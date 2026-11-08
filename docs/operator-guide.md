@@ -1,12 +1,12 @@
 # Use the operator app
 
-The operator app is where your team reads and answers chats. Open your Dinghy address in a browser, enter your email, and select **Email me a sign-in link**. Open the link in the email, and select **Sign in to Dinghy**. The link works once, for 15 minutes, and only the button uses it, so a mail scanner that opens it first does no harm. Dinghy has no passwords.
+The operator app is where your team reads and answers chats. Open your Dinghy address in a browser, enter your email, and select **Email me a sign-in link**. Open the link in the email, and select **Sign in**. The link works once, for 15 minutes, and only the button uses it, so a mail scanner that opens it first does no harm. Dinghy has no passwords.
 
 ![The operator app with a conversation open](media/inbox.png)
 
 ## Answer a chat
 
-New conversations appear in the **Open** list with no reload. Select one to read it, write in the reply box, and press **Send**.
+The sidebar has **Inbox**, **Closed**, **Alerts** and **Settings**. New conversations appear in the **Inbox** with no reload, and the red number counts the people who wait for a reply. Select one to read it, write in the reply box, and press Enter or the send button.
 
 To send an image, paste it, drag it onto the chat, or select the image button. The rules are the same as for visitors: PNG, JPEG or WebP, under 5 MB and under 16 megapixels.
 
@@ -14,14 +14,14 @@ If a message shows "Not sent", select it to try again. A retry cannot create a s
 
 If two of you open the same conversation, each sees "… is replying", so you do not answer twice.
 
-In a conversation, you can also:
+Under the visitor's name, the header shows their user ID and the page where they started. On the right are the controls:
 
 | Control | What it does |
 |---|---|
-| **Assign to** | A list that gives the conversation to one person on your team |
+| The assignee | A list that gives the conversation to one person on your team, or to nobody |
 | **Close** | Moves it to the **Closed** list. **Reopen** brings it back. If the visitor writes after a close, this starts a new conversation with no assignee, and the visitor sees one thread |
-| **Block** | Stops this visitor from sending messages. **Settings > Blocked visitors**, which appears once someone is blocked, can undo it |
-| **Delete** | Deletes the conversation and its images for good. Owners and admins only |
+| **…** then **Block** | Stops this visitor from sending messages. **Unblock** in the same place undoes it, and so does **Settings > Data > Blocked visitors** |
+| **…** then **Delete** | Deletes the conversation and its images for good, after you confirm. Owners and admins only |
 
 For a signed-in user, the conversation shows the email and user ID that [your site sent](add-to-your-site.md#show-who-is-chatting).
 
@@ -42,13 +42,17 @@ On Android and on a computer, you can install the app from the browser's menu, b
 
 A phone can delay or drop a notification, so do not rely on one for urgent work.
 
+## Your profile
+
+Select your name at the bottom of the sidebar, then **Profile**, to change the name your teammates see. **Sign out** is in the same menu.
+
 ## Set up your team
 
 ![The settings page](media/settings.png)
 
-Everyone can open **Settings**. An agent sees the team and the blocked visitors, and the other sections are for owners and admins.
+Everyone can open **Settings**. Its tabs are **Team**, **Install**, **Allowed sites**, **Signing secret** and **Data**. An agent sees the team, and the blocked visitors under **Data** once someone is blocked. The other tabs are for owners and admins.
 
-To invite someone, select **Create a link** in **Invite someone**, and send the link to that one person. A link works once and lasts 7 days. The person opens it, and enters a name and an email. Dinghy emails them a link, and selecting **Join your team** on the page it opens creates their account, or uses the one that email already has, joins the workspace and signs them in. Someone who is already signed in selects **Join**. Without a mail server, a new person signs in at once, and nothing checks the email, so send the link only to the person it is for. Someone who already has an account there signs in first, then opens the invite.
+To invite someone, select **Invite someone** at the top of Settings, pick a role, select **Create invite link**, and send the link to that one person. Pending invites show in the team list until they are used, with the days they have left and **Revoke**. A link works once and lasts 7 days. The person opens it, and enters a name and an email. Dinghy emails them a link, and selecting **Join your team** on the page it opens creates their account, or uses the one that email already has, joins the workspace and signs them in. Someone who is already signed in selects **Join**. Without a mail server, a new person signs in at once, and nothing checks the email, so send the link only to the person it is for. Someone who already has an account there signs in first, then opens the invite.
 
 | Role | Can do |
 |---|---|
@@ -56,16 +60,17 @@ To invite someone, select **Create a link** in **Invite someone**, and send the 
 | **Admin** | The above, and delete conversations, change settings, and invite or remove agents |
 | **Owner** | The above, and invite admins, change roles, and download exports |
 
-A workspace needs an owner, so make someone else owner before you leave.
+A workspace always keeps an owner. While you are the only one, your role stays **Owner** and you cannot leave: make someone else an owner first.
 
-Someone in two workspaces can switch between them at the top of the app.
+Someone in two workspaces switches between them with the workspace name at the top of the sidebar. On Dinghy Cloud, the same menu has **Create a workspace**.
 
 ## The other settings
 
-- **Widget snippet** has the tag for your site.
-- **Allowed sites** lists the sites that can load the chat.
-- **Signing secret** is for [signed-in users](add-to-your-site.md#show-who-is-chatting).
-- **Export** downloads all conversations and images as one file, which imports into a self-hosted Dinghy.
+- **Install** has the tag for your site, with a **Copy** button.
+- **Allowed sites** lists the sites that can load the chat, one per row. **Add a site** adds a row, and each row says if its address is not a site such as `https://example.com`.
+- **Signing secret** is for [signed-in users](add-to-your-site.md#show-who-is-chatting). It stays hidden until you select the eye. **Replace the secret** asks first, because the old one stops working at once.
+- **Data** has **Download an export**, which saves all conversations and images as one file that imports into a self-hosted Dinghy, and **Delete workspace**.
+- On Dinghy Cloud, **Team** also shows how many of the plan's 5 operators and 1 GB of images are in use.
 
 ## If no sign-in link arrives
 
