@@ -10,7 +10,7 @@ COPY packages/widget/package.json packages/widget/
 COPY ee/package.json ee/
 RUN bun install --frozen-lockfile --ignore-scripts
 
-FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS bundles
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS bundles
 WORKDIR /repo
 COPY --from=install /repo ./
 # Only what the two bundles import, so a server-only change does not build them again.
@@ -36,7 +36,7 @@ COPY ee/package.json ee/
 RUN bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted --omit=peer \
   && mkdir -p apps/server/node_modules ee/node_modules
 
-FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4
 # The major version in compose.yaml. pg_restore refuses a newer server, and the install check compares them.
 # The server never uses npm or corepack, and the image scan finds their bundled packages.
 # The upgrade takes Alpine's security fixes that the pinned base image does not have yet.
