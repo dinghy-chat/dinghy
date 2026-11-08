@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Dinghy API",
-    "version": "0.3.7",
+    "version": "0.4.0",
     "description": "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie). Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`, a BetterAuth pass-through that is not part of the versioned API."
   },
   "components": {
