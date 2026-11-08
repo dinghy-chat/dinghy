@@ -18,6 +18,14 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 - `Dinghy.reset()` no longer leaves a key in the browser's storage for a visitor who never chatted.
 - Search uses a trigram index on message text, so a search of three letters or more no longer reads every message. The migration adds Postgres's `pg_trgm` extension, which the database's owner can add with no superuser, and builds the index, which takes a moment on a large install.
 - API: `POST /v1/widget/{key}/page`, `GET /v1/operator/workspaces/{workspaceId}/conversations/search`, `GET /v1/operator/workspaces/{workspaceId}/analytics`, `visitorPages` with a conversation's messages, `chatted` in the widget's `me` answer, `texts` in the widget's presence answer, `widgetTexts` in the settings, `visitorOnline` with a conversation's messages, and `fromVisitor` on a new message's `change` event. The settings `PATCH` takes `allowedOrigins`, `widgetTexts` or both.
+- A `name` string in the identity token's `attributes` (or `claims`), when the token has no `name` of its own, is the visitor's name in the operator app: the conversation's title in the inbox, the conversation header and the blocked list. The email and user ID move to the line under it.
+- Settings fits a phone: the tabs wrap so every one stays visible, and **Invite someone**, now only on **Team**, is a short **Invite** in the title row. The install snippet has one attribute per line, so no screen breaks it inside `data-key`.
+- An invite link that expired or was used shows a heading and a way on, **Sign in** or **Open Dinghy**, instead of a line of red text.
+- **Delete workspace** is an outline button, like **Replace the secret**. The confirm step keeps the filled red one.
+- Fields have a darker border, at 3:1 on white, and buttons, tabs and dropdowns on a phone are at least 44 px tall.
+- On a touch screen, opening the chat no longer brings up the keyboard. Tapping the message field does. With a mouse, the field gets focus as before.
+- When nobody is online, the widget says "we will reply here" once, in its header.
+- Dinghy Cloud's early signup says what it is: the workspace works right away, and an email comes when the cloud opens. The button reads **Email me a sign-up link**, the workspace name has a hint, and the banner in the app is one short line.
 
 ## 0.5.0 (2026-11-08)
 

@@ -584,6 +584,9 @@ textarea {
   background: #fff;
   color: var(--navy);
 }
+.banner-short {
+  display: none;
+}
 .billing-banner a {
   color: inherit;
   font-weight: 600;
@@ -1850,6 +1853,14 @@ button.workspace[aria-expanded="true"],
 .invite-short {
   display: none;
 }
+.field .hint {
+  display: block;
+  margin-top: 8px;
+}
+/* The Role header starts where the text inside the role pills starts. */
+.members th:nth-child(3) {
+  padding-left: 26px;
+}
 .copy-field .pill,
 .inline-field .pill {
   min-height: 44px;
@@ -2201,16 +2212,36 @@ button.workspace[aria-expanded="true"],
   .me.current {
     box-shadow: 0 0 0 3px #fff;
   }
+  /* The title and the button share a row, and the line of context takes the full width below on
+     every page, so a button on one tab cannot make it wrap differently from the next. */
   .page-head {
-    flex-wrap: nowrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    /* As tall as the button, with or without one. */
+    grid-template-rows: 44px auto;
+    align-items: center;
+    row-gap: 0;
   }
   .page-title {
-    flex-basis: auto;
+    display: contents;
+  }
+  .page-head p {
+    grid-column: 1 / -1;
+  }
+  .page-actions {
+    grid-row: 1;
+    grid-column: 2;
   }
   .invite {
     padding: 0 16px;
   }
   .invite-short {
+    display: inline;
+  }
+  .banner-long {
+    display: none;
+  }
+  .banner-short {
     display: inline;
   }
   .invite-long {
