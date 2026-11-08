@@ -27,6 +27,24 @@ Under the visitor's name, the header shows their email or user ID and the page w
 
 For a signed-in user, the conversation shows the name, email, user ID and custom attributes that [your site sent](add-to-your-site.md#show-who-is-chatting). An attribute that is a web address is a link.
 
+Below the header, **Pages visited** lists the pages the visitor went through after they first chatted, newest first, with how long ago. Each one shows the page's title, or its address when it has none, and opens in a new tab. It shows 5, and **Show all** shows up to 20. The list reads the pages again every 30 seconds. Dinghy keeps a visitor's newest 100 pages for 90 days, and deleting the visitor's last conversation deletes them.
+
+## See how support is going
+
+Select **Analytics** in the sidebar. Every member can see it. Pick the last 7, 30 or 90 days in the list at the top right. Days and hours are in your browser's time zone, which the line under the title names.
+
+Every number is about the conversations that started in that period:
+
+| Number | What it means |
+|---|---|
+| **Conversations** | How many started |
+| **Median first reply** | Half of the answered ones got their first reply from your team within this time, counted from the visitor's first message |
+| **90% replied within** | 9 in 10 of the answered ones got their first reply within this time |
+| **Answered within 5 min** | The share of all of them, answered or not, with a first reply within 5 minutes |
+| **Closed now** | How many of them are closed now |
+
+Below are the conversations per day, the conversations each person answered first, and the busiest hours, as a grid of weekdays by hours where a darker square means more conversations started then. Hold the pointer over a bar or a square to see its number. With no conversation in the period, the page says so.
+
 ## Get alerts
 
 Select **Alerts** in the sidebar. Each device has its own setting.

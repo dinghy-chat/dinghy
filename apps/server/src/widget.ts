@@ -29,6 +29,7 @@ import {
   verifyHostToken,
 } from "./identity.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
+import { pageTitle, recordPage } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, wakeConversation } from "./live.ts";
 import {
@@ -82,6 +83,8 @@ const VisitorSchema = z
     visitorId: z.string(),
     signedIn: z.boolean(),
     openConversation: z.boolean(),
+    // The visitor has a conversation, open or closed. Only then does the widget report pages.
+    chatted: z.boolean(),
     lastReadSeq: z.string(),
     unread: z.number(),
     // A stream from here reads only what follows the read position, as a closed panel needs.
@@ -165,12 +168,20 @@ const pageRoute = createRoute({
   security: VISITOR_TOKEN,
   summary: "Report the page the visitor is on, for operators",
   description:
-    "The widget sends this when it loads and when the page's address changes. The server keeps the origin and path, when it came, and a short device line made from the User-Agent, which it does not keep.",
+    "The widget sends this when it loads and when the page's address changes, and only for a visitor who already has a token because they used the chat. The server stores something only for a visitor who has a conversation, and never creates a visitor here. It keeps the origin and path, never the query or hash, the title, when it came, and a short device line made from the User-Agent, which it does not keep. Each report adds a row to the visitor's page journey, unless it repeats the newest one, and a visitor keeps the newest 100.",
   request: {
     params,
     body: {
       required: true,
-      content: { "application/json": { schema: z.object({ page: z.string().max(4096) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({
+            page: z.string().max(4096),
+            // The document's title. The server keeps one line of 200 characters at most.
+            title: z.string().max(2000).optional(),
+          }),
+        },
+      },
     },
   },
   responses: {
@@ -544,6 +555,30 @@ async function authenticate(
 }
 
 /**
+ * The visitor a token names, without creating one: a page report must not store a signed-in user
+ * who never chatted. Undefined for a token that does not work, and null for no visitor yet.
+ */
+async function knownVisitor(
+  db: Database,
+  found: WidgetWorkspace,
+  publicKey: string,
+  authorization: string | undefined,
+): Promise<string | null | undefined> {
+  const token = bearerToken(authorization);
+  if (token === "") return undefined;
+  if (isBrowserToken(token)) return (await browserVisitor(db, found.id, token)) ?? undefined;
+  const identity = await verifyHostToken(token, found.signingSecret, publicKey);
+  if (identity === null) return undefined;
+  const [row] = await withWorkspace(db, found.id, (tx) =>
+    tx
+      .select({ id: visitor.id })
+      .from(visitor)
+      .where(and(eq(visitor.workspaceId, found.id), eq(visitor.externalId, identity.externalId))),
+  );
+  return row?.id ?? null;
+}
+
+/**
  * A read-only check of a token that already identified this stream's visitor. It writes nothing,
  * or an older tab's token would overwrite newer user data on every wake.
  */
@@ -568,16 +603,12 @@ async function stillValid(
 async function visitorView(db: Database, workspaceId: string, identified: Identified) {
   const { visitorId, signedIn } = identified;
   return withWorkspace(db, workspaceId, async (tx) => {
-    const open = await tx
-      .select({ id: conversation.id })
+    // The open one first, if there is one.
+    const [newest] = await tx
+      .select({ status: conversation.status })
       .from(conversation)
-      .where(
-        and(
-          eq(conversation.workspaceId, workspaceId),
-          eq(conversation.visitorId, visitorId),
-          eq(conversation.status, "open"),
-        ),
-      )
+      .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
+      .orderBy(sql`${conversation.status} = 'open' desc`)
       .limit(1);
     const { lastReadSeq, unread } = await readState(tx, workspaceId, visitorId);
     const [current] = await tx
@@ -587,7 +618,8 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
     return {
       visitorId,
       signedIn,
-      openConversation: open.length > 0,
+      openConversation: newest?.status === "open",
+      chatted: newest !== undefined,
       lastReadSeq: lastReadSeq.toString(),
       unread,
       readCursor: formatCursor({ generation: current?.generation ?? 0, seq: lastReadSeq }),
@@ -910,20 +942,19 @@ export function registerWidgetRoutes(
 
   app.openapi(pageRoute, async (c) => {
     const found = c.get("workspace");
-    const identified = await identify(c);
-    if (identified === null) return c.json(UNAUTHORIZED, 401);
+    const authorization = c.req.header("authorization");
     // A chat link's page is this server's, and its address holds the link's token.
-    if (identified.link) return c.json({ ok: true as const }, 200);
-    const page = startedPage(c.req.valid("json").page, c.req.header("origin"));
+    if (isChatLinkToken(bearerToken(authorization))) return c.json({ ok: true as const }, 200);
+    const visitorId = await knownVisitor(db, found, c.req.param("key"), authorization);
+    if (visitorId === undefined) return c.json(UNAUTHORIZED, 401);
+    if (visitorId === null) return c.json({ ok: true as const }, 200);
+    const { page, title } = c.req.valid("json");
     await withWorkspace(db, found.id, (tx) =>
-      tx
-        .update(visitor)
-        .set({
-          ...(page === null ? {} : { lastPage: page }),
-          lastSeenAt: sql`now()`,
-          device: deviceLine(c.req.header("user-agent")),
-        })
-        .where(and(eq(visitor.workspaceId, found.id), eq(visitor.id, identified.visitorId))),
+      recordPage(tx, found.id, visitorId, {
+        path: startedPage(page, c.req.header("origin")),
+        title: pageTitle(title),
+        device: deviceLine(c.req.header("user-agent")),
+      }),
     );
     return c.json({ ok: true as const }, 200);
   });

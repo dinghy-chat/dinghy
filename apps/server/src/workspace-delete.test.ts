@@ -11,7 +11,7 @@ import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { addOperator, signIn } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { subscription, workspace } from "./db/schema.ts";
+import { pageView, subscription, visitor, workspace } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createImages } from "./images.ts";
 import { localStore, type ObjectStore } from "./storage.ts";
@@ -133,6 +133,16 @@ describe("the owner's delete", () => {
     const created = await createWorkspace(db, "Home", []);
     const { email } = await addOperator({ auth, owner, name: "Self", workspaceId: created.id });
     const cookie = await signIn(app, auth, email);
+    // A visitor's page journey, so the check below covers it.
+    const [seen] = await owner
+      .insert(visitor)
+      .values({ workspaceId: created.id, tokenHash: "home-visitor" })
+      .returning({ id: visitor.id });
+    await owner.insert(pageView).values({
+      workspaceId: created.id,
+      visitorId: seen?.id ?? "",
+      path: "https://home.example/pricing",
+    });
     const response = await request("DELETE", `/v1/operator/workspaces/${created.id}`, {
       cookie,
       body: { name: "Home" },

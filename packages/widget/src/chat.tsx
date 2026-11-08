@@ -1,7 +1,14 @@
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
-import { ApiError, type ChatMessage, createClient, pageAddress, type Texts } from "./client.ts";
+import {
+  ApiError,
+  type ChatMessage,
+  createClient,
+  pageAddress,
+  pageTitle,
+  type Texts,
+} from "./client.ts";
 import {
   IMAGE_TYPES,
   imageProblem,
@@ -216,6 +223,8 @@ const sayer =
           ? texts.away
           : null) ?? t(id);
 
+const TITLE_WAIT_MS = 500;
+
 // A single-page site changes its address with the History API, which fires no event of its own.
 const NAVIGATED = "dinghy:navigated";
 let watchingHistory = false;
@@ -380,6 +389,8 @@ function Chat({ context, open, setOpen }: ChatProps) {
     identity === null ? readToken(publicKey) : typeof identity === "string" ? identity : null,
   );
   const [openConversation, setOpenConversation] = useState(false);
+  // Has a conversation, open or closed. Only such a visitor's pages are reported.
+  const [chatted, setChatted] = useState(false);
   const [lastRead, setLastRead] = useState(0n);
   // The server's count, with the read position it was computed from.
   const [serverRead, setServerRead] = useState({ unread: 0, position: 0n });
@@ -511,28 +522,36 @@ function Chat({ context, open, setOpen }: ChatProps) {
   }, [client, fullPage, open, token, visible]);
 
   // The page the visitor is on, for operators, when the chat loads and when the address changes.
-  // Only a visitor who has a token, so a page view of someone who never chatted sends nothing.
+  // Only for a visitor who has chatted, so someone who never used the chat sends nothing.
   useEffect(() => {
-    if (token === null || fullPage) return;
+    if (token === null || !chatted || fullPage) return;
     let last = "";
     const report = () => {
       const address = pageAddress();
-      if (address === last) return;
-      last = address;
-      client.reportPage(token, address).catch(() => {
+      const title = pageTitle();
+      if (`${address} ${title}` === last) return;
+      last = `${address} ${title}`;
+      client.reportPage(token, address, title).catch(() => {
         // Only a detail for operators. The next change of address tries again.
         last = "";
       });
     };
+    // A single-page app sets its new title a moment after it changes the address.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const navigated = () => {
+      clearTimeout(timer);
+      timer = setTimeout(report, TITLE_WAIT_MS);
+    };
     watchHistory();
     report();
-    addEventListener(NAVIGATED, report);
-    addEventListener("popstate", report);
+    addEventListener(NAVIGATED, navigated);
+    addEventListener("popstate", navigated);
     return () => {
-      removeEventListener(NAVIGATED, report);
-      removeEventListener("popstate", report);
+      clearTimeout(timer);
+      removeEventListener(NAVIGATED, navigated);
+      removeEventListener("popstate", navigated);
     };
-  }, [client, fullPage, token]);
+  }, [chatted, client, fullPage, token]);
 
   // One request when a visible tab has a token gives the unread count and says whether a stream is
   // needed. A visitor with only closed conversations holds no stream. It runs again when a tab
@@ -550,6 +569,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
         renewDelay.current = 0;
         // A send during this request leaves a conversation open that this response may not show.
         setOpenConversation(me.openConversation || sends.current !== sendsAtStart);
+        setChatted((current) => current || me.chatted);
         // The larger one, because this response can be older than a read in this tab.
         const position = BigInt(me.lastReadSeq);
         setLastRead((current) => larger(current, position));
@@ -729,6 +749,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
       });
       sends.current += 1;
       setOpenConversation(true);
+      setChatted(true);
       // A send that worked means a block was lifted, or the site was allowed again. Another warning,
       // such as an image that was too large, is about something else and stays.
       setProblem((current) =>

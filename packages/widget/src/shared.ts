@@ -55,10 +55,15 @@ export function writeToken(publicKey: string, token: string | null): void {
   }
 }
 
-/** Tells other tabs of this site to start again. A storage event fires only in other tabs. */
+/**
+ * Tells other tabs of this site to start again. A storage event fires only in other tabs. The key
+ * goes at once, so nothing stays stored for a visitor who never chatted.
+ */
 export function broadcastReset(publicKey: string): void {
   try {
-    localStorage.setItem(RESET_PREFIX + publicKey, String(Date.now()));
+    // The key is always gone before this, so each signal is a change that fires the event.
+    localStorage.setItem(RESET_PREFIX + publicKey, "1");
+    localStorage.removeItem(RESET_PREFIX + publicKey);
   } catch {
     // Other tabs keep their session until their next page load.
   }

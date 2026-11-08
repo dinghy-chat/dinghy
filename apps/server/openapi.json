@@ -237,6 +237,9 @@
           "openConversation": {
             "type": "boolean"
           },
+          "chatted": {
+            "type": "boolean"
+          },
           "lastReadSeq": {
             "type": "string"
           },
@@ -251,6 +254,7 @@
           "visitorId",
           "signedIn",
           "openConversation",
+          "chatted",
           "lastReadSeq",
           "unread",
           "readCursor"
@@ -485,6 +489,109 @@
           "imageRemoved": false,
           "createdAt": "2026-11-08T09:31:00.000Z"
         }
+      },
+      "PageView": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "viewedAt": {
+            "type": "string"
+          }
+        },
+        "required": ["path", "title", "viewedAt"]
+      },
+      "Analytics": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer"
+          },
+          "timeZone": {
+            "type": "string"
+          },
+          "started": {
+            "type": "integer"
+          },
+          "closed": {
+            "type": "integer"
+          },
+          "answered": {
+            "type": "integer"
+          },
+          "firstReply": {
+            "type": "object",
+            "properties": {
+              "medianSeconds": {
+                "type": ["number", "null"]
+              },
+              "p90Seconds": {
+                "type": ["number", "null"]
+              },
+              "within5Minutes": {
+                "type": ["number", "null"]
+              }
+            },
+            "required": ["medianSeconds", "p90Seconds", "within5Minutes"]
+          },
+          "perDay": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string"
+                },
+                "conversations": {
+                  "type": "integer"
+                }
+              },
+              "required": ["date", "conversations"]
+            }
+          },
+          "operators": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operatorId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": ["string", "null"]
+                },
+                "conversations": {
+                  "type": "integer"
+                }
+              },
+              "required": ["operatorId", "name", "conversations"]
+            }
+          },
+          "hours": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "required": [
+          "days",
+          "timeZone",
+          "started",
+          "closed",
+          "answered",
+          "firstReply",
+          "perDay",
+          "operators",
+          "hours"
+        ]
       },
       "Member": {
         "type": "object",
@@ -1416,7 +1523,7 @@
           }
         ],
         "summary": "Report the page the visitor is on, for operators",
-        "description": "The widget sends this when it loads and when the page's address changes. The server keeps the origin and path, when it came, and a short device line made from the User-Agent, which it does not keep.",
+        "description": "The widget sends this when it loads and when the page's address changes, and only for a visitor who already has a token because they used the chat. The server stores something only for a visitor who has a conversation, and never creates a visitor here. It keeps the origin and path, never the query or hash, the title, when it came, and a short device line made from the User-Agent, which it does not keep. Each report adds a row to the visitor's page journey, unless it repeats the newest one, and a visitor keeps the newest 100.",
         "parameters": [
           {
             "schema": {
@@ -1438,6 +1545,10 @@
                   "page": {
                     "type": "string",
                     "maxLength": 4096
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 2000
                   }
                 },
                 "required": ["page"]
@@ -2047,9 +2158,21 @@
                     },
                     "visitorOnline": {
                       "type": ["boolean", "null"]
+                    },
+                    "visitorPages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PageView"
+                      }
                     }
                   },
-                  "required": ["conversation", "messages", "hasMore", "visitorOnline"]
+                  "required": [
+                    "conversation",
+                    "messages",
+                    "hasMore",
+                    "visitorOnline",
+                    "visitorPages"
+                  ]
                 }
               }
             }
@@ -2843,6 +2966,132 @@
           },
           "429": {
             "description": "too_many_streams: the workspace has too many open streams. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/analytics": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Support numbers for the last 7, 30 or 90 days",
+        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first operator message, and `operators` counts conversations by who sent that reply.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 30
+            },
+            "required": false,
+            "name": "days",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            },
+            "required": false,
+            "name": "tz",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The numbers",
+            "content": {
+              "application/json": {
+                "example": {
+                  "days": 7,
+                  "timeZone": "Europe/Paris",
+                  "started": 12,
+                  "closed": 9,
+                  "answered": 11,
+                  "firstReply": {
+                    "medianSeconds": 140,
+                    "p90Seconds": 1260,
+                    "within5Minutes": 0.67
+                  },
+                  "perDay": [
+                    {
+                      "date": "2026-11-02",
+                      "conversations": 3
+                    }
+                  ],
+                  "operators": [
+                    {
+                      "operatorId": "7a3e5b20-9c1d-4f6a-b8e2-4d0f1c9a6b53",
+                      "name": "Sam",
+                      "conversations": 11
+                    }
+                  ],
+                  "hours": [
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Analytics"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
             "content": {
               "application/json": {
                 "schema": {

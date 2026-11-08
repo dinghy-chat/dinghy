@@ -1333,6 +1333,50 @@ button.workspace[aria-expanded="true"],
   overflow-wrap: anywhere;
   color: var(--navy);
 }
+/* The visitor's pages, newest first: a title as a link, and how long ago on the right. */
+.journey {
+  padding: 10px 28px;
+  border-bottom: 1px solid var(--warm-line);
+  font-size: 13.5px;
+}
+.journey h3 {
+  margin-bottom: 4px;
+  color: var(--quiet);
+  font: 600 13.5px / 1.4 var(--body);
+}
+.journey ol {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+}
+.journey li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.journey .page-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--navy);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.journey a.page-name {
+  color: var(--blue-deep);
+}
+.journey time {
+  flex: none;
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+}
+.journey .btn {
+  min-height: 28px;
+  margin-top: 4px;
+  padding: 0;
+}
 .context a,
 .who-text .visit a {
   color: var(--blue-deep);
@@ -1619,6 +1663,138 @@ button.workspace[aria-expanded="true"],
 .page-row + .danger-zone,
 .tab-panel > .danger-zone:first-child {
   border-top: 1.5px solid #f2c4c0;
+}
+/* Analytics: the headline numbers, then one row per chart. Bars and cells use the brand's navy
+   and blue on the cream track, as the usage meters do. */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 14px;
+  padding: 18px 0 24px;
+}
+.figures div {
+  padding: 16px 18px;
+  border: 1px solid var(--warm-line);
+  border-radius: 16px;
+}
+.figures dt {
+  color: var(--quiet);
+  font-size: 13.5px;
+}
+.figures dd {
+  margin-top: 6px;
+  color: var(--navy);
+  font: 700 26px / 1.1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.figures + .page-row {
+  border-top: 0;
+}
+.per-day,
+.hours {
+  margin: 0;
+  min-width: 0;
+}
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 140px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--soft);
+}
+.bars span {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  height: 100%;
+}
+.bars i {
+  display: block;
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: var(--navy);
+}
+.bars span:hover i {
+  background: var(--blue);
+}
+.axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--quiet);
+  font-size: 12.5px;
+}
+.by-operator {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+.by-operator li {
+  display: grid;
+  grid-template-columns: minmax(80px, 160px) minmax(0, 1fr) 3ch;
+  align-items: center;
+  gap: 12px;
+}
+.by-operator .who {
+  overflow: hidden;
+  color: var(--navy);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.by-operator .track {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--soft);
+}
+.by-operator .fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--navy);
+}
+.by-operator .count {
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.hours-grid {
+  display: grid;
+  grid-template-columns: 3.2em repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  font-size: 11.5px;
+}
+.hour-label {
+  overflow: visible;
+  color: var(--quiet);
+  white-space: nowrap;
+}
+.day-label {
+  color: var(--quiet);
+  line-height: 18px;
+}
+.cell {
+  height: 18px;
+  border-radius: 3px;
+  background: var(--soft);
+}
+.cell.level-1 {
+  background: color-mix(in srgb, var(--blue) 25%, var(--soft));
+}
+.cell.level-2 {
+  background: color-mix(in srgb, var(--blue) 50%, var(--soft));
+}
+.cell.level-3 {
+  background: var(--blue);
+}
+.cell.level-4 {
+  background: var(--navy);
 }
 .stack {
   display: grid;
@@ -2031,6 +2207,9 @@ button.workspace[aria-expanded="true"],
     flex: 1 1 100%;
     justify-content: space-between;
     margin: 0;
+    /* Five tabs fit a 360px phone. A narrower screen scrolls them, never the page. */
+    overflow-x: auto;
+    scrollbar-width: none;
   }
   .nav button {
     flex: 1;
@@ -2093,7 +2272,8 @@ button.workspace[aria-expanded="true"],
     flex: 1;
   }
   .replying,
-  .context {
+  .context,
+  .journey {
     padding-inline: 14px;
   }
   .log {

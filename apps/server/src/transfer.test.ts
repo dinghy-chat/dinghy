@@ -22,6 +22,7 @@ import {
   event,
   message,
   operator,
+  pageView,
   visitor,
   workspace,
   workspaceMember,
@@ -182,6 +183,15 @@ async function makeSource(): Promise<Source> {
     .set({ removedAt: new Date() })
     .where(eq(workspaceMember.operatorId, gone.id));
   await owner.insert(emailStop).values({ workspaceId: space.id, addressHash: "a".repeat(64) });
+  await app.request(`/v1/widget/${space.publicKey}/page`, {
+    method: "POST",
+    headers: {
+      origin: SITE,
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ page: `${SITE}/docs?ref=ad`, title: "Docs" }),
+  });
 
   // Another workspace on the same install, which must stay out of the export.
   const otherVisitor = await app.request(`/v1/widget/${other.publicKey}/visitors`, {
@@ -448,6 +458,16 @@ describe("a round trip onto a fresh install", () => {
     expect(rows.map((row) => row.addressHash)).toEqual(["a".repeat(64)]);
   });
 
+  test("the visitor's page journey comes along", async () => {
+    const rows = await target.owner
+      .select()
+      .from(pageView)
+      .where(eq(pageView.workspaceId, source.space.id));
+    expect(rows.map((row) => [row.visitorId, row.path, row.title])).toEqual([
+      [source.visitorId, `${SITE}/docs`, "Docs"],
+    ]);
+  });
+
   test("a repeated import is refused and changes nothing", async () => {
     const before = await files(target.directory);
     const messages = await target.owner.select().from(message);
@@ -532,6 +552,30 @@ describe("a bad file changes nothing", () => {
     expect(await target.owner.select().from(operator)).toHaveLength(before);
     expect(await files(target.directory)).toEqual([]);
   }
+
+  test("an export from 0.5.0, with no page journey, imports", async () => {
+    const old = await edited((data) => {
+      delete data.pageViews;
+    });
+    const target = await freshInstall();
+    await importArchive(target.db, target.store, once(old));
+    expect(await target.owner.select().from(pageView)).toEqual([]);
+    expect(await target.owner.select().from(visitor)).not.toEqual([]);
+  }, 30_000);
+
+  test("a page view of a visitor the file does not hold", async () => {
+    const bad = await edited((data) => {
+      (data.pageViews as Record<string, unknown>[]).push({
+        visitorId: randomUUID(),
+        path: `${SITE}/x`,
+        title: null,
+        viewedAt: new Date().toISOString(),
+      });
+    });
+    const target = await freshInstall();
+    await expect(importArchive(target.db, target.store, once(bad))).rejects.toThrow(ImportError);
+    expect(await target.owner.select().from(workspace)).toEqual([]);
+  }, 30_000);
 
   test("an export from 0.5.0, whose visitors have claims, imports them as attributes", async () => {
     const old = await edited((data) => {

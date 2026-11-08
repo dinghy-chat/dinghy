@@ -145,7 +145,9 @@ If your Dinghy serves images from a separate origin (`IMAGES_ORIGIN`), allow tha
 
 ## What operators see about a visitor
 
-Once a visitor has chatted, the widget tells your Dinghy server the page they are on: when it loads, and when the address changes, also in a single-page app. It sends the address without its query string or `#` part. The server also keeps a short line about the browser, such as "Chrome on macOS", and not the browser's full description. Operators see whether the visitor has the chat open now, or when they were last seen.
+Once a visitor has chatted, the widget tells your Dinghy server the page they are on: when it loads, and when the address changes, also in a single-page app. It sends the page's address without its query string or `#` part, so a token or a search in the address never reaches Dinghy, and the page's title. The server also keeps a short line about the browser, such as "Chrome on macOS", and not the browser's full description. Operators see whether the visitor has the chat open now, or when they were last seen, and the pages the visitor went through. Dinghy keeps a visitor's newest 100 pages, for 90 days at most, and deletes them with the visitor's last conversation.
+
+A visitor who never used the chat sends nothing, and the widget stores nothing in their browser: no cookie and nothing in `localStorage`. It stores its own token in `localStorage` only once the visitor sends a message, and a signed-in user's token is never stored. So the chat needs no cookie banner.
 
 ## Change the chat's words
 

@@ -21,6 +21,7 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
+import { forgetPagesWithoutChat } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { findConversation, recordConversationChange, recordTeamChange } from "./messages.ts";
 import { allowed } from "./team.ts";
@@ -144,9 +145,11 @@ async function deleteConversation(
   await tx
     .delete(message)
     .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversationId)));
-  await tx
+  const [gone] = await tx
     .delete(conversation)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)))
+    .returning({ visitorId: conversation.visitorId });
+  if (gone !== undefined) await forgetPagesWithoutChat(tx, workspaceId, gone.visitorId);
 }
 
 const params = z.object({ workspaceId: z.uuid(), conversationId: z.uuid() });

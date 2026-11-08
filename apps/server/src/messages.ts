@@ -712,8 +712,30 @@ export async function searchConversations(
   limit: number,
 ): Promise<ConversationSummary[]> {
   const pattern = containing(text);
-  // The newest matching message of each conversation. No index helps a substring, so this reads
-  // the workspace's messages: fine at a small team's size, and it runs only while someone searches.
+  // The matches first, so the previews below are read for one page of them only. A trigram index
+  // finds the messages that hold three characters or more.
+  const inMessages = tx
+    .select({ id: message.conversationId })
+    .from(message)
+    .where(and(eq(message.workspaceId, workspaceId), ilike(message.body, pattern)));
+  const matched = tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .innerJoin(visitor, joinVisitor())
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        or(
+          ilike(visitor.name, pattern),
+          ilike(visitor.email, pattern),
+          ilike(visitor.externalId, pattern),
+          inArray(conversation.id, inMessages),
+        ),
+      ),
+    )
+    .orderBy(desc(conversation.updatedAt), desc(conversation.id))
+    .limit(limit);
+  // The newest matching message of each conversation.
   const hit = tx
     .select({
       body: message.body,
@@ -756,19 +778,8 @@ export async function searchConversations(
     .innerJoin(visitor, joinVisitor())
     .leftJoinLateral(hit, sql`true`)
     .leftJoinLateral(newest, sql`true`)
-    .where(
-      and(
-        eq(conversation.workspaceId, workspaceId),
-        or(
-          ilike(visitor.name, pattern),
-          ilike(visitor.email, pattern),
-          ilike(visitor.externalId, pattern),
-          isNotNull(hit.createdAt),
-        ),
-      ),
-    )
-    .orderBy(desc(conversation.updatedAt), desc(conversation.id))
-    .limit(limit);
+    .where(and(eq(conversation.workspaceId, workspaceId), inArray(conversation.id, matched)))
+    .orderBy(desc(conversation.updatedAt), desc(conversation.id));
   return rows.map(
     ({
       hitBody,

@@ -17,6 +17,37 @@ export interface Visitor {
   lastSeenAt: string | null;
 }
 
+/** A page in the visitor's journey, as the widget reported it. */
+export interface PageView {
+  /** Origin and path, never a query or hash. */
+  path: string;
+  title: string | null;
+  viewedAt: string;
+}
+
+export type AnalyticsDays = 7 | 30 | 90;
+
+/** Support numbers about the conversations that started in the period. */
+export interface Analytics {
+  days: number;
+  timeZone: string;
+  started: number;
+  /** Of those, the ones closed now. */
+  closed: number;
+  answered: number;
+  firstReply: {
+    medianSeconds: number | null;
+    p90Seconds: number | null;
+    /** From 0 to 1, of the conversations started. */
+    within5Minutes: number | null;
+  };
+  perDay: { date: string; conversations: number }[];
+  /** By who sent the first reply. */
+  operators: { operatorId: string; name: string | null; conversations: number }[];
+  /** Weekday (Monday first) by hour. */
+  hours: number[][];
+}
+
 export interface Conversation {
   id: string;
   status: "open" | "closed";
@@ -249,6 +280,8 @@ export function workspaceApi(workspaceId: string) {
     rotateSecret: () => post<WorkspaceSettings>(`${base}/settings/rotate-secret`, {}),
     exportUrl: `${base}/export`,
     billing: () => call<BillingState>(`${base}/billing`),
+    analytics: (days: AnalyticsDays, timeZone: string) =>
+      call<Analytics>(`${base}/analytics?days=${days}&tz=${encodeURIComponent(timeZone)}`),
     billingPortal: () => post<{ url: string }>(`${base}/billing-portal`, {}),
     /** The typed name must match the workspace's. */
     deleteWorkspace: (name: string) =>
@@ -314,6 +347,8 @@ export function workspaceApi(workspaceId: string) {
         hasMore: boolean;
         /** A widget stream of the visitor's is open. Null when the server cannot tell. */
         visitorOnline: boolean | null;
+        /** The visitor's newest pages, newest first, at most 20. */
+        visitorPages: PageView[];
       }>(`${conversation(id)}/messages?after=${after}`),
     /** Open and closed conversations by visitor or message text. A newer search aborts this one. */
     search: (query: string, signal: AbortSignal) =>

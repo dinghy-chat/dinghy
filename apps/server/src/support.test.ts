@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { SignJWT } from "jose";
 import { pino } from "pino";
@@ -11,7 +11,7 @@ import { pruneOnce } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { chatLinkWorkspace, createChatLink } from "./chat-link.ts";
-import { chatLink, conversation, visitor, workspace } from "./db/schema.ts";
+import { chatLink, conversation, pageView, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { deviceLine } from "./device.ts";
 import { verifyHostToken } from "./identity.ts";
@@ -225,6 +225,7 @@ describe("device line", () => {
 describe("page reports", () => {
   test("keep the origin and path, the time and the device, and no User-Agent", async () => {
     const { visitorId, token } = await newVisitor();
+    await send(token, "Hi");
     const response = await widget(a.publicKey, "page", token, {
       method: "POST",
       body: { page: `${SITE}/pricing?coupon=secret#plans` },
@@ -244,6 +245,7 @@ describe("page reports", () => {
 
   test("ignore a page on another site", async () => {
     const { visitorId, token } = await newVisitor();
+    await send(token, "Hi");
     await widget(a.publicKey, "page", token, { method: "POST", body: { page: `${SITE}/a` } });
     await widget(a.publicKey, "page", token, {
       method: "POST",
@@ -274,15 +276,194 @@ describe("page reports", () => {
   });
 });
 
+describe("page journey", () => {
+  const report = (token: string, page: string, title?: string, key = a.publicKey) =>
+    widget(key, "page", token, {
+      method: "POST",
+      body: { page: `${SITE}${page}`, ...(title === undefined ? {} : { title }) },
+    });
+  const journey = (visitorId: string) =>
+    owner
+      .select()
+      .from(pageView)
+      .where(eq(pageView.visitorId, visitorId))
+      .orderBy(desc(pageView.viewedAt));
+  const pagesFor = async (conversationId: string) =>
+    (
+      (await (await asOperator(inA(`/conversations/${conversationId}/messages`))).json()) as {
+        visitorPages: { path: string; title: string | null; viewedAt: string }[];
+      }
+    ).visitorPages;
+
+  test("a visitor who never chatted is stored nowhere, signed in or not", async () => {
+    const anonymous = await newVisitor();
+    expect((await report(anonymous.token, "/pricing", "Pricing")).status).toBe(200);
+    expect(await journey(anonymous.visitorId)).toEqual([]);
+    expect((await visitorRow(anonymous.visitorId))?.lastPage).toBeNull();
+
+    // A host token alone creates no visitor through a page report.
+    const subject = randomUUID();
+    const signedIn = await hostToken({ name: "Never chatted" }, subject);
+    expect((await report(signedIn, "/account")).status).toBe(200);
+    const rows = await owner.select().from(visitor).where(eq(visitor.externalId, subject));
+    expect(rows).toEqual([]);
+    expect(
+      await owner
+        .select()
+        .from(pageView)
+        .where(eq(pageView.path, `${SITE}/account`)),
+    ).toEqual([]);
+  });
+
+  test("a bad token is refused", async () => {
+    expect((await report("v1.nope", "/a")).status).toBe(401);
+  });
+
+  test("records each page with its title, newest first, and skips a repeat", async () => {
+    const { visitorId, token } = await newVisitor();
+    const { conversationId } = await send(token, "Hi");
+    await report(token, "/pricing?coupon=secret#plans", "  Pricing \n  plans ");
+    await report(token, "/pricing", "Pricing plans");
+    await report(token, "/docs/start", "");
+    // A single-page app sets the title after the address: the repeat fills it in.
+    await report(token, "/docs/start", "Getting started");
+    const rows = await journey(visitorId);
+    expect(rows.map((row) => [row.path, row.title])).toEqual([
+      [`${SITE}/docs/start`, "Getting started"],
+      [`${SITE}/pricing`, "Pricing plans"],
+    ]);
+    const pages = await pagesFor(conversationId);
+    expect(pages.map((page) => page.title)).toEqual(["Getting started", "Pricing plans"]);
+    expect(Date.parse(pages[0]?.viewedAt ?? "")).not.toBeNaN();
+    // The visitor's last page moves with it.
+    expect((await visitorRow(visitorId))?.lastPage).toBe(`${SITE}/docs/start`);
+  });
+
+  test("a signed-in visitor who chatted is recorded", async () => {
+    const token = await hostToken({ name: "Ana" });
+    const { conversationId } = await send(token, "Hello");
+    await report(token, "/account", "Your account");
+    expect((await pagesFor(conversationId)).map((page) => page.path)).toEqual([`${SITE}/account`]);
+  });
+
+  test("the title is one line of 200 characters, and the path 2,000", async () => {
+    const { visitorId, token } = await newVisitor();
+    await send(token, "Hi");
+    await report(token, `/${"p".repeat(2500)}`, `${"t".repeat(250)}`);
+    const [row] = await journey(visitorId);
+    expect(row?.title).toHaveLength(200);
+    expect(row?.path).toHaveLength(2000);
+    expect((await report(token, "/x", "t".repeat(2001))).status).toBe(400);
+  });
+
+  test("a page on another site adds no row", async () => {
+    const { visitorId, token } = await newVisitor();
+    await send(token, "Hi");
+    await widget(a.publicKey, "page", token, {
+      method: "POST",
+      body: { page: "https://evil.example.com/b", title: "Evil" },
+    });
+    expect(await journey(visitorId)).toEqual([]);
+  });
+
+  test("keeps the newest 100 rows of a visitor, and operators see 20", async () => {
+    const { visitorId, token } = await newVisitor(b.publicKey);
+    await send(token, "Hi", b.publicKey);
+    // Older rows straight into the table, past the report rate limit.
+    await owner.insert(pageView).values(
+      Array.from({ length: 100 }, (_, index) => ({
+        workspaceId: b.id,
+        visitorId,
+        path: `${SITE}/old/${index}`,
+        viewedAt: new Date(Date.now() - (200 - index) * 1000),
+      })),
+    );
+    await report(token, "/new", "New", b.publicKey);
+    const rows = await journey(visitorId);
+    expect(rows).toHaveLength(100);
+    expect(rows[0]?.path).toBe(`${SITE}/new`);
+    expect(rows.some((row) => row.path === `${SITE}/old/0`)).toBe(false);
+    expect(rows.at(-1)?.path).toBe(`${SITE}/old/1`);
+  });
+
+  test("operators see the newest 20", async () => {
+    const { visitorId, token } = await newVisitor();
+    const { conversationId } = await send(token, "Hi");
+    await owner.insert(pageView).values(
+      Array.from({ length: 30 }, (_, index) => ({
+        workspaceId: a.id,
+        visitorId,
+        path: `${SITE}/p/${index}`,
+        viewedAt: new Date(Date.now() - (30 - index) * 1000),
+      })),
+    );
+    const pages = await pagesFor(conversationId);
+    expect(pages).toHaveLength(20);
+    expect(pages[0]?.path).toBe(`${SITE}/p/29`);
+  });
+
+  test("the worker deletes rows older than 90 days", async () => {
+    const { visitorId, token } = await newVisitor();
+    await send(token, "Hi");
+    await owner.insert(pageView).values([
+      {
+        workspaceId: a.id,
+        visitorId,
+        path: `${SITE}/old`,
+        viewedAt: new Date(Date.now() - 91 * 86_400_000),
+      },
+      {
+        workspaceId: a.id,
+        visitorId,
+        path: `${SITE}/recent`,
+        viewedAt: new Date(Date.now() - 89 * 86_400_000),
+      },
+    ]);
+    const worker = database.connect("worker").db;
+    await pruneOnce(worker, new Date(0));
+    expect((await journey(visitorId)).map((row) => row.path)).toEqual([`${SITE}/recent`]);
+  });
+
+  test("deleting the visitor's last conversation deletes the journey", async () => {
+    const { visitorId, token } = await newVisitor();
+    const first = await send(token, "One");
+    await report(token, "/one", "One");
+    const remove = (id: string) =>
+      asOperator(inA(`/conversations/${id}`), ownerCookie, { method: "DELETE" });
+    // A second conversation, after the first one closes.
+    await asOperator(inA(`/conversations/${first.conversationId}`), ownerCookie, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "closed" }),
+    });
+    const second = await send(token, "Two");
+    expect(second.conversationId).not.toBe(first.conversationId);
+    expect((await remove(first.conversationId)).status).toBe(200);
+    expect(await journey(visitorId)).toHaveLength(1);
+    expect((await remove(second.conversationId)).status).toBe(200);
+    expect(await journey(visitorId)).toEqual([]);
+  });
+
+  test("goes with its visitor", async () => {
+    const [row] = await owner
+      .insert(visitor)
+      .values({ workspaceId: a.id, tokenHash: randomUUID() })
+      .returning({ id: visitor.id });
+    const visitorId = row?.id ?? "";
+    await owner.insert(pageView).values({ workspaceId: a.id, visitorId, path: `${SITE}/a` });
+    await owner.delete(visitor).where(eq(visitor.id, visitorId));
+    expect(await journey(visitorId)).toEqual([]);
+  });
+});
+
 describe("visitor details for operators", () => {
   test("the conversation carries the name, device, last page and online state", async () => {
     const token = await hostToken({ name: "Ana", attributes: { site: "https://acme.example" } });
+    const { conversationId } = await send(token, "Hello");
     await widget(a.publicKey, "page", token, {
       method: "POST",
       body: { page: `${SITE}/docs` },
       agent: CHROME_MAC,
     });
-    const { conversationId } = await send(token, "Hello");
     const read = async () =>
       (await (await asOperator(inA(`/conversations/${conversationId}/messages`))).json()) as {
         conversation: { visitor: Record<string, unknown> };

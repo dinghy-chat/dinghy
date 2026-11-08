@@ -16,6 +16,7 @@ import {
 } from "./db/schema.ts";
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
+import { prunePageViews } from "./journey.ts";
 import { letter } from "./letter.ts";
 import { joinVisitor } from "./messages.ts";
 import type { Push, PushPayload } from "./push.ts";
@@ -647,7 +648,14 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
         WHERE expires_at < now()
         LIMIT ${PRUNE_BATCH})`);
     const links = await pruneChatLinks(db, PRUNE_BATCH);
-    const counts = [events.rowCount ?? 0, deliveries.rowCount ?? 0, blocks.rowCount ?? 0, links];
+    const pages = await prunePageViews(db, PRUNE_BATCH);
+    const counts = [
+      events.rowCount ?? 0,
+      deliveries.rowCount ?? 0,
+      blocks.rowCount ?? 0,
+      links,
+      pages,
+    ];
     removed += counts.reduce((sum, count) => sum + count, 0);
     // A full batch of any of them may have more behind it.
     if (counts.every((count) => count < PRUNE_BATCH)) return removed;

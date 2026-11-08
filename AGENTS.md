@@ -12,7 +12,7 @@ Three things matter more than any feature:
 2. **No lost or leaked data.** Every tenant row has a `workspace_id`, and every query on one runs through `withWorkspace` and filters by it. Row-level security is a second layer, not the only one.
 3. **Cheap to run.** A change that needs a bigger server, a third-party account or an API key to self-host is not a small change.
 
-The first release has no bots, AI answers, campaigns, help center, other channels or analytics. Do not add them without an approved issue.
+The first release has no bots, AI answers, campaigns, help center, other channels or website analytics. Support analytics, computed from the conversations already stored, are in. Do not add the others without an approved issue.
 
 ## Rules for the code
 

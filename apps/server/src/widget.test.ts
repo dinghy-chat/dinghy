@@ -243,6 +243,7 @@ describe("browser tokens", () => {
       visitorId: created.visitorId,
       signedIn: false,
       openConversation: false,
+      chatted: false,
       lastReadSeq: "0",
       unread: 0,
       readCursor: expect.stringMatching(/^\d+\.0$/),

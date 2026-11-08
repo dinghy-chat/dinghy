@@ -39,6 +39,8 @@ interface Me {
   visitorId: string;
   signedIn: boolean;
   openConversation: boolean;
+  /** Has a conversation, open or closed. Only then does the widget report pages. */
+  chatted: boolean;
   lastReadSeq: string;
   unread: number;
   /** A stream from here reads only what follows the read position. */
@@ -51,9 +53,11 @@ interface Me {
  */
 const DEADLINES = { requestMs: 30_000, uploadMs: 5 * 60_000 };
 
-/** The host page, so an operator sees where a chat started. The server keeps no query or hash. */
-// The server keeps 2,048 characters at most, and rejects a much longer value.
-export const pageAddress = () => (location.origin + location.pathname).slice(0, 2048);
+/** The host page, so an operator sees where a chat started. It never holds a query or hash. */
+export const pageAddress = () => (location.origin + location.pathname).slice(0, 2000);
+
+/** The page's title on one line, as the server keeps it. */
+export const pageTitle = () => document.title.replace(/\s+/g, " ").trim().slice(0, 200);
 
 /** The workspace's own widget text. Null means the default. */
 export interface Texts {
@@ -96,10 +100,10 @@ export function createClient(
     /** The token only on the chat page, where it is what lets the request in. */
     presence: (token: string | null) =>
       call<{ online: boolean | null; emailReplies: boolean; texts?: Texts }>("presence", token),
-    reportPage: (token: string, address: string) =>
+    reportPage: (token: string, address: string, title: string) =>
       call<{ ok: true }>("page", token, {
         method: "POST",
-        body: JSON.stringify({ page: address }),
+        body: JSON.stringify({ page: address, title }),
       }),
     saveEmail: (token: string, email: string) =>
       call<Me>("me", token, { method: "PATCH", body: JSON.stringify({ email }) }),

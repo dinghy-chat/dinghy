@@ -16,6 +16,7 @@ import {
   okContent,
 } from "./errors.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
+import { visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import { closedFailure, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
@@ -216,6 +217,17 @@ const conversationRoute = createRoute({
             hasMore: z.boolean(),
             // A widget stream of the visitor's is open now. Null when the server cannot tell.
             visitorOnline: z.boolean().nullable(),
+            // The visitor's newest pages, newest first, at most 20, as the widget reported them.
+            visitorPages: z.array(
+              z
+                .object({
+                  // Origin and path, never a query or hash.
+                  path: z.string(),
+                  title: z.string().nullable(),
+                  viewedAt: z.string(),
+                })
+                .openapi("PageView"),
+            ),
           }),
         },
       },
@@ -484,7 +496,8 @@ export function registerInboxRoutes(
         tx,
         page.messages.map((message) => message.authorOperatorId),
       );
-      return { found, page, names };
+      const pages = await visitorPages(tx, id, found.visitorId);
+      return { found, page, names, pages };
     });
     if (result === null) return c.json(NOT_FOUND, 404);
     return c.json(
@@ -495,6 +508,10 @@ export function registerInboxRoutes(
         ),
         hasMore: result.page.hasMore,
         visitorOnline: await visitorPresence.online(id, result.found.visitorId),
+        visitorPages: result.pages.map((row) => ({
+          ...row,
+          viewedAt: row.viewedAt.toISOString(),
+        })),
       },
       200,
     );

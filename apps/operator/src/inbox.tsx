@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BillingBanner, useBilling, WaitingBanner } from "../../../ee/operator/billing.tsx";
 import { AlertsPage, leaveDevice, useDeviceSync } from "./alerts.tsx";
+import { AnalyticsPage } from "./analytics.tsx";
 import {
   ApiError,
   type Conversation,
@@ -245,11 +246,12 @@ function SuspendedBanner({ contact }: { contact: string | null }) {
 }
 
 /** What the panel shows: one of the two lists, or a page. */
-type View = Status | "settings" | "alerts" | "profile";
+type View = Status | "analytics" | "settings" | "alerts" | "profile";
 
 const NAV: { view: Exclude<View, "profile">; label: TextId; icon: IconName }[] = [
   { view: "open", label: "inbox", icon: STATUS_LOOK.open.icon },
   { view: "closed", label: "closed", icon: STATUS_LOOK.closed.icon },
+  { view: "analytics", label: "analytics", icon: "chart" },
   { view: "alerts", label: "alerts", icon: "bell" },
   { view: "settings", label: "settings", icon: "gear" },
 ];
@@ -714,6 +716,7 @@ export function Inbox({
               onLeft={() => navigate("/")}
             />
           )}
+          {view === "analytics" && <AnalyticsPage api={api} />}
           {view === "alerts" && <AlertsPage api={api} />}
           {view === "profile" && (
             <ProfilePage

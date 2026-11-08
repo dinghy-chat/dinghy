@@ -14,6 +14,7 @@ import {
   type Conversation,
   type Member,
   type Message,
+  type PageView,
   type WorkspaceApi,
 } from "./api.ts";
 import { useLatestLoad } from "./load.ts";
@@ -80,9 +81,9 @@ function origin(conversation: Conversation): string | null {
 const MINUTE_MS = 60_000;
 const ONLINE_EVERY_MS = 30_000;
 
-/** "5 minutes ago", "yesterday", in the browser's words. */
-function ago(iso: string, now = Date.now()): string {
-  const words = new Intl.RelativeTimeFormat([], { numeric: "auto" });
+/** "5 minutes ago", "yesterday", in the browser's words. Narrow is "5m ago" in English. */
+function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "long"): string {
+  const words = new Intl.RelativeTimeFormat([], { numeric: "auto", style });
   const minutes = Math.round((new Date(iso).getTime() - now) / MINUTE_MS);
   if (minutes > -60) return words.format(Math.min(minutes, 0), "minute");
   const hours = Math.round(minutes / 60);
@@ -123,6 +124,54 @@ function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: 
         </Fragment>
       ))}
     </p>
+  );
+}
+
+const PAGES_FIRST = 5;
+
+/**
+ * The pages the visitor went through, newest first: the title, or the address when the page has
+ * none, as a link, and when. Five at first, and the rest of the 20 on request.
+ */
+function PageJourney({ pages }: { pages: PageView[] }) {
+  const [all, setAll] = useState(false);
+  if (pages.length === 0) return null;
+  const shown = all ? pages : pages.slice(0, PAGES_FIRST);
+  return (
+    <section className="journey" aria-label={t("pagesVisited")}>
+      <h3>{t("pagesVisited")}</h3>
+      <ol>
+        {shown.map((page) => {
+          const link = webLink(page.path);
+          const name = page.title ?? bare(page.path);
+          return (
+            <li key={`${page.path} ${page.viewedAt}`}>
+              {link === null ? (
+                <span className="page-name">{name}</span>
+              ) : (
+                <a
+                  className="page-name"
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={bare(link)}
+                >
+                  {name}
+                </a>
+              )}
+              <time dateTime={page.viewedAt} title={new Date(page.viewedAt).toLocaleString()}>
+                {ago(page.viewedAt, Date.now(), "narrow")}
+              </time>
+            </li>
+          );
+        })}
+      </ol>
+      {pages.length > PAGES_FIRST && (
+        <button type="button" className="btn link small" onClick={() => setAll(!all)}>
+          {all ? t("pagesFewer") : t("pagesAll").replace("{count}", String(pages.length))}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -466,6 +515,7 @@ export function Thread({
 }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
+  const [pages, setPages] = useState<PageView[]>([]);
   const [lines, setLines] = useState<Line[]>([]);
   // Here and not in the composer, which unmounts while the conversation is closed.
   const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
@@ -495,6 +545,7 @@ export function Thread({
       setLoadFailure(null);
       setConversation(page.conversation);
       setOnline(page.visitorOnline);
+      setPages(page.visitorPages);
       setLines((current) => page.messages.reduce(merge, current));
       const last = page.messages.at(-1);
       if (last !== undefined) position.current = last.seq;
@@ -698,6 +749,7 @@ export function Thread({
         </p>
       )}
       <VisitorContext conversation={conversation} />
+      <PageJourney pages={pages} />
       <div className="log" role="log" aria-live="polite" ref={log}>
         {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
         {lines.map((line, index) => {

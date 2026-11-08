@@ -5,7 +5,7 @@ import { openLink } from "./links.ts";
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 // A single-page site, which changes its address with the History API and never reloads.
 const SPA = `<!doctype html><title>App</title><h1>App</h1>
-<button id="go" onclick="history.pushState({}, '', '/app/settings?tab=billing')">Settings</button>
+<button id="go" onclick="history.pushState({}, '', '/app/settings?tab=billing'); setTimeout(() => { document.title = 'Billing settings' }, 50)">Settings</button>
 ${SNIPPET}`;
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
@@ -130,4 +130,71 @@ test("search finds a conversation by its text, and Escape returns to the list", 
   await field.press("Escape");
   await expect(field).toHaveValue("");
   await expect(owner.locator(".row", { hasText: "Something unrelated" })).toBeVisible();
+});
+
+test("a visitor who never chatted stores nothing and reports no page", async ({ page }) => {
+  const reports: string[] = [];
+  page.on("request", (request) => {
+    if (/\/v1\/widget\/[^/]+\/(page|visitors)$/.test(request.url())) reports.push(request.url());
+  });
+  await page.goto(`${server.hostOrigin}/app`);
+  await page.locator("#go").click();
+  // Opening the chat and closing it is not using it.
+  await page.getByRole("button", { name: "Open chat" }).click();
+  await expect(page.getByRole("textbox", { name: "Your message" })).toBeVisible();
+  await page.getByRole("button", { name: "Close chat" }).click();
+  await page.evaluate(() => {
+    const api = (globalThis as { Dinghy?: { reset(): void } }).Dinghy;
+    api?.reset();
+  });
+  await page.waitForTimeout(1000);
+  expect(reports).toEqual([]);
+  const stored = await page.evaluate(() => ({
+    local: Object.keys(localStorage),
+    session: Object.keys(sessionStorage),
+    cookies: document.cookie,
+  }));
+  expect(stored).toEqual({ local: [], session: [], cookies: "" });
+});
+
+test("the operator sees the pages the visitor went through, newest first", async ({ browser }) => {
+  const customer = await visitor(browser, "/app", "Which plan do I have?");
+  // The widget waits a moment after a change of address, for the new title.
+  const reported = customer.waitForRequest(
+    (request) =>
+      request.url().endsWith("/page") && request.postData()?.includes("Billing") === true,
+  );
+  await customer.locator("#go").click();
+  await reported;
+  const owner = await signedIn(browser);
+  await owner.locator(".row", { hasText: "Which plan do I have?" }).click();
+  const journey = owner.getByRole("region", { name: "Pages visited" });
+  await expect(journey.getByRole("link")).toHaveText(["Billing settings", "App"]);
+  const newest = journey.getByRole("link").first();
+  await expect(newest).toHaveAttribute("href", `${server.hostOrigin}/app/settings`);
+  await expect(newest).toHaveAttribute("target", "_blank");
+  await expect(newest).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(journey.locator("time").first()).toHaveText(/now|sec|min|0/);
+});
+
+test("the Analytics page shows the workspace's numbers for the chosen period", async ({
+  browser,
+}) => {
+  await visitor(browser, "/pricing", "Counting this one");
+  await server.reply("Answered.");
+  const owner = await signedIn(browser);
+  await owner.getByRole("button", { name: "Analytics" }).click();
+  const page = owner.getByRole("region", { name: "Analytics" });
+  await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
+  const zone = await owner.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  await expect(page.getByText(`in your time zone (${zone})`)).toBeVisible();
+  const started = page.locator(".figures div", { hasText: "Conversations" }).locator("dd");
+  await expect(started).toHaveText(/^[1-9]\d*$/);
+  await expect(page.locator(".figures div", { hasText: "Median first reply" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Conversations per day" })).toBeVisible();
+  await expect(page.locator(".bars > span")).toHaveCount(30);
+  await expect(page.locator(".hours-grid .cell")).toHaveCount(7 * 24);
+  await page.getByRole("button", { name: /Period/ }).click();
+  await owner.getByRole("option", { name: "Last 7 days" }).click();
+  await expect(page.locator(".bars > span")).toHaveCount(7);
 });

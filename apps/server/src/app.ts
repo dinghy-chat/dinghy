@@ -9,6 +9,7 @@ import { Counter, collectDefaultMetrics, Gauge, Histogram, Registry } from "prom
 import { type CloudSettings, createCloud } from "../../../ee/server/index.ts";
 import serverPackage from "../package.json" with { type: "json" };
 import { registerAlertRoutes, registerEmailStop } from "./alert-routes.ts";
+import { registerAnalyticsRoute } from "./analytics.ts";
 import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
 import { registerChatPage } from "./chat-link.ts";
@@ -338,6 +339,7 @@ export function createApp({
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);
     registerInboxRoutes(app, { db, images, limits, live, logger, stream, visitorPresence });
+    registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, presence);
     registerModerationRoutes(app, db, live);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
