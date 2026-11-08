@@ -317,6 +317,7 @@ check "an image opens from the bucket after the restore" image_opens "$c_port" "
 # ---- An upgrade from each previous release keeps data: the first release, and the latest one, which
 # is what installs upgrade from.
 upgrade=0
+[ "${#previous_images[@]}" -gt 0 ] || echo "skip - no earlier release is tagged in this repository, so no upgrade to check"
 for previous in "${previous_images[@]}"; do
   d="$base_project-d$upgrade"
   d_port=$((base_port + 3 + upgrade))

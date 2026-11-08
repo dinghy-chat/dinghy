@@ -15,9 +15,13 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 - Every email has a new, shorter text with the same facts: the sign-in, join and signup links, the note to an email that already has an account, the welcome, the new message alert, the reply to a visitor and the three billing emails. The welcome lists only the steps that work before the cloud opens, and the reply to a visitor is signed by the workspace, not by Dinghy.
 - The audit log has `sign_in.limited` for a link request over the limit, `sign_in.link_sent`, `sign_in.link_used` and `sign_in.link_refused`. It no longer has `sign_in.failed`.
 
-## 0.3.6 (2026-11-08)
+## 0.3.7 (2026-11-08)
 
-The first release from the public repository. Follow the upgrade steps in `docs/self-hosting.md`; nothing else is needed.
+The first release from the public repository, with the changes listed under 0.3.6. Follow the upgrade steps in `docs/self-hosting.md`; nothing else is needed.
+
+- The release check upgrades from the releases tagged in this repository. The 0.3.6 tag published no image, because that check looked for an older tag that only the private history has.
+
+## 0.3.6 (2026-11-08, not published)
 
 - `chat workspaces` prints the state that the API and the widget act on: `active`, `suspended`, `read_only`, `waiting_payment` or `waiting_cloud`. It used to print `active` for a workspace that was waiting for payment or read-only.
 - The image is public at `ghcr.io/dinghy-chat/dinghy`, so an install needs no registry login.
