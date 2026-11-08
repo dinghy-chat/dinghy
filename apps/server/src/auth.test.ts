@@ -19,7 +19,7 @@ import {
   pressLinkButton,
   signIn,
 } from "../test/operators.ts";
-import { type App, createApp } from "./app.ts";
+import { type App, createApp, openApiDocument } from "./app.ts";
 import { type Auth, createAuth, signInLink } from "./auth.ts";
 import { session } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
@@ -247,6 +247,22 @@ describe("asking for a link", () => {
       body: JSON.stringify({ email: `${"x".repeat(10_000)}@example.com` }),
     });
     expect(response.status).toBe(413);
+  });
+
+  test("the API description names the sign-in route that sets the session cookie", async () => {
+    const document = (await openApiDocument()) as {
+      components: { securitySchemes: Record<string, { description: string }> };
+    };
+    const named = /POST (\/v1\/auth\/\S+)/.exec(
+      document.components.securitySchemes.sessionCookie?.description ?? "",
+    )?.[1];
+    expect(named).toBeDefined();
+    const answer = await app.request(named ?? "", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(answer.status).not.toBe(404);
   });
 
   test("a request with no session is refused", async () => {
