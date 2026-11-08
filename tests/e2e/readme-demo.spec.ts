@@ -27,8 +27,9 @@ const hostPage = `<!doctype html><title>Acme pricing</title>
 </div></main>
 <script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>`;
 
-const VISITOR = { width: 600, height: 700 };
-const OPERATOR = { width: 1000, height: 700 };
+const VISITOR = { width: 600, height: 760 };
+// Wider than the app's 1000 px breakpoint, so the GIF shows the sidebar layout.
+const OPERATOR = { width: 1240, height: 760 };
 const FRAME_MS = 100;
 
 /**
@@ -132,6 +133,8 @@ test("record", async () => {
   // The pictures in the docs, after the recording, so the GIF never shows them.
   await visitor.screenshot({ path: join(directory, "widget.png") });
   await operator.setViewportSize({ width: 1100, height: 720 });
+  // No hover state in the pictures.
+  await operator.mouse.move(0, 0);
   await operator.screenshot({ path: join(directory, "inbox.png") });
   await operator.getByRole("button", { name: "Settings" }).click();
   await operator.getByRole("tab", { name: "Install" }).click();
@@ -142,6 +145,7 @@ test("record", async () => {
       code.textContent = (code.textContent ?? "").replaceAll(api, "https://chat.acme.example");
     }
   }, server.apiOrigin);
+  await operator.mouse.move(0, 0);
   await operator.screenshot({ path: join(directory, "settings.png"), fullPage: true });
 
   await visitorContext.close();

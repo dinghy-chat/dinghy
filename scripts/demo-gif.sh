@@ -7,7 +7,7 @@ set -euo pipefail
 frames="${1:?Usage: scripts/demo-gif.sh <directory>}/frames"
 out="docs/media/demo.gif"
 # The GIF's width. The frames are 2x, so this keeps the text sharp after the scale.
-width=1280
+width=1440
 palette="$(mktemp --suffix=.png)"
 trap 'rm -f "$palette"' EXIT
 
