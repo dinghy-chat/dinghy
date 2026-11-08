@@ -9,8 +9,9 @@ import {
   updateName,
 } from "./api.ts";
 import { CheckEmail } from "./auth.tsx";
+import { navigate } from "./nav.ts";
 import { type TextId, t } from "./text.ts";
-import { AuthPage, ErrorNote, Field, failureText, Loading, ROLE_TEXT } from "./ui.tsx";
+import { AuthPage, ErrorNote, Field, failureText, ROLE_TEXT, SceneLoading } from "./ui.tsx";
 
 export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   const [offer, setOffer] = useState<{ workspaceName: string; role: "admin" | "agent" } | null>(
@@ -35,13 +36,13 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
       // An account that signed up and never finished onboarding has no name yet.
       if (me?.name === "") await updateName(name.trim());
       const joined = await acceptInvite(token);
-      location.assign(`/?workspace=${joined.workspaceId}`);
+      navigate(`/?workspace=${joined.workspaceId}`);
     } catch (failure) {
       if (failure instanceof ApiError && failure.code === "operator_limit") {
         setError("operatorLimit");
       } else if (failure instanceof ApiError && failure.status === 409) {
         // Someone already in the workspace has nothing to do here.
-        location.assign("/");
+        navigate("/");
       } else {
         setError("inviteInvalid");
       }
@@ -56,7 +57,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
       const { signInUrl } = await joinWithInvite(token, name.trim(), email.trim());
       // A server with no mail server answers with the link itself.
       if (signInUrl !== null) {
-        location.assign(signInUrl);
+        navigate(signInUrl);
         return;
       }
       setSentTo(email.trim());
@@ -68,12 +69,12 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   if (sentTo !== null) return <CheckEmail text={t("checkEmail").replace("{email}", sentTo)} />;
   if (invalid) {
     return (
-      <AuthPage>
+      <AuthPage time="morning">
         <ErrorNote text="inviteInvalid" />
       </AuthPage>
     );
   }
-  if (offer === null) return <Loading />;
+  if (offer === null) return <SceneLoading />;
   const heading = (
     <>
       <h1>{t("inviteTitle")}</h1>
@@ -84,7 +85,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   );
   if (me !== null) {
     return (
-      <AuthPage onSubmit={(event) => void accept(event)}>
+      <AuthPage time="morning" onSubmit={(event) => void accept(event)}>
         {heading}
         <p className="note">
           {t("inviteSignedInAs")} {me.email}
@@ -108,7 +109,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     );
   }
   return (
-    <AuthPage onSubmit={join}>
+    <AuthPage time="morning" onSubmit={join}>
       {heading}
       <Field
         label={t("yourName")}
