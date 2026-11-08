@@ -1,21 +1,27 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { expect, type Page, test } from "@playwright/test";
+import { openLink } from "../../tests/e2e/links.ts";
 import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
-
-const PASSWORD = "a-long-test-password";
 
 type Server = Awaited<ReturnType<typeof startCloudE2EServer>>;
 
-/** The account step: email and password only. */
-async function createAccount(page: Page, server: Server, email: string) {
+/** The account step: the email only, then the link that comes back to it. */
+async function createAccount(
+  page: Page,
+  server: Server,
+  email: string,
+  { index = 0, button = "Continue setting up" } = {},
+) {
   await page.goto(server.apiOrigin);
   await page.getByRole("link", { name: "Create an account" }).click();
   await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
   await expect(page.getByLabel("Your name")).toHaveCount(0);
   await expect(page.getByLabel("Workspace name")).toHaveCount(0);
+  await expect(page.getByLabel(/password/i)).toHaveCount(0);
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password, at least 10 characters").fill(PASSWORD);
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Email me a link" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await openLink(page, await server.linkTo(email, index), button);
 }
 
 /** The onboarding step: the operator's name and the workspace's. */
@@ -32,10 +38,7 @@ async function signUp(page: Page, server: Server, workspaceName: string) {
 }
 
 async function signIn(page: Page, server: Server, email: string) {
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await openLink(page, await server.signInLink(email));
 }
 
 /** The fake Checkout page's session, and the workspace it pays for. */
@@ -91,14 +94,6 @@ test.describe("with billing on", () => {
     await expect(page.getByRole("heading", { name: "Paid Shop" })).toBeVisible();
 
     // The same account starts a second workspace and leaves before paying.
-    const me = (await (await page.request.get(`${server.apiOrigin}/v1/operator/me`)).json()) as {
-      email: string;
-    };
-    const again = await page.request.post(`${server.apiOrigin}/v1/signup`, {
-      headers: { origin: server.apiOrigin },
-      data: { email: me.email, password: PASSWORD },
-    });
-    expect(again.status()).toBe(200);
     const second = await page.request.post(`${server.apiOrigin}/v1/operator/workspaces`, {
       headers: { origin: server.apiOrigin },
       data: { name: "Nora", workspaceName: "Unpaid Shop" },
@@ -137,7 +132,7 @@ test.describe("with no Stripe keys", () => {
 
   test("an operator with no workspace is asked for an invite, not onboarded", async ({ page }) => {
     const email = `lone-${Date.now()}@example.com`;
-    await server.createOperator(email, PASSWORD, { member: false });
+    await server.createOperator(email, { member: false });
     await signIn(page, server, email);
     await expect(
       page.getByText("You are not in a workspace yet. Ask its owner for an invite."),
@@ -214,7 +209,7 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.locator(".row", { hasText: "Sample visitor" })).toBeVisible();
   });
 
-  test("an existing account signs up again with its password to add a workspace", async ({
+  test("an existing account that signs up again gets a sign-in link, then adds a workspace", async ({
     page,
     context,
   }) => {
@@ -224,21 +219,24 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.getByRole("heading", { name: "First Shop" })).toBeVisible();
     await context.clearCookies();
 
-    // A wrong password gets the usual answer.
-    await page.goto(`${server.apiOrigin}/signup`);
-    await page.getByLabel("Email").fill(email);
-    await page.getByLabel("Password, at least 10 characters").fill("a-wrong-long-password");
-    await page.getByRole("button", { name: "Continue" }).click();
-    await expect(
-      page.getByText("This email already has an account.", { exact: false }),
-    ).toBeVisible();
-
-    await createAccount(page, server, email);
-    // The form keeps the account's name.
-    await expect(page.getByRole("heading", { name: "Set up your workspace" })).toBeVisible();
-    await expect(page.getByLabel("Your name")).toHaveValue("Nora");
-    await page.getByLabel("Workspace name").fill("Second Shop");
-    await page.getByRole("button", { name: "Continue" }).click();
+    // The welcome came after the workspace. Then the same answer as a new email gets, and the
+    // email is a sign-in link instead.
+    await expect.poll(() => server.mail.filter((one) => one.to === email).length).toBe(2);
+    // An email with an account gets a sign-in link, which lands on the workspace setup.
+    await createAccount(page, server, email, { index: 2, button: "Sign in to Dinghy" });
+    const sent = server.mail.filter((one) => one.to === email);
+    expect(sent.map((one) => one.subject)).toEqual([
+      "Finish signing up for Dinghy",
+      "First Shop is ready",
+      "Your Dinghy sign-in link",
+    ]);
+    expect(sent[1]?.text.startsWith("Hi Nora,")).toBe(true);
+    expect(sent[1]?.text).not.toMatch(/opens soon|coming/i);
+    // The widget does not run before the cloud opens, so the welcome does not ask for it.
+    expect(sent[1]?.text).not.toContain("widget");
+    expect(sent[2]?.text).toContain("tried to sign up");
+    // The link lands on the workspace setup, which is why the person signed up again.
+    await onboard(page, "Second Shop");
     const picked = page.getByRole("combobox", { name: "Workspace" }).locator("option:checked");
     await expect(picked).toHaveText("Second Shop");
   });

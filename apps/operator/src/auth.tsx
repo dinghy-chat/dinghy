@@ -1,99 +1,66 @@
 /** @jsxImportSource react */
 import { type FormEvent, useState } from "react";
-import { requestReset, resetPassword, signIn } from "./api.ts";
+import { askSignInLink, redeemJoinLink, redeemSignInLink } from "./api.ts";
 import { type TextId, t } from "./text.ts";
-import { AuthPage, ErrorNote, Field, failureText, StatusNote } from "./ui.tsx";
+import { AuthPage, ErrorNote, Field, failureText } from "./ui.tsx";
 
-export function SignIn({ onDone, signup = false }: { onDone(): void; signup?: boolean }) {
+export function SignIn({
+  emailAvailable,
+  signup = false,
+}: {
+  emailAvailable: boolean;
+  signup?: boolean;
+}) {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<TextId | null>(null);
-  const [mode, setMode] = useState<"signIn" | "forgot">("signIn");
-  const [notice, setNotice] = useState<TextId | null>(null);
-
-  const showMode = (next: "signIn" | "forgot") => {
-    setError(null);
-    setNotice(null);
-    setMode(next);
-  };
+  const [busy, setBusy] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    setBusy(true);
     try {
-      await signIn(email.trim(), password);
-      onDone();
+      await askSignInLink(email.trim());
+      setSentTo(email.trim());
     } catch (failure) {
-      // 403: the right password on an account that has not confirmed its email yet.
-      setError(
-        failureText(failure, {
-          429: "tooManyAttempts",
-          401: "signInFailed",
-          403: "emailNotVerified",
-        }),
-      );
+      setError(failureText(failure, { 429: "tooManyAttempts" }));
+    } finally {
+      setBusy(false);
     }
   };
 
-  const forgot = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setNotice(null);
-    try {
-      await requestReset(email.trim());
-      setNotice("resetSent");
-    } catch (failure) {
-      setError(failureText(failure, { 429: "tooManyAttempts", 400: "resetNoMail" }));
-    }
-  };
-
-  const emailField = (
-    <Field
-      label={t("email")}
-      type="email"
-      autoComplete="email"
-      required
-      value={email}
-      onChange={setEmail}
-    />
-  );
-
-  if (mode === "forgot") {
+  if (sentTo !== null) {
     return (
-      <AuthPage onSubmit={forgot}>
-        <h1>{t("resetTitle")}</h1>
-        <p className="note">{t("resetHelp")}</p>
-        {emailField}
+      <CheckEmail
+        text={t("checkEmailSignIn").replace("{email}", sentTo)}
+        onBack={() => setSentTo(null)}
+      />
+    );
+  }
+  if (!emailAvailable) {
+    return (
+      <AuthPage>
+        <h1>{t("signInTitle")}</h1>
         <ErrorNote text={error} />
-        <StatusNote text={notice} />
-        <button type="submit" className="btn primary large">
-          {t("resetSend")}
-        </button>
-        <button type="button" className="btn link" onClick={() => showMode("signIn")}>
-          {t("backToSignIn")}
-        </button>
+        <p className="note">{t("signInNoMail")}</p>
       </AuthPage>
     );
   }
-
   return (
     <AuthPage onSubmit={submit}>
       <h1>{t("signInTitle")}</h1>
-      {emailField}
       <Field
-        label={t("password")}
-        type="password"
-        autoComplete="current-password"
+        label={t("email")}
+        type="email"
+        autoComplete="email"
         required
-        value={password}
-        onChange={setPassword}
+        value={email}
+        onChange={setEmail}
       />
       <ErrorNote text={error} />
-      <button type="submit" className="btn primary large">
-        {t("signIn")}
-      </button>
-      <button type="button" className="btn link" onClick={() => showMode("forgot")}>
-        {t("forgot")}
+      <button type="submit" className="btn primary large" disabled={busy}>
+        {t("signInSend")}
       </button>
       {signup && (
         <a className="btn link" href="/signup">
@@ -104,45 +71,87 @@ export function SignIn({ onDone, signup = false }: { onDone(): void; signup?: bo
   );
 }
 
-/** After a signup or an invite, on a server that verifies emails. */
-export function CheckEmail({ email }: { email: string }) {
+/** After a link went out, for a sign-in, a signup or an invite. */
+export function CheckEmail({ text, onBack }: { text: string; onBack?(): void }) {
   return (
     <AuthPage>
       <h1>{t("checkEmailTitle")}</h1>
-      <p className="note">{t("checkEmail").replace("{email}", email)}</p>
+      <p className="note" role="status">
+        {text}
+      </p>
+      {onBack !== undefined && (
+        <button type="button" className="btn link" onClick={onBack}>
+          {t("useAnotherEmail")}
+        </button>
+      )}
     </AuthPage>
   );
 }
 
-export function ResetPassword({ token }: { token: string }) {
-  const [password, setPassword] = useState("");
+/** What an emailed link is for, as the server names it: the button's words and where it leads. */
+const PURPOSES = {
+  "sign-in": { button: "linkSignIn", again: "/" },
+  signup: { button: "linkSignup", again: "/signup" },
+  // Cloud signup with an email that has an account: sign in, then add a workspace.
+  "add-workspace": { button: "linkSignIn", again: "/signup" },
+  // Only the invite makes a new join link, and the sign-in page cannot: the account may not exist.
+  join: { button: "linkJoin", again: null },
+} satisfies Record<string, { button: TextId; again: string | null }>;
+type Purpose = keyof typeof PURPOSES;
+/** The answers that use up a join link, unlike a lost connection, which leaves it to try again. */
+const SPENT = new Set<TextId>(["inviteInvalid", "emailTaken", "operatorLimit"]);
+const isPurpose = (value: string): value is Purpose => Object.hasOwn(PURPOSES, value);
+
+/**
+ * Every emailed link opens this page. Only its button uses the link, so a mail scanner that opens
+ * links cannot use one up before its owner does.
+ */
+export function LinkPage({ purpose, token }: { purpose: string; token: string }) {
+  const kind = isPurpose(purpose) ? purpose : "sign-in";
   const [error, setError] = useState<TextId | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    setError(null);
+    setBusy(true);
     try {
-      await resetPassword(token, password);
-      location.assign("/");
-    } catch {
-      setError("resetFailed");
+      if (kind === "join") {
+        const { workspaceId } = await redeemJoinLink(token);
+        location.assign(`/?workspace=${workspaceId}`);
+        return;
+      }
+      await redeemSignInLink(token);
+      location.assign(kind === "add-workspace" ? "/signup" : "/");
+    } catch (failure) {
+      setBusy(false);
+      setError(
+        failureText(failure, { 400: "linkInvalid", 404: "inviteInvalid", 409: "emailTaken" }),
+      );
     }
   };
 
+  const { again } = PURPOSES[kind];
+  // A refused join link is used up too, so its button would only say the link expired.
+  if (error === "linkInvalid" || (again === null && error !== null && SPENT.has(error))) {
+    return (
+      <AuthPage>
+        <ErrorNote text={again === null && error === "linkInvalid" ? "joinLinkInvalid" : error} />
+        {again !== null && (
+          <a className="btn primary large" href={again}>
+            {t("linkAskAgain")}
+          </a>
+        )}
+      </AuthPage>
+    );
+  }
   return (
     <AuthPage onSubmit={submit}>
-      <h1>{t("resetTitle")}</h1>
-      <Field
-        label={t("newPassword")}
-        type="password"
-        autoComplete="new-password"
-        required
-        minLength={10}
-        value={password}
-        onChange={setPassword}
-      />
+      <h1>{t("linkTitle")}</h1>
+      <p className="note">{t("linkHelp")}</p>
       <ErrorNote text={error} />
-      <button type="submit" className="btn primary large">
-        {t("setPassword")}
+      <button type="submit" className="btn primary large" disabled={busy}>
+        {t(PURPOSES[kind].button)}
       </button>
     </AuthPage>
   );

@@ -11,7 +11,6 @@ import { loadConfig, pushKeysFromConfig } from "./config.ts";
 import * as schema from "./db/schema.ts";
 import { createImages } from "./images.ts";
 import { createLive, createSignals } from "./live.ts";
-import { createLoginLimit } from "./login-limit.ts";
 import { createMailer } from "./mailer.ts";
 import { createPush } from "./push.ts";
 import { storeFromConfig } from "./storage.ts";
@@ -82,28 +81,7 @@ if (role === "web" || role === "all") {
     alerts: { push, emailAvailable: mailer !== undefined, secret: config.AUTH_SECRET },
     cloud,
     mailer,
-    auth: createAuth({
-      db,
-      secret: config.AUTH_SECRET,
-      baseURL: config.PUBLIC_URL,
-      logger,
-      // A new password must work at once, even after the attempts that led to the reset.
-      onPasswordReset: (email) => createLoginLimit(valkey, logger).clear(email),
-      sendResetPassword:
-        mailer === undefined
-          ? undefined
-          : (email, url) =>
-              mailer.send(email, "Reset your password", `Open this link to reset it: ${url}`),
-      sendVerificationEmail:
-        mailer === undefined
-          ? undefined
-          : (email, url) =>
-              mailer.send(
-                email,
-                "Confirm your email",
-                `Open this link to confirm your email and sign in to Dinghy: ${url}\n\nIf you did not ask for a Dinghy account, ignore this email.`,
-              ),
-    }),
+    auth: createAuth({ db, secret: config.AUTH_SECRET, baseURL: config.PUBLIC_URL }),
     db,
     images: createImages({
       store: storeFromConfig(config),

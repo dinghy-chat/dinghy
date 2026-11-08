@@ -209,11 +209,11 @@ if [ "$operators" = 0 ]; then
   ask workspace "Your company or project:"
   ask origin "The website that gets the chat, such as https://example.com:"
   say "Creating your account"
-  # Printed at once and whatever happens next, because nothing can show the password again.
+  # Printed at once and whatever happens next, because nothing can show the backup key again.
   if output="$(docker compose exec -T app chat setup --email "$email" --name "$name" --workspace "$workspace" --origin "$origin")"; then
     created=1
     grep -v 'Restart to turn on web push' <<<"$output"
-    printf '\n==> Save the password and the backup key above now. Nothing shows them again.\n'
+    printf '\n==> Save the backup key above now. Nothing shows it again.\n'
   else
     [ -z "$output" ] || printf '%s\n' "$output"
     stop "The setup failed, with the error above. Run this again to answer again."
@@ -223,7 +223,7 @@ if [ "$operators" = 0 ]; then
   docker compose restart app >/dev/null ||
     stop "The restart failed, so web push stays off. Run: docker compose restart app"
   docker compose up -d --wait >/dev/null ||
-    stop "The app did not come back after the restart. Your password is above. Read: docker compose logs app"
+    stop "The app did not come back after the restart. Read: docker compose logs app"
 fi
 
 # ---- The nightly backup. Its output and any failure go to the system log, tagged dinghy-backup.
@@ -273,7 +273,12 @@ else
     echo "To read the certificate logs, run: cd $directory && docker compose logs caddy"
   fi
 fi
-[ "$created" = 0 ] || echo "Your password and backup key are above."
+if [ "$created" = 1 ]; then
+  echo "Your backup key is above."
+  # A new link, because the one from the setup may expire while this runs. Each works once.
+  docker compose exec -T app chat sign-in-link "$email" ||
+    echo "To sign in, run: cd $directory && docker compose exec app chat sign-in-link $email"
+fi
 echo
 echo "The files are in $directory. Your next steps are in docs/README.md."
 if [ -f /etc/cron.d/dinghy ] && { pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1; }; then

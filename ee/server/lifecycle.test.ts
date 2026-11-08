@@ -8,7 +8,7 @@ import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { type App, createApp } from "../../apps/server/src/app.ts";
-import { createAuth } from "../../apps/server/src/auth.ts";
+import { type Auth, createAuth } from "../../apps/server/src/auth.ts";
 import {
   conversation,
   event,
@@ -28,6 +28,7 @@ import { purgeDeletedWorkspaces } from "../../apps/server/src/workspace-delete.t
 import { widgetWorkspace, workspaceKeys } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
+import { signIn } from "../../apps/server/test/operators.ts";
 import { type BillingOptions, createBilling } from "./billing.ts";
 import {
   BILLING_CLEAR_DELAY_MS,
@@ -47,7 +48,6 @@ import {
 } from "./test/fake-stripe.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
-const PASSWORD = "a-long-test-password";
 const DAY_MS = 86_400_000;
 const logger = pino({ level: "silent" });
 const ok = async () => {};
@@ -59,6 +59,7 @@ let owner: Database;
 let valkey: Redis;
 let stripe: FakeStripe;
 let app: App;
+let auth: Auth;
 let store: ObjectStore;
 let directory: string;
 /** The clock that every lifecycle time reads. Tests move it. */
@@ -110,11 +111,6 @@ const lifecycle = ({
   });
 
 const IP = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(256)}`;
-const cookieOf = (response: Response) =>
-  response.headers
-    .getSetCookie()
-    .map((value) => value.split(";")[0])
-    .join("; ");
 
 const request = (
   server: App,
@@ -184,10 +180,7 @@ async function payCheckout(workspaceId: string, cookie: string) {
 async function paidWorkspace() {
   const email = `owner-${randomUUID()}@example.com`;
   const name = `Shop ${randomUUID().slice(0, 8)}`;
-  const signup = await request(app, "POST", "/v1/signup", {
-    body: { email, password: PASSWORD },
-  });
-  const cookie = cookieOf(signup);
+  const cookie = await signIn(app, auth, email);
   const created = await request(app, "POST", "/v1/operator/workspaces", {
     cookie,
     body: { name: "Owner", workspaceName: name },
@@ -320,7 +313,7 @@ beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "dinghy-lifecycle-"));
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
   store = localStore(join(directory, "images"));
-  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   const images = createImages({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL });
   app = createApp({
     auth,
@@ -428,6 +421,14 @@ describe("the subscription lifecycle", () => {
     expect(mailsAbout(paid.name).map((mail) => [mail.to, mail.subject])).toEqual([
       [paid.email, `${paid.name} is now read-only`],
     ]);
+    // To the owner, who proved this address, by name, in the voice every email shares.
+    const text = mailsAbout(paid.name)[0]?.text ?? "";
+    expect(text.startsWith("Hi Owner,\n\n")).toBe(true);
+    expect(text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
+    expect(text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
+    expect(text).toContain(
+      new Date(clock.getTime() + READ_ONLY_DAYS * DAY_MS).toISOString().slice(0, 10),
+    );
     // A later pass sends nothing again.
     await lifecycle();
     expect(mailsAbout(paid.name)).toHaveLength(1);
@@ -440,7 +441,7 @@ describe("the subscription lifecycle", () => {
     expect((await row(paid.workspaceId))?.paymentFailedAt).toEqual(first);
     await lifecycle();
     expect(mailsAbout(paid.name).map((mail) => mail.subject)).toEqual([
-      `The payment for ${paid.name} failed`,
+      `The payment for ${paid.name} didn't go through`,
     ]);
     expect(await billingOf(paid)).toEqual({
       state: "payment_failed",
@@ -462,7 +463,7 @@ describe("the subscription lifecycle", () => {
     await lifecycle();
     await expectReadOnly(paid, true);
     expect(mailsAbout(paid.name).map((mail) => mail.subject)).toEqual([
-      `The payment for ${paid.name} failed`,
+      `The payment for ${paid.name} didn't go through`,
       `${paid.name} is now read-only`,
     ]);
     // Dinghy ended the subscription, so no late retry can charge, and paying again is Checkout.
@@ -485,7 +486,7 @@ describe("the subscription lifecycle", () => {
     later(0.01);
     await lifecycle();
     expect(mailsAbout(paid.name).map((mail) => mail.subject)).toEqual([
-      `The payment for ${paid.name} failed`,
+      `The payment for ${paid.name} didn't go through`,
       `${paid.name} is now read-only`,
     ]);
   });
@@ -504,7 +505,9 @@ describe("the subscription lifecycle", () => {
     await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
     expect((await row(paid.workspaceId))?.paymentFailedAt).toEqual(clock);
     await lifecycle();
-    expect(mailsAbout(paid.name).filter((mail) => mail.subject.includes("failed"))).toHaveLength(2);
+    expect(
+      mailsAbout(paid.name).filter((mail) => mail.subject.includes("didn't go through")),
+    ).toHaveLength(2);
   });
 
   test("resubscribing during the read-only time brings everything back, with all data", async () => {

@@ -1,24 +1,19 @@
-import { setTimeout as delay } from "node:timers/promises";
 import type { Context } from "hono";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
 import { failure } from "./errors.ts";
 import { emailAddressHash, sha256Hex } from "./identity.ts";
 
-const CLEAR_WAIT_MS = 1000;
-
 interface AccountLimit {
   /** How long a count lasts, and so the longest wait after the last attempt. */
   windowSeconds: number;
   /** Counts an attempt and returns false if this account and address have used up their attempts. */
   attempt(email: string, ip: string): Promise<boolean>;
-  /** With an address, clears only that one. Without one, clears every address for this account. */
-  clear(email: string, ip?: string): Promise<void>;
 }
 
 /**
  * Limits attempts across instances. The count is per account and address, so someone else's address
- * cannot lock an operator out. A second count per address stops one machine from trying many
+ * cannot use up an operator's own. A second count per address stops one machine from trying many
  * accounts. A third count per account, high and short, slows guesses from many addresses. It
  * counts before the attempt, so parallel requests cannot pass the limit. During a Valkey outage it
  * allows everything, because locking every operator out is worse.
@@ -79,40 +74,17 @@ function createAccountLimit(
         return true;
       }
     },
-    async clear(email, ip) {
-      if (valkey === null) return;
-      // Bounded, because the reset that calls this has already committed. A stalled Valkey must
-      // not hold back the answer, and the count expires on its own.
-      const key = keyFor(email);
-      const work = ip === undefined ? valkey.del(key, `${key}:total`) : valkey.hdel(key, ip);
-      await Promise.race([
-        work.catch((err: unknown) => {
-          logger.warn({ err }, "account limit unavailable");
-        }),
-        delay(CLEAR_WAIT_MS, undefined, { ref: false }),
-      ]);
-    },
   };
 }
 
-// The account total slows guessing spread over many addresses. It takes 40 addresses to reach, and
-// lasts 15 minutes at most: a password reset, by email or `chat reset-password`, clears it.
-export const createLoginLimit = (valkey: Redis | null, logger: Logger) =>
+// Each link request sends one email through the owner's mail server, so an account also has a
+// total. An operator past it can still get a link from the server's admin, with chat sign-in-link.
+export const createLinkLimit = (valkey: Redis | null, logger: Logger) =>
   createAccountLimit(valkey, logger, {
-    prefix: "login",
+    prefix: "sign-in-link",
     maxPerAccountAddress: 5,
     maxPerAddress: 30,
-    maxPerAccount: 200,
-    windowSeconds: 15 * 60,
-  });
-
-// Each reset request sends one email through the owner's mail server, so an account also has a total.
-export const createResetLimit = (valkey: Redis | null, logger: Logger) =>
-  createAccountLimit(valkey, logger, {
-    prefix: "reset",
-    maxPerAccountAddress: 3,
-    maxPerAddress: 30,
-    maxPerAccount: 10,
+    maxPerAccount: 20,
     windowSeconds: 60 * 60,
   });
 

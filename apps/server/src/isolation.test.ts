@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import webPush from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
-import { signedInOperator, TEST_PASSWORD } from "../test/operators.ts";
+import { pressLinkButton, signedInOperator } from "../test/operators.ts";
 import { claimDeliveries, emailStopUrl, fanOutOne, planDelivery } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -23,6 +23,7 @@ import {
   message,
   operator,
   pushSubscription,
+  verification,
   visitor,
   workspace,
   workspaceMember,
@@ -704,10 +705,36 @@ const ATTACKS: Record<string, Attack> = {
     const response = await server.request("/v1/invites/join", {
       method: "POST",
       headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ token: moved, name: "Mover", email, password: TEST_PASSWORD }),
+      body: JSON.stringify({ token: moved, name: "Mover", email }),
     });
     expect(response.status).toBe(404);
     expect(await owner.select().from(operator).where(eq(operator.email, email))).toEqual([]);
+  },
+  "POST /v1/invites/open": async ({ server, inviteB, a }) => {
+    // A join link that names workspace A with workspace B's invite, as a tampered row would.
+    const email = `opened-${randomUUID()}@example.com`;
+    const token = randomUUID();
+    await owner.insert(verification).values({
+      identifier: `invite-join:${createHash("sha256").update(token).digest("hex")}`,
+      value: JSON.stringify({
+        workspaceId: a.id,
+        inviteHash: createHash("sha256").update(inviteB.token).digest("hex"),
+        name: "Mover",
+        email,
+        proven: true,
+      }),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const opened = await pressLinkButton(server, `${PUBLIC_URL}/link?for=join&token=${token}`);
+    expect(opened.status).toBe(404);
+    expect(await opened.json()).toMatchObject({ error: { code: "invite_invalid" } });
+    expect(opened.headers.getSetCookie()).toEqual([]);
+    expect(await owner.select().from(operator).where(eq(operator.email, email))).toEqual([]);
+    const [row] = await owner.select().from(invite).where(eq(invite.id, inviteB.id));
+    expect(row?.usedAt).toBeNull();
+    // A made-up link opens nothing.
+    const forged = await pressLinkButton(server, `${PUBLIC_URL}/link?for=join&token=forged`);
+    expect(await forged.json()).toMatchObject({ error: { code: "link_invalid" } });
   },
   "POST /v1/operator/invites/accept": async ({ operator: as, anna, a, inviteB }) => {
     const moved = inviteB.token.replace(inviteB.token.split(".")[0] ?? "", a.id);
@@ -727,7 +754,7 @@ const signer = createImages({
 });
 
 async function buildWorld(db: Database): Promise<World> {
-  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   const server = createApp({
     alerts: {
       push: createPush(pushKeys, (async (url: string) => {
@@ -1025,7 +1052,7 @@ describe("the list of routes", () => {
     const db = database.connect("app", 1).db;
     const server = createApp({
       alerts: { emailAvailable: true, secret: AUTH_SECRET },
-      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger }),
+      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
       db,
       images: createImages({
         store: localStore(tmpdir()),
@@ -1041,6 +1068,47 @@ describe("the list of routes", () => {
       .filter((route) => route.path.startsWith("/v1/") && !route.path.startsWith("/v1/auth/"))
       .map((route) => `${route.method} ${route.path}`);
     expect([...new Set(routes)].sort()).toEqual(Object.keys(ATTACKS).sort());
+  });
+
+  test("a sign-in link signs in only its own operator, who sees only their own workspaces", async () => {
+    const db = database.connect("app", 2).db;
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const server = createApp({
+      auth,
+      db,
+      logger,
+      checks: { postgres: async () => {}, valkey: async () => {} },
+    });
+    const a = await createWorkspace(db, "Link A", [SITE_A]);
+    const b = await createWorkspace(db, "Link B", [SITE_A]);
+    const anna = await signedInOperator({
+      app: server,
+      auth,
+      owner,
+      email: `link-anna-${randomUUID()}@example.com`,
+      workspaceId: a.id,
+    });
+    await signedInOperator({
+      app: server,
+      auth,
+      owner,
+      email: `link-bea-${randomUUID()}@example.com`,
+      workspaceId: b.id,
+    });
+    const me = await server.request("/v1/operator/me", { headers: { cookie: anna.cookie } });
+    const body = (await me.json()) as { id: string; workspaces: { workspaceId: string }[] };
+    expect(body.id).toBe(anna.id);
+    expect(body.workspaces.map((one) => one.workspaceId)).toEqual([a.id]);
+    // The link route answers the same for any email, so it tells nobody about another tenant.
+    const ask = (email: string) =>
+      server.request("/v1/auth/sign-in/magic-link", {
+        method: "POST",
+        headers: { origin: new URL(PUBLIC_URL).origin, "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+    expect(await (await ask(anna.email)).text()).toBe(
+      await (await ask(`nobody-${randomUUID()}@example.com`)).text(),
+    );
   });
 });
 

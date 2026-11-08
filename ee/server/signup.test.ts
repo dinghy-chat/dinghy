@@ -14,7 +14,6 @@ import { type App, createApp } from "../../apps/server/src/app.ts";
 import { createAuth } from "../../apps/server/src/auth.ts";
 import { loadConfig } from "../../apps/server/src/config.ts";
 import {
-  account,
   event,
   message,
   operator,
@@ -28,6 +27,7 @@ import { localStore } from "../../apps/server/src/storage.ts";
 import { widgetWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
+import { openSignInLink, signIn } from "../../apps/server/test/operators.ts";
 import { createBilling } from "./billing.ts";
 import { runLifecycle } from "./lifecycle.ts";
 import { signupsCsv } from "./signup.ts";
@@ -40,7 +40,6 @@ import {
 } from "./test/fake-stripe.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
-const PASSWORD = "a-long-test-password";
 const SITE = "https://site.example";
 const CLI = fileURLToPath(new URL("../../apps/server/src/cli.ts", import.meta.url));
 const DAY_MS = 86_400_000;
@@ -61,8 +60,6 @@ let early: App;
 let paying: App;
 /** A self-hosted install: neither setting. */
 let selfHosted: App;
-/** Early signup on a server with a mail server, which verifies every new account's email. */
-let verifying: App;
 
 const mails: { to: string; subject: string; text: string }[] = [];
 const mailer: Mailer = {
@@ -71,12 +68,36 @@ const mailer: Mailer = {
   },
 };
 
-const IP = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(256)}`;
-const cookieOf = (response: Response) =>
-  response.headers
-    .getSetCookie()
-    .map((value) => value.split(";")[0])
-    .join("; ");
+const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(256)}`;
+const IP = newIp();
+const welcomes = () => mails.filter((mail) => mail.subject.endsWith(" is ready"));
+
+/** The link in the latest email to `to`, once it arrives: links go out after the answer. */
+async function linkFor(to: string, subject: string): Promise<string> {
+  await expect
+    .poll(() => mails.some((mail) => mail.to === to && mail.subject === subject))
+    .toBe(true);
+  const sent = mails.filter((mail) => mail.to === to && mail.subject === subject).at(-1);
+  return /https?:\/\/\S+/.exec(sent?.text ?? "")?.[0] ?? "";
+}
+
+/** Asks for a signup link, from an address of its own, since link counts outlast a run. */
+const askSignup = (server: App, email: string, from = newIp()) =>
+  server.request("/v1/signup", {
+    method: "POST",
+    headers: { origin: ORIGIN, "x-forwarded-for": from, "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+
+/** Signs up by link and returns the session: a new email gets one email, a known one another. */
+async function linkSignup(server: App, email: string, known = false) {
+  const before = mails.length;
+  const answer = await askSignup(server, email);
+  expect(answer.status).toBe(200);
+  const subject = known ? "Your Dinghy sign-in link" : "Finish signing up for Dinghy";
+  await expect.poll(() => mails.slice(before).some((mail) => mail.to === email)).toBe(true);
+  return openSignInLink(server, await linkFor(email, subject));
+}
 
 const request = (
   server: App,
@@ -95,22 +116,20 @@ const request = (
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 
-/** Cloud signup's two steps: the account, then the onboarding's name and workspace. */
+/** Cloud signup's two steps: the account by link, then the onboarding's name and workspace. */
 async function signup(
   server: App,
   workspaceName = "Acme",
   email = `early-${randomUUID()}@example.com`,
+  known = false,
 ) {
-  const account = await request(server, "POST", "/v1/signup", {
-    body: { email, password: PASSWORD },
-  });
-  const cookie = cookieOf(account);
+  const cookie = await linkSignup(server, email, known);
   const response = await request(server, "POST", "/v1/operator/workspaces", {
     cookie,
     body: { name: "Nora", workspaceName },
   });
   const body = (await response.json()) as { workspaceId: string };
-  return { account, response, email, workspaceId: body.workspaceId, cookie };
+  return { response, email, workspaceId: body.workspaceId, cookie };
 }
 
 async function workspaceRow(id: string) {
@@ -135,7 +154,7 @@ beforeAll(async () => {
   stripe = await startFakeStripe();
   directory = await mkdtemp(join(tmpdir(), "dinghy-signup-"));
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
-  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   const shared = {
     auth,
     db,
@@ -167,20 +186,6 @@ beforeAll(async () => {
     },
   });
   selfHosted = createApp(shared);
-  verifying = createApp({
-    ...shared,
-    cloud: { signup: "early" },
-    mailer,
-    auth: createAuth({
-      db,
-      secret: AUTH_SECRET,
-      baseURL: PUBLIC_URL,
-      logger,
-      sendVerificationEmail: async (to, url) => {
-        mails.push({ to, subject: "verify", text: url });
-      },
-    }),
-  });
 }, 30_000);
 
 afterAll(async () => {
@@ -204,7 +209,6 @@ describe("early signup", () => {
 
   test("creates the account, a workspace that waits for the cloud, a sample conversation and a welcome email", async () => {
     const created = await signup(early, "Harbor");
-    expect(created.account.status).toBe(200);
     expect(created.response.status).toBe(200);
     expect(created.cookie).toContain("better-auth.session_token=");
 
@@ -258,38 +262,38 @@ describe("early signup", () => {
       .where(eq(event.workspaceId, created.workspaceId));
     expect(events.map((one) => one.kind)).toEqual(["message.created"]);
 
-    expect(mails).toEqual([
-      { to: created.email, subject: "Welcome to Dinghy", text: expect.any(String) },
+    expect(welcomes()).toEqual([
+      { to: created.email, subject: "Harbor is ready", text: expect.any(String) },
     ]);
-    expect(mails[0]?.text).toContain("Your Dinghy workspace is ready");
-    // Text typed at signup never reaches the inbox of an address nobody checked.
-    expect(mails[0]?.text).not.toContain("Harbor");
-    expect(mails[0]?.text).toContain("We will email you when you can turn it on.");
+    // The link proved this address before the operator typed these names, so they are safe here.
+    // Only steps that work in a workspace that waits for the cloud: the widget does not run yet.
+    expect(welcomes()[0]?.text).toBe(
+      [
+        "Hi Nora,",
+        "Welcome to Dinghy! Your workspace Harbor is set up. Here's what to do next:",
+        "- Invite your team from Settings, under Team.\n" +
+          "- Turn on alerts there too, so you hear about new messages.",
+        `Sign in any time at ${PUBLIC_URL}`,
+        "Questions? Write to us at hello@dinghy.chat.",
+        "Cheers,\nThe Dinghy team",
+      ].join("\n\n"),
+    );
   });
 
-  test("signup alone makes a signed-in account with no name and no workspace, and sends no email", async () => {
+  test("the link alone makes a signed-in account with no name and no workspace, and no welcome", async () => {
     const email = `early-${randomUUID()}@example.com`;
-    const response = await request(early, "POST", "/v1/signup", {
-      body: { email, password: PASSWORD },
-    });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, verify: false });
-    const cookie = cookieOf(response);
+    const cookie = await linkSignup(early, email);
     const me = await request(early, "GET", "/v1/operator/me", { cookie });
     expect(await me.json()).toMatchObject({ email, name: "", workspaces: [] });
-    expect(mails).toEqual([]);
+    expect(welcomes()).toEqual([]);
 
     // Signing in later finds the same account, which can still finish its onboarding.
-    const signIn = await request(early, "POST", "/v1/auth/sign-in/email", {
-      body: { email, password: PASSWORD },
-    });
-    expect(signIn.status).toBe(200);
     const later = await request(early, "POST", "/v1/operator/workspaces", {
-      cookie: cookieOf(signIn),
+      cookie: await signIn(early, auth, email),
       body: { name: "Nora", workspaceName: "Later" },
     });
     expect(later.status).toBe(200);
-    expect(mails.map((mail) => mail.to)).toEqual([email]);
+    expect(welcomes().map((mail) => mail.to)).toEqual([email]);
   });
 
   test("the onboarding needs a session, a name and a workspace name", async () => {
@@ -311,11 +315,10 @@ describe("early signup", () => {
     expect(otherSite.status).toBe(403);
   });
 
-  test("a known email with its own password signs in and adds a waiting workspace, with no second welcome", async () => {
+  test("a known email signs in by link and adds a waiting workspace, with no second welcome", async () => {
     const first = await signup(early, "First");
     mails.length = 0;
-    const again = await signup(early, "Second", first.email);
-    expect(again.account.status).toBe(200);
+    const again = await signup(early, "Second", first.email, true);
     expect(again.response.status).toBe(200);
     expect((await workspaceRow(again.workspaceId)).waitingSince).toBeInstanceOf(Date);
     const me = await request(early, "GET", "/v1/operator/me", { cookie: again.cookie });
@@ -323,12 +326,12 @@ describe("early signup", () => {
     expect(body.workspaces.map((one) => one.workspaceId).sort()).toEqual(
       [first.workspaceId, again.workspaceId].sort(),
     );
-    expect(mails).toEqual([]);
+    expect(welcomes()).toEqual([]);
   });
 
   test("deleting the only workspace and making another sends no second welcome", async () => {
     const first = await signup(early, "Gone Soon");
-    expect(mails).toHaveLength(1);
+    expect(welcomes()).toHaveLength(1);
     const deleted = await request(early, "DELETE", `/v1/operator/workspaces/${first.workspaceId}`, {
       cookie: first.cookie,
       body: { name: "Gone Soon" },
@@ -339,15 +342,12 @@ describe("early signup", () => {
       body: { name: "Nora", workspaceName: "Back Again" },
     });
     expect(again.status).toBe(200);
-    expect(mails).toHaveLength(1);
+    expect(welcomes()).toHaveLength(1);
   });
 
   test("two onboardings at once send one welcome", async () => {
     const email = `twice-${randomUUID()}@example.com`;
-    const account = await request(early, "POST", "/v1/signup", {
-      body: { email, password: PASSWORD },
-    });
-    const cookie = cookieOf(account);
+    const cookie = await linkSignup(early, email);
     const both = await Promise.all(
       ["One", "Two"].map((workspaceName) =>
         request(early, "POST", "/v1/operator/workspaces", {
@@ -357,33 +357,7 @@ describe("early signup", () => {
       ),
     );
     expect(both.map((one) => one.status)).toEqual([200, 200]);
-    expect(mails.map((mail) => mail.to)).toEqual([email]);
-  });
-
-  test("a known email with another password gets no session", async () => {
-    const first = await signup(early);
-    const again = await request(early, "POST", "/v1/signup", {
-      body: { email: first.email, password: "another-long-password" },
-    });
-    expect(again.status).toBe(409);
-    expect(again.headers.getSetCookie()).toEqual([]);
-  });
-
-  test("a sign-in that fails for another reason is a logged 500, not email_taken", async () => {
-    const email = `broken-${randomUUID()}@example.com`;
-    const [row] = await owner
-      .insert(operator)
-      .values({ name: "Broken", email, emailVerified: true })
-      .returning({ id: operator.id });
-    const id = row?.id ?? "";
-    // A stored hash that the password check cannot read makes BetterAuth fail, not refuse.
-    await owner
-      .insert(account)
-      .values({ userId: id, accountId: id, providerId: "credential", password: "not-a-hash" });
-    const again = await request(early, "POST", "/v1/signup", {
-      body: { email, password: PASSWORD },
-    });
-    expect(again.status).toBe(500);
+    expect(welcomes().map((mail) => mail.to)).toEqual([email]);
   });
 
   test("one account creates at most 5 workspaces a day", async () => {
@@ -409,7 +383,7 @@ describe("early signup", () => {
         body: JSON.stringify(body),
       });
     const email = `early-${randomUUID()}@example.com`;
-    const cookie = cookieOf(await send("/v1/signup", { email, password: PASSWORD }));
+    const cookie = await signIn(strict, auth, email);
     const statuses: number[] = [];
     for (let i = 0; i < 6; i++) {
       const response = await send(
@@ -424,7 +398,7 @@ describe("early signup", () => {
     expect(((await me.json()) as { workspaces: unknown[] }).workspaces).toHaveLength(5);
   });
 
-  test("works with no SMTP, and only logs the unsent email", async () => {
+  test("without SMTP, signup says it cannot send email, for any address", async () => {
     const noMail = createApp({
       auth,
       db,
@@ -435,12 +409,12 @@ describe("early signup", () => {
       cloud: { signup: "early" },
       checks: { postgres: ok, valkey: ok },
     });
-    const created = await signup(noMail);
-    expect(created.response.status).toBe(200);
-    expect((await workspaceRow(created.workspaceId)).waitingSince).toBeInstanceOf(Date);
+    const response = await askSignup(noMail, `early-${randomUUID()}@example.com`);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: "email_unavailable" } });
   });
 
-  test("a failing mail server does not fail the signup", async () => {
+  test("a failing mail server does not fail the answer", async () => {
     const broken = createApp({
       auth,
       db,
@@ -452,7 +426,7 @@ describe("early signup", () => {
       mailer: { send: () => Promise.reject(new Error("SMTP is down")) },
       checks: { postgres: ok, valkey: ok },
     });
-    expect((await signup(broken)).response.status).toBe(200);
+    expect((await askSignup(broken, `early-${randomUUID()}@example.com`)).status).toBe(200);
   });
 
   test("keeps the signup limit per address", async () => {
@@ -471,7 +445,7 @@ describe("early signup", () => {
       const response = await strict.request("/v1/signup", {
         method: "POST",
         headers: { origin: ORIGIN, "x-forwarded-for": from, "content-type": "application/json" },
-        body: JSON.stringify({ email: "bad", password: PASSWORD }),
+        body: JSON.stringify({ email: "bad" }),
       });
       statuses.push(response.status);
     }
@@ -480,68 +454,67 @@ describe("early signup", () => {
   });
 });
 
-describe("with a mail server, signup verifies the email", () => {
-  const linkFor = async (to: string) => {
-    await expect
-      .poll(() => mails.some((mail) => mail.to === to && mail.subject === "verify"))
-      .toBe(true);
-    const sent = mails.filter((mail) => mail.to === to && mail.subject === "verify").at(-1);
-    return new URL(sent?.text ?? "");
-  };
-  const signupAs = (email: string, password = PASSWORD) =>
-    request(verifying, "POST", "/v1/signup", { body: { email, password } });
-  const signInAs = (email: string, password = PASSWORD) =>
-    request(verifying, "POST", "/v1/auth/sign-in/email", { body: { email, password } });
+describe("signup by link", () => {
+  const operatorRow = async (email: string) =>
+    (await owner.select().from(operator).where(eq(operator.email, email)))[0];
 
-  test("a new account gets a link, and signs in and adds a workspace only after opening it", async () => {
-    const email = `verify-${randomUUID()}@example.com`;
-    const answer = await signupAs(email);
-    expect(answer.status).toBe(200);
-    expect(await answer.json()).toEqual({ ok: true, verify: true });
-    expect(answer.headers.getSetCookie()).toEqual([]);
-    const link = await linkFor(email);
+  test("a new and a known email get the same answer, and no account exists before the link", async () => {
+    const known = `known-${randomUUID()}@example.com`;
+    await linkSignup(early, known);
+    const fresh = `fresh-${randomUUID()}@example.com`;
+    const answers = [await askSignup(early, fresh), await askSignup(early, known)];
+    expect(answers.map((one) => one.status)).toEqual([200, 200]);
+    const [first, second] = await Promise.all(answers.map((one) => one.text()));
+    expect(first).toBe(JSON.stringify({ ok: true }));
+    expect(second).toBe(first);
+    expect(answers.flatMap((one) => one.headers.getSetCookie())).toEqual([]);
+    await linkFor(fresh, "Finish signing up for Dinghy");
+    expect(await operatorRow(fresh)).toBeUndefined();
+  });
 
-    // No session yet, and signing in sends a new link instead.
-    const refused = await signInAs(email);
-    expect(refused.status).toBe(403);
-    expect(refused.headers.getSetCookie()).toEqual([]);
-
-    const opened = await verifying.request(`${link.pathname}${link.search}`);
-    expect(opened.status).toBe(302);
-    const cookie = cookieOf(opened);
-    const created = await request(verifying, "POST", "/v1/operator/workspaces", {
+  test("a new email's link creates a proven account with no name, signs in, and onboarding follows", async () => {
+    const email = `new-${randomUUID()}@example.com`;
+    await askSignup(early, email);
+    const link = await linkFor(email, "Finish signing up for Dinghy");
+    const sent = mails.find((mail) => mail.to === email);
+    expect(sent?.text.startsWith("Hi,\n\n")).toBe(true);
+    expect(sent?.text).toContain("15 minutes");
+    expect(sent?.text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
+    // Its page's button says "Continue setting up".
+    expect(link.startsWith(`${ORIGIN}/link?for=signup&token=`)).toBe(true);
+    const cookie = await openSignInLink(early, link);
+    expect(await operatorRow(email)).toMatchObject({ name: "", emailVerified: true });
+    const created = await request(early, "POST", "/v1/operator/workspaces", {
       cookie,
-      body: { name: "Nora", workspaceName: "Verified" },
+      body: { name: "Nora", workspaceName: "Proven" },
     });
     expect(created.status).toBe(200);
-    expect((await signInAs(email)).status).toBe(200);
   });
 
-  test("a known email with another password gets the same answer, and its owner a note", async () => {
+  test("a known email gets a sign-in link to the same account, with a note about the attempt", async () => {
     const email = `taken-${randomUUID()}@example.com`;
-    await signupAs(email);
-    const link = await linkFor(email);
-    await verifying.request(`${link.pathname}${link.search}`);
+    await linkSignup(early, email);
+    const { id } = (await operatorRow(email)) ?? { id: "" };
     mails.length = 0;
-
-    const fresh = await signupAs(`fresh-${randomUUID()}@example.com`);
-    const known = await signupAs(email, "another-long-password");
-    expect(known.status).toBe(fresh.status);
-    expect(await known.json()).toEqual(await fresh.json());
-    expect(known.headers.getSetCookie()).toEqual([]);
-    await expect
-      .poll(() => mails.filter((mail) => mail.to === email).map((mail) => mail.subject))
-      .toEqual(["Your Dinghy account"]);
+    await askSignup(early, email);
+    const link = await linkFor(email, "Your Dinghy sign-in link");
+    const sent = mails.find((mail) => mail.to === email);
+    expect(sent?.text).toContain("tried to sign up for Dinghy with this email");
+    expect(sent?.text).toContain("15 minutes");
+    expect(sent?.text.startsWith("Hi,\n\n")).toBe(true);
+    // It signs in, then lands on the workspace setup.
+    expect(link.startsWith(`${ORIGIN}/link?for=add-workspace&token=`)).toBe(true);
+    const cookie = await openSignInLink(early, link);
+    const me = await request(early, "GET", "/v1/operator/me", { cookie });
+    expect(await me.json()).toMatchObject({ id, email });
   });
 
-  test("a known, verified email with its own password signs in", async () => {
-    const email = `back-${randomUUID()}@example.com`;
-    await signupAs(email);
-    const link = await linkFor(email);
-    await verifying.request(`${link.pathname}${link.search}`);
-    const again = await signupAs(email);
-    expect(await again.json()).toEqual({ ok: true, verify: false });
-    expect(cookieOf(again)).not.toBe("");
+  test("an account gets at most 5 links an hour from one address", async () => {
+    const email = `limited-${randomUUID()}@example.com`;
+    const from = newIp();
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) statuses.push((await askSignup(early, email, from)).status);
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
   });
 });
 
@@ -630,7 +603,7 @@ describe("a workspace that waits for the cloud", () => {
     const created = await signup(early, '=Danger, "Quoted"');
     // An account that has not created its workspace yet is not listed.
     const unfinished = `early-${randomUUID()}@example.com`;
-    await request(early, "POST", "/v1/signup", { body: { email: unfinished, password: PASSWORD } });
+    await linkSignup(early, unfinished);
     const admin = new pg.Client({ connectionString: database.adminUrl() });
     await admin.connect();
     let csv: string;
@@ -669,7 +642,7 @@ describe("a self-hosted install with neither setting", () => {
     const meta = await (await selfHosted.request("/v1/meta")).json();
     expect(meta).toMatchObject({ billing: false, signup: null });
     const response = await request(selfHosted, "POST", "/v1/signup", {
-      body: { email: `x-${randomUUID()}@example.com`, password: PASSWORD },
+      body: { email: `x-${randomUUID()}@example.com` },
     });
     expect(response.status).toBe(404);
     // A signed-in operator cannot create a workspace there either.
@@ -691,7 +664,7 @@ describe("once Stripe keys are set", () => {
     const created = await signup(paying);
     const row = await workspaceRow(created.workspaceId);
     expect(row).toMatchObject({ active: false, waitingSince: null });
-    expect(mails).toEqual([]);
+    expect(welcomes()).toEqual([]);
     const inbox = await request(
       paying,
       "GET",

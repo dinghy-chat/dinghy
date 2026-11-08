@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { openLink } from "./links.ts";
 
 // Records the frames behind docs/media/demo.gif, and the pictures in the docs. It is not a test, so
 // it runs only by hand, then scripts/demo-gif.sh turns the frames into the GIF:
@@ -69,7 +70,7 @@ test("record", async () => {
   const frames = join(directory, "frames");
   await mkdir(frames, { recursive: true });
   const server = await startE2EServer({ "/": { html: hostPage } });
-  await server.createOperator("anna@acme.example", "a-long-test-password");
+  await server.createOperator("anna@acme.example");
   // The names a real team would have, instead of the test fixtures'.
   const database = server.owner.$client;
   await database.query("update operator set name = 'Anna' where email = $1", ["anna@acme.example"]);
@@ -88,10 +89,7 @@ test("record", async () => {
 
   const operatorContext = await browser.newContext({ viewport: OPERATOR, deviceScaleFactor: 2 });
   const operator = await operatorContext.newPage();
-  await operator.goto(server.apiOrigin);
-  await operator.getByLabel("Email").fill("anna@acme.example");
-  await operator.getByLabel("Password").fill("a-long-test-password");
-  await operator.getByRole("button", { name: "Sign in", exact: true }).click();
+  await openLink(operator, await server.signInLink("anna@acme.example"));
   await expect(operator.getByRole("heading", { name: "Acme" })).toBeVisible();
 
   const visitorContext = await browser.newContext({ viewport: VISITOR, deviceScaleFactor: 2 });

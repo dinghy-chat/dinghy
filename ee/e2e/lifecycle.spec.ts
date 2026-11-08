@@ -1,8 +1,7 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { expect, type Page, test } from "@playwright/test";
+import { openLink } from "../../tests/e2e/links.ts";
 import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
-
-const PASSWORD = "a-long-test-password";
 
 type Server = Awaited<ReturnType<typeof startCloudE2EServer>>;
 
@@ -27,10 +26,12 @@ async function onCheckout(page: Page) {
 
 /** Signs up, pays and lands in the inbox of a new workspace. */
 async function paidWorkspace(page: Page, name: string) {
+  const email = `nora-${Date.now()}@example.com`;
   await page.goto(`${server.apiOrigin}/signup`);
-  await page.getByLabel("Email").fill(`nora-${Date.now()}@example.com`);
-  await page.getByLabel("Password, at least 10 characters").fill(PASSWORD);
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Email me a link" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await openLink(page, await server.linkTo(email), "Continue setting up");
   await page.getByLabel("Your name").fill("Nora");
   await page.getByLabel("Workspace name").fill(name);
   await page.getByRole("button", { name: "Continue" }).click();

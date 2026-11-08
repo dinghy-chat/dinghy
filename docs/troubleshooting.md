@@ -54,9 +54,11 @@ curl https://chat.example.com/readyz
 
 ## Sign-in
 
-**I forgot the password.** Run `docker compose exec app chat reset-password you@example.com`.
+**No sign-in link arrives.** Check the spam folder, then `docker compose logs app` for a mail error. Without a mail server, or for a link at once, run `docker compose exec app chat sign-in-link you@example.com`. It prints a link that works once, for 15 minutes.
 
-**"Too many attempts".** Wait 15 minutes.
+**"That link has expired or was already used".** Ask for a new one. A link works once, for 15 minutes. A mail scanner that opens links before you do can use it up, so open the newest one.
+
+**"Too many links asked for".** Wait an hour, or run `chat sign-in-link` as above.
 
 **All visitors share one rate limit, or the limits look wrong.** Set `TRUSTED_PROXY_HOPS` as [Behind your own reverse proxy](self-hosting.md#behind-your-own-reverse-proxy) explains.
 

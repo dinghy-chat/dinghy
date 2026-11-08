@@ -155,8 +155,9 @@
 </ul>
 <p><strong>No email.</strong> Set <code>SMTP_URL</code> and <code>MAIL_FROM</code> in <code>.env</code>, and run <code>docker compose up -d --wait</code>. Then read <code>docker compose logs app</code> for a mail error.</p>
 <h2 id="sign-in"><a class="heading-link" href="#sign-in">Sign-in</a></h2>
-<p><strong>I forgot the password.</strong> Run <code class="code-long">docker compose exec app chat reset-password you@example.com</code>.</p>
-<p><strong>&quot;Too many attempts&quot;.</strong> Wait 15 minutes.</p>
+<p><strong>No sign-in link arrives.</strong> Check the spam folder, then <code>docker compose logs app</code> for a mail error. Without a mail server, or for a link at once, run <code class="code-long">docker compose exec app chat sign-in-link you@example.com</code>. It prints a link that works once, for 15 minutes.</p>
+<p><strong>&quot;That link has expired or was already used&quot;.</strong> Ask for a new one. A link works once, for 15 minutes. A mail scanner that opens links before you do can use it up, so open the newest one.</p>
+<p><strong>&quot;Too many links asked for&quot;.</strong> Wait an hour, or run <code>chat sign-in-link</code> as above.</p>
 <p><strong>All visitors share one rate limit, or the limits look wrong.</strong> Set <code>TRUSTED_PROXY_HOPS</code> as <a href="/docs/self-hosting#behind-your-own-reverse-proxy">Behind your own reverse proxy</a> explains.</p>
 <h2 id="backups-and-upgrades"><a class="heading-link" href="#backups-and-upgrades">Backups and upgrades</a></h2>
 <p><strong>&quot;Something is still connected to the database&quot;.</strong> Stop the app first with <code>docker compose stop app</code>. If the nightly backup is running, wait for it.</p>

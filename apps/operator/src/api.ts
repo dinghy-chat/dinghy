@@ -157,31 +157,28 @@ const UPLOAD_TIMEOUT_MS = 5 * 60_000;
 const post = <T>(path: string, body: unknown) =>
   call<T>(path, { method: "POST", body: JSON.stringify(body) });
 
-export const signIn = (email: string, password: string) =>
-  post<unknown>("/v1/auth/sign-in/email", { email, password });
+/** The answer is the same for any email. Only an operator's email gets the link. */
+export const askSignInLink = (email: string) =>
+  post<{ ok: true }>("/v1/auth/sign-in/magic-link", { email });
+/** Uses a sign-in link's token, from the button on the page the link opens. */
+export const redeemSignInLink = (token: string) =>
+  post<{ ok: true }>("/v1/auth/magic-link/verify", { token });
+/** Uses a join link's token: joins the workspace and signs in. */
+export const redeemJoinLink = (token: string) =>
+  post<{ workspaceId: string }>("/v1/invites/open", { token });
 export const signOut = () => post<unknown>("/v1/auth/sign-out", {});
-export const requestReset = (email: string) =>
-  post<unknown>("/v1/auth/request-password-reset", { email, redirectTo: "/reset-password" });
-export const resetPassword = (token: string, newPassword: string) =>
-  post<unknown>("/v1/auth/reset-password", { token, newPassword });
 export const updateName = (name: string) => post<unknown>("/v1/auth/update-user", { name });
-/** The server ends this operator's other sessions, and this one gets a new cookie. */
-export const changePassword = (currentPassword: string, newPassword: string) =>
-  post<unknown>("/v1/auth/change-password", {
-    currentPassword,
-    newPassword,
-    revokeOtherSessions: true,
-  });
 export const getMe = () => call<Me>("/v1/operator/me");
 export interface Meta {
   billing: boolean;
   /** How cloud signup works here, or null where nobody can sign up. */
   signup: "payment" | "early" | null;
+  /** Whether sign-in links go by email. Without, the server's admin hands them out. */
+  email: boolean;
 }
 export const getMeta = () => call<Meta>("/v1/meta");
-/** With `verify`, the account signs in from the link sent to its email. */
-export const signUp = (email: string, password: string) =>
-  post<{ ok: true; verify: boolean }>("/v1/signup", { email, password });
+/** The link in the email signs in, to a new account or the one the email has. */
+export const signUp = (email: string) => post<{ ok: true }>("/v1/signup", { email });
 /** Cloud signup's second step. It also sets the operator's name. */
 export const createWorkspace = (name: string, workspaceName: string) =>
   post<{ workspaceId: string }>("/v1/operator/workspaces", { name, workspaceName });
@@ -199,9 +196,9 @@ export const deleteDevice = (endpoint: string) =>
   });
 export const previewInvite = (token: string) =>
   post<{ workspaceName: string; role: "admin" | "agent" }>("/v1/invites/preview", { token });
-/** With `verify`, the account signs in from the link sent to its email. */
-export const joinWithInvite = (token: string, name: string, email: string, password: string) =>
-  post<{ ok: true; verify: boolean }>("/v1/invites/join", { token, name, email, password });
+/** The link goes by email. With no mail server, `signInUrl` is the link, for a new account only. */
+export const joinWithInvite = (token: string, name: string, email: string) =>
+  post<{ ok: true; signInUrl: string | null }>("/v1/invites/join", { token, name, email });
 export const acceptInvite = (token: string) =>
   post<{ workspaceId: string }>("/v1/operator/invites/accept", { token });
 export const testPush = () => post<{ sent: number; failed: number }>("/v1/operator/push-test", {});

@@ -281,6 +281,27 @@
       "when": 1794145014147,
       "tag": "0039_verified_existing_operators",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794158836595,
+      "tag": "0040_delete_passwords",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794162235948,
+      "tag": "0041_email_proven",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794162236388,
+      "tag": "0042_email_proven_backfill",
+      "breakpoints": true
     }
   ]
 }

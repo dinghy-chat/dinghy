@@ -4,7 +4,6 @@ import { BillingRow } from "../../../ee/operator/billing.tsx";
 import {
   type BillingState,
   type BlockedVisitor,
-  changePassword,
   type Me,
   type Member,
   type PendingInvite,
@@ -165,13 +164,10 @@ function SecretRow({
   );
 }
 
-/** The operator's own name and password. Every role has this. */
+/** The operator's own name. Every role has this. */
 function AccountRow({ me, onChanged }: { me: Me; onChanged(): void }) {
   const [name, setName] = useState(me.name);
   const [nameNote, setNameNote] = useState<{ ok: boolean; text: TextId } | null>(null);
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [passwordNote, setPasswordNote] = useState<{ ok: boolean; text: TextId } | null>(null);
 
   const saveName = async (event: FormEvent) => {
     event.preventDefault();
@@ -185,81 +181,29 @@ function AccountRow({ me, onChanged }: { me: Me; onChanged(): void }) {
     }
   };
 
-  const savePassword = async (event: FormEvent) => {
-    event.preventDefault();
-    if (next.length < 10) {
-      setPasswordNote({ ok: false, text: "passwordShort" });
-      return;
-    }
-    try {
-      await changePassword(current, next);
-      setCurrent("");
-      setNext("");
-      setPasswordNote({ ok: true, text: "passwordSaved" });
-    } catch (failure) {
-      setPasswordNote({
-        ok: false,
-        text: failureText(failure, { 400: "passwordWrong", 429: "tooManyAttempts" }),
-      });
-    }
-  };
-
   return (
-    <>
-      <PageRow title={t("accountTitle")} help={t("accountHelp")}>
-        <form className="stack" onSubmit={saveName}>
-          <Field
-            label={t("accountName")}
-            value={name}
-            onChange={(value) => {
-              setName(value);
-              setNameNote(null);
-            }}
-            required
-            maxLength={100}
-            autoComplete="name"
-          />
-          <div className="actions">
-            <button type="submit" className="btn navy small" disabled={name.trim() === ""}>
-              {t("accountNameSave")}
-            </button>
-          </div>
-          {nameNote?.ok === true && <StatusNote text={nameNote.text} />}
-          {nameNote?.ok === false && <ErrorNote text={nameNote.text} />}
-        </form>
-      </PageRow>
-      <PageRow title={t("passwordTitle")} help={t("passwordHelp")}>
-        <form className="stack" onSubmit={savePassword}>
-          {/* For password managers, which need the account's email next to a new password. */}
-          <input type="email" value={me.email} autoComplete="username" readOnly hidden />
-          <Field
-            label={t("currentPassword")}
-            type="password"
-            value={current}
-            onChange={setCurrent}
-            required
-            autoComplete="current-password"
-          />
-          <Field
-            label={t("newPassword")}
-            type="password"
-            value={next}
-            onChange={setNext}
-            required
-            minLength={10}
-            maxLength={128}
-            autoComplete="new-password"
-          />
-          <div className="actions">
-            <button type="submit" className="btn navy small">
-              {t("passwordSave")}
-            </button>
-          </div>
-          {passwordNote?.ok === true && <StatusNote text={passwordNote.text} />}
-          {passwordNote?.ok === false && <ErrorNote text={passwordNote.text} />}
-        </form>
-      </PageRow>
-    </>
+    <PageRow title={t("accountTitle")} help={t("accountHelp")}>
+      <form className="stack" onSubmit={saveName}>
+        <Field
+          label={t("accountName")}
+          value={name}
+          onChange={(value) => {
+            setName(value);
+            setNameNote(null);
+          }}
+          required
+          maxLength={100}
+          autoComplete="name"
+        />
+        <div className="actions">
+          <button type="submit" className="btn navy small" disabled={name.trim() === ""}>
+            {t("accountNameSave")}
+          </button>
+        </div>
+        {nameNote?.ok === true && <StatusNote text={nameNote.text} />}
+        {nameNote?.ok === false && <ErrorNote text={nameNote.text} />}
+      </form>
+    </PageRow>
   );
 }
 

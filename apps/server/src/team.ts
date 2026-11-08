@@ -6,14 +6,15 @@ import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
-import { type Auth, sendVerification, verifiesEmail } from "./auth.ts";
-import { account, invite, operator, workspace, workspaceMember } from "./db/schema.ts";
+import { type Auth, confirmUrl, LINK_MINUTES, signInNow } from "./auth.ts";
+import { invite, operator, verification, workspace, workspaceMember } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
   FORBIDDEN,
   failure,
   INVALID,
+  LINK_INVALID,
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
@@ -21,14 +22,17 @@ import {
   okContent,
   RATE_LIMITED,
   ROLE_WRITE_ERRORS,
+  safeErrorFields,
   WRONG_ORIGIN,
 } from "./errors.ts";
-import { normalizeOrigin, sha256Hex } from "./identity.ts";
+import { emailAddressHash, normalizeOrigin, sha256Hex } from "./identity.ts";
+import { joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
+import type { Mailer } from "./mailer.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { assignConversation, recordTeamChange } from "./messages.ts";
-import { limitByIp, type RateLimit } from "./rate-limit.ts";
+import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 
 export type Role = "owner" | "admin" | "agent";
 
@@ -43,7 +47,7 @@ const LAST_OWNER = failure(
 const BAD_INVITE = failure("invite_invalid", "This invite has expired or was already used.");
 const EMAIL_TAKEN = failure(
   "email_taken",
-  "This email already has an account. Sign in, then open this link again.",
+  "This email already has an account. Sign in, then open the invite again.",
 );
 const ALREADY_MEMBER = failure("already_member", "You are already in this workspace.");
 
@@ -257,27 +261,59 @@ const previewRoute = createRoute({
 const joinRoute = createRoute({
   method: "post",
   path: "/v1/invites/join",
-  summary: "Create an account and join with an invite",
+  summary: "Ask for the link that creates an account, or signs in to one, and joins with an invite",
   request: {
     body: json(
       tokenBody.extend({
         name: z.string().trim().min(1).max(100),
         email: z.email().max(254),
-        password: z.string().min(10).max(128),
       }),
     ),
   },
   responses: {
     200: reply(
-      "Joined. With `verify`, the account signs in only after it opens the link sent to its email",
-      z.object({ ok: z.literal(true), verify: z.boolean() }),
+      "With a mail server, the link went to the email, and `signInUrl` is null: the answer is the same whether or not the email has an account. Without one, open `signInUrl`",
+      z.object({ ok: z.literal(true), signInUrl: z.string().nullable() }),
     ),
     ...inviteErrors,
     409: errorAnswer(
-      "email_taken: the email has an account. operator_limit: the workspace has as many operators as its plan allows",
+      "email_taken: on a server with no mail server, the email has an account. Sign in, then accept the invite",
     ),
   },
 });
+
+const openRoute = createRoute({
+  method: "post",
+  path: "/v1/invites/open",
+  summary:
+    "Use a join link's token, from the button on the page the link opens: create the account if needed, join, and sign in",
+  request: { body: json(tokenBody) },
+  responses: {
+    200: reply(
+      "Signed in, with the session cookie set. Open the workspace",
+      z.object({ workspaceId: z.uuid() }),
+    ),
+    ...inviteErrors,
+    400: errorAnswer(
+      "invalid_request: the request is not valid. link_invalid: the link expired or was already used",
+    ),
+    409: errorAnswer(
+      "operator_limit: the workspace has the most operators its plan allows. email_taken: on a server with no mail server, the email has an account",
+    ),
+  },
+});
+
+/** What a join link carries, in BetterAuth's verification table until it is opened or expires. */
+const PendingJoin = z.object({
+  workspaceId: z.uuid(),
+  inviteHash: z.string(),
+  name: z.string(),
+  email: z.string(),
+  // False on a server with no mail server, where nobody proved the email: it joins only as a new
+  // account, so an invite cannot sign anyone in to an account that exists.
+  proven: z.boolean(),
+});
+const JOIN_LINK = "invite-join:";
 
 const acceptRoute = createRoute({
   method: "post",
@@ -426,14 +462,17 @@ interface TeamOptions {
   limits: Limits;
   live: Live;
   logger: Logger;
-  publicOrigin: string;
+  /** Sends join links. Without one, a new operator signs in from the join's answer. */
+  mailer: Mailer | undefined;
   rateLimit: RateLimit;
 }
 
 export function registerTeamRoutes(
   app: App,
-  { auth, db, limits, live, logger, publicOrigin, rateLimit }: TeamOptions,
+  { auth, db, limits, live, logger, mailer, rateLimit }: TeamOptions,
 ): void {
+  const publicUrl = String(auth.options.baseURL);
+  const publicOrigin = new URL(publicUrl).origin;
   const auditChange = (event: string, workspaceId: string, operatorId: string, fields = {}) =>
     audit(logger, event, { workspaceId, operatorId, ...fields });
   app.openapi(listMembersRoute, async (c) => {
@@ -680,51 +719,113 @@ export function registerTeamRoutes(
 
   app.openapi(joinRoute, async (c) => {
     if (c.req.header("origin") !== publicOrigin) return c.json(WRONG_ORIGIN, 403);
-    const { token, name, password } = c.req.valid("json");
+    const { token, name } = c.req.valid("json");
     const email = c.req.valid("json").email.toLowerCase();
     const parsed = parseToken(token);
     if (parsed === null) return c.json(BAD_INVITE, 404);
     const { workspaceId, tokenHash } = parsed;
-    // Hashing a password costs real CPU, so only a working invite gets that far.
     const [valid] = await withWorkspace(db, workspaceId, (tx) =>
       tx.select({ id: invite.id }).from(invite).where(usable(workspaceId, tokenHash)),
     );
     if (valid === undefined) return c.json(BAD_INVITE, 404);
-    const context = await auth.$context;
-    const hash = await context.password.hash(password);
-    // One transaction, so a lost race for the invite leaves no account behind.
+    // Each one sends an email to an address that whoever holds the invite picks.
+    const wait = await rateLimit.hit("invite-join-email", emailAddressHash(email), 5, 3600);
+    if (wait !== null) return tooManyRequests(c, wait);
+    if (mailer === undefined) {
+      const [taken] = await db
+        .select({ id: operator.id })
+        .from(operator)
+        .where(eq(operator.email, email));
+      if (taken !== undefined) return c.json(EMAIL_TAKEN, 409);
+    }
+    const linkToken = randomBytes(32).toString("base64url");
+    const pending: z.infer<typeof PendingJoin> = {
+      workspaceId,
+      inviteHash: tokenHash,
+      name,
+      email,
+      proven: mailer !== undefined,
+    };
+    await db.insert(verification).values({
+      identifier: `${JOIN_LINK}${sha256Hex(linkToken)}`,
+      value: JSON.stringify(pending),
+      expiresAt: new Date(Date.now() + LINK_MINUTES * 60_000),
+    });
+    const url = confirmUrl(publicUrl, "join", linkToken);
+    // With no mail server, the person who handed out the invite vouches for whoever holds it.
+    if (mailer === undefined) return c.json({ ok: true as const, signInUrl: url }, 200);
+    const mail = joinMail(url);
+    mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {
+      logger.error(safeErrorFields(err), "could not send a join link");
+    });
+    return c.json({ ok: true as const, signInUrl: null }, 200);
+  });
+
+  app.openapi(openRoute, async (c) => {
+    if (c.req.header("origin") !== publicOrigin) return c.json(WRONG_ORIGIN, 403);
+    // Deleted as it is read, so a link works once, even when it is opened twice at once.
+    const [row] = await db
+      .delete(verification)
+      .where(
+        and(
+          eq(verification.identifier, `${JOIN_LINK}${sha256Hex(c.req.valid("json").token)}`),
+          gt(verification.expiresAt, sql`now()`),
+        ),
+      )
+      .returning({ value: verification.value });
+    if (row === undefined) return c.json(LINK_INVALID, 400);
+    const pending = PendingJoin.parse(JSON.parse(row.value));
+    const { workspaceId, email } = pending;
     const result = await withWorkspace(db, workspaceId, async (tx) => {
       const [created] = await tx
         .insert(operator)
-        .values({ name, email, emailVerified: false })
+        .values({ name: pending.name, email, emailProven: pending.proven })
         .onConflictDoNothing()
         .returning({ id: operator.id });
-      if (created === undefined) return "email_taken" as const;
-      await tx.insert(account).values({
-        userId: created.id,
-        accountId: created.id,
-        providerId: "credential",
-        password: hash,
-      });
-      // A new account cannot be a member yet, so either error means the invite was not usable.
-      await consumeInvite(tx, limits, workspaceId, tokenHash, created.id);
-      return { operatorId: created.id };
-    }).catch((error: unknown) => {
-      if (error instanceof InviteUnusableError || error instanceof AlreadyMemberError) {
-        return "invalid" as const;
+      let operatorId = created?.id;
+      if (operatorId === undefined) {
+        if (!pending.proven) return "email_taken" as const;
+        // The email is proven, so an account left unnamed, such as by an unfinished signup,
+        // takes the typed name. A name it already has stays.
+        const [found] = await tx
+          .update(operator)
+          .set({
+            name: sql`case when ${operator.name} = '' then ${pending.name} else ${operator.name} end`,
+          })
+          .where(eq(operator.email, email))
+          .returning({ id: operator.id });
+        operatorId = found?.id;
+        if (operatorId === undefined) throw new Error("The operator row is missing");
       }
-      if (error instanceof OperatorLimitError) return "full" as const;
+      await consumeInvite(tx, limits, workspaceId, pending.inviteHash, operatorId);
+      return { operatorId };
+    }).catch((error: unknown) => {
+      if (error instanceof InviteUnusableError) return "invite_invalid" as const;
+      // Already in the workspace: the link still signs in.
+      if (error instanceof AlreadyMemberError) return "member" as const;
+      if (error instanceof OperatorLimitError) return "operator_limit" as const;
       throw error;
     });
-    if (result === "email_taken") return c.json(EMAIL_TAKEN, 409);
-    if (result === "full") return c.json(OPERATOR_LIMIT, 409);
-    if (result === "invalid") return c.json(BAD_INVITE, 404);
-    auditChange("invite.used", workspaceId, result.operatorId);
-    live.wake(workspaceId, OPERATORS);
-    // Whoever holds the link picks the email, so with a mail server the account must prove it.
-    const verify = verifiesEmail(auth);
-    if (verify) await sendVerification(auth, { id: result.operatorId, email });
-    return c.json({ ok: true as const, verify }, 200);
+    if (typeof result === "object") {
+      auditChange("invite.used", workspaceId, result.operatorId);
+      live.wake(workspaceId, OPERATORS);
+    } else if (result === "invite_invalid") {
+      return c.json(BAD_INVITE, 404);
+    } else if (result === "operator_limit") {
+      return c.json(OPERATOR_LIMIT, 409);
+    } else if (result === "email_taken") {
+      return c.json(EMAIL_TAKEN, 409);
+    }
+    const cookies = await signInNow(
+      auth,
+      db,
+      email,
+      c.req.raw.headers,
+      pending.proven ? "email" : "shown",
+    );
+    if (cookies === null) throw new Error("A sign-in token made just now did not work");
+    for (const cookie of cookies) c.header("set-cookie", cookie, { append: true });
+    return c.json({ workspaceId }, 200);
   });
 
   app.openapi(acceptRoute, async (c) => {

@@ -19,8 +19,9 @@ import { createTestDatabase, type TestDatabase } from "../../apps/server/test/da
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
 import {
   addOperator,
-  cookieOf,
-  TEST_PASSWORD as PASSWORD,
+  captureMail,
+  openSignInLink,
+  signIn,
 } from "../../apps/server/test/operators.ts";
 import { billingFromConfig, verifyStripeSignature } from "./billing.ts";
 import {
@@ -70,11 +71,14 @@ const request = (
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 
-/** Cloud signup's two steps. With a wrong password, the second step does not run. */
-async function signup(email = `owner-${randomUUID()}@example.com`, password = PASSWORD) {
-  const account = await request(app, "POST", "/v1/signup", { body: { email, password } });
-  const cookie = cookieOf(account);
-  if (account.status !== 200) return { response: account, email, workspaceId: "", cookie };
+const mail = captureMail();
+
+/** Cloud signup's two steps: the email's link signs in, then the workspace. */
+async function signup(email = `owner-${randomUUID()}@example.com`) {
+  const before = mail.countTo(email);
+  const account = await request(app, "POST", "/v1/signup", { body: { email }, from: ip() });
+  if (account.status !== 200) return { response: account, email, workspaceId: "", cookie: "" };
+  const cookie = await openSignInLink(app, await mail.linkTo(email, before));
   const response = await request(app, "POST", "/v1/operator/workspaces", {
     cookie,
     body: { name: "Owner", workspaceName: "Acme" },
@@ -92,10 +96,7 @@ async function agentCookie(workspaceId: string) {
     workspaceId,
     role: "agent",
   });
-  const signedIn = await request(app, "POST", "/v1/auth/sign-in/email", {
-    body: { email, password: PASSWORD },
-  });
-  return cookieOf(signedIn);
+  return signIn(app, auth, email);
 }
 
 const sessionIdOf = (body: unknown) => (body as { url: string }).url.split("/").at(-1) ?? "";
@@ -159,9 +160,10 @@ beforeAll(async () => {
   stripe = await startFakeStripe();
   directory = await mkdtemp(join(tmpdir(), "dinghy-billing-"));
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
-  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   app = createApp({
     auth,
+    mailer: mail,
     cloud: {
       billing: {
         secretKey: STRIPE_SECRET_KEY,
@@ -209,16 +211,7 @@ describe("signup", () => {
     });
   });
 
-  test("a known email with the wrong password gets no session and no workspace", async () => {
-    const first = await signup();
-    const before = await owner.select().from(workspace);
-    const again = await signup(first.email, "another-long-password");
-    expect(again.response.status).toBe(409);
-    expect(again.response.headers.getSetCookie()).toEqual([]);
-    expect(await owner.select().from(workspace)).toHaveLength(before.length);
-  });
-
-  test("a known email with its own password signs in and adds a workspace", async () => {
+  test("a known email signs in to its account by link and adds a workspace", async () => {
     const first = await signup();
     const again = await signup(first.email);
     expect(again.response.status).toBe(200);
@@ -232,16 +225,9 @@ describe("signup", () => {
     const response = await app.request("/v1/signup", {
       method: "POST",
       headers: { origin: "https://evil.example", "content-type": "application/json" },
-      body: JSON.stringify({ email: `x-${randomUUID()}@example.com`, password: PASSWORD }),
+      body: JSON.stringify({ email: `x-${randomUUID()}@example.com` }),
     });
     expect(response.status).toBe(403);
-  });
-
-  test("a short password is refused, as sign-in's rule says", async () => {
-    const response = await request(app, "POST", "/v1/signup", {
-      body: { email: `x-${randomUUID()}@example.com`, password: "short" },
-    });
-    expect(response.status).toBe(400);
   });
 
   test("is limited per address", async () => {
@@ -266,7 +252,7 @@ describe("signup", () => {
     for (let i = 0; i < 11; i++) {
       const response = await request(strict, "POST", "/v1/signup", {
         from,
-        body: { email: "not-an-email", password: PASSWORD },
+        body: { email: "not-an-email" },
       });
       statuses.push(response.status);
     }
@@ -765,11 +751,7 @@ describe("a self-hosted install with no keys", () => {
       email: `self-${randomUUID()}@example.com`,
       workspaceId: existing.id,
     });
-    const cookie = cookieOf(
-      await request(selfHosted, "POST", "/v1/auth/sign-in/email", {
-        body: { email, password: PASSWORD },
-      }),
-    );
+    const cookie = await signIn(selfHosted, auth, email);
 
     const meta = await (await selfHosted.request("/v1/meta")).json();
     expect(meta).toMatchObject({ billing: false });
@@ -779,7 +761,7 @@ describe("a self-hosted install with no keys", () => {
       workspaces: [{ workspaceId: existing.id, active: true }],
     });
     const signupResponse = await request(selfHosted, "POST", "/v1/signup", {
-      body: { email: `x-${randomUUID()}@example.com`, password: PASSWORD },
+      body: { email: `x-${randomUUID()}@example.com` },
     });
     expect(signupResponse.status).toBe(404);
     const onboarding = await request(selfHosted, "POST", "/v1/operator/workspaces", {
@@ -870,7 +852,7 @@ const CLOUD_ATTACKS: Record<string, () => Promise<void>> = {
     const response = await app.request("/v1/signup", {
       method: "POST",
       headers: { origin: "https://evil.example", "content-type": "application/json" },
-      body: JSON.stringify({ email: `x-${randomUUID()}@example.com`, password: PASSWORD }),
+      body: JSON.stringify({ email: `x-${randomUUID()}@example.com` }),
     });
     expect(response.status).toBe(403);
   },

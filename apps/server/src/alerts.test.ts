@@ -658,8 +658,12 @@ describe("email", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(mails).toHaveLength(1);
     expect(mails[0]?.to).toBe(email);
-    expect(mails[0]?.text).toContain("visitor@example.com wrote:");
+    // The operator's own name, which this test sets to their email.
+    expect(mails[0]?.text.startsWith(`Hi ${email},\n\n`)).toBe(true);
+    expect(mails[0]?.text).toContain("visitor@example.com wrote in Acme:");
     expect(mails[0]?.text).toContain("First");
+    expect(mails[0]?.text).toContain("turn them off in Settings, under Alerts");
+    expect(mails[0]?.text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
     expect(mails[0]?.text).toContain(
       `${PUBLIC_URL}/?workspace=${space.id}&conversation=${written.message.conversationId}`,
     );
@@ -779,9 +783,19 @@ describe("email", () => {
     const mail = mails[0];
     expect(mail?.to).toBe("v@example.com");
     expect(mail?.subject).toBe("Acme replied to your message");
-    expect(mail?.text).toContain("First answer\n\nSecond answer");
     const stop = emailStopUrl(PUBLIC_URL, AUTH_SECRET, space.id, "v@example.com");
-    expect(mail?.text).toContain(stop);
+    // Nobody proved the visitor's address, so it greets no name. The workspace signs it.
+    expect(mail?.text).toBe(
+      [
+        "Hi,",
+        "Acme replied to your message:",
+        "First answer\n\nSecond answer",
+        "To answer, go back to the site and open the chat.",
+        "You got this because this address was entered in a chat with Acme. If that wasn't you, " +
+          `or you'd rather not get these emails, stop them here: ${stop}`,
+        "Cheers,\nThe Acme team",
+      ].join("\n\n"),
+    );
     expect(mail?.headers?.["list-unsubscribe"]).toBe(`<${stop}>`);
     expect(mail?.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
   });
@@ -1213,7 +1227,7 @@ describe("the routes", () => {
 
   beforeEach(async () => {
     sends.length = 0;
-    const auth = createAuth({ db: app, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+    const auth = createAuth({ db: app, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
     server = createApp({
       alerts: { push, emailAvailable: true, secret: AUTH_SECRET },
       auth,

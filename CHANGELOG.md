@@ -2,6 +2,19 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
+## Unreleased
+
+**Owner action:** operators now sign in with a link sent to their email, and passwords are gone. Tell your team: they enter their email on the sign-in page and open the link, which works once, for 15 minutes. Without a mail server, the sign-in page tells them to ask you, and you make a link with `docker compose exec app chat sign-in-link <email>`. The upgrade deletes the stored password hashes. Accounts, workspaces and open sessions stay.
+
+- The sign-in page asks for an email and answers "Check your email" whether or not the email has an account. A link works once and lasts 15 minutes, and the database keeps only a hash of it. An email gets at most 5 links an hour from one address and 20 from all, and one address can ask for 30 emails an hour.
+- `chat sign-in-link <email>` prints a link for an existing operator. It replaces `chat reset-password`. `chat setup`, `chat create-operator`, the installer and `bun run dev` print a sign-in link instead of a password.
+- Joining by invite asks for a name and an email, and emails a link that creates the account, or uses the one the email has, joins the workspace and signs in. Without a mail server, a new person signs in at once, and an email that has an account gets `email_taken`. `POST /v1/invites/join` takes no `password` and answers `{ ok, signInUrl }`, and the new `POST /v1/invites/open` uses a join link.
+- On Dinghy Cloud, signup asks for an email only. The link proves the email and signs in, and the workspace setup follows. An email that has an account gets a sign-in link instead, with the same answer. `POST /v1/signup` takes no `password` and answers `{ ok }`.
+- Removed: the password routes under `/v1/auth`, the change-password card in Settings, the forgot and reset password pages, and the email confirmation step from 0.3.5, which opening a link now does. Every `/v1/auth` route the app does not use answers 404. `/v1/meta` has `email`, true when sign-in links go by email.
+- Every link in an email, and the one `chat sign-in-link` prints, opens a page of the operator app with one button, such as **Sign in to Dinghy**. Only the button uses the link, so a mail scanner that opens links cannot use one up. `POST /v1/auth/magic-link/verify` with `{ token }` uses a sign-in link, and `GET /v1/auth/magic-link/verify` answers 404.
+- Every email has a new, shorter text with the same facts: the sign-in, join and signup links, the note to an email that already has an account, the welcome, the new message alert, the reply to a visitor and the three billing emails. The welcome lists only the steps that work before the cloud opens, and the reply to a visitor is signed by the workspace, not by Dinghy.
+- The audit log has `sign_in.limited` for a link request over the limit, `sign_in.link_sent`, `sign_in.link_used` and `sign_in.link_refused`. It no longer has `sign_in.failed`.
+
 ## 0.3.7 (2026-11-08)
 
 The first release from the public repository, with the changes listed under 0.3.6. Follow the upgrade steps in `docs/self-hosting.md`; nothing else is needed.

@@ -5,7 +5,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
-import { signedInOperator } from "../test/operators.ts";
+import { signedInOperator, signIn } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import * as schema from "./db/schema.ts";
@@ -41,7 +41,7 @@ const live: Live = {
 };
 
 async function operatorSession(email: string, workspaceId: string, name = "Op"): Promise<string> {
-  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   return (await signedInOperator({ app, auth, owner, email, name, workspaceId })).cookie;
 }
 
@@ -85,7 +85,7 @@ beforeAll(async () => {
     logger,
     checks: { postgres: ok, valkey: ok },
     stream: { heartbeatMs: 25_000, lifetimeMs: 60_000 },
-    auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger }),
+    auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
   });
   a = await createWorkspace(db, "Acme", [WIDGET_ORIGIN]);
   b = await createWorkspace(db, "Beta", [WIDGET_ORIGIN]);
@@ -114,7 +114,7 @@ describe("headers", () => {
         db,
         logger,
         checks: { postgres: async () => {}, valkey: async () => {} },
-        auth: createAuth({ db, secret: AUTH_SECRET, baseURL, logger }),
+        auth: createAuth({ db, secret: AUTH_SECRET, baseURL }),
       }).request("/healthz");
     const secure = await at("https://chat.example.com");
     expect(secure.headers.get("strict-transport-security")).toBe("max-age=31536000");
@@ -460,7 +460,7 @@ describe("the stream", () => {
       live: waking,
       logger,
       checks: { postgres: async () => {}, valkey: async () => {} },
-      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger }),
+      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
     });
     const response = await instance.request(inA("/stream"), { headers: { cookie: renewing } });
     const reader = response.body?.getReader();
@@ -505,7 +505,7 @@ describe("the stream", () => {
       },
       logger,
       checks: { postgres: async () => {}, valkey: async () => {} },
-      auth: createAuth({ db: counted, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger }),
+      auth: createAuth({ db: counted, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
     });
     const response = await instance.request(inA("/stream"), { headers: { cookie } });
     const reader = response.body?.getReader();
@@ -543,7 +543,7 @@ describe("the stream", () => {
       live: waking,
       logger,
       checks: { postgres: async () => {}, valkey: async () => {} },
-      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger }),
+      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
     });
     const response = await instance.request(inA("/stream"), { headers: { cookie: revoked } });
     const reader = response.body?.getReader();
@@ -568,15 +568,7 @@ describe("the stream", () => {
   });
 
   async function signInAgain(email: string): Promise<string> {
-    const response = await app.request("/v1/auth/sign-in/email", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ email, password: "a-long-test-password" }),
-    });
-    return response.headers
-      .getSetCookie()
-      .map((value) => value.split(";")[0])
-      .join("; ");
+    return signIn(app, createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }), email);
   }
 });
 

@@ -30,7 +30,7 @@ If the platform's proxy sits behind Cloudflare's proxy too, set `TRUSTED_PROXY_H
 1. Create a resource from a Git repository, or from a Docker Compose file, with Dinghy's `compose.yaml`.
 2. Give the `app` service your domain with port 3000, such as `https://chat.example.com:3000`. The `:3000` tells Coolify's proxy which container port to use. It does not appear in the address people open.
 3. Set the variables above, then deploy.
-4. Open a terminal on the `app` container, and run `chat setup` once. It prints your password and the tag for your site.
+4. Open a terminal on the `app` container, and run `chat setup` once. It prints a sign-in link, which works once for 15 minutes, and the tag for your site.
 5. Restart the `app` service, which turns on web push with the keys that `chat setup` made.
 
 ## Dokploy

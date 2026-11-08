@@ -18,9 +18,9 @@ The installer asks for your domain, your email, your name, your company and your
 2. Checks that your domain points at this server, and that ports 80 and 443 are free.
 3. Writes your settings to `.env`, and starts everything with a real HTTPS certificate.
 4. Creates your owner login, and adds a nightly backup if the server runs cron. If it cannot, it says so.
-5. Prints your password, your backup key and the tag for your website.
+5. Prints your backup key, the tag for your website and a sign-in link.
 
-Save the password and the backup key when it prints them, because nothing shows them again. Then read [your next steps](README.md).
+Save the backup key when it prints it, because nothing shows it again. The sign-in link works once, for 15 minutes, and `docker compose exec app chat sign-in-link <email>` prints a new one. Then read [your next steps](README.md).
 
 Leave the domain empty to try Dinghy on this machine, at <http://localhost:3000>. Nobody else can reach it in that mode.
 
@@ -53,7 +53,7 @@ docker compose exec app chat setup
 docker compose restart app
 ```
 
-`chat setup` asks for your email, your name, your company and your website's address. In a script, pass them as `--email`, `--name`, `--workspace` and `--origin`. It prints a password once, and the tag to put on your site. The restart turns on web push, with the keys that `chat setup` made. Then open <http://localhost:3000>. If port 3000 is taken, set `DINGHY_PORT` first.
+`chat setup` asks for your email, your name, your company and your website's address. In a script, pass them as `--email`, `--name`, `--workspace` and `--origin`. It prints a sign-in link, which works once for 15 minutes, and the tag to put on your site. The restart turns on web push, with the keys that `chat setup` made. Then open <http://localhost:3000>. If port 3000 is taken, set `DINGHY_PORT` first.
 
 On a server:
 
@@ -82,7 +82,7 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `PUBLIC_URL` | The address people open, such as `https://chat.example.com`, with no path. Set it only when `CHAT_DOMAIN` does not give the right one, such as behind a proxy on another port. Without either, it is `http://localhost:3000`, and sign-in, the widget tag and links in emails all point there |
 | `COMPOSE_PROFILES=tls` | Starts Caddy with every command |
 | `DINGHY_PORT` | The local port when there is no domain |
-| `SMTP_URL`, `MAIL_FROM` | A mail server, such as `smtp://user:password@mail.example.com:587`. Password reset links, operator alerts by email and replies to visitors who left all need it. With it, someone who joins by invite confirms their email from a link before they can sign in |
+| `SMTP_URL`, `MAIL_FROM` | A mail server, such as `smtp://user:password@mail.example.com:587`. Sign-in links, operator alerts by email and replies to visitors who left all need it. Without one, `chat sign-in-link` makes the sign-in links |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Keeps images in a bucket, not on this disk |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | An encrypted copy of each backup in another place |
 | `BACKUP_HEARTBEAT_URL` | An address that `chat backup` pings after each backup that worked, such as a [healthchecks.io](https://healthchecks.io) check, so a monitor tells you when a night has none. Optional |
@@ -92,7 +92,7 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `METRICS_TOKEN` | Turns on Prometheus metrics at `/metrics`, with this token as the bearer token. At least 16 characters |
 | `HTTP_PORT`, `HTTPS_PORT` | The ports Caddy listens on with the `tls` profile, 80 and 443 by default. Certificates need those two ports from the internet, so change these only when something in front forwards them here |
 
-Without a mail server, Dinghy still works. A forgotten password then needs `docker compose exec app chat reset-password <email>`, and nothing checks the email of someone who joins by invite, so send each invite link only to the person it is for.
+Without a mail server, Dinghy still works. Operators sign in with a link that you make for them, with `docker compose exec app chat sign-in-link <email>`, and the sign-in page tells them to ask you. Someone new who opens an invite signs in at once, and nothing checks their email, so send each invite link only to the person it is for.
 
 ### A separate origin for images
 
@@ -177,7 +177,7 @@ To grow, run more `web` instances behind one load balancer, and one or more `wor
 |---|---|
 | List the workspaces and their IDs | `docker compose run --rm migrate chat workspaces` |
 | Back up the database | `docker compose run --rm migrate chat backup` |
-| Reset a password, with no mail server | `docker compose exec app chat reset-password <email>` |
+| Make a sign-in link for an operator | `docker compose exec app chat sign-in-link <email>` |
 | Export a workspace | `docker compose exec app chat export <workspace-id> /tmp/export.tar`, then `docker compose cp -a app:/tmp/export.tar .` |
 | Import a workspace | `docker compose cp -a export.tar app:/tmp/export.tar`, then `docker compose exec app chat import /tmp/export.tar` |
 | Suspend a workspace | `docker compose run --rm migrate chat suspend <workspace-id> [reason]` |
@@ -192,9 +192,9 @@ A suspended workspace cannot send messages or images, its widget answers as if i
 An export holds a workspace's conversations, visitors, team, settings and images. It moves a workspace from one Dinghy server to another, such as from the cloud to your own server.
 
 1. On the old server, an owner selects **Download an export** in Settings. Or run the export command from the table above.
-2. Install the new server. If you sign up there with the same email as on the old one, your account joins the imported workspace with the password you set there.
+2. Install the new server. If you sign up there with the same email as on the old one, your account joins the imported workspace.
 3. Import the file with the import command above. It refuses a workspace that is already on this server.
-4. The import names the operators who had no account on this server. Each one needs `docker compose exec app chat reset-password <email>` before they can sign in.
+4. The import names the operators who had no account on this server. They sign in with a link sent to their email, or, with no mail server, one from `docker compose exec app chat sign-in-link <email>`.
 5. Change the widget tag on your site to load from the new server's address. The public key and the allowed sites stay the same.
 6. The workspace gets a new signing secret. If your site signs users in with a host token, copy the new secret from **Settings** to your site's server, because tokens signed with the old one fail.
 

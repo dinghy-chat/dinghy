@@ -19,6 +19,6 @@ export function registerSecuritySchemes(registry: OpenAPIHono["openAPIRegistry"]
     // BetterAuth adds the __Secure- prefix on an https server.
     name: "better-auth.session_token",
     description:
-      "The session cookie that sign-in at POST /v1/auth/sign-in/email sets (BetterAuth). The cookie is `__Secure-better-auth.session_token` on https. A write must also send the server's own Origin.",
+      "The session cookie that POST /v1/auth/magic-link/verify sets when it uses a sign-in link (BetterAuth). The cookie is `__Secure-better-auth.session_token` on https. A write must also send the server's own Origin.",
   });
 }

@@ -45,7 +45,7 @@ beforeAll(async () => {
     origin: FILES,
   });
   app = createApp({
-    auth: createAuth({ db, secret: AUTH_SECRET, baseURL: APP, logger }),
+    auth: createAuth({ db, secret: AUTH_SECRET, baseURL: APP }),
     db,
     images,
     logger,

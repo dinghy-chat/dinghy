@@ -47,12 +47,14 @@ export const ERROR_CODES = [
   "checkout_retry_later",
   "conversation_closed",
   "email_taken",
+  "email_unavailable",
   "forbidden",
   "internal_error",
   "invalid_name",
   "invalid_request",
   "invite_invalid",
   "last_owner",
+  "link_invalid",
   "name_mismatch",
   "no_customer",
   "not_a_member",
@@ -64,7 +66,6 @@ export const ERROR_CODES = [
   "payment_required",
   "push_unavailable",
   "read_only",
-  "revoke_required",
   "signed_in",
   "storage_full",
   "suspended",
@@ -87,6 +88,8 @@ export const NOT_FOUND = failure("not_found", "This does not exist.");
 export const FORBIDDEN = failure("forbidden", "Your role does not allow this.");
 /** A write to the operator API from a page that is not this server's own. */
 export const WRONG_ORIGIN = failure("origin_not_allowed", "This site may not do this.");
+/** A sign-in or join link that expired or was already used. */
+export const LINK_INVALID = failure("link_invalid", "This link has expired or was already used.");
 
 const ErrorBody = z
   .object({

@@ -10,7 +10,7 @@ import sharp from "sharp";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, fromSocket, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
-import { addOperator, cookieOf, TEST_PASSWORD } from "../test/operators.ts";
+import { addOperator, captureMail, signIn as signInWithLink } from "../test/operators.ts";
 import { pruneOnce } from "./alerts.ts";
 import { type AppOptions, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -47,7 +47,7 @@ function valkey(): Redis {
   return client;
 }
 
-const auth = () => createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+const auth = () => createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
 
 function makeApp(options: Partial<AppOptions> = {}) {
   return createApp({
@@ -103,16 +103,19 @@ const makeOperator = (role: "owner" | "admin" | "agent") =>
     role,
   });
 
-const signIn = (server: Server, email: string, socket: string, password = TEST_PASSWORD) =>
+/** Asks for a sign-in link from `socket`. */
+const askLink = (server: Server, email: string, socket: string, headers = {}) =>
   server.request(
-    "/v1/auth/sign-in/email",
+    "/v1/auth/sign-in/magic-link",
     {
       method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      headers: { origin: ORIGIN, "content-type": "application/json", ...headers },
+      body: JSON.stringify({ email }),
     },
     fromSocket(socket),
   );
+
+const signIn = (server: Server, email: string) => signInWithLink(server, auth(), email);
 
 const asOperator = (server: Server, cookie: string, method: string, path: string, body?: unknown) =>
   server.request(`/v1/operator/workspaces/${space.id}${path}`, {
@@ -240,86 +243,47 @@ describe("the client address behind a proxy", () => {
   });
 });
 
-describe("login and reset limits", () => {
-  test("an attacker's wrong passwords do not lock the operator out from elsewhere", async () => {
-    const server = makeApp({ valkey: valkey() });
+describe("the link request limits", () => {
+  const linkApp = (options: Partial<AppOptions> = {}) =>
+    makeApp({ valkey: valkey(), mailer: captureMail(), ...options });
+
+  test("an attacker's requests do not stop the operator's own link from elsewhere", async () => {
+    const server = linkApp();
     const { email } = await makeOperator("agent");
     const attacker = randomAddress();
     for (let index = 0; index < 5; index++) {
-      expect((await signIn(server, email, attacker, "wrong-password")).status).toBe(401);
+      expect((await askLink(server, email, attacker)).status).toBe(200);
     }
-    expect((await signIn(server, email, attacker, "wrong-password")).status).toBe(429);
-    expect((await signIn(server, email, attacker)).status).toBe(429);
-    expect((await signIn(server, email, randomAddress())).status).toBe(200);
+    expect((await askLink(server, email, attacker)).status).toBe(429);
+    expect((await askLink(server, email, randomAddress())).status).toBe(200);
   });
 
-  test("a forged X-Forwarded-For gives an attacker no new attempts", async () => {
-    const server = makeApp({ valkey: valkey(), trustedProxyHops: 1 });
+  test("a forged X-Forwarded-For gives an attacker no new requests", async () => {
+    const server = linkApp({ trustedProxyHops: 1 });
     const { email } = await makeOperator("agent");
     const client = randomAddress();
     const attempt = (fake: string) =>
-      server.request(
-        "/v1/auth/sign-in/email",
-        {
-          method: "POST",
-          headers: {
-            origin: ORIGIN,
-            "content-type": "application/json",
-            "x-forwarded-for": `${fake}, ${client}`,
-          },
-          body: JSON.stringify({ email, password: "wrong-password" }),
-        },
-        fromSocket("10.0.0.1"),
-      );
+      askLink(server, email, "10.0.0.1", { "x-forwarded-for": `${fake}, ${client}` });
     for (let index = 0; index < 5; index++) await attempt(`192.0.2.${index}`);
     expect((await attempt("192.0.2.77")).status).toBe(429);
   });
 
-  test("one address cannot try many accounts", async () => {
-    const server = makeApp({ valkey: valkey() });
+  test("one address cannot ask for many accounts", async () => {
+    const server = linkApp();
     const address = randomAddress();
     let last = 0;
     for (let index = 0; index < 31; index++) {
-      const response = await signIn(server, `nobody-${randomUUID()}@example.com`, address);
-      last = response.status;
+      last = (await askLink(server, `nobody-${randomUUID()}@example.com`, address)).status;
     }
     expect(last).toBe(429);
   });
 
-  test("an attacker's reset requests do not block the owner's", async () => {
-    const server = makeApp({ valkey: valkey() });
-    const { email } = await makeOperator("agent");
-    const reset = (socket: string) =>
-      server.request(
-        "/v1/auth/request-password-reset",
-        {
-          method: "POST",
-          headers: { origin: ORIGIN, "content-type": "application/json" },
-          body: JSON.stringify({ email, redirectTo: "/reset-password" }),
-        },
-        fromSocket(socket),
-      );
-    const attacker = randomAddress();
-    for (let index = 0; index < 3; index++) await reset(attacker);
-    expect((await reset(attacker)).status).toBe(429);
-    expect((await reset(randomAddress())).status).not.toBe(429);
-  });
-
   test("many addresses still cannot flood one mailbox", async () => {
-    const server = makeApp({ valkey: valkey() });
+    const server = linkApp();
     const { email } = await makeOperator("agent");
     let last = 0;
-    for (let index = 0; index < 11; index++) {
-      const response = await server.request(
-        "/v1/auth/request-password-reset",
-        {
-          method: "POST",
-          headers: { origin: ORIGIN, "content-type": "application/json" },
-          body: JSON.stringify({ email, redirectTo: "/reset-password" }),
-        },
-        fromSocket(randomAddress()),
-      );
-      last = response.status;
+    for (let index = 0; index < 21; index++) {
+      last = (await askLink(server, email, randomAddress())).status;
     }
     expect(last).toBe(429);
   });
@@ -329,7 +293,7 @@ describe("blocking a visitor", () => {
   async function blockedWorld() {
     const server = makeApp();
     const { email } = await makeOperator("agent");
-    const cookie = cookieOf(await signIn(server, email, "198.51.100.1"));
+    const cookie = await signIn(server, email);
     const address = "198.51.100.80";
     const { visitorId, token } = await visitorToken(server, address);
     const sent = await send(server, token, address);
@@ -392,7 +356,7 @@ describe("blocking a visitor", () => {
   test("a signed-in visitor can be blocked, by identity and with no address block", async () => {
     const server = makeApp();
     const { email } = await makeOperator("agent");
-    const cookie = cookieOf(await signIn(server, email, "198.51.100.1"));
+    const cookie = await signIn(server, email);
     const now = Math.floor(Date.now() / 1000);
     const tokenFor = () =>
       new SignJWT({})
@@ -447,7 +411,7 @@ describe("blocking a visitor", () => {
   test("a visitor with no conversation left is listed, and can be unblocked", async () => {
     const { server, cookie, address, token, visitorId, conversationId } = await blockedWorld();
     const admin = await makeOperator("admin");
-    const adminCookie = cookieOf(await signIn(server, admin.email, "198.51.100.2"));
+    const adminCookie = await signIn(server, admin.email);
     await asOperator(server, adminCookie, "DELETE", `/conversations/${conversationId}`);
     const listed = await asOperator(server, cookie, "GET", "/blocked-visitors");
     const { visitors } = (await listed.json()) as { visitors: { id: string }[] };
@@ -484,7 +448,7 @@ describe("blocking a visitor", () => {
   test("every blocked visitor can be reached, past the first page", async () => {
     const server = makeApp();
     const { email } = await makeOperator("agent");
-    const cookie = cookieOf(await signIn(server, email, "198.51.100.1"));
+    const cookie = await signIn(server, email);
     const ids = Array.from({ length: 55 }, () => randomUUID());
     await owner.insert(visitor).values(
       ids.map((id, index) => ({
@@ -532,7 +496,7 @@ describe("blocking a visitor", () => {
     });
     const server = makeApp({ images });
     const { email } = await makeOperator("agent");
-    const cookie = cookieOf(await signIn(server, email, "198.51.100.1"));
+    const cookie = await signIn(server, email);
     const address = "198.51.100.83";
     const { token } = await visitorToken(server, address);
     const sent = await send(server, token, address);
@@ -583,7 +547,7 @@ describe("deleting a conversation", () => {
     });
     const server = makeApp({ images });
     const admin = await makeOperator("admin");
-    const cookie = cookieOf(await signIn(server, admin.email, "198.51.100.1"));
+    const cookie = await signIn(server, admin.email);
     const address = "198.51.100.84";
     const { token } = await visitorToken(server, address);
     const sent = await send(server, token, address, "Private text");
@@ -772,7 +736,7 @@ describe("deleting a conversation", () => {
   test("an agent cannot delete, and a second delete finds nothing", async () => {
     const { server, cookie, path } = await world();
     const agent = await makeOperator("agent");
-    const agentCookie = cookieOf(await signIn(server, agent.email, "198.51.100.2"));
+    const agentCookie = await signIn(server, agent.email);
     expect((await asOperator(server, agentCookie, "DELETE", path)).status).toBe(403);
     expect((await asOperator(server, cookie, "DELETE", path)).status).toBe(200);
     expect((await asOperator(server, cookie, "DELETE", path)).status).toBe(404);

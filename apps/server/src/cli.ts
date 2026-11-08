@@ -1,5 +1,5 @@
 // The `chat` command. It runs on the server, with the same settings as the app.
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { access, constants, mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Redis } from "iovalkey";
 import pg from "pg";
@@ -17,7 +17,7 @@ import webPush from "web-push";
 import { z } from "zod";
 import { signupsCsv } from "../../../ee/server/index.ts";
 import { BadArchiveError } from "./archive.ts";
-import { createAuth } from "./auth.ts";
+import { type Auth, createAuth, LINK_MINUTES, signInLink } from "./auth.ts";
 import {
   BackupKeyError,
   createBackup,
@@ -42,7 +42,6 @@ import { type Database, enterWorkspace, withWorkspace } from "./db/tenant.ts";
 import { normalizeOrigin } from "./identity.ts";
 import { runInit, type SetupAnswers, widgetSnippet, writePushKeys } from "./install.ts";
 import { createSignals } from "./live.ts";
-import { createLoginLimit } from "./login-limit.ts";
 import { type ObjectStore, storeFromConfig } from "./storage.ts";
 import { setSuspended, signalSuspension } from "./suspension.ts";
 import { exportArchive, ImportError, importArchive } from "./transfer.ts";
@@ -52,9 +51,9 @@ import { createWorkspace, insertWorkspace, workspaceKeys, workspacesTable } from
 const OLDEST_SUPPORTED_MIGRATION = 0;
 
 const USAGE = `Usage:
-  chat reset-password <email>
-      Sets a new password, signs the operator out everywhere and prints the password once.
-      This works with no mail server.
+  chat sign-in-link <email>
+      Prints a sign-in link for an operator. It works once, for 15 minutes. This works with no
+      mail server.
   chat export <workspace-id> <file.tar>
       Writes a workspace's data and images to one file. The signing secret stays out of it.
   chat import <file.tar>
@@ -95,9 +94,15 @@ const USAGE = `Usage:
       For development: prints new VAPID keys for web push. Changing the keys ends every device's
       subscription, so make them once.
   chat create-operator <email> <name> [--workspace <name> --origin <https://site>]
-      For development: creates an operator, and optionally a workspace that it owns.`;
+      For development: creates an operator, and optionally a workspace that it owns, and prints a
+      sign-in link.`;
 
-const newPassword = () => randomBytes(18).toString("base64url");
+/** How a link is shown: it works once and soon, so the command to make another comes with it. */
+function printLink(url: string, email: string): void {
+  console.log(`Sign in with this link. It works once, for the next ${LINK_MINUTES} minutes:`);
+  console.log(url);
+  console.log(`For a new one, run: chat sign-in-link ${email}`);
+}
 
 interface AdminSettings {
   adminUrl: string;
@@ -593,7 +598,7 @@ async function transfer(
     console.log("It has a new signing secret. An owner can copy it from Settings.");
     if (result.newOperators.length > 0) {
       console.log(
-        `These operators have no password here, so run chat reset-password for each: ${result.newOperators.join(", ")}`,
+        `These operators are new here. They sign in with a link sent to their email, or, with no mail server, one from chat sign-in-link: ${result.newOperators.join(", ")}`,
       );
     }
     return 0;
@@ -614,25 +619,21 @@ async function transfer(
   }
 }
 
-type AuthContext = Awaited<ReturnType<typeof createAuth>["$context"]>;
-
 /** The first operator and workspace of a new server, with the keys shown only now. */
 async function setupCommand(
   db: Database,
-  context: AuthContext,
+  auth: Auth,
   config: Config,
   args: string[],
 ): Promise<number> {
   const existing = await db.select({ id: schema.operator.id }).from(schema.operator).limit(1);
   if (existing.length > 0) {
-    console.error("This server is already set up. Sign in, or run chat reset-password.");
+    console.error("This server is already set up. Sign in, or run chat sign-in-link <email>.");
     return 1;
   }
   const answers = await readSetupAnswers(args);
   if (answers === null) return 2;
-  const password = newPassword();
   const email = answers.email.toLowerCase();
-  const hash = await context.password.hash(password);
   const created = workspaceKeys();
   // One transaction, so a failure leaves no workspace without its owner.
   await db.transaction(async (tx) => {
@@ -643,19 +644,12 @@ async function setupCommand(
       .values({ email, name: answers.name, emailVerified: true })
       .returning({ id: schema.operator.id });
     if (user === undefined) throw new Error("The operator insert returned no row");
-    await tx.insert(schema.account).values({
-      userId: user.id,
-      accountId: user.id,
-      providerId: "credential",
-      password: hash,
-    });
     await tx
       .insert(schema.workspaceMember)
       .values({ workspaceId: created.id, operatorId: user.id, role: "owner" });
   });
-  console.log(`\nSign in at ${config.PUBLIC_URL}`);
-  console.log(`Email: ${email}`);
-  console.log(`Password, shown only now: ${password}`);
+  console.log(`\nYour email: ${email}`);
+  printLink(await signInLink(auth, email), email);
   console.log(`Workspace ID: ${created.id}`);
   console.log(`\nPut this on your site, before the closing body tag:`);
   console.log(widgetSnippet(config.PUBLIC_URL, created.publicKey));
@@ -687,67 +681,37 @@ async function setupCommand(
   return 0;
 }
 
-async function resetPasswordCommand(
-  db: Database,
-  context: AuthContext,
-  config: Config,
-  email: string,
-): Promise<number> {
-  const found = await context.internalAdapter.findUserByEmail(email);
-  if (found === null) {
+/** A link for an operator, for a server with no mail server or an operator past the limit. */
+async function signInLinkCommand(db: Database, auth: Auth, email: string): Promise<number> {
+  const [found] = await db
+    .select({ id: schema.operator.id })
+    .from(schema.operator)
+    .where(eq(schema.operator.email, email.toLowerCase()));
+  // A link for an unknown email would create an account when opened.
+  if (found === undefined) {
     console.error(`No operator has the email ${email}.`);
     return 1;
   }
-  const password = newPassword();
-  const hash = await context.password.hash(password);
-  // One transaction, so a failure cannot leave a new password that nobody has seen, or keep
-  // old sessions after a password change.
-  const userId = found.user.id;
-  await db.transaction(async (tx) => {
-    const updated = await tx
-      .update(schema.account)
-      .set({ password: hash })
-      .where(and(eq(schema.account.userId, userId), eq(schema.account.providerId, "credential")))
-      .returning({ id: schema.account.id });
-    if (updated.length === 0) throw new Error("This operator has no password to reset.");
-    await tx.delete(schema.session).where(eq(schema.session.userId, userId));
-  });
-  // Printed first, because the change has committed and nothing later may lose this password.
-  console.log(`New password for ${email}: ${password}`);
-  // The new password must work at once, even after the attempts that led to this reset.
-  const valkey = new Redis(config.VALKEY_URL, {
-    maxRetriesPerRequest: 1,
-    retryStrategy: () => null,
-  });
-  valkey.on("error", () => {});
-  await createLoginLimit(valkey, pino({ level: "silent" })).clear(email);
-  valkey.disconnect();
+  printLink(await signInLink(auth, email), email.toLowerCase());
   return 0;
 }
 
 /** For development: an operator, and optionally a workspace that it owns. */
 async function createOperatorCommand(
   db: Database,
-  context: AuthContext,
+  auth: Auth,
   args: string[],
   email: string,
   name: string,
 ): Promise<number> {
   const flags = readFlags(args, ["workspace", "origin"]);
   if (flags === null) return 2;
-  const password = newPassword();
   const [user] = await db
     .insert(schema.operator)
     .values({ id: randomUUID(), email: email.toLowerCase(), name, emailVerified: true })
     .returning({ id: schema.operator.id });
   if (user === undefined) throw new Error("The operator insert returned no row");
-  await context.internalAdapter.linkAccount({
-    userId: user.id,
-    providerId: "credential",
-    accountId: user.id,
-    password: await context.password.hash(password),
-  });
-  console.log(`Operator ${email} has the password: ${password}`);
+  console.log(`Created the operator ${email}.`);
   if (flags.workspace !== undefined) {
     const created = await createWorkspace(
       db,
@@ -762,6 +726,7 @@ async function createOperatorCommand(
     console.log(`Workspace ID: ${created.id}`);
     console.log(`Workspace public key: ${created.publicKey}`);
   }
+  printLink(await signInLink(auth, email), email.toLowerCase());
   return 0;
 }
 
@@ -785,7 +750,7 @@ async function main(): Promise<number> {
   ) {
     return operate(command, args);
   }
-  const known = ["reset-password", "create-operator", "export", "import", "setup"];
+  const known = ["sign-in-link", "create-operator", "export", "import", "setup"];
   if (command === undefined || !known.includes(command)) {
     console.error(USAGE);
     return 2;
@@ -800,26 +765,20 @@ async function main(): Promise<number> {
       await pool.end();
     }
   }
-  const auth = createAuth({
-    db,
-    secret: config.AUTH_SECRET,
-    baseURL: config.PUBLIC_URL,
-    logger: pino({ level: "silent" }),
-  });
-  const context = await auth.$context;
+  const auth = createAuth({ db, secret: config.AUTH_SECRET, baseURL: config.PUBLIC_URL });
   try {
-    if (command === "setup") return await setupCommand(db, context, config, args);
+    if (command === "setup") return await setupCommand(db, auth, config, args);
     const [email, name] = args;
     if (email === undefined) {
       console.error(USAGE);
       return 2;
     }
-    if (command === "reset-password") return await resetPasswordCommand(db, context, config, email);
+    if (command === "sign-in-link") return await signInLinkCommand(db, auth, email);
     if (name === undefined) {
       console.error(USAGE);
       return 2;
     }
-    return await createOperatorCommand(db, context, args, email, name);
+    return await createOperatorCommand(db, auth, args, email, name);
   } finally {
     await pool.end();
   }

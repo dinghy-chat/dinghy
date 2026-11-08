@@ -254,7 +254,11 @@ describe("chat setup", () => {
     const email = `Owner-${randomUUID()}@Example.com`;
     const result = run(flags(email), { DINGHY_SECRETS_DIR: secrets });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("Password, shown only now: ");
+    // A sign-in link, not a password, and the command that makes another.
+    expect(result.stdout).not.toMatch(/password/i);
+    expect(result.stdout).toContain(`${new URL(PUBLIC_URL).origin}/link?for=sign-in&token=`);
+    expect(result.stdout).toContain("It works once, for the next 15 minutes");
+    expect(result.stdout).toContain(`chat sign-in-link ${email.toLowerCase()}`);
     expect(result.stdout).toContain(`${new URL(PUBLIC_URL).origin}/widget/loader.js`);
     expect(result.stdout).toContain("docker compose restart app");
     // No mail server here, so it says what that means.

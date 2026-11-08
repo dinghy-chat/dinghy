@@ -10,7 +10,7 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
-import { addOperator, TEST_PASSWORD as PASSWORD, signIn as signInTo } from "../test/operators.ts";
+import { addOperator, openSignInLink, signIn as signInTo } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { readTar, tarEnd, tarEntry } from "./archive.ts";
 import { createAuth } from "./auth.ts";
@@ -61,7 +61,7 @@ async function freshInstall(): Promise<Install> {
   const store = localStore(directory);
   const app = createApp({
     alerts: { emailAvailable: false, secret: AUTH_SECRET },
-    auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger }),
+    auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
     checks: { postgres: ok, valkey: ok },
     db,
     images: createImages({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL }),
@@ -79,14 +79,19 @@ const addPerson = (
   email = `${role}-${randomUUID()}@example.com`,
 ) =>
   addOperator({
-    auth: createAuth({ db: install.db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger }),
+    auth: createAuth({ db: install.db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
     owner: install.owner,
     email,
     workspaceId,
     role,
   });
 
-const signIn = (install: Install, email: string) => signInTo(install.app, email);
+const signIn = (install: Install, email: string) =>
+  signInTo(
+    install.app,
+    createAuth({ db: install.db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
+    email,
+  );
 
 const png = () =>
   sharp({ create: { width: 4, height: 3, channels: 3, background: "#336699" } })
@@ -478,19 +483,10 @@ describe("an operator on the new install", () => {
     expect(row?.assigneeOperatorId).toBe(existing.id);
   });
 
-  test("a new one cannot sign in until the reset command sets a password", async () => {
+  test("a new one signs in with a link from chat sign-in-link", async () => {
     const target = await freshInstall();
     await importArchive(target.db, target.store, once(archive));
-    const attempt = (password: string) =>
-      target.app.request("/v1/auth/sign-in/email", {
-        method: "POST",
-        headers: { origin: ORIGIN, "content-type": "application/json" },
-        body: JSON.stringify({ email: source.ownerEmail, password }),
-      });
-    expect((await attempt(PASSWORD)).status).toBe(401);
-    expect((await attempt("")).status).not.toBe(200);
-
-    const reset = spawnSync(process.execPath, [CLI, "reset-password", source.ownerEmail], {
+    const made = spawnSync(process.execPath, [CLI, "sign-in-link", source.ownerEmail], {
       encoding: "utf8",
       env: {
         ...process.env,
@@ -500,9 +496,11 @@ describe("an operator on the new install", () => {
         PUBLIC_URL,
       },
     });
-    expect(reset.status).toBe(0);
-    const password = reset.stdout.trim().split(/\s+/).at(-1) ?? "";
-    expect((await attempt(password)).status).toBe(200);
+    expect(made.status).toBe(0);
+    const link = /https?:\/\/\S+/.exec(made.stdout)?.[0] ?? "";
+    const cookie = await openSignInLink(target.app, link);
+    const me = await target.app.request("/v1/operator/me", { headers: { cookie } });
+    expect(await me.json()).toMatchObject({ email: source.ownerEmail });
   }, 30_000);
 });
 
@@ -750,7 +748,7 @@ test("the commands write and read a real file, and a failure leaves no whole-loo
   const imported = run(target.database, target.directory, "import", file);
   expect(imported.status).toBe(0);
   expect(imported.stdout).toContain("4 messages, 2 images");
-  expect(imported.stdout).toContain("chat reset-password");
+  expect(imported.stdout).toContain("chat sign-in-link");
 
   const again = run(target.database, target.directory, "import", file);
   expect(again.status).toBe(1);

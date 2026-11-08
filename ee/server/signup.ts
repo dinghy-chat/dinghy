@@ -7,27 +7,17 @@ import type { Redis } from "iovalkey";
 import type pg from "pg";
 import type { Logger } from "pino";
 import type { App } from "../../apps/server/src/app.ts";
-import {
-  type Auth,
-  isSignInRefused,
-  notVerified,
-  sendVerification,
-  verifiesEmail,
-} from "../../apps/server/src/auth.ts";
-import {
-  account,
-  operator,
-  visitor,
-  workspace,
-  workspaceMember,
-} from "../../apps/server/src/db/schema.ts";
+import { type Auth, signInLink } from "../../apps/server/src/auth.ts";
+import { operator, visitor, workspace, workspaceMember } from "../../apps/server/src/db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "../../apps/server/src/db/tenant.ts";
-import { errorAnswer, failure, WRONG_ORIGIN } from "../../apps/server/src/errors.ts";
 import {
-  createLoginLimit,
-  createResetLimit,
-  tooManyAttempts,
-} from "../../apps/server/src/login-limit.ts";
+  errorAnswer,
+  failure,
+  safeErrorFields,
+  WRONG_ORIGIN,
+} from "../../apps/server/src/errors.ts";
+import { LINK_LASTS, letter } from "../../apps/server/src/letter.ts";
+import { createLinkLimit, tooManyAttempts } from "../../apps/server/src/login-limit.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { appendMessage } from "../../apps/server/src/messages.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "../../apps/server/src/rate-limit.ts";
@@ -40,68 +30,66 @@ import { type NewWorkspace, workspaceKeys } from "../../apps/server/src/workspac
  */
 export type SignupMode = "payment" | "early";
 
+/** Where operators of a suspended cloud workspace write to, and where the welcome sends questions. */
+export const CLOUD_CONTACT = "hello@dinghy.chat";
+
 // Plain text. Every string has a key here, so a locale can be added later.
 const text = {
   sampleVisitor: "Sample visitor",
   sampleMessage:
     "Hi! This is a sample conversation. When the cloud opens, your visitors' messages will " +
     "appear here, and you answer them from this inbox.",
-  welcomeSubject: "Welcome to Dinghy",
-  // Fixed text only: nobody checks the address before this email goes out, so a name or a
-  // workspace name typed at signup must not reach someone else's inbox.
-  welcomeBody: (url: string) =>
-    `Hi,\n\nYour Dinghy workspace is ready. You can sign in, invite ` +
-    `your team and set it up now: ${url}\n\nDinghy Cloud opens soon. Until then, the chat ` +
-    `widget does not run on your site. We will email you when you can turn it on.\n\n` +
-    `The Dinghy team`,
-  takenSubject: "Your Dinghy account",
+  signupSubject: "Finish signing up for Dinghy",
+  // Fixed text only: nobody has proved this address yet.
+  signupBody: (url: string) => [
+    "Thanks for trying Dinghy! Open this link to confirm your email and set up your workspace:",
+    url,
+    LINK_LASTS,
+    "Didn't sign up? You can ignore this email, and nothing happens.",
+  ],
+  takenSubject: "Your Dinghy sign-in link",
   // Sent instead of an answer that would tell the person signing up that this email has an account.
-  takenBody: (url: string) =>
-    `Hi,\n\nSomeone, maybe you, tried to create a Dinghy account with this email. It already has ` +
-    `one. Sign in at ${url}, or reset your password there if you lost it.\n\nIf it was not you, ` +
-    `you need to do nothing.\n\nThe Dinghy team`,
+  takenBody: (url: string) => [
+    "Someone, hopefully you, just tried to sign up for Dinghy with this email. You already have " +
+      "an account, so here's a link to sign in instead. From there, you can add a workspace.",
+    url,
+    LINK_LASTS,
+    "If it wasn't you, you can ignore this email. Nobody gets in without the link.",
+  ],
+  welcomeSubject: (workspace: string) => `${workspace} is ready`,
+  // The operator proved this address with their link before they named themselves and the workspace.
+  // Only early signup sends it, so it lists only what works before the cloud opens: no widget yet.
+  welcomeBody: (workspace: string, url: string) => [
+    `Welcome to Dinghy! Your workspace ${workspace} is set up. Here's what to do next:`,
+    "- Invite your team from Settings, under Team.\n" +
+      "- Turn on alerts there too, so you hear about new messages.",
+    `Sign in any time at ${url}`,
+    `Questions? Write to us at ${CLOUD_CONTACT}.`,
+  ],
 };
-
-const EMAIL_TAKEN = failure(
-  "email_taken",
-  "This email already has an account. Use its password to add a workspace.",
-);
 
 const signupRoute = createRoute({
   method: "post",
   path: "/v1/signup",
-  summary: "Create an account, or sign in to the account this email already has",
+  summary: "Send the link that creates an account, or signs in to the one this email has",
   request: {
     body: {
       required: true,
       content: {
-        "application/json": {
-          schema: z.object({
-            email: z.email().max(254),
-            // The same rule as sign-in's.
-            password: z.string().min(10).max(128),
-          }),
-        },
+        "application/json": { schema: z.object({ email: z.email().max(254) }) },
       },
     },
   },
   responses: {
     200: {
       description:
-        "With `verify`, check the email: this answer is the same whether or not the email has an " +
-        "account. Without it, signed in, and the account adds a workspace next, at " +
-        "POST /v1/operator/workspaces",
-      content: {
-        "application/json": {
-          schema: z.object({ ok: z.literal(true), verify: z.boolean() }),
-        },
-      },
+        "Check the email: this answer is the same whether or not the email has an account. The " +
+        "link signs in, and the account adds a workspace next, at POST /v1/operator/workspaces",
+      content: { "application/json": { schema: z.object({ ok: z.literal(true) }) } },
     },
     403: errorAnswer("Another site sent this"),
-    409: errorAnswer(
-      "On a server with no mail server: the email has an account with another password",
-    ),
     429: errorAnswer("Too many attempts"),
+    503: errorAnswer("email_unavailable: this server cannot send email"),
   },
 });
 
@@ -188,20 +176,33 @@ export function registerSignup(
 ) {
   const publicUrl = String(auth.options.baseURL);
   const publicOrigin = new URL(publicUrl).origin;
-  const login = createLoginLimit(valkey, logger);
-  const notices = createResetLimit(valkey, logger);
-  const verify = verifiesEmail(auth);
-  const CHECK_EMAIL = { ok: true as const, verify: true };
+  const links = createLinkLimit(valkey, logger);
 
   /** At most once, after the commit. A mail failure never fails the signup. */
-  const welcome = (email: string) => {
+  const welcome = (to: string, name: string, workspace: string) => {
     if (mailer === undefined) {
       logger.info("this server has no SMTP, so a welcome email was not sent");
       return;
     }
+    const body = letter(text.welcomeBody(workspace, publicUrl), name);
     mailer
-      .send(email, text.welcomeSubject, text.welcomeBody(publicUrl))
+      .send(to, text.welcomeSubject(workspace), body)
       .catch((err: unknown) => logger.warn({ err }, "a welcome email was not sent"));
+  };
+
+  /** A new email gets the signup link. One with an account gets a sign-in link and a note. */
+  const sendLink = async (email: string) => {
+    if (mailer === undefined) return;
+    const [known] = await db
+      .select({ proven: operator.emailProven })
+      .from(operator)
+      .where(eq(operator.email, email));
+    // An account that never opened its link, from before links, counts as new: it proves itself.
+    const taken = known?.proven === true;
+    // A known email lands on the workspace setup, which is why its owner came to sign up.
+    const url = await signInLink(auth, email, taken ? "add-workspace" : "signup", "email");
+    const subject = taken ? text.takenSubject : text.signupSubject;
+    await mailer.send(email, subject, letter(taken ? text.takenBody(url) : text.signupBody(url)));
   };
 
   app.use("/v1/signup", limitByIp(rateLimit, "signup", 10, 3600));
@@ -209,68 +210,16 @@ export function registerSignup(
 
   app.openapi(signupRoute, async (c) => {
     if (c.req.header("origin") !== publicOrigin) return c.json(WRONG_ORIGIN, 403);
-    const body = c.req.valid("json");
-    const email = body.email.toLowerCase();
-    const context = await auth.$context;
-    // Always hashed, so a known email takes about as long as a new one.
-    const hash = await context.password.hash(body.password);
-    // The name stays empty until the operator names themselves with their first workspace.
-    const created = await db.transaction(async (tx) => {
-      const [row] = await tx
-        .insert(operator)
-        .values({ name: "", email, emailVerified: false })
-        .onConflictDoNothing()
-        .returning({ id: operator.id });
-      if (row === undefined) return false;
-      await tx
-        .insert(account)
-        .values({ userId: row.id, accountId: row.id, providerId: "credential", password: hash });
-      return row.id;
+    if (mailer === undefined) {
+      return c.json(failure("email_unavailable", "This server cannot send email."), 503);
+    }
+    const email = c.req.valid("json").email.toLowerCase();
+    if (!(await links.attempt(email, c.get("clientIp")))) return tooManyAttempts(c, links);
+    // After the answer, so its timing never tells whether the email has an account.
+    sendLink(email).catch((err: unknown) => {
+      logger.error(safeErrorFields(err), "could not send a signup link");
     });
-    const ip = c.get("clientIp");
-    // With a mail server, a new account opens its link before it can sign in. A known email with
-    // another password gets the same answer, and its owner gets a note, so nobody learns here
-    // whether an email has an account.
-    if (verify && created !== false) {
-      // The same password check a known email gets, so both answers take as long.
-      await context.password.verify({ hash, password: body.password });
-      await sendVerification(auth, { id: created, email });
-      return c.json(CHECK_EMAIL, 200);
-    }
-    // A known email signs in instead, and its own password is the only way to add a workspace.
-    if (!created && !(await login.attempt(email, ip))) return tooManyAttempts(c, login);
-    // BetterAuth's own sign-in, so the session cookie is the usual one.
-    const signedIn = await auth.api
-      .signInEmail({
-        body: { email, password: body.password },
-        headers: c.req.raw.headers,
-        returnHeaders: true,
-      })
-      .catch((error: unknown) => {
-        if (created) throw error;
-        // 403 is the right password on an account that has not opened its link, which sign-in
-        // has just sent again.
-        if (notVerified(error)) return "unverified" as const;
-        // Only a refused password means the email is someone else's. Anything else is a failure,
-        // which app.onError logs and answers with a 500.
-        if (isSignInRefused(error)) return null;
-        throw error;
-      });
-    if (verify && signedIn === "unverified") return c.json(CHECK_EMAIL, 200);
-    if (verify && signedIn === null) {
-      if (mailer !== undefined && (await notices.attempt(email, ip))) {
-        mailer
-          .send(email, text.takenSubject, text.takenBody(publicUrl))
-          .catch((err: unknown) => logger.warn({ err }, "a signup notice was not sent"));
-      }
-      return c.json(CHECK_EMAIL, 200);
-    }
-    if (signedIn === null || signedIn === "unverified") return c.json(EMAIL_TAKEN, 409);
-    if (!created) await login.clear(email, ip);
-    for (const cookie of signedIn.headers.getSetCookie()) {
-      c.header("set-cookie", cookie, { append: true });
-    }
-    return c.json({ ok: true as const, verify: false }, 200);
+    return c.json({ ok: true as const }, 200);
   });
 
   // The operator routes already check the session and the origin.
@@ -300,7 +249,7 @@ export function registerSignup(
         .returning({ id: operator.id });
       return marked.length > 0;
     });
-    if (welcomed) welcome(c.get("operatorEmail"));
+    if (welcomed) welcome(c.get("operatorEmail"), body.name, body.workspaceName);
     return c.json({ workspaceId: keys.id }, 200);
   });
 }

@@ -50,8 +50,9 @@ export function registerOperatorApp(
   // Signup and the payment's return page exist only on the cloud plan.
   const paths = [
     "/",
-    "/reset-password",
     "/invite",
+    // Every emailed link opens this page, whose button uses the link.
+    "/link",
     ...(signup ? ["/signup"] : []),
     ...(billing ? ["/billing/return"] : []),
   ];
