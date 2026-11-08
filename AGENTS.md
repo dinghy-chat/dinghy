@@ -10,22 +10,23 @@ Three things matter more than any feature:
 
 1. **Few moving parts.** One Docker image, Postgres and Valkey. Prefer the change with fewer parts, fewer settings and fewer dependencies. Do not add a plugin system, a queue service or a framework for its own sake.
 2. **No lost or leaked data.** Every tenant row has a `workspace_id`, and every query on one runs through `withWorkspace` and filters by it. Row-level security is a second layer, not the only one.
-3. **Cheap to run.** A change that needs a bigger server, a third-party account or an API key to self-host is not a small change.
-
-The first release has no bots, AI answers, campaigns, help center, other channels or analytics. Do not add them without an approved issue.
+3. **Cheap to run.** A change that needs a bigger server, a third-party account or an API key to self-host is not a small change. Dinghy has no license check and sends no telemetry.
 
 ## Rules for the code
 
 - TypeScript is strict. Do not use `any` unless nothing else works. Node strips the types at run time, so do not use `enum` or parameter properties.
 - Use Bun for packages. Do not use npm, yarn or pnpm, and do not add a second lockfile.
 - A message and its event row commit in one transaction. Valkey carries only signals, and a client catches up from its cursor, so a lost signal must never lose data. Do not use `LISTEN/NOTIFY`.
+- Saved data lives in Postgres. Do not add SQLite or another database: several instances share one.
 - Background jobs use the event table and `SKIP LOCKED`.
+- Alert delivery is at-least-once. Do not claim that an alert is sent exactly once.
 - A send carries an ID that the client made, so a retry cannot create a duplicate.
 - Migrations are generated with `bun run db:generate`, go forward only and work on existing data. Grants, policies and functions go in a file from `drizzle-kit generate --custom`.
 - Every string a user reads has a key, in `apps/operator/src/text.ts` or `packages/widget/src/text.ts`.
 - No secret goes in a default or an example value.
 - Code in `packages/` must not import from `apps/`. A product feature goes outside `ee/`. Every file in `ee/` keeps its license line.
 - The widget must stay small: `packages/widget/src/size.test.ts` holds the limits.
+- Every animated boat state also has text, and `prefers-reduced-motion` stops the animation.
 - Comments say why, not what. Keep functions short, and delete before you add.
 
 ## Tests
