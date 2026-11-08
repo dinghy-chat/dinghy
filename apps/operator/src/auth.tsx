@@ -1,99 +1,85 @@
 /** @jsxImportSource react */
 import { type FormEvent, useState } from "react";
-import { requestReset, resetPassword, signIn } from "./api.ts";
+import { askSignInLink } from "./api.ts";
 import { type TextId, t } from "./text.ts";
-import { AuthPage, ErrorNote, Field, failureText, StatusNote } from "./ui.tsx";
+import { AuthPage, ErrorNote, Field, failureText } from "./ui.tsx";
 
-export function SignIn({ onDone, signup = false }: { onDone(): void; signup?: boolean }) {
+/** Why a link brought the browser back here, from the `error` that the server added. */
+const LINK_ERRORS: Record<string, TextId> = {
+  invite_invalid: "inviteInvalid",
+  operator_limit: "operatorLimit",
+  email_taken: "emailTaken",
+};
+
+/** Reads a link's error once, and takes it out of the address so a reload does not show it again. */
+function takeLinkError(): TextId | null {
+  const params = new URLSearchParams(location.search);
+  const error = params.get("error");
+  if (error === null) return null;
+  params.delete("error");
+  params.delete("error_description");
+  const rest = params.toString();
+  history.replaceState(null, "", `${location.pathname}${rest === "" ? "" : `?${rest}`}`);
+  return LINK_ERRORS[error] ?? "linkInvalid";
+}
+
+export function SignIn({
+  emailAvailable,
+  signup = false,
+}: {
+  emailAvailable: boolean;
+  signup?: boolean;
+}) {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<TextId | null>(null);
-  const [mode, setMode] = useState<"signIn" | "forgot">("signIn");
-  const [notice, setNotice] = useState<TextId | null>(null);
-
-  const showMode = (next: "signIn" | "forgot") => {
-    setError(null);
-    setNotice(null);
-    setMode(next);
-  };
+  const [error, setError] = useState<TextId | null>(takeLinkError);
+  const [busy, setBusy] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    setBusy(true);
     try {
-      await signIn(email.trim(), password);
-      onDone();
+      await askSignInLink(email.trim());
+      setSentTo(email.trim());
     } catch (failure) {
-      // 403: the right password on an account that has not confirmed its email yet.
-      setError(
-        failureText(failure, {
-          429: "tooManyAttempts",
-          401: "signInFailed",
-          403: "emailNotVerified",
-        }),
-      );
+      setError(failureText(failure, { 429: "tooManyAttempts" }));
+    } finally {
+      setBusy(false);
     }
   };
 
-  const forgot = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setNotice(null);
-    try {
-      await requestReset(email.trim());
-      setNotice("resetSent");
-    } catch (failure) {
-      setError(failureText(failure, { 429: "tooManyAttempts", 400: "resetNoMail" }));
-    }
-  };
-
-  const emailField = (
-    <Field
-      label={t("email")}
-      type="email"
-      autoComplete="email"
-      required
-      value={email}
-      onChange={setEmail}
-    />
-  );
-
-  if (mode === "forgot") {
+  if (sentTo !== null) {
     return (
-      <AuthPage onSubmit={forgot}>
-        <h1>{t("resetTitle")}</h1>
-        <p className="note">{t("resetHelp")}</p>
-        {emailField}
+      <CheckEmail
+        text={t("checkEmailSignIn").replace("{email}", sentTo)}
+        onBack={() => setSentTo(null)}
+      />
+    );
+  }
+  if (!emailAvailable) {
+    return (
+      <AuthPage>
+        <h1>{t("signInTitle")}</h1>
         <ErrorNote text={error} />
-        <StatusNote text={notice} />
-        <button type="submit" className="btn primary large">
-          {t("resetSend")}
-        </button>
-        <button type="button" className="btn link" onClick={() => showMode("signIn")}>
-          {t("backToSignIn")}
-        </button>
+        <p className="note">{t("signInNoMail")}</p>
       </AuthPage>
     );
   }
-
   return (
     <AuthPage onSubmit={submit}>
       <h1>{t("signInTitle")}</h1>
-      {emailField}
       <Field
-        label={t("password")}
-        type="password"
-        autoComplete="current-password"
+        label={t("email")}
+        type="email"
+        autoComplete="email"
         required
-        value={password}
-        onChange={setPassword}
+        value={email}
+        onChange={setEmail}
       />
       <ErrorNote text={error} />
-      <button type="submit" className="btn primary large">
-        {t("signIn")}
-      </button>
-      <button type="button" className="btn link" onClick={() => showMode("forgot")}>
-        {t("forgot")}
+      <button type="submit" className="btn primary large" disabled={busy}>
+        {t("signInSend")}
       </button>
       {signup && (
         <a className="btn link" href="/signup">
@@ -104,46 +90,19 @@ export function SignIn({ onDone, signup = false }: { onDone(): void; signup?: bo
   );
 }
 
-/** After a signup or an invite, on a server that verifies emails. */
-export function CheckEmail({ email }: { email: string }) {
+/** After a link went out, for a sign-in, a signup or an invite. */
+export function CheckEmail({ text, onBack }: { text: string; onBack?(): void }) {
   return (
     <AuthPage>
       <h1>{t("checkEmailTitle")}</h1>
-      <p className="note">{t("checkEmail").replace("{email}", email)}</p>
-    </AuthPage>
-  );
-}
-
-export function ResetPassword({ token }: { token: string }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<TextId | null>(null);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      await resetPassword(token, password);
-      location.assign("/");
-    } catch {
-      setError("resetFailed");
-    }
-  };
-
-  return (
-    <AuthPage onSubmit={submit}>
-      <h1>{t("resetTitle")}</h1>
-      <Field
-        label={t("newPassword")}
-        type="password"
-        autoComplete="new-password"
-        required
-        minLength={10}
-        value={password}
-        onChange={setPassword}
-      />
-      <ErrorNote text={error} />
-      <button type="submit" className="btn primary large">
-        {t("setPassword")}
-      </button>
+      <p className="note" role="status">
+        {text}
+      </p>
+      {onBack !== undefined && (
+        <button type="button" className="btn link" onClick={onBack}>
+          {t("useAnotherEmail")}
+        </button>
+      )}
     </AuthPage>
   );
 }

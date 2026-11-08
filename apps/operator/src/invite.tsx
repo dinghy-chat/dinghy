@@ -6,30 +6,19 @@ import {
   joinWithInvite,
   type Me,
   previewInvite,
-  signIn,
   updateName,
 } from "./api.ts";
-import { CheckEmail, SignIn } from "./auth.tsx";
+import { CheckEmail } from "./auth.tsx";
 import { type TextId, t } from "./text.ts";
 import { AuthPage, ErrorNote, Field, failureText, Loading, ROLE_TEXT } from "./ui.tsx";
 
-export function InvitePage({
-  token,
-  me,
-  onSignedIn,
-}: {
-  token: string;
-  me: Me | null;
-  onSignedIn(): void;
-}) {
+export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   const [offer, setOffer] = useState<{ workspaceName: string; role: "admin" | "agent" } | null>(
     null,
   );
   const [invalid, setInvalid] = useState(false);
-  const [mode, setMode] = useState<"new" | "signIn">("new");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
@@ -59,23 +48,24 @@ export function InvitePage({
     }
   };
 
-  const create = async (event: FormEvent) => {
+  // The link joins, for a new account or one this email already has, and signs in.
+  const join = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     try {
-      const { verify } = await joinWithInvite(token, name, email, password);
-      if (verify) {
-        setSentTo(email);
+      const { signInUrl } = await joinWithInvite(token, name.trim(), email.trim());
+      // A server with no mail server answers with the link itself.
+      if (signInUrl !== null) {
+        location.assign(signInUrl);
         return;
       }
-      await signIn(email, password);
-      location.assign("/");
+      setSentTo(email.trim());
     } catch (failure) {
       setError(failureText(failure, { 409: "emailTaken", 404: "inviteInvalid" }));
     }
   };
 
-  if (sentTo !== null) return <CheckEmail email={sentTo} />;
+  if (sentTo !== null) return <CheckEmail text={t("checkEmail").replace("{email}", sentTo)} />;
   if (invalid) {
     return (
       <AuthPage>
@@ -117,11 +107,18 @@ export function InvitePage({
       </AuthPage>
     );
   }
-  if (mode === "signIn") return <SignIn onDone={onSignedIn} />;
   return (
-    <AuthPage onSubmit={create}>
+    <AuthPage onSubmit={join}>
       {heading}
-      <Field label={t("yourName")} required value={name} onChange={setName} />
+      <Field
+        label={t("yourName")}
+        autoComplete="name"
+        required
+        maxLength={100}
+        pattern=".*\S.*"
+        value={name}
+        onChange={setName}
+      />
       <Field
         label={t("email")}
         required
@@ -130,21 +127,9 @@ export function InvitePage({
         value={email}
         onChange={setEmail}
       />
-      <Field
-        label={t("newPassword")}
-        required
-        type="password"
-        minLength={10}
-        autoComplete="new-password"
-        value={password}
-        onChange={setPassword}
-      />
       <ErrorNote text={error} />
       <button type="submit" className="btn primary large">
         {t("inviteJoin")}
-      </button>
-      <button type="button" className="btn link" onClick={() => setMode("signIn")}>
-        {t("inviteHaveAccount")}
       </button>
     </AuthPage>
   );

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
-import { ResetPassword, SignIn } from "./auth.tsx";
+import { SignIn } from "./auth.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { t } from "./text.ts";
@@ -42,26 +42,30 @@ function App() {
   useEffect(() => {
     getMeta()
       .then(setMeta)
-      .catch(() => setMeta({ billing: false, signup: null }));
+      .catch(() => setMeta({ billing: false, signup: null, email: true }));
   }, []);
 
-  const resetToken = new URLSearchParams(location.search).get("token");
-  if (location.pathname === "/reset-password" && resetToken !== null) {
-    return <ResetPassword token={resetToken} />;
-  }
   if (me === "loading" || meta === "loading") return <Loading />;
   const inviteToken = new URLSearchParams(location.search).get("token");
   if (location.pathname === "/invite" && inviteToken !== null) {
-    return <InvitePage token={inviteToken} me={me} onSignedIn={load} />;
+    return <InvitePage token={inviteToken} me={me} />;
   }
   const returnWorkspace = new URLSearchParams(location.search).get("workspace");
   if (location.pathname === "/billing/return" && me !== null && returnWorkspace !== null) {
     return <BillingReturn workspaceId={returnWorkspace} />;
   }
-  if (location.pathname === "/signup" && me === null && meta.signup !== null) {
-    return <Signup early={meta.signup === "early"} />;
+  if (location.pathname === "/signup" && meta.signup !== null) {
+    // A signed-in operator who signs up again adds a workspace.
+    if (me === null) return <Signup />;
+    return (
+      <Onboarding
+        early={meta.signup === "early"}
+        initialName={me.name}
+        onSignedOut={() => location.assign("/")}
+      />
+    );
   }
-  if (me === null) return <SignIn onDone={load} signup={meta.signup !== null} />;
+  if (me === null) return <SignIn emailAvailable={meta.email} signup={meta.signup !== null} />;
   // A notification's link names its workspace, and otherwise the last one in use opens.
   const wanted =
     picked ?? new URLSearchParams(location.search).get("workspace") ?? rememberedWorkspace();

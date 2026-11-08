@@ -24,15 +24,13 @@ async function openCheckout(workspaceId: string): Promise<void> {
 }
 
 /**
- * Cloud signup's first step: the account. Then the onboarding names the operator and the
- * workspace, also for an existing account that signed in here to add one.
+ * Cloud signup's first step: the email. Its link signs in, to a new account or the one the email
+ * already has, and the onboarding then names the operator and the workspace.
  */
-export function Signup({ early }: { early: boolean }) {
+export function Signup() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
-  const [signedUp, setSignedUp] = useState<{ name: string } | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
   const submit = async (event: FormEvent) => {
@@ -40,32 +38,16 @@ export function Signup({ early }: { early: boolean }) {
     setError(null);
     setBusy(true);
     try {
-      const { verify } = await signUp(email.trim(), password);
-      // The link in the email signs the account in, and the onboarding follows.
-      if (verify) {
-        setSentTo(email.trim());
-        return;
-      }
+      await signUp(email.trim());
+      setSentTo(email.trim());
     } catch (failure) {
+      setError(failureText(failure, { 429: "tooManyAttempts" }));
+    } finally {
       setBusy(false);
-      setError(failureText(failure, { 409: "signupEmailTaken", 429: "tooManyAttempts" }));
-      return;
     }
-    // An existing account keeps its name in the form.
-    const me = await getMe().catch(() => null);
-    setSignedUp({ name: me?.name ?? "" });
   };
 
-  if (sentTo !== null) return <CheckEmail email={sentTo} />;
-  if (signedUp !== null) {
-    return (
-      <Onboarding
-        early={early}
-        initialName={signedUp.name}
-        onSignedOut={() => location.assign("/")}
-      />
-    );
-  }
+  if (sentTo !== null) return <CheckEmail text={t("checkEmail").replace("{email}", sentTo)} />;
   return (
     <AuthPage onSubmit={submit}>
       <h1>{t("signupTitle")}</h1>
@@ -76,16 +58,6 @@ export function Signup({ early }: { early: boolean }) {
         required
         value={email}
         onChange={setEmail}
-      />
-      <Field
-        label={t("signupPassword")}
-        type="password"
-        autoComplete="new-password"
-        required
-        minLength={10}
-        maxLength={128}
-        value={password}
-        onChange={setPassword}
       />
       <ErrorNote text={error} />
       <button type="submit" className="btn primary large" disabled={busy}>
