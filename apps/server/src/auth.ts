@@ -5,6 +5,7 @@ import { isAPIError } from "better-auth/api";
 import { magicLink } from "better-auth/plugins/magic-link";
 import { account, operator, session, verification } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
+import { sha256Hex } from "./identity.ts";
 import { LINK_MINUTES } from "./letter.ts";
 
 interface AuthOptions {
@@ -82,8 +83,18 @@ export type Auth = ReturnType<typeof createAuth>;
 /** Runs `work`, which makes links through BetterAuth's own route, with `deliver` receiving them. */
 export const deliverLinks = <T>(deliver: Delivery, work: () => T): T => delivery.run(deliver, work);
 
+/**
+ * Marks a token that never went through email, such as one a command printed. Using it signs in,
+ * but proves nothing about the mailbox, so BetterAuth's cleanup of unproven sessions still runs
+ * when a link that was emailed is used later.
+ */
+const SHOWN_LINK = "shown-link:";
+
+/** Whether a link reaches its owner by email, or another way, such as a command's output. */
+export type LinkRoute = "email" | "shown";
+
 /** A one-time sign-in token for `email`, made without sending anything. */
-async function signInToken(auth: Auth, email: string): Promise<string> {
+async function signInToken(auth: Auth, email: string, route: LinkRoute): Promise<string> {
   let made: string | undefined;
   await deliverLinks(
     ({ token }) => {
@@ -93,6 +104,14 @@ async function signInToken(auth: Auth, email: string): Promise<string> {
       auth.api.signInMagicLink({ body: { email: email.toLowerCase() }, headers: new Headers() }),
   );
   if (made === undefined) throw new Error("BetterAuth made no sign-in link");
+  if (route === "shown") {
+    const { internalAdapter } = await auth.$context;
+    await internalAdapter.createVerificationValue({
+      identifier: `${SHOWN_LINK}${sha256Hex(made)}`,
+      value: email.toLowerCase(),
+      expiresAt: new Date(Date.now() + LINK_MINUTES * 60_000),
+    });
+  }
   return made;
 }
 
@@ -101,8 +120,9 @@ export const signInLink = async (
   auth: Auth,
   email: string,
   purpose: Exclude<LinkPurpose, "join"> = "sign-in",
+  route: LinkRoute = "shown",
 ): Promise<string> =>
-  confirmUrl(String(auth.options.baseURL), purpose, await signInToken(auth, email));
+  confirmUrl(String(auth.options.baseURL), purpose, await signInToken(auth, email, route));
 
 /**
  * Uses a sign-in token, once: it creates the account if needed and a session. Returns the cookies
@@ -113,12 +133,18 @@ export async function redeemSignInToken(
   token: string,
   headers: Headers,
 ): Promise<string[] | null> {
+  const { internalAdapter } = await auth.$context;
+  const shown = await internalAdapter.consumeVerificationValue(`${SHOWN_LINK}${sha256Hex(token)}`);
+  const found = shown === null ? null : await internalAdapter.findUserByEmail(shown.value);
+  // BetterAuth marks the email proven on any link it verifies. A shown link proves nothing.
+  const unproven = found !== null && !found.user.emailVerified ? found.user.id : null;
   try {
     const answer = await auth.api.magicLinkVerify({
       query: { token },
       headers,
       returnHeaders: true,
     });
+    if (unproven !== null) await internalAdapter.updateUser(unproven, { emailVerified: false });
     return answer.headers.getSetCookie();
   } catch (error) {
     // BetterAuth answers a bad token with a redirect to its error page, which the app has not.
@@ -127,6 +153,9 @@ export async function redeemSignInToken(
   }
 }
 
-/** Signs `email` in at once, for a link that the server already checked, such as a join link. */
-export const signInNow = async (auth: Auth, email: string, headers: Headers) =>
-  redeemSignInToken(auth, await signInToken(auth, email), headers);
+/**
+ * Signs `email` in at once, for a link that the server already checked, such as a join link.
+ * `route` is how that link reached its owner, which says whether it proved the email.
+ */
+export const signInNow = async (auth: Auth, email: string, headers: Headers, route: LinkRoute) =>
+  redeemSignInToken(auth, await signInToken(auth, email, route), headers);

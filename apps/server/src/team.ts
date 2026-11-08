@@ -811,7 +811,12 @@ export function registerTeamRoutes(
     } else if (result === "email_taken") {
       return c.json(EMAIL_TAKEN, 409);
     }
-    const cookies = await signInNow(auth, email, c.req.raw.headers);
+    const cookies = await signInNow(
+      auth,
+      email,
+      c.req.raw.headers,
+      pending.proven ? "email" : "shown",
+    );
     if (cookies === null) throw new Error("A sign-in token made just now did not work");
     for (const cookie of cookies) c.header("set-cookie", cookie, { append: true });
     return c.json({ workspaceId }, 200);

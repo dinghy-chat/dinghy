@@ -200,7 +200,7 @@ export function registerSignup(
     // An account that never opened its link, from before links, counts as new: it proves itself.
     const taken = known?.verified === true;
     // A known email lands on the workspace setup, which is why its owner came to sign up.
-    const url = await signInLink(auth, email, taken ? "add-workspace" : "signup");
+    const url = await signInLink(auth, email, taken ? "add-workspace" : "signup", "email");
     const subject = taken ? text.takenSubject : text.signupSubject;
     await mailer.send(email, subject, letter(taken ? text.takenBody(url) : text.signupBody(url)));
   };

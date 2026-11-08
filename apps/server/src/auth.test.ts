@@ -254,7 +254,7 @@ describe("asking for a link", () => {
     expect((await me("better-auth.session_token=forged.value")).status).toBe(401);
   });
 
-  test("an account that never proved its email proves it with a link, and loses old sessions", async () => {
+  test("an account that never proved its email proves it with an emailed link, and loses old sessions", async () => {
     const [row] = await owner
       .execute<{ id: string }>(
         sql`insert into operator (name, email, email_verified) values ('Old', ${email("unproven")}, false)
@@ -265,7 +265,14 @@ describe("asking for a link", () => {
       sql`insert into session (user_id, token, expires_at)
           values (${row?.id}, ${`planted-${RUN}`}, now() + interval '1 day')`,
     );
+    // A link a command printed signs in, and proves nothing.
     expect(await signIn(app, auth, email("unproven"))).not.toBe("");
+    const before = await owner.execute<{ email_verified: boolean }>(
+      sql`select email_verified from operator where email = ${email("unproven")}`,
+    );
+    expect(before.rows[0]?.email_verified).toBe(false);
+    expect((await askLink(email("unproven"))).status).toBe(200);
+    expect(await openSignInLink(app, await mail.linkTo(email("unproven")))).not.toBe("");
     const { rows } = await owner.execute<{ email_verified: boolean; planted: number }>(
       sql`select email_verified, (select count(*)::int from session where token = ${`planted-${RUN}`})
           as planted from operator where email = ${email("unproven")}`,

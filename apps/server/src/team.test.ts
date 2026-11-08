@@ -10,8 +10,10 @@ import {
   captureMail,
   cookieOf,
   openLink,
+  openSignInLink,
   pressLinkButton,
   signedInOperator,
+  signIn,
 } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -284,6 +286,31 @@ describe("joining by link", () => {
     expect(workspaceId).toBe(space.id);
     const me = await app.request("/v1/operator/me", { headers: { cookie } });
     expect(await me.json()).toMatchObject({ email, workspaces: [{ workspaceId: space.id }] });
+  });
+
+  test("with no mail server, a join proves nothing until an emailed link is used", async () => {
+    const boss = await person("owner");
+    const email = `unproven-${randomUUID()}@example.com`;
+    const { cookie } = await joinAndOpen(await newInvite(boss), email);
+    expect((await operatorRow(email))?.emailVerified).toBe(false);
+    // A link from `chat sign-in-link` signs in, and proves nothing either.
+    const shown = await signIn(app, auth, email);
+    expect((await operatorRow(email))?.emailVerified).toBe(false);
+    // Once the server sends email, the mailbox's owner proves it and the earlier sessions end.
+    const asked = await mailApp.request("/v1/auth/sign-in/magic-link", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    expect(asked.status).toBe(200);
+    const proven = await openSignInLink(mailApp, await mail.linkTo(email));
+    expect((await operatorRow(email))?.emailVerified).toBe(true);
+    for (const old of [cookie, shown]) {
+      expect((await app.request("/v1/operator/me", { headers: { cookie: old } })).status).toBe(401);
+    }
+    expect((await app.request("/v1/operator/me", { headers: { cookie: proven } })).status).toBe(
+      200,
+    );
   });
 
   test("a password in the body is ignored, and nothing stores one", async () => {
