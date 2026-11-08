@@ -91,7 +91,7 @@ test.describe("each state shows its boat and its text", () => {
     const operatorContext = await browser.newContext();
     const operator = await operatorContext.newPage();
     await openLink(operator, await server.signInLink("anna@example.com"));
-    await expect(operator.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await expect(operator.getByRole("button", { name: "Your account" })).toBeVisible();
 
     const page = await openWidget(browser, "/plain2");
     await expect(page.locator(".scene.waiting")).toContainText("We are online");

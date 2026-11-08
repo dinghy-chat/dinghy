@@ -31,7 +31,7 @@ async function paidWorkspace(page: Page, name: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Email me a link" }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
-  await openLink(page, await server.linkTo(email), "Continue setting up");
+  await openLink(page, await server.linkTo(email), "Get started");
   await page.getByLabel("Your name").fill("Nora");
   await page.getByLabel("Workspace name").fill(name);
   await page.getByRole("button", { name: "Continue" }).click();
@@ -70,7 +70,8 @@ test("a write refused as read-only shows the banner, when the page missed the ch
   const banner = page.getByRole("status").filter({ hasText: "This workspace is read-only" });
   await expect(banner).toHaveCount(0);
   await page.getByRole("button", { name: "Settings" }).click();
-  await page.getByRole("button", { name: "Create a link" }).click();
+  await page.getByRole("button", { name: "Invite someone" }).click();
+  await page.getByRole("button", { name: "Create invite link" }).click();
   await expect(banner).toBeVisible();
 });
 
@@ -86,10 +87,14 @@ test("the owner sees the Billing section and opens Stripe's portal", async ({ pa
 test("the owner deletes the workspace after typing its name", async ({ page }) => {
   const workspaceId = await paidWorkspace(page, "Closing Shop");
   await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("tab", { name: "Data" }).click();
   await expect(page.getByRole("heading", { name: "Delete this workspace" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete workspace", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("Delete Closing Shop?");
   const remove = page.getByRole("button", { name: "Delete the workspace" });
   await expect(remove).toBeDisabled();
   const confirm = page.getByLabel("Type Closing Shop to confirm");
+  await expect(confirm).toBeFocused();
   await confirm.fill("Closing Sho");
   await expect(remove).toBeDisabled();
   await confirm.fill("Closing Shop");

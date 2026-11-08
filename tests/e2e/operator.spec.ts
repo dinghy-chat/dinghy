@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { openLink, signOut } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -39,6 +39,12 @@ async function visitor(browser: Browser, text: string): Promise<Page> {
 const row = (page: Page, text: string) => page.locator(".row", { hasText: text });
 const reply = (page: Page) => page.getByRole("textbox", { name: "Your reply" });
 
+/** Runs an action from the conversation's "…" menu. */
+async function moreAction(page: Page, name: string) {
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
 function setVisibility(page: Page, state: "hidden" | "visible") {
   return page.evaluate((value) => {
     Object.defineProperty(document, "visibilityState", { get: () => value, configurable: true });
@@ -51,12 +57,7 @@ test("a full conversation between the widget and the operator app @smoke", async
   const errors: string[] = [];
   operator.on("pageerror", (error) => errors.push(error.message));
   operator.on("console", (message) => {
-    // WebKit reports this for a plain <select> with no style attribute, because of its own rendering
-    // of that control. Chromium and Firefox still catch a real one.
-    const webkitSelect =
-      browser.browserType().name() === "webkit" &&
-      message.text().startsWith("Refused to apply a stylesheet");
-    if (message.type() === "error" && !message.text().includes("favicon") && !webkitSelect) {
+    if (message.type() === "error" && !message.text().includes("favicon")) {
       errors.push(message.text());
     }
   });
@@ -270,7 +271,7 @@ test("a revoked session returns to the sign-in page", async ({ browser }) => {
 
 test("signing out returns to the sign-in page, and a reload stays there", async ({ browser }) => {
   const operator = await signedIn(browser);
-  await operator.getByRole("button", { name: "Sign out" }).click();
+  await signOut(operator);
   await expect(operator.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
   await operator.reload();
   await expect(operator.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
@@ -309,9 +310,9 @@ test("opening a link uses nothing: only its page's button signs in", async ({ br
   // A mail scanner fetches the link, and a person may open it twice. Neither uses it up.
   const scanner = await (await browser.newContext()).newPage();
   await scanner.goto(link);
-  await expect(scanner.getByRole("heading", { name: "One more step" })).toBeVisible();
+  await expect(scanner.getByRole("heading", { name: "Welcome back" })).toBeVisible();
   await scanner.reload();
-  await expect(scanner.getByRole("button", { name: "Sign in to Dinghy" })).toBeVisible();
+  await expect(scanner.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   const page = await (await browser.newContext()).newPage();
   await openLink(page, link);
   await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
@@ -371,10 +372,11 @@ test("a site that is not allowed shows Not sent, never the text for a block", as
   const operator = await signedIn(browser);
   const widget = await visitor(browser, "Before the change");
   await operator.getByRole("button", { name: "Settings" }).click();
-  const sites = operator.getByLabel("Allowed sites");
+  await operator.getByRole("tab", { name: "Allowed sites" }).click();
+  const sites = operator.getByRole("textbox", { name: "Site 1" });
   const original = await sites.inputValue();
   await sites.fill("https://elsewhere.example.com");
-  await operator.getByRole("button", { name: "Save sites" }).click();
+  await operator.getByRole("button", { name: "Save", exact: true }).click();
   await expect(operator.getByRole("status")).toHaveText("Saved.");
 
   // The refusal carries no CORS headers, so the browser hides it, and the send reads as failed.
@@ -386,7 +388,7 @@ test("a site that is not allowed shows Not sent, never the text for a block", as
   await expect(widget.getByRole("alert")).toHaveCount(0);
 
   await sites.fill(original);
-  await operator.getByRole("button", { name: "Save sites" }).click();
+  await operator.getByRole("button", { name: "Save", exact: true }).click();
   await expect(operator.getByRole("status")).toHaveText("Saved.");
 });
 
@@ -394,7 +396,7 @@ test("an operator blocks a visitor, who then sees why they cannot send", async (
   const operator = await signedIn(browser);
   const widget = await visitor(browser, "Please block me");
   await row(operator, "Please block me").click();
-  await operator.getByRole("button", { name: "Block", exact: true }).click();
+  await moreAction(operator, "Block");
   await expect(operator.getByText("This visitor is blocked")).toBeVisible();
 
   await widget.getByRole("textbox", { name: "Your message" }).fill("Still here");
@@ -411,10 +413,11 @@ test("an operator blocks a visitor, who then sees why they cannot send", async (
 
   // The settings list the block too, for a visitor whose conversation is gone.
   await operator.getByRole("button", { name: "Settings" }).click();
+  await operator.getByRole("tab", { name: "Data" }).click();
   await expect(operator.getByText("Blocked visitors")).toBeVisible();
-  await operator.getByRole("button", { name: "Open", exact: true }).click();
+  await operator.getByRole("button", { name: "Inbox", exact: true }).click();
 
-  await operator.getByRole("button", { name: "Unblock" }).click();
+  await moreAction(operator, "Unblock");
   await expect(operator.getByText("This visitor is blocked")).toHaveCount(0);
 
   // A send that works ends the warning.
@@ -436,11 +439,11 @@ test("a block shows in another open thread of the same visitor", async ({ browse
 
   const second = await signedIn(browser);
   await row(second, "My second visit").click();
-  await second.getByRole("button", { name: "Block", exact: true }).click();
+  await moreAction(second, "Block");
   await expect(second.getByText("This visitor is blocked")).toBeVisible();
   // The first operator still has the closed conversation open, and sees the block there too.
   await expect(first.getByText("This visitor is blocked")).toBeVisible();
-  await first.getByRole("button", { name: "Unblock", exact: true }).click();
+  await moreAction(first, "Unblock");
   await expect(second.getByText("This visitor is blocked")).toHaveCount(0);
 });
 
@@ -450,7 +453,8 @@ test("clicking Load more twice in the blocked list still reaches every visitor",
   await server.blockVisitors(120);
   const operator = await signedIn(browser);
   await operator.getByRole("button", { name: "Settings" }).click();
-  const rows = operator.locator(".page .team li", { hasText: "Blocked on" });
+  await operator.getByRole("tab", { name: "Data" }).click();
+  const rows = operator.locator(".page .blocked li", { hasText: "Blocked " });
   await expect(rows).toHaveCount(50);
   const more = operator.locator(".page").getByRole("button", { name: "Load more" });
   await more.evaluate((button: HTMLElement) => {
@@ -468,14 +472,130 @@ test("an owner deletes a conversation, and the list and the thread go too", asyn
   const operator = await signedIn(browser);
   await visitor(browser, "Please delete this");
   await row(operator, "Please delete this").click();
-  await operator.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(operator.getByRole("alert")).toContainText("for good");
-  // Keeping it changes nothing.
-  await operator.getByRole("button", { name: "Keep it" }).click();
+  await moreAction(operator, "Delete");
+  await expect(operator.getByRole("alertdialog")).toContainText("for good");
+  // Canceling changes nothing.
+  await operator.getByRole("button", { name: "Cancel" }).click();
+  await expect(operator.getByRole("alertdialog")).toHaveCount(0);
   await expect(row(operator, "Please delete this")).toBeVisible();
 
-  await operator.getByRole("button", { name: "Delete", exact: true }).click();
+  await moreAction(operator, "Delete");
   await operator.getByRole("button", { name: "Delete it" }).click();
   await expect(row(operator, "Please delete this")).toHaveCount(0);
   await expect(reply(operator)).toHaveCount(0);
+});
+
+test("each emailed link's page says what it is for", async ({ page }) => {
+  const pages: [string, string, string][] = [
+    ["sign-in", "Welcome back", "Sign in"],
+    ["signup", "Welcome to Dinghy", "Get started"],
+    ["add-workspace", "Welcome back", "Sign in"],
+    ["join", "Join your team", "Join the team"],
+  ];
+  for (const [purpose, heading, button] of pages) {
+    await page.goto(`${server.apiOrigin}/link?for=${purpose}&token=unused`);
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expect(page.getByText("Click below to open Dinghy.")).toBeVisible();
+    await expect(page.getByRole("button", { name: button, exact: true })).toBeVisible();
+    // The link page is midday in the account screens' day.
+    await expect(page.locator(".scene")).toHaveClass(/\bnoon\b/);
+  }
+  await expect(page.getByText("One more step")).toHaveCount(0);
+});
+
+test("the account screens move from morning to mid-morning, with text for the scene", async ({
+  browser,
+}) => {
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(server.apiOrigin);
+  const scene = page.locator(".scene");
+  await expect(scene).toHaveClass(/\bmorning\b/);
+  await expect(page.getByText("Early morning. The boat sets out on a calm sea.")).toBeAttached();
+  await page.getByLabel("Email").fill("anna@example.com");
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await expect(scene).toHaveClass(/\bforenoon\b/);
+  await expect(page.getByText("Mid-morning. The boat sails on.")).toBeAttached();
+  await page.context().close();
+});
+
+test("a sign-in link opens the inbox in place, with no page load", async ({ browser }) => {
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(await server.signInLink("anna@example.com"));
+  // A full page load would lose this.
+  await page.evaluate(() => {
+    Object.assign(window, { stayed: true });
+  });
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  expect(await page.evaluate(() => "stayed" in window)).toBe(true);
+  expect(new URL(page.url()).pathname).toBe("/");
+  await page.context().close();
+});
+
+test("the assignee dropdown works with the keyboard", async ({ browser }) => {
+  const operator = await signedIn(browser);
+  await visitor(browser, "Keyboard assignment");
+  await row(operator, "Keyboard assignment").click();
+  const button = operator.getByRole("button", { name: /^Assign to/ });
+  await expect(button).toHaveAttribute("aria-haspopup", "listbox");
+  await expect(button).toHaveAttribute("aria-expanded", "false");
+  await button.focus();
+  await operator.keyboard.press("ArrowDown");
+  const list = operator.getByRole("listbox", { name: "Assign to" });
+  await expect(list).toBeFocused();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  await expect(list.getByRole("option", { name: "Unassigned" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // Escape closes it, and the focus goes back to the button.
+  await operator.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  await expect(button).toBeFocused();
+
+  // End moves to the last choice, Home back to the first, and typing jumps to a name.
+  await operator.keyboard.press("Enter");
+  await operator.keyboard.press("End");
+  const last = list.getByRole("option").last();
+  await expect(list).toHaveAttribute(
+    "aria-activedescendant",
+    (await last.getAttribute("id")) ?? "",
+  );
+  await operator.keyboard.press("Home");
+  await operator.keyboard.press("a");
+  const anna = list.getByRole("option", { name: "anna@example.com" });
+  await expect(list).toHaveAttribute(
+    "aria-activedescendant",
+    (await anna.getAttribute("id")) ?? "",
+  );
+  await operator.keyboard.press("Enter");
+  await expect(list).toHaveCount(0);
+  await expect(button).toBeFocused();
+  await expect(button).toContainText("anna@example.com");
+  await expect(row(operator, "Keyboard assignment")).toContainText("anna@example.com");
+
+  // A click outside closes it with no change.
+  await button.click();
+  await expect(list).toBeVisible();
+  await operator.locator(".log").click();
+  await expect(list).toHaveCount(0);
+  await expect(button).toContainText("anna@example.com");
+});
+
+test("the … menu blocks with the keyboard too", async ({ browser }) => {
+  const operator = await signedIn(browser);
+  await visitor(browser, "Menu by keyboard");
+  await row(operator, "Menu by keyboard").click();
+  const more = operator.getByRole("button", { name: "More actions" });
+  await more.focus();
+  await operator.keyboard.press("Enter");
+  const menu = operator.getByRole("menu", { name: "More actions" });
+  await expect(menu).toBeFocused();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Block", "Delete"]);
+  await operator.keyboard.press("Enter");
+  await expect(operator.getByText("This visitor is blocked")).toBeVisible();
+  await expect(more).toBeFocused();
+  await moreAction(operator, "Unblock");
+  await expect(operator.getByText("This visitor is blocked")).toHaveCount(0);
 });

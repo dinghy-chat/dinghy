@@ -10,7 +10,7 @@ async function createAccount(
   page: Page,
   server: Server,
   email: string,
-  { index = 0, button = "Continue setting up" } = {},
+  { index = 0, button = "Get started" } = {},
 ) {
   await page.goto(server.apiOrigin);
   await page.getByRole("link", { name: "Create an account" }).click();
@@ -104,11 +104,11 @@ test.describe("with billing on", () => {
     await expect(page.getByRole("heading", { name: "Finish payment" })).toBeVisible();
     await page.getByRole("button", { name: "Open Paid Shop" }).click();
     // With two workspaces, the rail shows a picker instead of one name.
-    const picked = page.getByRole("combobox", { name: "Workspace" }).locator("option:checked");
-    await expect(picked).toHaveText("Paid Shop");
+    const picked = page.getByRole("button", { name: /^Workspace:/ });
+    await expect(picked).toHaveAccessibleName("Workspace: Paid Shop");
     // The choice is remembered, so a reload does not go back to the payment screen.
     await page.goto(server.apiOrigin);
-    await expect(picked).toHaveText("Paid Shop");
+    await expect(picked).toHaveAccessibleName("Workspace: Paid Shop");
   });
 });
 
@@ -202,6 +202,7 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.getByText("Thanks, got it!").last()).toBeVisible();
 
     await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Install" }).click();
     await expect(page.getByText("Your install code appears when the cloud opens.")).toBeVisible();
     await expect(page.getByText("/widget/loader.js", { exact: false })).toHaveCount(0);
     // The banner is on every page.
@@ -237,7 +238,7 @@ test.describe("with early signup and no Stripe keys", () => {
     // email is a sign-in link instead.
     await expect.poll(() => server.mail.filter((one) => one.to === email).length).toBe(2);
     // An email with an account gets a sign-in link, which lands on the workspace setup.
-    await createAccount(page, server, email, { index: 2, button: "Sign in to Dinghy" });
+    await createAccount(page, server, email, { index: 2, button: "Sign in" });
     const sent = server.mail.filter((one) => one.to === email);
     expect(sent.map((one) => one.subject)).toEqual([
       "Finish signing up for Dinghy",
@@ -251,7 +252,16 @@ test.describe("with early signup and no Stripe keys", () => {
     expect(sent[2]?.text).toContain("tried to sign up");
     // The link lands on the workspace setup, which is why the person signed up again.
     await onboard(page, "Second Shop");
-    const picked = page.getByRole("combobox", { name: "Workspace" }).locator("option:checked");
-    await expect(picked).toHaveText("Second Shop");
+    const picked = page.getByRole("button", { name: /^Workspace:/ });
+    await expect(picked).toHaveAccessibleName("Workspace: Second Shop");
+    // On Dinghy Cloud the switcher also starts another workspace, at the signup's second step.
+    await picked.click();
+    await expect(page.getByRole("menuitemradio", { name: "Second Shop" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await page.getByRole("menuitem", { name: "Create a workspace" }).click();
+    await expect(page.getByRole("heading", { name: "Set up your workspace" })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/signup");
   });
 });

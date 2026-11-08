@@ -68,9 +68,15 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
   await row(bob, "One more from Alice").click();
   await answer(bob, "Bob joins.");
 
-  // One name above each run of messages from one operator.
-  await expect(alice.locator(".log .who")).toHaveText(["You", "bob@example.com"]);
-  await expect(bob.locator(".log .who")).toHaveText(["alice@example.com", "You"]);
+  // The name and the time under each run of messages from one operator.
+  await expect(alice.locator(".log .meta:not(.visitor)")).toHaveText([
+    /^You · \d/,
+    /^bob@example\.com · \d/,
+  ]);
+  await expect(bob.locator(".log .meta:not(.visitor)")).toHaveText([
+    /^alice@example\.com · \d/,
+    /^You · \d/,
+  ]);
 
   // The visitor sees the replies, and no operator's name.
   await expect(customer.locator(".msg:not(.mine)", { hasText: "Bob joins." })).toBeVisible();
@@ -78,14 +84,14 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
 
   // A signed-out visitor has a short code, and the thread shows the page without its query.
   await expect(alice.locator(".thread-head h2")).toHaveText(/^Visitor [0-9A-Z]{4}$/);
-  await expect(alice.locator(".context")).toContainText("Started on");
-  await expect(alice.locator(".context")).toContainText(`${server.hostOrigin}/pricing`);
-  await expect(alice.locator(".context")).not.toContainText("SECRET");
+  const from = alice.locator(".thread-head .who-text p");
+  await expect(from).toHaveText(`started on ${new URL(server.hostOrigin).host}/pricing`);
+  await expect(alice.locator(".thread")).not.toContainText("SECRET");
 
   for (const page of [customer, alice, bob]) await page.context().close();
 });
 
-test("the Open item and the tab title count the conversations that wait for a reply", async ({
+test("the Inbox item and the tab title count the conversations that wait for a reply", async ({
   browser,
 }) => {
   const operator = await signedIn(browser, "alice@example.com");
@@ -96,7 +102,7 @@ test("the Open item and the tab title count the conversations that wait for a re
   const first = await visitor(browser, "First question");
   await expect(openCount(operator)).toHaveText("1");
   await expect(operator).toHaveTitle("(1) Dinghy");
-  await expect(row(operator, "First question").locator(".tag.waiting")).toHaveText(
+  await expect(row(operator, "First question").locator(".chip.warn")).toHaveText(
     "Waits for a reply",
   );
 
@@ -111,7 +117,7 @@ test("the Open item and the tab title count the conversations that wait for a re
   await answer(operator, "Answered.");
   await expect(openCount(operator)).toHaveText("1");
   await expect(openCount(teammate)).toHaveText("1");
-  await expect(row(operator, "Answered.").locator(".tag.waiting")).toHaveCount(0);
+  await expect(row(operator, "Answered.").locator(".chip.warn")).toHaveCount(0);
 
   // The visitor writes again, so it waits again.
   await say(first, "Thanks, and one more thing");
@@ -157,17 +163,16 @@ test("a failed action says so", async ({ browser }) => {
   for (const page of [customer, operator]) await page.context().close();
 });
 
-test("an operator changes their name in Your account, which has no password", async ({
-  browser,
-}) => {
+test("an operator changes their name in Profile, which has no password", async ({ browser }) => {
   const page = await signedIn(browser, "carol@example.com");
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Your account" }).click();
+  await page.getByRole("menuitem", { name: "Profile" }).click();
   await expect(page.getByText("Change password")).toHaveCount(0);
   await expect(page.getByLabel(/password/i)).toHaveCount(0);
 
   await page.getByLabel("Name", { exact: true }).fill("Carol King");
-  await page.getByRole("button", { name: "Save name" }).click();
-  await expect(page.getByText("Name saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved.")).toBeVisible();
   await expect(page.locator(".me")).toContainText("Carol King");
 
   const again = await signedIn(browser, "carol@example.com");

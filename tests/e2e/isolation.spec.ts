@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { openLink, signOut } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -40,7 +40,7 @@ const identify = (page: Page, token: string) =>
 
 async function signIn(page: Page, email: string) {
   await openLink(page, await server.signInLink(email));
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
 }
 
 async function freshPage(browser: Browser): Promise<Page> {
@@ -113,7 +113,7 @@ test("the next operator on a shared browser sees only their own workspace", asyn
     return { workspace: me.workspaces[0].workspaceId, conversation: list.conversations[0].id };
   });
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOut(page);
   await expect(page.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
   await expect(page.getByText("anna's customer")).toHaveCount(0);
 

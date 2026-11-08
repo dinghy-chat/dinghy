@@ -16,7 +16,7 @@ test.afterAll(async () => {
 async function signIn(page: Page) {
   const streaming = page.waitForResponse((response) => response.url().includes("/stream"));
   await openLink(page, await server.signInLink("owner@example.com"));
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
   // The inbox's live stream is open, so a change from here on reaches it.
   await streaming;
 }

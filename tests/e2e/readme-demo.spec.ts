@@ -134,7 +134,8 @@ test("record", async () => {
   await operator.setViewportSize({ width: 1100, height: 720 });
   await operator.screenshot({ path: join(directory, "inbox.png") });
   await operator.getByRole("button", { name: "Settings" }).click();
-  await operator.getByRole("heading", { name: "Widget snippet" }).waitFor();
+  await operator.getByRole("tab", { name: "Install" }).click();
+  await operator.getByRole("heading", { name: "Install the chat" }).waitFor();
   // The snippet names the test server's address. A reader should see a real-looking one.
   await operator.evaluate((api) => {
     for (const code of document.querySelectorAll("pre, code")) {
