@@ -124,14 +124,12 @@ async function deleteConversation(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
+  visitorId: string,
 ): Promise<void> {
-  // The visitor's lock comes before the workspace's, as in a send and a block. A page report holds
-  // it too, so a report and this delete take turns, and the delete never leaves a page behind.
-  const [owner] = await tx
-    .select({ visitorId: conversation.visitorId })
-    .from(conversation)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  if (owner !== undefined) await lockVisitor(tx, workspaceId, owner.visitorId);
+  // The visitor's lock comes before the workspace's, as in a block, and in a send that notes a new
+  // address. A page report holds it too, so a report and this delete take turns, and the delete
+  // never leaves a page behind.
+  await lockVisitor(tx, workspaceId, visitorId);
   // Then the workspace's, as in every other write. A send that holds this lock and checks the
   // conversation with a foreign key would deadlock with a delete that took the conversation first.
   // One that waits here finds the conversation gone, and a visitor's next message starts a new one.
@@ -152,11 +150,10 @@ async function deleteConversation(
   await tx
     .delete(message)
     .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversationId)));
-  const [gone] = await tx
+  await tx
     .delete(conversation)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)))
-    .returning({ visitorId: conversation.visitorId });
-  if (gone !== undefined) await forgetPagesWithoutChat(tx, workspaceId, gone.visitorId);
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  await forgetPagesWithoutChat(tx, workspaceId, visitorId);
 }
 
 const params = z.object({ workspaceId: z.uuid(), conversationId: z.uuid() });
@@ -323,7 +320,7 @@ export function registerModerationRoutes(app: App, db: Database, live: Live): vo
     const visitorId = await withWorkspace(db, id, async (tx) => {
       const found = await findConversation(tx, id, conversationId);
       if (found === null) return null;
-      await deleteConversation(tx, id, conversationId);
+      await deleteConversation(tx, id, conversationId, found.visitorId);
       return found.visitorId;
     });
     if (visitorId === null) return c.json(NOT_FOUND, 404);
