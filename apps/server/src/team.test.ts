@@ -506,8 +506,17 @@ describe("the last owner", () => {
   test("cannot be demoted or removed, and a second owner makes both possible", async () => {
     const boss = await person("owner");
     const path = inSpace(`/members/${boss.id}`);
-    expect((await call("PATCH", path, boss, { role: "admin" })).status).toBe(409);
-    expect((await call("DELETE", path, boss)).status).toBe(409);
+    const refused = {
+      code: "last_owner",
+      message: "A workspace needs an owner. Make someone else owner first.",
+    };
+    for (const answer of [
+      await call("PATCH", path, boss, { role: "admin" }),
+      await call("DELETE", path, boss),
+    ]) {
+      expect(answer.status).toBe(409);
+      expect(await answer.json()).toEqual({ error: refused });
+    }
     const second = await person("agent");
     await call("PATCH", inSpace(`/members/${second.id}`), boss, { role: "owner" });
     expect((await call("PATCH", path, boss, { role: "admin" })).status).toBe(200);
