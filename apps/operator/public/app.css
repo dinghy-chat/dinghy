@@ -289,6 +289,19 @@ select {
 .logo svg {
   display: block;
 }
+/* On Dinghy Cloud the account screens' logo goes back to the site. */
+.logo-home {
+  display: inline-flex;
+  border-radius: 8px;
+  text-decoration: none;
+}
+.logo-home:hover .logo {
+  opacity: 0.8;
+}
+.logo-home:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+}
 .avatar {
   display: grid;
   flex: none;

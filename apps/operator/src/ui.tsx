@@ -103,6 +103,15 @@ function Boat({ kind, size }: { kind: BoatKind; size: number }) {
   );
 }
 
+/** The product's site. On Dinghy Cloud, the logo on the account screens goes back to it. */
+const SITE = "https://dinghy.chat";
+let logoLinksHome = false;
+
+/** Set once the server says where it runs. A self-hosted server's screens keep a plain logo. */
+export const setLogoLinksHome = (cloud: boolean) => {
+  logoLinksHome = cloud;
+};
+
 export function Logo() {
   return (
     <span className="logo">
@@ -314,7 +323,13 @@ export function AuthPage({
 }) {
   const content = (
     <>
-      <Logo />
+      {logoLinksHome ? (
+        <a className="logo-home" href={SITE} aria-label={t("backToSite")}>
+          <Logo />
+        </a>
+      ) : (
+        <Logo />
+      )}
       {children}
     </>
   );

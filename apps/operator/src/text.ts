@@ -1,6 +1,7 @@
 // Every string an operator reads has a key, so a locale can be added later.
 const en = {
   brand: "dinghy",
+  backToSite: "Back to dinghy.chat",
   appName: "Dinghy",
   loading: "Loading...",
   signInTitle: "Sign in to Dinghy",
