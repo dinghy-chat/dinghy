@@ -127,6 +127,8 @@ test.describe("with no Stripe keys", () => {
     await page.goto(server.apiOrigin);
     await expect(page.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Create an account" })).toHaveCount(0);
+    // A self-hosted server's screens belong to its team, so the logo does not go to dinghy.chat.
+    await expect(page.getByRole("link", { name: "Back to dinghy.chat" })).toHaveCount(0);
     expect((await page.request.get(`${server.apiOrigin}/signup`)).status()).toBe(404);
   });
 
@@ -155,6 +157,18 @@ test.describe("with early signup and no Stripe keys", () => {
 
   test.afterAll(async () => {
     await server.stop();
+  });
+
+  test("on the cloud, the logo on the account screens goes back to dinghy.chat", async ({
+    page,
+  }) => {
+    for (const path of ["/", "/signup"]) {
+      await page.goto(`${server.apiOrigin}${path}`);
+      await expect(page.getByRole("link", { name: "Back to dinghy.chat" })).toHaveAttribute(
+        "href",
+        "https://dinghy.chat",
+      );
+    }
   });
 
   test("sign up, land in the inbox with the sample conversation, reply, and see no install code yet @smoke", async ({

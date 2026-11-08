@@ -7,7 +7,7 @@ import { LinkPage, SignIn } from "./auth.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { t } from "./text.ts";
-import { AuthPage, Loading } from "./ui.tsx";
+import { AuthPage, Loading, setLogoLinksHome } from "./ui.tsx";
 
 const WORKSPACE_KEY = "dinghy.workspace";
 
@@ -41,7 +41,10 @@ function App() {
   const [meta, setMeta] = useState<Meta | "loading">("loading");
   useEffect(() => {
     getMeta()
-      .then(setMeta)
+      .then((loaded) => {
+        setLogoLinksHome(loaded.signup !== null);
+        setMeta(loaded);
+      })
       .catch(() => setMeta({ billing: false, signup: null, email: true }));
   }, []);
 
