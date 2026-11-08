@@ -176,7 +176,7 @@ Dinghy.close();
 <span class="code-keyword">const</span> secret = <span class="code-keyword">new</span> TextEncoder().encode(process.env.DINGHY_SIGNING_SECRET);
 
 <span class="code-keyword">export</span> <span class="code-keyword">function</span> dinghyToken(user) {
-  <span class="code-keyword">return</span> <span class="code-keyword">new</span> SignJWT({ email: user.email, claims: { plan: user.plan } })
+  <span class="code-keyword">return</span> <span class="code-keyword">new</span> SignJWT({ email: user.email, claims: { name: user.name, plan: user.plan } })
     .setProtectedHeader({ alg: <span class="code-string">&quot;HS256&quot;</span> })
     .setAudience(<span class="code-string">&quot;wk_your_public_key&quot;</span>)
     .setSubject(String(user.id))
@@ -194,7 +194,7 @@ Dinghy.close();
 <tr><td data-label="Field"><code>sub</code></td><td data-label="Value">Your user&#39;s ID, up to 255 characters</td></tr>
 <tr><td data-label="Field"><code>iat</code> and <code>exp</code></td><td data-label="Value">The issue time and the expiry, at most 24 hours apart</td></tr>
 <tr><td data-label="Field"><code>email</code></td><td data-label="Value">Optional. One address, which operators see. Anything else, such as a list, is dropped</td></tr>
-<tr><td data-label="Field"><code>claims</code></td><td data-label="Value">Optional. Other facts that operators see, such as a plan, up to 2 KB of JSON</td></tr>
+<tr><td data-label="Field"><code>claims</code></td><td data-label="Value">Optional. Other facts that operators see, such as a plan, up to 2 KB of JSON. A <code>name</code> string becomes the chat&#39;s title in the inbox</td></tr>
 </tbody>
 </table></div>
 <p><strong>2. On your page,</strong> pass a function that asks your server for a token. The widget calls it again when a token expires, so a tab that stays open keeps working:</p>

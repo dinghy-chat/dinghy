@@ -73,7 +73,13 @@ function SnippetRow({ publicKey, waiting }: { publicKey: string; waiting: boolea
       </PageRow>
     );
   }
-  const snippet = `<script src="${location.origin}/widget/loader.js" data-key="${publicKey}" async></script>`;
+  // One attribute per line, so no screen breaks the tag inside an attribute.
+  const snippet = [
+    "<script",
+    `  src="${location.origin}/widget/loader.js"`,
+    `  data-key="${publicKey}"`,
+    "  async></script>",
+  ].join("\n");
   return (
     <PageRow title={t("snippetTitle")} help={t("snippetHelp")}>
       <CodeBlock value={snippet} />
@@ -531,13 +537,12 @@ function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): 
           </span>
           <span className="who-lines">
             <span className="quiet">{t("inviteLinkLabel")}</span>
-            <span className="phone-only chip warn">{pendingText}</span>
+            {/* Under the name, since an invite link has no email. */}
+            <span className="chip warn">{pendingText}</span>
           </span>
         </div>
       </td>
-      <td className="email-cell">
-        <span className="chip warn">{pendingText}</span>
-      </td>
+      <td className="email-cell" />
       <td>
         <span className="chip">{t(ROLE_TEXT[pending.role])}</span>
       </td>
@@ -986,11 +991,17 @@ export function SettingsPage({
     <Page
       title={t("settings")}
       context={settingsContext(workspaceName, usage, team.members.length)}
+      // The invite button belongs to the team, so only its tab shows it. The line above stays on
+      // every tab, so the tabs do not move when one is picked.
       actions={
-        role === "agent" ? undefined : (
-          <button type="button" className="pill dark" onClick={() => setInviting(true)}>
+        role === "agent" || tab !== "team" ? undefined : (
+          <button type="button" className="pill dark invite" onClick={() => setInviting(true)}>
             <Icon name="plusBold" size={14} />
-            {t("invitesTitle")}
+            {/* On a phone the short label keeps the button in the title row. */}
+            <span className="invite-long">{t("invitesTitle")}</span>
+            <span className="invite-short" aria-hidden="true">
+              {t("inviteShort")}
+            </span>
           </button>
         )
       }
@@ -1088,9 +1099,10 @@ function DeleteRow({
     : t("deleteWorkspaceHelp");
   return (
     <PageRow title={t("deleteWorkspaceTitle")} help={help} danger>
+      {/* An outline, as for replacing the secret. The filled red is for the confirm step. */}
       <button
         type="button"
-        className="pill danger"
+        className="pill danger-soft"
         onClick={() => {
           setTyped("");
           setError(null);

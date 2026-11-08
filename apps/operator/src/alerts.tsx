@@ -142,8 +142,11 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
             )}
             <StatusNote text={note} />
           </PageRow>
-          <PageRow title={t("email")}>
-            {settings.emailAvailable ? (
+          <PageRow
+            title={t("email")}
+            help={settings.emailAvailable ? undefined : t("emailUnavailable")}
+          >
+            {settings.emailAvailable && (
               <label className="check">
                 {t("emailAlerts")}
                 <input
@@ -152,8 +155,6 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
                   onChange={(event) => void setEmail(event.target.checked)}
                 />
               </label>
-            ) : (
-              <p className="note">{t("emailUnavailable")}</p>
             )}
             <ErrorNote text={failure} />
           </PageRow>

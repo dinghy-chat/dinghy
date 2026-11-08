@@ -11,7 +11,7 @@ import {
 import { CheckEmail } from "./auth.tsx";
 import { navigate } from "./nav.ts";
 import { type TextId, t } from "./text.ts";
-import { AuthPage, ErrorNote, Field, failureText, ROLE_TEXT, SceneLoading } from "./ui.tsx";
+import { AuthPage, ErrorNote, Field, failureText, SceneLoading } from "./ui.tsx";
 
 export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   const [offer, setOffer] = useState<{ workspaceName: string; role: "admin" | "agent" } | null>(
@@ -70,7 +70,11 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   if (invalid) {
     return (
       <AuthPage time="morning">
-        <ErrorNote text="inviteInvalid" />
+        <h1>{t("inviteInvalidTitle")}</h1>
+        <p className="note">{t("inviteInvalid")}</p>
+        <button type="button" className="btn primary large" onClick={() => navigate("/")}>
+          {t(me === null ? "linkSignIn" : "inviteOpenApp")}
+        </button>
       </AuthPage>
     );
   }
@@ -79,7 +83,10 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     <>
       <h1>{t("inviteTitle")}</h1>
       <p className="note">
-        {offer.workspaceName} {t("inviteAs")} {t(ROLE_TEXT[offer.role])}
+        {t(offer.role === "admin" ? "inviteAsAdmin" : "inviteAsAgent").replace(
+          "{workspace}",
+          offer.workspaceName,
+        )}
       </p>
     </>
   );

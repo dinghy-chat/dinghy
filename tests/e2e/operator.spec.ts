@@ -495,7 +495,7 @@ test("each emailed link's page says what it is for", async ({ page }) => {
   for (const [purpose, heading, button] of pages) {
     await page.goto(`${server.apiOrigin}/link?for=${purpose}&token=unused`);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-    await expect(page.getByText("Click below to open Dinghy.")).toBeVisible();
+    await expect(page.getByText("This signs you in on this browser.")).toBeVisible();
     await expect(page.getByRole("button", { name: button, exact: true })).toBeVisible();
     // The link page is midday in the account screens' day.
     await expect(page.locator(".scene")).toHaveClass(/\bnoon\b/);
