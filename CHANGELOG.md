@@ -2,7 +2,7 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
-## Unreleased
+## 0.5.0 (2026-11-08)
 
 - A new look for the operator app, in the brand's yellow: a sidebar with **Inbox**, **Closed**, **Alerts** and **Settings**, and one white panel with a title, a line of context and the page's actions.
 - Every dropdown is the app's own, with full keyboard use. The conversation header shows the user ID and the starting page under the name, and **Block** and **Delete** moved to its **…** menu. Each run of messages shows its time, and its author for an operator, and days are split by a line.
