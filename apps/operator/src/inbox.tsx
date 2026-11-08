@@ -311,18 +311,21 @@ function WorkspaceSwitcher({
 function UserMenu({
   me,
   role,
+  current,
   onProfile,
   onSignedOut,
 }: {
   me: Me;
   role: Role;
+  /** True on the Profile page, which the menu opens, so the menu shows it as the current page. */
+  current: boolean;
   onProfile(): void;
   onSignedOut(): void;
 }) {
   return (
     <Menu
       label={t("userMenu")}
-      buttonClass="me"
+      buttonClass={current ? "me current" : "me"}
       side="start"
       direction="up"
       className="me-menu"
@@ -414,7 +417,13 @@ function Sidebar({
           {waitingText}
         </span>
       )}
-      <UserMenu me={me} role={role} onProfile={() => onView("profile")} onSignedOut={onSignedOut} />
+      <UserMenu
+        me={me}
+        role={role}
+        current={view === "profile"}
+        onProfile={() => onView("profile")}
+        onSignedOut={onSignedOut}
+      />
     </aside>
   );
 }

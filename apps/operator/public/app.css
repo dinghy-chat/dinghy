@@ -118,7 +118,7 @@ textarea {
   width: 100%;
   min-height: 46px;
   padding: 0 14px;
-  border: 1.5px solid #e6dfcc;
+  border: 1.5px solid #978a63;
   border-radius: 12px;
   background-color: #fff;
   color: var(--navy);
@@ -126,7 +126,7 @@ textarea {
 }
 input:hover,
 textarea:hover {
-  border-color: #cfc5aa;
+  border-color: #7d714f;
 }
 input[readonly] {
   border-color: var(--warm-line);
@@ -529,8 +529,12 @@ textarea {
     0 2px 4px rgb(11 34 57 / 0.06),
     0 24px 60px rgb(11 34 57 / 0.16);
 }
+.card .note {
+  text-wrap: pretty;
+}
 .card h1 {
   margin-top: 6px;
+  text-wrap: balance;
   font-size: 32px;
   line-height: 1.08;
 }
@@ -700,7 +704,8 @@ button.workspace[aria-expanded="true"],
 .nav button:hover {
   background: rgb(255 255 255 / 0.45);
 }
-.nav button[aria-current="page"] {
+.nav button[aria-current="page"],
+.me.current {
   background: #fff;
   box-shadow: 0 2px 10px rgb(120 80 0 / 0.12);
 }
@@ -1557,6 +1562,9 @@ button.workspace[aria-expanded="true"],
   min-width: 0;
   max-width: 620px;
 }
+.page-controls > .pill {
+  min-height: 44px;
+}
 .page-controls > .pill,
 .page-controls > .actions,
 .page-controls > .select {
@@ -1564,8 +1572,9 @@ button.workspace[aria-expanded="true"],
 }
 /* What cannot be undone: a red outline and a red button. */
 .danger-zone {
-  margin-top: 16px;
-  padding: 22px 24px;
+  max-width: calc(960px + 49px);
+  margin: 16px -24.5px 0;
+  padding: 22px 23px;
   border: 1.5px solid #f2c4c0;
   border-radius: 18px;
 }
@@ -1585,6 +1594,7 @@ button.workspace[aria-expanded="true"],
 }
 .code-block {
   position: relative;
+  min-width: 0;
 }
 .code-block pre {
   margin: 0;
@@ -1594,8 +1604,8 @@ button.workspace[aria-expanded="true"],
   background: var(--navy);
   color: #e7eefb;
   font: 13.5px / 1.6 var(--mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* The snippet has one attribute per line. A long line scrolls instead of breaking a name. */
+  white-space: pre;
 }
 .code-block .pill {
   position: absolute;
@@ -1616,6 +1626,13 @@ button.workspace[aria-expanded="true"],
 .inline-field input {
   flex: 1;
   min-width: 0;
+}
+.invite-short {
+  display: none;
+}
+.copy-field .pill,
+.inline-field .pill {
+  min-height: 44px;
 }
 .copy-field .icon-button {
   width: 44px;
@@ -1673,6 +1690,7 @@ button.workspace[aria-expanded="true"],
 .tabs [aria-selected="true"],
 .tabs [aria-selected="true"]:hover {
   background: var(--soft);
+  box-shadow: inset 0 0 0 1.5px #eadcae;
   color: var(--navy);
 }
 .tab-panel {
@@ -1719,6 +1737,10 @@ button.workspace[aria-expanded="true"],
   color: var(--navy);
   font-weight: 600;
 }
+.who-lines > .chip {
+  justify-self: start;
+  margin-top: 4px;
+}
 .who-lines > span {
   overflow: hidden;
   color: var(--quiet);
@@ -1745,13 +1767,23 @@ button.workspace[aria-expanded="true"],
 .phone-only {
   display: none;
 }
+.members td > .chip:not(.warn) {
+  min-height: 36px;
+  padding: 0 14px;
+  color: var(--navy);
+  font-size: 14.5px;
+}
+/* Revoke ends where the trash icons end. */
+.end-cell > .text-button {
+  margin-right: 9px;
+}
 .members .role .select-button {
   width: max-content;
 }
 .members .role .select-value {
   overflow: visible;
 }
-.members .pending .who-lines > span {
+.members .pending .who-lines > span:not(.chip) {
   font-size: 15px;
 }
 .members .avatar.nobody {
@@ -1945,6 +1977,30 @@ button.workspace[aria-expanded="true"],
     padding: 3px;
     border-radius: 50%;
   }
+  /* A ring that takes no space, so the header does not move on Profile. */
+  .me.current {
+    box-shadow: 0 0 0 3px #fff;
+  }
+  .page-head {
+    flex-wrap: nowrap;
+  }
+  .page-title {
+    flex-basis: auto;
+  }
+  .invite {
+    padding: 0 16px;
+  }
+  .invite-short {
+    display: inline;
+  }
+  .invite-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .me-text,
   .me > svg:last-child {
     display: none;
@@ -2084,7 +2140,27 @@ button.workspace[aria-expanded="true"],
     padding: 20px 0;
   }
   .danger-zone {
+    margin-inline: 0;
     padding: 18px;
+  }
+  .tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .app .pill,
+  .app .select-button,
+  .tabs [role="tab"] {
+    min-height: 44px;
+  }
+  .nav button {
+    min-height: 44px;
+  }
+  .thread-head .icon-button,
+  .back,
+  .compose .icon-button,
+  .compose button[type="submit"] {
+    min-width: 44px;
+    min-height: 44px;
   }
   .members thead,
   .members .email-cell {
@@ -2115,7 +2191,7 @@ button.workspace[aria-expanded="true"],
   .who-lines strong {
     flex-wrap: wrap;
   }
-  .members .pending .who-lines > span {
+  .members .pending .who-lines > span:not(.chip) {
     font-size: 14px;
   }
   .lock-note {

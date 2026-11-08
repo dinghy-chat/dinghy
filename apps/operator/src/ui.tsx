@@ -471,7 +471,7 @@ export function PageRow({
   children,
 }: {
   title: ReactNode;
-  help?: string;
+  help?: string | undefined;
   danger?: boolean;
   children: ReactNode;
 }) {

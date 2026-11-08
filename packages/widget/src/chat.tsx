@@ -50,6 +50,7 @@ const CSS = `
 .action:hover{filter:brightness(.92)}
 .duo{fill:var(--d-accent,#e5352b);opacity:.3}
 .head .duo{fill:#ffc917;opacity:.45}
+.head .icon .duo{fill:currentColor;opacity:.25}
 [type=submit] .duo{fill:#ffc917;opacity:1}
 .icon{background:transparent;color:inherit;padding:0}
 .icon:hover{filter:none;background:rgb(127 127 127/.25)}
@@ -57,7 +58,7 @@ const CSS = `
 button:focus-visible{outline:2px solid var(--d-accent,#e5352b);outline-offset:1px}
 textarea:focus-visible,input:focus-visible{outline:2px solid #1f6bff;outline-offset:-1px}
 .head button:focus-visible{outline-color:currentColor}
-form{display:flex;align-items:flex-end;gap:6px;padding:10px 12px 12px;border-top:1px solid var(--line)}
+form{display:flex;align-items:flex-end;gap:10px;padding:10px 12px 12px;border-top:1px solid var(--line)}
 textarea,input{flex:1;min-width:0;font:inherit;color:inherit;background:var(--fog);border:1px solid transparent;border-radius:22px;padding:11px 16px}
 textarea{resize:none;height:44px}
 .shot{display:block;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:#fff;align-self:flex-start;cursor:zoom-in}
@@ -238,7 +239,7 @@ function ChatHead({
         </div>
       </div>
       <button type="button" class="action icon" aria-label={t("close")} onClick={onClose}>
-        <Icon paths={CLOSE_ICON} />
+        <Icon paths={CLOSE_ICON} size={24} />
       </button>
     </div>
   );
@@ -792,7 +793,8 @@ function Chat({ context, open, setOpen }: ChatProps) {
                 <i class="sun" />
               </Sea>
             )}
-            {sceneState !== "empty" && <p>{t("empty")}</p>}
+            {/* Away, the header already asks for a message. */}
+            {sceneState !== "empty" && sceneState !== "away" && <p>{t("empty")}</p>}
           </div>
         )}
         {lines.map((line) => (
