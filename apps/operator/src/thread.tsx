@@ -20,7 +20,7 @@ import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
-import { title } from "./visitor.ts";
+import { claimedName, title, visitorName } from "./visitor.ts";
 
 interface Line {
   id: string;
@@ -66,13 +66,15 @@ const bare = (page: string) => page.replace(/^https?:\/\//, "");
 
 /** Who the visitor is and where they came from: the quiet line under their name. */
 function origin(conversation: Conversation): string | null {
-  // The title shows the email, or else the user ID, so the line adds the user ID only after an email.
-  const who = conversation.visitor.email === null ? null : conversation.visitor.externalId;
+  // The line adds the email and the user ID that the title does not already show.
+  const { visitor } = conversation;
+  const shown = visitorName(visitor);
+  const ids = [visitor.email, visitor.externalId].filter((one) => one !== shown);
   const page =
     conversation.startedPage === null
       ? null
       : t("startedOn").replace("{page}", bare(conversation.startedPage));
-  const parts = [who, page].filter((part) => part !== null);
+  const parts = [...ids, page].filter((part) => part !== null);
   return parts.length === 0 ? null : parts.join(" · ");
 }
 
@@ -166,6 +168,8 @@ function VisitorContext({ conversation }: { conversation: Conversation }) {
   const { visitor } = conversation;
   const rows: [string, string][] = [];
   for (const [name, value] of Object.entries(visitor.claims ?? {})) {
+    // The title already shows the name.
+    if (name === "name" && claimedName(visitor) !== null) continue;
     rows.push([name, typeof value === "string" ? value : JSON.stringify(value)]);
   }
   if (rows.length === 0) return null;

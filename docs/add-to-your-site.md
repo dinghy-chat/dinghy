@@ -76,7 +76,7 @@ import { SignJWT } from "jose";
 const secret = new TextEncoder().encode(process.env.DINGHY_SIGNING_SECRET);
 
 export function dinghyToken(user) {
-  return new SignJWT({ email: user.email, claims: { plan: user.plan } })
+  return new SignJWT({ email: user.email, claims: { name: user.name, plan: user.plan } })
     .setProtectedHeader({ alg: "HS256" })
     .setAudience("wk_your_public_key")
     .setSubject(String(user.id))
@@ -95,7 +95,7 @@ Any JWT library works, in any language. The token must have these fields:
 | `sub` | Your user's ID, up to 255 characters |
 | `iat` and `exp` | The issue time and the expiry, at most 24 hours apart |
 | `email` | Optional. One address, which operators see. Anything else, such as a list, is dropped |
-| `claims` | Optional. Other facts that operators see, such as a plan, up to 2 KB of JSON |
+| `claims` | Optional. Other facts that operators see, such as a plan, up to 2 KB of JSON. A `name` string becomes the chat's title in the inbox |
 
 **2. On your page,** pass a function that asks your server for a token. The widget calls it again when a token expires, so a tab that stays open keeps working:
 

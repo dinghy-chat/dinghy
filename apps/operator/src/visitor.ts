@@ -12,13 +12,20 @@ export function visitorLabel(visitorId: string): string {
   return t("visitorLabel").replace("{code}", code);
 }
 
-/** The email or user ID the host site gave, or the short code for a signed-out visitor. */
+/** The `name` claim the host site signed, when it is a string with text in it. */
+export function claimedName(visitor: { claims?: Record<string, unknown> | null }): string | null {
+  const name = visitor.claims?.name;
+  return typeof name === "string" && name.trim() !== "" ? name.trim() : null;
+}
+
+/** The name, email or user ID the host site gave, or the short code for a signed-out visitor. */
 export function visitorName(visitor: {
   id: string;
   email: string | null;
   externalId: string | null;
+  claims?: Record<string, unknown> | null;
 }): string {
-  return visitor.email ?? visitor.externalId ?? visitorLabel(visitor.id);
+  return claimedName(visitor) ?? visitor.email ?? visitor.externalId ?? visitorLabel(visitor.id);
 }
 
 export function title(conversation: Conversation): string {

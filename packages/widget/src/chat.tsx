@@ -67,6 +67,7 @@ textarea{resize:none;height:44px}
 dialog{padding:0;border:0;background:transparent;max-width:95vw;max-height:95vh;overflow:auto}
 dialog::backdrop{background:rgb(11 34 57/.85)}
 dialog img{display:block;max-width:none}
+.panel:focus{outline:none}
 .panel.drop{outline:3px dashed var(--d-accent,#e5352b);outline-offset:-6px}
 .pick{background:transparent;color:inherit;padding:0}
 .pick:hover{filter:none;background:var(--fog)}
@@ -386,6 +387,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
   const [replay, setReplay] = useState(0);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const creatingVisitor = useRef<Promise<string> | null>(null);
 
@@ -444,7 +446,11 @@ function Chat({ context, open, setOpen }: ChatProps) {
   }, [identity, renewing, renewAttempt, visible]);
 
   useEffect(() => {
-    if (open) input.current?.focus();
+    if (!open) return;
+    // On a touch screen the keyboard would cover the panel before the visitor reads it, so focus
+    // goes to the panel, and a tap on the field opens the keyboard.
+    if (matchMedia("(pointer: fine)").matches) input.current?.focus();
+    else panel.current?.focus();
   }, [open]);
 
   useEffect(() => {
@@ -760,6 +766,8 @@ function Chat({ context, open, setOpen }: ChatProps) {
 
   return (
     <section
+      ref={panel}
+      tabIndex={-1}
       class={dropping ? "panel drop" : "panel"}
       onDragOver={(event) => {
         // A drag of selected text keeps its normal behavior.

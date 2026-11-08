@@ -696,6 +696,20 @@ test("Escape closes the chat and returns focus to the launcher", async ({ page }
   await expect(launcher(page)).toBeFocused();
 });
 
+test("on a touch screen, opening the chat focuses the panel, so no keyboard covers it", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await page.goto(`${server.hostOrigin}/plain`);
+  await launcher(page).tap();
+  await expect(page.getByRole("region", { name: "Chat with us" })).toBeFocused();
+  await expect(input(page)).not.toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(launcher(page)).toBeFocused();
+  await context.close();
+});
+
 test("typing in the chat does not fire the host page's shortcuts", async ({ page }) => {
   await page.goto(`${server.hostOrigin}/hostile`);
   await launcher(page).click();
