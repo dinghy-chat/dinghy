@@ -123,6 +123,22 @@ test("an owner changes the allowed sites and replaces the secret", async ({ brow
   await expect(secret).not.toHaveText(before ?? "");
 });
 
+test("a used join link says to open the invite again, with no way to the sign-in page", async ({
+  browser,
+}) => {
+  const boss = await signedIn(browser);
+  const url = await inviteLink(boss);
+  const joined = await joinAsNew(browser, url, "Eve");
+  const page = await (await browser.newContext()).newPage();
+  await openLink(page, await server.linkTo("eve@example.com"), "Join your team");
+  await expect(page.getByRole("alert")).toHaveText(
+    "That link has expired or was already used. Open your invite link again to get a new one.",
+  );
+  await expect(page.getByRole("link")).toHaveCount(0);
+  await expect(page.getByRole("button")).toHaveCount(0);
+  for (const one of [boss, joined, page]) await one.context().close();
+});
+
 test("someone with an account joins a second workspace and switches between them", async ({
   browser,
 }) => {

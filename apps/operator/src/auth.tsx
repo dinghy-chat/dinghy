@@ -94,9 +94,12 @@ const PURPOSES = {
   signup: { button: "linkSignup", again: "/signup" },
   // Cloud signup with an email that has an account: sign in, then add a workspace.
   "add-workspace": { button: "linkSignIn", again: "/signup" },
-  join: { button: "linkJoin", again: "/" },
-} satisfies Record<string, { button: TextId; again: string }>;
+  // Only the invite makes a new join link, and the sign-in page cannot: the account may not exist.
+  join: { button: "linkJoin", again: null },
+} satisfies Record<string, { button: TextId; again: string | null }>;
 type Purpose = keyof typeof PURPOSES;
+/** The answers that use up a join link, unlike a lost connection, which leaves it to try again. */
+const SPENT = new Set<TextId>(["inviteInvalid", "emailTaken", "operatorLimit"]);
 const isPurpose = (value: string): value is Purpose => Object.hasOwn(PURPOSES, value);
 
 /**
@@ -128,13 +131,17 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
     }
   };
 
-  if (error === "linkInvalid") {
+  const { again } = PURPOSES[kind];
+  // A refused join link is used up too, so its button would only say the link expired.
+  if (error === "linkInvalid" || (again === null && error !== null && SPENT.has(error))) {
     return (
       <AuthPage>
-        <ErrorNote text={error} />
-        <a className="btn primary large" href={PURPOSES[kind].again}>
-          {t("linkAskAgain")}
-        </a>
+        <ErrorNote text={again === null && error === "linkInvalid" ? "joinLinkInvalid" : error} />
+        {again !== null && (
+          <a className="btn primary large" href={again}>
+            {t("linkAskAgain")}
+          </a>
+        )}
       </AuthPage>
     );
   }

@@ -20,6 +20,8 @@ const en = {
   linkSignup: "Continue setting up",
   linkJoin: "Join your team",
   linkAskAgain: "Get a new link",
+  joinLinkInvalid:
+    "That link has expired or was already used. Open your invite link again to get a new one.",
   tooManyAttempts: "Too many links asked for. Try again in an hour.",
   somethingFailed: "Something went wrong. Try again.",
   tooManyRequests: "Too many requests. Wait a moment and try again.",
