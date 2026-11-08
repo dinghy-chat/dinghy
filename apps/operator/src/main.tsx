@@ -94,7 +94,7 @@ function App() {
   }
   if (path === "/signup" && meta.signup !== null) {
     // A signed-in operator who signs up again adds a workspace.
-    if (me === null) return <Signup />;
+    if (me === null) return <Signup early={meta.signup === "early"} />;
     return (
       <Onboarding
         early={meta.signup === "early"}

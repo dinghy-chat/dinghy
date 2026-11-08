@@ -28,7 +28,7 @@ async function openCheckout(workspaceId: string): Promise<void> {
  * Cloud signup's first step: the email. Its link signs in, to a new account or the one the email
  * already has, and the onboarding then names the operator and the workspace.
  */
-export function Signup() {
+export function Signup({ early }: { early: boolean }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
@@ -52,6 +52,7 @@ export function Signup() {
   return (
     <AuthPage time="morning" onSubmit={submit}>
       <h1>{t("signupTitle")}</h1>
+      {early && <p className="note">{t("signupEarly")}</p>}
       <Field
         label={t("email")}
         type="email"
@@ -124,6 +125,7 @@ export function Onboarding({
       />
       <Field
         label={t("signupWorkspace")}
+        hint={t("signupWorkspaceHint")}
         autoComplete="organization"
         required
         maxLength={100}

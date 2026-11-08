@@ -29,7 +29,7 @@ async function paidWorkspace(page: Page, name: string) {
   const email = `nora-${Date.now()}@example.com`;
   await page.goto(`${server.apiOrigin}/signup`);
   await page.getByLabel("Email").fill(email);
-  await page.getByRole("button", { name: "Email me a link" }).click();
+  await page.getByRole("button", { name: "Email me a sign-up link" }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   await openLink(page, await server.linkTo(email), "Get started");
   await page.getByLabel("Your name").fill("Nora");
