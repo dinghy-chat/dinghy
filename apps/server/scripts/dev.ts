@@ -5,7 +5,7 @@
 // With DINGHY_PORT=4000, they move to 4000 and 4001. PUBLIC_URL sets the address people open.
 // Its files, such as the auth secret and the images, live in .dev/, which git ignores.
 // Restart it to pick up a change in the server, the operator app or the widget.
-// `bun run dev reset-password` prints a new password for owner@example.com, and exits.
+// Each start prints a sign-in link for owner@example.com, since development sends no email.
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -79,7 +79,7 @@ const env = {
   LOG_LEVEL: process.env.LOG_LEVEL ?? "info",
 };
 
-// The first run creates the owner, and prints a new random password once.
+// The first run creates the owner. Every run prints a new link for it.
 const owner = new pg.Client({ connectionString: postgres("postgres", NAME) });
 await owner.connect();
 const operators = await owner.query("SELECT 1 FROM operator LIMIT 1");
@@ -101,12 +101,9 @@ if (operators.rowCount === 0) {
     ],
     env,
   );
-  console.log("Save that password. `bun run dev reset-password` makes a new one.");
-}
-if (process.argv[2] === "reset-password") {
-  run("node", ["apps/server/src/cli.ts", "reset-password", "owner@example.com"], env);
-  await owner.end();
-  process.exit(0);
+} else {
+  console.log("==> Signing in");
+  run("node", ["apps/server/src/cli.ts", "sign-in-link", "owner@example.com"], env);
 }
 const workspace = await owner.query<{ public_key: string }>(
   "SELECT public_key FROM workspace ORDER BY created_at LIMIT 1",

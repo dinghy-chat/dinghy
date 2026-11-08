@@ -41,9 +41,10 @@ fi
 pass "docker compose up starts everything, with no account and no settings"
 
 setup="$("${compose[@]}" exec -T app chat setup --email owner@example.com --name Owner --workspace Acme --origin "$site")"
-password="$(sed -n 's/^Password, shown only now: //p' <<<"$setup")"
+link="$(grep -o 'http[^ ]*/magic-link/verify[^ ]*' <<<"$setup")"
 key="$(sed -n 's/.*data-key="\([^"]*\)".*/\1/p' <<<"$setup")"
-[ -n "$password" ] && [ -n "$key" ] && pass "chat setup prints a password and the snippet" || fail "chat setup printed no password or snippet"
+[ -n "$link" ] && [ -n "$key" ] && pass "chat setup prints a sign-in link and the snippet" || fail "chat setup printed no link or snippet"
+grep -qi 'password' <<<"$setup" && fail "chat setup still mentions a password" || pass "chat setup prints no password"
 if "${compose[@]}" exec -T app chat setup --email other@example.com --name Other --workspace Other --origin "$site" >/dev/null 2>&1; then
   fail "a second chat setup ran"
 else
@@ -59,11 +60,14 @@ grep -q '"id"' <<<"$sent" && pass "a visitor sends a message" || fail "a visitor
 
 # The owner signs in, and reads it.
 cookies="$work/cookies"
-signin() {
-  curl -s -o /dev/null -w '%{http_code}' -c "$cookies" -H "Origin: http://localhost:$port" -H 'content-type: application/json' \
-    -d "{\"email\":\"owner@example.com\",\"password\":\"$password\"}" "http://localhost:$port/v1/auth/sign-in/email"
+open_link() { # open_link <url>: prints ok once the link signed in
+  local answer
+  answer="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -c "$cookies" "$1")"
+  if [[ "$answer" == "302 "* && "$answer" != *error=* ]]; then echo ok; else echo "$answer"; fi
 }
-[ "$(signin)" = 200 ] && pass "the owner signs in" || fail "the owner could not sign in"
+signin() { open_link "$("${compose[@]}" exec -T app chat sign-in-link owner@example.com | grep -o 'http[^ ]*/magic-link/verify[^ ]*')"; }
+[ "$(open_link "$link")" = ok ] && pass "the owner signs in with the link from setup" || fail "the setup's link did not sign in"
+[ "$(open_link "$link")" = ok ] && fail "the setup's link worked twice" || pass "the setup's link works once"
 operator() { curl -sf -b "$cookies" "$@"; }
 me="$(operator "http://localhost:$port/v1/operator/me")"
 workspace="$(sed 's/.*"workspaceId":"\([^"]*\)".*/\1/' <<<"$me")"
@@ -73,7 +77,7 @@ grep -q "Hello from the install check" <<<"$list" && pass "the owner reads the m
 # Web push turns on after the restart that setup asks for.
 "${compose[@]}" restart app >/dev/null 2>&1
 for _ in $(seq 1 30); do curl -sf "$base/readyz" >/dev/null && break; sleep 1; done
-[ "$(signin)" = 200 ] || fail "the owner could not sign in after a restart"
+[ "$(signin)" = ok ] || fail "the owner could not sign in after a restart"
 alerts="$(operator "http://localhost:$port/v1/operator/workspaces/$workspace/alerts")"
 if grep -q '"pushKey":"' <<<"$alerts"; then pass "web push is on after the restart"; else fail "web push is off: $alerts"; fi
 
@@ -116,7 +120,7 @@ grep -q 'Wrote ' <<<"$backup" && pass "a backup runs from the migrate service" |
   tail -20 "$work/up2.log"
   fail "the second start failed"
 }
-[ "$(signin)" = 200 ] && pass "the same password works after a restart, so init changed no secret" || fail "the secrets changed on a second start"
+operator "http://localhost:$port/v1/operator/me" >/dev/null && pass "the session survives a stop and start, so init changed no secret" || fail "the secrets changed on a second start"
 list="$(operator "http://localhost:$port/v1/operator/workspaces/$workspace/conversations" || true)"
 grep -q "Hello from the install check" <<<"$list" && pass "the messages survive a stop and start" || fail "the messages are gone after a restart"
 

@@ -51,10 +51,9 @@ start() { # start <project> <port> <image>
     exit 1
   }
 }
-setup() { # setup <project>, which sets password, key and backup_key
+setup() { # setup <project>, which sets key and backup_key
   local output
   output="$(compose "$1" exec -T app chat setup --email owner@example.com --name Owner --workspace Acme --origin "$site")"
-  password="$(sed -n 's/^Password, shown only now: //p' <<<"$output")"
   key="$(sed -n 's/.*data-key="\([^"]*\)".*/\1/p' <<<"$output")"
   backup_key="$(sed -n 's/^Backup private key, shown only now: //p' <<<"$output")"
 }
@@ -73,9 +72,11 @@ read_stream() { # read_stream <port> <token> <query>, for a few seconds
     "http://127.0.0.1:$1/v1/widget/$key/stream$3" || true
 }
 cursor_of() { sed -n 's/.*"cursor":"\([^"]*\)".*/\1/p' | tail -1; }
-sign_in() { # sign_in <port> <jar>
-  curl -s -o /dev/null -w '%{http_code}' -c "$2" -H "Origin: http://localhost:$1" -H 'content-type: application/json' \
-    -d "{\"email\":\"owner@example.com\",\"password\":\"$password\"}" "http://localhost:$1/v1/auth/sign-in/email"
+sign_in() { # sign_in <project> <port> <jar>: opens a new sign-in link, and prints ok once signed in
+  local link answer
+  link="$(DINGHY_IMAGE="$image" DINGHY_PORT="$2" compose "$1" exec -T app chat sign-in-link owner@example.com | grep -o 'http[^ ]*/magic-link/verify[^ ]*')"
+  answer="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -c "$3" "$link")"
+  if [[ "$answer" == "302 "* && "$answer" != *error=* ]]; then echo ok; else echo "$answer"; fi
 }
 take_backup() { # take_backup <project> <port> <image> <file>
   local name output
@@ -116,12 +117,12 @@ curl -sf -o "$work/reencoded.png" "http://127.0.0.1:$a_port$path"
 old_cursor="$(read_stream "$a_port" "$token" "" | cursor_of)"
 [ -n "$old_cursor" ] && pass "a client holds a cursor: $old_cursor" || fail "no cursor before the backup"
 jar_a="$work/jar-a"
-[ "$(sign_in "$a_port" "$jar_a")" = 200 ] || fail "the owner could not sign in"
+[ "$(sign_in "$a" "$a_port" "$jar_a")" = ok ] || fail "the owner could not sign in"
 workspace="$(curl -sf -b "$jar_a" "http://localhost:$a_port/v1/operator/me" | sed 's/.*"workspaceId":"\([^"]*\)".*/\1/')"
 push_key_a="$(curl -sf -b "$jar_a" "http://localhost:$a_port/v1/operator/workspaces/$workspace/alerts" | sed -n 's/.*"pushKey":\("[^"]*"\|null\).*/\1/p')"
 DINGHY_IMAGE="$image" DINGHY_PORT="$a_port" compose "$a" restart app >/dev/null 2>&1
 for _ in $(seq 1 30); do curl -sf "http://127.0.0.1:$a_port/readyz" >/dev/null && break; sleep 1; done
-sign_in "$a_port" "$jar_a" >/dev/null
+sign_in "$a" "$a_port" "$jar_a" >/dev/null
 push_key_a="$(curl -sf -b "$jar_a" "http://localhost:$a_port/v1/operator/workspaces/$workspace/alerts" | sed -n 's/.*"pushKey":"\([^"]*\)".*/\1/p')"
 take_backup "$a" "$a_port" "$image" "$work/a.tar"
 check "the backup is one tar file with the database, images and secrets" \
@@ -135,7 +136,7 @@ start "$b" "$b_port" "$image"
 restore "$b" "$b_port" "$image" "$work/a.tar" | tail -1 | cut -c1-90
 jar_b="$work/jar-b"
 key="$key_a"
-[ "$(sign_in "$b_port" "$jar_b")" = 200 ] && pass "the owner's old password works on the new host" || fail "the old password does not work after a restore"
+[ "$(sign_in "$b" "$b_port" "$jar_b")" = ok ] && pass "the owner signs in by link on the new host" || fail "the owner cannot sign in after a restore"
 check "the visitor's browser keeps its chat" sh -c "curl -sf -H 'Origin: $site' -H 'Authorization: Bearer $token' 'http://127.0.0.1:$b_port/v1/widget/$key/messages' | grep -q 'Hello before the backup'"
 check "an image opens on the new host" image_opens "$b_port" "$token"
 push_key_b="$(curl -sf -b "$jar_b" "http://localhost:$b_port/v1/operator/workspaces/$workspace/alerts" | sed -n 's/.*"pushKey":"\([^"]*\)".*/\1/p')"
@@ -206,7 +207,7 @@ else
 fi
 in_b up -d --wait >/dev/null 2>&1
 check "this host still has its data after that refusal" sh -c "curl -sf -H 'Origin: $site' -H 'Authorization: Bearer $token' 'http://127.0.0.1:$b_port/v1/widget/$key/messages' | grep -q 'After the second restore'"
-[ "$(sign_in "$b_port" "$work/jar-refused")" = 200 ] && pass "and its secrets" || fail "the refused restore broke sign-in"
+[ "$(sign_in "$b" "$b_port" "$work/jar-refused")" = ok ] && pass "and its secrets" || fail "the refused restore broke sign-in"
 
 # A restore does not bring back a backup key that this server replaced.
 in_b stop app >/dev/null 2>&1
@@ -337,7 +338,7 @@ for previous in "${previous_images[@]}"; do
   noauth="$(DINGHY_IMAGE="$image" DINGHY_PORT="$d_port" compose "$d" exec -T valkey valkey-cli ping 2>&1 || true)"
   grep -q NOAUTH <<<"$noauth" && pass "Valkey has a password after the upgrade from $from" || fail "Valkey answers with no password after the upgrade from $from: $noauth"
   jar_d="$work/jar-d$upgrade"
-  [ "$(sign_in "$d_port" "$jar_d")" = 200 ] && pass "and the owner's password, from $from" || fail "the password stopped working after an upgrade from $from"
+  [ "$(sign_in "$d" "$d_port" "$jar_d")" = ok ] && pass "and the owner signs in by link, from $from" || fail "the owner cannot sign in after an upgrade from $from"
   # A release with no new migration leaves the data alone, so it takes no backup.
   if DINGHY_IMAGE="$image" DINGHY_PORT="$d_port" compose "$d" logs migrate | grep -q 'The database is up to date'; then
     pass "the upgrade from $from had no migration to run"

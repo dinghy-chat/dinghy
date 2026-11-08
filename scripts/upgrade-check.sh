@@ -61,9 +61,11 @@ send() { # send <text>
 }
 messages() { widget -H "Authorization: Bearer $token" "$base/v1/widget/$key/messages"; }
 has_message() { messages | grep -q "$1"; }
-sign_in() {
-  curl -s -o /dev/null -w '%{http_code}' -H "Origin: http://localhost:$port" -H 'content-type: application/json' \
-    -d "{\"email\":\"owner@example.com\",\"password\":\"$password\"}" "http://localhost:$port/v1/auth/sign-in/email"
+sign_in() { # opens a new sign-in link, and prints ok once signed in
+  local link answer
+  link="$("${current[@]}" exec -T app chat sign-in-link owner@example.com | grep -o 'http[^ ]*/magic-link/verify[^ ]*')"
+  answer="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$link")"
+  if [[ "$answer" == "302 "* && "$answer" != *error=* ]]; then echo ok; else echo "$answer"; fi
 }
 image_opens() {
   local path
@@ -83,7 +85,6 @@ in_volume() { "${current[@]}" run --rm --no-deps -T --entrypoint sh postgres -c 
   exit 1
 }
 setup="$("${current[@]}" exec -T app chat setup --email owner@example.com --name Owner --workspace Acme --origin "$site")"
-password="$(sed -n 's/^Password, shown only now: //p' <<<"$setup")"
 key="$(sed -n 's/.*data-key="\([^"]*\)".*/\1/p' <<<"$setup")"
 token="$(widget -X POST "$base/v1/widget/$key/visitors" | sed 's/.*"token":"\([^"]*\)".*/\1/')"
 send "Written on the old version" >/dev/null
@@ -123,7 +124,7 @@ in_volume "test ! -e /var/lib/postgresql/$next_major/docker/PG_VERSION" && pass 
 "${current[@]}" up -d --wait >"$work/back.log" 2>&1 || fail "the old compose.yaml did not start after a failed upgrade"
 [ "$(major "${current[@]}")" = "$old_major" ] && has_message "Written on the old version" &&
   pass "the old compose.yaml runs on the old data" || fail "the old data is not usable after a failed upgrade"
-[ "$(sign_in)" = 200 ] && pass "and the owner can sign in" || fail "sign-in failed after a failed upgrade"
+[ "$(sign_in)" = ok ] && pass "and the owner can sign in" || fail "sign-in failed after a failed upgrade"
 send "Written after the failed upgrade" >/dev/null
 
 # ---- The upgrade again, with the cause gone.
@@ -136,7 +137,7 @@ fi
 [ "$(major "${next[@]}")" = "$next_major" ] && pass "the install now runs on Postgres $next_major" || fail "the version did not change"
 has_message "Written on the old version" && has_message "Written after the failed upgrade" && pass "the messages came along" || fail "messages are missing"
 image_opens && pass "an image opens" || fail "the image does not open"
-[ "$(sign_in)" = 200 ] && pass "the owner's password works" || fail "the password stopped working"
+[ "$(sign_in)" = ok ] && pass "the owner signs in" || fail "the owner cannot sign in after the upgrade"
 send "Written on the new version" >/dev/null && has_message "Written on the new version" && pass "a visitor sends a new message" || fail "a new message failed"
 owned="$(sql_text="select count(*) from pg_tables where schemaname = 'public' and tableowner = 'dinghy_app'" run_sql "${next[@]}")"
 [ "$owned" = 0 ] && pass "the app role still owns no table" || fail "the app role owns $owned tables"
