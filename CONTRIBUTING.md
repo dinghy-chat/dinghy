@@ -2,7 +2,13 @@
 
 Thank you for helping. This page covers the setup, the checks, how the code is laid out, and the contributor license agreement you sign once.
 
-Before a large change, open an issue to talk about it. [`NON_GOALS.md`](NON_GOALS.md) lists what Dinghy does not plan to do. A security problem goes to `hello@dinghy.chat`, as [`SECURITY.md`](SECURITY.md) says, not to an issue.
+Dinghy stays small on purpose, and review time is short. So:
+
+- A small fix for a clear bug is welcome as a pull request, with a test that fails without it.
+- A feature or a change in behavior needs an issue that a maintainer approved first. A pull request without one may be closed, however good it is.
+- A security problem goes to `hello@dinghy.chat`, as [`SECURITY.md`](SECURITY.md) says, not to an issue.
+
+If an agent writes your change, point it to [`AGENTS.md`](AGENTS.md).
 
 ## Setup
 

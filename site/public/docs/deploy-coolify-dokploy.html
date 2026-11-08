@@ -120,7 +120,7 @@
 <p>Both platforms run a Docker Compose file and put their own proxy, Traefik, in front of it. Dinghy then runs as it does <a href="/docs/self-hosting#behind-your-own-reverse-proxy">behind your own reverse proxy</a>: without its own Caddy, with the platform&#39;s proxy sending HTTPS traffic to the <code>app</code> service on port 3000.</p>
 <h2 id="what-to-keep"><a class="heading-link" href="#what-to-keep">What to keep</a></h2>
 <ul>
-<li>Use <code>compose.yaml</code> from a release tag as it is, such as <code>v0.3.5</code>. Do not split it into separate services.</li>
+<li>Use <code>compose.yaml</code> from a release tag as it is, such as <code>v0.3.6</code>. Do not split it into separate services.</li>
 <li>Keep every service. <code>init</code> writes the secrets and exits, <code>migrate</code> creates the database roles and runs migrations and exits, and <code>app</code> starts only after both. The platform must not report these two exits as failures or restart them.</li>
 <li>Keep the named volumes. Each service mounts only the secrets it needs, and the data lives in <code>postgres</code>, <code>images</code> and <code>backups</code>.</li>
 <li>Do not turn on the <code>tls</code> profile. The platform&#39;s proxy owns ports 80 and 443, and Caddy would fail to start on them.</li>

@@ -1,0 +1,68 @@
+name: Bug report
+description: Something in Dinghy does not work as the docs say.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem goes to hello@dinghy.chat, not here. See SECURITY.md.
+        Search the open issues first, and keep the report to one problem.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - The chat widget
+        - The operator app
+        - The server or the worker
+        - Install, upgrade or backup
+        - The docs
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Dinghy version
+      description: The release tag you installed, or the image tag in `compose.yaml`.
+      placeholder: v0.3.6
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you run it
+      options:
+        - Self-hosted with install.sh
+        - Self-hosted with Docker Compose by hand
+        - Self-hosted another way
+        - Dinghy Cloud
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      description: For a problem in the widget or the operator app.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: From `docker compose logs app`, for example. Remove email addresses, tokens and message text first.
+      render: text
