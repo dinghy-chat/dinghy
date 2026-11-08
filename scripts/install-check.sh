@@ -13,6 +13,8 @@ failures=0
 site="https://www.example.com"
 base="http://127.0.0.1:$port"
 work="$(mktemp -d)"
+# shellcheck source=scripts/links.sh
+. "$(dirname "$0")/links.sh"
 
 pass() { echo "ok - $1"; }
 fail() {
@@ -41,7 +43,7 @@ fi
 pass "docker compose up starts everything, with no account and no settings"
 
 setup="$("${compose[@]}" exec -T app chat setup --email owner@example.com --name Owner --workspace Acme --origin "$site")"
-link="$(grep -o 'http[^ ]*/magic-link/verify[^ ]*' <<<"$setup")"
+link="$(link_in <<<"$setup")"
 key="$(sed -n 's/.*data-key="\([^"]*\)".*/\1/p' <<<"$setup")"
 [ -n "$link" ] && [ -n "$key" ] && pass "chat setup prints a sign-in link and the snippet" || fail "chat setup printed no link or snippet"
 grep -qi 'password' <<<"$setup" && fail "chat setup still mentions a password" || pass "chat setup prints no password"
@@ -60,12 +62,8 @@ grep -q '"id"' <<<"$sent" && pass "a visitor sends a message" || fail "a visitor
 
 # The owner signs in, and reads it.
 cookies="$work/cookies"
-open_link() { # open_link <url>: prints ok once the link signed in
-  local answer
-  answer="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -c "$cookies" "$1")"
-  if [[ "$answer" == "302 "* && "$answer" != *error=* ]]; then echo ok; else echo "$answer"; fi
-}
-signin() { open_link "$("${compose[@]}" exec -T app chat sign-in-link owner@example.com | grep -o 'http[^ ]*/magic-link/verify[^ ]*')"; }
+open_link() { press_link "$1" "$cookies"; }
+signin() { open_link "$("${compose[@]}" exec -T app chat sign-in-link owner@example.com | link_in)"; }
 [ "$(open_link "$link")" = ok ] && pass "the owner signs in with the link from setup" || fail "the setup's link did not sign in"
 [ "$(open_link "$link")" = ok ] && fail "the setup's link worked twice" || pass "the setup's link works once"
 operator() { curl -sf -b "$cookies" "$@"; }

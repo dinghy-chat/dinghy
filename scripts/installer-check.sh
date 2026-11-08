@@ -10,6 +10,8 @@ port=$((36000 + $$ % 900))
 failures=0
 export COMPOSE_PROJECT_NAME="dinghy-installer-$$" DINGHY_IMAGE="$image" DINGHY_PORT="$port"
 cp "$root/compose.yaml" "$root/settings.example" "$work/"
+# shellcheck source=scripts/links.sh
+. "$root/scripts/links.sh"
 
 pass() { echo "ok - $1"; }
 fail() {
@@ -59,7 +61,7 @@ output="$(install_with --local --no-backup-cron --email owner@example.com --name
   fail "the install failed"
   exit 1
 }
-link="$(grep -o 'http[^ ]*/magic-link/verify[^ ]*' <<<"$output" | tail -1)"
+link="$(link_in <<<"$output")"
 [ -n "$link" ] && pass "it prints a sign-in link" || fail "it printed no sign-in link"
 grep -qi 'password' <<<"$output" && fail "it still mentions a password" || pass "it mentions no password"
 grep -q 'data-key=' <<<"$output" && pass "it prints the tag for the site" || fail "it printed no tag"
@@ -69,12 +71,7 @@ grep -q "Dinghy is running at http://localhost:$port" <<<"$output" && pass "it s
 [ "$(stat -c %a "$work/.env")" = 600 ] && pass "the settings are private" || fail "the settings have mode $(stat -c %a "$work/.env")"
 alerts="$(cd "$work" && docker compose exec -T app sh -c 'ls /secrets' | grep -c vapid || true)"
 [ "$alerts" -ge 1 ] && pass "web push keys exist" || fail "no web push keys"
-opened() { # opened <url>: prints ok once the link signed in
-  local answer
-  answer="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$1")"
-  if [[ "$answer" == "302 "* && "$answer" != *error=* ]]; then echo ok; else echo "$answer"; fi
-}
-code="$(opened "$link")"
+code="$(press_link "$link")"
 [ "$code" = ok ] && pass "the owner signs in with that link" || fail "sign-in answered $code"
 
 # A second run, with no answers and no terminal, changes nothing. The port now comes from the settings.
@@ -83,7 +80,7 @@ unset DINGHY_PORT
 second="$(install_with --no-backup-cron 2>&1)" && pass "a second run succeeds with no answers" || fail "a second run failed: $(tail -1 <<<"$second")"
 grep -q "Dinghy is running at http://localhost:$port" <<<"$second" && pass "a second run reads the port from the settings" || fail "a second run did not find the port"
 grep -q 'Backup private key' <<<"$second" && fail "a second run made a new owner" || pass "a second run makes no new owner"
-code="$(opened "$(cd "$work" && docker compose exec -T app chat sign-in-link owner@example.com | grep -o 'http[^ ]*/magic-link/verify[^ ]*')")"
+code="$(press_link "$(cd "$work" && docker compose exec -T app chat sign-in-link owner@example.com | link_in)")"
 [ "$code" = ok ] && pass "chat sign-in-link still signs the owner in" || fail "sign-in answered $code after a second run"
 
 if install_with --domain other.example.com >"$work/domain.log" 2>&1; then

@@ -11,6 +11,8 @@ old_major=18
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(mktemp -d)"
+# shellcheck source=scripts/links.sh
+. "$root/scripts/links.sh"
 port=$((39600 + $$ % 300))
 failures=0
 site="https://www.example.com"
@@ -62,10 +64,9 @@ send() { # send <text>
 messages() { widget -H "Authorization: Bearer $token" "$base/v1/widget/$key/messages"; }
 has_message() { messages | grep -q "$1"; }
 sign_in() { # opens a new sign-in link, and prints ok once signed in
-  local link answer
-  link="$("${current[@]}" exec -T app chat sign-in-link owner@example.com | grep -o 'http[^ ]*/magic-link/verify[^ ]*')"
-  answer="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$link")"
-  if [[ "$answer" == "302 "* && "$answer" != *error=* ]]; then echo ok; else echo "$answer"; fi
+  local link
+  link="$("${current[@]}" exec -T app chat sign-in-link owner@example.com | link_in)"
+  press_link "$link"
 }
 image_opens() {
   local path
