@@ -20,7 +20,7 @@ import {
 import { runLifecycle } from "./lifecycle.ts";
 import { createLimits, type LimitOptions } from "./limits.ts";
 import { removeOldImages } from "./retention.ts";
-import { registerSignup, type SignupMode } from "./signup.ts";
+import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
 
 /** For `chat signups`, which lists the early signups that wait for the cloud. */
 export { signupsCsv } from "./signup.ts";
@@ -38,8 +38,7 @@ export interface CloudSettings {
   limits?: LimitOptions | undefined;
 }
 
-/** Where operators of a suspended cloud workspace write to. */
-export const CLOUD_CONTACT = "hello@dinghy.chat";
+export { CLOUD_CONTACT } from "./signup.ts";
 
 /** The cloud's settings, or none on a self-hosted install, which leaves them all unset. */
 export function cloudFromConfig(config: Config): CloudSettings | undefined {
