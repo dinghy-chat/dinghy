@@ -21,7 +21,7 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { forgetPagesWithoutChat } from "./journey.ts";
+import { forgetPagesWithoutChat, lockVisitor } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { findConversation, recordConversationChange, recordTeamChange } from "./messages.ts";
 import { allowed } from "./team.ts";
@@ -125,9 +125,16 @@ async function deleteConversation(
   workspaceId: string,
   conversationId: string,
 ): Promise<void> {
-  // First, as in every other write. A send that holds this lock and checks the conversation with a
-  // foreign key would deadlock with a delete that took the conversation first. One that waits here
-  // finds the conversation gone, and a visitor's next message starts a new one.
+  // The visitor's lock comes before the workspace's, as in a send and a block. A page report holds
+  // it too, so a report and this delete take turns, and the delete never leaves a page behind.
+  const [owner] = await tx
+    .select({ visitorId: conversation.visitorId })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  if (owner !== undefined) await lockVisitor(tx, workspaceId, owner.visitorId);
+  // Then the workspace's, as in every other write. A send that holds this lock and checks the
+  // conversation with a foreign key would deadlock with a delete that took the conversation first.
+  // One that waits here finds the conversation gone, and a visitor's next message starts a new one.
   await recordConversationChange(tx, workspaceId, conversationId, "conversation.deleted");
   const messages = tx
     .select({ id: message.id })

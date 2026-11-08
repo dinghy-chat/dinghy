@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { SignJWT } from "jose";
 import { pino } from "pino";
@@ -17,6 +17,7 @@ import { deviceLine } from "./device.ts";
 import { verifyHostToken } from "./identity.ts";
 import { recordPage } from "./journey.ts";
 import { createLive, type Live } from "./live.ts";
+import { recordConversationChange } from "./messages.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const SITE = "https://app.example.com";
@@ -464,6 +465,26 @@ describe("page journey", () => {
     expect(doneWhileReporting).toBe(false);
     expect((await deleted)?.status).toBe(200);
     expect(await journey(visitorId)).toEqual([]);
+  });
+
+  test("a delete takes the visitor's lock before the workspace's, as a block does", async () => {
+    const { visitorId, token } = await newVisitor();
+    const { conversationId } = await send(token, "Hi");
+    let deleted: Promise<Response> | undefined;
+    await withWorkspace(db, a.id, async (tx) => {
+      // A block's order: the visitor row, then the workspace's event feed.
+      await tx
+        .update(visitor)
+        .set({ blockedAt: null })
+        .where(and(eq(visitor.workspaceId, a.id), eq(visitor.id, visitorId)));
+      deleted = Promise.resolve(
+        asOperator(inA(`/conversations/${conversationId}`), ownerCookie, { method: "DELETE" }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      // In the opposite order, the delete would hold this lock now, and Postgres would end one.
+      await recordConversationChange(tx, a.id, conversationId, "conversation.moderated");
+    });
+    expect((await deleted)?.status).toBe(200);
   });
 
   test("goes with its visitor", async () => {

@@ -78,12 +78,17 @@ export async function recordPage(
   return true;
 }
 
-async function lockVisitor(tx: Transaction, workspaceId: string, visitorId: string) {
+/**
+ * Takes the visitor row's lock, as an update of it would. A caller that also writes the workspace
+ * takes this first, as a send and a block do, so the two locks never come in opposite orders. It
+ * leaves the key alone, so a send that starts a conversation can still check its foreign key.
+ */
+export async function lockVisitor(tx: Transaction, workspaceId: string, visitorId: string) {
   await tx
     .select({ id: visitor.id })
     .from(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)))
-    .for("update");
+    .for("no key update");
 }
 
 /** A visitor's newest pages, newest first. */
@@ -103,14 +108,14 @@ export function visitorPages(
 
 /**
  * The journey belongs to a visitor who chatted. When their last conversation goes, it goes too, so
- * a delete leaves no trace of where they browsed.
+ * a delete leaves no trace of where they browsed. The caller holds the visitor's lock already, from
+ * before the workspace's.
  */
 export async function forgetPagesWithoutChat(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
 ): Promise<void> {
-  await lockVisitor(tx, workspaceId, visitorId);
   await tx.execute(sql`
     DELETE FROM page_view WHERE workspace_id = ${workspaceId} AND visitor_id = ${visitorId}
       AND NOT EXISTS (SELECT 1 FROM conversation
