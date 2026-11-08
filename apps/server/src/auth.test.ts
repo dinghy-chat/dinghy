@@ -287,6 +287,11 @@ describe("asking for a link", () => {
       sql`select email_verified from operator where email = ${email("unproven")}`,
     );
     expect(before.rows[0]?.email_verified).toBe(false);
+    // ...and signs nobody else out: the session from before is still there.
+    const kept = await owner.execute<{ planted: number }>(
+      sql`select count(*)::int as planted from session where token = ${`planted-${RUN}`}`,
+    );
+    expect(kept.rows[0]?.planted).toBe(1);
     expect((await askLink(email("unproven"))).status).toBe(200);
     expect(await openSignInLink(app, await mail.linkTo(email("unproven")))).not.toBe("");
     const { rows } = await owner.execute<{ email_verified: boolean; planted: number }>(
@@ -295,6 +300,21 @@ describe("asking for a link", () => {
     );
     expect(rows[0]).toEqual({ email_verified: true, planted: 0 });
   });
+});
+
+test("two uses of one printed link at once leave an unproven email unproven", async () => {
+  const address = email("racing");
+  await owner.execute(
+    sql`insert into operator (name, email, email_verified) values ('Racing', ${address}, false)`,
+  );
+  const link = await signInLink(auth, address);
+  const results = await Promise.all([pressLinkButton(app, link), pressLinkButton(app, link)]);
+  // The token works once.
+  expect(results.map((response) => response.status).sort()).toEqual([200, 400]);
+  const { rows } = await owner.execute<{ email_verified: boolean }>(
+    sql`select email_verified from operator where email = ${address}`,
+  );
+  expect(rows[0]?.email_verified).toBe(false);
 });
 
 describe("with no mail server", () => {

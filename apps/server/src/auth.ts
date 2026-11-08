@@ -134,22 +134,29 @@ export async function redeemSignInToken(
   headers: Headers,
 ): Promise<string[] | null> {
   const { internalAdapter } = await auth.$context;
-  const shown = await internalAdapter.consumeVerificationValue(`${SHOWN_LINK}${sha256Hex(token)}`);
+  // Read, not consumed, so two requests with the same printed link both see it, and both restore
+  // the flag below. The token itself still works once.
+  const shown = await internalAdapter.findVerificationValue(`${SHOWN_LINK}${sha256Hex(token)}`);
   const found = shown === null ? null : await internalAdapter.findUserByEmail(shown.value);
-  // BetterAuth marks the email proven on any link it verifies. A shown link proves nothing.
   const unproven = found !== null && !found.user.emailVerified ? found.user.id : null;
+  // A printed link proves no mailbox. BetterAuth's check marks the email proven and, for an
+  // unproven account, first signs out every other session. So while a printed link is checked the
+  // account counts as proven, and afterwards it is unproven again, whatever the outcome. Only a
+  // link that went by email proves the address and ends the earlier sessions.
+  if (unproven !== null) await internalAdapter.updateUser(unproven, { emailVerified: true });
   try {
     const answer = await auth.api.magicLinkVerify({
       query: { token },
       headers,
       returnHeaders: true,
     });
-    if (unproven !== null) await internalAdapter.updateUser(unproven, { emailVerified: false });
     return answer.headers.getSetCookie();
   } catch (error) {
     // BetterAuth answers a bad token with a redirect to its error page, which the app has not.
     if (isAPIError(error) && error.statusCode === 302) return null;
     throw error;
+  } finally {
+    if (unproven !== null) await internalAdapter.updateUser(unproven, { emailVerified: false });
   }
 }
 
