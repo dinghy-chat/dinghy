@@ -1,7 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 
-const PASSWORD = "a-long-test-password";
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
@@ -10,8 +9,8 @@ test.beforeAll(async () => {
   server = await startE2EServer({
     "/plain": { html: `<!doctype html><title>Host</title>${SNIPPET}` },
   });
-  await server.createOperator("anna@example.com", PASSWORD);
-  await server.createSecondWorkspace("Elsewhere", "bea@example.com", PASSWORD);
+  await server.createOperator("anna@example.com");
+  await server.createSecondWorkspace("Elsewhere", "bea@example.com");
 });
 
 test.afterAll(async () => {
@@ -39,9 +38,7 @@ const identify = (page: Page, token: string) =>
   }, token);
 
 async function signIn(page: Page, email: string) {
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink(email));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 }
 

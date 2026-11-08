@@ -1,13 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 
-const PASSWORD = "a-long-test-password";
-
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
 test.beforeAll(async () => {
   server = await startE2EServer({});
-  await server.createOperator("owner@example.com", PASSWORD);
+  await server.createOperator("owner@example.com");
 });
 
 test.afterAll(async () => {
@@ -16,10 +14,7 @@ test.afterAll(async () => {
 
 async function signIn(page: Page) {
   const streaming = page.waitForResponse((response) => response.url().includes("/stream"));
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill("owner@example.com");
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink("owner@example.com"));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   // The inbox's live stream is open, so a change from here on reaches it.
   await streaming;

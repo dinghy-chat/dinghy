@@ -105,6 +105,27 @@ describe("chat migrate", () => {
     expect(fresh?.fresh).toBe(true);
   });
 
+  test("stored passwords go, and the accounts and their sessions stay", async () => {
+    await run(await migrationsBefore("0040_"));
+    const id = "00000000-0000-4000-8000-0000000000bb";
+    await query(
+      `insert into operator (id, name, email, email_verified)
+       values ('${id}', 'Old', 'old@example.com', true)`,
+    );
+    await query(
+      `insert into account (user_id, account_id, provider_id, password)
+       values ('${id}', '${id}', 'credential', 'scrypt-hash')`,
+    );
+    await query(
+      `insert into session (user_id, token, expires_at)
+       values ('${id}', 'kept-session', now() + interval '1 day')`,
+    );
+    await run();
+    expect(await query("select 1 from account")).toEqual([]);
+    expect(await query("select email from operator")).toEqual([{ email: "old@example.com" }]);
+    expect(await query("select token from session")).toEqual([{ token: "kept-session" }]);
+  });
+
   test("a run with no pending migration takes no backup and changes nothing", async () => {
     await run();
     const before = await appliedCount();

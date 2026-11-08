@@ -1,7 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 
-const PASSWORD = "a-long-test-password";
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
@@ -10,7 +9,7 @@ test.beforeAll(async () => {
   server = await startE2EServer({
     "/plain": { html: `<!doctype html><title>Host</title>${SNIPPET}` },
   });
-  await server.createOperator("owner@example.com", PASSWORD);
+  await server.createOperator("owner@example.com");
 });
 
 test.afterAll(async () => {
@@ -24,10 +23,7 @@ async function signedIn(browser: Browser, email = "owner@example.com"): Promise<
     await context.grantPermissions(["clipboard-write"]);
   }
   const page = await context.newPage();
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink(email));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   return page;
 }
@@ -48,10 +44,14 @@ async function joinAsNew(browser: Browser, url: string, name: string): Promise<P
   const page = await context.newPage();
   await page.goto(url);
   await expect(page.getByRole("heading", { name: "Join a workspace" })).toBeVisible();
+  const email = `${name.toLowerCase()}@example.com`;
   await page.getByLabel("Your name").fill(name);
-  await page.getByLabel("Email").fill(`${name.toLowerCase()}@example.com`);
-  await page.getByLabel("New password").fill(PASSWORD);
+  await page.getByLabel("Email").fill(email);
+  await expect(page.getByLabel(/password/i)).toHaveCount(0);
   await page.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  // The link joins and signs in, in this same browser.
+  await page.goto(await server.linkTo(email));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   return page;
 }
@@ -127,7 +127,7 @@ test("someone with an account joins a second workspace and switches between them
 }) => {
   const boss = await signedIn(browser);
   const url = await inviteLink(boss);
-  const other = await server.createSecondWorkspace("Other", "multi@example.com", PASSWORD);
+  const other = await server.createSecondWorkspace("Other", "multi@example.com");
   const page = await signedIn(browser, "multi@example.com");
   await page.goto(url);
   await expect(page.getByText("You are signed in as multi@example.com")).toBeVisible();
@@ -147,7 +147,7 @@ test("an open app sees team changes, and a removal opens the other workspace", a
   const boss = await signedIn(browser);
   const url = await inviteLink(boss);
   const laterUrl = await inviteLink(boss);
-  await server.createSecondWorkspace("Elsewhere", "two@example.com", PASSWORD);
+  await server.createSecondWorkspace("Elsewhere", "two@example.com");
   const person = await signedIn(browser, "two@example.com");
   await person.goto(url);
   await person.getByRole("button", { name: "Join", exact: true }).click();
@@ -196,9 +196,7 @@ test("a window whose session ended elsewhere reconnects with the new one", async
   const second = await first.context().newPage();
   await second.goto(server.apiOrigin);
   await second.getByRole("button", { name: "Sign out" }).click();
-  await second.getByLabel("Email").fill("owner@example.com");
-  await second.getByLabel("Password").fill(PASSWORD);
-  await second.getByRole("button", { name: "Sign in", exact: true }).click();
+  await second.goto(await server.signInLink("owner@example.com"));
   await expect(second.getByRole("button", { name: "Sign out" })).toBeVisible();
 
   // The next event ends the first window's old stream, and a later one must still arrive.

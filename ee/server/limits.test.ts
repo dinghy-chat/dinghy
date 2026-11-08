@@ -26,7 +26,7 @@ import { startWorker } from "../../apps/server/src/worker.ts";
 import { createWorkspace, type NewWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
-import { signedInOperator, TEST_PASSWORD } from "../../apps/server/test/operators.ts";
+import { openLink, signedInOperator } from "../../apps/server/test/operators.ts";
 import { type CloudSettings, cloudWorkerStep } from "./index.ts";
 import { createLimits, MAX_OPERATORS } from "./limits.ts";
 import { imageCutoff, removeOldImages } from "./retention.ts";
@@ -81,7 +81,7 @@ beforeAll(async () => {
   workerDb = database.connect("worker", 2).db;
   valkey = new Redis(VALKEY_URL, { maxRetriesPerRequest: 1 });
   directory = await mkdtemp(join(tmpdir(), "dinghy-limits-"));
-  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   const processed = await processImage(await testImage());
   if (typeof processed === "string") throw new Error(processed);
   imageSize = processed.data.byteLength;
@@ -220,10 +220,11 @@ describe("operators: 5 per workspace on the cloud", () => {
       token: unused,
       name: "New",
       email,
-      password: TEST_PASSWORD,
     });
-    expect(joined.status).toBe(409);
-    expect(await joined.json()).toMatchObject({ error: { code: "operator_limit" } });
+    expect(joined.status).toBe(200);
+    const { signInUrl } = (await joined.json()) as { signInUrl: string };
+    const opened = await openLink(cloud, signInUrl);
+    expect(opened.headers.get("location")).toBe("/?error=operator_limit");
     expect(await owner.select().from(operator).where(eq(operator.email, email))).toEqual([]);
     expect(await members(space)).toBe(MAX_OPERATORS);
   });

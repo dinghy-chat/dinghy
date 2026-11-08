@@ -1,13 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 
-const PASSWORD = "a-long-test-password";
-
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
 test.beforeAll(async () => {
   server = await startE2EServer({});
-  await server.createOperator("anna@example.com", PASSWORD);
+  await server.createOperator("anna@example.com");
 });
 
 test.afterAll(async () => {
@@ -41,10 +39,7 @@ const FAKE_PUSH = () => {
 };
 
 async function signedIn(page: Page) {
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill("anna@example.com");
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink("anna@example.com"));
   await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
 }
 

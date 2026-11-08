@@ -1,7 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 
-const PASSWORD = "a-long-test-password";
 const tag = (attributes = "") =>
   `<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" ${attributes} async></script>`;
 
@@ -23,7 +22,7 @@ test.beforeAll(async () => {
       csp: "default-src 'none'; script-src {{API}}; style-src 'none'; connect-src {{API}}; img-src {{API}}",
     },
   });
-  await server.createOperator("anna@example.com", PASSWORD);
+  await server.createOperator("anna@example.com");
 });
 
 test.afterAll(async () => {
@@ -90,10 +89,7 @@ test.describe("each state shows its boat and its text", () => {
   test("the team online, then a new reply with a flag", async ({ browser }) => {
     const operatorContext = await browser.newContext();
     const operator = await operatorContext.newPage();
-    await operator.goto(server.apiOrigin);
-    await operator.getByLabel("Email").fill("anna@example.com");
-    await operator.getByLabel("Password").fill(PASSWORD);
-    await operator.getByRole("button", { name: "Sign in", exact: true }).click();
+    await operator.goto(await server.signInLink("anna@example.com"));
     await expect(operator.getByRole("button", { name: "Sign out" })).toBeVisible();
 
     const page = await openWidget(browser, "/plain2");
@@ -115,10 +111,7 @@ test.describe("each state shows its boat and its text", () => {
   test("an empty inbox in the operator app", async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(server.apiOrigin);
-    await page.getByLabel("Email").fill("anna@example.com");
-    await page.getByLabel("Password").fill(PASSWORD);
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page.goto(await server.signInLink("anna@example.com"));
     const empty = page.locator(".empty-boat");
     await expect(empty).toContainText("No open conversations.");
     await expect(empty.locator(".ship svg")).toBeVisible();
@@ -210,10 +203,7 @@ test.describe("reduced motion", () => {
   test("the operator app's boat stops too", async ({ browser }) => {
     const context = await browser.newContext({ reducedMotion: "reduce" });
     const page = await context.newPage();
-    await page.goto(server.apiOrigin);
-    await page.getByLabel("Email").fill("anna@example.com");
-    await page.getByLabel("Password").fill(PASSWORD);
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page.goto(await server.signInLink("anna@example.com"));
     await expect(page.locator(".empty-boat .ship")).toBeVisible();
     expect(await animations(page, ".empty-boat .ship")).toBe(0);
     await context.close();

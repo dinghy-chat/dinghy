@@ -2,7 +2,6 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
-const PASSWORD = "a-long-test-password";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -10,7 +9,7 @@ test.beforeAll(async () => {
   server = await startE2EServer({
     "/plain": { html: `<!doctype html><title>Host</title><h1>Host</h1>${SNIPPET}` },
   });
-  await server.createOperator("anna@example.com", PASSWORD);
+  await server.createOperator("anna@example.com");
 });
 
 test.afterAll(async () => {
@@ -20,10 +19,7 @@ test.afterAll(async () => {
 async function signedIn(browser: Browser): Promise<Page> {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill("anna@example.com");
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink("anna@example.com"));
   await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
   return page;
 }
@@ -160,10 +156,7 @@ test("a refused stream waits for Retry-After before it tries again", async ({ br
     });
   });
   const page = await context.newPage();
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill("anna@example.com");
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink("anna@example.com"));
   await expect.poll(() => tries.length, { timeout: 8000 }).toBe(2);
   expect((tries[1] ?? 0) - (tries[0] ?? 0)).toBeGreaterThanOrEqual(2900);
   await context.close();
@@ -282,25 +275,63 @@ test("signing out returns to the sign-in page, and a reload stays there", async 
   await expect(operator.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
 });
 
-test("a wrong password shows a message", async ({ browser }) => {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill("anna@example.com");
-  await page.getByLabel("Password").fill("not-the-password");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText("That email and password do not match.");
+test("the sign-in page sends a link, and the answer is the same for an unknown email", async ({
+  browser,
+}) => {
+  // New addresses each run, because the link limit lives in Valkey and outlasts the database.
+  const known = `known-${crypto.randomUUID()}@example.com`;
+  const unknown = `unknown-${crypto.randomUUID()}@example.com`;
+  await server.createOperator(known);
+  const answers: string[] = [];
+  for (const email of [known, unknown]) {
+    const page = await (await browser.newContext()).newPage();
+    await page.goto(server.apiOrigin);
+    await expect(page.getByLabel(/password/i)).toHaveCount(0);
+    await page.getByLabel("Email").fill(email);
+    await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    answers.push(((await page.getByRole("status").textContent()) ?? "").replace(email, "{email}"));
+    await page.context().close();
+  }
+  expect(answers[0]).toBe(answers[1]);
+  expect(answers[0]).toContain("If {email} has an account here");
+
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(await server.linkTo(known));
+  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  expect(server.mail.filter((one) => one.to === unknown)).toEqual([]);
+  await page.context().close();
 });
 
-test("with no mail server, a forgotten password points to the command", async ({ browser }) => {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.goto(server.apiOrigin);
-  await page.getByRole("button", { name: "Forgot your password?" }).click();
-  // A new address each run, because this limit lives in Valkey and outlasts the test database.
-  await page.getByLabel("Email").fill(`reset-${crypto.randomUUID()}@example.com`);
-  await page.getByRole("button", { name: "Send link" }).click();
-  await expect(page.getByRole("alert")).toContainText("chat reset-password");
+test("a used link lands on the sign-in page with a message", async ({ browser }) => {
+  const link = await server.signInLink("anna@example.com");
+  const first = await (await browser.newContext()).newPage();
+  await first.goto(link);
+  await expect(first.getByRole("heading", { name: "E2E" })).toBeVisible();
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(link);
+  await expect(page.getByRole("alert")).toHaveText(
+    "That link has expired or was already used. Ask for a new one.",
+  );
+  expect(page.url()).not.toContain("error=");
+  for (const one of [first, page]) await one.context().close();
+});
+
+test("with no mail server, the sign-in page says to ask the admin for a link", async ({
+  browser,
+}) => {
+  const quiet = await startE2EServer({}, { mail: false });
+  try {
+    const page = await (await browser.newContext()).newPage();
+    await page.goto(quiet.apiOrigin);
+    await expect(page.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
+    await expect(page.getByText("ask its admin for a sign-in link")).toBeVisible();
+    await expect(page.getByText(/chat sign-in-link/)).toBeVisible();
+    await expect(page.getByLabel("Email")).toHaveCount(0);
+    await page.context().close();
+  } finally {
+    await quiet.stop();
+  }
 });
 
 test("on a phone, the list and the thread take turns", async ({ browser }) => {

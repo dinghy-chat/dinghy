@@ -14,7 +14,7 @@ import type { CloudSettings } from "../../../ee/server/index.ts";
 import { buildWidget } from "../../../packages/widget/build.ts";
 import { buildOperator } from "../../operator/build.ts";
 import { createApp } from "../src/app.ts";
-import { createAuth } from "../src/auth.ts";
+import { createAuth, signInLink } from "../src/auth.ts";
 import { ensureRoles } from "../src/db/roles.ts";
 import {
   conversation,
@@ -35,6 +35,7 @@ import { createWorkspace } from "../src/workspaces.ts";
 import { createTestDatabase } from "./database.ts";
 import { AUTH_SECRET, DATABASE_URL, VALKEY_URL } from "./env.ts";
 import { sendOperatorMessage } from "./messages.ts";
+import { captureMail } from "./operators.ts";
 
 const OPERATOR = "00000000-0000-4000-8000-0000000000f3";
 
@@ -49,7 +50,16 @@ const listen = (server: http.Server) =>
 /** The real server and a host site on another origin, for browser tests. */
 export async function startE2EServer(
   hostPages: Record<string, { html: string; csp?: string }>,
-  { emailAvailable = false, cloud }: { emailAvailable?: boolean; cloud?: CloudSettings } = {},
+  {
+    emailAvailable = false,
+    mail = true,
+    cloud,
+  }: {
+    emailAvailable?: boolean;
+    /** False for a server with no mail server, whose admin hands out sign-in links. */
+    mail?: boolean;
+    cloud?: CloudSettings;
+  } = {},
 ) {
   const admin = new pg.Client({ connectionString: DATABASE_URL });
   await admin.connect();
@@ -85,7 +95,9 @@ export async function startE2EServer(
   const apiAddress = api.address();
   const apiPort = typeof apiAddress === "object" && apiAddress !== null ? apiAddress.port : 0;
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
-  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: apiOrigin, logger });
+  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: apiOrigin });
+  // Keeps what it sends, so a test opens a link the way a person would.
+  const mailer = captureMail();
   const valkey = new Redis(VALKEY_URL, { enableOfflineQueue: false, maxRetriesPerRequest: 1 });
   const pushed: string[] = [];
   const push = createPush(
@@ -103,6 +115,7 @@ export async function startE2EServer(
     limitScale: 1000,
     alerts: { push, emailAvailable, secret: AUTH_SECRET },
     auth,
+    mailer: mail ? mailer : undefined,
     db,
     live,
     logger,
@@ -161,20 +174,19 @@ export async function startE2EServer(
     apiOrigin,
     hostOrigin,
     workspace,
+    /** The emails the server sent, newest last. */
+    mail: mailer.sent,
+    /** The link in email number `index` to `email`, once it arrives. */
+    linkTo: (email: string, index = 0) => mailer.linkTo(email, index),
+    /** A sign-in link, as `chat sign-in-link` prints it. */
+    signInLink: (email: string, callbackPath = "/") => signInLink(auth, email, callbackPath),
     /** An operator who is a member of this workspace, or of none with `member: false`. */
-    async createOperator(email: string, password: string, { member = true } = {}) {
-      const context = await auth.$context;
+    async createOperator(email: string, { member = true } = {}) {
       const [created] = await owner
         .insert(operator)
         .values({ name: email, email, emailVerified: true })
         .returning({ id: operator.id });
       const id = created?.id ?? "";
-      await context.internalAdapter.linkAccount({
-        userId: id,
-        providerId: "credential",
-        accountId: id,
-        password: await context.password.hash(password),
-      });
       if (!member) return;
       await owner
         .insert(workspaceMember)
@@ -233,20 +245,13 @@ export async function startE2EServer(
     },
     wakeOperators: () => live.wake(workspace.id, OPERATORS),
     /** A second workspace, owned by a new operator, for tests of one login across workspaces. */
-    async createSecondWorkspace(name: string, email: string, password: string) {
+    async createSecondWorkspace(name: string, email: string) {
       const created = await createWorkspace(db, name, []);
-      const context = await auth.$context;
       const [row] = await owner
         .insert(operator)
         .values({ name: email, email, emailVerified: true })
         .returning({ id: operator.id });
       const id = row?.id ?? "";
-      await context.internalAdapter.linkAccount({
-        userId: id,
-        providerId: "credential",
-        accountId: id,
-        password: await context.password.hash(password),
-      });
       await owner
         .insert(workspaceMember)
         .values({ workspaceId: created.id, operatorId: id, role: "owner" });

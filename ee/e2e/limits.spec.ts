@@ -2,15 +2,13 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
 
-const PASSWORD = "a-long-test-password";
-
 let server: Awaited<ReturnType<typeof startCloudE2EServer>>;
 
 test.beforeAll(async () => {
   server = await startCloudE2EServer({ early: true });
   // With the seeded owner, the workspace has 5 operators.
   for (const name of ["ana", "ben", "cy", "dee"]) {
-    await server.createOperator(`${name}@example.com`, PASSWORD);
+    await server.createOperator(`${name}@example.com`);
   }
 });
 
@@ -20,10 +18,7 @@ test.afterAll(async () => {
 
 async function signIn(page: Page) {
   const streaming = page.waitForResponse((response) => response.url().includes("/stream"));
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill("ana@example.com");
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink("ana@example.com"));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   await streaming;
 }

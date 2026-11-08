@@ -107,7 +107,7 @@ beforeAll(async () => {
   owner = database.connect("migrator", 1).db;
   publisher = new Redis(VALKEY_URL, { enableOfflineQueue: false, maxRetriesPerRequest: 1 });
   live = createLive(publisher, VALKEY_URL, logger);
-  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   app = createApp({
     auth,
     db,

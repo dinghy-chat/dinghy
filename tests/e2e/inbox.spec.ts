@@ -2,7 +2,6 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
-const PASSWORD = "a-long-test-password";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -12,7 +11,7 @@ test.beforeAll(async () => {
   });
   // createOperator names each operator after its email.
   for (const email of ["alice@example.com", "bob@example.com", "carol@example.com"]) {
-    await server.createOperator(email, PASSWORD);
+    await server.createOperator(email);
   }
 });
 
@@ -25,12 +24,9 @@ test.beforeEach(async () => {
   await server.closeConversations();
 });
 
-async function signedIn(browser: Browser, email: string, password = PASSWORD): Promise<Page> {
+async function signedIn(browser: Browser, email: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink(email));
   await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
   return page;
 }
@@ -160,35 +156,20 @@ test("a failed action says so", async ({ browser }) => {
   for (const page of [customer, operator]) await page.context().close();
 });
 
-test("an operator changes their name and password in Your account", async ({ browser }) => {
+test("an operator changes their name in Your account, which has no password", async ({
+  browser,
+}) => {
   const page = await signedIn(browser, "carol@example.com");
-  const laptop = await signedIn(browser, "carol@example.com");
   await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByText("Change password")).toHaveCount(0);
+  await expect(page.getByLabel(/password/i)).toHaveCount(0);
 
   await page.getByLabel("Name", { exact: true }).fill("Carol King");
   await page.getByRole("button", { name: "Save name" }).click();
   await expect(page.getByText("Name saved.")).toBeVisible();
   await expect(page.locator(".me")).toContainText("Carol King");
 
-  // A wrong current password changes nothing.
-  await page.getByLabel("Current password").fill("not-my-password");
-  await page.getByLabel("New password, at least 10 characters").fill("a-new-long-password");
-  await page.getByRole("button", { name: "Change password" }).click();
-  await expect(page.getByText("The current password is not right.")).toBeVisible();
-
-  await page.getByLabel("Current password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Change password" }).click();
-  await expect(
-    page.getByText("Password changed. Your other sessions are signed out."),
-  ).toBeVisible();
-
-  // This tab stays signed in, and the other one is signed out.
-  await page.reload();
-  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
-  await laptop.reload();
-  await expect(laptop.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-
-  const again = await signedIn(browser, "carol@example.com", "a-new-long-password");
+  const again = await signedIn(browser, "carol@example.com");
   await expect(again.locator(".me")).toContainText("Carol King");
-  for (const one of [page, laptop, again]) await one.context().close();
+  for (const one of [page, again]) await one.context().close();
 });

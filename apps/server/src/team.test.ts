@@ -6,10 +6,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { untilWaiting } from "../test/locks.ts";
-import { signedInOperator, signIn, TEST_PASSWORD } from "../test/operators.ts";
+import { captureMail, cookieOf, openLink, signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
-import { conversation, event, invite, operator, workspaceMember } from "./db/schema.ts";
+import {
+  account,
+  conversation,
+  event,
+  invite,
+  operator,
+  verification,
+  workspaceMember,
+} from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import type { Live } from "./live.ts";
 import { appendMessage } from "./messages.ts";
@@ -36,6 +44,9 @@ let db: Database;
 let owner: Database;
 let auth: ReturnType<typeof createAuth>;
 let app: App;
+/** The same server with a mail server, so join links go by email. */
+let mailApp: App;
+const mail = captureMail();
 let space: NewWorkspace;
 const wakes: string[] = [];
 const live: Live = {
@@ -95,26 +106,54 @@ const memberRow = async (operatorId: string, workspaceId = space.id) => {
   return row;
 };
 
-const join = (token: string, email: string, origin = ORIGIN) =>
-  call(
-    "POST",
-    "/v1/invites/join",
-    null,
-    { token, name: "New Person", email, password: TEST_PASSWORD },
-    origin,
-  );
+/** Asks for a join link. With no mail server, `app` answers with the link itself. */
+const join = (token: string, email: string, origin = ORIGIN, server = app) =>
+  server.request("/v1/invites/join", {
+    method: "POST",
+    headers: { origin, "content-type": "application/json" },
+    body: JSON.stringify({ token, name: "New Person", email }),
+  });
+
+/** Opens a join link, and follows its redirect to BetterAuth's, as a browser does. */
+async function openJoin(url: string, server = app) {
+  const opened = await openLink(server, url);
+  expect(opened.status).toBe(302);
+  const next = opened.headers.get("location") ?? "";
+  if (!next.includes("/v1/auth/magic-link/verify")) return { cookie: "", landing: next };
+  const signedIn = await openLink(server, next);
+  return { cookie: cookieOf(signedIn), landing: signedIn.headers.get("location") ?? "" };
+}
+
+/** Joins on the server with no mail server: asks for the link, then opens it. */
+async function joinAndOpen(token: string, email: string) {
+  const response = await join(token, email);
+  expect(response.status).toBe(200);
+  const { signInUrl } = (await response.json()) as { signInUrl: string };
+  return openJoin(signInUrl);
+}
+
+const operatorRow = async (email: string) =>
+  (await owner.select().from(operator).where(eq(operator.email, email)))[0];
 
 beforeAll(async () => {
   database = await createTestDatabase();
   await database.migrate();
   db = database.connect("app", 10).db;
   owner = database.connect("migrator").db;
-  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   app = createApp({
     auth,
     db,
     live,
     logger,
+    checks: { postgres: ok, valkey: ok },
+  });
+  mailApp = createApp({
+    auth,
+    db,
+    live,
+    logger,
+    mailer: mail,
     checks: { postgres: ok, valkey: ok },
   });
 }, 30_000);
@@ -128,49 +167,134 @@ beforeEach(async () => {
   space = await createWorkspace(db, "Acme", [SITE]);
 });
 
-describe("with a mail server, an invite join verifies the email", () => {
-  test("the new account signs in only after it opens the link sent to its email", async () => {
-    const links: { to: string; url: string }[] = [];
-    const verifyingAuth = createAuth({
-      db,
-      secret: AUTH_SECRET,
-      baseURL: PUBLIC_URL,
-      logger,
-      sendVerificationEmail: async (to, url) => {
-        links.push({ to, url });
-      },
-    });
-    const verifying = createApp({
-      auth: verifyingAuth,
-      db,
-      live,
-      logger,
-      checks: { postgres: ok, valkey: ok },
-    });
+describe("joining by link", () => {
+  test("a new and an existing email get the same answer, and an email that says nothing typed", async () => {
     const boss = await person("owner");
     const token = await newInvite(boss);
-    const email = `joiner-${randomUUID()}@example.com`;
-    const joined = await verifying.request("/v1/invites/join", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ token, name: "New Person", email, password: TEST_PASSWORD }),
-    });
-    expect(await joined.json()).toEqual({ ok: true, verify: true });
-    await expect.poll(() => links.some((link) => link.to === email)).toBe(true);
-    await expect(signIn(verifying, email)).rejects.toThrow("Sign-in failed with 403");
-
-    const link = new URL(links.find((one) => one.to === email)?.url ?? "");
-    const opened = await verifying.request(`${link.pathname}${link.search}`);
-    expect(opened.status).toBe(302);
-    expect(await signIn(verifying, email)).not.toBe("");
+    const fresh = `joiner-${randomUUID()}@example.com`;
+    const known = await join(token, fresh, ORIGIN, mailApp);
+    const existing = await join(token, boss.email, ORIGIN, mailApp);
+    expect(known.status).toBe(200);
+    expect(await known.json()).toEqual({ ok: true, signInUrl: null });
+    expect(await existing.json()).toEqual({ ok: true, signInUrl: null });
+    await mail.linkTo(fresh);
+    const sent = mail.sent.find((one) => one.to === fresh);
+    expect(sent?.subject).toBe("Your link to join your team on Dinghy");
+    expect(sent?.text.startsWith("Hi,\n\n")).toBe(true);
+    expect(sent?.text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
+    expect(sent?.text).toContain("15 minutes");
+    // Nobody has proved this address, so neither the workspace nor the typed name reach it.
+    expect(sent?.text).not.toContain("Acme");
+    expect(sent?.text).not.toContain("New Person");
+    // Nothing exists before the link opens.
+    expect(await operatorRow(fresh)).toBeUndefined();
   });
 
-  test("without one, the account signs in at once", async () => {
+  test("opening the link creates the account, joins with the role, signs in, and works once", async () => {
     const boss = await person("owner");
+    const token = await newInvite(boss, "admin");
+    const email = `joiner-${randomUUID()}@example.com`;
+    await join(token, email.toUpperCase(), ORIGIN, mailApp);
+    const link = await mail.linkTo(email);
+    expect(link.startsWith(`${ORIGIN}/v1/invites/open?token=`)).toBe(true);
+    const { cookie, landing } = await openJoin(link, mailApp);
+    expect(landing).toBe(`${ORIGIN}/?workspace=${space.id}`);
+    const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
+    expect(await me.json()).toMatchObject({
+      name: "New Person",
+      email,
+      workspaces: [{ workspaceId: space.id, role: "admin" }],
+    });
+    expect((await operatorRow(email))?.emailVerified).toBe(true);
+    const again = await openLink(mailApp, link);
+    expect(again.headers.get("location")).toBe("/?error=INVALID_TOKEN");
+    expect(again.headers.getSetCookie()).toEqual([]);
+  });
+
+  test("an expired link changes nothing", async () => {
+    const boss = await person("owner");
+    const token = await newInvite(boss);
+    const email = `late-${randomUUID()}@example.com`;
+    await join(token, email, ORIGIN, mailApp);
+    const link = await mail.linkTo(email);
+    await owner
+      .update(verification)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(sql`${verification.identifier} like 'invite-join:%'`);
+    expect((await openLink(mailApp, link)).headers.get("location")).toBe("/?error=INVALID_TOKEN");
+    expect(await operatorRow(email)).toBeUndefined();
+    expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
+  });
+
+  test("an existing account joins and signs in with its own login", async () => {
+    const other = await createWorkspace(db, "Other", [SITE]);
+    const existing = await person("owner", other.id);
+    const boss = await person("owner");
+    const token = await newInvite(boss);
+    await join(token, existing.email, ORIGIN, mailApp);
+    const { cookie, landing } = await openJoin(await mail.linkTo(existing.email), mailApp);
+    expect(landing).toBe(`${ORIGIN}/?workspace=${space.id}`);
+    expect(
+      await owner.select().from(operator).where(eq(operator.email, existing.email)),
+    ).toHaveLength(1);
+    expect((await memberRow(existing.id))?.role).toBe("agent");
+    // Its own name stays: the typed one only names a new account.
+    const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
+    expect(await me.json()).toMatchObject({ id: existing.id, name: existing.email });
+  });
+
+  test("an invite used or revoked before the link opens makes nothing", async () => {
+    const boss = await person("owner");
+    const used = await newInvite(boss);
+    const usedEmail = `used-${randomUUID()}@example.com`;
+    await join(used, usedEmail, ORIGIN, mailApp);
+    const someone = await person(null);
+    expect(
+      (await call("POST", "/v1/operator/invites/accept", someone, { token: used })).status,
+    ).toBe(200);
+    const response = await call("POST", inSpace("/invites"), boss, { role: "agent" });
+    const revoked = (await response.json()) as { id: string; token: string };
+    const revokedEmail = `revoked-${randomUUID()}@example.com`;
+    await join(revoked.token, revokedEmail, ORIGIN, mailApp);
+    await call("DELETE", inSpace(`/invites/${revoked.id}`), boss);
+    for (const email of [usedEmail, revokedEmail]) {
+      const opened = await openJoin(await mail.linkTo(email), mailApp);
+      expect(opened).toEqual({ cookie: "", landing: "/?error=invite_invalid" });
+      expect(await operatorRow(email)).toBeUndefined();
+    }
+  });
+
+  test("with no mail server, a new email gets the link in the answer, and it works the same", async () => {
+    const boss = await person("owner");
+    const token = await newInvite(boss);
     const email = `plain-${randomUUID()}@example.com`;
-    const joined = await join(await newInvite(boss), email);
-    expect(await joined.json()).toEqual({ ok: true, verify: false });
-    expect(await signIn(app, email)).not.toBe("");
+    const { cookie, landing } = await joinAndOpen(token, email);
+    expect(landing).toBe(`${ORIGIN}/?workspace=${space.id}`);
+    const me = await app.request("/v1/operator/me", { headers: { cookie } });
+    expect(await me.json()).toMatchObject({ email, workspaces: [{ workspaceId: space.id }] });
+  });
+
+  test("a password in the body is ignored, and nothing stores one", async () => {
+    const boss = await person("owner");
+    const token = await newInvite(boss);
+    const email = `pw-${randomUUID()}@example.com`;
+    const response = await call("POST", "/v1/invites/join", null, {
+      token,
+      name: "New",
+      email,
+      password: "a-long-password-value",
+    });
+    expect(response.status).toBe(200);
+    const { signInUrl } = (await response.json()) as { signInUrl: string };
+    await openJoin(signInUrl);
+    const created = await operatorRow(email);
+    expect(created).toBeDefined();
+    expect(
+      await owner
+        .select()
+        .from(account)
+        .where(eq(account.userId, created?.id ?? "")),
+    ).toEqual([]);
   });
 });
 
@@ -187,7 +311,7 @@ describe("the audit log", () => {
     const { signingSecret } = (await rotated.json()) as { signingSecret: string };
     const token = await newInvite(boss);
     const joiner = `joiner-${randomUUID()}@example.com`;
-    expect((await join(token, joiner)).status).toBe(200);
+    expect((await joinAndOpen(token, joiner)).cookie).not.toBe("");
 
     const by = { workspaceId: space.id, operatorId: boss.id };
     expect(audits("member.role_changed")).toEqual([
@@ -451,8 +575,7 @@ describe("invites", () => {
     expect(await offer.json()).toEqual({ workspaceName: "Acme", role: "admin" });
 
     const email = `new-${randomUUID()}@example.com`;
-    expect((await join(token, email.toUpperCase())).status).toBe(200);
-    const cookie = await signIn(app, email);
+    const { cookie } = await joinAndOpen(token, email.toUpperCase());
     expect(cookie).toContain("session");
     const me = await app.request("/v1/operator/me", { headers: { cookie } });
     expect(((await me.json()) as { workspaces: unknown[] }).workspaces).toEqual([
@@ -531,7 +654,7 @@ describe("invites", () => {
     expect((await call("GET", inSpace("/members"), existing)).status).toBe(200);
   });
 
-  test("joining with a taken email makes nothing and leaves the link usable", async () => {
+  test("with no mail server, joining with a taken email makes nothing and leaves the link usable", async () => {
     const boss = await person("owner");
     const token = await newInvite(boss);
     const response = await join(token, boss.email);
@@ -544,10 +667,20 @@ describe("invites", () => {
     const boss = await person("owner");
     const token = await newInvite(boss);
     const emails = [`a-${randomUUID()}@example.com`, `b-${randomUUID()}@example.com`];
-    const results = await Promise.all(emails.map((email) => join(token, email)));
-    expect(results.map((result) => result.status).sort()).toEqual([200, 404]);
-    const lost = emails[results.findIndex((result) => result.status === 404)] ?? "";
-    expect(await owner.select().from(operator).where(eq(operator.email, lost))).toEqual([]);
+    const links = await Promise.all(
+      emails.map(async (email) => {
+        const response = await join(token, email);
+        return ((await response.json()) as { signInUrl: string }).signInUrl;
+      }),
+    );
+    const results = await Promise.all(links.map((link) => openJoin(link)));
+    expect(results.map((result) => result.landing.includes("error=")).sort()).toEqual([
+      false,
+      true,
+    ]);
+    const lost = emails[results.findIndex((result) => result.landing.includes("error="))] ?? "";
+    expect(results.find((result) => result.cookie === "")?.landing).toBe("/?error=invite_invalid");
+    expect(await operatorRow(lost)).toBeUndefined();
   });
 
   test("an existing member keeps their role and does not use up the link", async () => {
@@ -640,19 +773,6 @@ describe("invites", () => {
     expect((await call("POST", "/v1/operator/invites/accept", boss, { token }, evil)).status).toBe(
       403,
     );
-  });
-
-  test("a short password is refused", async () => {
-    const boss = await person("owner");
-    const token = await newInvite(boss);
-    const response = await call("POST", "/v1/invites/join", null, {
-      token,
-      name: "New",
-      email: `x-${randomUUID()}@example.com`,
-      password: "short",
-    });
-    expect(response.status).toBe(400);
-    expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
   });
 });
 

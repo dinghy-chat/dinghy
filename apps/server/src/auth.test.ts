@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
@@ -8,22 +7,31 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
-import { addOperator, TEST_PASSWORD } from "../test/operators.ts";
+import {
+  addOperator,
+  captureMail,
+  cookieOf,
+  openLink,
+  openSignInLink,
+  signIn,
+} from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
-import { type Auth, createAuth } from "./auth.ts";
+import { type Auth, createAuth, signInLink } from "./auth.ts";
 import { session } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
-import { createLoginLimit } from "./login-limit.ts";
+import { createLinkLimit } from "./login-limit.ts";
 
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
 const logger = pino({ level: "silent" });
 const ok = async () => {};
 const ORIGIN = new URL(PUBLIC_URL).origin;
-// Sign-in counts live for 15 minutes in the Valkey that every test file shares, so each run uses its
-// own emails and addresses, and a run soon after another starts from zero.
+// Link counts live for an hour in the Valkey that every test file shares, so each run uses its own
+// emails and addresses, and a run soon after another starts from zero.
 const RUN = randomUUID().slice(0, 8);
-const address = (n: number) => `2001:db8:${RUN.slice(0, 4)}:${RUN.slice(4)}::${n.toString(16)}`;
+// The limits count a whole IPv6 /64 as one address, so each number is its own /64.
+const address = (n: number) => `2001:${RUN.slice(0, 4)}:${RUN.slice(4)}:${n.toString(16)}::1`;
+let nextAddress = 0x1000;
 const email = (name: string) => `${name}-${RUN}@example.com`;
 
 let database: TestDatabase;
@@ -32,20 +40,17 @@ let owner: Database;
 let auth: Auth;
 let app: App;
 let valkey: Redis;
-const mail: { to: string; url: string }[] = [];
+const mail = captureMail();
 
-function chat(...args: (string | Record<string, string>)[]) {
-  const words = args.filter((arg): arg is string => typeof arg === "string");
-  const env = args.find((arg): arg is Record<string, string> => typeof arg !== "string");
+function chat(...args: string[]) {
   return new Promise<{ code: number | null; out: string; err: string }>((resolve) => {
-    const child = spawn(process.execPath, [CLI, ...words], {
+    const child = spawn(process.execPath, [CLI, ...args], {
       env: {
         ...process.env,
         DATABASE_URL: database.url("app"),
         VALKEY_URL,
         AUTH_SECRET,
         PUBLIC_URL,
-        ...env,
       },
     });
     let out = "";
@@ -60,28 +65,19 @@ function chat(...args: (string | Record<string, string>)[]) {
   });
 }
 
-/** In-process, since a new Node process per operator made this file slow. A test below keeps
- * `chat create-operator` covered. */
-async function newOperator(email: string) {
-  await addOperator({ auth, owner, email, name: "Anna" });
-  return TEST_PASSWORD;
-}
+const newOperator = (to: string) => addOperator({ auth, owner, email: to, name: "Anna" });
 
-function signIn(email: string, password: string, target = app, origin = ORIGIN) {
-  return target.request("/v1/auth/sign-in/email", {
+/** Asks for a link on the sign-in page, from `ip`. */
+function askLink(to: string, { target = app, origin = ORIGIN, ip = address(nextAddress++) } = {}) {
+  return target.request("/v1/auth/sign-in/magic-link", {
     method: "POST",
-    headers: { origin, "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    headers: { origin, "content-type": "application/json", "x-forwarded-for": ip },
+    body: JSON.stringify({ email: to }),
   });
 }
 
-const cookieOf = (response: Response) =>
-  response.headers
-    .getSetCookie()
-    .map((cookie) => cookie.split(";")[0])
-    .join("; ");
-
 const me = (cookie: string) => app.request("/v1/operator/me", { headers: { cookie } });
+const linkIn = (text: string) => /https?:\/\/\S+/.exec(text)?.[0] ?? "";
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -90,17 +86,16 @@ beforeAll(async () => {
   valkey = new Redis(VALKEY_URL, { enableOfflineQueue: false, maxRetriesPerRequest: 1 });
   await new Promise((resolve) => valkey.once("ready", resolve));
   owner = database.connect("migrator").db;
-  auth = createAuth({
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+  app = createApp({
     db,
-    secret: AUTH_SECRET,
-    baseURL: PUBLIC_URL,
     logger,
-    sendResetPassword: async (to, url) => {
-      mail.push({ to, url });
-    },
-    onPasswordReset: (email) => createLoginLimit(valkey, logger).clear(email),
+    valkey,
+    mailer: mail,
+    trustedProxyHops: 1,
+    checks: { postgres: ok, valkey: ok },
+    auth,
   });
-  app = createApp({ db, logger, valkey, checks: { postgres: ok, valkey: ok }, auth });
 }, 30_000);
 
 afterAll(async () => {
@@ -108,11 +103,32 @@ afterAll(async () => {
   await database.drop();
 });
 
-describe("signing in", () => {
-  test("a valid password gives a session that is HttpOnly and not sent cross-site", async () => {
-    const password = await newOperator(email("in"));
-    const response = await signIn(email("in"), password);
-    expect(response.status).toBe(200);
+describe("asking for a link", () => {
+  test("a known and an unknown email get the same answer, and only the known one an email", async () => {
+    await newOperator(email("known"));
+    const known = await askLink(email("known"));
+    const unknown = await askLink(email("unknown"));
+    expect(known.status).toBe(200);
+    expect(unknown.status).toBe(200);
+    expect(await known.text()).toBe(await unknown.text());
+    const link = await mail.linkTo(email("known"));
+    expect(link.startsWith(`${ORIGIN}/v1/auth/magic-link/verify?token=`)).toBe(true);
+    // The unknown email's work runs after the answer, so give it the time the known one took.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(mail.countTo(email("unknown"))).toBe(0);
+    const [sent] = mail.sent.filter((one) => one.to === email("known"));
+    expect(sent?.subject).toBe("Your Dinghy sign-in link");
+    expect(sent?.text.startsWith("Hi,\n\n")).toBe(true);
+    expect(sent?.text).toContain("15 minutes");
+    expect(sent?.text.endsWith("Cheers,\nThe Dinghy team")).toBe(true);
+  });
+
+  test("opening the link signs in with a session that is HttpOnly and not sent cross-site", async () => {
+    await newOperator(email("in"));
+    await askLink(email("in"));
+    const response = await openLink(app, await mail.linkTo(email("in")));
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(`${ORIGIN}/`);
     const [cookie] = response.headers.getSetCookie();
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
@@ -120,8 +136,146 @@ describe("signing in", () => {
     expect(body.email).toBe(email("in"));
   });
 
-  test("an operator lists its workspaces, with no other tenant's data", async () => {
-    const { out } = await chat(
+  test("the email's letter case does not matter", async () => {
+    await newOperator(email("case"));
+    expect((await askLink(email("case").toUpperCase())).status).toBe(200);
+    expect(await mail.linkTo(email("case"))).toContain("token=");
+  });
+
+  test("a link works once", async () => {
+    await newOperator(email("once"));
+    const link = await signInLink(auth, email("once"));
+    expect(await openSignInLink(app, link)).not.toBe("");
+    const again = await openLink(app, link);
+    expect(again.status).toBe(302);
+    expect(again.headers.get("location")).toContain("error=INVALID_TOKEN");
+    expect(again.headers.getSetCookie()).toEqual([]);
+  });
+
+  test("a link stops working after 15 minutes", async () => {
+    await newOperator(email("old"));
+    const link = await signInLink(auth, email("old"));
+    const { rows } = await owner.execute<{ minutes: number }>(
+      sql`select extract(epoch from expires_at - now()) / 60 as minutes from verification
+          where identifier like 'magic-link:%' order by created_at desc limit 1`,
+    );
+    expect(Number(rows[0]?.minutes)).toBeGreaterThan(14);
+    expect(Number(rows[0]?.minutes)).toBeLessThanOrEqual(15);
+    await owner.execute(
+      sql`update verification set expires_at = now() - interval '1 second'
+          where identifier like 'magic-link:%'`,
+    );
+    const response = await openLink(app, link);
+    expect(response.headers.get("location")).toContain("error=INVALID_TOKEN");
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  test("the database holds only a hash of each link's token", async () => {
+    await newOperator(email("hash"));
+    const token = new URL(await signInLink(auth, email("hash"))).searchParams.get("token") ?? "";
+    const { rows } = await owner.execute<{ identifier: string; value: string }>(
+      sql`select identifier, value from verification`,
+    );
+    expect(JSON.stringify(rows)).not.toContain(token);
+  });
+
+  test("a request from another origin, or a form body, is refused", async () => {
+    await newOperator(email("csrf"));
+    expect((await askLink(email("csrf"), { origin: "https://evil.example.com" })).status).toBe(403);
+    const form = await app.request("/v1/auth/sign-in/magic-link", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },
+      body: `email=${encodeURIComponent(email("csrf"))}`,
+    });
+    expect(form.status).toBe(415);
+  });
+
+  test("a client cannot pick where the link lands or name a new account", async () => {
+    const response = await app.request("/v1/auth/sign-in/magic-link", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ email: email("pick"), callbackURL: "https://evil.example.com" }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  test("an oversized request is refused before it is parsed", async () => {
+    const response = await app.request("/v1/auth/sign-in/magic-link", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ email: `${"x".repeat(10_000)}@example.com` }),
+    });
+    expect(response.status).toBe(413);
+  });
+
+  test("a request with no session is refused", async () => {
+    expect((await me("")).status).toBe(401);
+    expect((await me("better-auth.session_token=forged.value")).status).toBe(401);
+  });
+
+  test("an account that never proved its email proves it with a link, and loses old sessions", async () => {
+    const [row] = await owner
+      .execute<{ id: string }>(
+        sql`insert into operator (name, email, email_verified) values ('Old', ${email("unproven")}, false)
+          returning id`,
+      )
+      .then((result) => result.rows);
+    await owner.execute(
+      sql`insert into session (user_id, token, expires_at)
+          values (${row?.id}, ${`planted-${RUN}`}, now() + interval '1 day')`,
+    );
+    expect(await signIn(app, auth, email("unproven"))).not.toBe("");
+    const { rows } = await owner.execute<{ email_verified: boolean; planted: number }>(
+      sql`select email_verified, (select count(*)::int from session where token = ${`planted-${RUN}`})
+          as planted from operator where email = ${email("unproven")}`,
+    );
+    expect(rows[0]).toEqual({ email_verified: true, planted: 0 });
+  });
+});
+
+describe("with no mail server", () => {
+  test("the sign-in route says so, for any email, and /v1/meta tells the app", async () => {
+    const quiet = createApp({ db, logger, checks: { postgres: ok, valkey: ok }, auth });
+    await newOperator(email("quiet"));
+    const known = await askLink(email("quiet"), { target: quiet });
+    const unknown = await askLink(email("quiet-unknown"), { target: quiet });
+    expect(known.status).toBe(400);
+    const answer = await known.text();
+    expect(answer).toBe(await unknown.text());
+    expect((JSON.parse(answer) as { error: { code: string } }).error.code).toBe(
+      "email_unavailable",
+    );
+    expect(await (await quiet.request("/v1/meta")).json()).toMatchObject({ email: false });
+    expect(await (await app.request("/v1/meta")).json()).toMatchObject({ email: true });
+  });
+});
+
+describe("chat sign-in-link", () => {
+  test("prints a link that signs the operator in once", async () => {
+    await newOperator(email("cli"));
+    const { code, out } = await chat("sign-in-link", email("cli").toUpperCase());
+    expect(code).toBe(0);
+    expect(out).toContain("It works once, for the next 15 minutes");
+    expect(out).toContain(`chat sign-in-link ${email("cli")}`);
+    const link = linkIn(out);
+    const cookie = await openSignInLink(app, link);
+    expect(((await (await me(cookie)).json()) as { email: string }).email).toBe(email("cli"));
+    expect((await openLink(app, link)).headers.get("location")).toContain("error=INVALID_TOKEN");
+  });
+
+  test("refuses an unknown email and makes no link", async () => {
+    const { code, err, out } = await chat("sign-in-link", email("nobody"));
+    expect(code).toBe(1);
+    expect(err).toContain(`No operator has the email ${email("nobody")}`);
+    expect(out).toBe("");
+    const { rows } = await owner.execute(
+      sql`select 1 from operator where email = ${email("nobody")}`,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  test("chat create-operator creates the account and prints a working link", async () => {
+    const { code, out } = await chat(
       "create-operator",
       email("owner"),
       "Owner",
@@ -130,169 +284,107 @@ describe("signing in", () => {
       "--origin",
       "https://acme.example.com",
     );
-    const password = /password: (\S+)/.exec(out)?.[1] ?? "";
-    const response = await signIn(email("owner"), password);
-    const body = (await (await me(cookieOf(response))).json()) as {
-      workspaces: { role: string }[];
-    };
+    expect(code).toBe(0);
+    const cookie = await openSignInLink(app, linkIn(out));
+    const body = (await (await me(cookie)).json()) as { workspaces: { role: string }[] };
     expect(body.workspaces.map((w) => w.role)).toEqual(["owner"]);
   });
 
-  test("a password is stored only as a hash", async () => {
-    const password = await newOperator(email("hash"));
-    const { rows } = await owner.execute<{ password: string }>(
-      sql`select a.password from account a join operator o on o.id = a.user_id
-          where o.email = ${email("hash")}`,
-    );
-    expect(rows[0]?.password).not.toContain(password);
-    expect(rows[0]?.password.length).toBeGreaterThan(50);
+  test("chat with no command, or the old reset-password, prints usage", async () => {
+    const none = await chat();
+    expect(none.code).toBe(2);
+    expect(none.err).toContain("chat sign-in-link <email>");
+    const old = await chat("reset-password", email("cli"));
+    expect(old.code).toBe(2);
+    expect(old.err).not.toContain("reset-password");
   });
+});
 
-  test("a wrong password and an unknown email both fail the same way", async () => {
-    await newOperator(email("same"));
-    const wrong = await signIn(email("same"), "wrong-password-value");
-    const unknown = await signIn(email("nobody"), "wrong-password-value");
-    expect(wrong.status).toBe(401);
-    expect(unknown.status).toBe(401);
-    expect(await wrong.text()).toBe(await unknown.text());
-  });
-
-  test("nobody can sign themselves up", async () => {
-    const response = await app.request("/v1/auth/sign-up/email", {
+describe("password routes", () => {
+  const post = (path: string, body: Record<string, unknown>) =>
+    app.request(path, {
       method: "POST",
       headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ email: email("self"), password: "a-long-password", name: "S" }),
+      body: JSON.stringify(body),
     });
-    expect(response.status).toBeGreaterThanOrEqual(400);
+
+  test("none of them answers any more", async () => {
+    await newOperator(email("routes"));
+    const cookie = await signIn(app, auth, email("routes"));
+    for (const path of [
+      "/v1/auth/sign-in/email",
+      "/v1/auth/sign-up/email",
+      "/v1/auth/request-password-reset",
+      "/v1/auth/reset-password",
+      "/v1/auth/change-password",
+      "/v1/auth/set-password",
+      "/v1/auth/send-verification-email",
+      "/v1/auth/forget-password",
+    ]) {
+      const response = await app.request(path, {
+        method: "POST",
+        headers: { cookie, origin: ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({ email: email("routes"), password: "a-long-password-value" }),
+      });
+      expect(response.status, path).toBe(404);
+    }
+    for (const path of ["/v1/auth/verify-email?token=x", "/v1/auth/reset-password/x"]) {
+      expect((await app.request(path)).status, path).toBe(404);
+    }
+    expect((await app.request("/reset-password")).status).toBe(404);
+  });
+
+  test("nobody signs themselves up through BetterAuth", async () => {
+    await post("/v1/auth/sign-up/email", { email: email("self"), password: "x".repeat(12) });
     const { rows } = await owner.execute(
       sql`select 1 from operator where email = ${email("self")}`,
     );
     expect(rows).toEqual([]);
   });
-
-  test("a sign-in from another origin is refused", async () => {
-    const password = await newOperator(email("csrf"));
-    const response = await signIn(email("csrf"), password, app, "https://evil.example.com");
-    expect(response.status).toBe(403);
-    expect(response.headers.getSetCookie()).toEqual([]);
-  });
-
-  test("a request with no session is refused", async () => {
-    expect((await me("")).status).toBe(401);
-    expect((await me("better-auth.session_token=forged.value")).status).toBe(401);
-  });
-
-  test("an oversized sign-in is refused before it is parsed", async () => {
-    const response = await signIn(email("big"), "x".repeat(10_000));
-    expect(response.status).toBe(413);
-  });
-
-  test("the worker role cannot read passwords", async () => {
-    const { db: worker } = database.connect("worker");
-    await expect(worker.execute(sql`select password from account`)).rejects.toThrow();
-  });
 });
 
-describe("the login limit", () => {
-  test("wrong passwords count, and the limit stops even the right one", async () => {
-    const password = await newOperator(email("limit"));
-    for (let i = 0; i < 5; i++) {
-      expect((await signIn(email("limit"), "wrong-password-value")).status).toBe(401);
+describe("the link limit", () => {
+  test("stops one address after 5 requests for one account, and counts before the lookup", async () => {
+    for (const target of [email("limit"), email("limit-unknown")]) {
+      if (target === email("limit")) await newOperator(target);
+      for (let i = 0; i < 5; i++)
+        expect((await askLink(target, { ip: address(1) })).status).toBe(200);
+      const limited = await askLink(target, { ip: address(1) });
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get("retry-after")).toBe("3600");
     }
-    const blocked = await signIn(email("limit"), password);
-    expect(blocked.status).toBe(429);
-    expect(blocked.headers.get("retry-after")).toBe("900");
+    // Another address still gets its own link.
+    expect((await askLink(email("limit"), { ip: address(2) })).status).toBe(200);
   });
 
-  test("the limit ignores letter case and spaces in the email", async () => {
-    await newOperator(email("case"));
-    for (let i = 0; i < 5; i++)
-      await signIn(`${email("case").toUpperCase()} `, "wrong-password-value");
-    expect((await signIn(email("case"), "wrong-password-value")).status).toBe(429);
+  test("letter case does not reset the count", async () => {
+    for (let i = 0; i < 5; i++) await askLink(email("case-limit"), { ip: address(3) });
+    expect((await askLink(email("CASE-limit"), { ip: address(3) })).status).toBe(429);
   });
 
-  test("parallel guesses cannot pass the limit", async () => {
-    await newOperator(email("parallel"));
-    const responses = await Promise.all(
-      Array.from({ length: 12 }, () => signIn(email("parallel"), "wrong-password-value")),
-    );
-    expect(responses.filter((r) => r.status === 401)).toHaveLength(5);
-    expect(responses.filter((r) => r.status === 429)).toHaveLength(7);
+  test("one address cannot ask for many accounts", async () => {
+    for (let i = 0; i < 30; i++) await askLink(email(`many-${i}`), { ip: address(4) });
+    expect((await askLink(email("many-next"), { ip: address(4) })).status).toBe(429);
   });
 
-  test("a body that parses two ways cannot show the limit another email", async () => {
-    const password = await newOperator(email("victim"));
-    const guess = (decoy: string, value: string) =>
-      app.request("/v1/auth/sign-in/email", {
-        method: "POST",
-        headers: { origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },
-        body: `{"email":"${decoy}","a":"&email=${email("victim")}&password=${value}&b="}`,
-      });
-    expect((await guess(email("decoy1"), password)).status).toBe(415);
-    expect((await guess(email("decoy2"), "wrong-password-value")).status).toBe(415);
-    const plain = await app.request("/v1/auth/sign-in/email", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },
-      body: `email=${email("victim")}&password=${password}`,
-    });
-    expect(plain.status).toBe(415);
-    expect(plain.headers.getSetCookie()).toEqual([]);
+  test("an account gets at most 20 links an hour, from any number of addresses", async () => {
+    const target = email("total");
+    for (let i = 0; i < 20; i++) {
+      expect((await askLink(target, { ip: address(100 + i) })).status).toBe(200);
+    }
+    expect((await askLink(target, { ip: address(200) })).status).toBe(429);
   });
 
   test("a counter always has an expiry", async () => {
-    await newOperator(email("expiry"));
-    await signIn(email("expiry"), "wrong-password-value");
-    // Only this test's keys: another file can be counting sign-ins in the same Valkey.
-    const key = `dinghy:login:${sha256Hex(email("expiry"))}`;
-    const keys = [key, `${key}:total`];
-    const ttls = await Promise.all(keys.map((name) => valkey.ttl(name)));
-    expect(ttls.length).toBeGreaterThan(0);
-    expect(ttls.every((ttl) => ttl > 0)).toBe(true);
+    const limit = createLinkLimit(valkey, logger);
+    await limit.attempt(email("ttl"), address(5));
+    const key = `dinghy:sign-in-link:${sha256Hex(email("ttl"))}`;
+    expect(await valkey.ttl(key)).toBeGreaterThan(0);
+    expect(await valkey.ttl(`${key}:total`)).toBeGreaterThan(0);
   });
 
-  test("chat reset-password makes the new password work at once, despite the limit", async () => {
-    await newOperator(email("locked"));
-    for (let i = 0; i < 6; i++) await signIn(email("locked"), "wrong-password-value");
-    const { out } = await chat("reset-password", email("locked"));
-    const next = /: (\S+)\n/.exec(out)?.[1] ?? "";
-    expect((await signIn(email("locked"), next)).status).toBe(200);
-  });
-
-  test("a correct sign-in clears the count", async () => {
-    const password = await newOperator(email("clear"));
-    for (let i = 0; i < 4; i++) await signIn(email("clear"), "wrong-password-value");
-    expect((await signIn(email("clear"), password)).status).toBe(200);
-    expect((await signIn(email("clear"), "wrong-password-value")).status).toBe(401);
-  });
-
-  test("one account's limit does not touch another", async () => {
-    const password = await newOperator(email("other"));
-    for (let i = 0; i < 6; i++) await signIn(email("noisy"), "wrong-password-value");
-    expect((await signIn(email("other"), password)).status).toBe(200);
-  });
-
-  test("guesses from many addresses stop at the account's total, and a reset clears it", async () => {
-    const limit = createLoginLimit(valkey, logger);
-    const target = email("spread");
-    let allowed = 0;
-    for (let n = 0; n < 50; n++) {
-      for (let i = 0; i < 5; i++) if (await limit.attempt(target, address(n))) allowed++;
-    }
-    expect(allowed).toBe(200);
-    expect(await limit.attempt(target, address(1000))).toBe(false);
-    await limit.clear(target);
-    expect(await limit.attempt(target, address(1000))).toBe(true);
-  });
-
-  test("one address that keeps guessing cannot use up the account's total", async () => {
-    const limit = createLoginLimit(valkey, logger);
-    const target = email("hammered");
-    for (let i = 0; i < 300; i++) await limit.attempt(target, address(1001));
-    expect(await limit.attempt(target, address(1002))).toBe(true);
-  });
-
-  test("sign-in still works with Valkey down", async () => {
-    const password = await newOperator(email("down"));
+  test("links still work with Valkey down", async () => {
+    await newOperator(email("down"));
     const down = new Redis("redis://127.0.0.1:1", {
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
@@ -303,43 +395,18 @@ describe("the login limit", () => {
       db,
       logger,
       valkey: down,
+      mailer: mail,
       checks: { postgres: ok, valkey: ok },
-      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger }),
+      auth,
     });
-    expect((await signIn(email("down"), password, offline)).status).toBe(200);
+    expect((await askLink(email("down"), { target: offline })).status).toBe(200);
+    expect(await openSignInLink(offline, await mail.linkTo(email("down")))).not.toBe("");
     down.disconnect();
   });
 });
 
 describe("the logs", () => {
-  test("a database failure during sign-in logs no email or parameters", async () => {
-    const lines: string[] = [];
-    const capture = pino({ level: "info" }, { write: (line: string) => lines.push(line) });
-    const printed: string[] = [];
-    const original = console.error;
-    console.error = (...args: unknown[]) => printed.push(args.map(String).join(" "));
-    const failing = createApp({
-      db,
-      logger: capture,
-      checks: { postgres: ok, valkey: ok },
-      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger: capture }),
-    });
-    await owner.execute(sql`alter table operator rename to operator_hidden`);
-    try {
-      const response = await signIn(email("private"), "a-private-password", failing);
-      expect(response.status).toBeGreaterThanOrEqual(500);
-    } finally {
-      await owner.execute(sql`alter table operator_hidden rename to operator`);
-      console.error = original;
-    }
-    const output = lines.join("") + printed.join("");
-    expect(output).not.toContain(email("private"));
-    expect(output).not.toContain("a-private-password");
-  });
-});
-
-describe("the audit log", () => {
-  test("a failed and a limited sign-in each write a line, with a hash and no email", async () => {
+  test("a limited request and a used or refused link each write an audit line, with no email", async () => {
     const lines: Record<string, unknown>[] = [];
     const capture = pino(
       { level: "info" },
@@ -349,36 +416,56 @@ describe("the audit log", () => {
       db,
       logger: capture,
       valkey,
+      mailer: mail,
+      trustedProxyHops: 1,
       checks: { postgres: ok, valkey: ok },
-      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger: capture }),
+      auth,
     });
-    await newOperator(email("audited"));
-    for (let i = 0; i < 6; i++) await signIn(email("audited"), "wrong-password-value", logged);
-    const account = sha256Hex(email("audited")).slice(0, 16);
+    const { id } = await newOperator(email("audited"));
+    for (let i = 0; i < 6; i++) await askLink(email("audited"), { target: logged, ip: address(6) });
+    const link = await mail.linkTo(email("audited"));
+    await openLink(logged, link);
+    await openLink(logged, link);
     const audits = lines.filter((line) => line.msg === "audit");
-    expect(audits.filter((line) => line.event === "sign_in.failed")).toHaveLength(5);
-    expect(audits.filter((line) => line.event === "sign_in.limited")).toHaveLength(1);
-    expect(audits.every((line) => line.account === account)).toBe(true);
+    const of = (event: string) => audits.filter((line) => line.event === event);
+    expect(of("sign_in.limited")).toEqual([
+      expect.objectContaining({ account: sha256Hex(email("audited")).slice(0, 16) }),
+    ]);
+    expect(of("sign_in.link_sent")).toHaveLength(5);
+    expect(of("sign_in.link_used")).toEqual([expect.objectContaining({ operatorId: id })]);
+    expect(of("sign_in.link_refused")).toHaveLength(1);
     const text = JSON.stringify(lines);
     expect(text).not.toContain(email("audited"));
-    expect(text).not.toContain("wrong-password-value");
+    expect(text).not.toContain(new URL(link).searchParams.get("token"));
   });
-});
 
-describe("failures", () => {
+  test("a mail server failure answers normally and logs the failure", async () => {
+    const lines: string[] = [];
+    const capture = pino({ level: "info" }, { write: (line: string) => lines.push(line) });
+    await newOperator(email("no-mail"));
+    const failing = createApp({
+      db,
+      logger: capture,
+      mailer: {
+        send: async () => {
+          throw new Error("The mail server refused the message");
+        },
+      },
+      checks: { postgres: ok, valkey: ok },
+      auth,
+    });
+    expect((await askLink(email("no-mail"), { target: failing })).status).toBe(200);
+    await expect.poll(() => lines.join("")).toContain("could not send a sign-in link");
+  });
+
   test("a database failure during a session check keeps the session token out of the logs", async () => {
-    const password = await newOperator(email("token-log"));
-    const cookie = cookieOf(await signIn(email("token-log"), password));
+    await newOperator(email("token-log"));
+    const cookie = await signIn(app, auth, email("token-log"));
     const token = decodeURIComponent(cookie.split("=")[1] ?? "").split(".")[0] ?? "";
     expect(token.length).toBeGreaterThan(10);
     const lines: string[] = [];
     const capture = pino({ level: "info" }, { write: (line: string) => lines.push(line) });
-    const failing = createApp({
-      db,
-      logger: capture,
-      checks: { postgres: ok, valkey: ok },
-      auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger: capture }),
-    });
+    const failing = createApp({ db, logger: capture, checks: { postgres: ok, valkey: ok }, auth });
     await owner.execute(sql`alter table session rename to session_hidden`);
     try {
       await failing.request("/v1/operator/me", { headers: { cookie } });
@@ -389,54 +476,12 @@ describe("failures", () => {
     expect(output).toContain("unhandled error");
     expect(output).not.toContain(token);
   });
-
-  test("a mail server failure answers normally and logs the failure", async () => {
-    const lines: string[] = [];
-    const capture = pino({ level: "info" }, { write: (line: string) => lines.push(line) });
-    await newOperator(email("no-mail"));
-    const failing = createApp({
-      db,
-      logger: capture,
-      checks: { postgres: ok, valkey: ok },
-      auth: createAuth({
-        db,
-        secret: AUTH_SECRET,
-        baseURL: PUBLIC_URL,
-        logger: capture,
-        sendResetPassword: async () => {
-          throw new Error("The mail server refused the message");
-        },
-      }),
-    });
-    const response = await failing.request("/v1/auth/request-password-reset", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ email: email("no-mail"), redirectTo: "/" }),
-    });
-    expect(response.status).toBe(200);
-    await expect.poll(() => lines.join("")).toContain("could not send a password reset email");
-  });
-
-  test("a Valkey that stops answering does not hold up a reset or lose its password", async () => {
-    const silent = net.createServer(() => {});
-    await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
-    const { port } = silent.address() as net.AddressInfo;
-    await newOperator(email("silent"));
-    const started = Date.now();
-    const { code, out } = await chat("reset-password", email("silent"), {
-      VALKEY_URL: `redis://127.0.0.1:${port}`,
-    });
-    expect(code).toBe(0);
-    expect(out).toContain(`New password for ${email("silent")}`);
-    expect(Date.now() - started).toBeLessThan(8000);
-    silent.close();
-  }, 15_000);
 });
 
 describe("sessions", () => {
   test("an active operator's session renews and sends a new cookie", async () => {
-    const password = await newOperator(email("renew"));
-    const cookie = cookieOf(await signIn(email("renew"), password));
+    await newOperator(email("renew"));
+    const cookie = await signIn(app, auth, email("renew"));
     // The session was last renewed two days ago, and it renews once a day.
     await owner.execute(sql`
       update session set updated_at = now() - interval '2 days',
@@ -449,8 +494,8 @@ describe("sessions", () => {
   });
 
   test("signing out ends the session", async () => {
-    const password = await newOperator(email("out"));
-    const cookie = cookieOf(await signIn(email("out"), password));
+    await newOperator(email("out"));
+    const cookie = await signIn(app, auth, email("out"));
     await app.request("/v1/auth/sign-out", {
       method: "POST",
       headers: { cookie, origin: ORIGIN, "content-type": "application/json" },
@@ -460,128 +505,10 @@ describe("sessions", () => {
   });
 
   test("a revoked session stops at the next request", async () => {
-    const password = await newOperator(email("revoked"));
-    const cookie = cookieOf(await signIn(email("revoked"), password));
+    await newOperator(email("revoked"));
+    const cookie = await signIn(app, auth, email("revoked"));
     expect((await me(cookie)).status).toBe(200);
     await db.delete(session);
     expect((await me(cookie)).status).toBe(401);
-  });
-});
-
-describe("resetting a password", () => {
-  test("chat reset-password works with no mail server, and signs the operator out", async () => {
-    const old = await newOperator(email("cli"));
-    const cookie = cookieOf(await signIn(email("cli"), old));
-    const { code, out } = await chat("reset-password", email("cli"));
-    expect(code).toBe(0);
-    const next = /: (\S+)\n/.exec(out)?.[1] ?? "";
-    expect((await me(cookie)).status).toBe(401);
-    expect((await signIn(email("cli"), old)).status).toBe(401);
-    expect((await signIn(email("cli"), next)).status).toBe(200);
-  });
-
-  test("chat reset-password names an unknown email and changes nothing", async () => {
-    const { code, err } = await chat("reset-password", email("nobody"));
-    expect(code).toBe(1);
-    expect(err).toContain(email("nobody"));
-  });
-
-  test("chat with no command prints usage", async () => {
-    const { code, err } = await chat();
-    expect(code).toBe(2);
-    expect(err).toContain("Usage");
-  });
-
-  test("with a mail server, a reset link sets a new password and ends old sessions", async () => {
-    const old = await newOperator(email("mail"));
-    const cookie = cookieOf(await signIn(email("mail"), old));
-    const request = await app.request("/v1/auth/request-password-reset", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ email: email("mail"), redirectTo: "/" }),
-    });
-    expect(request.status).toBe(200);
-    await expect.poll(() => mail.some((m) => m.to === email("mail"))).toBe(true);
-    const sent = mail.find((m) => m.to === email("mail"));
-    const token = new URL(sent?.url ?? "http://x").pathname.split("/").at(-1);
-    const reset = await app.request("/v1/auth/reset-password", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ newPassword: "a-brand-new-password", token }),
-    });
-    expect(reset.status).toBe(200);
-    expect((await me(cookie)).status).toBe(401);
-    expect((await signIn(email("mail"), "a-brand-new-password")).status).toBe(200);
-  });
-
-  test("a reset link also clears the login limit", async () => {
-    await newOperator(email("mail-limit"));
-    for (let i = 0; i < 6; i++) await signIn(email("mail-limit"), "wrong-password-value");
-    await app.request("/v1/auth/request-password-reset", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ email: email("mail-limit"), redirectTo: "/" }),
-    });
-    await expect.poll(() => mail.some((m) => m.to === email("mail-limit"))).toBe(true);
-    const sent = mail.find((m) => m.to === email("mail-limit"));
-    const token = new URL(sent?.url ?? "http://x").pathname.split("/").at(-1);
-    await app.request("/v1/auth/reset-password", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ newPassword: "another-new-password", token }),
-    });
-    expect((await signIn(email("mail-limit"), "another-new-password")).status).toBe(200);
-  });
-
-  test("reset emails to one address are limited", async () => {
-    await newOperator(email("flood"));
-    const request = () =>
-      app.request("/v1/auth/request-password-reset", {
-        method: "POST",
-        headers: { origin: ORIGIN, "content-type": "application/json" },
-        body: JSON.stringify({ email: email("flood"), redirectTo: "/" }),
-      });
-    const statuses = [];
-    for (let i = 0; i < 5; i++) statuses.push((await request()).status);
-    expect(statuses).toEqual([200, 200, 200, 429, 429]);
-    // The reset count lasts an hour, so the answer says to wait that long.
-    expect((await request()).headers.get("retry-after")).toBe("3600");
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(mail.filter((m) => m.to === email("flood"))).toHaveLength(3);
-  });
-
-  test("verification emails to one address share the reset limit", async () => {
-    const request = () =>
-      app.request("/v1/auth/send-verification-email", {
-        method: "POST",
-        headers: { origin: ORIGIN, "content-type": "application/json" },
-        body: JSON.stringify({ email: email("verify-flood") }),
-      });
-    const statuses = [];
-    for (let i = 0; i < 4; i++) statuses.push((await request()).status);
-    expect(statuses.slice(0, 3)).not.toContain(429);
-    expect(statuses[3]).toBe(429);
-  });
-
-  test("reset requests do not lock anyone out of signing in", async () => {
-    const password = await newOperator(email("calm"));
-    for (let i = 0; i < 5; i++) {
-      await app.request("/v1/auth/request-password-reset", {
-        method: "POST",
-        headers: { origin: ORIGIN, "content-type": "application/json" },
-        body: JSON.stringify({ email: email("calm"), redirectTo: "/" }),
-      });
-    }
-    expect((await signIn(email("calm"), password)).status).toBe(200);
-  });
-
-  test("a reset request reveals nothing about an unknown email", async () => {
-    const unknown = await app.request("/v1/auth/request-password-reset", {
-      method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ email: email("nobody"), redirectTo: "/" }),
-    });
-    expect(unknown.status).toBe(200);
-    expect(mail.some((m) => m.to === email("nobody"))).toBe(false);
   });
 });

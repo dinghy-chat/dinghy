@@ -3,7 +3,6 @@ import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { dropImage, pasteImage, pngFile } from "./images.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
-const PASSWORD = "a-long-test-password";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -15,7 +14,7 @@ test.beforeAll(async () => {
       csp: "default-src 'none'; script-src {{API}}; style-src 'unsafe-inline'; connect-src {{API}}; img-src {{API}}",
     },
   });
-  await server.createOperator("anna@example.com", PASSWORD);
+  await server.createOperator("anna@example.com");
 });
 
 test.afterAll(async () => {
@@ -29,10 +28,7 @@ async function openWidget(page: Page, path = "/plain") {
 }
 
 async function openInbox(page: Page) {
-  await page.goto(server.apiOrigin);
-  await page.getByLabel("Email").fill("anna@example.com");
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(await server.signInLink("anna@example.com"));
   await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
 }
 

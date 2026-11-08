@@ -8,7 +8,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
-import { addOperator, cookieOf, TEST_PASSWORD } from "../test/operators.ts";
+import { addOperator, signIn } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import { subscription, workspace } from "./db/schema.ts";
@@ -108,7 +108,7 @@ beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "dinghy-workspace-delete-"));
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
   store = localStore(join(directory, "images"));
-  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   app = createApp({
     auth,
     db,
@@ -132,9 +132,7 @@ describe("the owner's delete", () => {
   test("works on a self-hosted install, with no Stripe", async () => {
     const created = await createWorkspace(db, "Home", []);
     const { email } = await addOperator({ auth, owner, name: "Self", workspaceId: created.id });
-    const cookie = cookieOf(
-      await request("POST", "/v1/auth/sign-in/email", { body: { email, password: TEST_PASSWORD } }),
-    );
+    const cookie = await signIn(app, auth, email);
     const response = await request("DELETE", `/v1/operator/workspaces/${created.id}`, {
       cookie,
       body: { name: "Home" },
