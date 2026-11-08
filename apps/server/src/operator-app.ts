@@ -51,6 +51,8 @@ export function registerOperatorApp(
   const paths = [
     "/",
     "/invite",
+    // Every emailed link opens this page, whose button uses the link.
+    "/link",
     ...(signup ? ["/signup"] : []),
     ...(billing ? ["/billing/return"] : []),
   ];

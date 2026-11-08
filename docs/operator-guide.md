@@ -1,6 +1,6 @@
 # Use the operator app
 
-The operator app is where your team reads and answers chats. Open your Dinghy address in a browser, enter your email, and select **Email me a sign-in link**. Open the link in the email to sign in. It works once, for 15 minutes. Dinghy has no passwords.
+The operator app is where your team reads and answers chats. Open your Dinghy address in a browser, enter your email, and select **Email me a sign-in link**. Open the link in the email, and select **Sign in to Dinghy**. The link works once, for 15 minutes, and only the button uses it, so a mail scanner that opens it first does no harm. Dinghy has no passwords.
 
 ![The operator app with a conversation open](media/inbox.png)
 
@@ -48,7 +48,7 @@ A phone can delay or drop a notification, so do not rely on one for urgent work.
 
 Everyone can open **Settings**. An agent sees the team and the blocked visitors, and the other sections are for owners and admins.
 
-To invite someone, select **Create a link** in **Invite someone**, and send the link to that one person. A link works once and lasts 7 days. The person opens it, and enters a name and an email. Dinghy emails them a link, and opening it creates their account, or uses the one that email already has, joins the workspace and signs them in. Someone who is already signed in selects **Join**. Without a mail server, a new person signs in at once, and nothing checks the email, so send the link only to the person it is for. Someone who already has an account there signs in first, then opens the invite.
+To invite someone, select **Create a link** in **Invite someone**, and send the link to that one person. A link works once and lasts 7 days. The person opens it, and enters a name and an email. Dinghy emails them a link, and selecting **Join your team** on the page it opens creates their account, or uses the one that email already has, joins the workspace and signs them in. Someone who is already signed in selects **Join**. Without a mail server, a new person signs in at once, and nothing checks the email, so send the link only to the person it is for. Someone who already has an account there signs in first, then opens the invite.
 
 | Role | Can do |
 |---|---|

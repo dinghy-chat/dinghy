@@ -266,14 +266,18 @@ describe("early signup", () => {
       { to: created.email, subject: "Harbor is ready", text: expect.any(String) },
     ]);
     // The link proved this address before the operator typed these names, so they are safe here.
-    const text = welcomes()[0]?.text ?? "";
-    expect(text.startsWith("Hi Nora,\n\n")).toBe(true);
-    expect(text).toContain("Your workspace Harbor is set up.");
-    expect(text).toContain("Invite your team");
-    expect(text).toContain("chat widget");
-    expect(text).toContain(PUBLIC_URL);
-    expect(text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
-    expect(text).not.toMatch(/opens soon|coming|when the cloud/i);
+    // Only steps that work in a workspace that waits for the cloud: the widget does not run yet.
+    expect(welcomes()[0]?.text).toBe(
+      [
+        "Hi Nora,",
+        "Welcome to Dinghy! Your workspace Harbor is set up. Here's what to do next:",
+        "- Invite your team from Settings, under Team.\n" +
+          "- Turn on alerts there too, so you hear about new messages.",
+        `Sign in any time at ${PUBLIC_URL}`,
+        "Questions? Write to us at hello@dinghy.chat.",
+        "Cheers,\nThe Dinghy team",
+      ].join("\n\n"),
+    );
   });
 
   test("the link alone makes a signed-in account with no name and no workspace, and no welcome", async () => {
@@ -476,6 +480,8 @@ describe("signup by link", () => {
     expect(sent?.text.startsWith("Hi,\n\n")).toBe(true);
     expect(sent?.text).toContain("15 minutes");
     expect(sent?.text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
+    // Its page's button says "Continue setting up".
+    expect(link.startsWith(`${ORIGIN}/link?for=signup&token=`)).toBe(true);
     const cookie = await openSignInLink(early, link);
     expect(await operatorRow(email)).toMatchObject({ name: "", emailVerified: true });
     const created = await request(early, "POST", "/v1/operator/workspaces", {
@@ -496,6 +502,8 @@ describe("signup by link", () => {
     expect(sent?.text).toContain("tried to sign up for Dinghy with this email");
     expect(sent?.text).toContain("15 minutes");
     expect(sent?.text.startsWith("Hi,\n\n")).toBe(true);
+    // It signs in, then lands on the workspace setup.
+    expect(link.startsWith(`${ORIGIN}/link?for=add-workspace&token=`)).toBe(true);
     const cookie = await openSignInLink(early, link);
     const me = await request(early, "GET", "/v1/operator/me", { cookie });
     expect(await me.json()).toMatchObject({ id, email });

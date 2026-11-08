@@ -54,16 +54,28 @@ export const pathOf = (url: string): string => {
   return `${parsed.pathname}${parsed.search}`;
 };
 
-/** Opens a link through `app`, as a browser would, and returns the answer. */
+/** Opens a link through `app`, as a browser or a mail scanner would. It uses nothing. */
 export const openLink = async (app: Server, url: string): Promise<Response> =>
   app.request(pathOf(url));
 
-/** Opens a link and returns the session cookie, or throws if it did not sign in. */
+/** Selects the button on the page a link opens: it posts the link's token, as the app does. */
+export function pressLinkButton(app: Server, url: string): Promise<Response> | Response {
+  const parsed = new URL(url);
+  const path =
+    parsed.searchParams.get("for") === "join" ? "/v1/invites/open" : "/v1/auth/magic-link/verify";
+  return app.request(path, {
+    method: "POST",
+    headers: { origin: parsed.origin, "content-type": "application/json" },
+    body: JSON.stringify({ token: parsed.searchParams.get("token") }),
+  });
+}
+
+/** Opens a link, selects its button and returns the session cookie, or throws if it did not sign in. */
 export async function openSignInLink(app: Server, url: string): Promise<string> {
-  const response = await openLink(app, url);
-  const location = response.headers.get("location") ?? "";
-  if (response.status !== 302 || location.includes("error=")) {
-    throw new Error(`Sign-in failed with ${response.status} ${location}`);
+  await openLink(app, url);
+  const response = await pressLinkButton(app, url);
+  if (response.status !== 200) {
+    throw new Error(`Sign-in failed with ${response.status} ${await response.text()}`);
   }
   return cookieOf(response);
 }

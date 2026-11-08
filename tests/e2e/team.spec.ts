@@ -1,5 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { openLink } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -23,7 +24,7 @@ async function signedIn(browser: Browser, email = "owner@example.com"): Promise<
     await context.grantPermissions(["clipboard-write"]);
   }
   const page = await context.newPage();
-  await page.goto(await server.signInLink(email));
+  await openLink(page, await server.signInLink(email));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   return page;
 }
@@ -51,7 +52,7 @@ async function joinAsNew(browser: Browser, url: string, name: string): Promise<P
   await page.getByRole("button", { name: "Join", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   // The link joins and signs in, in this same browser.
-  await page.goto(await server.linkTo(email));
+  await openLink(page, await server.linkTo(email), "Join your team");
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   return page;
 }
@@ -196,7 +197,7 @@ test("a window whose session ended elsewhere reconnects with the new one", async
   const second = await first.context().newPage();
   await second.goto(server.apiOrigin);
   await second.getByRole("button", { name: "Sign out" }).click();
-  await second.goto(await server.signInLink("owner@example.com"));
+  await openLink(second, await server.signInLink("owner@example.com"));
   await expect(second.getByRole("button", { name: "Sign out" })).toBeVisible();
 
   // The next event ends the first window's old stream, and a later one must still arrive.

@@ -6,7 +6,7 @@ import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
-import { type Auth, LINK_MINUTES, signInLink } from "./auth.ts";
+import { type Auth, confirmUrl, LINK_MINUTES, signInNow } from "./auth.ts";
 import { invite, operator, verification, workspace, workspaceMember } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
@@ -14,6 +14,7 @@ import {
   FORBIDDEN,
   failure,
   INVALID,
+  LINK_INVALID,
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
@@ -282,16 +283,23 @@ const joinRoute = createRoute({
 });
 
 const openRoute = createRoute({
-  method: "get",
+  method: "post",
   path: "/v1/invites/open",
-  summary: "Open a join link: create the account if needed, join, and sign in",
-  request: { query: z.object({ token: z.string().max(200) }) },
+  summary:
+    "Use a join link's token, from the button on the page the link opens: create the account if needed, join, and sign in",
+  request: { body: json(tokenBody) },
   responses: {
-    302: {
-      description:
-        "Signed in, to the workspace. Or the sign-in page, with `error` set to INVALID_TOKEN, invite_invalid, operator_limit or email_taken",
-    },
-    ...RATE_LIMITED,
+    200: reply(
+      "Signed in, with the session cookie set. Open the workspace",
+      z.object({ workspaceId: z.uuid() }),
+    ),
+    ...inviteErrors,
+    400: errorAnswer(
+      "invalid_request: the request is not valid. link_invalid: the link expired or was already used",
+    ),
+    409: errorAnswer(
+      "operator_limit: the workspace has the most operators its plan allows. email_taken: on a server with no mail server, the email has an account",
+    ),
   },
 });
 
@@ -743,7 +751,7 @@ export function registerTeamRoutes(
       value: JSON.stringify(pending),
       expiresAt: new Date(Date.now() + LINK_MINUTES * 60_000),
     });
-    const url = new URL(`/v1/invites/open?token=${linkToken}`, publicUrl).href;
+    const url = confirmUrl(publicUrl, "join", linkToken);
     // With no mail server, the person who handed out the invite vouches for whoever holds it.
     if (mailer === undefined) return c.json({ ok: true as const, signInUrl: url }, 200);
     const mail = joinMail(url);
@@ -754,18 +762,18 @@ export function registerTeamRoutes(
   });
 
   app.openapi(openRoute, async (c) => {
-    const back = (error: string) => c.redirect(`/?error=${error}`, 302);
+    if (c.req.header("origin") !== publicOrigin) return c.json(WRONG_ORIGIN, 403);
     // Deleted as it is read, so a link works once, even when it is opened twice at once.
     const [row] = await db
       .delete(verification)
       .where(
         and(
-          eq(verification.identifier, `${JOIN_LINK}${sha256Hex(c.req.valid("query").token)}`),
+          eq(verification.identifier, `${JOIN_LINK}${sha256Hex(c.req.valid("json").token)}`),
           gt(verification.expiresAt, sql`now()`),
         ),
       )
       .returning({ value: verification.value });
-    if (row === undefined) return back("INVALID_TOKEN");
+    if (row === undefined) return c.json(LINK_INVALID, 400);
     const pending = PendingJoin.parse(JSON.parse(row.value));
     const { workspaceId, email } = pending;
     const result = await withWorkspace(db, workspaceId, async (tx) => {
@@ -796,10 +804,17 @@ export function registerTeamRoutes(
     if (typeof result === "object") {
       auditChange("invite.used", workspaceId, result.operatorId);
       live.wake(workspaceId, OPERATORS);
-    } else if (result !== "member") {
-      return back(result);
+    } else if (result === "invite_invalid") {
+      return c.json(BAD_INVITE, 404);
+    } else if (result === "operator_limit") {
+      return c.json(OPERATOR_LIMIT, 409);
+    } else if (result === "email_taken") {
+      return c.json(EMAIL_TAKEN, 409);
     }
-    return c.redirect(await signInLink(auth, email, `/?workspace=${workspaceId}`), 302);
+    const cookies = await signInNow(auth, email, c.req.raw.headers);
+    if (cookies === null) throw new Error("A sign-in token made just now did not work");
+    for (const cookie of cookies) c.header("set-cookie", cookie, { append: true });
+    return c.json({ workspaceId }, 200);
   });
 
   app.openapi(acceptRoute, async (c) => {

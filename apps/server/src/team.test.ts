@@ -6,7 +6,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { untilWaiting } from "../test/locks.ts";
-import { captureMail, cookieOf, openLink, signedInOperator } from "../test/operators.ts";
+import {
+  captureMail,
+  cookieOf,
+  openLink,
+  pressLinkButton,
+  signedInOperator,
+} from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import {
@@ -114,14 +120,16 @@ const join = (token: string, email: string, origin = ORIGIN, server = app) =>
     body: JSON.stringify({ token, name: "New Person", email }),
   });
 
-/** Opens a join link, and follows its redirect to BetterAuth's, as a browser does. */
+/** Opens a join link and selects the page's button, as a person does. */
 async function openJoin(url: string, server = app) {
-  const opened = await openLink(server, url);
-  expect(opened.status).toBe(302);
-  const next = opened.headers.get("location") ?? "";
-  if (!next.includes("/v1/auth/magic-link/verify")) return { cookie: "", landing: next };
-  const signedIn = await openLink(server, next);
-  return { cookie: cookieOf(signedIn), landing: signedIn.headers.get("location") ?? "" };
+  await openLink(server, url);
+  const response = await pressLinkButton(server, url);
+  const body = (await response.json()) as { workspaceId?: string; error?: { code: string } };
+  return {
+    cookie: cookieOf(response),
+    workspaceId: body.workspaceId ?? null,
+    error: body.error?.code ?? null,
+  };
 }
 
 /** Joins on the server with no mail server: asks for the link, then opens it. */
@@ -196,9 +204,12 @@ describe("joining by link", () => {
     const email = `joiner-${randomUUID()}@example.com`;
     await join(token, email.toUpperCase(), ORIGIN, mailApp);
     const link = await mail.linkTo(email);
-    expect(link.startsWith(`${ORIGIN}/v1/invites/open?token=`)).toBe(true);
-    const { cookie, landing } = await openJoin(link, mailApp);
-    expect(landing).toBe(`${ORIGIN}/?workspace=${space.id}`);
+    expect(link.startsWith(`${ORIGIN}/link?for=join&token=`)).toBe(true);
+    // Opening the link, as a mail scanner does, uses nothing.
+    await openLink(mailApp, link);
+    expect(await operatorRow(email)).toBeUndefined();
+    const { cookie, workspaceId } = await openJoin(link, mailApp);
+    expect(workspaceId).toBe(space.id);
     const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
     expect(await me.json()).toMatchObject({
       name: "New Person",
@@ -206,8 +217,9 @@ describe("joining by link", () => {
       workspaces: [{ workspaceId: space.id, role: "admin" }],
     });
     expect((await operatorRow(email))?.emailVerified).toBe(true);
-    const again = await openLink(mailApp, link);
-    expect(again.headers.get("location")).toBe("/?error=INVALID_TOKEN");
+    const again = await pressLinkButton(mailApp, link);
+    expect(again.status).toBe(400);
+    expect(await again.json()).toMatchObject({ error: { code: "link_invalid" } });
     expect(again.headers.getSetCookie()).toEqual([]);
   });
 
@@ -221,7 +233,7 @@ describe("joining by link", () => {
       .update(verification)
       .set({ expiresAt: new Date(Date.now() - 1000) })
       .where(sql`${verification.identifier} like 'invite-join:%'`);
-    expect((await openLink(mailApp, link)).headers.get("location")).toBe("/?error=INVALID_TOKEN");
+    expect((await openJoin(link, mailApp)).error).toBe("link_invalid");
     expect(await operatorRow(email)).toBeUndefined();
     expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
   });
@@ -232,8 +244,8 @@ describe("joining by link", () => {
     const boss = await person("owner");
     const token = await newInvite(boss);
     await join(token, existing.email, ORIGIN, mailApp);
-    const { cookie, landing } = await openJoin(await mail.linkTo(existing.email), mailApp);
-    expect(landing).toBe(`${ORIGIN}/?workspace=${space.id}`);
+    const { cookie, workspaceId } = await openJoin(await mail.linkTo(existing.email), mailApp);
+    expect(workspaceId).toBe(space.id);
     expect(
       await owner.select().from(operator).where(eq(operator.email, existing.email)),
     ).toHaveLength(1);
@@ -259,7 +271,7 @@ describe("joining by link", () => {
     await call("DELETE", inSpace(`/invites/${revoked.id}`), boss);
     for (const email of [usedEmail, revokedEmail]) {
       const opened = await openJoin(await mail.linkTo(email), mailApp);
-      expect(opened).toEqual({ cookie: "", landing: "/?error=invite_invalid" });
+      expect(opened).toEqual({ cookie: "", workspaceId: null, error: "invite_invalid" });
       expect(await operatorRow(email)).toBeUndefined();
     }
   });
@@ -268,8 +280,8 @@ describe("joining by link", () => {
     const boss = await person("owner");
     const token = await newInvite(boss);
     const email = `plain-${randomUUID()}@example.com`;
-    const { cookie, landing } = await joinAndOpen(token, email);
-    expect(landing).toBe(`${ORIGIN}/?workspace=${space.id}`);
+    const { cookie, workspaceId } = await joinAndOpen(token, email);
+    expect(workspaceId).toBe(space.id);
     const me = await app.request("/v1/operator/me", { headers: { cookie } });
     expect(await me.json()).toMatchObject({ email, workspaces: [{ workspaceId: space.id }] });
   });
@@ -674,12 +686,9 @@ describe("invites", () => {
       }),
     );
     const results = await Promise.all(links.map((link) => openJoin(link)));
-    expect(results.map((result) => result.landing.includes("error=")).sort()).toEqual([
-      false,
-      true,
-    ]);
-    const lost = emails[results.findIndex((result) => result.landing.includes("error="))] ?? "";
-    expect(results.find((result) => result.cookie === "")?.landing).toBe("/?error=invite_invalid");
+    expect(results.map((result) => result.error !== null).sort()).toEqual([false, true]);
+    const lost = emails[results.findIndex((result) => result.error !== null)] ?? "";
+    expect(results.find((result) => result.cookie === "")?.error).toBe("invite_invalid");
     expect(await operatorRow(lost)).toBeUndefined();
   });
 

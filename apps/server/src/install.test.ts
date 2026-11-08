@@ -256,9 +256,7 @@ describe("chat setup", () => {
     expect(result.status).toBe(0);
     // A sign-in link, not a password, and the command that makes another.
     expect(result.stdout).not.toMatch(/password/i);
-    expect(result.stdout).toContain(
-      `${new URL(PUBLIC_URL).origin}/v1/auth/magic-link/verify?token=`,
-    );
+    expect(result.stdout).toContain(`${new URL(PUBLIC_URL).origin}/link?for=sign-in&token=`);
     expect(result.stdout).toContain("It works once, for the next 15 minutes");
     expect(result.stdout).toContain(`chat sign-in-link ${email.toLowerCase()}`);
     expect(result.stdout).toContain(`${new URL(PUBLIC_URL).origin}/widget/loader.js`);

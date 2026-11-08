@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { dropImage, pasteImage, pngFile } from "./images.ts";
+import { openLink } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -28,7 +29,7 @@ async function openWidget(page: Page, path = "/plain") {
 }
 
 async function openInbox(page: Page) {
-  await page.goto(await server.signInLink("anna@example.com"));
+  await openLink(page, await server.signInLink("anna@example.com"));
   await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
 }
 

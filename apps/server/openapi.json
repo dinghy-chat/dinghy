@@ -85,6 +85,7 @@
                   "invalid_request",
                   "invite_invalid",
                   "last_owner",
+                  "link_invalid",
                   "name_mismatch",
                   "no_customer",
                   "not_a_member",
@@ -4695,22 +4696,92 @@
       }
     },
     "/v1/invites/open": {
-      "get": {
-        "summary": "Open a join link: create the account if needed, join, and sign in",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "maxLength": 200
-            },
-            "required": true,
-            "name": "token",
-            "in": "query"
+      "post": {
+        "summary": "Use a join link's token, from the button on the page the link opens: create the account if needed, join, and sign in",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": ["token"]
+              }
+            }
           }
-        ],
+        },
         "responses": {
-          "302": {
-            "description": "Signed in, to the workspace. Or the sign-in page, with `error` set to INVALID_TOKEN, invite_invalid, operator_limit or email_taken"
+          "200": {
+            "description": "Signed in, with the session cookie set. Open the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workspaceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": ["workspaceId"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. link_invalid: the link expired or was already used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: another site sent this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "invite_invalid: the invite expired or was used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "operator_limit: the workspace has the most operators its plan allows. email_taken: on a server with no mail server, the email has an account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 8 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
             "description": "too_many_requests: over the rate limit. Retry after `retry-after`",

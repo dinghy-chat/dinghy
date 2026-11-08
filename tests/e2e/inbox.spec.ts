@@ -1,5 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { openLink } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -26,7 +27,7 @@ test.beforeEach(async () => {
 
 async function signedIn(browser: Browser, email: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
-  await page.goto(await server.signInLink(email));
+  await openLink(page, await server.signInLink(email));
   await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
   return page;
 }

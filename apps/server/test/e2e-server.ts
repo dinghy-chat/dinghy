@@ -179,7 +179,7 @@ export async function startE2EServer(
     /** The link in email number `index` to `email`, once it arrives. */
     linkTo: (email: string, index = 0) => mailer.linkTo(email, index),
     /** A sign-in link, as `chat sign-in-link` prints it. */
-    signInLink: (email: string, callbackPath = "/") => signInLink(auth, email, callbackPath),
+    signInLink: (email: string) => signInLink(auth, email),
     /** An operator who is a member of this workspace, or of none with `member: false`. */
     async createOperator(email: string, { member = true } = {}) {
       const [created] = await owner

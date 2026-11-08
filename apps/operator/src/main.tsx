@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
-import { SignIn } from "./auth.tsx";
+import { LinkPage, SignIn } from "./auth.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { t } from "./text.ts";
@@ -45,6 +45,10 @@ function App() {
       .catch(() => setMeta({ billing: false, signup: null, email: true }));
   }, []);
 
+  const query = new URLSearchParams(location.search);
+  if (location.pathname === "/link") {
+    return <LinkPage purpose={query.get("for") ?? ""} token={query.get("token") ?? ""} />;
+  }
   if (me === "loading" || meta === "loading") return <Loading />;
   const inviteToken = new URLSearchParams(location.search).get("token");
   if (location.pathname === "/invite" && inviteToken !== null) {

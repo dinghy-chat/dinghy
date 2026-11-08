@@ -160,6 +160,12 @@ const post = <T>(path: string, body: unknown) =>
 /** The answer is the same for any email. Only an operator's email gets the link. */
 export const askSignInLink = (email: string) =>
   post<{ ok: true }>("/v1/auth/sign-in/magic-link", { email });
+/** Uses a sign-in link's token, from the button on the page the link opens. */
+export const redeemSignInLink = (token: string) =>
+  post<{ ok: true }>("/v1/auth/magic-link/verify", { token });
+/** Uses a join link's token: joins the workspace and signs in. */
+export const redeemJoinLink = (token: string) =>
+  post<{ workspaceId: string }>("/v1/invites/open", { token });
 export const signOut = () => post<unknown>("/v1/auth/sign-out", {});
 export const updateName = (name: string) => post<unknown>("/v1/auth/update-user", { name });
 export const getMe = () => call<Me>("/v1/operator/me");

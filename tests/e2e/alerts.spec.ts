@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { openLink } from "./links.ts";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -39,7 +40,7 @@ const FAKE_PUSH = () => {
 };
 
 async function signedIn(page: Page) {
-  await page.goto(await server.signInLink("anna@example.com"));
+  await openLink(page, await server.signInLink("anna@example.com"));
   await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
 }
 

@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
@@ -13,6 +16,7 @@ import {
   cookieOf,
   openLink,
   openSignInLink,
+  pressLinkButton,
   signIn,
 } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
@@ -40,6 +44,7 @@ let owner: Database;
 let auth: Auth;
 let app: App;
 let valkey: Redis;
+let directory: string;
 const mail = captureMail();
 
 function chat(...args: string[]) {
@@ -87,6 +92,9 @@ beforeAll(async () => {
   await new Promise((resolve) => valkey.once("ready", resolve));
   owner = database.connect("migrator").db;
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+  // The operator app's page, which every emailed link opens.
+  directory = await mkdtemp(join(tmpdir(), "dinghy-auth-"));
+  await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
   app = createApp({
     db,
     logger,
@@ -95,11 +103,13 @@ beforeAll(async () => {
     trustedProxyHops: 1,
     checks: { postgres: ok, valkey: ok },
     auth,
+    operatorDirectory: directory,
   });
 }, 30_000);
 
 afterAll(async () => {
   valkey.disconnect();
+  await rm(directory, { recursive: true, force: true });
   await database.drop();
 });
 
@@ -112,7 +122,7 @@ describe("asking for a link", () => {
     expect(unknown.status).toBe(200);
     expect(await known.text()).toBe(await unknown.text());
     const link = await mail.linkTo(email("known"));
-    expect(link.startsWith(`${ORIGIN}/v1/auth/magic-link/verify?token=`)).toBe(true);
+    expect(link.startsWith(`${ORIGIN}/link?for=sign-in&token=`)).toBe(true);
     // The unknown email's work runs after the answer, so give it the time the known one took.
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(mail.countTo(email("unknown"))).toBe(0);
@@ -123,12 +133,31 @@ describe("asking for a link", () => {
     expect(sent?.text.endsWith("Cheers,\nThe Dinghy team")).toBe(true);
   });
 
-  test("opening the link signs in with a session that is HttpOnly and not sent cross-site", async () => {
+  test("opening the link shows a page and uses nothing, so a mail scanner cannot use it up", async () => {
+    await newOperator(email("scan"));
+    await askLink(email("scan"));
+    const link = await mail.linkTo(email("scan"));
+    for (let i = 0; i < 3; i++) {
+      const page = await openLink(app, link);
+      expect(page.status).toBe(200);
+      expect(page.headers.get("content-type")).toContain("text/html");
+      expect(page.headers.get("referrer-policy")).toBe("no-referrer");
+      expect(page.headers.getSetCookie()).toEqual([]);
+    }
+    // BetterAuth's own GET route, which used a link when fetched, is gone.
+    const token = new URL(link).searchParams.get("token") ?? "";
+    const bypass = await app.request(`/v1/auth/magic-link/verify?token=${token}&callbackURL=/`);
+    expect(bypass.status).toBe(404);
+    expect(bypass.headers.getSetCookie()).toEqual([]);
+    expect(await openSignInLink(app, link)).not.toBe("");
+  });
+
+  test("the page's button signs in with a session that is HttpOnly and not sent cross-site", async () => {
     await newOperator(email("in"));
     await askLink(email("in"));
-    const response = await openLink(app, await mail.linkTo(email("in")));
-    expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe(`${ORIGIN}/`);
+    const response = await pressLinkButton(app, await mail.linkTo(email("in")));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
     const [cookie] = response.headers.getSetCookie();
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
@@ -146,9 +175,9 @@ describe("asking for a link", () => {
     await newOperator(email("once"));
     const link = await signInLink(auth, email("once"));
     expect(await openSignInLink(app, link)).not.toBe("");
-    const again = await openLink(app, link);
-    expect(again.status).toBe(302);
-    expect(again.headers.get("location")).toContain("error=INVALID_TOKEN");
+    const again = await pressLinkButton(app, link);
+    expect(again.status).toBe(400);
+    expect(await again.json()).toMatchObject({ error: { code: "link_invalid" } });
     expect(again.headers.getSetCookie()).toEqual([]);
   });
 
@@ -165,8 +194,9 @@ describe("asking for a link", () => {
       sql`update verification set expires_at = now() - interval '1 second'
           where identifier like 'magic-link:%'`,
     );
-    const response = await openLink(app, link);
-    expect(response.headers.get("location")).toContain("error=INVALID_TOKEN");
+    const response = await pressLinkButton(app, link);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "link_invalid" } });
     expect(response.headers.getSetCookie()).toEqual([]);
   });
 
@@ -188,6 +218,17 @@ describe("asking for a link", () => {
       body: `email=${encodeURIComponent(email("csrf"))}`,
     });
     expect(form.status).toBe(415);
+    // The same for the button's request, which uses a link.
+    const link = await signInLink(auth, email("csrf"));
+    const token = new URL(link).searchParams.get("token");
+    const elsewhere = await app.request("/v1/auth/magic-link/verify", {
+      method: "POST",
+      headers: { origin: "https://evil.example.com", "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(elsewhere.status).toBe(403);
+    expect(elsewhere.headers.getSetCookie()).toEqual([]);
+    expect(await openSignInLink(app, link)).not.toBe("");
   });
 
   test("a client cannot pick where the link lands or name a new account", async () => {
@@ -260,7 +301,8 @@ describe("chat sign-in-link", () => {
     const link = linkIn(out);
     const cookie = await openSignInLink(app, link);
     expect(((await (await me(cookie)).json()) as { email: string }).email).toBe(email("cli"));
-    expect((await openLink(app, link)).headers.get("location")).toContain("error=INVALID_TOKEN");
+    expect(link.startsWith(`${ORIGIN}/link?for=sign-in&token=`)).toBe(true);
+    expect((await pressLinkButton(app, link)).status).toBe(400);
   });
 
   test("refuses an unknown email and makes no link", async () => {
@@ -424,8 +466,8 @@ describe("the logs", () => {
     const { id } = await newOperator(email("audited"));
     for (let i = 0; i < 6; i++) await askLink(email("audited"), { target: logged, ip: address(6) });
     const link = await mail.linkTo(email("audited"));
-    await openLink(logged, link);
-    await openLink(logged, link);
+    await pressLinkButton(logged, link);
+    await pressLinkButton(logged, link);
     const audits = lines.filter((line) => line.msg === "audit");
     const of = (event: string) => audits.filter((line) => line.event === event);
     expect(of("sign_in.limited")).toEqual([

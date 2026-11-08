@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { isAPIError } from "better-auth/api";
 import { magicLink } from "better-auth/plugins/magic-link";
 import { account, operator, session, verification } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
@@ -15,8 +16,25 @@ interface AuthOptions {
 
 export { LINK_MINUTES };
 
-/** Where a new link goes: an email, or a command's output. Every caller that makes one sets it. */
-type Delivery = (link: { email: string; url: string }) => void | Promise<void>;
+/**
+ * What a link is for. It picks the confirm page's button and where the browser goes after it.
+ * `add-workspace` is a sign-in that lands on the workspace setup, for cloud signup with an account.
+ */
+export type LinkPurpose = "sign-in" | "signup" | "add-workspace" | "join";
+
+/**
+ * The link an email carries: a page of the operator app, whose button uses the token. Opening it
+ * uses nothing, so a mail scanner that fetches every link cannot use one up.
+ */
+export const confirmUrl = (baseURL: string, purpose: LinkPurpose, token: string): string => {
+  const url = new URL("/link", baseURL);
+  url.searchParams.set("for", purpose);
+  url.searchParams.set("token", token);
+  return url.href;
+};
+
+/** Where a new token goes: an email, or a command's output. Every caller that makes one sets it. */
+type Delivery = (link: { email: string; token: string }) => void | Promise<void>;
 const delivery = new AsyncLocalStorage<Delivery>();
 
 export function createAuth({ db, secret, baseURL }: AuthOptions) {
@@ -64,22 +82,51 @@ export type Auth = ReturnType<typeof createAuth>;
 /** Runs `work`, which makes links through BetterAuth's own route, with `deliver` receiving them. */
 export const deliverLinks = <T>(deliver: Delivery, work: () => T): T => delivery.run(deliver, work);
 
-/**
- * A one-time sign-in link for `email`, made without sending anything, for an email, a command's
- * output or a test. After it signs in, the browser goes to `callbackPath`.
- */
-export async function signInLink(auth: Auth, email: string, callbackPath = "/"): Promise<string> {
+/** A one-time sign-in token for `email`, made without sending anything. */
+async function signInToken(auth: Auth, email: string): Promise<string> {
   let made: string | undefined;
   await deliverLinks(
-    ({ url }) => {
-      made = url;
+    ({ token }) => {
+      made = token;
     },
     () =>
-      auth.api.signInMagicLink({
-        body: { email: email.toLowerCase(), callbackURL: callbackPath },
-        headers: new Headers(),
-      }),
+      auth.api.signInMagicLink({ body: { email: email.toLowerCase() }, headers: new Headers() }),
   );
   if (made === undefined) throw new Error("BetterAuth made no sign-in link");
   return made;
 }
+
+/** A one-time sign-in link for `email`, for an email, a command's output or a test. */
+export const signInLink = async (
+  auth: Auth,
+  email: string,
+  purpose: Exclude<LinkPurpose, "join"> = "sign-in",
+): Promise<string> =>
+  confirmUrl(String(auth.options.baseURL), purpose, await signInToken(auth, email));
+
+/**
+ * Uses a sign-in token, once: it creates the account if needed and a session. Returns the cookies
+ * that hold the session, or null when the token expired or was used.
+ */
+export async function redeemSignInToken(
+  auth: Auth,
+  token: string,
+  headers: Headers,
+): Promise<string[] | null> {
+  try {
+    const answer = await auth.api.magicLinkVerify({
+      query: { token },
+      headers,
+      returnHeaders: true,
+    });
+    return answer.headers.getSetCookie();
+  } catch (error) {
+    // BetterAuth answers a bad token with a redirect to its error page, which the app has not.
+    if (isAPIError(error) && error.statusCode === 302) return null;
+    throw error;
+  }
+}
+
+/** Signs `email` in at once, for a link that the server already checked, such as a join link. */
+export const signInNow = async (auth: Auth, email: string, headers: Headers) =>
+  redeemSignInToken(auth, await signInToken(auth, email), headers);

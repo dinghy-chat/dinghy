@@ -1,5 +1,6 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { expect, type Page, test } from "@playwright/test";
+import { openLink } from "../../tests/e2e/links.ts";
 import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
 
 let server: Awaited<ReturnType<typeof startCloudE2EServer>>;
@@ -18,7 +19,7 @@ test.afterAll(async () => {
 
 async function signIn(page: Page) {
   const streaming = page.waitForResponse((response) => response.url().includes("/stream"));
-  await page.goto(await server.signInLink("ana@example.com"));
+  await openLink(page, await server.signInLink("ana@example.com"));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   await streaming;
 }

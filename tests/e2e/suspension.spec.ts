@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { openLink } from "./links.ts";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -14,7 +15,7 @@ test.afterAll(async () => {
 
 async function signIn(page: Page) {
   const streaming = page.waitForResponse((response) => response.url().includes("/stream"));
-  await page.goto(await server.signInLink("owner@example.com"));
+  await openLink(page, await server.signInLink("owner@example.com"));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   // The inbox's live stream is open, so a change from here on reaches it.
   await streaming;

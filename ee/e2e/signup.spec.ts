@@ -1,11 +1,17 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { expect, type Page, test } from "@playwright/test";
+import { openLink } from "../../tests/e2e/links.ts";
 import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
 
 type Server = Awaited<ReturnType<typeof startCloudE2EServer>>;
 
 /** The account step: the email only, then the link that comes back to it. */
-async function createAccount(page: Page, server: Server, email: string, index = 0) {
+async function createAccount(
+  page: Page,
+  server: Server,
+  email: string,
+  { index = 0, button = "Continue setting up" } = {},
+) {
   await page.goto(server.apiOrigin);
   await page.getByRole("link", { name: "Create an account" }).click();
   await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
@@ -15,7 +21,7 @@ async function createAccount(page: Page, server: Server, email: string, index = 
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Email me a link" }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
-  await page.goto(await server.linkTo(email, index));
+  await openLink(page, await server.linkTo(email, index), button);
 }
 
 /** The onboarding step: the operator's name and the workspace's. */
@@ -32,7 +38,7 @@ async function signUp(page: Page, server: Server, workspaceName: string) {
 }
 
 async function signIn(page: Page, server: Server, email: string) {
-  await page.goto(await server.signInLink(email));
+  await openLink(page, await server.signInLink(email));
 }
 
 /** The fake Checkout page's session, and the workspace it pays for. */
@@ -216,7 +222,8 @@ test.describe("with early signup and no Stripe keys", () => {
     // The welcome came after the workspace. Then the same answer as a new email gets, and the
     // email is a sign-in link instead.
     await expect.poll(() => server.mail.filter((one) => one.to === email).length).toBe(2);
-    await createAccount(page, server, email, 2);
+    // An email with an account gets a sign-in link, which lands on the workspace setup.
+    await createAccount(page, server, email, { index: 2, button: "Sign in to Dinghy" });
     const sent = server.mail.filter((one) => one.to === email);
     expect(sent.map((one) => one.subject)).toEqual([
       "Finish signing up for Dinghy",
@@ -225,6 +232,8 @@ test.describe("with early signup and no Stripe keys", () => {
     ]);
     expect(sent[1]?.text.startsWith("Hi Nora,")).toBe(true);
     expect(sent[1]?.text).not.toMatch(/opens soon|coming/i);
+    // The widget does not run before the cloud opens, so the welcome does not ask for it.
+    expect(sent[1]?.text).not.toContain("widget");
     expect(sent[2]?.text).toContain("tried to sign up");
     // The link lands on the workspace setup, which is why the person signed up again.
     await onboard(page, "Second Shop");

@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { openLink } from "./links.ts";
 
 // Records the frames behind docs/media/demo.gif, and the pictures in the docs. It is not a test, so
 // it runs only by hand, then scripts/demo-gif.sh turns the frames into the GIF:
@@ -88,7 +89,7 @@ test("record", async () => {
 
   const operatorContext = await browser.newContext({ viewport: OPERATOR, deviceScaleFactor: 2 });
   const operator = await operatorContext.newPage();
-  await operator.goto(await server.signInLink("anna@acme.example"));
+  await openLink(operator, await server.signInLink("anna@acme.example"));
   await expect(operator.getByRole("heading", { name: "Acme" })).toBeVisible();
 
   const visitorContext = await browser.newContext({ viewport: VISITOR, deviceScaleFactor: 2 });

@@ -7,10 +7,10 @@ import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
-import { type Auth, deliverLinks } from "./auth.ts";
+import { type Auth, confirmUrl, deliverLinks, redeemSignInToken } from "./auth.ts";
 import { operator, workspace } from "./db/schema.ts";
 import { accessFlags, type Database, operatorWorkspaces, withWorkspace } from "./db/tenant.ts";
-import { failure, OPERATOR_ERRORS, safeErrorFields, WRONG_ORIGIN } from "./errors.ts";
+import { failure, LINK_INVALID, OPERATOR_ERRORS, safeErrorFields, WRONG_ORIGIN } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
 import { signInMail } from "./letter.ts";
 import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
@@ -87,15 +87,16 @@ interface OperatorOptions {
 }
 
 const LinkRequest = z.strictObject({ email: z.email().max(254) });
+const LinkToken = z.strictObject({ token: z.string().min(1).max(200) });
 
 /** BetterAuth's routes that the app uses. Every other one, such as a password route, is not found. */
 const AUTH_ROUTES = new Set([
   "GET /v1/auth/get-session",
   "POST /v1/auth/sign-out",
   "POST /v1/auth/update-user",
-  "GET /v1/auth/magic-link/verify",
-  // Dinghy's own, in front of BetterAuth's, so it controls who gets a link.
+  // Dinghy's own, in front of BetterAuth's, so it controls who gets a link and how one is used.
   "POST /v1/auth/sign-in/magic-link",
+  "POST /v1/auth/magic-link/verify",
 ]);
 
 export function registerOperatorRoutes(
@@ -114,8 +115,8 @@ export function registerOperatorRoutes(
       .where(eq(operator.email, email));
     if (known === undefined) return;
     await deliverLinks(
-      ({ url }) => {
-        const mail = signInMail(url);
+      ({ token }) => {
+        const mail = signInMail(confirmUrl(publicOrigin, "sign-in", token));
         return mailer.send(email, mail.subject, mail.body);
       },
       () => auth.api.signInMagicLink({ body: { email }, headers: new Headers() }),
@@ -212,21 +213,22 @@ export function registerOperatorRoutes(
     await next();
   });
 
-  // Opening a link signs in, or lands on the sign-in page with an error, once a link was used.
-  app.get("/v1/auth/magic-link/verify", async (c, next) => {
-    await next();
+  // The confirm page's button uses the link. Opening the emailed page uses nothing, and a GET of
+  // this route is not found, so a mail scanner that fetches links cannot use one up.
+  app.post("/v1/auth/magic-link/verify", async (c) => {
+    const parsed = LinkToken.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json(failure("invalid_request", "Send a token."), 400);
     const ip = c.get("clientIp");
-    const location = new URL(c.res.headers.get("location") ?? "/", publicOrigin);
-    if (c.res.status !== 302 || location.searchParams.has("error")) {
+    const cookies = await redeemSignInToken(auth, parsed.data.token, c.req.raw.headers);
+    if (cookies === null) {
       audit(logger, "sign_in.link_refused", { ip }, "warn");
-      return;
+      return c.json(LINK_INVALID, 400);
     }
-    const cookie = c.res.headers
-      .getSetCookie()
-      .map((one) => one.split(";")[0])
-      .join("; ");
+    for (const cookie of cookies) c.header("set-cookie", cookie, { append: true });
+    const cookie = cookies.map((one) => one.split(";")[0]).join("; ");
     const found = await auth.api.getSession({ headers: new Headers({ cookie }) });
     audit(logger, "sign_in.link_used", { operatorId: found?.user.id, ip });
+    return c.json({ ok: true as const }, 200);
   });
 
   app.on(["GET", "POST"], "/v1/auth/*", (c) => auth.handler(c.req.raw));

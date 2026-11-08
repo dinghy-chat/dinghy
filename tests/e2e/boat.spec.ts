@@ -1,5 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { openLink } from "./links.ts";
 
 const tag = (attributes = "") =>
   `<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" ${attributes} async></script>`;
@@ -89,7 +90,7 @@ test.describe("each state shows its boat and its text", () => {
   test("the team online, then a new reply with a flag", async ({ browser }) => {
     const operatorContext = await browser.newContext();
     const operator = await operatorContext.newPage();
-    await operator.goto(await server.signInLink("anna@example.com"));
+    await openLink(operator, await server.signInLink("anna@example.com"));
     await expect(operator.getByRole("button", { name: "Sign out" })).toBeVisible();
 
     const page = await openWidget(browser, "/plain2");
@@ -111,7 +112,7 @@ test.describe("each state shows its boat and its text", () => {
   test("an empty inbox in the operator app", async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(await server.signInLink("anna@example.com"));
+    await openLink(page, await server.signInLink("anna@example.com"));
     const empty = page.locator(".empty-boat");
     await expect(empty).toContainText("No open conversations.");
     await expect(empty.locator(".ship svg")).toBeVisible();
@@ -203,7 +204,7 @@ test.describe("reduced motion", () => {
   test("the operator app's boat stops too", async ({ browser }) => {
     const context = await browser.newContext({ reducedMotion: "reduce" });
     const page = await context.newPage();
-    await page.goto(await server.signInLink("anna@example.com"));
+    await openLink(page, await server.signInLink("anna@example.com"));
     await expect(page.locator(".empty-boat .ship")).toBeVisible();
     expect(await animations(page, ".empty-boat .ship")).toBe(0);
     await context.close();

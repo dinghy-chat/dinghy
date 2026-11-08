@@ -58,10 +58,10 @@ const text = {
   ],
   welcomeSubject: (workspace: string) => `${workspace} is ready`,
   // The operator proved this address with their link before they named themselves and the workspace.
+  // Only early signup sends it, so it lists only what works before the cloud opens: no widget yet.
   welcomeBody: (workspace: string, url: string) => [
     `Welcome to Dinghy! Your workspace ${workspace} is set up. Here's what to do next:`,
-    "- Add the chat widget to your site. The snippet is in Settings.\n" +
-      "- Invite your team from Settings, under Team.\n" +
+    "- Invite your team from Settings, under Team.\n" +
       "- Turn on alerts there too, so you hear about new messages.",
     `Sign in any time at ${url}`,
     `Questions? Write to us at ${CLOUD_CONTACT}.`,
@@ -200,7 +200,7 @@ export function registerSignup(
     // An account that never opened its link, from before links, counts as new: it proves itself.
     const taken = known?.verified === true;
     // A known email lands on the workspace setup, which is why its owner came to sign up.
-    const url = await signInLink(auth, email, taken ? "/signup" : "/");
+    const url = await signInLink(auth, email, taken ? "add-workspace" : "signup");
     const subject = taken ? text.takenSubject : text.signupSubject;
     await mailer.send(email, subject, letter(taken ? text.takenBody(url) : text.signupBody(url)));
   };

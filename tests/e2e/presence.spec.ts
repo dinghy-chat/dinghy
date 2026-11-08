@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { openLink } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -20,7 +21,7 @@ test.afterAll(async () => {
 async function signedIn(browser: import("@playwright/test").Browser, email: string) {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto(await server.signInLink(email));
+  await openLink(page, await server.signInLink(email));
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   return page;
 }

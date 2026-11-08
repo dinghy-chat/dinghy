@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import webPush from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
-import { openLink, signedInOperator } from "../test/operators.ts";
+import { pressLinkButton, signedInOperator } from "../test/operators.ts";
 import { claimDeliveries, emailStopUrl, fanOutOne, planDelivery } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -710,7 +710,7 @@ const ATTACKS: Record<string, Attack> = {
     expect(response.status).toBe(404);
     expect(await owner.select().from(operator).where(eq(operator.email, email))).toEqual([]);
   },
-  "GET /v1/invites/open": async ({ server, inviteB, a }) => {
+  "POST /v1/invites/open": async ({ server, inviteB, a }) => {
     // A join link that names workspace A with workspace B's invite, as a tampered row would.
     const email = `opened-${randomUUID()}@example.com`;
     const token = randomUUID();
@@ -725,15 +725,16 @@ const ATTACKS: Record<string, Attack> = {
       }),
       expiresAt: new Date(Date.now() + 60_000),
     });
-    const opened = await openLink(server, `${PUBLIC_URL}/v1/invites/open?token=${token}`);
-    expect(opened.headers.get("location")).toBe("/?error=invite_invalid");
+    const opened = await pressLinkButton(server, `${PUBLIC_URL}/link?for=join&token=${token}`);
+    expect(opened.status).toBe(404);
+    expect(await opened.json()).toMatchObject({ error: { code: "invite_invalid" } });
     expect(opened.headers.getSetCookie()).toEqual([]);
     expect(await owner.select().from(operator).where(eq(operator.email, email))).toEqual([]);
     const [row] = await owner.select().from(invite).where(eq(invite.id, inviteB.id));
     expect(row?.usedAt).toBeNull();
     // A made-up link opens nothing.
-    const forged = await openLink(server, `${PUBLIC_URL}/v1/invites/open?token=forged`);
-    expect(forged.headers.get("location")).toBe("/?error=INVALID_TOKEN");
+    const forged = await pressLinkButton(server, `${PUBLIC_URL}/link?for=join&token=forged`);
+    expect(await forged.json()).toMatchObject({ error: { code: "link_invalid" } });
   },
   "POST /v1/operator/invites/accept": async ({ operator: as, anna, a, inviteB }) => {
     const moved = inviteB.token.replace(inviteB.token.split(".")[0] ?? "", a.id);
