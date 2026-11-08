@@ -7,7 +7,6 @@ import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
 import { newGeneration } from "./db/migrate.ts";
 import {
-  account,
   attachment,
   conversation,
   emailStop,
@@ -286,7 +285,7 @@ interface ImportResult {
   images: number;
   /** Images that were deleted while the export ran, so these messages have none. */
   missingImages: number;
-  /** Operators with no account here before this import. They set a password by reset. */
+  /** Operators with no account here before this import. They sign in by link. */
   newOperators: string[];
 }
 
@@ -401,7 +400,7 @@ async function insertWorkspace(
     createdAt: new Date(data.workspace.createdAt),
   });
 
-  // One email has one login on an install, so an existing account keeps its ID and password.
+  // One email has one login on an install, so an existing account keeps its ID.
   const emails = data.members.map((member) => member.email.toLowerCase());
   const before = await tx
     .select({ id: operator.id, email: operator.email })
@@ -419,10 +418,6 @@ async function insertWorkspace(
         .values({ name: member.name, email, emailVerified: false })
         .returning({ id: operator.id });
       operatorId = row?.id ?? "";
-      // With no password, so sign-in fails until a reset sets one, which needs this row.
-      await tx
-        .insert(account)
-        .values({ userId: operatorId, accountId: operatorId, providerId: "credential" });
       created.push(email);
     }
     operatorIds.set(member.id, operatorId);

@@ -46,7 +46,7 @@ export interface AppOptions {
   auth?: Auth | undefined;
   /** Dinghy Cloud's settings, read by `ee/`. A self-hosted install leaves them unset. */
   cloud?: CloudSettings | undefined;
-  /** Sends a cloud signup's welcome email. Without it, the email is logged as not sent. */
+  /** Sends sign-in links and the cloud's emails. Without it, the server's admin hands out links. */
   mailer?: Mailer | undefined;
   alerts?: { push?: Push | undefined; emailAvailable: boolean; secret: string };
   checks: Checks;
@@ -104,6 +104,8 @@ const metaRoute = createRoute({
               billing: z.boolean(),
               // How cloud signup works on this server, or null where nobody can sign up.
               signup: z.enum(["payment", "early"]).nullable(),
+              // Whether sign-in links go by email. Without, the server's admin hands them out.
+              email: z.boolean(),
             })
             .openapi("Meta"),
         },
@@ -284,6 +286,7 @@ export function createApp({
       version,
       billing: cloud?.billing ?? false,
       signup: cloud?.signup ?? null,
+      email: auth !== undefined && mailer !== undefined,
     }),
   );
   // The plan's limits on Dinghy Cloud. A self-hosted install has none.
@@ -312,6 +315,7 @@ export function createApp({
       contact: cloud?.contact ?? null,
       db,
       logger,
+      mailer,
       rateLimit,
       valkey,
     });
@@ -327,7 +331,7 @@ export function createApp({
       limits,
       live,
       logger,
-      publicOrigin: new URL(String(auth.options.baseURL)).origin,
+      mailer,
       rateLimit,
     });
     if (alerts !== undefined) {
@@ -448,7 +452,6 @@ export async function openApiDocument(): Promise<unknown> {
       db,
       secret: "unused-while-building-the-document",
       baseURL: "http://localhost",
-      logger: pino({ level: "silent" }),
     }),
     checks: { postgres: unused, valkey: unused },
     db,

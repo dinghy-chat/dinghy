@@ -1,6 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { eq } from "drizzle-orm";
-import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Redis } from "iovalkey";
@@ -8,12 +7,14 @@ import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
-import type { Auth } from "./auth.ts";
-import { workspace } from "./db/schema.ts";
+import { type Auth, deliverLinks } from "./auth.ts";
+import { operator, workspace } from "./db/schema.ts";
 import { accessFlags, type Database, operatorWorkspaces, withWorkspace } from "./db/tenant.ts";
-import { failure, OPERATOR_ERRORS, WRONG_ORIGIN } from "./errors.ts";
+import { failure, OPERATOR_ERRORS, safeErrorFields, WRONG_ORIGIN } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
-import { createLoginLimit, createResetLimit, tooManyAttempts } from "./login-limit.ts";
+import { signInMail } from "./letter.ts";
+import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
+import type { Mailer } from "./mailer.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 
 const UNAUTHORIZED = failure("unauthorized", "Sign in to continue.");
@@ -75,6 +76,8 @@ interface OperatorOptions {
   auth: Auth;
   db: Database;
   logger: Logger;
+  /** Sends sign-in links. Without one, an operator asks the server's admin for a link. */
+  mailer: Mailer | undefined;
   rateLimit: RateLimit;
   valkey: Redis | null;
   /** True when the cloud plan's billing is on. */
@@ -83,21 +86,41 @@ interface OperatorOptions {
   contact: string | null;
 }
 
+const LinkRequest = z.strictObject({ email: z.email().max(254) });
+
+/** BetterAuth's routes that the app uses. Every other one, such as a password route, is not found. */
+const AUTH_ROUTES = new Set([
+  "GET /v1/auth/get-session",
+  "POST /v1/auth/sign-out",
+  "POST /v1/auth/update-user",
+  "GET /v1/auth/magic-link/verify",
+  // Dinghy's own, in front of BetterAuth's, so it controls who gets a link.
+  "POST /v1/auth/sign-in/magic-link",
+]);
+
 export function registerOperatorRoutes(
   app: App,
-  { auth, billing, contact, db, logger, rateLimit, valkey }: OperatorOptions,
+  { auth, billing, contact, db, logger, mailer, rateLimit, valkey }: OperatorOptions,
 ) {
   const publicOrigin = new URL(String(auth.options.baseURL)).origin;
-  const login = createLoginLimit(valkey, logger);
-  const reset = createResetLimit(valkey, logger);
+  const links = createLinkLimit(valkey, logger);
 
-  /** The email in a JSON body. The JSON check on these routes means BetterAuth reads the same one. */
-  const emailIn = async (c: Context) => {
-    const body = await c.req.raw
-      .clone()
-      .json()
-      .catch(() => null);
-    return typeof body?.email === "string" ? body.email : "";
+  /** Sends a link to an operator, and nothing to an email with no account. */
+  const sendLink = async (email: string, ip: string) => {
+    if (mailer === undefined) return;
+    const [known] = await db
+      .select({ id: operator.id })
+      .from(operator)
+      .where(eq(operator.email, email));
+    if (known === undefined) return;
+    await deliverLinks(
+      ({ url }) => {
+        const mail = signInMail(url);
+        return mailer.send(email, mail.subject, mail.body);
+      },
+      () => auth.api.signInMagicLink({ body: { email }, headers: new Headers() }),
+    );
+    audit(logger, "sign_in.link_sent", { operatorId: known.id, ip });
   };
 
   // A session is read from the database on each request, so a revoked one stops at the next.
@@ -128,42 +151,53 @@ export function registerOperatorRoutes(
   });
 
   app.use("/v1/auth/*", bodyLimit({ maxSize: 8 * 1024 }));
+  app.use("/v1/auth/*", async (c, next) => {
+    if (!AUTH_ROUTES.has(`${c.req.method} ${c.req.path}`)) {
+      return c.json(failure("not_found", "This route does not exist."), 404);
+    }
+    await next();
+  });
 
-  // BetterAuth checks the origin only when a request has a cookie, and a sign-in has none. Another
-  // site must not be able to sign a browser in to an attacker's account.
+  // A cookie goes with any same-site request, so a sign-in or a change must come from this origin.
   app.post("/v1/auth/*", async (c, next) => {
     if (c.req.header("origin") !== publicOrigin) {
       return c.json(failure("origin_not_allowed", "This site may not sign in here."), 403);
     }
-    // BetterAuth also reads form bodies. A body that is valid both ways could show the limit below
-    // one email and show BetterAuth another, which would allow unlimited guesses.
+    // BetterAuth also reads form bodies, and the checks here read JSON.
     if (c.req.header("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
       return c.json(failure("unsupported_media_type", "Send JSON."), 415);
     }
     await next();
   });
 
-  // Each sends an email through the owner's mail server, so they share one limit.
-  for (const path of ["/v1/auth/request-password-reset", "/v1/auth/send-verification-email"]) {
-    app.post(path, async (c, next) => {
-      if (!(await reset.attempt(await emailIn(c), c.get("clientIp"))))
-        return tooManyAttempts(c, reset);
-      await next();
-    });
-  }
-
-  app.post("/v1/auth/sign-in/email", async (c, next) => {
-    const email = await emailIn(c);
-    const ip = c.get("clientIp");
-    // The account as a short hash, so a log can link attempts without holding anyone's email.
-    const account = emailAddressHash(email).slice(0, 16);
-    if (!(await login.attempt(email, ip))) {
-      audit(logger, "sign_in.limited", { account, ip }, "warn");
-      return tooManyAttempts(c, login);
+  // The answer is the same for any email, and it comes before the lookup and the email, so its
+  // content and its timing never tell whether an account exists.
+  app.post("/v1/auth/sign-in/magic-link", async (c) => {
+    if (mailer === undefined) {
+      return c.json(
+        failure("email_unavailable", "This server cannot send email. Ask its admin for a link."),
+        400,
+      );
     }
-    await next();
-    if (c.res.status === 200) await login.clear(email, ip);
-    else audit(logger, "sign_in.failed", { account, ip, status: c.res.status }, "warn");
+    const parsed = LinkRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json(failure("invalid_request", "Send an email."), 400);
+    const email = parsed.data.email.toLowerCase();
+    const ip = c.get("clientIp");
+    if (!(await links.attempt(email, ip))) {
+      // The account as a short hash, so a log can link attempts without holding anyone's email.
+      audit(
+        logger,
+        "sign_in.limited",
+        { account: emailAddressHash(email).slice(0, 16), ip },
+        "warn",
+      );
+      return tooManyAttempts(c, links);
+    }
+    sendLink(email, ip).catch((err: unknown) => {
+      // The owner needs to see a broken mail server.
+      logger.error(safeErrorFields(err), "could not send a sign-in link");
+    });
+    return c.json({ ok: true as const }, 200);
   });
 
   // An operator changes only their own name here. The email is the login, and the image is unused.
@@ -178,31 +212,21 @@ export function registerOperatorRoutes(
     await next();
   });
 
-  // A password change always ends the operator's other sessions, such as one on a lost laptop. The
-  // limit is per operator, so a stolen session cannot guess the current password for long.
-  app.post("/v1/auth/change-password", async (c, next) => {
-    const body = await c.req.raw
-      .clone()
-      .json()
-      .catch(() => null);
-    if (body?.revokeOtherSessions !== true) {
-      return c.json(
-        failure(
-          "revoke_required",
-          "A password change ends the other sessions. Send revokeOtherSessions: true.",
-        ),
-        400,
-      );
-    }
-    const found = await auth.api.getSession({
-      headers: c.req.raw.headers,
-      query: { disableRefresh: true },
-    });
-    if (found !== null) {
-      const wait = await rateLimit.hit("change-password", found.user.id, 10, 15 * 60);
-      if (wait !== null) return tooManyRequests(c, wait);
-    }
+  // Opening a link signs in, or lands on the sign-in page with an error, once a link was used.
+  app.get("/v1/auth/magic-link/verify", async (c, next) => {
     await next();
+    const ip = c.get("clientIp");
+    const location = new URL(c.res.headers.get("location") ?? "/", publicOrigin);
+    if (c.res.status !== 302 || location.searchParams.has("error")) {
+      audit(logger, "sign_in.link_refused", { ip }, "warn");
+      return;
+    }
+    const cookie = c.res.headers
+      .getSetCookie()
+      .map((one) => one.split(";")[0])
+      .join("; ");
+    const found = await auth.api.getSession({ headers: new Headers({ cookie }) });
+    audit(logger, "sign_in.link_used", { operatorId: found?.user.id, ip });
   });
 
   app.on(["GET", "POST"], "/v1/auth/*", (c) => auth.handler(c.req.raw));
