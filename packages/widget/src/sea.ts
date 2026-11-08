@@ -39,7 +39,11 @@ const HEIGHT_PER_WIDTH = 120 / 140;
 const TO_DEGREES = 180 / Math.PI;
 const CREAM = "#fff8df";
 
-/** Starts the sea, and returns a function that stops it. */
+/**
+ * Starts the sea, and returns a function that stops it. The boat and the sun's path ease toward
+ * `options.boatAt` and `options.sunAt` while the sea moves. With reduced motion nothing moves, so
+ * the host starts the sea again to show a new place.
+ */
 export function startSea(host: HTMLElement, options: SeaOptions): () => void {
   const back = host.querySelector<HTMLCanvasElement>(".sea-back");
   const front = host.querySelector<HTMLCanvasElement>(".sea-front");
@@ -47,7 +51,9 @@ export function startSea(host: HTMLElement, options: SeaOptions): () => void {
   const backContext = back?.getContext("2d");
   const frontContext = front?.getContext("2d");
   if (!back || !front || !float || !backContext || !frontContext) return () => {};
-  const { layers, boatLayer, boatAt, drift = 0, sunAt } = options;
+  const { layers, boatLayer, drift = 0 } = options;
+  // Read each frame, so a host that changes them sees the boat and the sun's path glide there.
+  let { boatAt, sunAt } = options;
   const motion = matchMedia("(prefers-reduced-motion: reduce)");
   let width = 0;
   let height = 0;
@@ -179,8 +185,16 @@ export function startSea(host: HTMLElement, options: SeaOptions): () => void {
   const tick = (now: number) => {
     request = requestAnimationFrame(tick);
     if (now - last < FRAME_MS) return;
-    seconds += Math.min(Math.max(now - last, 0) / 1000, 0.1);
+    const step = Math.min(Math.max(now - last, 0) / 1000, 0.1);
+    seconds += step;
     last = now;
+    // About half a second to settle on a new place.
+    const share = Math.min(1, step * 7);
+    boatAt += (options.boatAt - boatAt) * share;
+    sunAt =
+      sunAt === undefined || options.sunAt === undefined
+        ? options.sunAt
+        : sunAt + (options.sunAt - sunAt) * share;
     draw(seconds);
   };
 
