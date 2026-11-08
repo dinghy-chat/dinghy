@@ -21,7 +21,7 @@ import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
-import { otherIdentity, title, webLink } from "./visitor.ts";
+import { attributeName, otherIdentity, title, webLink } from "./visitor.ts";
 
 interface Line {
   id: string;
@@ -269,6 +269,8 @@ function VisitorContext({ conversation }: { conversation: Conversation }) {
   const { visitor } = conversation;
   const rows: [string, string, string | null][] = [];
   for (const [name, value] of Object.entries(visitor.attributes ?? {})) {
+    // The title already shows a name from the attributes when the token has no `name`.
+    if (name === "name" && visitor.name === null && attributeName(visitor) !== null) continue;
     rows.push([name, typeof value === "string" ? value : JSON.stringify(value), webLink(value)]);
   }
   if (rows.length === 0) return null;

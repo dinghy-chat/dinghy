@@ -24,6 +24,16 @@ describe("visitor labels", () => {
     expect(visitorName({ id, email: null, externalId: "u1" })).toBe("u1");
     expect(visitorName({ id, email: null, externalId: null })).toBe(visitorLabel(id));
   });
+
+  test("a name in the signed attributes wins, and a blank one is ignored", () => {
+    const id = "7f3a9c2e-1b4d-4e8f-9a0b-1c2d3e4f5a6b";
+    const email = "maria@example.com";
+    expect(
+      visitorName({ id, email, externalId: null, attributes: { name: " Maria Santos " } }),
+    ).toBe("Maria Santos");
+    expect(visitorName({ id, email, externalId: null, attributes: { name: "  " } })).toBe(email);
+    expect(visitorName({ id, email, externalId: null, attributes: { name: 42 } })).toBe(email);
+  });
 });
 
 describe("waiting", () => {

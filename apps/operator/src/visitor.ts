@@ -12,14 +12,32 @@ export function visitorLabel(visitorId: string): string {
   return t("visitorLabel").replace("{code}", code);
 }
 
+/** A `name` in the signed attributes, when it is a string with text in it. Tokens put it there before `name` had its own field. */
+export function attributeName(visitor: {
+  attributes?: Record<string, unknown> | null;
+}): string | null {
+  const name = visitor.attributes?.name;
+  return typeof name === "string" && name.trim() !== "" ? name.trim() : null;
+}
+
 /** The name, email or user ID the host site gave, or the short code for a signed-out visitor. */
 export function visitorName(visitor: {
   id: string;
   email: string | null;
   externalId: string | null;
   name?: string | null;
+  attributes?: Record<string, unknown> | null;
 }): string {
-  return visitor.name ?? visitor.email ?? visitor.externalId ?? visitorLabel(visitor.id);
+  return shownName(visitor) ?? visitorLabel(visitor.id);
+}
+
+function shownName(visitor: {
+  email: string | null;
+  externalId: string | null;
+  name?: string | null;
+  attributes?: Record<string, unknown> | null;
+}): string | null {
+  return visitor.name ?? attributeName(visitor) ?? visitor.email ?? visitor.externalId;
 }
 
 /** The email and user ID the title does not already show, so an operator can find the account. */
@@ -27,8 +45,9 @@ export function otherIdentity(visitor: {
   email: string | null;
   externalId: string | null;
   name?: string | null;
+  attributes?: Record<string, unknown> | null;
 }): string[] {
-  const shown = visitor.name ?? visitor.email ?? visitor.externalId;
+  const shown = shownName(visitor);
   return [visitor.email, visitor.externalId].filter(
     (part): part is string => part !== null && part !== shown,
   );
