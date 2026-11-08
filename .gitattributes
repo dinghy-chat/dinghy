@@ -1,0 +1,11 @@
+# One line ending everywhere, so a checkout on Windows does not break the shell scripts.
+* text=auto eol=lf
+*.png binary
+*.gif binary
+*.woff2 binary
+
+# Generated files: GitHub folds them in pull requests and leaves them out of the language stats.
+site/public/docs/** linguist-generated
+apps/server/openapi.json linguist-generated
+apps/server/drizzle/meta/** linguist-generated
+bun.lock linguist-generated

@@ -1,0 +1,24 @@
+name: Feature request
+description: Something Dinghy should do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Dinghy stays small on purpose, so a feature needs a maintainer's yes before anyone builds it.
+        Describe the problem first. A pull request for a feature without an approved issue may be closed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+  - type: textarea
+    id: other
+    attributes:
+      label: Other ways you considered
