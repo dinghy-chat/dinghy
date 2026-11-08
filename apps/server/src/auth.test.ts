@@ -302,6 +302,23 @@ describe("asking for a link", () => {
   });
 });
 
+test("two emailed links used at once both sign in, and the email is proven once", async () => {
+  const address = email("twice");
+  await owner.execute(
+    sql`insert into operator (name, email, email_proven) values ('Twice', ${address}, false)`,
+  );
+  expect((await askLink(address)).status).toBe(200);
+  expect((await askLink(address)).status).toBe(200);
+  const links = [await mail.linkTo(address, 0), await mail.linkTo(address, 1)];
+  const cookies = await Promise.all(links.map((link) => openSignInLink(app, link)));
+  // Neither sign-in's cleanup removes the other's new session.
+  for (const cookie of cookies) expect((await me(cookie)).status).toBe(200);
+  const { rows } = await owner.execute<{ email_proven: boolean }>(
+    sql`select email_proven from operator where email = ${address}`,
+  );
+  expect(rows[0]?.email_proven).toBe(true);
+});
+
 test("two uses of one printed link at once leave an unproven email unproven", async () => {
   const address = email("racing");
   await owner.execute(

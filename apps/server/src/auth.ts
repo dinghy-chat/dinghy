@@ -1,9 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
+import { z } from "@hono/zod-openapi";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { isAPIError } from "better-auth/api";
 import { magicLink } from "better-auth/plugins/magic-link";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { account, operator, session, verification } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
@@ -137,31 +139,48 @@ export async function redeemSignInToken(
   const { internalAdapter } = await auth.$context;
   // Read before the token is used, so the answer does not depend on another request's timing.
   const shown = await internalAdapter.findVerificationValue(`${SHOWN_LINK}${sha256Hex(token)}`);
-  let answer: Awaited<ReturnType<typeof verifyMagicLink>>;
+  if (shown === null) await proveMailbox(auth, db, token);
   try {
-    answer = await verifyMagicLink(auth, token, headers);
+    const answer = await verifyMagicLink(auth, token, headers);
+    return answer.headers.getSetCookie();
   } catch (error) {
     // BetterAuth answers a bad token with a redirect to its error page, which the app has not.
     if (isAPIError(error) && error.statusCode === 302) return null;
     throw error;
   }
-  // A link that went by email proves the mailbox. The first time, the other sessions end: someone
-  // who joined under this address without email loses the access it gave them. One statement checks
-  // and sets the flag, so two sign-ins at once cannot both act, and nothing sets it back.
-  if (shown === null) {
-    const { user, session: created } = answer.response;
-    const proved = await db
+}
+
+/** BetterAuth's key for a stored link token: its SHA-256 in base64url, as `storeToken: "hashed"`. */
+const storedLinkKey = (token: string) =>
+  `magic-link:${createHash("sha256").update(token).digest("base64url")}`;
+
+const LinkRecord = z.object({ email: z.string() });
+
+/**
+ * A link that went by email proves its mailbox. The first time, before this sign-in makes its
+ * session, every session the account had ends: someone who joined under this address without email
+ * loses the access it gave them. The proof and the cleanup commit together, and the UPDATE holds the
+ * account's row, so a second sign-in at the same moment waits, finds the email proven, and keeps its
+ * own session. Nothing ever sets the flag back.
+ */
+async function proveMailbox(auth: Auth, db: Database, token: string): Promise<void> {
+  const { internalAdapter } = await auth.$context;
+  const stored = await internalAdapter.findVerificationValue(storedLinkKey(token));
+  if (stored === null || stored.expiresAt.getTime() < Date.now()) return;
+  let email: string;
+  try {
+    email = LinkRecord.parse(JSON.parse(stored.value)).email.toLowerCase();
+  } catch {
+    return;
+  }
+  await db.transaction(async (tx) => {
+    const [proved] = await tx
       .update(operator)
       .set({ emailProven: true })
-      .where(and(eq(operator.id, user.id), eq(operator.emailProven, false)))
+      .where(and(eq(operator.email, email), eq(operator.emailProven, false)))
       .returning({ id: operator.id });
-    if (proved.length > 0) {
-      await db
-        .delete(session)
-        .where(and(eq(session.userId, user.id), ne(session.token, created.token)));
-    }
-  }
-  return answer.headers.getSetCookie();
+    if (proved !== undefined) await tx.delete(session).where(eq(session.userId, proved.id));
+  });
 }
 
 const verifyMagicLink = (auth: Auth, token: string, headers: Headers) =>
