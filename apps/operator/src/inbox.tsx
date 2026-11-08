@@ -14,10 +14,22 @@ import {
   workspaceApi,
 } from "./api.ts";
 import { useLatestLoad } from "./load.ts";
-import { SettingsPage } from "./settings.tsx";
+import { navigate } from "./nav.ts";
+import { Menu, type MenuItem } from "./popup.tsx";
+import { ProfilePage, SettingsPage } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
-import { Avatar, Harbor, Icon, Logo, Pond, ROLE_TEXT } from "./ui.tsx";
+import {
+  Avatar,
+  Harbor,
+  Icon,
+  type IconName,
+  initials,
+  Logo,
+  PageHead,
+  Pond,
+  ROLE_TEXT,
+} from "./ui.tsx";
 import { isWaiting, title } from "./visitor.ts";
 
 const RETRY_LIMIT_MS = 30_000;
@@ -26,9 +38,9 @@ const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
 
-const STATUS_LOOK: Record<Status, { empty: TextId; icon: "inbox" | "done" }> = {
-  open: { empty: "noOpen", icon: "inbox" },
-  closed: { empty: "noClosed", icon: "done" },
+const STATUS_LOOK: Record<Status, { label: TextId; empty: TextId; icon: "inbox" | "done" }> = {
+  open: { label: "inbox", empty: "noOpen", icon: "inbox" },
+  closed: { label: "closed", empty: "noClosed", icon: "done" },
 };
 
 /** The time today, and the date before today. */
@@ -217,21 +229,130 @@ function SuspendedBanner({ contact }: { contact: string | null }) {
   );
 }
 
-/** What the main area shows: one of the two lists, or a page. */
-type View = Status | "settings" | "alerts";
+/** What the panel shows: one of the two lists, or a page. */
+type View = Status | "settings" | "alerts" | "profile";
 
-const NAV: { view: View; icon: Parameters<typeof Icon>[0]["name"] }[] = [
-  { view: "open", icon: STATUS_LOOK.open.icon },
-  { view: "closed", icon: STATUS_LOOK.closed.icon },
-  { view: "settings", icon: "gear" },
-  { view: "alerts", icon: "bell" },
+const NAV: { view: Exclude<View, "profile">; label: TextId; icon: IconName }[] = [
+  { view: "open", label: "inbox", icon: STATUS_LOOK.open.icon },
+  { view: "closed", label: "closed", icon: STATUS_LOOK.closed.icon },
+  { view: "alerts", label: "alerts", icon: "bell" },
+  { view: "settings", label: "settings", icon: "gear" },
 ];
 
-function Rail({
+/** Two letters for a workspace: "Acme" gives "AC", and "Harbor Labs" gives "HL". */
+function WorkspaceTile({ name }: { name: string }) {
+  const letters = initials(name);
+  return (
+    <span className="ws-tile" aria-hidden="true">
+      {letters.length > 1 ? letters : name.trim().slice(0, 2).toUpperCase()}
+    </span>
+  );
+}
+
+/**
+ * The workspace's name at the top of the sidebar. With more than one workspace, or a way to make
+ * one, it opens a menu to switch.
+ */
+function WorkspaceSwitcher({
+  me,
+  name,
+  workspaceId,
+  canCreate,
+  onSwitch,
+}: {
+  me: Me;
+  name: string;
+  workspaceId: string;
+  canCreate: boolean;
+  onSwitch(id: string): void;
+}) {
+  if (me.workspaces.length < 2 && !canCreate) {
+    return (
+      <div className="workspace">
+        <WorkspaceTile name={name} />
+        <span className="ws-name" aria-hidden="true">
+          {name}
+        </span>
+      </div>
+    );
+  }
+  const items: MenuItem[] = me.workspaces.map((one) => ({
+    label: one.name,
+    lead: <WorkspaceTile name={one.name} />,
+    checked: one.workspaceId === workspaceId,
+    onSelect: () => {
+      if (one.workspaceId !== workspaceId) onSwitch(one.workspaceId);
+    },
+  }));
+  if (canCreate) {
+    items.push({
+      label: t("createWorkspace"),
+      lead: <Icon name="plusCircle" size={18} />,
+      divider: true,
+      onSelect: () => navigate("/signup"),
+    });
+  }
+  return (
+    <Menu
+      label={t("workspaceMenu").replace("{name}", name)}
+      items={items}
+      buttonClass="workspace"
+      side="start"
+      className="workspace-menu"
+    >
+      <WorkspaceTile name={name} />
+      <span className="ws-name">{name}</span>
+      <Icon name="chevron" size={12} />
+    </Menu>
+  );
+}
+
+/** The operator at the foot of the sidebar, with their profile and sign out. */
+function UserMenu({
+  me,
+  role,
+  onProfile,
+  onSignedOut,
+}: {
+  me: Me;
+  role: Role;
+  onProfile(): void;
+  onSignedOut(): void;
+}) {
+  return (
+    <Menu
+      label={t("userMenu")}
+      buttonClass="me"
+      side="start"
+      direction="up"
+      className="me-menu"
+      items={[
+        { label: t("profile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
+        {
+          label: t("signOut"),
+          lead: <Icon name="exit" size={18} />,
+          onSelect: () => void leaveDevice().then(signOut).finally(onSignedOut),
+        },
+      ]}
+    >
+      <span className="me-avatar" aria-hidden="true">
+        {initials(me.name)}
+      </span>
+      <span className="me-text">
+        <b>{me.name}</b>
+        <small>{t(ROLE_TEXT[role])}</small>
+      </span>
+      <Icon name="chevron" size={12} />
+    </Menu>
+  );
+}
+
+function Sidebar({
   me,
   role,
   name,
   workspaceId,
+  canCreate,
   view,
   waiting,
   onView,
@@ -242,6 +363,7 @@ function Rail({
   role: Role;
   name: string;
   workspaceId: string;
+  canCreate: boolean;
   view: View;
   /** Open conversations that wait for a reply, in the whole workspace. */
   waiting: number;
@@ -251,29 +373,20 @@ function Rail({
 }) {
   const waitingText = t("waitingCount").replace("{count}", String(waiting));
   return (
-    <aside className="rail">
-      <Logo />
-      <div className="workspace">
-        {me.workspaces.length > 1 ? (
-          <select
-            aria-label={t("workspacePick")}
-            value={workspaceId}
-            onChange={(event) => onSwitch(event.target.value)}
-          >
-            {me.workspaces.map((one) => (
-              <option key={one.workspaceId} value={one.workspaceId}>
-                {one.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <>
-            <Avatar name={name} />
-            <h1>{name}</h1>
-          </>
-        )}
+    <aside className="side">
+      <div className="brand">
+        <Logo />
       </div>
-      <nav className="nav" aria-label={t("inboxLabel")}>
+      {/* The page's heading is the workspace, which the switcher shows. */}
+      <h1 className="visually-hidden">{name}</h1>
+      <WorkspaceSwitcher
+        me={me}
+        name={name}
+        workspaceId={workspaceId}
+        canCreate={canCreate}
+        onSwitch={onSwitch}
+      />
+      <nav className="nav" aria-label={t("mainMenu")}>
         {NAV.map((item) => {
           const counted = item.view === "open" && waiting > 0;
           return (
@@ -281,12 +394,12 @@ function Rail({
               type="button"
               key={item.view}
               aria-current={view === item.view ? "page" : undefined}
-              // A description, so the button's name stays "Open" while the number changes.
+              // A description, so the button's name stays "Inbox" while the number changes.
               aria-describedby={counted ? "waiting-count" : undefined}
               onClick={() => onView(item.view)}
             >
-              <Icon name={item.icon} size={18} />
-              {t(item.view)}
+              <Icon name={item.icon} size={20} />
+              {t(item.label)}
               {counted && (
                 <span className="count" aria-hidden="true">
                   {waiting}
@@ -301,22 +414,7 @@ function Rail({
           {waitingText}
         </span>
       )}
-      <div className="me">
-        <Avatar name={me.name} />
-        <div>
-          {me.name}
-          <small>{t(ROLE_TEXT[role])}</small>
-        </div>
-      </div>
-      <button
-        type="button"
-        className="sign-out"
-        onClick={() => void leaveDevice().then(signOut).finally(onSignedOut)}
-        title={me.email}
-      >
-        <Icon name="exit" size={18} />
-        {t("signOut")}
-      </button>
+      <UserMenu me={me} role={role} onProfile={() => onView("profile")} onSignedOut={onSignedOut} />
     </aside>
   );
 }
@@ -337,6 +435,7 @@ function ConversationRow({
   const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
   const preview =
     conversation.lastMessage?.body ?? (conversation.lastMessage === null ? "" : t("image"));
+  const waits = isWaiting(conversation);
   return (
     <li>
       <button type="button" className="row" aria-current={selected} onClick={onSelect}>
@@ -347,30 +446,39 @@ function ConversationRow({
             <time dateTime={conversation.updatedAt}>{shortTime(conversation.updatedAt)}</time>
           </span>
           <span className="preview">{preview}</span>
-          <span className="row-meta">
-            {isWaiting(conversation) && <span className="tag waiting">{t("waiting")}</span>}
-            {replying !== null && <em>{replying}</em>}
-            {assignee === undefined ? (
-              <span className="tag">{t("unassigned")}</span>
-            ) : (
-              <small>{assignee.name}</small>
-            )}
-          </span>
+          {(waits || replying !== null || assignee !== undefined) && (
+            <span className="row-meta">
+              {waits && <span className="chip warn">{t("waiting")}</span>}
+              {assignee !== undefined && <span className="chip">{assignee.name}</span>}
+              {replying !== null && <em>{replying}</em>}
+            </span>
+          )}
         </span>
       </button>
     </li>
   );
 }
 
+/** The line under the list's title: who waits, or what the closed list holds. */
+function listContext(status: Status, waiting: number): string {
+  if (status === "closed") return t("closedContext");
+  if (waiting === 0) return t("waitingNone");
+  if (waiting === 1) return t("waitingOne");
+  return t("waitingMany").replace("{count}", String(waiting));
+}
+
 export function Inbox({
   me,
   workspaceId,
+  canCreate,
   onSignedOut,
   onSwitch,
   onAccountChanged,
 }: {
   me: Me;
   workspaceId: string;
+  /** Dinghy Cloud lets an operator make another workspace. */
+  canCreate: boolean;
   onSignedOut(): void;
   onSwitch(id: string): void;
   /** The operator's name or a workspace's billing changed, so `me` must load again. */
@@ -504,85 +612,99 @@ export function Inbox({
         <BillingBanner api={api} workspaceId={workspaceId} readOnly={readOnly} billing={billing} />
       )}
       <div className={view !== status ? "app paging" : selected === null ? "app" : "app showing"}>
-        <Rail
+        <Sidebar
           me={me}
           role={role}
           name={name}
           workspaceId={workspaceId}
+          canCreate={canCreate}
           view={view}
           waiting={waiting}
           onView={showView}
           onSwitch={onSwitch}
           onSignedOut={onSignedOut}
         />
-        {view === "settings" && (
-          <SettingsPage
-            api={api}
-            me={me}
-            role={role}
-            workspaceId={workspaceId}
-            workspaceName={name}
-            billing={billing}
-            waiting={waitsForCloud}
-            onLeft={() => location.assign("/")}
-            onAccountChanged={() => {
-              onAccountChanged();
-              loadMembers();
-            }}
-          />
-        )}
-        {view === "alerts" && <AlertsPage api={api} />}
-        <section className="list" aria-label={t(status)}>
-          <h2>{t(status)}</h2>
-          <ul className="rows">
-            {conversations.length === 0 && (
-              <li className="nothing empty-boat">
-                <Pond />
-                <b>{t(STATUS_LOOK[status].empty)}</b>
-                {t("emptyHint")}
-              </li>
-            )}
-            {conversations.map((conversation) => (
-              <ConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                selected={conversation.id === selected}
-                members={members}
-                replying={replying(conversation.id)}
-                onSelect={() => setSelected(conversation.id)}
-              />
-            ))}
-          </ul>
-          {hasMore && (
-            <button
-              type="button"
-              className="btn link small"
-              onClick={() => setLimit((current) => current + PAGE_SIZE)}
-            >
-              {t("loadMore")}
-            </button>
+        <main className="panel">
+          {view === "settings" && (
+            <SettingsPage
+              api={api}
+              me={me}
+              role={role}
+              workspaceId={workspaceId}
+              workspaceName={name}
+              billing={billing}
+              waiting={waitsForCloud}
+              onLeft={() => navigate("/")}
+            />
           )}
-        </section>
-        {selected === null ? (
-          <div className="thread">
-            <Harbor title={t("pickOne")} />
+          {view === "alerts" && <AlertsPage api={api} />}
+          {view === "profile" && (
+            <ProfilePage
+              me={me}
+              onChanged={() => {
+                // The name shows on assignments and in the dropdown too, which read the members.
+                onAccountChanged();
+                loadMembers();
+              }}
+            />
+          )}
+          <div className="split">
+            <section className="list" aria-label={t(STATUS_LOOK[status].label)}>
+              <PageHead
+                title={t(STATUS_LOOK[status].label)}
+                context={listContext(status, waiting)}
+              />
+              <ul className="rows">
+                {conversations.length === 0 && (
+                  <li className="nothing empty-boat">
+                    <Pond />
+                    <b>{t(STATUS_LOOK[status].empty)}</b>
+                    {t("emptyHint")}
+                  </li>
+                )}
+                {conversations.map((conversation) => (
+                  <ConversationRow
+                    key={conversation.id}
+                    conversation={conversation}
+                    selected={conversation.id === selected}
+                    members={members}
+                    replying={replying(conversation.id)}
+                    onSelect={() => setSelected(conversation.id)}
+                  />
+                ))}
+              </ul>
+              {hasMore && (
+                <button
+                  type="button"
+                  className="btn link small"
+                  onClick={() => setLimit((current) => current + PAGE_SIZE)}
+                >
+                  {t("loadMore")}
+                </button>
+              )}
+            </section>
+            {selected === null ? (
+              <div className="thread">
+                <Harbor title={t("pickOne")} />
+              </div>
+            ) : (
+              <Thread
+                key={selected}
+                api={api}
+                meId={me.id}
+                drafts={drafts}
+                members={members}
+                replying={replying(selected)}
+                canDelete={role !== "agent" && !readOnly && !suspended}
+                repliesOffReason={suspended ? "suspendedHelp" : readOnly ? "readOnlyHelp" : null}
+                conversationId={selected}
+                version={threadVersion(selected)}
+                onBack={() => setSelected(null)}
+                onChanged={reload}
+              />
+            )}
           </div>
-        ) : (
-          <Thread
-            key={selected}
-            api={api}
-            meId={me.id}
-            drafts={drafts}
-            members={members}
-            replying={replying(selected)}
-            canDelete={role !== "agent" && !readOnly && !suspended}
-            repliesOffReason={suspended ? "suspendedHelp" : readOnly ? "readOnlyHelp" : null}
-            conversationId={selected}
-            version={threadVersion(selected)}
-            onBack={() => setSelected(null)}
-            onChanged={reload}
-          />
-        )}
+        </main>
       </div>
     </div>
   );

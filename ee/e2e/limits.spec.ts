@@ -20,7 +20,7 @@ test.afterAll(async () => {
 async function signIn(page: Page) {
   const streaming = page.waitForResponse((response) => response.url().includes("/stream"));
   await openLink(page, await server.signInLink("ana@example.com"));
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
   await streaming;
 }
 
@@ -29,14 +29,21 @@ test("a workspace with 5 operators shows the limit when an owner creates an invi
 }) => {
   await signIn(page);
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.getByRole("heading", { name: "Plan" })).toBeVisible();
-  await expect(page.getByText("Operators: 5 of 5")).toBeVisible();
-  await expect(page.getByText("Images: 0 MB of 1 GB")).toBeVisible();
-  await page.getByRole("button", { name: "Create a link" }).click();
+  await expect(page.getByRole("region", { name: "Plan" })).toBeVisible();
+  const operators = page.locator(".meter", { hasText: "Operators" });
+  await expect(operators).toContainText("5 of 5");
+  await expect(operators).toContainText("At the limit.");
+  await expect(operators).toHaveClass(/full/);
+  const images = page.locator(".meter", { hasText: "Images" });
+  await expect(images).toContainText("0 MB of 1 GB");
+  await expect(images).toHaveClass(/ ok/);
+  await expect(page.getByText("Each image is kept for 12 months.")).toBeVisible();
+  await page.getByRole("button", { name: "Invite someone" }).click();
+  await page.getByRole("button", { name: "Create invite link" }).click();
   await expect(
     page.getByText("This workspace has 5 operators, the most the plan allows."),
   ).toBeVisible();
-  await expect(page.locator(".page pre", { hasText: "/invite?token=" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Invite link" })).toHaveCount(0);
 });
 
 test("a suspended cloud workspace tells its operators where to write", async ({ page }) => {

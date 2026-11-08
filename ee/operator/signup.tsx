@@ -10,6 +10,7 @@ import {
   startCheckout,
 } from "../../apps/operator/src/api.ts";
 import { CheckEmail } from "../../apps/operator/src/auth.tsx";
+import { navigate } from "../../apps/operator/src/nav.ts";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { AuthPage, ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
 import { CHECKOUT_FAILURES } from "./billing.tsx";
@@ -20,7 +21,7 @@ const POLL_FOR_MS = 2 * 60_000;
 /** Opens Stripe Checkout, or the payment screen if Checkout cannot start. */
 async function openCheckout(workspaceId: string): Promise<void> {
   const { url } = await startCheckout(workspaceId);
-  location.assign(url);
+  navigate(url);
 }
 
 /**
@@ -49,7 +50,7 @@ export function Signup() {
 
   if (sentTo !== null) return <CheckEmail text={t("checkEmail").replace("{email}", sentTo)} />;
   return (
-    <AuthPage onSubmit={submit}>
+    <AuthPage time="morning" onSubmit={submit}>
       <h1>{t("signupTitle")}</h1>
       <Field
         label={t("email")}
@@ -63,7 +64,7 @@ export function Signup() {
       <button type="submit" className="btn primary large" disabled={busy}>
         {t("signupSubmit")}
       </button>
-      <button type="button" className="btn link" onClick={() => location.assign("/")}>
+      <button type="button" className="btn link" onClick={() => navigate("/")}>
         {t("haveAccount")}
       </button>
     </AuthPage>
@@ -101,15 +102,15 @@ export function Onboarding({
       return;
     }
     if (early) {
-      location.assign(`/?workspace=${workspaceId}`);
+      navigate(`/?workspace=${workspaceId}`);
       return;
     }
     // The workspace exists now, so a failed Checkout falls back to the payment screen.
-    await openCheckout(workspaceId).catch(() => location.assign(`/?workspace=${workspaceId}`));
+    await openCheckout(workspaceId).catch(() => navigate(`/?workspace=${workspaceId}`));
   };
 
   return (
-    <AuthPage onSubmit={submit}>
+    <AuthPage time="afternoon" onSubmit={submit}>
       <h1>{t("onboardingTitle")}</h1>
       {!early && <p className="note">{t("signupHelp")}</p>}
       <Field
@@ -171,7 +172,7 @@ export function FinishPayment({
     }
   };
   return (
-    <AuthPage>
+    <AuthPage time="afternoon">
       <h1>{t("payTitle")}</h1>
       <p className="note">{workspace.name}</p>
       {workspace.role === "owner" ? (
@@ -227,7 +228,7 @@ export function BillingReturn({ workspaceId }: { workspaceId: string }) {
         (one) => one.workspaceId === workspaceId && one.active && !one.readOnly,
       );
       if (ready) {
-        location.assign(`/?workspace=${workspaceId}`);
+        navigate(`/?workspace=${workspaceId}`);
         return;
       }
       if (Date.now() - started >= POLL_FOR_MS) setTimedOut(true);
@@ -241,7 +242,7 @@ export function BillingReturn({ workspaceId }: { workspaceId: string }) {
   }, [workspaceId]);
 
   return (
-    <AuthPage>
+    <AuthPage time="afternoon">
       <h1>{t("payTitle")}</h1>
       {timedOut ? (
         <>

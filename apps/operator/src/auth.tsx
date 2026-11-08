@@ -1,8 +1,9 @@
 /** @jsxImportSource react */
 import { type FormEvent, useState } from "react";
 import { askSignInLink, redeemJoinLink, redeemSignInLink } from "./api.ts";
+import { navigate } from "./nav.ts";
 import { type TextId, t } from "./text.ts";
-import { AuthPage, ErrorNote, Field, failureText } from "./ui.tsx";
+import { AppLink, AuthPage, ErrorNote, Field, failureText } from "./ui.tsx";
 
 export function SignIn({
   emailAvailable,
@@ -40,7 +41,7 @@ export function SignIn({
   }
   if (!emailAvailable) {
     return (
-      <AuthPage>
+      <AuthPage time="morning">
         <h1>{t("signInTitle")}</h1>
         <ErrorNote text={error} />
         <p className="note">{t("signInNoMail")}</p>
@@ -48,7 +49,7 @@ export function SignIn({
     );
   }
   return (
-    <AuthPage onSubmit={submit}>
+    <AuthPage time="morning" onSubmit={submit}>
       <h1>{t("signInTitle")}</h1>
       <Field
         label={t("email")}
@@ -63,9 +64,9 @@ export function SignIn({
         {t("signInSend")}
       </button>
       {signup && (
-        <a className="btn link" href="/signup">
+        <AppLink className="btn link" href="/signup">
           {t("createAccount")}
-        </a>
+        </AppLink>
       )}
     </AuthPage>
   );
@@ -74,7 +75,7 @@ export function SignIn({
 /** After a link went out, for a sign-in, a signup or an invite. */
 export function CheckEmail({ text, onBack }: { text: string; onBack?(): void }) {
   return (
-    <AuthPage>
+    <AuthPage time="forenoon">
       <h1>{t("checkEmailTitle")}</h1>
       <p className="note" role="status">
         {text}
@@ -88,15 +89,18 @@ export function CheckEmail({ text, onBack }: { text: string; onBack?(): void }) 
   );
 }
 
-/** What an emailed link is for, as the server names it: the button's words and where it leads. */
+/**
+ * What an emailed link is for, as the server names it: the card's heading, the button's words and
+ * where to ask for a new link.
+ */
 const PURPOSES = {
-  "sign-in": { button: "linkSignIn", again: "/" },
-  signup: { button: "linkSignup", again: "/signup" },
+  "sign-in": { title: "linkWelcomeBack", button: "linkSignIn", again: "/" },
+  signup: { title: "linkWelcome", button: "linkSignup", again: "/signup" },
   // Cloud signup with an email that has an account: sign in, then add a workspace.
-  "add-workspace": { button: "linkSignIn", again: "/signup" },
+  "add-workspace": { title: "linkWelcomeBack", button: "linkSignIn", again: "/signup" },
   // Only the invite makes a new join link, and the sign-in page cannot: the account may not exist.
-  join: { button: "linkJoin", again: null },
-} satisfies Record<string, { button: TextId; again: string | null }>;
+  join: { title: "linkJoinTitle", button: "linkJoin", again: null },
+} satisfies Record<string, { title: TextId; button: TextId; again: string | null }>;
 type Purpose = keyof typeof PURPOSES;
 /** The answers that use up a join link, unlike a lost connection, which leaves it to try again. */
 const SPENT = new Set<TextId>(["inviteInvalid", "emailTaken", "operatorLimit"]);
@@ -118,11 +122,11 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
     try {
       if (kind === "join") {
         const { workspaceId } = await redeemJoinLink(token);
-        location.assign(`/?workspace=${workspaceId}`);
+        navigate(`/?workspace=${workspaceId}`);
         return;
       }
       await redeemSignInLink(token);
-      location.assign(kind === "add-workspace" ? "/signup" : "/");
+      navigate(kind === "add-workspace" ? "/signup" : "/");
     } catch (failure) {
       setBusy(false);
       setError(
@@ -135,19 +139,19 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
   // A refused join link is used up too, so its button would only say the link expired.
   if (error === "linkInvalid" || (again === null && error !== null && SPENT.has(error))) {
     return (
-      <AuthPage>
+      <AuthPage time="noon">
         <ErrorNote text={again === null && error === "linkInvalid" ? "joinLinkInvalid" : error} />
         {again !== null && (
-          <a className="btn primary large" href={again}>
+          <AppLink className="btn primary large" href={again}>
             {t("linkAskAgain")}
-          </a>
+          </AppLink>
         )}
       </AuthPage>
     );
   }
   return (
-    <AuthPage onSubmit={submit}>
-      <h1>{t("linkTitle")}</h1>
+    <AuthPage time="noon" onSubmit={submit}>
+      <h1>{t(PURPOSES[kind].title)}</h1>
       <p className="note">{t("linkHelp")}</p>
       <ErrorNote text={error} />
       <button type="submit" className="btn primary large" disabled={busy}>

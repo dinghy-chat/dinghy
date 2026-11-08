@@ -2,6 +2,15 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
+## Unreleased
+
+- A new look for the operator app, in the brand's yellow: a sidebar with **Inbox**, **Closed**, **Alerts** and **Settings**, and one white panel with a title, a line of context and the page's actions.
+- Every dropdown is the app's own, with full keyboard use. The conversation header shows the user ID and the starting page under the name, and **Block** and **Delete** moved to its **…** menu. Each run of messages shows its time, and its author for an operator, and days are split by a line.
+- Settings has tabs: **Team**, **Install**, **Allowed sites**, **Signing secret** and **Data**. **Invite someone** opens a dialog. Allowed sites take one site per row, and the signing secret stays hidden until shown. On Dinghy Cloud, the plan's use shows as two bars.
+- **Profile** and **Sign out** moved to the menu under your name, at the bottom of the sidebar. The workspace name at the top switches workspaces, and on Dinghy Cloud creates one.
+- The app keeps a workspace's last owner: their role cannot be lowered and they cannot leave, and the app says why. The server already refused both.
+- The sign-in, link and setup screens change in place, with no page load, and their sky moves from morning to afternoon as you go. The link page names what its button does, such as **Sign in** or **Join the team**.
+
 ## 0.4.1 (2026-11-08)
 
 Follow the upgrade steps in `docs/self-hosting.md`; nothing else is needed.

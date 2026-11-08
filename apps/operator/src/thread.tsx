@@ -17,6 +17,7 @@ import {
   type WorkspaceApi,
 } from "./api.ts";
 import { useLatestLoad } from "./load.ts";
+import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
 import { title } from "./visitor.ts";
@@ -32,6 +33,8 @@ interface Line {
   /** Held until the server confirms it, so a retry can send it again. */
   file?: File;
   fromVisitor: boolean;
+  /** When the server saved it. A pending line has none yet. */
+  createdAt?: string;
   /** The operator who sent it. A pending line is this operator's own. */
   authorOperatorId: string | null;
   authorName: string | null;
@@ -47,6 +50,7 @@ function merge(lines: Line[], message: Message): Line[] {
     image: message.image,
     imageRemoved: message.imageRemoved,
     fromVisitor: message.fromVisitor,
+    createdAt: message.createdAt,
     authorOperatorId: message.authorOperatorId,
     authorName: message.authorName,
     status: "sent",
@@ -55,6 +59,21 @@ function merge(lines: Line[], message: Message): Line[] {
     (other) => other.id !== message.id && !(other.seq === null && other.id === message.clientId),
   );
   return inCommitOrder(others, line);
+}
+
+/** A page as the header shows it: with no scheme, as in "acme.example/pricing". */
+const bare = (page: string) => page.replace(/^https?:\/\//, "");
+
+/** Who the visitor is and where they came from: the quiet line under their name. */
+function origin(conversation: Conversation): string | null {
+  // The title shows the email, or else the user ID, so the line adds the user ID only after an email.
+  const who = conversation.visitor.email === null ? null : conversation.visitor.externalId;
+  const page =
+    conversation.startedPage === null
+      ? null
+      : t("startedOn").replace("{page}", bare(conversation.startedPage));
+  const parts = [who, page].filter((part) => part !== null);
+  return parts.length === 0 ? null : parts.join(" · ");
 }
 
 /** What the operator can do with this conversation. */
@@ -78,61 +97,74 @@ function ThreadHead({
   onDelete(): void;
 }) {
   const closed = conversation.status === "closed";
+  const { blocked } = conversation.visitor;
+  const assignee = members.some((member) => member.id === conversation.assigneeOperatorId)
+    ? (conversation.assigneeOperatorId ?? "")
+    : "";
+  const more: MenuItem[] = [
+    {
+      label: blocked ? t("unblockVisitor") : t("blockVisitor"),
+      lead: <Icon name="prohibit" size={18} />,
+      onSelect: () => onBlocked(!blocked),
+    },
+  ];
+  if (canDelete) {
+    more.push({
+      label: t("deleteConversation"),
+      lead: <Icon name="trash" size={18} />,
+      danger: true,
+      onSelect: onDelete,
+    });
+  }
+  const from = origin(conversation);
   return (
     <header className="thread-head">
-      <button type="button" className="icon-button back" aria-label={t("back")} onClick={onBack}>
-        <Icon name="back" />
-      </button>
-      <Avatar name={title(conversation)} />
-      <h2>{title(conversation)}</h2>
+      <div className="who-is">
+        <button type="button" className="icon-button back" aria-label={t("back")} onClick={onBack}>
+          <Icon name="back" />
+        </button>
+        <Avatar name={title(conversation)} />
+        <div className="who-text">
+          <h2>{title(conversation)}</h2>
+          {from !== null && <p title={from}>{from}</p>}
+        </div>
+      </div>
       <div className="actions">
-        <select
-          aria-label={t("assignTo")}
-          value={
-            members.some((member) => member.id === conversation.assigneeOperatorId)
-              ? (conversation.assigneeOperatorId ?? "")
-              : ""
-          }
-          onChange={(event) => onAssign(event.target.value || null)}
-        >
-          <option value="">{t("unassigned")}</option>
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
+        <Select
+          label={t("assignTo")}
+          className="assignee"
+          side="end"
+          value={assignee}
+          choices={[
+            { value: "", label: t("unassigned"), lead: <span className="avatar nobody" /> },
+            ...members.map((member) => ({
+              value: member.id,
+              label: member.name,
+              lead: <Avatar name={member.name} />,
+            })),
+          ]}
+          onChange={(value) => onAssign(value === "" ? null : value)}
+        />
         <button
           type="button"
-          className="btn outline small"
+          className="pill dark"
           onClick={() => onStatus(closed ? "open" : "closed")}
         >
+          <Icon name={closed ? "inbox" : "done"} size={18} />
           {closed ? t("reopen") : t("close")}
         </button>
-        <button
-          type="button"
-          className="btn outline small"
-          onClick={() => onBlocked(!conversation.visitor.blocked)}
-        >
-          {conversation.visitor.blocked ? t("unblockVisitor") : t("blockVisitor")}
-        </button>
-        {canDelete && (
-          <button type="button" className="btn outline small danger-text" onClick={onDelete}>
-            {t("deleteConversation")}
-          </button>
-        )}
+        <Menu label={t("moreActions")} items={more} buttonClass="round">
+          <Icon name="dots" />
+        </Menu>
       </div>
     </header>
   );
 }
 
-/** What the host page told the server about this visitor, for the operator to read. */
+/** What the host page told the server about this visitor, beyond the header: its claims. */
 function VisitorContext({ conversation }: { conversation: Conversation }) {
   const { visitor } = conversation;
   const rows: [string, string][] = [];
-  if (conversation.startedPage !== null) rows.push([t("contextPage"), conversation.startedPage]);
-  if (visitor.email !== null) rows.push([t("contextEmail"), visitor.email]);
-  if (visitor.externalId !== null) rows.push([t("contextUser"), visitor.externalId]);
   for (const [name, value] of Object.entries(visitor.claims ?? {})) {
     rows.push([name, typeof value === "string" ? value : JSON.stringify(value)]);
   }
@@ -237,31 +269,28 @@ function Composer({
             }
           }}
         />
-        <button type="submit" className="btn primary small">
-          {t("send")}
+        <button type="submit" className="send" aria-label={t("send")} title={t("send")}>
+          <Icon name="arrowUp" size={16} />
         </button>
       </div>
     </form>
   );
 }
 
-/** One message in the log, under its sender's name when the sender changes. */
+/** One message in the log. */
 function ThreadLine({
   line,
-  sender,
   onView,
   onImageError,
   onRetry,
 }: {
   line: Line;
-  sender: string | null;
   onView(): void;
   onImageError(): void;
   onRetry(): void;
 }) {
   return (
     <>
-      {sender !== null && <div className="who">{sender}</div>}
       {line.image !== null ? (
         <button
           type="button"
@@ -297,16 +326,49 @@ function ThreadLine({
   );
 }
 
-/** The sender's name above the first of a run of operator messages, and "You" for your own. */
-function senderLabel(lines: Line[], index: number, meId: string): string | null {
+const sameSender = (one: Line | undefined, other: Line | undefined) =>
+  one !== undefined &&
+  other !== undefined &&
+  one.fromVisitor === other.fromVisitor &&
+  one.authorOperatorId === other.authorOperatorId;
+
+const dayOf = (line: Line | undefined) =>
+  line?.createdAt === undefined ? null : new Date(line.createdAt).toDateString();
+
+/** "Today", "Yesterday" or the date, for the line between days. */
+function dayLabel(iso: string): string {
+  const day = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (day.toDateString() === today.toDateString()) return t("today");
+  if (day.toDateString() === yesterday.toDateString()) return t("yesterday");
+  return day.toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    ...(day.getFullYear() !== today.getFullYear() && { year: "numeric" }),
+  });
+}
+
+/**
+ * The quiet line under the last message of a run from one sender: the time, and for an operator's
+ * run, who sent it ("You" for your own). A pending message has no time yet.
+ */
+function groupMeta(lines: Line[], index: number, meId: string): string | null {
   const line = lines[index];
-  if (line === undefined || line.fromVisitor) return null;
-  const before = lines[index - 1];
-  if (before?.fromVisitor === false && before.authorOperatorId === line.authorOperatorId) {
+  if (line === undefined || line.status !== "sent") return null;
+  const after = lines[index + 1];
+  if (sameSender(line, after) && dayOf(after) === dayOf(line) && after?.status === "sent") {
     return null;
   }
-  if (line.authorOperatorId === meId) return t("you");
-  return line.authorName ?? t("aTeammate");
+  const time =
+    line.createdAt === undefined
+      ? null
+      : new Date(line.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (line.fromVisitor) return time;
+  const who = line.authorOperatorId === meId ? t("you") : (line.authorName ?? t("aTeammate"));
+  return time === null ? who : `${who} · ${time}`;
 }
 
 export function Thread({
@@ -544,15 +606,13 @@ export function Thread({
         onDelete={() => setConfirming(true)}
       />
       {confirming && (
-        <div className="confirm" role="alert">
-          <p>{t("deleteConfirm")}</p>
-          <button type="button" className="btn danger small" onClick={() => void remove()}>
-            {t("deleteYes")}
-          </button>
-          <button type="button" className="btn outline small" onClick={() => setConfirming(false)}>
-            {t("deleteNo")}
-          </button>
-        </div>
+        <Confirm
+          title={t("deleteTitle")}
+          text={t("deleteConfirm")}
+          confirm={t("deleteYes")}
+          onConfirm={() => void remove()}
+          onCancel={() => setConfirming(false)}
+        />
       )}
       {conversation.visitor.blocked && (
         <p className="replying blocked" role="status">
@@ -567,16 +627,26 @@ export function Thread({
       <VisitorContext conversation={conversation} />
       <div className="log" role="log" aria-live="polite" ref={log}>
         {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
-        {lines.map((line, index) => (
-          <ThreadLine
-            key={line.id}
-            line={line}
-            sender={senderLabel(lines, index, meId)}
-            onView={() => setViewing(line.id)}
-            onImageError={refreshImages}
-            onRetry={() => void deliver(line.id, line.body, line.file)}
-          />
-        ))}
+        {lines.map((line, index) => {
+          const day = dayOf(line);
+          const meta = groupMeta(lines, index, meId);
+          return (
+            <Fragment key={line.id}>
+              {line.createdAt !== undefined && day !== dayOf(lines[index - 1]) && (
+                <div className="day">{dayLabel(line.createdAt)}</div>
+              )}
+              <ThreadLine
+                line={line}
+                onView={() => setViewing(line.id)}
+                onImageError={refreshImages}
+                onRetry={() => void deliver(line.id, line.body, line.file)}
+              />
+              {meta !== null && (
+                <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>
+              )}
+            </Fragment>
+          );
+        })}
       </div>
       {viewing !== null && (
         <ImageViewer

@@ -22,7 +22,7 @@ async function signedIn(browser: import("@playwright/test").Browser, email: stri
   const context = await browser.newContext();
   const page = await context.newPage();
   await openLink(page, await server.signInLink(email));
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
   return page;
 }
 

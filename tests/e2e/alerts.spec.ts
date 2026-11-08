@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { openLink, signOut } from "./links.ts";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -66,10 +66,10 @@ test("an operator turns on notifications and receives a test, and sign-out ends 
 
   // With no mail server, the settings say what that means.
   await expect(page.getByText("This server cannot send email.")).toBeVisible();
-  await page.getByRole("button", { name: "Open", exact: true }).click();
+  await page.getByRole("button", { name: "Inbox", exact: true }).click();
   await expect(page.locator(".page")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOut(page);
   await expect(page.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
   const remaining = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.getRegistration();
