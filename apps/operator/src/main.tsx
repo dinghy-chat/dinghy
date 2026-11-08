@@ -46,6 +46,8 @@ function App() {
     const moved = () => {
       const next = here();
       const show = (account: Me | null) => {
+        // A later move has its own answer coming. This one must not overwrite it.
+        if (here() !== next) return;
         setMe(account);
         // A new address can name a workspace, which wins over the last one picked.
         setPicked(null);

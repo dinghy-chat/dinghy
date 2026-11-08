@@ -61,8 +61,10 @@ function usePopup(labels: string[], start: () => number) {
 
   const jump = (key: string) => {
     const now = Date.now();
-    const text = (now - typed.current.at > TYPE_AHEAD_MS ? "" : typed.current.text) + key;
-    typed.current = { text: text.toLowerCase(), at: now };
+    const text = (
+      (now - typed.current.at > TYPE_AHEAD_MS ? "" : typed.current.text) + key
+    ).toLowerCase();
+    typed.current = { text, at: now };
     const count = labels.length;
     // A repeated letter steps through the items that start with it.
     const repeat = [...text].every((character) => character === text[0]);

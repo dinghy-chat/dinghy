@@ -175,6 +175,15 @@ test("an operator changes their name in Profile, which has no password", async (
   await expect(page.getByText("Saved.")).toBeVisible();
   await expect(page.locator(".me")).toContainText("Carol King");
 
+  // The inbox's assignment dropdown shows the new name too, without a reload.
+  const customer = await visitor(browser, "Who is Carol now?");
+  await page.getByRole("button", { name: "Inbox" }).click();
+  await row(page, "Who is Carol now?").click();
+  await page.getByRole("button", { name: /^Assign to/ }).click();
+  await expect(page.getByRole("option", { name: "Carol King" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await customer.context().close();
+
   const again = await signedIn(browser, "carol@example.com");
   await expect(again.locator(".me")).toContainText("Carol King");
   for (const one of [page, again]) await one.context().close();

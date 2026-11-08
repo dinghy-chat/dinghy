@@ -563,7 +563,8 @@ test("the assignee dropdown works with the keyboard", async ({ browser }) => {
     (await last.getAttribute("id")) ?? "",
   );
   await operator.keyboard.press("Home");
-  await operator.keyboard.press("a");
+  // A capital letter jumps too.
+  await operator.keyboard.press("Shift+A");
   const anna = list.getByRole("option", { name: "anna@example.com" });
   await expect(list).toHaveAttribute(
     "aria-activedescendant",

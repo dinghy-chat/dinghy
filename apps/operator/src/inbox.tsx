@@ -638,7 +638,16 @@ export function Inbox({
             />
           )}
           {view === "alerts" && <AlertsPage api={api} />}
-          {view === "profile" && <ProfilePage me={me} onChanged={onAccountChanged} />}
+          {view === "profile" && (
+            <ProfilePage
+              me={me}
+              onChanged={() => {
+                // The name shows on assignments and in the dropdown too, which read the members.
+                onAccountChanged();
+                loadMembers();
+              }}
+            />
+          )}
           <div className="split">
             <section className="list" aria-label={t(STATUS_LOOK[status].label)}>
               <PageHead
