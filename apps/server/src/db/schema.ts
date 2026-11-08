@@ -80,7 +80,13 @@ export const operator = pgTable("operator", {
   id: id().primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").notNull().default(false),
+  // BetterAuth's own flag. Always true, so BetterAuth never runs its own cleanup of unproven
+  // accounts: Dinghy proves a mailbox itself, with `emailProven`.
+  emailVerified: boolean("email_verified").notNull().default(true),
+  // False for an account nobody has proved owns its email: one imported, or one that joined a server
+  // without email. The first link that goes by email sets it, once, and signs out the earlier
+  // sessions. Nothing ever sets it back.
+  emailProven: boolean("email_proven").notNull().default(true),
   image: text("image"),
   // Cloud only. When the cloud's welcome email went out, so an account gets it once, whatever it does after.
   welcomedAt: timestamp("welcomed_at", { withTimezone: true }),

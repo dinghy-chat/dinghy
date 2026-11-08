@@ -105,6 +105,21 @@ describe("chat migrate", () => {
     expect(fresh?.fresh).toBe(true);
   });
 
+  test("an account BetterAuth did not count as verified stays unproven in email_proven", async () => {
+    await run(await migrationsBefore("0041_"));
+    await query(
+      `insert into operator (name, email, email_verified) values
+       ('Imported', 'imported@example.com', false), ('Known', 'known@example.com', true)`,
+    );
+    await run();
+    expect(
+      await query("select email, email_verified, email_proven from operator order by email"),
+    ).toEqual([
+      { email: "imported@example.com", email_verified: true, email_proven: false },
+      { email: "known@example.com", email_verified: true, email_proven: true },
+    ]);
+  });
+
   test("stored passwords go, and the accounts and their sessions stay", async () => {
     await run(await migrationsBefore("0040_"));
     const id = "00000000-0000-4000-8000-0000000000bb";

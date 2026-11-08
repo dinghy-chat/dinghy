@@ -779,7 +779,7 @@ export function registerTeamRoutes(
     const result = await withWorkspace(db, workspaceId, async (tx) => {
       const [created] = await tx
         .insert(operator)
-        .values({ name: pending.name, email, emailVerified: pending.proven })
+        .values({ name: pending.name, email, emailProven: pending.proven })
         .onConflictDoNothing()
         .returning({ id: operator.id });
       let operatorId = created?.id;
@@ -818,6 +818,7 @@ export function registerTeamRoutes(
     }
     const cookies = await signInNow(
       auth,
+      db,
       email,
       c.req.raw.headers,
       pending.proven ? "email" : "shown",

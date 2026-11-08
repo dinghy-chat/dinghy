@@ -219,7 +219,7 @@ export function registerOperatorRoutes(
     const parsed = LinkToken.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json(failure("invalid_request", "Send a token."), 400);
     const ip = c.get("clientIp");
-    const cookies = await redeemSignInToken(auth, parsed.data.token, c.req.raw.headers);
+    const cookies = await redeemSignInToken(auth, db, parsed.data.token, c.req.raw.headers);
     if (cookies === null) {
       audit(logger, "sign_in.link_refused", { ip }, "warn");
       return c.json(LINK_INVALID, 400);

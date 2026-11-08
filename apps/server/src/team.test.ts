@@ -218,7 +218,7 @@ describe("joining by link", () => {
       email,
       workspaces: [{ workspaceId: space.id, role: "admin" }],
     });
-    expect((await operatorRow(email))?.emailVerified).toBe(true);
+    expect((await operatorRow(email))?.emailProven).toBe(true);
     const again = await pressLinkButton(mailApp, link);
     expect(again.status).toBe(400);
     expect(await again.json()).toMatchObject({ error: { code: "link_invalid" } });
@@ -305,10 +305,10 @@ describe("joining by link", () => {
     const boss = await person("owner");
     const email = `unproven-${randomUUID()}@example.com`;
     const { cookie } = await joinAndOpen(await newInvite(boss), email);
-    expect((await operatorRow(email))?.emailVerified).toBe(false);
+    expect((await operatorRow(email))?.emailProven).toBe(false);
     // A link from `chat sign-in-link` signs in, and proves nothing either.
     const shown = await signIn(app, auth, email);
-    expect((await operatorRow(email))?.emailVerified).toBe(false);
+    expect((await operatorRow(email))?.emailProven).toBe(false);
     // Once the server sends email, the mailbox's owner proves it and the earlier sessions end.
     const asked = await mailApp.request("/v1/auth/sign-in/magic-link", {
       method: "POST",
@@ -317,7 +317,7 @@ describe("joining by link", () => {
     });
     expect(asked.status).toBe(200);
     const proven = await openSignInLink(mailApp, await mail.linkTo(email));
-    expect((await operatorRow(email))?.emailVerified).toBe(true);
+    expect((await operatorRow(email))?.emailProven).toBe(true);
     for (const old of [cookie, shown]) {
       expect((await app.request("/v1/operator/me", { headers: { cookie: old } })).status).toBe(401);
     }

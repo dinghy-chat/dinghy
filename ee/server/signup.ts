@@ -194,11 +194,11 @@ export function registerSignup(
   const sendLink = async (email: string) => {
     if (mailer === undefined) return;
     const [known] = await db
-      .select({ verified: operator.emailVerified })
+      .select({ proven: operator.emailProven })
       .from(operator)
       .where(eq(operator.email, email));
     // An account that never opened its link, from before links, counts as new: it proves itself.
-    const taken = known?.verified === true;
+    const taken = known?.proven === true;
     // A known email lands on the workspace setup, which is why its owner came to sign up.
     const url = await signInLink(auth, email, taken ? "add-workspace" : "signup", "email");
     const subject = taken ? text.takenSubject : text.signupSubject;

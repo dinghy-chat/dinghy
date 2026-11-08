@@ -415,7 +415,7 @@ async function insertWorkspace(
     if (operatorId === undefined) {
       const [row] = await tx
         .insert(operator)
-        .values({ name: member.name, email, emailVerified: false })
+        .values({ name: member.name, email, emailProven: false })
         .returning({ id: operator.id });
       operatorId = row?.id ?? "";
       created.push(email);
