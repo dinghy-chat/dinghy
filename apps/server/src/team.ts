@@ -785,10 +785,15 @@ export function registerTeamRoutes(
       let operatorId = created?.id;
       if (operatorId === undefined) {
         if (!pending.proven) return "email_taken" as const;
+        // The email is proven, so an account left unnamed, such as by an unfinished signup,
+        // takes the typed name. A name it already has stays.
         const [found] = await tx
-          .select({ id: operator.id })
-          .from(operator)
-          .where(eq(operator.email, email));
+          .update(operator)
+          .set({
+            name: sql`case when ${operator.name} = '' then ${pending.name} else ${operator.name} end`,
+          })
+          .where(eq(operator.email, email))
+          .returning({ id: operator.id });
         operatorId = found?.id;
         if (operatorId === undefined) throw new Error("The operator row is missing");
       }

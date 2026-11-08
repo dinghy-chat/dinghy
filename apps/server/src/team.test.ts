@@ -257,6 +257,19 @@ describe("joining by link", () => {
     expect(await me.json()).toMatchObject({ id: existing.id, name: existing.email });
   });
 
+  test("an existing account with no name takes the typed one", async () => {
+    const [unnamed] = await owner
+      .insert(operator)
+      .values({ name: "", email: `unnamed-${randomUUID()}@example.com`, emailVerified: true })
+      .returning({ id: operator.id, email: operator.email });
+    if (unnamed === undefined) throw new Error("No operator");
+    const boss = await person("owner");
+    await join(await newInvite(boss), unnamed.email, ORIGIN, mailApp);
+    const { cookie } = await openJoin(await mail.linkTo(unnamed.email), mailApp);
+    const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
+    expect(await me.json()).toMatchObject({ id: unnamed.id, name: "New Person" });
+  });
+
   test("an invite used or revoked before the link opens makes nothing", async () => {
     const boss = await person("owner");
     const used = await newInvite(boss);
