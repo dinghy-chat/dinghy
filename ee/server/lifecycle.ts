@@ -19,6 +19,7 @@ import {
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
+import { letter } from "../../apps/server/src/letter.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import type { Billing } from "./billing.ts";
@@ -128,23 +129,29 @@ const date = (value: Date) => value.toISOString().slice(0, 10);
 
 // Plain text. Every string has a key here, so a locale can be added later.
 const text = {
-  paymentFailedSubject: (name: string) => `The payment for ${name} failed`,
-  paymentFailedBody: (name: string, until: Date, url: string) =>
-    `The payment for your Dinghy workspace ${name} did not go through. Stripe will try again.\n\n` +
-    `The workspace works as usual until ${date(until)}. If no payment clears by then, it becomes ` +
-    `read-only: the chat widget goes off and nobody can reply.\n\n` +
-    `Update the payment method in Settings, under Billing: ${url}`,
+  paymentFailedSubject: (name: string) => `The payment for ${name} didn't go through`,
+  paymentFailedBody: (name: string, until: Date, url: string) => [
+    `The payment for your Dinghy workspace ${name} didn't go through. Stripe will try again on ` +
+      "its own.",
+    `Everything keeps working until ${date(until)}. If no payment clears by then, the workspace ` +
+      "turns read-only: the chat widget goes off and nobody can reply.",
+    `You can update the card in Settings, under Billing: ${url}`,
+  ],
   readOnlySubject: (name: string) => `${name} is now read-only`,
-  readOnlyBody: (name: string, deleteOn: Date, url: string) =>
-    `Your Dinghy workspace ${name} has no paid subscription, so it is now read-only. The chat ` +
-    `widget is off. Your team can still sign in, read conversations and download an export, and ` +
-    `cannot reply.\n\nPay again to get everything back, with all its data: ${url}\n\n` +
+  readOnlyBody: (name: string, deleteOn: Date, url: string) => [
+    `Your Dinghy workspace ${name} no longer has a paid subscription, so it's read-only now. The ` +
+      "chat widget is off. Your team can still sign in, read conversations and download an " +
+      "export, but nobody can reply.",
+    `Pay again and you get everything back, with all its data: ${url}`,
     `If nobody pays, the workspace and all its data are deleted on ${date(deleteOn)}.`,
+  ],
   deletionSubject: (name: string, deleteOn: Date) => `${name} will be deleted on ${date(deleteOn)}`,
-  deletionBody: (name: string, deleteOn: Date, url: string) =>
+  deletionBody: (name: string, deleteOn: Date, url: string) => [
     `Your Dinghy workspace ${name} has been read-only since its subscription ended. On ` +
-    `${date(deleteOn)}, the workspace and all its data, including images, are deleted for good.\n\n` +
-    `To keep it, pay again: ${url}\n\nTo keep a copy instead, download an export in Settings first.`,
+      `${date(deleteOn)}, the workspace and all its data, images included, are deleted for good.`,
+    `To keep it, pay again: ${url}`,
+    "If you'd rather keep a copy, download an export in Settings before then.",
+  ],
 };
 
 function noticeMail(notice: Notice, name: string, row: LifecycleRow, url: string) {
@@ -385,7 +392,7 @@ export async function runLifecycle({
         .from(workspace)
         .where(eq(workspace.id, row.workspaceId));
       const owners = await tx
-        .select({ email: operator.email })
+        .select({ email: operator.email, name: operator.name })
         .from(workspaceMember)
         .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
         .where(
@@ -395,7 +402,7 @@ export async function runLifecycle({
             isNull(workspaceMember.removedAt),
           ),
         );
-      return { name: named?.name ?? "", owners: owners.map((one) => one.email) };
+      return { name: named?.name ?? "", owners };
     });
     if (mailer === undefined) {
       logger.info(
@@ -406,7 +413,10 @@ export async function runLifecycle({
       const url = `${publicUrl.replace(/\/$/, "")}/?workspace=${row.workspaceId}`;
       const mail = noticeMail(notice, found.name, row, url);
       // A failure leaves the notice unsent, and the claim's end retries it: at least once.
-      for (const to of found.owners) await mailer.send(to, mail.subject, mail.body);
+      for (const to of found.owners) {
+        // Each owner signed in with a link to this address, so their own name is safe here.
+        await mailer.send(to.email, mail.subject, letter(mail.body, to.name));
+      }
     }
     await finish(
       row,

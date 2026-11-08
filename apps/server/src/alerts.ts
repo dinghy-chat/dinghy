@@ -15,6 +15,7 @@ import {
 } from "./db/schema.ts";
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
+import { letter } from "./letter.ts";
 import { joinVisitor } from "./messages.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
@@ -42,13 +43,21 @@ const text = {
   testTitle: "Dinghy",
   testBody: "Alerts work on this device.",
   operatorSubject: (name: string) => `New message in ${name}`,
-  operatorBody: (who: string, body: string, url: string) =>
-    `${who} wrote:\n\n${body}\n\nOpen the conversation: ${url}`,
+  operatorBody: (who: string, place: string, body: string, url: string) => [
+    `${who} wrote in ${place}:`,
+    body,
+    `Open the conversation: ${url}`,
+    "You get these because email alerts are on for you. You can turn them off in Settings, " +
+      "under Alerts.",
+  ],
   replySubject: (name: string) => `${name} replied to your message`,
-  replyBody: (name: string, replies: string, stop: string) =>
-    `${replies}\n\nReturn to the site to answer.\n\n` +
-    `You received this because this address was entered in a chat with ${name}. ` +
-    `If that was not you, or to stop these emails: ${stop}`,
+  replyBody: (name: string, replies: string, stop: string) => [
+    `${name} replied to your message:`,
+    replies,
+    "To answer, go back to the site and open the chat.",
+    `You got this because this address was entered in a chat with ${name}. If that wasn't you, ` +
+      `or you'd rather not get these emails, stop them here: ${stop}`,
+  ],
 };
 
 export const testPayload = (id: string): PushPayload => ({
@@ -512,13 +521,16 @@ async function replyEmailPlan(
     channel: "email",
     to: target.email,
     subject: text.replySubject(placeName),
-    text: text.replyBody(
-      placeName,
-      replies
-        .reverse()
-        .map((reply) => messageText(reply.body))
-        .join("\n\n"),
-      stopUrl,
+    // The visitor typed this address, and nobody proved it, so it greets no name.
+    text: letter(
+      text.replyBody(
+        placeName,
+        replies
+          .reverse()
+          .map((reply) => messageText(reply.body))
+          .join("\n\n"),
+        stopUrl,
+      ),
     ),
     stopUrl,
   };
@@ -537,7 +549,11 @@ async function operatorPlan(
   if (operatorId === null) return null;
   // A removed operator receives nothing, even from a row made before the removal.
   const [member] = await tx
-    .select({ email: operator.email, wantsEmail: workspaceMember.alertEmail })
+    .select({
+      email: operator.email,
+      name: operator.name,
+      wantsEmail: workspaceMember.alertEmail,
+    })
     .from(workspaceMember)
     .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
     .where(
@@ -571,7 +587,10 @@ async function operatorPlan(
     channel: "email",
     to: member.email,
     subject: text.operatorSubject(placeName),
-    text: text.operatorBody(from?.email ?? text.visitor, messageText(body), threadUrl),
+    text: letter(
+      text.operatorBody(from?.email ?? text.visitor, placeName, messageText(body), threadUrl),
+      member.name,
+    ),
   };
 }
 
