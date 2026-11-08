@@ -2,9 +2,13 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
-## 0.3.6 (2026-11-08)
+## 0.3.7 (2026-11-08)
 
-The first release from the public repository. Follow the upgrade steps in `docs/self-hosting.md`; nothing else is needed.
+The first release from the public repository, with the changes listed under 0.3.6. Follow the upgrade steps in `docs/self-hosting.md`; nothing else is needed.
+
+- The release check upgrades from the releases tagged in this repository. The 0.3.6 tag published no image, because that check looked for an older tag that only the private history has.
+
+## 0.3.6 (2026-11-08, not published)
 
 - `chat workspaces` prints the state that the API and the widget act on: `active`, `suspended`, `read_only`, `waiting_payment` or `waiting_cloud`. It used to print `active` for a workspace that was waiting for payment or read-only.
 - The image is public at `ghcr.io/dinghy-chat/dinghy`, so an install needs no registry login.
