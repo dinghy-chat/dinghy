@@ -2,6 +2,12 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
+## 0.4.1 (2026-11-08)
+
+Follow the upgrade steps in `docs/self-hosting.md`; nothing else is needed.
+
+- On Dinghy Cloud, the logo on the sign-in, signup and link screens goes back to dinghy.chat. A self-hosted server's screens keep a plain logo.
+
 ## 0.4.0 (2026-11-08)
 
 **Owner action:** operators now sign in with a link sent to their email, and passwords are gone. Tell your team: they enter their email on the sign-in page and open the link, which works once, for 15 minutes. Without a mail server, the sign-in page tells them to ask you, and you make a link with `docker compose exec app chat sign-in-link <email>`. The upgrade deletes the stored password hashes. Accounts, workspaces and open sessions stay.
