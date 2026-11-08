@@ -112,7 +112,7 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
   };
 
   return (
-    <Page title={t("alerts")}>
+    <Page title={t("alerts")} context={t("alertsContext")}>
       {settings === null ? (
         <Loading failure={failure} />
       ) : (
@@ -125,17 +125,17 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
             ) : device === null ? (
               <button
                 type="button"
-                className="btn primary"
+                className="pill dark"
                 onClick={() => void turnOn(settings.pushKey ?? "")}
               >
                 {t("pushOn")}
               </button>
             ) : (
               <div className="actions">
-                <button type="button" className="btn navy" onClick={() => void sendTest()}>
+                <button type="button" className="pill dark" onClick={() => void sendTest()}>
                   {t("pushTest")}
                 </button>
-                <button type="button" className="btn outline" onClick={() => void turnOff()}>
+                <button type="button" className="pill" onClick={() => void turnOff()}>
                   {t("pushOff")}
                 </button>
               </div>

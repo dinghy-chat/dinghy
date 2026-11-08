@@ -1,15 +1,22 @@
 /** @jsxImportSource react */
 import {
+  createContext,
   type FormEvent,
   type InputHTMLAttributes,
   type ReactNode,
   type RefObject,
+  useCallback,
+  useContext,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
+  useState,
 } from "react";
 import { BOAT_CSS, type BoatKind, boatSvg, logoSvg } from "../../../packages/widget/src/boat.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "../../../packages/widget/src/sea.ts";
 import { ApiError, type Role } from "./api.ts";
+import { navigate } from "./nav.ts";
 import { type TextId, t } from "./text.ts";
 
 // One set of boat colors for the widget and this app. A constructed sheet passes style-src 'self'.
@@ -92,6 +99,42 @@ export function Field({ label, value, onChange, ...input }: FieldProps) {
   );
 }
 
+/**
+ * A link to another screen of the app. It moves in place, as the app's buttons do, and still
+ * opens a new tab with a modifier key or the middle button.
+ */
+export function AppLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <a
+      className={className}
+      href={href}
+      onClick={(event) => {
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
+          return;
+        }
+        event.preventDefault();
+        navigate(href);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 /** A moving boat. Each place that shows one also shows text that says the same. */
 function Boat({ kind, size }: { kind: BoatKind; size: number }) {
   return (
@@ -146,24 +189,48 @@ const SHORE: SeaOptions = {
   boatLayer: 1,
   boatAt: 0.2,
   drift: 16,
-  // The sun shows only on wider screens.
-  sunAt: matchMedia("(min-width: 761px)").matches ? 0.8 : undefined,
 };
 
-/** A boat riding layers of moving swell. The boat and the water are pictures: the place that shows them also shows text that says the same. */
+const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * A boat riding layers of moving swell. The boat and the water are pictures: the place that shows
+ * them also shows text that says the same. A new `boatAt` or `sunAt` glides there.
+ */
 function Sea({
   className,
   options,
+  boatAt = options.boatAt,
+  sunAt = options.sunAt,
   size,
   children,
 }: {
   className: string;
   options: SeaOptions;
+  boatAt?: number;
+  sunAt?: number | undefined;
   size: number;
   children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  useEffect(() => (host.current ? startSea(host.current, options) : undefined), [options]);
+  // The sea reads these each frame, so a change moves the boat without a new start.
+  const live = useRef<SeaOptions>({ ...options, boatAt, sunAt });
+  const stop = useRef(() => {});
+  const start = useCallback(() => {
+    stop.current();
+    stop.current = host.current ? startSea(host.current, live.current) : () => {};
+  }, []);
+  useEffect(() => {
+    live.current = { ...options, boatAt: live.current.boatAt, sunAt: live.current.sunAt };
+    start();
+    return () => stop.current();
+  }, [options, start]);
+  useEffect(() => {
+    live.current.boatAt = boatAt;
+    live.current.sunAt = sunAt;
+    // With reduced motion the sea is still, so it starts again in its new place.
+    if (lessMotion()) start();
+  }, [boatAt, sunAt, start]);
   return (
     <div className={`sea ${className}`} ref={host} aria-hidden="true">
       {children}
@@ -214,7 +281,7 @@ export function Loading({ failure = null }: { failure?: TextId | null }) {
 const TINT_COUNT = 4;
 
 /** Up to two initials: "Maya Chen" gives "MC", and "maya@example.com" gives "M". */
-function initials(name: string): string {
+export function initials(name: string): string {
   const words = name.split(/[\s@._-]+/).filter((word) => word !== "");
   const first = words[0] ?? name;
   const second = name.includes("@") ? undefined : words[1];
@@ -262,46 +329,155 @@ const ICONS = {
     "M209.66,122.34a8,8,0,0,1,0,11.32l-82.05,82a56,56,0,0,1-79.2-79.21L147.67,35.73a40,40,0,1,1,56.61,56.55L105,193A24,24,0,1,1,71,159L154.3,74.38A8,8,0,1,1,165.7,85.6L82.39,170.31a8,8,0,1,0,11.27,11.36L192.93,81A24,24,0,1,0,159,47L59.76,147.68a40,40,0,1,0,56.53,56.62l82.06-82A8,8,0,0,1,209.66,122.34Z",
   ],
   back: [
-    "M160,48V208L80,128Z",
-    "M163.06,40.61a8,8,0,0,0-8.72,1.73l-80,80a8,8,0,0,0,0,11.32l80,80A8,8,0,0,0,168,208V48A8,8,0,0,0,163.06,40.61ZM152,188.69,91.31,128,152,67.31Z",
+    "",
+    "M168.49,199.51a12,12,0,0,1-17,17l-80-80a12,12,0,0,1,0-17l80-80a12,12,0,0,1,17,17L97,128Z",
+  ],
+  // For these, the light layer is a square behind the mark, so they draw the mark alone.
+  check: [
+    "",
+    "M205.66,85.66l-96,96a8,8,0,0,1-11.32,0l-40-40a8,8,0,0,1,11.32-11.32L104,164.69l90.34-90.35a8,8,0,0,1,11.32,11.32Z",
+  ],
+  plus: [
+    "",
+    "M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z",
+  ],
+  close: [
+    "",
+    "M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z",
+  ],
+  dots: [
+    "",
+    "M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128Zm56-12a12,12,0,1,0,12,12A12,12,0,0,0,196,116ZM60,116a12,12,0,1,0,12,12A12,12,0,0,0,60,116Z",
+  ],
+  // Bold, single-layer marks for small controls.
+  chevron: [
+    "",
+    "M216.49,104.49l-80,80a12,12,0,0,1-17,0l-80-80a12,12,0,0,1,17-17L128,159l71.51-71.52a12,12,0,0,1,17,17Z",
+  ],
+  chevronRight: [
+    "",
+    "M184.49,136.49l-80,80a12,12,0,0,1-17-17L159,128,87.51,56.49a12,12,0,1,1,17-17l80,80A12,12,0,0,1,184.49,136.49Z",
+  ],
+  arrowUp: [
+    "",
+    "M208.49,120.49a12,12,0,0,1-17,0L140,69V216a12,12,0,0,1-24,0V69L64.49,120.49a12,12,0,0,1-17-17l72-72a12,12,0,0,1,17,0l72,72A12,12,0,0,1,208.49,120.49Z",
+  ],
+  plusBold: [
+    "",
+    "M228,128a12,12,0,0,1-12,12H140v76a12,12,0,0,1-24,0V140H40a12,12,0,0,1,0-24h76V40a12,12,0,0,1,24,0v76h76A12,12,0,0,1,228,128Z",
+  ],
+  lock: [
+    "M216,96V208a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V96a8,8,0,0,1,8-8H208A8,8,0,0,1,216,96Z",
+    "M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Z",
+  ],
+  link: [
+    "M209.94,113.94l-96,96a48,48,0,0,1-67.88-67.88l96-96a48,48,0,0,1,67.88,67.88Z",
+    "M165.66,90.34a8,8,0,0,1,0,11.32l-64,64a8,8,0,0,1-11.32-11.32l64-64A8,8,0,0,1,165.66,90.34ZM215.6,40.4a56,56,0,0,0-79.2,0L106.34,70.45a8,8,0,0,0,11.32,11.32l30.06-30a40,40,0,0,1,56.57,56.56l-30.07,30.06a8,8,0,0,0,11.31,11.32L215.6,119.6a56,56,0,0,0,0-79.2ZM138.34,174.22l-30.06,30.06a40,40,0,1,1-56.56-56.57l30.05-30.05a8,8,0,0,0-11.32-11.32L40.4,136.4a56,56,0,0,0,79.2,79.2l30.06-30.07a8,8,0,0,0-11.32-11.31Z",
+  ],
+  eye: [
+    "M128,56C48,56,16,128,16,128s32,72,112,72,112-72,112-72S208,56,128,56Zm0,112a40,40,0,1,1,40-40A40,40,0,0,1,128,168Z",
+    "M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z",
+  ],
+  eyeOff: [
+    "M128,56C48,56,16,128,16,128s32,72,112,72,112-72,112-72S208,56,128,56Zm0,112a40,40,0,1,1,40-40A40,40,0,0,1,128,168Z",
+    "M53.92,34.62A8,8,0,1,0,42.08,45.38L61.32,66.55C25,88.84,9.38,123.2,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208a127.11,127.11,0,0,0,52.07-10.83l22,24.21a8,8,0,1,0,11.84-10.76Zm47.33,75.84,41.67,45.85a32,32,0,0,1-41.67-45.85ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.16,133.16,0,0,1,25,128c4.69-8.79,19.66-33.39,47.35-49.38l18,19.75a48,48,0,0,0,63.66,70l14.73,16.2A112,112,0,0,1,128,192Zm6-95.43a8,8,0,0,1,3-15.72,48.16,48.16,0,0,1,38.77,42.64,8,8,0,0,1-7.22,8.71,6.39,6.39,0,0,1-.75,0,8,8,0,0,1-8-7.26A32.09,32.09,0,0,0,134,96.57Zm113.28,34.69c-.42.94-10.55,23.37-33.36,43.8a8,8,0,1,1-10.67-11.92A132.77,132.77,0,0,0,231.05,128a133.15,133.15,0,0,0-23.12-30.77C185.67,75.19,158.78,64,128,64a118.37,118.37,0,0,0-19.36,1.57A8,8,0,1,1,106,49.79,134,134,0,0,1,128,48c34.88,0,66.57,13.26,91.66,38.35,18.83,18.83,27.3,37.62,27.65,38.41A8,8,0,0,1,247.31,131.26Z",
+  ],
+  copy: [
+    "M216,40V168H168V88H88V40Z",
+    "M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z",
+  ],
+  trash: [
+    "M200,56V208a8,8,0,0,1-8,8H64a8,8,0,0,1-8-8V56Z",
+    "M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z",
+  ],
+  user: [
+    "M192,96a64,64,0,1,1-64-64A64,64,0,0,1,192,96Z",
+    "M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z",
+  ],
+  prohibit: [
+    "M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z",
+    "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm88,104a87.56,87.56,0,0,1-20.41,56.28L71.72,60.4A88,88,0,0,1,216,128ZM40,128A87.56,87.56,0,0,1,60.41,71.72L184.28,195.6A88,88,0,0,1,40,128Z",
+  ],
+  plusCircle: [
+    "M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z",
+    "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm48-88a8,8,0,0,1-8,8H136v32a8,8,0,0,1-16,0V136H88a8,8,0,0,1,0-16h32V88a8,8,0,0,1,16,0v32h32A8,8,0,0,1,176,128Z",
   ],
 } satisfies Record<string, [string, string]>;
 
-export function Icon({ name, size = 20 }: { name: keyof typeof ICONS; size?: number }) {
+export type IconName = keyof typeof ICONS;
+
+export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   const [light, main] = ICONS[name];
   return (
     <svg width={size} height={size} viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">
-      <path className="duo" d={light} />
+      {light !== "" && <path className="duo" d={light} />}
       <path d={main} />
     </svg>
   );
 }
 
-/** A page beside the left rail, such as settings and alerts. The rail stays in use. */
-export function Page({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * A page inside the white panel: a large title, one line of context, and the page's actions on the
+ * right as pills.
+ */
+export function Page({
+  title,
+  context,
+  actions,
+  children,
+}: {
+  title: string;
+  context?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="page" aria-label={title}>
-      <header className="page-head">
-        <h2>{title}</h2>
-      </header>
+      <PageHead title={title} context={context} actions={actions} />
       <div className="page-body">{children}</div>
     </section>
   );
 }
 
-/** One card on a page: a title and its help on the left, the controls on the right. */
+/** The title, its line of context and the actions, at the top of a page or of the inbox list. */
+export function PageHead({
+  title,
+  context,
+  actions,
+}: {
+  title: string;
+  context?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="page-head">
+      <div className="page-title">
+        <h2>{title}</h2>
+        {context !== undefined && <p>{context}</p>}
+      </div>
+      {actions !== undefined && <div className="page-actions">{actions}</div>}
+    </header>
+  );
+}
+
+/**
+ * One row of a page: a title and its help on the left, the controls on the right, and a thin line
+ * between rows. A danger row, for what cannot be undone, has a red outline.
+ */
 export function PageRow({
   title,
   help,
+  danger = false,
   children,
 }: {
   title: ReactNode;
   help?: string;
+  danger?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className="page-row">
-      <div>
+    <section className={danger ? "page-row danger-zone" : "page-row"}>
+      <div className="page-about">
         <h3>{title}</h3>
         {help !== undefined && <p className="hint">{help}</p>}
       </div>
@@ -311,16 +487,141 @@ export function PageRow({
 }
 
 /**
+ * The account screens follow one day: sign in in the early morning, the email by mid-morning, the
+ * link at midday and the workspace's setup in the afternoon.
+ */
+export type TimeOfDay = "morning" | "forenoon" | "noon" | "afternoon";
+
+/** Where the boat rests and where the sun lies, as shares of the width, at each time of day. */
+const DAY: Record<TimeOfDay, { boatAt: number; sunAt: number }> = {
+  morning: { boatAt: 0.16, sunAt: 0.14 },
+  forenoon: { boatAt: 0.32, sunAt: 0.17 },
+  noon: { boatAt: 0.52, sunAt: 0.79 },
+  afternoon: { boatAt: 0.76, sunAt: 0.86 },
+};
+
+/** The words for each time of day, so the moving scene also has text. */
+const DAY_TEXT: Record<TimeOfDay, TextId> = {
+  morning: "sceneMorning",
+  forenoon: "sceneForenoon",
+  noon: "sceneNoon",
+  afternoon: "sceneAfternoon",
+};
+
+/**
+ * AuthPage tells the app it is on screen, and at what time of day, so the sky and the sea behind
+ * it stay mounted.
+ */
+const SceneUse = createContext<{ use(change: number): void; at(time: TimeOfDay): void }>({
+  use() {},
+  at() {},
+});
+
+function useScene(time?: TimeOfDay) {
+  const scene = useContext(SceneUse);
+  // A layout effect, so a screen that replaces another adds itself before the paint. The count
+  // never reaches zero between them, and the sea keeps moving.
+  useLayoutEffect(() => {
+    scene.use(1);
+    return () => scene.use(-1);
+  }, [scene]);
+  useLayoutEffect(() => {
+    if (time !== undefined) scene.at(time);
+  }, [scene, time]);
+}
+
+/** The sun shows only on wider screens. */
+const wide = () => matchMedia("(min-width: 761px)").matches;
+
+/**
+ * The landing page's sky and sea, behind every screen for someone who is not signed in. It stays
+ * mounted while one card replaces another, so only the card changes, and the sky, the sun and the
+ * boat glide to the time of day of each step.
+ */
+export function Scene({ children }: { children: ReactNode }) {
+  const [users, setUsers] = useState(0);
+  const [time, setTime] = useState<TimeOfDay>("morning");
+  const scene = useMemo(
+    () => ({
+      use: (change: number) => setUsers((current) => current + change),
+      at: setTime,
+    }),
+    [],
+  );
+  return (
+    <SceneUse.Provider value={scene}>
+      {users > 0 && (
+        <div className={`scene ${time}`} aria-hidden="true">
+          <div className="sky">
+            <span className="cloud cloud-a" />
+            <span className="cloud cloud-b" />
+            <span className="sun" />
+          </div>
+          <Sea
+            className="shore"
+            options={SHORE}
+            boatAt={DAY[time].boatAt}
+            sunAt={wide() ? DAY[time].sunAt : undefined}
+            size={150}
+          />
+        </div>
+      )}
+      {users > 0 && <p className="visually-hidden">{t(DAY_TEXT[time])}</p>}
+      {children}
+    </SceneUse.Provider>
+  );
+}
+
+/** The sky and the sea with no card, while an account screen loads. */
+export function SceneLoading() {
+  useScene();
+  return (
+    <main className="signin">
+      <p className="visually-hidden" role="status">
+        {t("loading")}
+      </p>
+    </main>
+  );
+}
+
+/**
+ * The app's frame with nothing in it yet, while a signed-in operator's app loads, so the first
+ * screen is the shape of the next one.
+ */
+export function ShellLoading() {
+  return (
+    <div className="shell">
+      <div className="app">
+        <aside className="side">
+          <div className="brand">
+            <Logo />
+          </div>
+        </aside>
+        <main className="panel" aria-busy="true">
+          <p className="visually-hidden" role="status">
+            {t("loading")}
+          </p>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The page for everyone who is not signed in: one card over the sky and the sea from the landing
- * page. With onSubmit, the card is a form.
+ * page, at the step's time of day. With onSubmit, the card is a form.
  */
 export function AuthPage({
+  time,
   onSubmit,
   children,
 }: {
+  /** The step's time of day. Without one, the scene stays where it is. */
+  time?: TimeOfDay;
   onSubmit?(event: FormEvent): void;
   children: ReactNode;
 }) {
+  useScene(time);
   const content = (
     <>
       {logoLinksHome ? (
@@ -333,23 +634,18 @@ export function AuthPage({
       {children}
     </>
   );
+  // A new step is a new card, so it fades in while the scene stays.
   return (
-    <div className="signin">
-      <div className="sky" aria-hidden="true">
-        <span className="cloud cloud-a" />
-        <span className="cloud cloud-b" />
-        <span className="sun" />
-      </div>
-      <main className="signform">
-        {onSubmit === undefined ? (
-          <div className="card">{content}</div>
-        ) : (
-          <form className="card" onSubmit={onSubmit}>
-            {content}
-          </form>
-        )}
-      </main>
-      <Sea className="shore" options={SHORE} size={150} />
-    </div>
+    <main className="signin">
+      {onSubmit === undefined ? (
+        <div className="card" key={time}>
+          {content}
+        </div>
+      ) : (
+        <form className="card" key={time} onSubmit={onSubmit}>
+          {content}
+        </form>
+      )}
+    </main>
   );
 }
