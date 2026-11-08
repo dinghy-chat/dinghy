@@ -783,14 +783,18 @@ describe("email", () => {
     const mail = mails[0];
     expect(mail?.to).toBe("v@example.com");
     expect(mail?.subject).toBe("Acme replied to your message");
-    expect(mail?.text).toContain("First answer\n\nSecond answer");
-    // Nobody proved the visitor's address, so it greets no name.
-    expect(mail?.text.startsWith("Hi,\n\nAcme replied to your message:")).toBe(true);
-    expect(mail?.text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
     const stop = emailStopUrl(PUBLIC_URL, AUTH_SECRET, space.id, "v@example.com");
-    expect(mail?.text).toContain(stop);
-    expect(mail?.text).toContain(
-      "You got this because this address was entered in a chat with Acme.",
+    // Nobody proved the visitor's address, so it greets no name. The workspace signs it.
+    expect(mail?.text).toBe(
+      [
+        "Hi,",
+        "Acme replied to your message:",
+        "First answer\n\nSecond answer",
+        "To answer, go back to the site and open the chat.",
+        "You got this because this address was entered in a chat with Acme. If that wasn't you, " +
+          `or you'd rather not get these emails, stop them here: ${stop}`,
+        "Cheers,\nThe Acme team",
+      ].join("\n\n"),
     );
     expect(mail?.headers?.["list-unsubscribe"]).toBe(`<${stop}>`);
     expect(mail?.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");

@@ -531,6 +531,8 @@ async function replyEmailPlan(
           .join("\n\n"),
         stopUrl,
       ),
+      undefined,
+      placeName,
     ),
     stopUrl,
   };

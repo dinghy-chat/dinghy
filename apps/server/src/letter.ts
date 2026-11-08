@@ -6,7 +6,7 @@ export const LINK_MINUTES = 15;
 const text = {
   hi: "Hi,",
   hiName: (name: string) => `Hi ${name},`,
-  signOff: "Cheers,\nThe Dinghy team",
+  signOff: (team: string) => `Cheers,\nThe ${team} team`,
   linkLasts: `The link works once, for the next ${LINK_MINUTES} minutes.`,
   signInSubject: "Your Dinghy sign-in link",
   signInBody: (url: string) => [
@@ -24,15 +24,18 @@ const text = {
   ],
 };
 
+// One line, so a name cannot add paragraphs of its own.
+const oneLine = (words: string | undefined) => words?.replace(/\s+/g, " ").trim();
+
 /**
  * An email's text. Pass a name only when the person it goes to typed it and proved this address,
- * so a stranger cannot put their own words in someone else's inbox.
+ * so a stranger cannot put their own words in someone else's inbox. `team` signs it, and defaults
+ * to Dinghy: a workspace signs the emails that its own visitors get.
  */
-export function letter(paragraphs: string[], name?: string): string {
-  // One line, so a name cannot add paragraphs of its own.
-  const shown = name?.replace(/\s+/g, " ").trim();
+export function letter(paragraphs: string[], name?: string, team = "Dinghy"): string {
+  const shown = oneLine(name);
   const greeting = shown ? text.hiName(shown) : text.hi;
-  return [greeting, ...paragraphs, text.signOff].join("\n\n");
+  return [greeting, ...paragraphs, text.signOff(oneLine(team) || "Dinghy")].join("\n\n");
 }
 
 /** The sign-in link that an operator asked for on the sign-in page. */
