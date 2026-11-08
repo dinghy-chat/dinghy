@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API: Dinghy docs</title>
+  <meta name="description" content="Dinghy's HTTP API: versioning, sign-in, errors, live streams with cursors, and the OpenAPI document.">
+  <link rel="canonical" href="https://dinghy.chat/docs/api">
+  <meta name="theme-color" content="#ffc917">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Dinghy">
+  <meta property="og:url" content="https://dinghy.chat/docs/api">
+  <meta property="og:title" content="API: Dinghy docs">
+  <meta property="og:description" content="Dinghy's HTTP API: versioning, sign-in, errors, live streams with cursors, and the OpenAPI document.">
+  <meta property="og:image" content="https://dinghy.chat/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A boat on the water, with the words: Live chat for solo founders and small teams.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="API: Dinghy docs">
+  <meta name="twitter:description" content="Dinghy's HTTP API: versioning, sign-in, errors, live streams with cursors, and the OpenAPI document.">
+  <meta name="twitter:image" content="https://dinghy.chat/og.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/gabarito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/site.css">
+  <script type="module" src="/js/docs.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the content</a>
+
+  <header class="site-header">
+    <div class="header-bar">
+      <a class="logo" href="/" aria-label="Dinghy home"><img src="/favicon.svg" width="32" height="32" alt=""><span>dinghy</span></a>
+      <nav aria-label="Main">
+        <a data-wave-link href="/#features">Features</a>
+        <a data-wave-link href="/#install">Install</a>
+        <a data-wave-link href="/#pricing">Pricing</a>
+        <a data-wave-link href="/docs/" aria-current="page">Docs</a>
+        <a class="github-link" data-wave-link href="https://github.com/dinghy-chat/dinghy"><svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
+      </nav>
+      <div class="header-end">
+        <a data-wave-link href="https://app.dinghy.chat">Log in</a>
+        <a class="btn btn-navy btn-small" href="https://app.dinghy.chat/signup">Get started</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="docs-band" data-hero data-pause-offscreen>
+      <div class="docs-grid docs-band-grid">
+        <div class="docs-band-text">
+          <h1>API</h1>
+          <p class="lede">Dinghy's HTTP API: versioning, sign-in, errors, live streams with cursors, and the OpenAPI document.</p>
+        </div>
+      </div>
+      <div class="water docs-water" data-scene="band" aria-hidden="true">
+        <canvas data-water-back></canvas>
+        <div class="water-boats" data-boats></div>
+        <canvas data-water-front></canvas>
+      </div>
+    </section>
+
+    <div class="docs-grid docs-body">
+      <details class="docs-menu">
+        <summary><span class="docs-menu-label">Docs</span><b>API</b><svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path class="duo" d="M208,96l-80,80L48,96Z"/><path d="M215.39,92.94A8,8,0,0,0,208,88H48a8,8,0,0,0-5.66,13.66l80,80a8,8,0,0,0,11.32,0l80-80A8,8,0,0,0,215.39,92.94ZM128,164.69,67.31,104H188.69Z"/></svg></summary>
+        <nav aria-label="Docs pages">
+        <ul>
+          <li><a href="/docs/">Overview</a></li>
+        </ul>
+        <p class="docs-group">Get started</p>
+        <ul>
+          <li><a href="/docs/self-hosting">Self-hosting</a></li>
+          <li><a href="/docs/add-to-your-site">Add the chat to your site</a></li>
+        </ul>
+        <p class="docs-group">Use it</p>
+        <ul>
+          <li><a href="/docs/operator-guide">Operator guide</a></li>
+        </ul>
+        <p class="docs-group">Help</p>
+        <ul>
+          <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+          <li><a href="/docs/runbooks">Runbooks</a></li>
+          <li><a href="/docs/deploy-coolify-dokploy">Deploy on Coolify or Dokploy</a></li>
+        </ul>
+        <p class="docs-group">Develop</p>
+        <ul>
+          <li><a href="/docs/architecture">Architecture</a></li>
+          <li><a href="/docs/api" aria-current="page">API</a></li>
+        </ul>
+        </nav>
+      </details>
+      <nav class="docs-side" aria-label="Docs">
+        <ul>
+          <li><a href="/docs/">Overview</a></li>
+        </ul>
+        <p class="docs-group">Get started</p>
+        <ul>
+          <li><a href="/docs/self-hosting">Self-hosting</a></li>
+          <li><a href="/docs/add-to-your-site">Add the chat to your site</a></li>
+        </ul>
+        <p class="docs-group">Use it</p>
+        <ul>
+          <li><a href="/docs/operator-guide">Operator guide</a></li>
+        </ul>
+        <p class="docs-group">Help</p>
+        <ul>
+          <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+          <li><a href="/docs/runbooks">Runbooks</a></li>
+          <li><a href="/docs/deploy-coolify-dokploy">Deploy on Coolify or Dokploy</a></li>
+        </ul>
+        <p class="docs-group">Develop</p>
+        <ul>
+          <li><a href="/docs/architecture">Architecture</a></li>
+          <li><a href="/docs/api" aria-current="page">API</a></li>
+        </ul>
+      </nav>
+      <article class="doc">
+<p>Dinghy&#39;s widget and operator app use the same HTTP API that you can build on, for example a custom widget, a bot or an integration. Every install serves its full description as OpenAPI 3.1 at <code>/v1/openapi.json</code>, such as <code class="code-long">https://chat.example.com/v1/openapi.json</code>. The same file is in the repository at <a href="https://github.com/dinghy-chat/dinghy/blob/main/apps/server/openapi.json"><code>apps/server/openapi.json</code></a>.</p>
+<h2 id="versions"><a class="heading-link" href="#versions">Versions</a></h2>
+<p>Every route starts with <code>/v1</code>. Within <code>v1</code>, a release may add routes, fields and error codes. A change that would break a client is meant for a new version, and the <a href="https://github.com/dinghy-chat/dinghy/blob/main/CHANGELOG.md">changelog</a> names every API change.</p>
+<h2 id="two-apis-and-two-ways-to-sign-in"><a class="heading-link" href="#two-apis-and-two-ways-to-sign-in">Two APIs and two ways to sign in</a></h2>
+<ul>
+<li><strong>The widget API</strong>, at <code>/v1/widget/{key}</code>, where <code>key</code> is the workspace&#39;s public key. It answers only pages whose <code>Origin</code> is on the workspace&#39;s allowed sites. <code>POST /v1/widget/{key}/visitors</code> creates a visitor and returns its browser token once. Other calls send it as <code>Authorization: Bearer &lt;token&gt;</code>. For a signed-in user, the bearer token is a host token that your site&#39;s server signs instead, as <a href="/docs/add-to-your-site#show-who-is-chatting">Add the chat to your website</a> explains.</li>
+<li><strong>The operator API</strong>, at <code>/v1/operator</code>. It uses the session cookie that sign-in sets. Sign-in, sign-out and password resets live at <code>/v1/auth</code>, a pass-through to the BetterAuth library. Its shape follows that library, so it is not part of the versioned API. A request that changes something must also send the server&#39;s own <code>Origin</code>, so the operator API works only from the operator app&#39;s pages.</li>
+</ul>
+<h2 id="errors"><a class="heading-link" href="#errors">Errors</a></h2>
+<p>Every error answer has the same body:</p>
+<div class="terminal doc-code terminal-plain">
+<div class="terminal-bar"><span>Code</span><button class="copy" type="button" data-copy="code-1"><span data-copy-label>Copy</span></button></div>
+<pre class="terminal-code" id="code-1"><code>{ &quot;error&quot;: { &quot;code&quot;: &quot;too_many_requests&quot;, &quot;message&quot;: &quot;Too many requests. Try again later.&quot; } }</code></pre>
+</div>
+<p>Branch on <code>code</code>, which is stable, and show <code>message</code> only to people. The OpenAPI document lists every code and the statuses each route can answer. Some answers also carry a <code>requestId</code>, which the server&#39;s log holds too. The common ones:</p>
+<div class="doc-table"><table>
+<thead><tr><th>Status</th><th>Codes</th><th>When</th></tr></thead>
+<tbody>
+<tr><td data-label="Status">400</td><td data-label="Codes"><code>invalid_request</code></td><td data-label="When">The request does not match its schema</td></tr>
+<tr><td data-label="Status">401</td><td data-label="Codes"><code>unauthorized</code></td><td data-label="When">No token or session, or one that is no longer valid</td></tr>
+<tr><td data-label="Status">402</td><td data-label="Codes"><code>payment_required</code>, <code>read_only</code></td><td data-label="When">On the cloud plan, a workspace that is not paid for. A self-hosted install never answers 402</td></tr>
+<tr><td data-label="Status">403</td><td data-label="Codes"><code>origin_not_allowed</code>, <code>suspended</code>, <code>forbidden</code>, <code>blocked</code></td><td data-label="When">The site is not allowed or the widget is off, the workspace is suspended, the role does not allow it, or an operator blocked the visitor</td></tr>
+<tr><td data-label="Status">404</td><td data-label="Codes"><code>not_found</code></td><td data-label="When">It does not exist, or it is in another workspace</td></tr>
+</tbody>
+</table></div>
+<p>In a read-only or suspended workspace, operators can read and export, and a write answers 402 <code>read_only</code> or 403 <code>suspended</code>. A route whose OpenAPI entry has <code>x-workspace-access: closed</code> still works then: presence, removing a member, revoking an invite and deleting the workspace.
+| 413 | <code>too_large</code> | The body is too large |
+| 429 | <code>too_many_requests</code>, <code>too_many_streams</code> | A rate limit. Wait for the <code>Retry-After</code> header&#39;s seconds |
+| 503 | <code>busy</code> | The server is overloaded for a moment. Try again |</p>
+<h2 id="sending-without-duplicates"><a class="heading-link" href="#sending-without-duplicates">Sending without duplicates</a></h2>
+<p>A message or an image carries a <code>clientId</code> that the client makes, such as <code>m_4f9a2c</code>. A retry with the same <code>clientId</code> returns the first message and creates nothing, so a client can retry a send after any network error.</p>
+<h2 id="live-updates"><a class="heading-link" href="#live-updates">Live updates</a></h2>
+<p>A client receives with server-sent events. <code>GET /v1/widget/{key}/stream</code> and <code class="code-long">GET /v1/operator/workspaces/{workspaceId}/stream</code> send:</p>
+<ul>
+<li><code>message</code> (widget) or <code>change</code> (operator) events, whose <code>id</code> is the new cursor,</li>
+<li><code>ready</code> once the stream has caught up,</li>
+<li><code>resync</code> when the client must load everything again, such as after a restore,</li>
+<li><code>close</code>, with a reason, before the server ends the stream.</li>
+</ul>
+<p>Pass the last cursor when you reconnect, and the stream replays what you missed. A stream lasts at most 15 minutes, and it sends a heartbeat every 25 seconds. The widget reads it with <code>fetch</code>, because <code>EventSource</code> cannot send a bearer token. <a href="/docs/architecture#messages-events-and-cursors">Architecture</a> explains cursors.</p>
+      </article>
+      <aside class="docs-toc" aria-label="On this page">
+        <p class="docs-group">On this page</p>
+        <ol>
+          <li><a href="#versions">Versions</a></li>
+          <li><a href="#two-apis-and-two-ways-to-sign-in">Two APIs and two ways to sign in</a></li>
+          <li><a href="#errors">Errors</a></li>
+          <li><a href="#sending-without-duplicates">Sending without duplicates</a></li>
+          <li><a href="#live-updates">Live updates</a></li>
+        </ol>
+      </aside>
+    </div>
+    <p class="visually-hidden" role="status" data-copy-status></p>
+  </main>
+
+  <footer>
+    <div class="sand">
+      <div class="wrap sand-row">
+        <span>&copy; 2026 Dinghy, a project by <a href="https://oncebyte.com/" target="_blank" rel="noopener">OnceByte, LLC</a></span>
+        <a class="sand-mail" href="mailto:hello@dinghy.chat">hello@dinghy.chat</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

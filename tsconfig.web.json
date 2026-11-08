@@ -1,0 +1,11 @@
+{
+  // The browser code: the operator app, the widget and the cloud's pages. No Node types, so a
+  // browser file cannot use Buffer or process. The widget's baseline is Safari 16.4.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["apps/operator/src", "ee/operator", "packages/widget/src"],
+  "exclude": ["**/*.test.ts"]
+}

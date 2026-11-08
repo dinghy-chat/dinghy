@@ -1,0 +1,45 @@
+# The full stack on 2 CPUs that all three services share, for a capacity check on one machine.
+# On a real CX23, run the same services without the cpuset.
+name: dinghy-load
+services:
+  postgres:
+    image: postgres:18-alpine
+    cpuset: "0,1"
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      retries: 15
+  valkey:
+    image: valkey/valkey:9-alpine
+    cpuset: "0,1"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      retries: 15
+  web:
+    image: node:24-slim
+    cpuset: "0,1"
+    working_dir: /repo
+    command: ["node", "apps/server/src/main.ts", "web"]
+    volumes:
+      - ../../..:/repo:ro
+    environment:
+      # All load comes from one machine, so a normal rate limit would measure only the limit.
+      RATE_LIMIT_SCALE: "100000"
+      DATABASE_URL: postgres://dinghy_app@postgres:5432/postgres
+      VALKEY_URL: redis://valkey:6379
+      PORT: "3000"
+      PUBLIC_URL: http://localhost:3100
+      AUTH_SECRET: a-load-test-secret-with-at-least-32-characters
+      LOG_LEVEL: warn
+    ports:
+      - "127.0.0.1:3100:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy

@@ -1,0 +1,8 @@
+name = "dinghy-site"
+compatibility_date = "2026-11-01"
+routes = [{ pattern = "dinghy.chat", custom_domain = true }]
+
+[assets]
+directory = "./public"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"

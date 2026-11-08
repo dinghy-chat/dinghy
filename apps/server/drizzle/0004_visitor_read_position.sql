@@ -1,0 +1,1 @@
+ALTER TABLE "visitor" ADD COLUMN "last_read_seq" bigint DEFAULT 0 NOT NULL;

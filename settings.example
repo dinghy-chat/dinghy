@@ -1,0 +1,61 @@
+# Copy this to .env, next to compose.yaml, so that later commands use the same settings.
+# The init service creates the infrastructure secrets on the first start, so they never go here.
+# The mail and bucket credentials you add here are secrets too, so keep this file private:
+# chmod 600 .env
+
+# Your domain, for HTTPS with Caddy. Leave it empty to try Dinghy on localhost.
+CHAT_DOMAIN=
+
+# Starts Caddy with every command, once CHAT_DOMAIN is set.
+# COMPOSE_PROFILES=tls
+
+# The port on this machine, when you have no domain and port 3000 is taken.
+DINGHY_PORT=
+
+# The address people open, such as https://chat.example.com, with no path. CHAT_DOMAIN sets it to
+# https:// and the domain, so leave it empty unless that is wrong, such as behind a proxy on another
+# port. Without either, it is http://localhost:3000, and sign-in and the widget tag point there.
+PUBLIC_URL=
+
+# Optional. With a mail server, a visitor who left the page gets an email with the reply.
+SMTP_URL=
+MAIL_FROM=
+
+# Optional. Without these, images stay in a volume on this server.
+S3_ENDPOINT=
+S3_REGION=
+S3_BUCKET=
+S3_ACCESS_KEY_ID=
+S3_SECRET_ACCESS_KEY=
+
+# Optional. A separate origin for user images, such as https://files.example.com, pointed at this
+# same server by your proxy. Image links then use it, so an uploaded file can never run as this site.
+IMAGES_ORIGIN=
+
+# Optional. An encrypted copy of each backup in another place, because a backup on this disk does not
+# survive the loss of this disk. Any S3-compatible bucket works.
+BACKUP_S3_ENDPOINT=
+BACKUP_S3_REGION=
+BACKUP_S3_BUCKET=
+BACKUP_S3_ACCESS_KEY_ID=
+BACKUP_S3_SECRET_ACCESS_KEY=
+
+# Optional. chat backup pings this address after each backup that worked, so an outside monitor, such
+# as a healthchecks.io check, can tell you when a night has none. The address can hold a token.
+BACKUP_HEARTBEAT_URL=
+
+# How many proxies you run in front of this server. With CHAT_DOMAIN set and one proxy in front,
+# either Caddy from the tls profile or your own, this is 1, and you can leave it empty. Too low, and every visitor shares one rate limit.
+TRUSTED_PROXY_HOPS=
+
+# Optional. How much the app logs: debug, info, warn, error or silent. The default is info.
+LOG_LEVEL=
+
+# Optional. Turns on Prometheus metrics at /metrics, with this token as the bearer token. At least 16
+# characters. The route stays off without it, because it should not be public.
+METRICS_TOKEN=
+
+# Optional. The ports Caddy listens on with the tls profile. Certificates need 80 and 443 from the
+# internet, so change these only when something in front forwards those ports here.
+HTTP_PORT=
+HTTPS_PORT=

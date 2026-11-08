@@ -1,0 +1,78 @@
+name: CI
+
+# Pull request jobs must fit GitHub's free allowance of about 2,000 minutes a month. Ask the
+# maintainers before adding a job or a paid runner.
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "site/**"
+      - "**/*.md"
+  workflow_dispatch:
+  # The Image workflow runs this on a release tag before it builds.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-retries 15
+      s3:
+        image: rustfs/rustfs@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
+        env:
+          RUSTFS_ACCESS_KEY: dinghy-dev
+          RUSTFS_SECRET_KEY: dinghy-dev-secret
+        ports:
+          - 59000:9000
+      valkey:
+        image: valkey/valkey:9-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+        ports:
+          - 56379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 2s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      # The repository does not require it, so this keeps every action pinned to a full commit SHA.
+      - name: Every action is pinned to a commit
+        run: |
+          unpinned="$(grep -rhE '^\s*-?\s*uses:' .github/workflows | grep -vE 'uses: *\./|@[0-9a-f]{40}( |$)' || true)"
+          if [ -n "$unpinned" ]; then echo "Pin these to a commit SHA:"; echo "$unpinned"; exit 1; fi
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run db:check
+      # The suite opens more connections than Postgres's default 100. A service container takes
+      # no command-line flags, so the limit is raised here and the container restarted.
+      - name: Raise the Postgres connection limit
+        run: |
+          docker exec ${{ job.services.postgres.id }} psql -U postgres -c "ALTER SYSTEM SET max_connections = 300"
+          docker restart ${{ job.services.postgres.id }}
+          until docker exec ${{ job.services.postgres.id }} pg_isready -U postgres; do sleep 1; done
+      - run: bun run test
+      # No --with-deps: the runner's Chrome already brought the system libraries, and an Ubuntu
+      # mirror that hangs in apt would use up this job's time limit.
+      - run: bun x playwright install chromium
+      - run: bun run test:e2e --grep @smoke

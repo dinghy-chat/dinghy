@@ -1,0 +1,32 @@
+# Added to ../../../compose.yaml for scripts/capacity-check.sh: the real install under a 4 GB limit.
+services:
+  postgres:
+    mem_limit: 1536m
+  valkey:
+    mem_limit: 256m
+  app:
+    mem_limit: 2048m
+    environment:
+      # All load comes from one machine, so a normal rate limit would measure only the limit. The load
+      # generator also sets a different address on each upload, which the one trusted hop allows.
+      RATE_LIMIT_SCALE: "100000"
+      TRUSTED_PROXY_HOPS: "1"
+      LOG_LEVEL: warn
+    ports: !override
+      - "${LOAD_BIND:-127.0.0.1}:${DINGHY_PORT:-3000}:3000"
+  # A stand-in for a push service, so the worker does its real work: it encrypts and sends each alert.
+  fakepush:
+    image: ${DINGHY_IMAGE}
+    mem_limit: 256m
+    entrypoint: ["node", "-e"]
+    command:
+      - |
+        let count = 0;
+        require("http").createServer((request, response) => {
+          request.resume();
+          request.on("end", () => {
+            count += 1;
+            response.writeHead(201);
+            response.end(String(count));
+          });
+        }).listen(8080);

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Architecture: Dinghy docs</title>
+  <meta name="description" content="How Dinghy's processes, tenant isolation, messages and events, live signals and background jobs fit together.">
+  <link rel="canonical" href="https://dinghy.chat/docs/architecture">
+  <meta name="theme-color" content="#ffc917">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Dinghy">
+  <meta property="og:url" content="https://dinghy.chat/docs/architecture">
+  <meta property="og:title" content="Architecture: Dinghy docs">
+  <meta property="og:description" content="How Dinghy's processes, tenant isolation, messages and events, live signals and background jobs fit together.">
+  <meta property="og:image" content="https://dinghy.chat/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A boat on the water, with the words: Live chat for solo founders and small teams.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Architecture: Dinghy docs">
+  <meta name="twitter:description" content="How Dinghy's processes, tenant isolation, messages and events, live signals and background jobs fit together.">
+  <meta name="twitter:image" content="https://dinghy.chat/og.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/gabarito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/site.css">
+  <script type="module" src="/js/docs.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the content</a>
+
+  <header class="site-header">
+    <div class="header-bar">
+      <a class="logo" href="/" aria-label="Dinghy home"><img src="/favicon.svg" width="32" height="32" alt=""><span>dinghy</span></a>
+      <nav aria-label="Main">
+        <a data-wave-link href="/#features">Features</a>
+        <a data-wave-link href="/#install">Install</a>
+        <a data-wave-link href="/#pricing">Pricing</a>
+        <a data-wave-link href="/docs/" aria-current="page">Docs</a>
+        <a class="github-link" data-wave-link href="https://github.com/dinghy-chat/dinghy"><svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
+      </nav>
+      <div class="header-end">
+        <a data-wave-link href="https://app.dinghy.chat">Log in</a>
+        <a class="btn btn-navy btn-small" href="https://app.dinghy.chat/signup">Get started</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="docs-band" data-hero data-pause-offscreen>
+      <div class="docs-grid docs-band-grid">
+        <div class="docs-band-text">
+          <h1>Architecture</h1>
+          <p class="lede">How Dinghy's processes, tenant isolation, messages and events, live signals and background jobs fit together.</p>
+        </div>
+      </div>
+      <div class="water docs-water" data-scene="band" aria-hidden="true">
+        <canvas data-water-back></canvas>
+        <div class="water-boats" data-boats></div>
+        <canvas data-water-front></canvas>
+      </div>
+    </section>
+
+    <div class="docs-grid docs-body">
+      <details class="docs-menu">
+        <summary><span class="docs-menu-label">Docs</span><b>Architecture</b><svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path class="duo" d="M208,96l-80,80L48,96Z"/><path d="M215.39,92.94A8,8,0,0,0,208,88H48a8,8,0,0,0-5.66,13.66l80,80a8,8,0,0,0,11.32,0l80-80A8,8,0,0,0,215.39,92.94ZM128,164.69,67.31,104H188.69Z"/></svg></summary>
+        <nav aria-label="Docs pages">
+        <ul>
+          <li><a href="/docs/">Overview</a></li>
+        </ul>
+        <p class="docs-group">Get started</p>
+        <ul>
+          <li><a href="/docs/self-hosting">Self-hosting</a></li>
+          <li><a href="/docs/add-to-your-site">Add the chat to your site</a></li>
+        </ul>
+        <p class="docs-group">Use it</p>
+        <ul>
+          <li><a href="/docs/operator-guide">Operator guide</a></li>
+        </ul>
+        <p class="docs-group">Help</p>
+        <ul>
+          <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+          <li><a href="/docs/runbooks">Runbooks</a></li>
+          <li><a href="/docs/deploy-coolify-dokploy">Deploy on Coolify or Dokploy</a></li>
+        </ul>
+        <p class="docs-group">Develop</p>
+        <ul>
+          <li><a href="/docs/architecture" aria-current="page">Architecture</a></li>
+          <li><a href="/docs/api">API</a></li>
+        </ul>
+        </nav>
+      </details>
+      <nav class="docs-side" aria-label="Docs">
+        <ul>
+          <li><a href="/docs/">Overview</a></li>
+        </ul>
+        <p class="docs-group">Get started</p>
+        <ul>
+          <li><a href="/docs/self-hosting">Self-hosting</a></li>
+          <li><a href="/docs/add-to-your-site">Add the chat to your site</a></li>
+        </ul>
+        <p class="docs-group">Use it</p>
+        <ul>
+          <li><a href="/docs/operator-guide">Operator guide</a></li>
+        </ul>
+        <p class="docs-group">Help</p>
+        <ul>
+          <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+          <li><a href="/docs/runbooks">Runbooks</a></li>
+          <li><a href="/docs/deploy-coolify-dokploy">Deploy on Coolify or Dokploy</a></li>
+        </ul>
+        <p class="docs-group">Develop</p>
+        <ul>
+          <li><a href="/docs/architecture" aria-current="page">Architecture</a></li>
+          <li><a href="/docs/api">API</a></li>
+        </ul>
+      </nav>
+      <article class="doc">
+<p>How Dinghy&#39;s parts fit together, for contributors and for anyone who reviews its security. The code layout is in <a href="https://github.com/dinghy-chat/dinghy/blob/main/CONTRIBUTING.md"><code>CONTRIBUTING.md</code></a>, and the HTTP API is in <a href="/docs/api">the API page</a>.</p>
+<h2 id="processes"><a class="heading-link" href="#processes">Processes</a></h2>
+<div class="terminal doc-code terminal-plain">
+<div class="terminal-bar"><span>Text</span><button class="copy" type="button" data-copy="code-1"><span data-copy-label>Copy</span></button></div>
+<pre class="terminal-code" id="code-1"><code> visitors' browsers           operators' browsers
+ (widget, Shadow DOM)         (React PWA)
+        │  POST to send, SSE to receive  │
+        └───────────────┬────────────────┘
+                 [ caddy, optional ]
+                        │
+          [ app: web role + worker role ]──── Valkey: signals, presence, rate limits
+                        │
+                    Postgres: every saved thing, and the job queue</code></pre>
+</div>
+<p>One Docker image runs every process. Its first word picks the role:</p>
+<ul>
+<li><code>web</code> serves the API, the operator app, the widget files and the live streams.</li>
+<li><code>worker</code> runs the background jobs.</li>
+<li><code>all</code> runs both in one Node process. A single server uses this.</li>
+<li><code>chat ...</code> runs a command, such as <code>chat migrate</code> or <code>chat backup</code>.</li>
+</ul>
+<p>Compose adds two one-shot services from the same image: <code>init</code> writes the secrets on the first start, and <code>migrate</code> creates the database roles and runs the migrations before the app starts. Clients send with <code>POST</code> and receive with server-sent events (SSE). There are no WebSockets.</p>
+<h2 id="tenant-isolation"><a class="heading-link" href="#tenant-isolation">Tenant isolation</a></h2>
+<p>A workspace is a tenant. <code>operator</code> and its session tables are global and hold no workspace data. Every other table has a <code>workspace_id</code>.</p>
+<p>Two layers keep workspaces apart:</p>
+<ol>
+<li>Every query on a tenant table runs inside <code>withWorkspace</code> (<code>apps/server/src/db/tenant.ts</code>). It opens a transaction, sets <code>app.workspace_id</code>, and the query also filters by <code>workspace_id</code>.</li>
+<li>Row-level security, on every tenant table since the first migration, allows only rows whose <code>workspace_id</code> matches <code>app.workspace_id</code>.</li>
+</ol>
+<p>Table owners and superusers bypass row-level security, so the app never connects as either. <code>chat migrate</code> creates four roles (<code>apps/server/src/db/roles.ts</code>): <code>dinghy_migrator</code> owns the tables and runs migrations, <code>dinghy_app</code> and <code>dinghy_worker</code> are the <code>web</code> and <code>worker</code> logins, with <code>NOBYPASSRLS</code>, and <code>dinghy_backup</code> is the only role that bypasses row-level security, to dump the whole database. <code class="code-long">apps/server/src/isolation.test.ts</code> attacks every route from another workspace.</p>
+<h2 id="messages-events-and-cursors"><a class="heading-link" href="#messages-events-and-cursors">Messages, events and cursors</a></h2>
+<p>A message and its row in the <code>event</code> table commit in one Postgres transaction. The first statement takes the workspace row&#39;s lock and increments its event sequence, so the order of the sequence matches the order of commits. A client that holds cursor N can never miss an event below N that commits later.</p>
+<p>A cursor is <code>generation.seq</code>. A restore or an import gives the workspace a new random generation. A client sends its cursor when it reconnects, and the server replays the events after it. When the cursor&#39;s generation is old, or its events were pruned, the server answers <code>resync</code>, and the client loads everything again.</p>
+<p>Each send carries an ID that the client made. A retry with the same ID returns the first message, so it cannot create a duplicate.</p>
+<h2 id="live-signals"><a class="heading-link" href="#live-signals">Live signals</a></h2>
+<p>Valkey carries only signals: &quot;workspace W has new events&quot;. An instance that holds a stream for W reads the new events from Postgres and sends them. Losing a signal never loses data: the next signal, a reconnect or the stream&#39;s end makes the client catch up from its cursor. Presence (which operators are online) and rate-limit counts live only in Valkey, and losing them loses nothing that matters.</p>
+<p>Dinghy does not use Postgres <code>LISTEN/NOTIFY</code>, because <code>NOTIFY</code> takes a global lock at commit. It does not use SQLite, because several instances must share one database.</p>
+<h2 id="the-workers-jobs"><a class="heading-link" href="#the-workers-jobs">The worker&#39;s jobs</a></h2>
+<p>Background work lives in Postgres tables, and the worker claims rows with <code>FOR UPDATE SKIP LOCKED</code> and a claim that expires. So several workers can run at once, and a crashed worker&#39;s rows come back after the claim ends. One loop, in <code>apps/server/src/worker.ts</code>, runs these in order:</p>
+<ol>
+<li>Fan out alerts: turn new visitor messages into one delivery per operator device and email.</li>
+<li>Send the claimed deliveries: web push and email.</li>
+<li>Delete stored image files that are queued for deletion.</li>
+<li>Prune old events and finished rows. Events go only from the start of a workspace&#39;s feed, so a client can tell a gap from its cursor.</li>
+<li>Purge workspaces that an owner deleted.</li>
+</ol>
+<p>Each step runs on its own, so a step that fails is logged and the others still run. Every 30 seconds at most, a worker records that its loop still finishes, and <code>/readyz</code> reports <code>&quot;worker&quot;:&quot;stale&quot;</code> when no worker did for 5 minutes. On Dinghy Cloud, the subscription lifecycle runs in the same loop with its own 10-minute claim, because one step can wait on Stripe and on email.</p>
+<p>Delivery is at least once. A claim counts as an attempt, and a worker that stops after a send but before its commit sends that alert again. A push carries the event&#39;s ID as its tag, so the phone replaces the first notification.</p>
+<h2 id="core-and-ee"><a class="heading-link" href="#core-and-ee">Core and <code>ee/</code></a></h2>
+<p>Everything a self-hosted install uses is outside <code>ee/</code>. <code>ee/</code> holds what only Dinghy Cloud runs: Stripe billing, signup, the plan&#39;s limits and image retention. Core reaches it only through <code>ee/server/index.ts</code> and the screens in <code>ee/operator/</code>, and only when a cloud setting is set (<code>STRIPE_*</code> or <code>CLOUD_SIGNUP</code>). <a href="https://github.com/dinghy-chat/dinghy/blob/main/LICENSE-NOTICE.md"><code>LICENSE-NOTICE.md</code></a> has the licenses.</p>
+<h2 id="scaling"><a class="heading-link" href="#scaling">Scaling</a></h2>
+<p>Add <code>web</code> instances behind a load balancer, and one or more <code>worker</code> instances. They share Postgres and Valkey, and no instance holds state another needs. <a href="/docs/self-hosting#running-more-than-one-instance">Self-hosting</a> has the settings.</p>
+      </article>
+      <aside class="docs-toc" aria-label="On this page">
+        <p class="docs-group">On this page</p>
+        <ol>
+          <li><a href="#processes">Processes</a></li>
+          <li><a href="#tenant-isolation">Tenant isolation</a></li>
+          <li><a href="#messages-events-and-cursors">Messages, events and cursors</a></li>
+          <li><a href="#live-signals">Live signals</a></li>
+          <li><a href="#the-workers-jobs">The worker's jobs</a></li>
+          <li><a href="#core-and-ee">Core and ee/</a></li>
+          <li><a href="#scaling">Scaling</a></li>
+        </ol>
+      </aside>
+    </div>
+    <p class="visually-hidden" role="status" data-copy-status></p>
+  </main>
+
+  <footer>
+    <div class="sand">
+      <div class="wrap sand-row">
+        <span>&copy; 2026 Dinghy, a project by <a href="https://oncebyte.com/" target="_blank" rel="noopener">OnceByte, LLC</a></span>
+        <a class="sand-mail" href="mailto:hello@dinghy.chat">hello@dinghy.chat</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

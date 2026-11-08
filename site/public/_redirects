@@ -1,0 +1,5 @@
+# The old start page. Getting started is the signup itself now.
+/start https://app.dinghy.chat/signup 301
+
+# The self-host page moved into the docs.
+/self-host /docs/self-hosting 301

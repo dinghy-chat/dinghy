@@ -1,0 +1,21 @@
+{
+  "name": "@dinghy/ee",
+  "version": "0.3.5",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "dependencies": {
+    "@hono/zod-openapi": "^1.6.3",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.16",
+    "pino": "^10.4.0"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^2.1.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "iovalkey": "^0.4.0",
+    "pg": "^8.23.1",
+    "react": "^19.3.1"
+  }
+}

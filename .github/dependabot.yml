@@ -1,0 +1,50 @@
+# Dependency updates and security alerts. Each pull request runs CI, so updates come once a week,
+# grouped, with at most 2 open per ecosystem. Security updates come as they are published.
+# The repository settings must have Dependabot alerts turned on for the alerts.
+version: 2
+
+updates:
+  # Bun's lockfile, which the npm ecosystem would leave behind.
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      weekly:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      weekly:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      weekly:
+        update-types: [minor, patch]
+    ignore:
+      # A new Postgres major version needs the steps in compose.yaml and a person.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      weekly:
+        update-types: [minor, patch]

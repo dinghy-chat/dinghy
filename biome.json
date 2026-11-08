@@ -1,0 +1,15 @@
+{
+  "files": {
+    "includes": [
+      "**",
+      "!docs",
+      "!site",
+      "!test-results",
+      "!playwright-report",
+      "!.dev",
+      "!.playwright-mcp"
+    ]
+  },
+  "formatter": { "indentStyle": "space", "lineWidth": 100 },
+  "linter": { "domains": { "react": "recommended" }, "rules": { "preset": "recommended" } }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "visitor" ADD COLUMN "identity_issued_at" bigint;

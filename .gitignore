@@ -1,0 +1,11 @@
+node_modules/
+.dev/
+.env
+.env.*
+.wrangler/
+.playwright-mcp/
+coverage/
+dist/
+test-results/
+playwright-report/
+packages/widget/dist/

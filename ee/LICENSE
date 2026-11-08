@@ -1,0 +1,40 @@
+The Dinghy Enterprise License
+
+Copyright (c) 2026-present OnceByte, LLC
+
+This license covers every file in the `ee/` folder of the Dinghy repository (the "Software").
+It does not cover any file outside that folder. Those files are under the licenses named in
+the repository's LICENSE-NOTICE.md.
+
+1. What you may do. You may read, copy and change the Software, and run it, for development
+   and testing only. For example, you may run its tests, try a change on your own computer, or
+   send a patch to the Dinghy project.
+
+2. Running Dinghy with the cloud features off. You may also run the unmodified Software in
+   production, as part of Dinghy, as long as the cloud features stay off. They stay off when
+   none of the settings STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID and
+   CLOUD_SIGNUP is set. This is how every self-hosted install runs, and it needs no agreement.
+
+3. What needs an agreement. Any other use in production needs a written agreement with
+   OnceByte, LLC that allows it. That includes turning on the cloud features, running a changed
+   copy of the Software in production, and offering the cloud features to others as a service.
+   Hosting Dinghy for others with the cloud features off is allowed under section 2.
+   "Production" means any use beyond development and testing. Without that agreement, you may
+   not do any of these.
+
+4. Your changes. A changed copy of the Software, and any work made from it, is under this same
+   license.
+
+5. No other rights. This license grants no other rights, whether by implication or otherwise.
+   It grants no right to use the names or trademarks of OnceByte, LLC or Dinghy.
+
+6. Third-party code. Code from others that the Software uses stays under its own license.
+
+7. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL ONCEBYTE, LLC BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+Questions about an agreement go to hello@dinghy.chat.

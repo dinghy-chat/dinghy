@@ -1,0 +1,286 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1793898218738,
+      "tag": "0000_initial_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793898219061,
+      "tag": "0001_tenant_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793898823805,
+      "tag": "0002_visitor_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793898824252,
+      "tag": "0003_widget_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793904287124,
+      "tag": "0004_visitor_read_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793906786137,
+      "tag": "0005_operator_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793906786476,
+      "tag": "0006_operator_auth_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793908629423,
+      "tag": "0007_visitor_identity_issued_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793909561670,
+      "tag": "0008_conversation_updated_at_ms",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793913102952,
+      "tag": "0009_attachment_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793917850810,
+      "tag": "0010_tough_tombstone",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793917851165,
+      "tag": "0011_alert_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793918864181,
+      "tag": "0012_salty_puck",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793918864557,
+      "tag": "0013_invite_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793927588339,
+      "tag": "0014_nosy_leper_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793927588701,
+      "tag": "0015_safety_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793935020096,
+      "tag": "0016_safe_daimon_hellstrom",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793935020455,
+      "tag": "0017_instance_setting_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794053293675,
+      "tag": "0018_noisy_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794053297706,
+      "tag": "0019_billing_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794061949389,
+      "tag": "0020_heavy_alex_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794066400844,
+      "tag": "0021_fuzzy_typhoid_mary",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794066405320,
+      "tag": "0022_lifecycle_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794068048703,
+      "tag": "0023_first_talisman",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794068368310,
+      "tag": "0024_billing_signal_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794076236494,
+      "tag": "0025_brief_amphibian",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794076236898,
+      "tag": "0026_billing_clear_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794081788640,
+      "tag": "0027_gifted_hercules",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794081789037,
+      "tag": "0028_early_signup_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794091012786,
+      "tag": "0029_colossal_jamie_braddock",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794101547948,
+      "tag": "0030_broad_clint_barton",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794101548342,
+      "tag": "0031_limits_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794140015495,
+      "tag": "0032_absurd_ben_grimm",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794140085226,
+      "tag": "0033_natural_captain_midlands",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794140172381,
+      "tag": "0034_moaning_reavers",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794142662967,
+      "tag": "0035_workspace_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794143147954,
+      "tag": "0036_worker_heartbeat",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794143148357,
+      "tag": "0037_worker_heartbeat_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794145013739,
+      "tag": "0038_visitor_token_used_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794145014147,
+      "tag": "0039_verified_existing_operators",
+      "breakpoints": true
+    }
+  ]
+}

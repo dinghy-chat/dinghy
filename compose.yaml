@@ -1,0 +1,218 @@
+# Dinghy, on one small server. See docs/self-hosting.md.
+#
+# To try it on this machine:   docker compose up -d --wait
+# With a domain and HTTPS:     CHAT_DOMAIN=chat.example.com docker compose --profile tls up -d --wait
+# Then, once:                  docker compose exec app chat setup
+#
+# No password or secret lives in this file. The init service makes them on the first start.
+name: dinghy
+
+# DINGHY_IMAGE and DINGHY_POSTGRES_* are for our tests and scripts/upgrade-postgres.sh, not settings.
+# Dinghy's own image goes by its tag, unlike the others: it is built from the tagged commit, so this
+# file cannot hold its digest. `docker image inspect -f '{{.RepoDigests}}' <image>` shows the one pulled.
+x-image: &image ${DINGHY_IMAGE:-ghcr.io/dinghy-chat/dinghy:0.3.5}
+
+# Docker keeps every log line until a container is recreated, so a busy server could fill its disk.
+# This keeps at most 3 files of 10 MB per container. docker compose logs still reads them.
+x-logging: &logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "3"
+
+# No process may gain privileges, and a service gets back only the capabilities it needs.
+x-hardened: &hardened
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  # Writes the secrets, and does nothing if they exist. It runs as root to give each service's files
+  # to that service's user.
+  init:
+    <<: *hardened
+    # To read, chown and chmod files that belong to each service's user.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    image: *image
+    user: "0:0"
+    command: ["chat", "init"]
+    environment:
+      INIT_DIR: /init
+    volumes:
+      - secrets-postgres:/init/postgres
+      - secrets-migrate:/init/migrate
+      - secrets-app:/init/app
+      - secrets-valkey:/init/valkey
+    restart: "no"
+    logging: *logging
+
+  postgres:
+    <<: *hardened
+    # Its entrypoint starts as root, sets up the data directory, and switches to the postgres user.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    # Pinned, because a new major version needs scripts/upgrade-postgres.sh, which sets the two variables
+    # here. A release that moves this also moves the number in PGDATA and postgresql18-client in the
+    # Dockerfile, because pg_restore refuses a newer server.
+    image: ${DINGHY_POSTGRES_IMAGE:-postgres:18-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395}
+    # Sized for the 4 GB server the docs name, where the whole install peaked under 600 MB. The image's
+    # default is 128 MB of shared buffers. On a smaller server, lower both.
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "effective_cache_size=2GB"]
+    environment:
+      PGDATA: ${DINGHY_POSTGRES_DATA:-/var/lib/postgresql/18/docker}
+      POSTGRES_DB: dinghy
+      POSTGRES_PASSWORD_FILE: /run/dinghy/password
+    volumes:
+      - postgres:/var/lib/postgresql
+      - secrets-postgres:/run/dinghy:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      # Over TCP. A first start runs a temporary server on the socket only, and migrate cannot reach it.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "dinghy"]
+      interval: 2s
+      retries: 30
+    restart: unless-stopped
+    logging: *logging
+
+  valkey:
+    <<: *hardened
+    image: valkey/valkey:9-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+    # The image's valkey user, so it needs no capability to switch to it.
+    user: "999:1000"
+    # It holds only signals and short-lived counts, so nothing here needs saving. The file sets the
+    # password that init wrote, which keeps it off the command line.
+    command: ["valkey-server", "/run/dinghy/valkey.conf", "--save", "", "--appendonly", "no"]
+    volumes:
+      - secrets-valkey:/run/dinghy:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(sed -n 's/^requirepass //p' /run/dinghy/valkey.conf)" valkey-cli ping | grep -q PONG
+      interval: 2s
+      retries: 30
+    restart: unless-stopped
+    logging: *logging
+
+  # Creates the roles and runs migrations. This service holds the admin and backup logins, so a backup
+  # runs here too: docker compose run --rm migrate chat backup
+  migrate:
+    <<: *hardened
+    image: *image
+    command: ["chat", "migrate"]
+    environment:
+      ROLE_SECRETS_DIR: /secrets
+      APP_SECRETS_DIR: /app-secrets
+      S3_BUCKET: ${S3_BUCKET:-}
+      # Optional. An encrypted copy of each backup, in another place.
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      # Optional. chat backup pings this address after it succeeds, such as a healthchecks.io check.
+      BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL:-}
+      # Only for a restore of an encrypted backup. Pass it for that one command.
+      BACKUP_PRIVATE_KEY: ${BACKUP_PRIVATE_KEY:-}
+    volumes:
+      - secrets-migrate:/secrets:ro
+      - secrets-app:/app-secrets
+      - backups:/data/backups
+      - images:/data/images
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    logging: *logging
+
+  app:
+    <<: *hardened
+    image: *image
+    command: ["all"]
+    environment:
+      # The file names in this directory are these settings' names, in lower case.
+      DINGHY_SECRETS_DIR: /secrets
+      CHAT_DOMAIN: ${CHAT_DOMAIN:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      DINGHY_PORT: ${DINGHY_PORT:-}
+      # Caddy is the one proxy when a domain is set. Set this yourself for another proxy in front.
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-${CHAT_DOMAIN:+1}}
+      PORT: "3000"
+      # Optional. Without a mail server, a visitor who left the page does not learn about a reply.
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      # Optional. Without these, images stay in the images volume.
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      # Optional. A separate origin for user images, such as https://files.example.com.
+      IMAGES_ORIGIN: ${IMAGES_ORIGIN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+    volumes:
+      # Writable, because chat setup runs here and saves the push keys in it.
+      - secrets-app:/secrets
+      - images:/data/images
+    ports:
+      # This machine only. With a domain, Caddy reaches the app over the private network.
+      - "127.0.0.1:${DINGHY_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/readyz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))
+      interval: 5s
+      retries: 12
+      start_period: 5s
+    # Long enough for open streams to close, which the app bounds at 8 seconds.
+    stop_grace_period: 10s
+    restart: unless-stopped
+    logging: *logging
+
+  caddy:
+    <<: *hardened
+    cap_add: [NET_BIND_SERVICE]
+    profiles: [tls]
+    image: caddy:2-alpine@sha256:ae5e525ca6773b0a4ce579c774cb39b3147e1576084139229517bdbcfe3ed812
+    # Gets and renews a certificate by itself, and needs no account.
+    # HSTS keeps browsers on HTTPS after the first visit. The app sends it too when PUBLIC_URL is https.
+    command:
+      - caddy
+      - reverse-proxy
+      - --from
+      - ${CHAT_DOMAIN:-localhost}
+      - --to
+      - app:3000
+      - --header-down
+      - "Strict-Transport-Security: max-age=31536000"
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - caddy:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  postgres:
+  images:
+  backups:
+  caddy:
+  # Apart, so that each service mounts only what it needs.
+  secrets-postgres:
+  secrets-migrate:
+  secrets-app:
+  secrets-valkey:

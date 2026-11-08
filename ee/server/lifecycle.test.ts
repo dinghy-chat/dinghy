@@ -1,0 +1,1015 @@
+// Licensed under the Dinghy Enterprise License. See ee/LICENSE.
+import { randomInt, randomUUID } from "node:crypto";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { and, eq, sql } from "drizzle-orm";
+import { Redis } from "iovalkey";
+import { pino } from "pino";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { type App, createApp } from "../../apps/server/src/app.ts";
+import { createAuth } from "../../apps/server/src/auth.ts";
+import {
+  conversation,
+  event,
+  operator,
+  subscription,
+  visitor,
+  workspace,
+} from "../../apps/server/src/db/schema.ts";
+import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
+import { createImages } from "../../apps/server/src/images.ts";
+import { createSignals } from "../../apps/server/src/live.ts";
+import type { Mailer } from "../../apps/server/src/mailer.ts";
+import { appendMessage } from "../../apps/server/src/messages.ts";
+import { localStore, type ObjectStore } from "../../apps/server/src/storage.ts";
+import { startWorker } from "../../apps/server/src/worker.ts";
+import { purgeDeletedWorkspaces } from "../../apps/server/src/workspace-delete.ts";
+import { widgetWorkspace, workspaceKeys } from "../../apps/server/src/workspaces.ts";
+import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
+import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
+import { type BillingOptions, createBilling } from "./billing.ts";
+import {
+  BILLING_CLEAR_DELAY_MS,
+  DELETION_WARNING_DAYS,
+  GRACE_DAYS,
+  type LifecycleRow,
+  nextStep,
+  READ_ONLY_DAYS,
+  runLifecycle,
+} from "./lifecycle.ts";
+import {
+  type FakeStripe,
+  STRIPE_PRICE_ID,
+  STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET,
+  startFakeStripe,
+} from "./test/fake-stripe.ts";
+
+const ORIGIN = new URL(PUBLIC_URL).origin;
+const PASSWORD = "a-long-test-password";
+const DAY_MS = 86_400_000;
+const logger = pino({ level: "silent" });
+const ok = async () => {};
+
+let database: TestDatabase;
+let db: Database;
+let workerDb: Database;
+let owner: Database;
+let valkey: Redis;
+let stripe: FakeStripe;
+let app: App;
+let store: ObjectStore;
+let directory: string;
+/** The clock that every lifecycle time reads. Tests move it. */
+let clock: Date;
+const later = (days: number) => {
+  clock = new Date(clock.getTime() + days * DAY_MS);
+};
+
+const keys = (): BillingOptions => ({
+  secretKey: STRIPE_SECRET_KEY,
+  webhookSecret: STRIPE_WEBHOOK_SECRET,
+  priceId: STRIPE_PRICE_ID,
+  apiBase: "",
+  now: () => clock,
+});
+
+const mails: { to: string; subject: string; text: string }[] = [];
+const mailer: Mailer = {
+  async send(to, subject, text) {
+    mails.push({ to, subject, text });
+  },
+};
+const mailsAbout = (name: string) => mails.filter((mail) => mail.subject.includes(name));
+
+/** The worker's own login and billing client, as main.ts builds them. */
+const workerBilling = () =>
+  createBilling(
+    { ...keys(), apiBase: stripe.apiBase },
+    workerDb,
+    logger,
+    createSignals(valkey, logger),
+  );
+
+/** `mailer: null` runs it as a server with no SMTP. */
+const lifecycle = ({
+  mailer: sender = mailer,
+  batch,
+}: {
+  mailer?: Mailer | null;
+  batch?: number;
+} = {}) =>
+  runLifecycle({
+    db: workerDb,
+    billing: workerBilling(),
+    logger,
+    mailer: sender ?? undefined,
+    publicUrl: PUBLIC_URL,
+    ...(batch === undefined ? {} : { batch }),
+  });
+
+const IP = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(256)}`;
+const cookieOf = (response: Response) =>
+  response.headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0])
+    .join("; ");
+
+const request = (
+  server: App,
+  method: string,
+  path: string,
+  { cookie, body }: { cookie?: string; body?: unknown } = {},
+) =>
+  server.request(path, {
+    method,
+    headers: {
+      origin: ORIGIN,
+      "x-forwarded-for": IP,
+      ...(cookie === undefined ? {} : { cookie }),
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+const deliver = (event: { payload: string; signature: string }) =>
+  app.request("/v1/stripe/webhook", {
+    method: "POST",
+    headers: { "content-type": "application/json", "stripe-signature": event.signature },
+    body: event.payload,
+  });
+
+/** Sets the fake's subscription and sends Stripe's event about it. */
+async function stripeSays(
+  workspaceId: string,
+  subscriptionId: string,
+  status: string,
+  extra: { cancel_at_period_end?: boolean } = {},
+) {
+  const found = stripe.subscriptions.get(subscriptionId);
+  if (found === undefined) throw new Error(`No subscription ${subscriptionId}`);
+  Object.assign(found, { status, ...extra });
+  const response = await deliver(
+    stripe.event("customer.subscription.updated", {
+      id: subscriptionId,
+      object: "subscription",
+      status,
+      metadata: { workspace_id: workspaceId },
+    }),
+  );
+  expect(response.status).toBe(200);
+}
+
+/** Opens Checkout as the owner, pays it and sends the webhook. */
+async function payCheckout(workspaceId: string, cookie: string) {
+  const response = await request(app, "POST", `/v1/operator/workspaces/${workspaceId}/checkout`, {
+    cookie,
+  });
+  expect(response.status).toBe(200);
+  const { url } = (await response.json()) as { url: string };
+  const paid = stripe.pay(url.split("/").at(-1) ?? "");
+  const done = await deliver(
+    stripe.event("checkout.session.completed", {
+      object: "checkout.session",
+      client_reference_id: workspaceId,
+      subscription: paid.id,
+    }),
+  );
+  expect(done.status).toBe(200);
+  return paid.id;
+}
+
+/** A paid cloud workspace, its owner's session, and one conversation with an image. */
+async function paidWorkspace() {
+  const email = `owner-${randomUUID()}@example.com`;
+  const name = `Shop ${randomUUID().slice(0, 8)}`;
+  const signup = await request(app, "POST", "/v1/signup", {
+    body: { email, password: PASSWORD },
+  });
+  const cookie = cookieOf(signup);
+  const created = await request(app, "POST", "/v1/operator/workspaces", {
+    cookie,
+    body: { name: "Owner", workspaceName: name },
+  });
+  const { workspaceId } = (await created.json()) as { workspaceId: string };
+  const subscriptionId = await payCheckout(workspaceId, cookie);
+  const storageKey = `${workspaceId}/${randomUUID()}.png`;
+  await store.put(storageKey, new Uint8Array([1, 2, 3]), "image/png");
+  await withWorkspace(db, workspaceId, async (tx) => {
+    const [row] = await tx
+      .insert(visitor)
+      .values({ workspaceId, externalId: "visitor-1" })
+      .returning({ id: visitor.id });
+    const author = { kind: "visitor" as const, visitorId: row?.id ?? "" };
+    await appendMessage(tx, workspaceId, author, { clientId: "c1", body: "Hello there" });
+    await appendMessage(tx, workspaceId, author, {
+      clientId: "c2",
+      image: {
+        attachmentId: randomUUID(),
+        storageKey,
+        byteSize: 3,
+        contentType: "image/png",
+        width: 1,
+        height: 1,
+      },
+    });
+  });
+  const [publicKey] = await owner
+    .select({ key: workspace.publicKey })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId));
+  return {
+    workspaceId,
+    name,
+    email,
+    cookie,
+    subscriptionId,
+    storageKey,
+    key: publicKey?.key ?? "",
+  };
+}
+
+type Paid = Awaited<ReturnType<typeof paidWorkspace>>;
+
+/** Opens Checkout as the owner and leaves it unpaid. Returns the session's ID. */
+async function openCheckout(paid: Paid) {
+  const response = await request(
+    app,
+    "POST",
+    `/v1/operator/workspaces/${paid.workspaceId}/checkout`,
+    {
+      cookie: paid.cookie,
+    },
+  );
+  expect(response.status).toBe(200);
+  return ((await response.json()) as { url: string }).url.split("/").at(-1) ?? "";
+}
+
+const row = async (workspaceId: string) =>
+  (await owner.select().from(subscription).where(eq(subscription.workspaceId, workspaceId)))[0];
+
+const workspaceRow = async (workspaceId: string) =>
+  (await owner.select().from(workspace).where(eq(workspace.id, workspaceId)))[0];
+
+const conversationsOf = async (workspaceId: string) =>
+  owner.select().from(conversation).where(eq(conversation.workspaceId, workspaceId));
+
+const billingOf = async (paid: Paid) =>
+  (await (
+    await request(app, "GET", `/v1/operator/workspaces/${paid.workspaceId}/billing`, {
+      cookie: paid.cookie,
+    })
+  ).json()) as { state: string; date: string | null; payWith: string };
+
+/** What an operator of a read-only workspace can and cannot do. */
+async function expectReadOnly(paid: Paid, readOnly: boolean) {
+  expect(await widgetWorkspace(db, paid.key)).toEqual(readOnly ? null : expect.anything());
+  const base = `/v1/operator/workspaces/${paid.workspaceId}`;
+  const list = await request(app, "GET", `${base}/conversations?status=open`, {
+    cookie: paid.cookie,
+  });
+  expect(list.status).toBe(200);
+  const [first] = await conversationsOf(paid.workspaceId);
+  const reply = await request(app, "POST", `${base}/conversations/${first?.id}/messages`, {
+    cookie: paid.cookie,
+    body: { clientId: randomUUID(), body: "a reply" },
+  });
+  expect(reply.status).toBe(readOnly ? 402 : 201);
+  const exported = await request(app, "GET", `${base}/export`, { cookie: paid.cookie });
+  expect(exported.status).toBe(200);
+  await exported.arrayBuffer();
+}
+
+/** Tenant tables that still hold a row of this workspace. */
+async function leftovers(workspaceId: string): Promise<string[]> {
+  const tables = await owner.execute<{ table_name: string }>(
+    sql`select table_name from information_schema.columns
+        where table_schema = 'public' and column_name = 'workspace_id'`,
+  );
+  const left: string[] = [];
+  for (const { table_name } of tables.rows) {
+    const found = await owner.execute<{ count: string }>(
+      sql`select count(*) as count from ${sql.identifier(table_name)} where workspace_id = ${workspaceId}`,
+    );
+    if (Number(found.rows[0]?.count) > 0) left.push(table_name);
+  }
+  return left;
+}
+
+beforeAll(async () => {
+  database = await createTestDatabase();
+  await database.migrate();
+  db = database.connect("app", 20).db;
+  workerDb = database.connect("worker", 10).db;
+  owner = database.connect("migrator").db;
+  valkey = new Redis(VALKEY_URL, { enableOfflineQueue: false, maxRetriesPerRequest: 1 });
+  stripe = await startFakeStripe();
+  // Stripe tells Dinghy about a cancel, the worker's own included, through the real webhook.
+  stripe.hooks.afterCancel = async (ended) => {
+    const response = await deliver(
+      stripe.event("customer.subscription.deleted", {
+        id: ended.id,
+        object: "subscription",
+        status: ended.status,
+        metadata: ended.metadata,
+      }),
+    );
+    expect(response.status).toBe(200);
+  };
+  directory = await mkdtemp(join(tmpdir(), "dinghy-lifecycle-"));
+  await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
+  store = localStore(join(directory, "images"));
+  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL, logger });
+  const images = createImages({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL });
+  app = createApp({
+    auth,
+    db,
+    logger,
+    valkey,
+    images,
+    trustedProxyHops: 1,
+    limitScale: 100,
+    operatorDirectory: directory,
+    checks: { postgres: ok, valkey: ok },
+    cloud: { billing: { ...keys(), apiBase: stripe.apiBase } },
+  });
+}, 30_000);
+
+afterAll(async () => {
+  valkey.disconnect();
+  await stripe.stop();
+  await rm(directory, { recursive: true, force: true });
+  await database.drop();
+});
+
+beforeEach(() => {
+  clock = new Date("2027-03-01T12:00:00Z");
+  mails.length = 0;
+});
+
+describe("the rules", () => {
+  const base: LifecycleRow = {
+    status: "active",
+    paidAt: new Date(0),
+    paymentFailedAt: null,
+    readOnlyAt: null,
+    notice: null,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+  };
+  const now = new Date("2027-03-01T00:00:00Z");
+  const ago = (days: number) => new Date(now.getTime() - days * DAY_MS);
+
+  test("keep the named numbers of days", () => {
+    expect([GRACE_DAYS, READ_ONLY_DAYS, DELETION_WARNING_DAYS]).toEqual([14, 30, 7]);
+  });
+
+  test("a paid or canceling subscription has nothing to do", () => {
+    expect(nextStep(base, now)).toBeNull();
+    expect(nextStep({ ...base, cancelAtPeriodEnd: true }, now)).toBeNull();
+  });
+
+  test("a signup that never paid never goes read-only", () => {
+    expect(nextStep({ ...base, paidAt: null, status: "incomplete_expired" }, now)).toBeNull();
+  });
+
+  test("each step comes at its time", () => {
+    const failing = { ...base, status: "past_due" };
+    expect(nextStep({ ...failing, paymentFailedAt: ago(1) }, now)).toEqual({
+      kind: "notice",
+      notice: "payment_failed",
+    });
+    expect(
+      nextStep({ ...failing, paymentFailedAt: ago(13), notice: "payment_failed" }, now),
+    ).toBeNull();
+    expect(nextStep({ ...failing, paymentFailedAt: ago(14) }, now)).toEqual({
+      kind: "read_only",
+    });
+    expect(nextStep({ ...base, status: "canceled" }, now)).toEqual({ kind: "read_only" });
+    const ended = { ...base, status: "canceled", readOnlyAt: ago(1) };
+    expect(nextStep(ended, now)).toEqual({ kind: "notice", notice: "read_only" });
+    expect(nextStep({ ...ended, notice: "read_only" }, now)).toBeNull();
+    expect(nextStep({ ...ended, readOnlyAt: ago(23), notice: "read_only" }, now)).toEqual({
+      kind: "notice",
+      notice: "deletion_soon",
+    });
+    expect(nextStep({ ...ended, readOnlyAt: ago(29), notice: "deletion_soon" }, now)).toBeNull();
+    expect(nextStep({ ...ended, readOnlyAt: ago(30), notice: "deletion_soon" }, now)).toEqual({
+      kind: "delete",
+    });
+  });
+});
+
+describe("the subscription lifecycle", () => {
+  test("a cancellation keeps full service until the paid period ends, then turns read-only", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "active", {
+      cancel_at_period_end: true,
+    });
+    expect(await billingOf(paid)).toMatchObject({ state: "ending" });
+    later(20);
+    await lifecycle();
+    await expectReadOnly(paid, false);
+    expect(mailsAbout(paid.name)).toEqual([]);
+
+    // Stripe ends it at the period's end.
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    await lifecycle();
+    expect((await row(paid.workspaceId))?.readOnlyAt).toEqual(clock);
+    await expectReadOnly(paid, true);
+    const me = await (await request(app, "GET", "/v1/operator/me", { cookie: paid.cookie })).json();
+    expect(me).toMatchObject({ workspaces: [{ workspaceId: paid.workspaceId, readOnly: true }] });
+    expect(await billingOf(paid)).toEqual({
+      state: "read_only",
+      date: new Date(clock.getTime() + READ_ONLY_DAYS * DAY_MS).toISOString(),
+      payWith: "checkout",
+    });
+    expect(mailsAbout(paid.name).map((mail) => [mail.to, mail.subject])).toEqual([
+      [paid.email, `${paid.name} is now read-only`],
+    ]);
+    // A later pass sends nothing again.
+    await lifecycle();
+    expect(mailsAbout(paid.name)).toHaveLength(1);
+  });
+
+  test("a failed payment gives 14 days from the first failure, and a second failure does not restart them", async () => {
+    const paid = await paidWorkspace();
+    const first = new Date(clock);
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    expect((await row(paid.workspaceId))?.paymentFailedAt).toEqual(first);
+    await lifecycle();
+    expect(mailsAbout(paid.name).map((mail) => mail.subject)).toEqual([
+      `The payment for ${paid.name} failed`,
+    ]);
+    expect(await billingOf(paid)).toEqual({
+      state: "payment_failed",
+      date: new Date(first.getTime() + GRACE_DAYS * DAY_MS).toISOString(),
+      payWith: "portal",
+    });
+
+    later(7);
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "unpaid");
+    expect((await row(paid.workspaceId))?.paymentFailedAt).toEqual(first);
+    await lifecycle();
+    expect(mailsAbout(paid.name)).toHaveLength(1);
+    await expectReadOnly(paid, false);
+
+    later(6.9);
+    await lifecycle();
+    await expectReadOnly(paid, false);
+    later(0.1);
+    await lifecycle();
+    await expectReadOnly(paid, true);
+    expect(mailsAbout(paid.name).map((mail) => mail.subject)).toEqual([
+      `The payment for ${paid.name} failed`,
+      `${paid.name} is now read-only`,
+    ]);
+    // Dinghy ended the subscription, so no late retry can charge, and paying again is Checkout.
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("canceled");
+    expect((await billingOf(paid)).payWith).toBe("checkout");
+  });
+
+  test("the worker's own cancel, and its webhook, still give one read-only email at once", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    await lifecycle();
+    later(GRACE_DAYS);
+    await lifecycle();
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("canceled");
+    expect((await row(paid.workspaceId))?.readOnlyAt).toEqual(clock);
+    await expectReadOnly(paid, true);
+    // Later passes, after any claim has run out, send nothing more.
+    later(0.01);
+    await lifecycle();
+    later(0.01);
+    await lifecycle();
+    expect(mailsAbout(paid.name).map((mail) => mail.subject)).toEqual([
+      `The payment for ${paid.name} failed`,
+      `${paid.name} is now read-only`,
+    ]);
+  });
+
+  test("a recovered payment clears the failure, and the next failure starts a new 14 days", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    await lifecycle();
+    later(10);
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "active");
+    expect(await row(paid.workspaceId)).toMatchObject({ paymentFailedAt: null, notice: null });
+    later(10);
+    await lifecycle();
+    await expectReadOnly(paid, false);
+
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    expect((await row(paid.workspaceId))?.paymentFailedAt).toEqual(clock);
+    await lifecycle();
+    expect(mailsAbout(paid.name).filter((mail) => mail.subject.includes("failed"))).toHaveLength(2);
+  });
+
+  test("resubscribing during the read-only time brings everything back, with all data", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    await lifecycle();
+    await expectReadOnly(paid, true);
+    const before = await leftoversCount(paid.workspaceId);
+
+    later(12);
+    const again = await payCheckout(paid.workspaceId, paid.cookie);
+    expect(again).not.toBe(paid.subscriptionId);
+    expect(await row(paid.workspaceId)).toMatchObject({
+      readOnlyAt: null,
+      notice: null,
+      status: "active",
+      stripeSubscriptionId: again,
+    });
+    await expectReadOnly(paid, false);
+    expect(await leftoversCount(paid.workspaceId)).toBeGreaterThanOrEqual(before);
+    expect(await store.get(paid.storageKey)).not.toBeNull();
+
+    // A late event about the old, canceled subscription does not end the new one.
+    await deliver(
+      stripe.event("customer.subscription.deleted", {
+        id: paid.subscriptionId,
+        object: "subscription",
+        metadata: { workspace_id: paid.workspaceId },
+      }),
+    );
+    expect((await row(paid.workspaceId))?.status).toBe("active");
+    later(60);
+    await lifecycle();
+    await expectReadOnly(paid, false);
+  });
+
+  test("Checkout opens once the subscription ended, before the worker makes it read-only", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    expect((await row(paid.workspaceId))?.readOnlyAt).toBeNull();
+    const sessionId = await openCheckout(paid);
+    expect(stripe.sessions.get(sessionId)?.expired).toBeUndefined();
+  });
+
+  test("going read-only and back is on the workspace's feed, and the worker wakes open inboxes", async () => {
+    const paid = await paidWorkspace();
+    const billingEvents = async () =>
+      (
+        await owner
+          .select({ seq: event.seq })
+          .from(event)
+          .where(and(eq(event.workspaceId, paid.workspaceId), eq(event.kind, "billing.changed")))
+      ).length;
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    const before = await billingEvents();
+
+    const listener = new Redis(VALKEY_URL);
+    const signals: string[] = [];
+    listener.on("message", (_channel: string, payload: string) => signals.push(payload));
+    await listener.subscribe(`dinghy:signals:${paid.workspaceId}`);
+    try {
+      await lifecycle();
+      expect((await row(paid.workspaceId))?.readOnlyAt).toEqual(clock);
+      expect(await billingEvents()).toBe(before + 1);
+      // A signal is best effort and travels apart from the commit, so a loaded machine can be slow.
+      await expect.poll(() => signals, { timeout: 5000 }).toContain("wake:operators");
+    } finally {
+      listener.disconnect();
+    }
+
+    await payCheckout(paid.workspaceId, paid.cookie);
+    expect((await row(paid.workspaceId))?.readOnlyAt).toBeNull();
+    expect(await billingEvents()).toBe(before + 2);
+  });
+
+  test("a paid workspace's Checkout still answers 409", async () => {
+    const paid = await paidWorkspace();
+    const response = await request(
+      app,
+      "POST",
+      `/v1/operator/workspaces/${paid.workspaceId}/checkout`,
+      { cookie: paid.cookie },
+    );
+    expect(response.status).toBe(409);
+  });
+
+  test("after the 30 days, the workspace and all its data are deleted, including images", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    await lifecycle();
+    later(READ_ONLY_DAYS - DELETION_WARNING_DAYS);
+    await lifecycle();
+    expect(mailsAbout(paid.name).map((mail) => mail.subject)).toEqual([
+      `${paid.name} is now read-only`,
+      `${paid.name} will be deleted on ${new Date(clock.getTime() + DELETION_WARNING_DAYS * DAY_MS).toISOString().slice(0, 10)}`,
+    ]);
+    later(DELETION_WARNING_DAYS - 0.01);
+    await lifecycle();
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toBeNull();
+    later(0.01);
+    await lifecycle();
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toEqual(clock);
+    // Gone for its operators and its widget at once.
+    const me = await (await request(app, "GET", "/v1/operator/me", { cookie: paid.cookie })).json();
+    expect(me).toMatchObject({ workspaces: [] });
+    expect(await widgetWorkspace(db, paid.key)).toBeNull();
+
+    await purgeUntilGone(paid.workspaceId);
+    expect(await leftovers(paid.workspaceId)).toEqual([]);
+    expect(await store.get(paid.storageKey)).toBeNull();
+    // The owner's account stays, because it is global and may belong to other workspaces.
+    expect(await owner.select().from(operator).where(eq(operator.email, paid.email))).toHaveLength(
+      1,
+    );
+  });
+
+  test("the deletion asks Stripe again and skips a subscription that is paid", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    later(GRACE_DAYS);
+    await lifecycle();
+    await expectReadOnly(paid, true);
+    later(READ_ONLY_DAYS);
+    // The payment cleared at Stripe, and its webhook never came.
+    const found = stripe.subscriptions.get(paid.subscriptionId);
+    if (found !== undefined) found.status = "active";
+    await lifecycle();
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toBeNull();
+    expect(await row(paid.workspaceId)).toMatchObject({ status: "active", readOnlyAt: null });
+    await expectReadOnly(paid, false);
+  });
+
+  test("a payment whose webhook never came stops the read-only step", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    later(GRACE_DAYS);
+    // The card worked on Stripe, but Dinghy never heard.
+    const sub = stripe.subscriptions.get(paid.subscriptionId);
+    if (sub !== undefined) sub.status = "active";
+    await lifecycle();
+    await expectReadOnly(paid, false);
+    expect(sub?.status).toBe("active");
+  });
+
+  test("a new payment after a cancellation keeps the workspace, though its webhook is late", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    // The owner paid again through a new Checkout, and its webhook has not come yet.
+    const customer = (await row(paid.workspaceId))?.stripeCustomerId ?? "";
+    stripe.subscriptions.set("sub_again", {
+      id: "sub_again",
+      customer,
+      status: "active",
+      current_period_end: Math.floor(clock.getTime() / 1000) + 30 * 86_400,
+      metadata: { workspace_id: paid.workspaceId },
+    });
+    await lifecycle();
+    await expectReadOnly(paid, false);
+  });
+
+  test("a subscription that still retries is ended at read-only time, and the deletion follows", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "unpaid");
+    later(GRACE_DAYS);
+    await lifecycle();
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("canceled");
+    later(READ_ONLY_DAYS);
+    await lifecycle();
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("canceled");
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toEqual(clock);
+  });
+
+  test("the deletion after the read-only time expires an open Checkout", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    await lifecycle();
+    const sessionId = await openCheckout(paid);
+    later(READ_ONLY_DAYS);
+    await lifecycle();
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toEqual(clock);
+    expect(stripe.sessions.get(sessionId)?.expired).toBe(true);
+  });
+
+  test("two workers that run the check at once act once", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    const counts = await Promise.all([lifecycle(), lifecycle(), lifecycle()]);
+    expect(counts.reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(mailsAbout(paid.name)).toHaveLength(1);
+
+    later(READ_ONLY_DAYS);
+    const cancels = stripe.counts.cancels;
+    await Promise.all([lifecycle(), lifecycle(), lifecycle()]);
+    expect(stripe.counts.cancels).toBe(cancels);
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toEqual(clock);
+    // The billing is cleared first, within the deletion's claim.
+    clock = new Date(clock.getTime() + BILLING_CLEAR_DELAY_MS);
+    await lifecycle();
+    expect(stripe.counts.cancels).toBe(cancels);
+    const purged = await Promise.all([
+      purgeDeletedWorkspaces(workerDb),
+      purgeDeletedWorkspaces(workerDb),
+    ]);
+    // The images are queued once, and none is removed twice.
+    expect(purged).toEqual([0, 0]);
+    const queued = await owner.execute<{ count: string }>(
+      sql`select count(*) as count from storage_deletion where workspace_id = ${paid.workspaceId}`,
+    );
+    expect(Number(queued.rows[0]?.count)).toBe(1);
+  });
+
+  test("a second worker does not repeat a step that the first worker's slow email still holds", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    let reached = false;
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Holds only this workspace's email, as a slow SMTP server would.
+    const slow: Mailer = {
+      async send(to, subject, text) {
+        if (to === paid.email) {
+          reached = true;
+          await held;
+        }
+        mails.push({ to, subject, text });
+      },
+    };
+    const worker = startWorker({
+      db: workerDb,
+      logger,
+      mailer: slow,
+      cloud: { billing: { ...keys(), apiBase: stripe.apiBase } },
+      signals: createSignals(valkey, logger),
+      publicUrl: PUBLIC_URL,
+      secret: AUTH_SECRET,
+      pollMs: 20,
+      mailTimeoutMs: 60_000,
+    });
+    try {
+      await expect.poll(() => reached, { timeout: 8000 }).toBe(true);
+      // Past the alert worker's 60-second claim, well inside the lifecycle's own.
+      clock = new Date(clock.getTime() + 2 * 60_000);
+      await lifecycle();
+      expect(mailsAbout(paid.name)).toEqual([]);
+      release();
+      await expect.poll(() => mailsAbout(paid.name).length, { timeout: 8000 }).toBeGreaterThan(0);
+    } finally {
+      release();
+      await worker.stop();
+    }
+    expect(mailsAbout(paid.name)).toHaveLength(1);
+  });
+
+  test("rows with nothing due never fill the batch ahead of a row that is due", async () => {
+    // IDs that sort before every random one, so the rows with nothing due come first.
+    const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+    const insert = async (n: number, row: Partial<typeof subscription.$inferInsert>) => {
+      const keys = { ...workspaceKeys(), id: id(n) };
+      await owner.insert(workspace).values({ ...keys, name: `Row ${n}` });
+      // The worker asks Stripe about the customer before it acts, so Stripe must know it.
+      stripe.customers.push(`cus_row_${n}`);
+      await owner.insert(subscription).values({
+        workspaceId: keys.id,
+        stripeCustomerId: `cus_row_${n}`,
+        paidAt: new Date(clock.getTime() - 60 * DAY_MS),
+        ...row,
+      });
+    };
+    // Read-only, warned, and far from deletion: more than one batch of them.
+    for (const n of [1, 2, 3]) {
+      await insert(n, {
+        status: "canceled",
+        readOnlyAt: new Date(clock.getTime() - DAY_MS),
+        notice: "read_only",
+      });
+    }
+    await insert(4, { status: "canceled" });
+    await lifecycle({ batch: 2 });
+    expect((await row(id(4)))?.readOnlyAt).toEqual(clock);
+  });
+
+  test("a failed email is sent again by a later pass, and a server with no SMTP carries on", async () => {
+    const first = await paidWorkspace();
+    await stripeSays(first.workspaceId, first.subscriptionId, "canceled");
+    const failing: Mailer = {
+      send: () => Promise.reject(new Error("the mail server is down")),
+    };
+    await lifecycle({ mailer: failing });
+    expect((await row(first.workspaceId))?.notice).toBeNull();
+    // The claim lasts 10 minutes.
+    later(0.01);
+    await lifecycle();
+    expect(mailsAbout(first.name)).toHaveLength(1);
+    expect((await row(first.workspaceId))?.notice).toBe("read_only");
+
+    const second = await paidWorkspace();
+    await stripeSays(second.workspaceId, second.subscriptionId, "canceled");
+    await lifecycle({ mailer: null });
+    expect(await row(second.workspaceId)).toMatchObject({ notice: "read_only" });
+    expect((await row(second.workspaceId))?.readOnlyAt).not.toBeNull();
+  });
+});
+
+describe("the owner's delete", () => {
+  test("cancels the subscription at once, then deletes the workspace and its images", async () => {
+    const paid = await paidWorkspace();
+    const path = `/v1/operator/workspaces/${paid.workspaceId}`;
+    const wrong = await request(app, "DELETE", path, {
+      cookie: paid.cookie,
+      body: { name: "Not the name" },
+    });
+    expect(wrong.status).toBe(400);
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toBeNull();
+
+    // Another tab opens a Checkout while the cancel runs, before the deletion commits.
+    const webhook = stripe.hooks.afterCancel;
+    stripe.hooks.afterCancel = async (ended) => {
+      stripe.hooks.afterCancel = webhook;
+      await webhook?.(ended);
+      const params = new URLSearchParams({ customer: ended.customer });
+      stripe.sessions.set("cs_late", { id: "cs_late", url: "http://x/pay/cs_late", params });
+    };
+    const done = await request(app, "DELETE", path, {
+      cookie: paid.cookie,
+      body: { name: paid.name },
+    });
+    expect(done.status).toBe(200);
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("canceled");
+    expect(await widgetWorkspace(db, paid.key)).toBeNull();
+    expect((await request(app, "GET", path, { cookie: paid.cookie })).status).toBe(404);
+    // The worker expires it before the purge.
+    await purgeUntilGone(paid.workspaceId);
+    expect(stripe.sessions.get("cs_late")?.expired).toBe(true);
+    expect(await leftovers(paid.workspaceId)).toEqual([]);
+    expect(await store.get(paid.storageKey)).toBeNull();
+  });
+
+  test("expires an open Checkout, and cancels a subscription that still comes from one", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    await lifecycle();
+    const sessionId = await openCheckout(paid);
+    const done = await request(app, "DELETE", `/v1/operator/workspaces/${paid.workspaceId}`, {
+      cookie: paid.cookie,
+      body: { name: paid.name },
+    });
+    expect(done.status).toBe(200);
+    expect(stripe.sessions.get(sessionId)?.expired).toBe(true);
+
+    // A payment that Stripe took just before the expiry, whose webhook comes after the delete.
+    const late = stripe.pay(sessionId);
+    const response = await deliver(
+      stripe.event("checkout.session.completed", {
+        object: "checkout.session",
+        client_reference_id: paid.workspaceId,
+        subscription: late.id,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(stripe.subscriptions.get(late.id)?.status).toBe("canceled");
+    expect((await workspaceRow(paid.workspaceId))?.active).toBe(true);
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).not.toBeNull();
+  });
+
+  test("deletes nothing when Stripe cannot cancel", async () => {
+    const paid = await paidWorkspace();
+    stripe.failures.cancel = 1;
+    const response = await request(app, "DELETE", `/v1/operator/workspaces/${paid.workspaceId}`, {
+      cookie: paid.cookie,
+      body: { name: paid.name },
+    });
+    expect(response.status).toBe(502);
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toBeNull();
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("active");
+  });
+
+  test("a Checkout made after the deletion commits is expired before the purge", async () => {
+    const paid = await paidWorkspace();
+    const customer = (await row(paid.workspaceId))?.stripeCustomerId ?? "";
+    const response = await request(app, "DELETE", `/v1/operator/workspaces/${paid.workspaceId}`, {
+      cookie: paid.cookie,
+      body: { name: paid.name },
+    });
+    expect(response.status).toBe(200);
+    // A Checkout request that was already running makes its session after the commit.
+    const params = new URLSearchParams({ customer });
+    stripe.sessions.set("cs_after", { id: "cs_after", url: "http://x/pay/cs_after", params });
+
+    // The purge waits for the worker, and the worker waits out any request still running.
+    expect(await purgeDeletedWorkspaces(workerDb)).toBe(0);
+    await lifecycle();
+    expect(stripe.sessions.get("cs_after")?.expired).toBeUndefined();
+    expect(await purgeDeletedWorkspaces(workerDb)).toBe(0);
+    expect(await leftovers(paid.workspaceId)).toContain("subscription");
+
+    clock = new Date(clock.getTime() + BILLING_CLEAR_DELAY_MS);
+    await lifecycle();
+    expect(stripe.sessions.get("cs_after")?.expired).toBe(true);
+    expect((await row(paid.workspaceId))?.billingClearedAt).toEqual(clock);
+    await purgeUntilGone(paid.workspaceId);
+    expect(await leftovers(paid.workspaceId)).toEqual([]);
+  });
+
+  test("a Stripe failure while clearing a deleted workspace's billing keeps its rows, and retries", async () => {
+    const paid = await paidWorkspace();
+    const customer = (await row(paid.workspaceId))?.stripeCustomerId ?? "";
+    const response = await request(app, "DELETE", `/v1/operator/workspaces/${paid.workspaceId}`, {
+      cookie: paid.cookie,
+      body: { name: paid.name },
+    });
+    expect(response.status).toBe(200);
+    const params = new URLSearchParams({ customer });
+    stripe.sessions.set("cs_retry", { id: "cs_retry", url: "http://x/pay/cs_retry", params });
+    clock = new Date(clock.getTime() + BILLING_CLEAR_DELAY_MS);
+    stripe.failures.expire = 1;
+    await lifecycle();
+    expect(stripe.sessions.get("cs_retry")?.expired).toBeUndefined();
+    expect((await row(paid.workspaceId))?.billingClearedAt).toBeNull();
+    expect(await purgeDeletedWorkspaces(workerDb)).toBe(0);
+    expect(await leftovers(paid.workspaceId)).toEqual(
+      expect.arrayContaining(["subscription", "conversation", "message"]),
+    );
+
+    // The next pass tries again.
+    await lifecycle();
+    expect(stripe.sessions.get("cs_retry")?.expired).toBe(true);
+    expect((await row(paid.workspaceId))?.billingClearedAt).not.toBeNull();
+    await purgeUntilGone(paid.workspaceId);
+    expect(await leftovers(paid.workspaceId)).toEqual([]);
+  });
+
+  test("a customer deleted in Stripe does not block the owner's delete or the purge", async () => {
+    const paid = await paidWorkspace();
+    stripe.deleteCustomer((await row(paid.workspaceId))?.stripeCustomerId ?? "");
+    const response = await request(app, "DELETE", `/v1/operator/workspaces/${paid.workspaceId}`, {
+      cookie: paid.cookie,
+      body: { name: paid.name },
+    });
+    expect(response.status).toBe(200);
+    clock = new Date(clock.getTime() + BILLING_CLEAR_DELAY_MS);
+    await lifecycle();
+    expect((await row(paid.workspaceId))?.billingClearedAt).not.toBeNull();
+    await purgeUntilGone(paid.workspaceId);
+    expect(await leftovers(paid.workspaceId)).toEqual([]);
+  });
+
+  test("a customer deleted in Stripe does not block the deletion after the read-only time", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    await lifecycle();
+    stripe.deleteCustomer((await row(paid.workspaceId))?.stripeCustomerId ?? "");
+    later(READ_ONLY_DAYS);
+    await lifecycle();
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toEqual(clock);
+  });
+
+  test("a customer that other keys cannot see is never counted as cleared", async () => {
+    const paid = await paidWorkspace();
+    const customer = (await row(paid.workspaceId))?.stripeCustomerId ?? "";
+    const response = await request(app, "DELETE", `/v1/operator/workspaces/${paid.workspaceId}`, {
+      cookie: paid.cookie,
+      body: { name: paid.name },
+    });
+    expect(response.status).toBe(200);
+    // The keys changed: Stripe answers 404 for a customer that still exists elsewhere.
+    stripe.customers.splice(stripe.customers.indexOf(customer), 1);
+    clock = new Date(clock.getTime() + BILLING_CLEAR_DELAY_MS);
+    await lifecycle();
+    expect((await row(paid.workspaceId))?.billingClearedAt).toBeNull();
+    expect(await purgeDeletedWorkspaces(workerDb)).toBe(0);
+  });
+});
+
+/**
+ * Runs the real worker until the workspace row is gone: billing first, then data, then images,
+ * then the row. The clock moves past the wait before billing is cleared. The self-hosted case,
+ * with no cloud, is in apps/server/src/workspace-delete.test.ts.
+ */
+async function purgeUntilGone(workspaceId: string) {
+  clock = new Date(clock.getTime() + BILLING_CLEAR_DELAY_MS);
+  const worker = startWorker({
+    db: workerDb,
+    logger,
+    publicUrl: PUBLIC_URL,
+    secret: AUTH_SECRET,
+    store,
+    pollMs: 20,
+    lifecycleMs: 20,
+    cloud: { billing: { ...keys(), apiBase: stripe.apiBase } },
+    signals: createSignals(valkey, logger),
+  });
+  try {
+    const deadline = Date.now() + 10_000;
+    while ((await workspaceRow(workspaceId)) !== undefined) {
+      if (Date.now() > deadline) throw new Error("The workspace was not purged");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  } finally {
+    await worker.stop();
+  }
+  expect(await readdir(join(directory, "images", workspaceId)).catch(() => [])).toEqual([]);
+}
+
+async function leftoversCount(workspaceId: string) {
+  return (await conversationsOf(workspaceId)).length;
+}

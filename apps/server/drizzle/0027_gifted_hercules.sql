@@ -1,0 +1,2 @@
+ALTER TABLE "workspace" ADD COLUMN "waiting_since" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "workspace" ADD CONSTRAINT "workspace_waiting_inactive" CHECK (not ("workspace"."active" and "workspace"."waiting_since" is not null));

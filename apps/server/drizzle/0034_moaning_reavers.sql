@@ -1,0 +1,1 @@
+CREATE INDEX "attachment_bytes_idx" ON "attachment" USING btree ("workspace_id","byte_size");

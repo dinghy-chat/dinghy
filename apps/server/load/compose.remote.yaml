@@ -1,0 +1,14 @@
+# Added to compose.yaml on a real server. A firewall must limit port 3100 to the load machine.
+# Caddy gives Cloudflare's "Full" mode a certificate on 443, for the proxied heartbeat check.
+services:
+  web:
+    ports: !override
+      - "0.0.0.0:3100:3000"
+  caddy:
+    image: caddy:2-alpine
+    command:
+      ["caddy", "reverse-proxy", "--from", "${LOAD_HOST}", "--to", "web:3000", "--internal-certs"]
+    ports:
+      - "0.0.0.0:443:443"
+    depends_on:
+      - web

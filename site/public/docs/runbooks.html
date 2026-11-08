@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Runbooks: Dinghy docs</title>
+  <meta name="description" content="What to do when the disk is full, Postgres or Valkey is down, mail fails, a release breaks or backups fail.">
+  <link rel="canonical" href="https://dinghy.chat/docs/runbooks">
+  <meta name="theme-color" content="#ffc917">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Dinghy">
+  <meta property="og:url" content="https://dinghy.chat/docs/runbooks">
+  <meta property="og:title" content="Runbooks: Dinghy docs">
+  <meta property="og:description" content="What to do when the disk is full, Postgres or Valkey is down, mail fails, a release breaks or backups fail.">
+  <meta property="og:image" content="https://dinghy.chat/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A boat on the water, with the words: Live chat for solo founders and small teams.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Runbooks: Dinghy docs">
+  <meta name="twitter:description" content="What to do when the disk is full, Postgres or Valkey is down, mail fails, a release breaks or backups fail.">
+  <meta name="twitter:image" content="https://dinghy.chat/og.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/gabarito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/site.css">
+  <script type="module" src="/js/docs.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the content</a>
+
+  <header class="site-header">
+    <div class="header-bar">
+      <a class="logo" href="/" aria-label="Dinghy home"><img src="/favicon.svg" width="32" height="32" alt=""><span>dinghy</span></a>
+      <nav aria-label="Main">
+        <a data-wave-link href="/#features">Features</a>
+        <a data-wave-link href="/#install">Install</a>
+        <a data-wave-link href="/#pricing">Pricing</a>
+        <a data-wave-link href="/docs/" aria-current="page">Docs</a>
+        <a class="github-link" data-wave-link href="https://github.com/dinghy-chat/dinghy"><svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
+      </nav>
+      <div class="header-end">
+        <a data-wave-link href="https://app.dinghy.chat">Log in</a>
+        <a class="btn btn-navy btn-small" href="https://app.dinghy.chat/signup">Get started</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="docs-band" data-hero data-pause-offscreen>
+      <div class="docs-grid docs-band-grid">
+        <div class="docs-band-text">
+          <h1>Runbooks</h1>
+          <p class="lede">What to do when the disk is full, Postgres or Valkey is down, mail fails, a release breaks or backups fail.</p>
+        </div>
+      </div>
+      <div class="water docs-water" data-scene="band" aria-hidden="true">
+        <canvas data-water-back></canvas>
+        <div class="water-boats" data-boats></div>
+        <canvas data-water-front></canvas>
+      </div>
+    </section>
+
+    <div class="docs-grid docs-body">
+      <details class="docs-menu">
+        <summary><span class="docs-menu-label">Docs</span><b>Runbooks</b><svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path class="duo" d="M208,96l-80,80L48,96Z"/><path d="M215.39,92.94A8,8,0,0,0,208,88H48a8,8,0,0,0-5.66,13.66l80,80a8,8,0,0,0,11.32,0l80-80A8,8,0,0,0,215.39,92.94ZM128,164.69,67.31,104H188.69Z"/></svg></summary>
+        <nav aria-label="Docs pages">
+        <ul>
+          <li><a href="/docs/">Overview</a></li>
+        </ul>
+        <p class="docs-group">Get started</p>
+        <ul>
+          <li><a href="/docs/self-hosting">Self-hosting</a></li>
+          <li><a href="/docs/add-to-your-site">Add the chat to your site</a></li>
+        </ul>
+        <p class="docs-group">Use it</p>
+        <ul>
+          <li><a href="/docs/operator-guide">Operator guide</a></li>
+        </ul>
+        <p class="docs-group">Help</p>
+        <ul>
+          <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+          <li><a href="/docs/runbooks" aria-current="page">Runbooks</a></li>
+          <li><a href="/docs/deploy-coolify-dokploy">Deploy on Coolify or Dokploy</a></li>
+        </ul>
+        <p class="docs-group">Develop</p>
+        <ul>
+          <li><a href="/docs/architecture">Architecture</a></li>
+          <li><a href="/docs/api">API</a></li>
+        </ul>
+        </nav>
+      </details>
+      <nav class="docs-side" aria-label="Docs">
+        <ul>
+          <li><a href="/docs/">Overview</a></li>
+        </ul>
+        <p class="docs-group">Get started</p>
+        <ul>
+          <li><a href="/docs/self-hosting">Self-hosting</a></li>
+          <li><a href="/docs/add-to-your-site">Add the chat to your site</a></li>
+        </ul>
+        <p class="docs-group">Use it</p>
+        <ul>
+          <li><a href="/docs/operator-guide">Operator guide</a></li>
+        </ul>
+        <p class="docs-group">Help</p>
+        <ul>
+          <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+          <li><a href="/docs/runbooks" aria-current="page">Runbooks</a></li>
+          <li><a href="/docs/deploy-coolify-dokploy">Deploy on Coolify or Dokploy</a></li>
+        </ul>
+        <p class="docs-group">Develop</p>
+        <ul>
+          <li><a href="/docs/architecture">Architecture</a></li>
+          <li><a href="/docs/api">API</a></li>
+        </ul>
+      </nav>
+      <article class="doc">
+<p>What to do when the server breaks. Each part has what you see, how to confirm it and the fix. Run the commands in the folder with <code>compose.yaml</code>, which is <code>/opt/dinghy</code> after the install script.</p>
+<h2 id="the-disk-is-full"><a class="heading-link" href="#the-disk-is-full">The disk is full</a></h2>
+<p><strong>What you see.</strong> Visitors&#39; messages fail, the app turns unhealthy, or the nightly backup logs <code class="code-long">Not enough free disk space for a backup</code>. Postgres stops accepting writes when the disk is full.</p>
+<p><strong>Confirm it.</strong></p>
+<div class="terminal doc-code">
+<div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-1"><span data-copy-label>Copy</span></button></div>
+<pre class="terminal-code" id="code-1"><code><span class="term-line">df -h /</span>
+<span class="term-line">docker system df</span>
+<span class="term-line">docker compose run --rm --entrypoint du migrate -sh /data/backups /data/images</span></code></pre>
+</div>
+<p><strong>Fix it.</strong></p>
+<ol>
+<li>Remove old Docker images, which each upgrade leaves behind: <code>docker image prune -a</code>. It keeps the images of running containers.</li>
+<li>If backups take the space, keep a copy elsewhere first, then remove the oldest ones. List them with <code class="code-long">docker compose run --rm --entrypoint ls migrate /data/backups</code>, and remove one with <code class="code-long">docker compose run --rm --entrypoint rm migrate /data/backups/&lt;file&gt;</code>.</li>
+<li>Logs rotate by themselves, at 30 MB per container. A container created before your <code>compose.yaml</code> had the <code>logging</code> setting keeps its old log until it is recreated: <code class="code-long">docker compose up -d --force-recreate</code>.</li>
+<li>When there is room again, check that Postgres and the app are healthy with <code>docker compose ps</code>, then take a backup: <code class="code-long">docker compose run --rm -T migrate chat backup</code>.</li>
+</ol>
+<p>For good, move images to S3 (see <a href="/docs/self-hosting#settings">Settings</a>), or give the server a bigger disk.</p>
+<h2 id="postgres-is-down"><a class="heading-link" href="#postgres-is-down">Postgres is down</a></h2>
+<p><strong>What you see.</strong> <code>/readyz</code> answers 503 with <code>&quot;postgres&quot;:&quot;failed&quot;</code>, and the app logs connection errors.</p>
+<p><strong>Confirm it.</strong></p>
+<div class="terminal doc-code">
+<div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-2"><span data-copy-label>Copy</span></button></div>
+<pre class="terminal-code" id="code-2"><code><span class="term-line">docker compose ps postgres</span>
+<span class="term-line">docker compose logs --tail 50 postgres</span></code></pre>
+</div>
+<p><strong>Fix it.</strong></p>
+<ul>
+<li>It stopped: <code>docker compose up -d --wait</code>.</li>
+<li>The log says the disk is full: see <a href="#the-disk-is-full">The disk is full</a>.</li>
+<li>The log names an older or newer data format: a release moved the Postgres major version. Run <code>scripts/upgrade-postgres.sh</code>, as <a href="/docs/self-hosting#upgrading-postgres">Upgrading Postgres</a> explains.</li>
+<li>The data is damaged: restore the newest backup, as <a href="/docs/self-hosting#restore">Restore</a> explains.</li>
+</ul>
+<h2 id="valkey-is-down"><a class="heading-link" href="#valkey-is-down">Valkey is down</a></h2>
+<p><strong>What you see.</strong> <code>/readyz</code> still answers 200, with <code>&quot;valkey&quot;:&quot;failed&quot;</code>. Messages still save, because Postgres holds them, but live updates wait until a client reconnects, and the sign-in limits are off.</p>
+<p><strong>Confirm it.</strong></p>
+<div class="terminal doc-code">
+<div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-3"><span data-copy-label>Copy</span></button></div>
+<pre class="terminal-code" id="code-3"><code><span class="term-line">docker compose ps valkey</span>
+<span class="term-line">docker compose logs --tail 50 valkey</span></code></pre>
+</div>
+<p><strong>Fix it.</strong> <code>docker compose up -d --wait</code>. Valkey holds no data worth keeping, so a restart loses nothing, and clients catch up from their last cursor.</p>
+<h2 id="mail-is-not-sent"><a class="heading-link" href="#mail-is-not-sent">Mail is not sent</a></h2>
+<p><strong>What you see.</strong> Password reset links, email alerts or replies to visitors who left do not arrive.</p>
+<p><strong>Confirm it.</strong></p>
+<div class="terminal doc-code">
+<div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-4"><span data-copy-label>Copy</span></button></div>
+<pre class="terminal-code" id="code-4"><code><span class="term-line">grep -q '^SMTP_URL=.' .env &amp;&amp; echo &quot;SMTP_URL is set&quot; || echo &quot;SMTP_URL is empty&quot;</span>
+<span class="term-line">docker compose logs --since 1h app | grep -i -E 'email|alert failed|smtp'</span></code></pre>
+</div>
+<p>The first command prints no value, because <code>SMTP_URL</code> holds a password.</p>
+<p><strong>Fix it.</strong></p>
+<ul>
+<li><code>SMTP_URL</code> is empty: set it and <code>MAIL_FROM</code> in <code>.env</code>, then run <code>docker compose up -d --wait</code>.</li>
+<li>A refused login or a timeout: check <code>SMTP_URL</code>, including the port (587 or 465), and that the server&#39;s provider does not block outgoing mail. Many block port 25.</li>
+<li>Mail is sent but lands in spam: the sender domain needs SPF and DKIM records for your mail server.</li>
+</ul>
+<p>An alert email that failed is sent again later, so a fixed mail server delivers the backlog. An alert can arrive twice.</p>
+<h2 id="a-release-does-not-work"><a class="heading-link" href="#a-release-does-not-work">A release does not work</a></h2>
+<p><strong>What you see.</strong> The app does not start after an upgrade, or something that worked before is broken.</p>
+<p><strong>Confirm it.</strong></p>
+<div class="terminal doc-code">
+<div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-5"><span data-copy-label>Copy</span></button></div>
+<pre class="terminal-code" id="code-5"><code><span class="term-line">docker compose ps</span>
+<span class="term-line">docker compose logs --tail 100 migrate app</span></code></pre>
+</div>
+<p><strong>Fix it.</strong> Go back to the release you had, as <a href="/docs/self-hosting#going-back">Going back</a> explains. Without a migration, nothing is lost. With one, you restore the backup that <code>chat migrate</code> took, and lose what was written since. Then email <code>hello@dinghy.chat</code> with the logs, after checking they hold no password.</p>
+<h2 id="backups-fail"><a class="heading-link" href="#backups-fail">Backups fail</a></h2>
+<p><strong>What you see.</strong> <code>journalctl -t dinghy-backup</code> shows <code>FAILED</code>, or your heartbeat monitor says a night had no backup.</p>
+<p><strong>Confirm it.</strong> Run one by hand and read the error: <code class="code-long">docker compose run --rm -T migrate chat backup</code>.</p>
+<p><strong>Fix it.</strong> A full disk is the usual cause: see <a href="#the-disk-is-full">The disk is full</a>. For an upload error, check the <code>BACKUP_S3_*</code> settings and that the key may write to the bucket.</p>
+      </article>
+      <aside class="docs-toc" aria-label="On this page">
+        <p class="docs-group">On this page</p>
+        <ol>
+          <li><a href="#the-disk-is-full">The disk is full</a></li>
+          <li><a href="#postgres-is-down">Postgres is down</a></li>
+          <li><a href="#valkey-is-down">Valkey is down</a></li>
+          <li><a href="#mail-is-not-sent">Mail is not sent</a></li>
+          <li><a href="#a-release-does-not-work">A release does not work</a></li>
+          <li><a href="#backups-fail">Backups fail</a></li>
+        </ol>
+      </aside>
+    </div>
+    <p class="visually-hidden" role="status" data-copy-status></p>
+  </main>
+
+  <footer>
+    <div class="sand">
+      <div class="wrap sand-row">
+        <span>&copy; 2026 Dinghy, a project by <a href="https://oncebyte.com/" target="_blank" rel="noopener">OnceByte, LLC</a></span>
+        <a class="sand-mail" href="mailto:hello@dinghy.chat">hello@dinghy.chat</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

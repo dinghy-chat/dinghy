@@ -1,0 +1,1 @@
+CREATE INDEX "alert_delivery_message_idx" ON "alert_delivery" USING btree ("workspace_id","message_id");

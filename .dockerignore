@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.git
+.git
+.github
+docs
+site
+tests
+test-results
+apps/server/load
+apps/server/test
+ee/server/test
+ee/e2e
+**/*.test.ts
+*.md
+!LICENSE-NOTICE.md
