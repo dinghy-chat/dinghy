@@ -2,7 +2,7 @@
 
 Thank you for helping. This page covers the setup, the checks, how the code is laid out, and the contributor license agreement you sign once.
 
-Before a large change, open an issue to talk about it. [`NON_GOALS.md`](NON_GOALS.md) lists what Dinghy does not plan to do. A security problem goes to `hello@dinghy.chat`, as [`SECURITY.md`](SECURITY.md) says, not to an issue.
+Before a large change, open an issue to talk about it. A security problem goes to `hello@dinghy.chat`, as [`SECURITY.md`](SECURITY.md) says, not to an issue.
 
 ## Setup
 

@@ -16,7 +16,7 @@ sudo ./install.sh
 
 The installer asks a few questions, installs Docker if it is missing, gets an HTTPS certificate and prints your password and the tag for your site. [The docs](docs/README.md) have the next steps.
 
-It has text and images in both directions, verified users, several operators, web push and email alerts, and export and import. [`NON_GOALS.md`](NON_GOALS.md) lists what it does not do.
+It has text and images in both directions, verified users, several operators, web push and email alerts, and export and import.
 
 One Hetzner CX23 ran the full install with 5,000 open streams in under 600 MB. [The measurements](docs/measurements.md) have the numbers and their limits.
 
