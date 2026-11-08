@@ -88,7 +88,9 @@ test("an owner invites an agent, assigns a chat to them, then removes them @smok
   // The same link does not work twice.
   const stranger = await (await browser.newContext()).newPage();
   await stranger.goto(url);
-  await expect(stranger.getByRole("heading", { name: "This invite no longer works" })).toBeVisible();
+  await expect(
+    stranger.getByRole("heading", { name: "This invite no longer works" }),
+  ).toBeVisible();
   await expect(stranger.getByText("expired or was already used")).toBeVisible();
 
   await server.seedConversations(1, "assign me");
