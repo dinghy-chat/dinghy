@@ -14,7 +14,9 @@ If a message shows "Not sent", select it to try again. A retry cannot create a s
 
 If two of you open the same conversation, each sees "… is replying", so you do not answer twice.
 
-Under the visitor's name, the header shows their user ID and the page where they started. On the right are the controls:
+To find a conversation, type at least two letters in the search box above the list. It searches open and closed conversations by the visitor's name, email or user ID, and by what anyone wrote, and shows the matching message under each one. Press Escape or empty the box to go back to the list.
+
+Under the visitor's name, the header shows their email or user ID and the page where they started. The next line shows **Online now** while the visitor has the chat open, or when they were last seen, then their browser and system, such as "Chrome on macOS", and the last page they were on, which opens in a new tab. If Dinghy cannot tell whether they are online, it says nothing about it. On the right are the controls:
 
 | Control | What it does |
 |---|---|
@@ -23,7 +25,7 @@ Under the visitor's name, the header shows their user ID and the page where they
 | **…** then **Block** | Stops this visitor from sending messages. **Unblock** in the same place undoes it, and so does **Settings > Data > Blocked visitors** |
 | **…** then **Delete** | Deletes the conversation and its images for good, after you confirm. Owners and admins only |
 
-For a signed-in user, the conversation shows the email and user ID that [your site sent](add-to-your-site.md#show-who-is-chatting).
+For a signed-in user, the conversation shows the name, email, user ID and custom attributes that [your site sent](add-to-your-site.md#show-who-is-chatting). An attribute that is a web address is a link.
 
 ## Get alerts
 
@@ -31,6 +33,7 @@ Select **Alerts** in the sidebar. Each device has its own setting.
 
 - **Notifications on this device** sends a push notification when a visitor writes. Select **Turn on**, then **Send a test** to see if it works. A private window usually cannot turn this on.
 - **Email me about new messages** needs a mail server on your Dinghy install. A burst of messages in one conversation sends one email.
+- **Play a sound for new messages** plays a short chime when a visitor writes in a conversation you don't have open, or while the app's window is in the background. It is on unless you turn it off. The browser plays it only after your first click or key press in the app. A tab you are not on holds no live connection, so it stays silent: turn on notifications for that.
 
 On an iPhone, a web app can show notifications only from the Home Screen:
 
@@ -66,7 +69,7 @@ Someone in two workspaces switches between them with the workspace name at the t
 
 ## The other settings
 
-- **Install** has the tag for your site, with a **Copy** button.
+- **Install** has the chat's title, its greeting in an empty chat and its text for when nobody is online, then the tag for your site, with a **Copy** button. An empty box keeps Dinghy's own words.
 - **Allowed sites** lists the sites that can load the chat, one per row. **Add a site** adds a row, and each row says if its address is not a site such as `https://example.com`.
 - **Signing secret** is for [signed-in users](add-to-your-site.md#show-who-is-chatting). It stays hidden until you select the eye. **Replace the secret** asks first, because the old one stops working at once.
 - **Data** has **Download an export**, which saves all conversations and images as one file that imports into a self-hosted Dinghy, and **Delete workspace**.

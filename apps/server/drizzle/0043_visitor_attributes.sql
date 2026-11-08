@@ -1,0 +1,1 @@
+ALTER TABLE "visitor" RENAME COLUMN "claims" TO "attributes";

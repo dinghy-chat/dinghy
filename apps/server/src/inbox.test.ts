@@ -185,7 +185,11 @@ describe("conversations", () => {
   });
 
   test("a signed-in visitor's context reaches the operator", async () => {
-    const token = await new SignJWT({ email: "pat@example.com", claims: { plan: "pro" } })
+    const token = await new SignJWT({
+      email: "pat@example.com",
+      name: "Pat Doe",
+      attributes: { plan: "pro" },
+    })
       .setProtectedHeader({ alg: "HS256" })
       .setAudience(a.publicKey)
       .setSubject("user-42")
@@ -207,7 +211,8 @@ describe("conversations", () => {
     expect(body.conversation.visitor).toMatchObject({
       email: "pat@example.com",
       externalId: "user-42",
-      claims: { plan: "pro" },
+      name: "Pat Doe",
+      attributes: { plan: "pro" },
     });
   });
 
@@ -573,8 +578,8 @@ describe("the stream", () => {
 });
 
 describe("user context from older tokens", () => {
-  const sign = (claims: Record<string, unknown>, issuedAt: number) =>
-    new SignJWT({ claims })
+  const sign = (attributes: Record<string, unknown>, issuedAt: number) =>
+    new SignJWT({ attributes })
       .setProtectedHeader({ alg: "HS256" })
       .setAudience(a.publicKey)
       .setSubject("two-tokens")
@@ -604,15 +609,15 @@ describe("user context from older tokens", () => {
       });
     await me(await sign({ plan: "pro" }, now));
     await me(await sign({ plan: "free" }, now - 60));
-    const { rows } = await owner.execute<{ claims: unknown }>(
-      sql`select claims from visitor where external_id = 'two-tokens'`,
+    const { rows } = await owner.execute<{ attributes: unknown }>(
+      sql`select attributes from visitor where external_id = 'two-tokens'`,
     );
-    expect(rows[0]?.claims).toEqual({ plan: "pro" });
+    expect(rows[0]?.attributes).toEqual({ plan: "pro" });
     await me(await sign({ plan: "team" }, now + 1));
-    const after = await owner.execute<{ claims: unknown }>(
-      sql`select claims from visitor where external_id = 'two-tokens'`,
+    const after = await owner.execute<{ attributes: unknown }>(
+      sql`select attributes from visitor where external_id = 'two-tokens'`,
     );
-    expect(after.rows[0]?.claims).toEqual({ plan: "team" });
+    expect(after.rows[0]?.attributes).toEqual({ plan: "team" });
   });
 });
 

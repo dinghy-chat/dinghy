@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import {
   attachment,
   conversation,
@@ -241,7 +241,11 @@ export async function appendMessage(
     workspaceId,
     seq,
     kind: "message.created",
-    payload: { messageId: row.id, conversationId } satisfies MessageCreatedPayload,
+    payload: {
+      messageId: row.id,
+      conversationId,
+      fromVisitor: author.kind === "visitor",
+    } satisfies MessageCreatedPayload,
     needsAlert: true,
   });
   await tx
@@ -393,7 +397,11 @@ export interface ConversationRow {
   visitorBlockedAt: Date | null;
   visitorEmail: string | null;
   visitorExternalId: string | null;
-  visitorClaims: unknown;
+  visitorName: string | null;
+  visitorAttributes: unknown;
+  visitorDevice: string | null;
+  visitorLastPage: string | null;
+  visitorLastSeenAt: Date | null;
 }
 
 const conversationColumns = {
@@ -406,7 +414,11 @@ const conversationColumns = {
   visitorBlockedAt: visitor.blockedAt,
   visitorEmail: visitor.email,
   visitorExternalId: visitor.externalId,
-  visitorClaims: visitor.claims,
+  visitorName: visitor.name,
+  visitorAttributes: visitor.attributes,
+  visitorDevice: visitor.device,
+  visitorLastPage: visitor.lastPage,
+  visitorLastSeenAt: visitor.lastSeenAt,
 };
 
 /** Joins a conversation to its visitor, inside the same workspace. */
@@ -629,6 +641,8 @@ interface FeedEvent {
   kind: EventKind;
   // Null for a team or billing change.
   conversationId: string | null;
+  /** On a new message: whether the visitor wrote it. */
+  fromVisitor: boolean;
 }
 
 /**
@@ -676,9 +690,106 @@ export async function listWorkspaceEvents(
       seq: row.seq,
       kind: row.kind,
       conversationId: (row.payload as { conversationId?: string }).conversationId ?? null,
+      fromVisitor: (row.payload as { fromVisitor?: boolean }).fromVisitor === true,
     })),
     cursor: { generation: current.generation, seq: page.at(-1)?.seq ?? after.seq },
     hasMore: rows.length > limit,
     resync: false,
   };
+}
+
+/** `%` and `_` match anything in a LIKE pattern, so a search for them must escape them. */
+const containing = (text: string) => `%${text.replace(/[\\%_]/g, "\\$&")}%`;
+
+/**
+ * Conversations, open and closed, whose visitor's name, email or user ID, or one of whose messages,
+ * holds the text, newest activity first. A match in a message becomes the preview.
+ */
+export async function searchConversations(
+  tx: Transaction,
+  workspaceId: string,
+  text: string,
+  limit: number,
+): Promise<ConversationSummary[]> {
+  const pattern = containing(text);
+  // The newest matching message of each conversation. No index helps a substring, so this reads
+  // the workspace's messages: fine at a small team's size, and it runs only while someone searches.
+  const hit = tx
+    .select({
+      body: message.body,
+      authorVisitorId: message.authorVisitorId,
+      createdAt: message.createdAt,
+    })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversation.id),
+        ilike(message.body, pattern),
+      ),
+    )
+    .orderBy(desc(message.seq))
+    .limit(1)
+    .as("hit");
+  const newest = tx
+    .select({
+      body: message.body,
+      authorVisitorId: message.authorVisitorId,
+      createdAt: message.createdAt,
+    })
+    .from(message)
+    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversation.id)))
+    .orderBy(desc(message.seq))
+    .limit(1)
+    .as("newest");
+  const rows = await tx
+    .select({
+      ...conversationColumns,
+      hitBody: hit.body,
+      hitAuthorVisitorId: hit.authorVisitorId,
+      hitCreatedAt: hit.createdAt,
+      lastBody: newest.body,
+      lastAuthorVisitorId: newest.authorVisitorId,
+      lastCreatedAt: newest.createdAt,
+    })
+    .from(conversation)
+    .innerJoin(visitor, joinVisitor())
+    .leftJoinLateral(hit, sql`true`)
+    .leftJoinLateral(newest, sql`true`)
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        or(
+          ilike(visitor.name, pattern),
+          ilike(visitor.email, pattern),
+          ilike(visitor.externalId, pattern),
+          isNotNull(hit.createdAt),
+        ),
+      ),
+    )
+    .orderBy(desc(conversation.updatedAt), desc(conversation.id))
+    .limit(limit);
+  return rows.map(
+    ({
+      hitBody,
+      hitAuthorVisitorId,
+      hitCreatedAt,
+      lastBody,
+      lastAuthorVisitorId,
+      lastCreatedAt,
+      ...row
+    }) => ({
+      ...row,
+      lastMessage:
+        hitCreatedAt !== null
+          ? { body: hitBody, fromVisitor: hitAuthorVisitorId !== null, createdAt: hitCreatedAt }
+          : lastCreatedAt === null
+            ? null
+            : {
+                body: lastBody,
+                fromVisitor: lastAuthorVisitorId !== null,
+                createdAt: lastCreatedAt,
+              },
+    }),
+  );
 }

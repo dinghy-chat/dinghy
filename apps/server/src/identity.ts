@@ -6,7 +6,13 @@ const BROWSER_TOKEN_PREFIX = "dbt_";
 // A token in a browser should be short-lived, and the widget can ask for a new one.
 const MAX_TOKEN_LIFETIME_SECONDS = 24 * 60 * 60;
 const CLOCK_TOLERANCE_SECONDS = 60;
-const MAX_CLAIMS_BYTES = 2048;
+const MAX_ATTRIBUTES_BYTES = 2048;
+const MAX_NAME_LENGTH = 100;
+
+const attributes = z
+  .record(z.string(), z.unknown())
+  .refine((value) => Buffer.byteLength(JSON.stringify(value)) <= MAX_ATTRIBUTES_BYTES)
+  .optional();
 
 const hostTokenPayload = z.object({
   sub: z.string().min(1).max(255),
@@ -15,16 +21,25 @@ const hostTokenPayload = z.object({
   // A bad email is dropped, not refused, because it must not decide whether a user can chat. It must
   // be one address: a mail server sends to every address in a list such as "a@x.com, b@y.com".
   email: z.email().max(320).optional().catch(undefined),
-  claims: z
-    .record(z.string(), z.unknown())
-    .refine((claims) => Buffer.byteLength(JSON.stringify(claims)) <= MAX_CLAIMS_BYTES)
-    .optional(),
+  // Dropped the same way: one line of text, so a name cannot add lines of its own.
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_NAME_LENGTH)
+    .regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u)
+    .optional()
+    .catch(undefined),
+  attributes,
+  // The name in 0.5.0. `attributes` wins when a token has both.
+  claims: attributes,
 });
 
 export interface HostIdentity {
   externalId: string;
   email: string | undefined;
-  claims: Record<string, unknown> | undefined;
+  name: string | undefined;
+  attributes: Record<string, unknown> | undefined;
   expiresAt: Date;
   issuedAt: number;
 }
@@ -53,7 +68,8 @@ export async function verifyHostToken(
     return {
       externalId: parsed.data.sub,
       email: parsed.data.email,
-      claims: parsed.data.claims,
+      name: parsed.data.name,
+      attributes: parsed.data.attributes ?? parsed.data.claims,
       expiresAt: new Date(exp * 1000),
       issuedAt: iat,
     };

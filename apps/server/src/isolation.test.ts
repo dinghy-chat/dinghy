@@ -215,7 +215,22 @@ const ATTACKS: Record<string, Attack> = {
   "GET /v1/widget/:key/presence": async ({ widget, a, b }) => {
     expect((await widget(a.publicKey, "GET", "presence", null, SITE_B)).status).toBe(403);
     const own = await widget(b.publicKey, "GET", "presence", null, SITE_B);
-    expect(Object.keys((await own.json()) as object)).toEqual(["online", "emailReplies"]);
+    expect(Object.keys((await own.json()) as object)).toEqual(["online", "emailReplies", "texts"]);
+  },
+  "POST /v1/widget/:key/page": async ({ widget, a, b, one, two }) => {
+    const pageOf = async (id: string) =>
+      (await owner.select().from(visitor).where(eq(visitor.id, id)))[0]?.lastPage;
+    const before = await pageOf(two.id);
+    const page = `${SITE_A}/isolation-${randomUUID()}`;
+    expect((await widget(a.publicKey, "POST", "page", one.token, SITE_A, { page })).status).toBe(
+      200,
+    );
+    expect(await pageOf(one.id)).toBe(page);
+    expect(await pageOf(two.id)).toBe(before);
+    expect(
+      (await widget(b.publicKey, "POST", "page", one.token, SITE_B, { page: `${SITE_B}/x` }))
+        .status,
+    ).toBe(401);
   },
 
   // ---- An image and a stop link, whose signatures name one workspace.
@@ -274,6 +289,23 @@ const ATTACKS: Record<string, Attack> = {
     expect((await as(anna, "GET", inWorkspace(b.id))).status).toBe(404);
     const own = (await (await as(anna, "GET", inWorkspace(a.id))).json()) as { id: string };
     expect(own.id).toBe(a.id);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/conversations/search": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    one,
+    other,
+    secrets,
+  }) => {
+    const search = (id: string, q: string) =>
+      as(anna, "GET", inWorkspace(id, `/conversations/search?q=${encodeURIComponent(q)}`));
+    expect((await search(b.id, "written")).status).toBe(404);
+    const text = await (await search(a.id, "written")).text();
+    expect(text).toContain(one.conversationId);
+    expect(text).not.toContain(other.conversationId);
+    expect(text).not.toContain(secrets.b);
   },
   "GET /v1/operator/workspaces/:workspaceId/conversations": async ({
     operator: as,

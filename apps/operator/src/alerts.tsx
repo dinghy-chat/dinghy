@@ -7,6 +7,7 @@ import {
   testPush,
   type WorkspaceApi,
 } from "./api.ts";
+import { setSoundOn, soundOn } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
 import { ErrorNote, failureText, Loading, Page, PageRow, StatusNote } from "./ui.tsx";
 
@@ -45,6 +46,7 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
   const [device, setDevice] = useState<PushSubscription | null>(null);
   const [note, setNote] = useState<TextId | null>(null);
   const [failure, setFailure] = useState<TextId | null>(null);
+  const [sound, setSound] = useState(soundOn);
 
   useEffect(() => {
     // An answer for a workspace this page no longer shows must not land here.
@@ -156,6 +158,19 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
               <p className="note">{t("emailUnavailable")}</p>
             )}
             <ErrorNote text={failure} />
+          </PageRow>
+          <PageRow title={t("soundTitle")} help={t("soundHelp")}>
+            <label className="check">
+              {t("soundToggle")}
+              <input
+                type="checkbox"
+                checked={sound}
+                onChange={(event) => {
+                  setSoundOn(event.target.checked);
+                  setSound(event.target.checked);
+                }}
+              />
+            </label>
           </PageRow>
         </>
       )}

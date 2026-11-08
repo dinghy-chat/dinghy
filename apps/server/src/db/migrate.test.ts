@@ -141,6 +141,23 @@ describe("chat migrate", () => {
     expect(await query("select token from session")).toEqual([{ token: "kept-session" }]);
   });
 
+  test("a visitor's claims from 0.5.0 become its attributes", async () => {
+    await run(await migrationsBefore("0043_"));
+    const workspace = "00000000-0000-4000-8000-0000000000cc";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000000', 'secret')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, external_id, claims)
+       values ('${workspace}', 'user-1', '{"plan":"pro"}')`,
+    );
+    await run();
+    expect(await query("select attributes, name, device from visitor")).toEqual([
+      { attributes: { plan: "pro" }, name: null, device: null },
+    ]);
+  });
+
   test("a run with no pending migration takes no backup and changes nothing", async () => {
     await run();
     const before = await appliedCount();

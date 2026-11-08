@@ -12,13 +12,14 @@ export function visitorLabel(visitorId: string): string {
   return t("visitorLabel").replace("{code}", code);
 }
 
-/** The email or user ID the host site gave, or the short code for a signed-out visitor. */
+/** The name, email or user ID the host site gave, or the short code for a signed-out visitor. */
 export function visitorName(visitor: {
   id: string;
   email: string | null;
   externalId: string | null;
+  name?: string | null;
 }): string {
-  return visitor.email ?? visitor.externalId ?? visitorLabel(visitor.id);
+  return visitor.name ?? visitor.email ?? visitor.externalId ?? visitorLabel(visitor.id);
 }
 
 export function title(conversation: Conversation): string {
@@ -28,4 +29,13 @@ export function title(conversation: Conversation): string {
 /** True when the newest message is the visitor's, in an open conversation. */
 export function isWaiting(conversation: Conversation): boolean {
   return conversation.status === "open" && conversation.lastMessage?.fromVisitor === true;
+}
+
+/** A web address that is safe to open: only http and https, which a link may point to. */
+export function webLink(value: unknown): string | null {
+  if (typeof value !== "string" || !/^https?:\/\//i.test(value) || !URL.canParse(value)) {
+    return null;
+  }
+  const { protocol, href } = new URL(value);
+  return protocol === "https:" || protocol === "http:" ? href : null;
 }

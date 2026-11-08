@@ -22,6 +22,7 @@ import {
   event,
   message,
   operator,
+  visitor,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
@@ -531,6 +532,21 @@ describe("a bad file changes nothing", () => {
     expect(await target.owner.select().from(operator)).toHaveLength(before);
     expect(await files(target.directory)).toEqual([]);
   }
+
+  test("an export from 0.5.0, whose visitors have claims, imports them as attributes", async () => {
+    const old = await edited((data) => {
+      for (const row of data.visitors as Record<string, unknown>[]) {
+        row.claims = { plan: "pro" };
+        delete row.attributes;
+        delete row.name;
+      }
+    });
+    const target = await freshInstall();
+    await importArchive(target.db, target.store, once(old));
+    const rows = await target.owner.select().from(visitor);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.attributes).toEqual({ plan: "pro" });
+  }, 30_000);
 
   test("a file cut off anywhere", async () => {
     await refuses(archive.subarray(0, archive.length - 1024), "cut off");

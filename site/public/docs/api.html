@@ -122,6 +122,7 @@
 <h2 id="two-apis-and-two-ways-to-sign-in"><a class="heading-link" href="#two-apis-and-two-ways-to-sign-in">Two APIs and two ways to sign in</a></h2>
 <ul>
 <li><strong>The widget API</strong>, at <code>/v1/widget/{key}</code>, where <code>key</code> is the workspace&#39;s public key. It answers only pages whose <code>Origin</code> is on the workspace&#39;s allowed sites. <code>POST /v1/widget/{key}/visitors</code> creates a visitor and returns its browser token once. Other calls send it as <code>Authorization: Bearer &lt;token&gt;</code>. For a signed-in user, the bearer token is a host token that your site&#39;s server signs instead, as <a href="/docs/add-to-your-site#show-who-is-chatting">Add the chat to your website</a> explains.</li>
+<li><strong>A reply email&#39;s chat page</strong>, at <code>/chat/{token}</code> on the Dinghy server itself. Its page uses the widget API with the link&#39;s token, which starts with <code>dcl_</code>, as <code>Authorization: Bearer dcl_...</code>. The widget API takes that token only from the Dinghy server&#39;s own origin, or with no <code>Origin</code> header, and takes no other token from there. It works for 30 days.</li>
 <li><strong>The operator API</strong>, at <code>/v1/operator</code>. It uses the session cookie that sign-in sets. Sign-in and sign-out live at <code>/v1/auth</code>: <code>POST /v1/auth/sign-in/magic-link</code> with <code>{ &quot;email&quot; }</code> emails a link, <code>POST /v1/auth/magic-link/verify</code> with <code>{ &quot;token&quot; }</code> uses one, which the button on the page the link opens does, and <code>POST /v1/auth/sign-out</code> ends the session. They pass through to the BetterAuth library, so their shape follows it and is not part of the versioned API. A request that changes something must also send the server&#39;s own <code>Origin</code>, so the operator API works only from the operator app&#39;s pages.</li>
 </ul>
 <h2 id="errors"><a class="heading-link" href="#errors">Errors</a></h2>
@@ -147,10 +148,15 @@
 | 503 | <code>busy</code> | The server is overloaded for a moment. Try again |</p>
 <h2 id="sending-without-duplicates"><a class="heading-link" href="#sending-without-duplicates">Sending without duplicates</a></h2>
 <p>A message or an image carries a <code>clientId</code> that the client makes, such as <code>m_4f9a2c</code>. A retry with the same <code>clientId</code> returns the first message and creates nothing, so a client can retry a send after any network error.</p>
+<h2 id="visitors"><a class="heading-link" href="#visitors">Visitors</a></h2>
+<p>The operator API&#39;s <code>Conversation</code> describes the visitor: <code>name</code>, <code>email</code>, <code>externalId</code>, <code>attributes</code> (the custom attributes your site signed, called <code>claims</code> in 0.5.0), <code>blocked</code>, <code>device</code> (such as <code>&quot;Chrome on macOS&quot;</code>), <code>lastPage</code> and <code>lastSeenAt</code>. A conversation&#39;s messages also answer <code>visitorOnline</code>: true while the visitor has a widget stream open, and null when the server cannot tell.</p>
+<p><code>POST /v1/widget/{key}/page</code> with <code>{ &quot;page&quot; }</code> reports the page the visitor is on. The widget sends it when it loads and when the address changes. The server keeps only the origin and path.</p>
+<p><code class="code-long">GET /v1/operator/workspaces/{workspaceId}/conversations/search?q=</code> searches open and closed conversations by the visitor&#39;s name, email or user ID and by message text, ignoring case. <code>q</code> has 2 to 100 characters, and the answer has at most 50 conversations, newest activity first. A conversation found by a message has that message as <code>lastMessage</code>.</p>
+<p><code>GET /v1/widget/{key}/presence</code> also answers <code>texts</code>: the workspace&#39;s own <code>title</code>, <code>greeting</code> and <code>away</code> text for the widget, each null for the default. Owners and admins set them with <code class="code-long">PATCH /v1/operator/workspaces/{workspaceId}/settings</code> and <code class="code-long">{ &quot;widgetTexts&quot;: { &quot;title&quot;, &quot;greeting&quot;, &quot;away&quot; } }</code>, at most 40, 200 and 200 characters, where an empty text means the default.</p>
 <h2 id="live-updates"><a class="heading-link" href="#live-updates">Live updates</a></h2>
 <p>A client receives with server-sent events. <code>GET /v1/widget/{key}/stream</code> and <code class="code-long">GET /v1/operator/workspaces/{workspaceId}/stream</code> send:</p>
 <ul>
-<li><code>message</code> (widget) or <code>change</code> (operator) events, whose <code>id</code> is the new cursor,</li>
+<li><code>message</code> (widget) or <code>change</code> (operator) events, whose <code>id</code> is the new cursor. A <code>change</code> for a new message has <code>fromVisitor</code>, true when the visitor wrote it,</li>
 <li><code>ready</code> once the stream has caught up,</li>
 <li><code>resync</code> when the client must load everything again, such as after a restore,</li>
 <li><code>close</code>, with a reason, before the server ends the stream.</li>
@@ -164,6 +170,7 @@
           <li><a href="#two-apis-and-two-ways-to-sign-in">Two APIs and two ways to sign in</a></li>
           <li><a href="#errors">Errors</a></li>
           <li><a href="#sending-without-duplicates">Sending without duplicates</a></li>
+          <li><a href="#visitors">Visitors</a></li>
           <li><a href="#live-updates">Live updates</a></li>
         </ol>
       </aside>

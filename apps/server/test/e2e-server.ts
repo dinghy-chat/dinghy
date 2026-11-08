@@ -15,6 +15,7 @@ import { buildWidget } from "../../../packages/widget/build.ts";
 import { buildOperator } from "../../operator/build.ts";
 import { createApp } from "../src/app.ts";
 import { createAuth, signInLink } from "../src/auth.ts";
+import { chatLinkUrl, createChatLink } from "../src/chat-link.ts";
 import { ensureRoles } from "../src/db/roles.ts";
 import {
   conversation,
@@ -129,6 +130,7 @@ export async function startE2EServer(
       now: () => Date.now() + imageClockMs,
     }),
     operatorDirectory: operatorBundle,
+    publicUrl: apiOrigin,
   });
 
   let workspace = { id: "", publicKey: "", signingSecret: "" };
@@ -298,6 +300,27 @@ export async function startE2EServer(
       const sent = await sendOperatorMessage(db, workspace.id, OPERATOR, latest.id, body);
       live.wake(workspace.id, latest.visitorId);
       return sent.seq;
+    },
+    /** A reply email's link to the latest conversation, as the worker makes one. */
+    async chatLink() {
+      const rows = await withWorkspace(db, workspace.id, (tx) => tx.select().from(conversation));
+      const latest = rows.sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime()).at(-1);
+      if (latest === undefined) throw new Error("No conversation to link to");
+      const token = await withWorkspace(owner, workspace.id, (tx) =>
+        createChatLink(tx, workspace.id, latest.visitorId, latest.id),
+      );
+      return chatLinkUrl(apiOrigin, token);
+    },
+    /** Sets the widget's own texts, as an owner does in Settings. */
+    async setWidgetTexts(texts: {
+      title: string | null;
+      greeting: string | null;
+      away: string | null;
+    }) {
+      await owner
+        .update(workspaceTable)
+        .set({ widgetTitle: texts.title, widgetGreeting: texts.greeting, widgetAway: texts.away })
+        .where(eq(workspaceTable.id, workspace.id));
     },
     async closeConversations() {
       await withWorkspace(db, workspace.id, (tx) =>

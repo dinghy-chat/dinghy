@@ -20,7 +20,7 @@ import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
-import { title } from "./visitor.ts";
+import { title, webLink } from "./visitor.ts";
 
 interface Line {
   id: string;
@@ -66,8 +66,9 @@ const bare = (page: string) => page.replace(/^https?:\/\//, "");
 
 /** Who the visitor is and where they came from: the quiet line under their name. */
 function origin(conversation: Conversation): string | null {
-  // The title shows the email, or else the user ID, so the line adds the user ID only after an email.
-  const who = conversation.visitor.email === null ? null : conversation.visitor.externalId;
+  // The title shows the name, or else the email, or else the user ID. The line adds what is left.
+  const { name, email, externalId } = conversation.visitor;
+  const who = name !== null ? (email ?? externalId) : email === null ? null : externalId;
   const page =
     conversation.startedPage === null
       ? null
@@ -76,9 +77,59 @@ function origin(conversation: Conversation): string | null {
   return parts.length === 0 ? null : parts.join(" · ");
 }
 
+const MINUTE_MS = 60_000;
+const ONLINE_EVERY_MS = 30_000;
+
+/** "5 minutes ago", "yesterday", in the browser's words. */
+function ago(iso: string, now = Date.now()): string {
+  const words = new Intl.RelativeTimeFormat([], { numeric: "auto" });
+  const minutes = Math.round((new Date(iso).getTime() - now) / MINUTE_MS);
+  if (minutes > -60) return words.format(Math.min(minutes, 0), "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours > -24) return words.format(hours, "hour");
+  return words.format(Math.round(hours / 24), "day");
+}
+
+/**
+ * The visit, under who the visitor is: online now or when last seen, the device, and the page the
+ * widget last reported, as a link. Unknown parts are left out, never guessed.
+ */
+function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: boolean | null }) {
+  const seen =
+    online === true ? null : visitor.lastSeenAt === null ? null : ago(visitor.lastSeenAt);
+  const page = visitor.lastPage === null ? null : webLink(visitor.lastPage);
+  if (online !== true && seen === null && visitor.device === null && page === null) return null;
+  const parts = [
+    online === true ? (
+      <span key="online" className="online">
+        {t("onlineNow")}
+      </span>
+    ) : seen === null ? null : (
+      <span key="seen">{t("lastSeen").replace("{time}", seen)}</span>
+    ),
+    visitor.device === null ? null : <span key="device">{visitor.device}</span>,
+    page === null ? null : (
+      <a key="page" href={page} target="_blank" rel="noopener noreferrer" title={page}>
+        {bare(page)}
+      </a>
+    ),
+  ].filter((part) => part !== null);
+  return (
+    <p className="visit">
+      {parts.map((part, index) => (
+        <Fragment key={part.key}>
+          {index > 0 && " · "}
+          {part}
+        </Fragment>
+      ))}
+    </p>
+  );
+}
+
 /** What the operator can do with this conversation. */
 function ThreadHead({
   conversation,
+  online,
   members,
   canDelete,
   onBack,
@@ -88,6 +139,8 @@ function ThreadHead({
   onDelete,
 }: {
   conversation: Conversation;
+  /** A widget stream of the visitor's is open, or null when unknown. */
+  online: boolean | null;
   members: Member[];
   canDelete: boolean;
   onBack(): void;
@@ -127,6 +180,7 @@ function ThreadHead({
         <div className="who-text">
           <h2>{title(conversation)}</h2>
           {from !== null && <p title={from}>{from}</p>}
+          <Visit visitor={conversation.visitor} online={online} />
         </div>
       </div>
       <div className="actions">
@@ -161,20 +215,31 @@ function ThreadHead({
   );
 }
 
-/** What the host page told the server about this visitor, beyond the header: its claims. */
+/**
+ * What the host page told the server about this visitor, beyond the header: its custom attributes.
+ * A web address opens in a new tab, and every other value stays text.
+ */
 function VisitorContext({ conversation }: { conversation: Conversation }) {
   const { visitor } = conversation;
-  const rows: [string, string][] = [];
-  for (const [name, value] of Object.entries(visitor.claims ?? {})) {
-    rows.push([name, typeof value === "string" ? value : JSON.stringify(value)]);
+  const rows: [string, string, string | null][] = [];
+  for (const [name, value] of Object.entries(visitor.attributes ?? {})) {
+    rows.push([name, typeof value === "string" ? value : JSON.stringify(value), webLink(value)]);
   }
   if (rows.length === 0) return null;
   return (
     <dl className="context">
-      {rows.map(([name, value]) => (
+      {rows.map(([name, value, link]) => (
         <Fragment key={`${name}=${value}`}>
           <dt>{name}</dt>
-          <dd>{value}</dd>
+          <dd>
+            {link === null ? (
+              value
+            ) : (
+              <a href={link} target="_blank" rel="noopener noreferrer">
+                {value}
+              </a>
+            )}
+          </dd>
         </Fragment>
       ))}
     </dl>
@@ -400,6 +465,7 @@ export function Thread({
   onChanged(): void;
 }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [online, setOnline] = useState<boolean | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   // Here and not in the composer, which unmounts while the conversation is closed.
   const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
@@ -428,6 +494,7 @@ export function Thread({
       });
       setLoadFailure(null);
       setConversation(page.conversation);
+      setOnline(page.visitorOnline);
       setLines((current) => page.messages.reduce(merge, current));
       const last = page.messages.at(-1);
       if (last !== undefined) position.current = last.seq;
@@ -436,6 +503,11 @@ export function Thread({
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   useEffect(load, [load, version]);
+  // The visitor's online state changes with no event, so it is read again now and then.
+  useEffect(() => {
+    const timer = setInterval(load, ONLINE_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [load]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line scrolls down.
   useEffect(() => {
@@ -597,6 +669,7 @@ export function Thread({
     >
       <ThreadHead
         conversation={conversation}
+        online={online}
         members={members}
         canDelete={canDelete}
         onBack={onBack}

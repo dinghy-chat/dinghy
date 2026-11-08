@@ -11,6 +11,7 @@ import serverPackage from "../package.json" with { type: "json" };
 import { registerAlertRoutes, registerEmailStop } from "./alert-routes.ts";
 import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
+import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
 import type { Database } from "./db/tenant.ts";
 import { safeErrorFields } from "./errors.ts";
@@ -23,7 +24,12 @@ import { registerMemberCheck } from "./member.ts";
 import { registerModerationRoutes } from "./moderation.ts";
 import { registerOperatorRoutes } from "./operator.ts";
 import { registerOperatorApp } from "./operator-app.ts";
-import { createPresence, registerOperatorPresence, registerWidgetPresence } from "./presence.ts";
+import {
+  createPresence,
+  createVisitorPresence,
+  registerOperatorPresence,
+  registerWidgetPresence,
+} from "./presence.ts";
 import type { Push } from "./push.ts";
 import { createRateLimit, createSlots } from "./rate-limit.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
@@ -69,6 +75,8 @@ export interface AppOptions {
   operatorDirectory?: string | undefined;
   /** The directory with the widget's bundles. Without it, /widget/* gets a 404. */
   widgetDirectory?: string | undefined;
+  /** The server's public URL. Without it, the reply email's chat page is off. */
+  publicUrl?: string | undefined;
 }
 
 export interface AppEnv {
@@ -173,6 +181,7 @@ export function createApp({
   operatorDirectory,
   stream = DEFAULT_STREAM,
   widgetDirectory,
+  publicUrl,
 }: AppOptions): App {
   const app: App = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -295,6 +304,8 @@ export function createApp({
     c.set("clientIp", clientIp(c, trustedProxyHops));
     await next();
   });
+  const visitorPresence = createVisitorPresence(valkey, logger, presenceTtlMs);
+  const ownOrigin = publicUrl === undefined ? undefined : new URL(publicUrl).origin;
   registerWidgetRoutes(app, {
     db,
     images,
@@ -305,9 +316,14 @@ export function createApp({
     rateLimit,
     slots: createSlots(valkey, logger, limitScale),
     stream,
+    visitorPresence,
+    ownOrigin,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
-  registerWidgetPresence(app, presence, alerts?.emailAvailable ?? false);
+  registerWidgetPresence(app, db, presence, alerts?.emailAvailable ?? false);
+  if (ownOrigin !== undefined) {
+    registerChatPage(app, { db, rateLimit, imagesOrigin: images?.origin });
+  }
   if (auth !== undefined) {
     registerOperatorRoutes(app, {
       auth,
@@ -321,7 +337,7 @@ export function createApp({
     });
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);
-    registerInboxRoutes(app, { db, images, limits, live, logger, stream });
+    registerInboxRoutes(app, { db, images, limits, live, logger, stream, visitorPresence });
     registerOperatorPresence(app, presence);
     registerModerationRoutes(app, db, live);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);

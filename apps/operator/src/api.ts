@@ -5,8 +5,16 @@ export interface Visitor {
   id: string;
   email: string | null;
   externalId: string | null;
-  claims: Record<string, unknown> | null;
+  /** The name the host site signed. */
+  name: string | null;
+  /** Custom attributes the host site signed. */
+  attributes: Record<string, unknown> | null;
   blocked: boolean;
+  /** Such as "Chrome on macOS". */
+  device: string | null;
+  /** The page the widget last reported, as origin and path. */
+  lastPage: string | null;
+  lastSeenAt: string | null;
 }
 
 export interface Conversation {
@@ -90,8 +98,16 @@ export interface WorkspaceSettings {
   publicKey: string;
   allowedOrigins: string[];
   signingSecret: string;
+  widgetTexts: WidgetTexts;
   /** The plan's limits and their use, on Dinghy Cloud. Null with no limits. */
   usage: Usage | null;
+}
+
+/** The widget's own words. Null means the default. */
+export interface WidgetTexts {
+  title: string | null;
+  greeting: string | null;
+  away: string | null;
 }
 
 export interface AlertSettings {
@@ -225,6 +241,11 @@ export function workspaceApi(workspaceId: string) {
         method: "PATCH",
         body: JSON.stringify({ allowedOrigins }),
       }),
+    setWidgetTexts: (widgetTexts: WidgetTexts) =>
+      call<WorkspaceSettings>(`${base}/settings`, {
+        method: "PATCH",
+        body: JSON.stringify({ widgetTexts }),
+      }),
     rotateSecret: () => post<WorkspaceSettings>(`${base}/settings/rotate-secret`, {}),
     exportUrl: `${base}/export`,
     billing: () => call<BillingState>(`${base}/billing`),
@@ -287,8 +308,18 @@ export function workspaceApi(workspaceId: string) {
       }
     },
     messages: (id: string, after: string) =>
-      call<{ conversation: Conversation; messages: Message[]; hasMore: boolean }>(
-        `${conversation(id)}/messages?after=${after}`,
+      call<{
+        conversation: Conversation;
+        messages: Message[];
+        hasMore: boolean;
+        /** A widget stream of the visitor's is open. Null when the server cannot tell. */
+        visitorOnline: boolean | null;
+      }>(`${conversation(id)}/messages?after=${after}`),
+    /** Open and closed conversations by visitor or message text. A newer search aborts this one. */
+    search: (query: string, signal: AbortSignal) =>
+      call<{ conversations: Conversation[] }>(
+        `${base}/conversations/search?q=${encodeURIComponent(query)}`,
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) },
       ),
     reply: (id: string, clientId: string, body: string) =>
       post<Message>(`${conversation(id)}/messages`, { clientId, body }),
@@ -314,8 +345,16 @@ export function workspaceApi(workspaceId: string) {
       after: string | null,
       signal: AbortSignal,
       handlers: {
-        /** `conversationId` is null for a change to the workspace, such as its team. */
-        change(cursor: string, kind: EventKind, conversationId: string | null): void;
+        /**
+         * `conversationId` is null for a change to the workspace, such as its team. `fromVisitor`
+         * is true for a visitor's new message.
+         */
+        change(
+          cursor: string,
+          kind: EventKind,
+          conversationId: string | null,
+          fromVisitor: boolean,
+        ): void;
         ready(cursor: string | null): void;
         resync(cursor: string): void;
       },
@@ -330,8 +369,18 @@ export function workspaceApi(workspaceId: string) {
           response.status === 429 ? retryAfterMs(response.headers.get("retry-after")) : undefined,
         );
       }
-      return readStream<{ kind: EventKind; conversationId?: string | null }>(response, "change", {
-        data: (value, cursor) => handlers.change(cursor, value.kind, value.conversationId ?? null),
+      return readStream<{
+        kind: EventKind;
+        conversationId?: string | null;
+        fromVisitor?: boolean;
+      }>(response, "change", {
+        data: (value, cursor) =>
+          handlers.change(
+            cursor,
+            value.kind,
+            value.conversationId ?? null,
+            value.fromVisitor === true,
+          ),
         ready: handlers.ready,
         resync: handlers.resync,
       });

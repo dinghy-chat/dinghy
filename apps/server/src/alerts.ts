@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { CHAT_LINK_DAYS, chatLinkUrl, createChatLink, pruneChatLinks } from "./chat-link.ts";
 import {
   alertDelivery,
   conversation,
@@ -51,10 +52,11 @@ const text = {
       "under Alerts.",
   ],
   replySubject: (name: string) => `${name} replied to your message`,
-  replyBody: (name: string, replies: string, stop: string) => [
+  replyBody: (name: string, replies: string, chat: string, stop: string) => [
     `${name} replied to your message:`,
     replies,
-    "To answer, go back to the site and open the chat.",
+    `Read the conversation and answer here: ${chat}`,
+    `The link works for ${CHAT_LINK_DAYS} days. Anyone who has it can read and reply, so don't forward this email.`,
     `You got this because this address was entered in a chat with ${name}. If that wasn't you, ` +
       `or you'd rather not get these emails, stop them here: ${stop}`,
   ],
@@ -456,7 +458,7 @@ export function planDelivery(
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, row.messageId)));
     if (place === undefined || written === undefined) return null;
     if (row.visitorId !== null) {
-      return replyEmailPlan(tx, workspaceId, row.visitorId, place.name, { publicUrl, secret });
+      return replyEmailPlan(tx, row, row.visitorId, place.name, { publicUrl, secret });
     }
     const threadUrl = new URL(threadPath(workspaceId, conversationId), publicUrl).href;
     return operatorPlan(tx, row, place.name, written.body, threadUrl);
@@ -466,7 +468,7 @@ export function planDelivery(
 /** The email to a visitor with every reply they have not read, unless a limit says later. */
 async function replyEmailPlan(
   tx: Transaction,
-  workspaceId: string,
+  { workspaceId, conversationId }: ClaimedDelivery,
   visitorId: string,
   placeName: string,
   { publicUrl, secret }: PlanOptions,
@@ -517,6 +519,11 @@ async function replyEmailPlan(
   const earliest = (sent[0]?.finishedAt?.getTime() ?? 0) + REPLY_EMAIL_GAP_MS;
   if (earliest > Date.now()) return { channel: "later", until: new Date(earliest) };
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, target.email);
+  // A new link for each email. Older ones keep working until they expire.
+  const chatUrl = chatLinkUrl(
+    publicUrl,
+    await createChatLink(tx, workspaceId, visitorId, conversationId),
+  );
   return {
     channel: "email",
     to: target.email,
@@ -529,6 +536,7 @@ async function replyEmailPlan(
           .reverse()
           .map((reply) => messageText(reply.body))
           .join("\n\n"),
+        chatUrl,
         stopUrl,
       ),
       undefined,
@@ -638,9 +646,10 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
         SELECT workspace_id, ip_hash, visitor_id FROM ip_block
         WHERE expires_at < now()
         LIMIT ${PRUNE_BATCH})`);
-    const counts = [events.rowCount ?? 0, deliveries.rowCount ?? 0, blocks.rowCount ?? 0];
+    const links = await pruneChatLinks(db, PRUNE_BATCH);
+    const counts = [events.rowCount ?? 0, deliveries.rowCount ?? 0, blocks.rowCount ?? 0, links];
     removed += counts.reduce((sum, count) => sum + count, 0);
-    // A full batch of any of the three may have more behind it.
+    // A full batch of any of them may have more behind it.
     if (counts.every((count) => count < PRUNE_BATCH)) return removed;
   }
 }

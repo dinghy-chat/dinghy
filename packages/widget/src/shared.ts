@@ -8,6 +8,8 @@ export interface WidgetContext {
   shadow: ShadowRoot;
   /** False when the page set data-mascot="false". Every state still has its text. */
   mascot: boolean;
+  /** The full-page chat that a reply email opens, on the Dinghy server's own origin. */
+  page?: boolean;
   getIdentity(): Identity | null;
   /** The chat registers here to start again after identify() or reset(). */
   setSessionHandler(handler: () => void): void;

@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type pg from "pg";
 import { workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
@@ -68,6 +68,21 @@ export async function widgetWorkspace(
   const row = result.rows[0];
   if (row === undefined) return null;
   return { id: row.id, allowedOrigins: row.allowed_origins, signingSecret: row.signing_secret };
+}
+
+/** The widget's own words for a workspace. Null means the widget's default text. */
+export async function widgetTexts(db: Database, workspaceId: string) {
+  const [row] = await withWorkspace(db, workspaceId, (tx) =>
+    tx
+      .select({
+        title: workspace.widgetTitle,
+        greeting: workspace.widgetGreeting,
+        away: workspace.widgetAway,
+      })
+      .from(workspace)
+      .where(eq(workspace.id, workspaceId)),
+  );
+  return row ?? { title: null, greeting: null, away: null };
 }
 
 /**

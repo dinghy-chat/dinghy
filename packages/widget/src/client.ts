@@ -53,10 +53,27 @@ const DEADLINES = { requestMs: 30_000, uploadMs: 5 * 60_000 };
 
 /** The host page, so an operator sees where a chat started. The server keeps no query or hash. */
 // The server keeps 2,048 characters at most, and rejects a much longer value.
-const page = () => (location.origin + location.pathname).slice(0, 2048);
+export const pageAddress = () => (location.origin + location.pathname).slice(0, 2048);
 
-export function createClient(base: string, publicKey: string, deadlines = DEADLINES) {
+/** The workspace's own widget text. Null means the default. */
+export interface Texts {
+  title: string | null;
+  greeting: string | null;
+  away: string | null;
+}
+
+/**
+ * `hostPage` is false on the chat page that a reply email opens, whose address holds its token and
+ * must never reach the server as a page.
+ */
+export function createClient(
+  base: string,
+  publicKey: string,
+  deadlines = DEADLINES,
+  hostPage = true,
+) {
   const url = (path: string) => `${base}../v1/widget/${publicKey}/${path}`;
+  const page = () => (hostPage ? pageAddress() : undefined);
 
   async function call<T>(path: string, token: string | null, init: RequestInit = {}): Promise<T> {
     const response = await fetch(url(path), {
@@ -76,7 +93,14 @@ export function createClient(base: string, publicKey: string, deadlines = DEADLI
     newVisitor: () =>
       call<{ visitorId: string; token: string }>("visitors", null, { method: "POST" }),
     me: (token: string) => call<Me>("me", token),
-    presence: () => call<{ online: boolean | null; emailReplies: boolean }>("presence", null),
+    /** The token only on the chat page, where it is what lets the request in. */
+    presence: (token: string | null) =>
+      call<{ online: boolean | null; emailReplies: boolean; texts?: Texts }>("presence", token),
+    reportPage: (token: string, address: string) =>
+      call<{ ok: true }>("page", token, {
+        method: "POST",
+        body: JSON.stringify({ page: address }),
+      }),
     saveEmail: (token: string, email: string) =>
       call<Me>("me", token, { method: "PATCH", body: JSON.stringify({ email }) }),
     markRead: (token: string, seq: string) =>
@@ -87,8 +111,11 @@ export function createClient(base: string, publicKey: string, deadlines = DEADLI
         keepalive: true,
       }),
     sendImage: async (token: string, clientId: string, file: File) => {
+      const at = page();
       const response = await fetch(
-        url(`images?clientId=${clientId}&page=${encodeURIComponent(page())}`),
+        url(
+          `images?clientId=${clientId}${at === undefined ? "" : `&page=${encodeURIComponent(at)}`}`,
+        ),
         {
           method: "POST",
           cache: "no-store",

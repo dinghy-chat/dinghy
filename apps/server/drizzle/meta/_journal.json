@@ -302,6 +302,27 @@
       "when": 1794162236388,
       "tag": "0042_email_proven_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794173777484,
+      "tag": "0043_visitor_attributes",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794173785219,
+      "tag": "0044_support_basics",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1794173800028,
+      "tag": "0045_chat_link_grants",
+      "breakpoints": true
     }
   ]
 }

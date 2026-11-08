@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BillingBanner, useBilling, WaitingBanner } from "../../../ee/operator/billing.tsx";
 import { AlertsPage, leaveDevice, useDeviceSync } from "./alerts.tsx";
 import {
@@ -17,6 +17,7 @@ import { useLatestLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { ProfilePage, SettingsPage } from "./settings.tsx";
+import { chime, prepareSound } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
 import {
@@ -34,6 +35,8 @@ import { isWaiting, title } from "./visitor.ts";
 
 const RETRY_LIMIT_MS = 30_000;
 const PAGE_SIZE = 50;
+const SEARCH_WAIT_MS = 250;
+const SEARCH_MIN = 2;
 const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
@@ -112,7 +115,13 @@ function useTabVisible(): boolean {
  * allow about six HTTP/1.1 connections per origin. A tab catches up from its cursor when it becomes
  * visible again.
  */
-function useChanges(api: WorkspaceApi, visible: boolean, onSignedOut: () => void) {
+function useChanges(
+  api: WorkspaceApi,
+  visible: boolean,
+  onSignedOut: () => void,
+  /** A visitor's new message, live, after the stream has caught up. */
+  onVisitorMessage: (conversationId: string | null) => void,
+) {
   const [lost, setLost] = useState(false);
   const [version, setVersion] = useState(0);
   const [teamVersion, setTeamVersion] = useState(0);
@@ -132,10 +141,15 @@ function useChanges(api: WorkspaceApi, visible: boolean, onSignedOut: () => void
     (async () => {
       while (!controller.signal.aborted) {
         let refusedMs: number | undefined;
+        // What a stream replays before `ready` is catch-up, and makes no sound.
+        let live = false;
         try {
           const reason = await api.stream(cursor.current, controller.signal, {
-            change(next, kind, conversationId) {
+            change(next, kind, conversationId, fromVisitor) {
               cursor.current = next;
+              if (live && kind === "message.created" && fromVisitor) {
+                onVisitorMessage(conversationId);
+              }
               // React batches these, so a long catch-up becomes few loads.
               setVersion((current) => current + 1);
               // A block or unblock is on the visitor, so it changes every one of their threads.
@@ -157,6 +171,7 @@ function useChanges(api: WorkspaceApi, visible: boolean, onSignedOut: () => void
               }
             },
             ready(next) {
+              live = true;
               // A first stream starts at the present, so a billing change since `me` loaded is
               // not on it.
               if (cursor.current === null) setBillingVersion((current) => current + 1);
@@ -195,7 +210,7 @@ function useChanges(api: WorkspaceApi, visible: boolean, onSignedOut: () => void
       }
     })();
     return () => controller.abort();
-  }, [api, onSignedOut, visible]);
+  }, [api, onSignedOut, onVisitorMessage, visible]);
 
   // A write refused as read-only means this page missed the change.
   useEffect(() => {
@@ -459,6 +474,55 @@ function ConversationRow({
   );
 }
 
+/**
+ * Searches open and closed conversations as the operator types. It waits for a pause, and a newer
+ * search cancels the one before, so a slow answer never replaces a newer one. Null means no search.
+ */
+function useSearch(api: WorkspaceApi, query: string): Conversation[] | null {
+  const [found, setFound] = useState<Conversation[] | null>(null);
+  const wanted = query.trim();
+  useEffect(() => {
+    if (wanted.length < SEARCH_MIN) {
+      setFound(null);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      api.search(wanted, controller.signal).then(
+        (result) => setFound(result.conversations),
+        () => {
+          // An aborted search has a newer one behind it, and a failed one keeps the last rows.
+        },
+      );
+    }, SEARCH_WAIT_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [api, wanted]);
+  return wanted.length < SEARCH_MIN ? null : found;
+}
+
+/** The search field at the top of the list. Escape clears it. */
+function SearchField({ value, onChange }: { value: string; onChange(value: string): void }) {
+  return (
+    <div className="search">
+      <Icon name="search" size={18} />
+      <input
+        type="search"
+        aria-label={t("searchLabel")}
+        placeholder={t("searchPlaceholder")}
+        maxLength={100}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onChange("");
+        }}
+      />
+    </div>
+  );
+}
+
 /** The line under the list's title: who waits, or what the closed list holds. */
 function listContext(status: Status, waiting: number): string {
   if (status === "closed") return t("closedContext");
@@ -499,10 +563,23 @@ export function Inbox({
   });
   const [view, setView] = useState<View>("open");
   const visible = useTabVisible();
+  const [query, setQuery] = useState("");
+  const found = useSearch(api, query);
+  useEffect(prepareSound, []);
+  const shownConversation = useRef(selected);
+  useLayoutEffect(() => {
+    shownConversation.current = selected;
+  });
+  // A sound only when the operator is not already looking at that conversation.
+  const onVisitorMessage = useCallback((conversationId: string | null) => {
+    const looking = document.visibilityState === "visible" && document.hasFocus();
+    if (!looking || conversationId !== shownConversation.current) chime();
+  }, []);
   const { lost, version, threadVersion, teamVersion, billingVersion } = useChanges(
     api,
     visible,
     onSignedOut,
+    onVisitorMessage,
   );
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
@@ -654,15 +731,21 @@ export function Inbox({
                 title={t(STATUS_LOOK[status].label)}
                 context={listContext(status, waiting)}
               />
+              <SearchField value={query} onChange={setQuery} />
               <ul className="rows">
-                {conversations.length === 0 && (
+                {found === null && conversations.length === 0 && (
                   <li className="nothing empty-boat">
                     <Pond />
                     <b>{t(STATUS_LOOK[status].empty)}</b>
                     {t("emptyHint")}
                   </li>
                 )}
-                {conversations.map((conversation) => (
+                {found !== null && found.length === 0 && (
+                  <li className="nothing">
+                    <b>{t("searchNone")}</b>
+                  </li>
+                )}
+                {(found ?? conversations).map((conversation) => (
                   <ConversationRow
                     key={conversation.id}
                     conversation={conversation}
@@ -673,7 +756,7 @@ export function Inbox({
                   />
                 ))}
               </ul>
-              {hasMore && (
+              {hasMore && found === null && (
                 <button
                   type="button"
                   className="btn link small"

@@ -33,9 +33,11 @@ import {
   operatorNames,
   parseCursor,
   type StoredMessage,
+  searchConversations,
   setConversationStatus,
   WorkspaceClosedError,
 } from "./messages.ts";
+import type { VisitorPresence } from "./presence.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 
 const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
@@ -90,8 +92,16 @@ const Conversation = z
       id: z.string(),
       email: z.string().nullable(),
       externalId: z.string().nullable(),
-      claims: z.record(z.string(), z.unknown()).nullable(),
+      // The name the host site signed, on one line.
+      name: z.string().nullable(),
+      // Custom attributes the host site signed.
+      attributes: z.record(z.string(), z.unknown()).nullable(),
       blocked: z.boolean(),
+      // A short line such as "Chrome on macOS", from the widget's last report.
+      device: z.string().nullable(),
+      // The page the widget last reported, as origin and path, and when the visitor was last seen.
+      lastPage: z.string().nullable(),
+      lastSeenAt: z.string().nullable(),
     }),
     lastMessage: z
       .object({ body: z.string().nullable(), fromVisitor: z.boolean(), createdAt: z.string() })
@@ -155,8 +165,12 @@ const listRoute = createRoute({
                   id: "0b6f1c6e-2f4a-4c1e-9a57-3f1b8f0e6d21",
                   email: "ana@example.com",
                   externalId: null,
-                  claims: null,
+                  name: "Ana Lima",
+                  attributes: { plan: "pro" },
                   blocked: false,
+                  device: "Safari on iPhone",
+                  lastPage: "https://www.example.com/pricing",
+                  lastSeenAt: "2026-11-08T09:30:00.000Z",
                 },
                 lastMessage: {
                   body: "Do you have a yearly plan?",
@@ -200,6 +214,8 @@ const conversationRoute = createRoute({
             conversation: Conversation,
             messages: z.array(InboxMessage),
             hasMore: z.boolean(),
+            // A widget stream of the visitor's is open now. Null when the server cannot tell.
+            visitorOnline: z.boolean().nullable(),
           }),
         },
       },
@@ -274,6 +290,29 @@ const replyImageRoute = createRoute({
   },
 });
 
+const searchRoute = createRoute({
+  method: "get",
+  path: `${PREFIX}/{workspaceId}/conversations/search`,
+  security: SESSION,
+  summary: "Search open and closed conversations, newest activity first",
+  description:
+    "Matches the visitor's name, email or user ID, or the text of a message, ignoring case. A conversation found by a message shows that message as its `lastMessage`.",
+  request: {
+    params: workspaceParams,
+    query: z.object({ q: z.string().trim().min(2).max(100) }),
+  },
+  responses: {
+    200: {
+      description: "At most 50 conversations",
+      content: {
+        "application/json": { schema: z.object({ conversations: z.array(Conversation) }) },
+      },
+    },
+    ...MEMBER_ERRORS,
+    ...INVALID,
+  },
+});
+
 const statusRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}`,
@@ -304,7 +343,7 @@ const streamRoute = createRoute({
   summary: "Stream the workspace's changes after a cursor",
   description:
     "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
-    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
     CLOSE_REASONS_TEXT,
   request: {
     params: workspaceParams,
@@ -354,7 +393,11 @@ function conversationView(
       blocked: row.visitorBlockedAt !== null,
       email: row.visitorEmail,
       externalId: row.visitorExternalId,
-      claims: (row.visitorClaims as Record<string, unknown> | null) ?? null,
+      name: row.visitorName,
+      attributes: (row.visitorAttributes as Record<string, unknown> | null) ?? null,
+      device: row.visitorDevice,
+      lastPage: row.visitorLastPage,
+      lastSeenAt: row.visitorLastSeenAt?.toISOString() ?? null,
     },
     lastMessage:
       lastMessage === null
@@ -389,11 +432,12 @@ interface InboxOptions {
   live: Live;
   logger: Logger;
   stream: StreamOptions;
+  visitorPresence: VisitorPresence;
 }
 
 export function registerInboxRoutes(
   app: App,
-  { db, images, limits, live, logger, stream }: InboxOptions,
+  { db, images, limits, live, logger, stream, visitorPresence }: InboxOptions,
 ) {
   app.openapi(workspaceRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
@@ -450,7 +494,18 @@ export function registerInboxRoutes(
           messageView(images, id, result.names, message),
         ),
         hasMore: result.page.hasMore,
+        visitorOnline: await visitorPresence.online(id, result.found.visitorId),
       },
+      200,
+    );
+  });
+
+  app.openapi(searchRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { q } = c.req.valid("query");
+    const rows = await withWorkspace(db, id, (tx) => searchConversations(tx, id, q, 50));
+    return c.json(
+      { conversations: rows.map((row) => conversationView(row, row.lastMessage)) },
       200,
     );
   });
@@ -594,7 +649,11 @@ export function registerInboxRoutes(
           items: page.events.map((event) => ({
             event: "change",
             seq: event.seq,
-            data: { kind: event.kind, conversationId: event.conversationId },
+            data: {
+              kind: event.kind,
+              conversationId: event.conversationId,
+              ...(event.kind === "message.created" ? { fromVisitor: event.fromVisitor } : {}),
+            },
           })),
         };
       },

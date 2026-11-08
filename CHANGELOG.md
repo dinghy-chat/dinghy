@@ -2,6 +2,18 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
+## Unreleased
+
+**Owner note:** the identity token's `claims` field is now called `attributes`, the name Intercom and Chatwoot use. Tokens made for 0.5.0 keep working with `claims`, and you can rename it on your server whenever you like. The operator API's visitor field changed from `claims` to `attributes` too, and an export holds `attributes`, while an export from 0.5.0 still imports.
+
+- The identity token takes an optional `name`, on one line, up to 100 characters. The operator app shows it as the visitor's name, before the email and the user ID. A custom attribute whose value is an `https://` or `http://` address shows as a link that opens in a new tab.
+- The conversation header shows whether the visitor has the chat open now, or when they were last seen, their browser and system, such as "Chrome on macOS", and the last page they were on, as a link. The widget reports the page when it loads and when the address changes, also in a single-page app, with no query string or `#` part, and at most 30 times a minute. The server keeps the short device line, not the User-Agent. Online state lives in Valkey, and without it the app shows nothing rather than a guess.
+- Owners and admins can change the chat's title, its greeting in an empty chat and its text for when nobody is online, in **Settings > Install**. An empty box keeps Dinghy's words.
+- The operator app can play a soft chime when a visitor writes in a conversation you don't have open, or while its window is in the background. **Alerts > Play a sound for new messages** turns it off on this device.
+- The reply email to a visitor links to the conversation on a page of your Dinghy server, at `/chat/...`, where they can read and reply, in place of "go back to the site". Each email makes a new link that works for 30 days, the database keeps only its hash, and the worker deletes expired ones. An expired link, a deleted conversation, a blocked visitor or a closed workspace shows a plain page that says so. The email keeps its stop link.
+- A search box above the conversation list finds open and closed conversations by the visitor's name, email or user ID, or by message text, and shows the matching message.
+- API: `POST /v1/widget/{key}/page`, `GET /v1/operator/workspaces/{workspaceId}/conversations/search`, `texts` in the widget's presence answer, `widgetTexts` in the settings, `visitorOnline` with a conversation's messages, and `fromVisitor` on a new message's `change` event. The settings `PATCH` takes `allowedOrigins`, `widgetTexts` or both.
+
 ## 0.5.0 (2026-11-08)
 
 - A new look for the operator app, in the brand's yellow: a sidebar with **Inbox**, **Closed**, **Alerts** and **Settings**, and one white panel with a title, a line of context and the page's actions.

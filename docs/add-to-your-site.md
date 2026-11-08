@@ -64,7 +64,7 @@ The script loads with `async`, so `Dinghy` may not exist yet when your own scrip
 
 With no more work, a visitor is anonymous. Their chat stays in that browser, and they can leave an email in the chat so you can reply if they leave. A browser that does not come back for a year starts a new chat.
 
-If your site has logins, you can tell Dinghy who the user is. Their chat then follows them to every device, and operators see their email, your user ID and any claims you send. An anonymous chat from before the sign-in does not merge into it, and the widget shows the user's own chat.
+If your site has logins, you can tell Dinghy who the user is. Their chat then follows them to every device, and operators see their name, email, your user ID and any custom attributes you send. An anonymous chat from before the sign-in does not merge into it, and the widget shows the user's own chat.
 
 Your server signs a short token with the workspace's signing secret, and your page passes it to the widget.
 
@@ -76,7 +76,11 @@ import { SignJWT } from "jose";
 const secret = new TextEncoder().encode(process.env.DINGHY_SIGNING_SECRET);
 
 export function dinghyToken(user) {
-  return new SignJWT({ email: user.email, claims: { plan: user.plan } })
+  return new SignJWT({
+    name: user.name,
+    email: user.email,
+    attributes: { plan: user.plan, account: `https://admin.example.com/users/${user.id}` },
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setAudience("wk_your_public_key")
     .setSubject(String(user.id))
@@ -94,8 +98,11 @@ Any JWT library works, in any language. The token must have these fields:
 | `aud` | Your public key from the tag |
 | `sub` | Your user's ID, up to 255 characters |
 | `iat` and `exp` | The issue time and the expiry, at most 24 hours apart |
+| `name` | Optional. The name operators see, on one line, up to 100 characters. Anything else is dropped |
 | `email` | Optional. One address, which operators see. Anything else, such as a list, is dropped |
-| `claims` | Optional. Other facts that operators see, such as a plan, up to 2 KB of JSON |
+| `attributes` | Optional. Custom attributes that operators see, such as a plan, up to 2 KB of JSON. A value that starts with `https://` or `http://` shows as a link |
+
+A token made for Dinghy 0.5.0 sends its attributes as `claims`, and that still works. If a token has both, `attributes` wins.
 
 **2. On your page,** pass a function that asks your server for a token. The widget calls it again when a token expires, so a tab that stays open keeps working:
 
@@ -134,5 +141,14 @@ If your Dinghy serves images from a separate origin (`IMAGES_ORIGIN`), allow tha
 - Read the chat again after a refresh.
 - See an unread count on the button.
 - Leave an email, if they are not signed in and your Dinghy install has a mail server. They then get your reply by email if they left the page. With no mail server, the widget does not ask.
+- Continue from the reply email. Its link opens the conversation on a page of your Dinghy server, at `https://chat.example.com/chat/...`, where they can read and reply. The link works for 30 days, and each email has a new one. The email still has the link that stops these emails.
+
+## What operators see about a visitor
+
+Once a visitor has chatted, the widget tells your Dinghy server the page they are on: when it loads, and when the address changes, also in a single-page app. It sends the address without its query string or `#` part. The server also keeps a short line about the browser, such as "Chrome on macOS", and not the browser's full description. Operators see whether the visitor has the chat open now, or when they were last seen.
+
+## Change the chat's words
+
+An owner or admin can change the chat's title, its greeting in an empty chat, and the line it shows when nobody is online, in **Settings > Install**. An empty box keeps Dinghy's own words.
 
 The widget lives in its own Shadow DOM, so your site's styles do not change it, and its styles do not change your site.

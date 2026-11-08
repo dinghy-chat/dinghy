@@ -122,7 +122,8 @@
 <p>To send an image, paste it, drag it onto the chat, or select the image button. The rules are the same as for visitors: PNG, JPEG or WebP, under 5 MB and under 16 megapixels.</p>
 <p>If a message shows &quot;Not sent&quot;, select it to try again. A retry cannot create a second copy.</p>
 <p>If two of you open the same conversation, each sees &quot;… is replying&quot;, so you do not answer twice.</p>
-<p>Under the visitor&#39;s name, the header shows their user ID and the page where they started. On the right are the controls:</p>
+<p>To find a conversation, type at least two letters in the search box above the list. It searches open and closed conversations by the visitor&#39;s name, email or user ID, and by what anyone wrote, and shows the matching message under each one. Press Escape or empty the box to go back to the list.</p>
+<p>Under the visitor&#39;s name, the header shows their email or user ID and the page where they started. The next line shows <strong>Online now</strong> while the visitor has the chat open, or when they were last seen, then their browser and system, such as &quot;Chrome on macOS&quot;, and the last page they were on, which opens in a new tab. If Dinghy cannot tell whether they are online, it says nothing about it. On the right are the controls:</p>
 <div class="doc-table"><table>
 <thead><tr><th>Control</th><th>What it does</th></tr></thead>
 <tbody>
@@ -132,12 +133,13 @@
 <tr><td data-label="Control"><strong>…</strong> then <strong>Delete</strong></td><td data-label="What it does">Deletes the conversation and its images for good, after you confirm. Owners and admins only</td></tr>
 </tbody>
 </table></div>
-<p>For a signed-in user, the conversation shows the email and user ID that <a href="/docs/add-to-your-site#show-who-is-chatting">your site sent</a>.</p>
+<p>For a signed-in user, the conversation shows the name, email, user ID and custom attributes that <a href="/docs/add-to-your-site#show-who-is-chatting">your site sent</a>. An attribute that is a web address is a link.</p>
 <h2 id="get-alerts"><a class="heading-link" href="#get-alerts">Get alerts</a></h2>
 <p>Select <strong>Alerts</strong> in the sidebar. Each device has its own setting.</p>
 <ul>
 <li><strong>Notifications on this device</strong> sends a push notification when a visitor writes. Select <strong>Turn on</strong>, then <strong>Send a test</strong> to see if it works. A private window usually cannot turn this on.</li>
 <li><strong>Email me about new messages</strong> needs a mail server on your Dinghy install. A burst of messages in one conversation sends one email.</li>
+<li><strong>Play a sound for new messages</strong> plays a short chime when a visitor writes in a conversation you don&#39;t have open, or while the app&#39;s window is in the background. It is on unless you turn it off. The browser plays it only after your first click or key press in the app. A tab you are not on holds no live connection, so it stays silent: turn on notifications for that.</li>
 </ul>
 <p>On an iPhone, a web app can show notifications only from the Home Screen:</p>
 <ol>
@@ -165,7 +167,7 @@
 <p>Someone in two workspaces switches between them with the workspace name at the top of the sidebar. On Dinghy Cloud, the same menu has <strong>Create a workspace</strong>.</p>
 <h2 id="the-other-settings"><a class="heading-link" href="#the-other-settings">The other settings</a></h2>
 <ul>
-<li><strong>Install</strong> has the tag for your site, with a <strong>Copy</strong> button.</li>
+<li><strong>Install</strong> has the chat&#39;s title, its greeting in an empty chat and its text for when nobody is online, then the tag for your site, with a <strong>Copy</strong> button. An empty box keeps Dinghy&#39;s own words.</li>
 <li><strong>Allowed sites</strong> lists the sites that can load the chat, one per row. <strong>Add a site</strong> adds a row, and each row says if its address is not a site such as <code>https://example.com</code>.</li>
 <li><strong>Signing secret</strong> is for <a href="/docs/add-to-your-site#show-who-is-chatting">signed-in users</a>. It stays hidden until you select the eye. <strong>Replace the secret</strong> asks first, because the old one stops working at once.</li>
 <li><strong>Data</strong> has <strong>Download an export</strong>, which saves all conversations and images as one file that imports into a self-hosted Dinghy, and <strong>Delete workspace</strong>.</li>

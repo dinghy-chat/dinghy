@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Conversation } from "./api.ts";
-import { isWaiting, visitorLabel, visitorName } from "./visitor.ts";
+import { isWaiting, visitorLabel, visitorName, webLink } from "./visitor.ts";
 
 describe("visitor labels", () => {
   test("a signed-out visitor gets a short code from its ID, the same every time", () => {
@@ -33,7 +33,17 @@ describe("waiting", () => {
     updatedAt: "2026-11-07T10:00:00.000Z",
     assigneeOperatorId: null,
     startedPage: null,
-    visitor: { id: "v", email: null, externalId: null, claims: null, blocked: false },
+    visitor: {
+      id: "v",
+      email: null,
+      externalId: null,
+      name: null,
+      attributes: null,
+      blocked: false,
+      device: null,
+      lastPage: null,
+      lastSeenAt: null,
+    },
     lastMessage: { body: "hi", fromVisitor: true, createdAt: "2026-11-07T10:00:00.000Z" },
   };
 
@@ -46,5 +56,34 @@ describe("waiting", () => {
     expect(isWaiting({ ...base, lastMessage: reply })).toBe(false);
     expect(isWaiting({ ...base, status: "closed" })).toBe(false);
     expect(isWaiting({ ...base, lastMessage: null })).toBe(false);
+  });
+});
+
+describe("names and links", () => {
+  test("a signed name comes before the email and the user ID", () => {
+    expect(visitorName({ id: "v", name: "Ana", email: "a@example.com", externalId: "u1" })).toBe(
+      "Ana",
+    );
+    expect(visitorName({ id: "v", name: null, email: "a@example.com", externalId: "u1" })).toBe(
+      "a@example.com",
+    );
+  });
+
+  test("only an http or https address that parses becomes a link", () => {
+    expect(webLink("https://acme.example/account/42")).toBe("https://acme.example/account/42");
+    expect(webLink("HTTP://acme.example")).toBe("http://acme.example/");
+    for (const value of [
+      "javascript:alert(1)",
+      "data:text/html,hi",
+      "ftp://acme.example",
+      "https://",
+      " https://acme.example",
+      "acme.example",
+      42,
+      null,
+      { url: "https://acme.example" },
+    ]) {
+      expect(webLink(value)).toBeNull();
+    }
   });
 });

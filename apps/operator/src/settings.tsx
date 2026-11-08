@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { BillingRow } from "../../../ee/operator/billing.tsx";
+import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import {
   type BillingState,
   type BlockedVisitor,
@@ -77,6 +78,77 @@ function SnippetRow({ publicKey, waiting }: { publicKey: string; waiting: boolea
   return (
     <PageRow title={t("snippetTitle")} help={t("snippetHelp")}>
       <CodeBlock value={snippet} />
+    </PageRow>
+  );
+}
+
+/** The widget's title, greeting and away text. An empty box means the widget's own default. */
+function WidgetTextsRow({
+  api,
+  settings,
+  onSaved,
+}: {
+  api: WorkspaceApi;
+  settings: WorkspaceSettings;
+  onSaved(saved: WorkspaceSettings): void;
+}) {
+  const [texts, setTexts] = useState(() => ({
+    title: settings.widgetTexts.title ?? "",
+    greeting: settings.widgetTexts.greeting ?? "",
+    away: settings.widgetTexts.away ?? "",
+  }));
+  const [note, setNote] = useState<{ ok: boolean; text: TextId } | null>(null);
+  const field = (name: keyof typeof texts) => ({
+    value: texts[name],
+    onChange: (value: string) => {
+      setTexts((current) => ({ ...current, [name]: value }));
+      setNote(null);
+    },
+  });
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    const blank = (value: string) => (value.trim() === "" ? null : value.trim());
+    try {
+      const saved = await api.setWidgetTexts({
+        title: blank(texts.title),
+        greeting: blank(texts.greeting),
+        away: blank(texts.away),
+      });
+      onSaved(saved);
+      setNote({ ok: true, text: "widgetTextsSaved" });
+    } catch (failure) {
+      setNote({ ok: false, text: failureText(failure, {}) });
+    }
+  };
+  return (
+    <PageRow title={t("widgetTextsTitle")} help={t("widgetTextsHelp")}>
+      <form className="stack" onSubmit={save}>
+        <Field
+          label={t("widgetTitleLabel")}
+          placeholder={widgetText("title")}
+          maxLength={40}
+          {...field("title")}
+        />
+        <Field
+          label={t("widgetGreetingLabel")}
+          placeholder={widgetText("empty")}
+          maxLength={200}
+          {...field("greeting")}
+        />
+        <Field
+          label={t("widgetAwayLabel")}
+          placeholder={widgetText("teamAway")}
+          maxLength={200}
+          {...field("away")}
+        />
+        <div className="actions">
+          <button type="submit" className="pill dark">
+            {t("save")}
+          </button>
+        </div>
+        {note?.ok === true && <StatusNote text={note.text} />}
+        {note?.ok === false && <ErrorNote text={note.text} />}
+      </form>
     </PageRow>
   );
 }
@@ -1012,7 +1084,10 @@ export function SettingsPage({
           />
         )}
         {tab === "install" && settings !== null && (
-          <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
+          <>
+            <WidgetTextsRow api={api} settings={settings} onSaved={setSettings} />
+            <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
+          </>
         )}
         {tab === "sites" && settings !== null && (
           <OriginsRow api={api} settings={settings} onSaved={setSettings} />
