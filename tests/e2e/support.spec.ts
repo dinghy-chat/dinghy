@@ -105,7 +105,13 @@ test("the operator sees the visitor online, their device and the page they moved
   browser,
 }) => {
   const customer = await visitor(browser, "/app", "Where is billing?");
+  // The widget waits a moment after a change of address, for the new title.
+  const reported = customer.waitForRequest(
+    (request) =>
+      request.url().endsWith("/page") && request.postData()?.includes("settings") === true,
+  );
   await customer.locator("#go").click();
+  await reported;
   const owner = await signedIn(browser);
   await owner.locator(".row", { hasText: "Where is billing?" }).click();
   const visit = owner.locator(".thread-head .visit");
