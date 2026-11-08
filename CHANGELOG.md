@@ -2,6 +2,17 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
+## Unreleased
+
+- A `name` string in the identity token's `claims` is the visitor's name in the operator app: the conversation's title in the inbox, the conversation header and the blocked list. The email and user ID move to the line under it.
+- Settings fits a phone: the tabs wrap so every one stays visible, and **Invite someone**, now only on **Team**, is a short **Invite** in the title row. The install snippet has one attribute per line, so no screen breaks it inside `data-key`.
+- An invite link that expired or was used shows a heading and a way on, **Sign in** or **Open Dinghy**, instead of a line of red text.
+- **Delete workspace** is an outline button, like **Replace the secret**. The confirm step keeps the filled red one.
+- Fields have a darker border, at 3:1 on white, and buttons, tabs and dropdowns on a phone are at least 44 px tall.
+- On a touch screen, opening the chat no longer brings up the keyboard. Tapping the message field does. With a mouse, the field gets focus as before.
+- When nobody is online, the widget says "we will reply here" once, in its header.
+- Dinghy Cloud's early signup says what it is: the workspace works right away, and an email comes when the cloud opens. The button reads **Email me a sign-up link**, the workspace name has a hint, and the banner in the app is one short line.
+
 ## 0.5.0 (2026-11-08)
 
 - A new look for the operator app, in the brand's yellow: a sidebar with **Inbox**, **Closed**, **Alerts** and **Settings**, and one white panel with a title, a line of context and the page's actions.

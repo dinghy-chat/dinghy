@@ -116,7 +116,9 @@ export function WaitingBanner({
   if (!billing) {
     return (
       <div className="banner billing-banner waiting-banner" role="status">
-        {t("waitingBanner").replace("{email}", email)}
+        {/* A phone shows the short line, so the banner stays one line tall. */}
+        <span className="banner-long">{t("waitingBanner").replace("{email}", email)}</span>
+        <span className="banner-short">{t("waitingBannerShort")}</span>
       </div>
     );
   }

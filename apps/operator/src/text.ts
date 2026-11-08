@@ -219,7 +219,10 @@ const en = {
   signupWorkspace: "Workspace name",
   onboardingTitle: "Set up your workspace",
   onboardingSubmit: "Continue",
-  signupSubmit: "Email me a link",
+  signupSubmit: "Email me a sign-up link",
+  signupEarly:
+    "Dinghy Cloud is in early access. Set up your workspace now, and we will email you when you can add the chat to your site.",
+  signupWorkspaceHint: "Usually your company or product name.",
   haveAccount: "I already have an account",
   payTitle: "Finish payment",
   payHelp: "This workspace opens once its payment clears.",
@@ -245,8 +248,8 @@ const en = {
   readOnlyMember: "This workspace is read-only until its owner pays again.",
   paymentFailedBanner:
     "The last payment failed. Update the card before {date} to keep the chat on.",
-  waitingBanner:
-    "Dinghy Cloud opens soon. Your workspace is ready, and we will email you at {email} when you can turn it on.",
+  waitingBanner: "Dinghy Cloud opens soon. We will email {email} when you can turn it on.",
+  waitingBannerShort: "Dinghy Cloud opens soon. We will email you.",
   turnOnBanner: "Turn on Dinghy, $7 a month",
   turnOnButton: "Turn it on",
   turnOnMember: "Dinghy Cloud is open. Ask the workspace owner to turn this workspace on.",

@@ -19,7 +19,7 @@ async function createAccount(
   await expect(page.getByLabel("Workspace name")).toHaveCount(0);
   await expect(page.getByLabel(/password/i)).toHaveCount(0);
   await page.getByLabel("Email").fill(email);
-  await page.getByRole("button", { name: "Email me a link" }).click();
+  await page.getByRole("button", { name: "Email me a sign-up link" }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   await openLink(page, await server.linkTo(email, index), button);
 }
@@ -178,18 +178,17 @@ test.describe("with early signup and no Stripe keys", () => {
     await page.goto(server.apiOrigin);
     await page.getByRole("link", { name: "Create an account" }).click();
     await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
-    // No helper line under the form, and no payment.
-    await expect(page.locator(".card .note")).toHaveCount(0);
+    // One line about early access, and no payment.
+    await expect(page.locator(".card .note")).toHaveText(/early access/);
     await expect(page.getByText(/pay|Stripe/i)).toHaveCount(0);
     await createAccount(page, server, email);
     await expect(page.getByText(/pay|Stripe/i)).toHaveCount(0);
     await onboard(page, "Early Shop");
 
     await expect(page.getByRole("heading", { name: "Early Shop" })).toBeVisible();
-    await expect(
-      page.getByRole("status").filter({ hasText: "Dinghy Cloud opens soon." }),
-    ).toHaveText(
-      `Dinghy Cloud opens soon. Your workspace is ready, and we will email you at ${email} when you can turn it on.`,
+    // A wide screen shows the long line, with the email.
+    await expect(page.getByRole("status").locator(".banner-long")).toHaveText(
+      `Dinghy Cloud opens soon. We will email ${email} when you can turn it on.`,
     );
     await page.locator(".row", { hasText: "Sample visitor" }).click();
     await expect(
@@ -206,7 +205,7 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.getByText("Your install code appears when the cloud opens.")).toBeVisible();
     await expect(page.getByText("/widget/loader.js", { exact: false })).toHaveCount(0);
     // The banner is on every page.
-    await expect(page.getByText("Dinghy Cloud opens soon.", { exact: false })).toBeVisible();
+    await expect(page.getByRole("status").locator(".banner-long")).toBeVisible();
   });
 
   test("an account that left after the first step finishes onboarding at its next sign-in", async ({

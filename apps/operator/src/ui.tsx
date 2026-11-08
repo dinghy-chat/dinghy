@@ -8,6 +8,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -86,15 +87,28 @@ export function StatusNote({ text }: { text: TextId | null }) {
 
 interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
   label: string;
+  /** A short line under the field, which a screen reader reads after the label. */
+  hint?: string;
   value: string;
   onChange(value: string): void;
 }
 
-export function Field({ label, value, onChange, ...input }: FieldProps) {
+export function Field({ label, hint, value, onChange, ...input }: FieldProps) {
+  const hintId = useId();
   return (
     <label className="field">
       <span>{label}</span>
-      <input {...input} value={value} onChange={(event) => onChange(event.target.value)} />
+      <input
+        {...input}
+        aria-describedby={hint === undefined ? undefined : hintId}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {hint !== undefined && (
+        <small className="hint" id={hintId}>
+          {hint}
+        </small>
+      )}
     </label>
   );
 }
