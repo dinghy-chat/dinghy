@@ -159,7 +159,7 @@
 </div>
 <p><strong>Fix it.</strong> <code>docker compose up -d --wait</code>. Valkey holds no data worth keeping, so a restart loses nothing, and clients catch up from their last cursor.</p>
 <h2 id="mail-is-not-sent"><a class="heading-link" href="#mail-is-not-sent">Mail is not sent</a></h2>
-<p><strong>What you see.</strong> Password reset links, email alerts or replies to visitors who left do not arrive.</p>
+<p><strong>What you see.</strong> Sign-in links, email alerts or replies to visitors who left do not arrive. Until it is fixed, <code class="code-long">docker compose exec app chat sign-in-link &lt;email&gt;</code> prints a link for an operator.</p>
 <p><strong>Confirm it.</strong></p>
 <div class="terminal doc-code">
 <div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-4"><span data-copy-label>Copy</span></button></div>

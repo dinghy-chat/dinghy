@@ -56,7 +56,7 @@ docker compose logs --tail 50 valkey
 
 ## Mail is not sent
 
-**What you see.** Password reset links, email alerts or replies to visitors who left do not arrive.
+**What you see.** Sign-in links, email alerts or replies to visitors who left do not arrive. Until it is fixed, `docker compose exec app chat sign-in-link <email>` prints a link for an operator.
 
 **Confirm it.**
 

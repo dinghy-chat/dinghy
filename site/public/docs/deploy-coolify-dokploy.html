@@ -142,7 +142,7 @@
 <li>Create a resource from a Git repository, or from a Docker Compose file, with Dinghy&#39;s <code>compose.yaml</code>.</li>
 <li>Give the <code>app</code> service your domain with port 3000, such as <code>https://chat.example.com:3000</code>. The <code>:3000</code> tells Coolify&#39;s proxy which container port to use. It does not appear in the address people open.</li>
 <li>Set the variables above, then deploy.</li>
-<li>Open a terminal on the <code>app</code> container, and run <code>chat setup</code> once. It prints your password and the tag for your site.</li>
+<li>Open a terminal on the <code>app</code> container, and run <code>chat setup</code> once. It prints a sign-in link, which works once for 15 minutes, and the tag for your site.</li>
 <li>Restart the <code>app</code> service, which turns on web push with the keys that <code>chat setup</code> made.</li>
 </ol>
 <h2 id="dokploy"><a class="heading-link" href="#dokploy">Dokploy</a></h2>

@@ -9,7 +9,7 @@ Every route starts with `/v1`. Within `v1`, a release may add routes, fields and
 ## Two APIs and two ways to sign in
 
 - **The widget API**, at `/v1/widget/{key}`, where `key` is the workspace's public key. It answers only pages whose `Origin` is on the workspace's allowed sites. `POST /v1/widget/{key}/visitors` creates a visitor and returns its browser token once. Other calls send it as `Authorization: Bearer <token>`. For a signed-in user, the bearer token is a host token that your site's server signs instead, as [Add the chat to your website](add-to-your-site.md#show-who-is-chatting) explains.
-- **The operator API**, at `/v1/operator`. It uses the session cookie that sign-in sets. Sign-in, sign-out and password resets live at `/v1/auth`, a pass-through to the BetterAuth library. Its shape follows that library, so it is not part of the versioned API. A request that changes something must also send the server's own `Origin`, so the operator API works only from the operator app's pages.
+- **The operator API**, at `/v1/operator`. It uses the session cookie that sign-in sets. Sign-in and sign-out live at `/v1/auth`: `POST /v1/auth/sign-in/magic-link` with `{ "email" }` emails a link, `GET /v1/auth/magic-link/verify` opens one, and `POST /v1/auth/sign-out` ends the session. They pass through to the BetterAuth library, so their shape follows it and is not part of the versioned API. A request that changes something must also send the server's own `Origin`, so the operator API works only from the operator app's pages.
 
 ## Errors
 

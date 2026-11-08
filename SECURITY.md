@@ -18,7 +18,7 @@ Anything that lets someone do what Dinghy should stop. For example:
 
 - Reading or changing another workspace's data.
 - A visitor reading another visitor's messages or images.
-- Signing in as an operator without their password, or keeping access after a sign-out, a password change or a removal from the team.
+- Signing in as an operator without their sign-in link, using a link twice or after 15 minutes, or keeping access after a sign-out or a removal from the team.
 - Running script in the operator app or on a site that embeds the widget.
 - Getting secrets from a server, such as database passwords or the signing secret.
 - A way around the rate limits, a block or the allowed sites.

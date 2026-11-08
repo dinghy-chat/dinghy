@@ -23,7 +23,7 @@ bun run dev
 
 `bun run dev` starts Postgres, Valkey and an S3-compatible store in Docker, from `compose.dev.yaml`. They listen on `127.0.0.1` only, on ports 55432, 56379 and 59000. Then it creates the database, runs the migrations, bundles the widget and the operator app, and starts the server and the worker.
 
-- The operator app is at <http://localhost:3000>. The first run creates the owner `owner@example.com` and prints its password once. `bun run dev reset-password` prints a new one.
+- The operator app is at <http://localhost:3000>. The first run creates the owner `owner@example.com`, and every run prints a sign-in link for it, since development sends no email. A link works once, for 15 minutes.
 - A test site with the widget is at <http://localhost:3001>. Its messages reach the operator app.
 - If port 3000 or 3001 is taken, run `DINGHY_PORT=4000 bun run dev` to use 4000 and 4001.
 - Restart it to pick up a change. Ctrl-C stops the server, and `docker compose -f compose.dev.yaml down` stops the services.

@@ -14,7 +14,7 @@ cd dinghy
 sudo ./install.sh
 ```
 
-The installer asks a few questions, installs Docker if it is missing, gets an HTTPS certificate and prints your password and the tag for your site. [The docs](docs/README.md) have the next steps.
+The installer asks a few questions, installs Docker if it is missing, gets an HTTPS certificate and prints a sign-in link and the tag for your site. [The docs](docs/README.md) have the next steps.
 
 It has text and images in both directions, verified users, several operators, web push and email alerts, and export and import.
 

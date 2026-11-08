@@ -35,9 +35,12 @@
           "signup": {
             "type": ["string", "null"],
             "enum": ["payment", "early", null]
+          },
+          "email": {
+            "type": "boolean"
           }
         },
-        "required": ["name", "version", "billing", "signup"]
+        "required": ["name", "version", "billing", "signup", "email"]
       },
       "NewVisitor": {
         "type": "object",
@@ -75,6 +78,7 @@
                   "checkout_retry_later",
                   "conversation_closed",
                   "email_taken",
+                  "email_unavailable",
                   "forbidden",
                   "internal_error",
                   "invalid_name",
@@ -92,7 +96,6 @@
                   "payment_required",
                   "push_unavailable",
                   "read_only",
-                  "revoke_required",
                   "signed_in",
                   "storage_full",
                   "suspended",
@@ -4579,7 +4582,7 @@
     },
     "/v1/invites/join": {
       "post": {
-        "summary": "Create an account and join with an invite",
+        "summary": "Ask for the link that creates an account, or signs in to one, and joins with an invite",
         "requestBody": {
           "required": true,
           "content": {
@@ -4600,21 +4603,16 @@
                     "type": "string",
                     "maxLength": 254,
                     "format": "email"
-                  },
-                  "password": {
-                    "type": "string",
-                    "minLength": 10,
-                    "maxLength": 128
                   }
                 },
-                "required": ["token", "name", "email", "password"]
+                "required": ["token", "name", "email"]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Joined. With `verify`, the account signs in only after it opens the link sent to its email",
+            "description": "With a mail server, the link went to the email, and `signInUrl` is null: the answer is the same whether or not the email has an account. Without one, open `signInUrl`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4624,11 +4622,11 @@
                       "type": "boolean",
                       "enum": [true]
                     },
-                    "verify": {
-                      "type": "boolean"
+                    "signInUrl": {
+                      "type": ["string", "null"]
                     }
                   },
-                  "required": ["ok", "verify"]
+                  "required": ["ok", "signInUrl"]
                 }
               }
             }
@@ -4664,7 +4662,7 @@
             }
           },
           "409": {
-            "description": "email_taken: the email has an account. operator_limit: the workspace has as many operators as its plan allows",
+            "description": "email_taken: on a server with no mail server, the email has an account. Sign in, then accept the invite",
             "content": {
               "application/json": {
                 "schema": {
@@ -4682,6 +4680,37 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/invites/open": {
+      "get": {
+        "summary": "Open a join link: create the account if needed, join, and sign in",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "token",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Signed in, to the workspace. Or the sign-in page, with `error` set to INVALID_TOKEN, invite_invalid, operator_limit or email_taken"
           },
           "429": {
             "description": "too_many_requests: over the rate limit. Retry after `retry-after`",

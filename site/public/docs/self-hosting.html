@@ -131,9 +131,9 @@
 <li>Checks that your domain points at this server, and that ports 80 and 443 are free.</li>
 <li>Writes your settings to <code>.env</code>, and starts everything with a real HTTPS certificate.</li>
 <li>Creates your owner login, and adds a nightly backup if the server runs cron. If it cannot, it says so.</li>
-<li>Prints your password, your backup key and the tag for your website.</li>
+<li>Prints your backup key, the tag for your website and a sign-in link.</li>
 </ol>
-<p>Save the password and the backup key when it prints them, because nothing shows them again. Then read <a href="/docs/">your next steps</a>.</p>
+<p>Save the backup key when it prints it, because nothing shows it again. The sign-in link works once, for 15 minutes, and <code class="code-long">docker compose exec app chat sign-in-link &lt;email&gt;</code> prints a new one. Then read <a href="/docs/">your next steps</a>.</p>
 <p>Leave the domain empty to try Dinghy on this machine, at <a href="http://localhost:3000">http://localhost:3000</a>. Nobody else can reach it in that mode.</p>
 <p>If something stops it, fix what it says and run it again. A second run keeps your settings and your data. <code>./install.sh --help</code> shows how to run it with no questions.</p>
 <p>If you ran it with <code>sudo</code>, and your user is not in the <code>docker</code> group, use <code>sudo docker compose</code> for the commands in these docs.</p>
@@ -157,7 +157,7 @@
 <span class="term-line">docker compose exec app chat setup</span>
 <span class="term-line">docker compose restart app</span></code></pre>
 </div>
-<p><code>chat setup</code> asks for your email, your name, your company and your website&#39;s address. In a script, pass them as <code>--email</code>, <code>--name</code>, <code>--workspace</code> and <code>--origin</code>. It prints a password once, and the tag to put on your site. The restart turns on web push, with the keys that <code>chat setup</code> made. Then open <a href="http://localhost:3000">http://localhost:3000</a>. If port 3000 is taken, set <code>DINGHY_PORT</code> first.</p>
+<p><code>chat setup</code> asks for your email, your name, your company and your website&#39;s address. In a script, pass them as <code>--email</code>, <code>--name</code>, <code>--workspace</code> and <code>--origin</code>. It prints a sign-in link, which works once for 15 minutes, and the tag to put on your site. The restart turns on web push, with the keys that <code>chat setup</code> made. Then open <a href="http://localhost:3000">http://localhost:3000</a>. If port 3000 is taken, set <code>DINGHY_PORT</code> first.</p>
 <p>On a server:</p>
 <div class="terminal doc-code">
 <div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-4"><span data-copy-label>Copy</span></button></div>
@@ -180,7 +180,7 @@
 <tr><td data-label="Setting"><code>PUBLIC_URL</code></td><td data-label="Purpose">The address people open, such as <code>https://chat.example.com</code>, with no path. Set it only when <code>CHAT_DOMAIN</code> does not give the right one, such as behind a proxy on another port. Without either, it is <code>http://localhost:3000</code>, and sign-in, the widget tag and links in emails all point there</td></tr>
 <tr><td data-label="Setting"><code>COMPOSE_PROFILES=tls</code></td><td data-label="Purpose">Starts Caddy with every command</td></tr>
 <tr><td data-label="Setting"><code>DINGHY_PORT</code></td><td data-label="Purpose">The local port when there is no domain</td></tr>
-<tr><td data-label="Setting"><code>SMTP_URL</code>, <code>MAIL_FROM</code></td><td data-label="Purpose">A mail server, such as <code class="code-long">smtp://user:password@mail.example.com:587</code>. Password reset links, operator alerts by email and replies to visitors who left all need it. With it, someone who joins by invite confirms their email from a link before they can sign in</td></tr>
+<tr><td data-label="Setting"><code>SMTP_URL</code>, <code>MAIL_FROM</code></td><td data-label="Purpose">A mail server, such as <code class="code-long">smtp://user:password@mail.example.com:587</code>. Sign-in links, operator alerts by email and replies to visitors who left all need it. Without one, <code>chat sign-in-link</code> makes the sign-in links</td></tr>
 <tr><td data-label="Setting"><code>S3_ENDPOINT</code>, <code>S3_REGION</code>, <code>S3_BUCKET</code>, <code>S3_ACCESS_KEY_ID</code>, <code>S3_SECRET_ACCESS_KEY</code></td><td data-label="Purpose">Keeps images in a bucket, not on this disk</td></tr>
 <tr><td data-label="Setting"><code>BACKUP_S3_ENDPOINT</code>, <code>BACKUP_S3_REGION</code>, <code>BACKUP_S3_BUCKET</code>, <code>BACKUP_S3_ACCESS_KEY_ID</code>, <code>BACKUP_S3_SECRET_ACCESS_KEY</code></td><td data-label="Purpose">An encrypted copy of each backup in another place</td></tr>
 <tr><td data-label="Setting"><code>BACKUP_HEARTBEAT_URL</code></td><td data-label="Purpose">An address that <code>chat backup</code> pings after each backup that worked, such as a <a href="https://healthchecks.io">healthchecks.io</a> check, so a monitor tells you when a night has none. Optional</td></tr>
@@ -191,7 +191,7 @@
 <tr><td data-label="Setting"><code>HTTP_PORT</code>, <code>HTTPS_PORT</code></td><td data-label="Purpose">The ports Caddy listens on with the <code>tls</code> profile, 80 and 443 by default. Certificates need those two ports from the internet, so change these only when something in front forwards them here</td></tr>
 </tbody>
 </table></div>
-<p>Without a mail server, Dinghy still works. A forgotten password then needs <code class="code-long">docker compose exec app chat reset-password &lt;email&gt;</code>, and nothing checks the email of someone who joins by invite, so send each invite link only to the person it is for.</p>
+<p>Without a mail server, Dinghy still works. Operators sign in with a link that you make for them, with <code class="code-long">docker compose exec app chat sign-in-link &lt;email&gt;</code>, and the sign-in page tells them to ask you. Someone new who opens an invite signs in at once, and nothing checks their email, so send each invite link only to the person it is for.</p>
 <h3 id="a-separate-origin-for-images"><a class="heading-link" href="#a-separate-origin-for-images">A separate origin for images</a></h3>
 <p>Images come from visitors you do not know. Dinghy re-encodes each one and serves it with headers that stop scripts, but a second origin adds one more wall: nothing served there can ever act as the app. To use one:</p>
 <ol>
@@ -267,7 +267,7 @@
 <tbody>
 <tr><td data-label="Task">List the workspaces and their IDs</td><td data-label="Command"><code class="code-long">docker compose run --rm migrate chat workspaces</code></td></tr>
 <tr><td data-label="Task">Back up the database</td><td data-label="Command"><code class="code-long">docker compose run --rm migrate chat backup</code></td></tr>
-<tr><td data-label="Task">Reset a password, with no mail server</td><td data-label="Command"><code class="code-long">docker compose exec app chat reset-password &lt;email&gt;</code></td></tr>
+<tr><td data-label="Task">Make a sign-in link for an operator</td><td data-label="Command"><code class="code-long">docker compose exec app chat sign-in-link &lt;email&gt;</code></td></tr>
 <tr><td data-label="Task">Export a workspace</td><td data-label="Command"><code class="code-long">docker compose exec app chat export &lt;workspace-id&gt; /tmp/export.tar</code>, then <code class="code-long">docker compose cp -a app:/tmp/export.tar .</code></td></tr>
 <tr><td data-label="Task">Import a workspace</td><td data-label="Command"><code class="code-long">docker compose cp -a export.tar app:/tmp/export.tar</code>, then <code class="code-long">docker compose exec app chat import /tmp/export.tar</code></td></tr>
 <tr><td data-label="Task">Suspend a workspace</td><td data-label="Command"><code class="code-long">docker compose run --rm migrate chat suspend &lt;workspace-id&gt; [reason]</code></td></tr>
@@ -280,9 +280,9 @@
 <p>An export holds a workspace&#39;s conversations, visitors, team, settings and images. It moves a workspace from one Dinghy server to another, such as from the cloud to your own server.</p>
 <ol>
 <li>On the old server, an owner selects <strong>Download an export</strong> in Settings. Or run the export command from the table above.</li>
-<li>Install the new server. If you sign up there with the same email as on the old one, your account joins the imported workspace with the password you set there.</li>
+<li>Install the new server. If you sign up there with the same email as on the old one, your account joins the imported workspace.</li>
 <li>Import the file with the import command above. It refuses a workspace that is already on this server.</li>
-<li>The import names the operators who had no account on this server. Each one needs <code class="code-long">docker compose exec app chat reset-password &lt;email&gt;</code> before they can sign in.</li>
+<li>The import names the operators who had no account on this server. They sign in with a link sent to their email, or, with no mail server, one from <code class="code-long">docker compose exec app chat sign-in-link &lt;email&gt;</code>.</li>
 <li>Change the widget tag on your site to load from the new server&#39;s address. The public key and the allowed sites stay the same.</li>
 <li>The workspace gets a new signing secret. If your site signs users in with a host token, copy the new secret from <strong>Settings</strong> to your site&#39;s server, because tokens signed with the old one fail.</li>
 </ol>
