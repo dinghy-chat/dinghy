@@ -21,7 +21,7 @@ import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
-import { title, webLink } from "./visitor.ts";
+import { otherIdentity, title, webLink } from "./visitor.ts";
 
 interface Line {
   id: string;
@@ -67,14 +67,11 @@ const bare = (page: string) => page.replace(/^https?:\/\//, "");
 
 /** Who the visitor is and where they came from: the quiet line under their name. */
 function origin(conversation: Conversation): string | null {
-  // The title shows the name, or else the email, or else the user ID. The line adds what is left.
-  const { name, email, externalId } = conversation.visitor;
-  const who = name !== null ? (email ?? externalId) : email === null ? null : externalId;
   const page =
     conversation.startedPage === null
       ? null
       : t("startedOn").replace("{page}", bare(conversation.startedPage));
-  const parts = [who, page].filter((part) => part !== null);
+  const parts = [...otherIdentity(conversation.visitor), page].filter((part) => part !== null);
   return parts.length === 0 ? null : parts.join(" · ");
 }
 

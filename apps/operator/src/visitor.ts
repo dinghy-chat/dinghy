@@ -22,6 +22,18 @@ export function visitorName(visitor: {
   return visitor.name ?? visitor.email ?? visitor.externalId ?? visitorLabel(visitor.id);
 }
 
+/** The email and user ID the title does not already show, so an operator can find the account. */
+export function otherIdentity(visitor: {
+  email: string | null;
+  externalId: string | null;
+  name?: string | null;
+}): string[] {
+  const shown = visitor.name ?? visitor.email ?? visitor.externalId;
+  return [visitor.email, visitor.externalId].filter(
+    (part): part is string => part !== null && part !== shown,
+  );
+}
+
 export function title(conversation: Conversation): string {
   return visitorName(conversation.visitor);
 }

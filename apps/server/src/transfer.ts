@@ -46,6 +46,10 @@ const ExportFile = z.strictObject({
     allowedOrigins: z.array(z.string().max(300)).max(200),
     eventSeq: seq,
     feedGeneration: z.number().int().min(1).max(999_999_999),
+    // Added after 0.5.0, so an older file without them still imports.
+    widgetTitle: z.string().max(40).nullable().optional(),
+    widgetGreeting: z.string().max(200).nullable().optional(),
+    widgetAway: z.string().max(200).nullable().optional(),
     createdAt: date,
   }),
   members: z.array(
@@ -73,6 +77,10 @@ const ExportFile = z.strictObject({
       identityIssuedAt: seq.nullable(),
       lastReadSeq: seq,
       blockedAt: nullableDate,
+      // Added after 0.5.0, so an older file without them still imports.
+      device: z.string().max(100).nullable().optional(),
+      lastPage: z.string().max(2048).nullable().optional(),
+      lastSeenAt: nullableDate.optional(),
       createdAt: date,
     }),
   ),
@@ -234,6 +242,9 @@ async function readWorkspace(
           allowedOrigins: space.allowedOrigins,
           eventSeq: space.eventSeq.toString(),
           feedGeneration: space.feedGeneration,
+          widgetTitle: space.widgetTitle,
+          widgetGreeting: space.widgetGreeting,
+          widgetAway: space.widgetAway,
           createdAt: iso(space.createdAt),
         },
         members: members.map((row) => ({
@@ -251,6 +262,9 @@ async function readWorkspace(
           identityIssuedAt: row.identityIssuedAt?.toString() ?? null,
           lastReadSeq: row.lastReadSeq.toString(),
           blockedAt: isoOrNull(row.blockedAt),
+          device: row.device,
+          lastPage: row.lastPage,
+          lastSeenAt: isoOrNull(row.lastSeenAt),
           createdAt: iso(row.createdAt),
         })),
         conversations: conversations.map((row) => ({
@@ -446,6 +460,9 @@ async function insertWorkspace(
     // New and random, so a client's old cursor gets resync, even when one file is imported onto
     // two servers in turn at the same address. A count from the file would repeat there.
     feedGeneration: newGeneration(data.workspace.feedGeneration),
+    widgetTitle: data.workspace.widgetTitle ?? null,
+    widgetGreeting: data.workspace.widgetGreeting ?? null,
+    widgetAway: data.workspace.widgetAway ?? null,
     createdAt: new Date(data.workspace.createdAt),
   });
 
@@ -499,6 +516,9 @@ async function insertWorkspace(
         identityIssuedAt: row.identityIssuedAt === null ? null : BigInt(row.identityIssuedAt),
         lastReadSeq: BigInt(row.lastReadSeq),
         blockedAt: row.blockedAt === null ? null : new Date(row.blockedAt),
+        device: row.device ?? null,
+        lastPage: row.lastPage ?? null,
+        lastSeenAt: row.lastSeenAt ? new Date(row.lastSeenAt) : null,
         createdAt: new Date(row.createdAt),
       })),
     );

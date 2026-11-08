@@ -570,7 +570,8 @@ export function Inbox({
   useEffect(prepareSound, []);
   const shownConversation = useRef(selected);
   useLayoutEffect(() => {
-    shownConversation.current = selected;
+    // A page such as Analytics hides the thread, so its conversation is not in view then.
+    shownConversation.current = view === "open" || view === "closed" ? selected : null;
   });
   // A sound only when the operator is not already looking at that conversation.
   const onVisitorMessage = useCallback((conversationId: string | null) => {

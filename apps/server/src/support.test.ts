@@ -15,6 +15,7 @@ import { chatLink, conversation, pageView, visitor, workspace } from "./db/schem
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { deviceLine } from "./device.ts";
 import { verifyHostToken } from "./identity.ts";
+import { recordPage } from "./journey.ts";
 import { createLive, type Live } from "./live.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -443,6 +444,28 @@ describe("page journey", () => {
     expect(await journey(visitorId)).toEqual([]);
   });
 
+  test("a report racing the delete of the last conversation leaves no page behind", async () => {
+    const { visitorId, token } = await newVisitor();
+    const { conversationId } = await send(token, "Hi");
+    let deleted: Promise<Response> | undefined;
+    let doneWhileReporting = false;
+    await withWorkspace(db, a.id, async (tx) => {
+      // The report has checked the conversation and written its row, and has not committed.
+      await recordPage(tx, a.id, visitorId, { path: `${SITE}/race`, title: null, device: "x" });
+      const pending = Promise.resolve(
+        asOperator(inA(`/conversations/${conversationId}`), ownerCookie, { method: "DELETE" }),
+      );
+      deleted = pending;
+      void pending.then(() => {
+        doneWhileReporting = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(doneWhileReporting).toBe(false);
+    expect((await deleted)?.status).toBe(200);
+    expect(await journey(visitorId)).toEqual([]);
+  });
+
   test("goes with its visitor", async () => {
     const [row] = await owner
       .insert(visitor)
@@ -597,6 +620,20 @@ describe("search", () => {
     expect(byText.body.conversations.map((row) => row.id)).toEqual([conversationId]);
     // The matching message is the preview, not the newest one.
     expect(byText.body.conversations[0]?.lastMessage?.body).toBe(`The invoice ${tag} is wrong`);
+  });
+
+  test("a match in an answered message does not make the conversation look waiting", async () => {
+    const tag = randomUUID().slice(0, 8);
+    const { token } = await newVisitor();
+    const { conversationId } = await send(token, `Refund ${tag} please`);
+    await asOperator(inA(`/conversations/${conversationId}/messages`), ownerCookie, {
+      method: "POST",
+      body: JSON.stringify({ clientId: randomUUID(), body: "Done." }),
+    });
+    const [row] = (await search(`refund ${tag}`)).body.conversations as {
+      lastMessage: { body: string; fromVisitor: boolean } | null;
+    }[];
+    expect(row?.lastMessage).toMatchObject({ body: `Refund ${tag} please`, fromVisitor: false });
   });
 
   test("% and _ match only themselves", async () => {

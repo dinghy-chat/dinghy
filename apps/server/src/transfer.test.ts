@@ -183,6 +183,10 @@ async function makeSource(): Promise<Source> {
     .set({ removedAt: new Date() })
     .where(eq(workspaceMember.operatorId, gone.id));
   await owner.insert(emailStop).values({ workspaceId: space.id, addressHash: "a".repeat(64) });
+  await owner
+    .update(workspace)
+    .set({ widgetTitle: "Ask Acme", widgetGreeting: "Hello there", widgetAway: "Back soon" })
+    .where(eq(workspace.id, space.id));
   await app.request(`/v1/widget/${space.publicKey}/page`, {
     method: "POST",
     headers: {
@@ -456,6 +460,36 @@ describe("a round trip onto a fresh install", () => {
       .from(emailStop)
       .where(eq(emailStop.workspaceId, source.space.id));
     expect(rows.map((row) => row.addressHash)).toEqual(["a".repeat(64)]);
+  });
+
+  test("the widget's words and the visitor's details come along", async () => {
+    const [space] = await target.owner
+      .select()
+      .from(workspace)
+      .where(eq(workspace.id, source.space.id));
+    expect([space?.widgetTitle, space?.widgetGreeting, space?.widgetAway]).toEqual([
+      "Ask Acme",
+      "Hello there",
+      "Back soon",
+    ]);
+    const [before] = await source.install.owner
+      .select()
+      .from(visitor)
+      .where(eq(visitor.id, source.visitorId));
+    const [after] = await target.owner
+      .select()
+      .from(visitor)
+      .where(eq(visitor.id, source.visitorId));
+    expect(before?.lastPage).toBe(`${SITE}/docs`);
+    expect([after?.device, after?.lastPage]).toEqual([before?.device, before?.lastPage]);
+    // Streams in other tests move both sides' times, so the file is what this checks.
+    let exported: { visitors: { id: string; lastSeenAt?: string | null }[] } | undefined;
+    for await (const entry of readTar(once(archive))) {
+      if (entry.name === "export.json") exported = JSON.parse(Buffer.from(entry.bytes).toString());
+    }
+    const row = exported?.visitors.find((one) => one.id === source.visitorId);
+    expect(row?.lastSeenAt).toMatch(/^\d{4}-/);
+    expect(after?.lastSeenAt).toBeInstanceOf(Date);
   });
 
   test("the visitor's page journey comes along", async () => {

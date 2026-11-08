@@ -34,13 +34,15 @@ export async function recordPage(
   page: { path: string | null; title: string | null; device: string },
 ): Promise<boolean> {
   const isVisitor = and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId));
+  // The visitor row's lock makes this take turns with another report and with the delete of the
+  // visitor's last conversation, so a delete can never leave a page behind.
+  await lockVisitor(tx, workspaceId, visitorId);
   const chatted = await tx
     .select({ id: conversation.id })
     .from(conversation)
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
     .limit(1);
   if (chatted.length === 0) return false;
-  // First, so the visitor row's lock makes two reports of one visitor take turns below.
   await tx
     .update(visitor)
     .set({
@@ -76,6 +78,14 @@ export async function recordPage(
   return true;
 }
 
+async function lockVisitor(tx: Transaction, workspaceId: string, visitorId: string) {
+  await tx
+    .select({ id: visitor.id })
+    .from(visitor)
+    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)))
+    .for("update");
+}
+
 /** A visitor's newest pages, newest first. */
 export function visitorPages(
   tx: Transaction,
@@ -100,6 +110,7 @@ export async function forgetPagesWithoutChat(
   workspaceId: string,
   visitorId: string,
 ): Promise<void> {
+  await lockVisitor(tx, workspaceId, visitorId);
   await tx.execute(sql`
     DELETE FROM page_view WHERE workspace_id = ${workspaceId} AND visitor_id = ${visitorId}
       AND NOT EXISTS (SELECT 1 FROM conversation

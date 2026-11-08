@@ -198,3 +198,28 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
   await owner.getByRole("option", { name: "Last 7 days" }).click();
   await expect(page.locator(".bars > span")).toHaveCount(7);
 });
+
+test("a message in the open conversation chimes while another page hides it", async ({
+  browser,
+}) => {
+  const customer = await visitor(browser, "/pricing", "First question");
+  const owner = await signedIn(browser);
+  // Counts each chime, which starts its notes with an oscillator.
+  await owner.evaluate(() => {
+    const counted = globalThis as { chimes?: number };
+    counted.chimes = 0;
+    const original = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function (this: AudioContext) {
+      counted.chimes = (counted.chimes ?? 0) + 1;
+      return original.call(this);
+    };
+  });
+  await owner.locator(".row", { hasText: "First question" }).click();
+  await expect(owner.locator(".thread .msg.visitor", { hasText: "First question" })).toBeVisible();
+  await owner.getByRole("button", { name: "Analytics" }).click();
+  await expect(owner.getByRole("heading", { name: "Analytics" })).toBeVisible();
+  await say(customer, "Are you there?");
+  await expect
+    .poll(() => owner.evaluate(() => (globalThis as { chimes?: number }).chimes ?? 0))
+    .toBeGreaterThan(0);
+});

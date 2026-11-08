@@ -16,7 +16,7 @@ If two of you open the same conversation, each sees "… is replying", so you do
 
 To find a conversation, type at least two letters in the search box above the list. It searches open and closed conversations by the visitor's name, email or user ID, and by what anyone wrote, and shows the matching message under each one. Press Escape or empty the box to go back to the list.
 
-Under the visitor's name, the header shows their email or user ID and the page where they started. The next line shows **Online now** while the visitor has the chat open, or when they were last seen, then their browser and system, such as "Chrome on macOS", and the last page they were on, which opens in a new tab. If Dinghy cannot tell whether they are online, it says nothing about it. On the right are the controls:
+Under the visitor's name, the header shows their email and user ID, when the name does not already show them, and the page where they started. The next line shows **Online now** while the visitor has the chat open, or when they were last seen, then their browser and system, such as "Chrome on macOS", and the last page they were on, which opens in a new tab. If Dinghy cannot tell whether they are online, it says nothing about it. On the right are the controls:
 
 | Control | What it does |
 |---|---|

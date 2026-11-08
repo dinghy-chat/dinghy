@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Conversation } from "./api.ts";
-import { isWaiting, visitorLabel, visitorName, webLink } from "./visitor.ts";
+import { isWaiting, otherIdentity, visitorLabel, visitorName, webLink } from "./visitor.ts";
 
 describe("visitor labels", () => {
   test("a signed-out visitor gets a short code from its ID, the same every time", () => {
@@ -85,5 +85,20 @@ describe("names and links", () => {
     ]) {
       expect(webLink(value)).toBeNull();
     }
+  });
+});
+
+describe("the line under the visitor's name", () => {
+  test("keeps the email and the user ID that the title does not show", () => {
+    expect(otherIdentity({ name: "Ana", email: "ana@example.com", externalId: "u-1" })).toEqual([
+      "ana@example.com",
+      "u-1",
+    ]);
+    expect(otherIdentity({ name: null, email: "ana@example.com", externalId: "u-1" })).toEqual([
+      "u-1",
+    ]);
+    expect(otherIdentity({ name: "Ana", email: null, externalId: "u-1" })).toEqual(["u-1"]);
+    expect(otherIdentity({ name: null, email: null, externalId: "u-1" })).toEqual([]);
+    expect(otherIdentity({ name: null, email: null, externalId: null })).toEqual([]);
   });
 });

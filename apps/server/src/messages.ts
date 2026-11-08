@@ -737,11 +737,7 @@ export async function searchConversations(
     .limit(limit);
   // The newest matching message of each conversation.
   const hit = tx
-    .select({
-      body: message.body,
-      authorVisitorId: message.authorVisitorId,
-      createdAt: message.createdAt,
-    })
+    .select({ body: message.body, createdAt: message.createdAt })
     .from(message)
     .where(
       and(
@@ -768,7 +764,6 @@ export async function searchConversations(
     .select({
       ...conversationColumns,
       hitBody: hit.body,
-      hitAuthorVisitorId: hit.authorVisitorId,
       hitCreatedAt: hit.createdAt,
       lastBody: newest.body,
       lastAuthorVisitorId: newest.authorVisitorId,
@@ -781,19 +776,17 @@ export async function searchConversations(
     .where(and(eq(conversation.workspaceId, workspaceId), inArray(conversation.id, matched)))
     .orderBy(desc(conversation.updatedAt), desc(conversation.id));
   return rows.map(
-    ({
-      hitBody,
-      hitAuthorVisitorId,
-      hitCreatedAt,
-      lastBody,
-      lastAuthorVisitorId,
-      lastCreatedAt,
-      ...row
-    }) => ({
+    ({ hitBody, hitCreatedAt, lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
       ...row,
+      // The matching message's text is the preview. Who wrote last and when still come from the
+      // newest message, so a conversation shows as waiting only when the visitor wrote last.
       lastMessage:
-        hitCreatedAt !== null
-          ? { body: hitBody, fromVisitor: hitAuthorVisitorId !== null, createdAt: hitCreatedAt }
+        hitCreatedAt !== null && lastCreatedAt !== null
+          ? {
+              body: hitBody,
+              fromVisitor: lastAuthorVisitorId !== null,
+              createdAt: lastCreatedAt,
+            }
           : lastCreatedAt === null
             ? null
             : {
