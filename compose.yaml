@@ -183,7 +183,7 @@ services:
     <<: *hardened
     cap_add: [NET_BIND_SERVICE]
     profiles: [tls]
-    image: caddy:2-alpine@sha256:ae5e525ca6773b0a4ce579c774cb39b3147e1576084139229517bdbcfe3ed812
+    image: caddy:2-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
     # Gets and renews a certificate by itself, and needs no account.
     # HSTS keeps browsers on HTTPS after the first visit. The app sends it too when PUBLIC_URL is https.
     command:
