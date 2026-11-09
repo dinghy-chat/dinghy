@@ -5,6 +5,9 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 ## Unreleased
 
 - Security: an operator request now ends with the state at its end, not its start. Before, a member could start a write, send its body slowly, and finish it after an owner removed them or ended their session, for up to 5 minutes. A removed admin could then read the new signing secret after its rotation, and a removed owner could delete the workspace. The server now reads the whole body before it checks the session and the membership, and an image upload checks both again before it saves the message.
+- On a phone, the open chat fills the screen, as in Crisp and Intercom, and keeps clear of the notch and the home bar. On a computer it still floats in the corner.
+- A visitor with no name gets the first two characters of their code as initials, such as "7F" for "Visitor 7F3K", so two of them no longer look the same.
+- Headings and short texts in the operator app break their lines more evenly, and the **Visitor details** row is 44 px tall on a phone.
 
 ## 0.6.0 (2026-11-09)
 

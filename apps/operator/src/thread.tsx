@@ -21,7 +21,7 @@ import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
-import { attributeName, otherIdentity, title, webLink } from "./visitor.ts";
+import { attributeName, avatarLetters, otherIdentity, title, webLink } from "./visitor.ts";
 
 interface Line {
   id: string;
@@ -233,7 +233,7 @@ function ThreadHead({
         <button type="button" className="icon-button back" aria-label={t("back")} onClick={onBack}>
           <Icon name="back" />
         </button>
-        <Avatar name={title(conversation)} />
+        <Avatar name={title(conversation)} letters={avatarLetters(conversation.visitor)} />
         <div className="who-text">
           <h2>{title(conversation)}</h2>
           {from !== null && <p title={from}>{from}</p>}

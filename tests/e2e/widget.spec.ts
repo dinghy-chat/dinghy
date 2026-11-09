@@ -710,6 +710,23 @@ test("on a touch screen, opening the chat focuses the panel, so no keyboard cove
   await context.close();
 });
 
+test("on a phone, the open chat fills the screen, and on a computer it floats", async ({
+  browser,
+}) => {
+  for (const [width, height, full] of [
+    [390, 844, true],
+    [1280, 800, false],
+  ] as const) {
+    const context = await browser.newContext({ viewport: { width, height } });
+    const page = await context.newPage();
+    await page.goto(`${server.hostOrigin}/plain`);
+    await launcher(page).click();
+    const box = await page.getByRole("region", { name: "Chat with us" }).boundingBox();
+    expect(box !== null && box.x === 0 && box.y === 0 && box.width === width).toBe(full);
+    await context.close();
+  }
+});
+
 test("typing in the chat does not fire the host page's shortcuts", async ({ page }) => {
   await page.goto(`${server.hostOrigin}/hostile`);
   await launcher(page).click();
