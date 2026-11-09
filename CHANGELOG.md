@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-09
+
 ### Added
 
 - The operator app has a dark theme. It follows the device, and Profile can fix it to light or dark on one device.
@@ -168,7 +170,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/dinghy-chat/dinghy/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dinghy-chat/dinghy/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dinghy-chat/dinghy/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dinghy-chat/dinghy/compare/v0.5.0...v0.6.0
