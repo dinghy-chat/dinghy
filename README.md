@@ -9,7 +9,7 @@ A small open-source live support chat that you can run on one small server.
 On a new Linux server:
 
 ```sh
-git clone -b v0.7.0 https://github.com/dinghy-chat/dinghy.git
+git clone -b v0.7.1 https://github.com/dinghy-chat/dinghy.git
 cd dinghy
 sudo ./install.sh
 ```
