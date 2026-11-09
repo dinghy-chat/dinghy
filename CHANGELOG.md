@@ -4,6 +4,18 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- The operator app has a dark theme. It follows the device, and Profile can fix it to light or dark on one device.
+- The analytics charts show the count and the day or hour under the pointer.
+- The search field shows a ring while a search runs.
+
+### Fixed
+
+- The sidebar starts at the top of the window when a banner shows.
+- The Delete item in a conversation's menu is no longer a red block with red text.
+- The search field is white, not cream.
+
 ## [0.7.1] - 2026-11-09
 
 ### Changed

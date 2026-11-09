@@ -10,9 +10,10 @@ import {
   type WorkspaceApi,
   type WorkspaceSettings,
 } from "./api.ts";
-import { Confirm } from "./popup.tsx";
+import { Confirm, Select } from "./popup.tsx";
 import { BlockedRow, InviteDialog, imagesText, operatorsText, TeamTab, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
+import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import {
   CopyButton,
   ErrorNote,
@@ -359,8 +360,15 @@ function SecretRow({
 }
 
 /** The operator's own name and email, the same in every workspace. */
+const THEMES: { value: Theme; label: TextId }[] = [
+  { value: "system", label: "themeSystem" },
+  { value: "light", label: "themeLight" },
+  { value: "dark", label: "themeDark" },
+];
+
 export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
   const [name, setName] = useState(me.name);
+  const [theme, setThemeState] = useState(savedTheme);
   const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState(false);
 
@@ -407,6 +415,17 @@ export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
         </PageRow>
         <PageRow title={t("email")} help={t("accountEmailHelp")}>
           <input aria-label={t("email")} value={me.email} readOnly />
+        </PageRow>
+        <PageRow title={t("themeTitle")} help={t("themeHelp")}>
+          <Select<Theme>
+            label={t("themeTitle")}
+            value={theme}
+            choices={THEMES.map((choice) => ({ value: choice.value, label: t(choice.label) }))}
+            onChange={(next) => {
+              setTheme(next);
+              setThemeState(next);
+            }}
+          />
         </PageRow>
       </form>
     </Page>
