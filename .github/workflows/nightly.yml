@@ -80,7 +80,6 @@ jobs:
     timeout-minutes: 50
     permissions:
       contents: read
-      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -92,8 +91,6 @@ jobs:
       - run: scripts/image-check.sh dinghy:check
       - run: scripts/installer-check.sh dinghy:check
       - run: scripts/install-check.sh dinghy:check
-      # The previous releases are private until launch, so this logs in only to pull them.
-      - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       # Upgrades from the first release, and from the latest one, which is what installs upgrade from.
       - run: scripts/backup-check.sh dinghy:check $(scripts/previous-releases.sh)
       - run: scripts/upgrade-check.sh dinghy:check

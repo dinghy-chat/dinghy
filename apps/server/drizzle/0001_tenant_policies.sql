@@ -48,7 +48,7 @@ GRANT SELECT, INSERT, UPDATE ON workspace TO dinghy_app;
 --> statement-breakpoint
 GRANT SELECT, INSERT, UPDATE, DELETE ON operator, workspace_member, visitor, conversation, message, attachment TO dinghy_app;
 --> statement-breakpoint
--- The feed is append-only for the app. The worker prunes it in a later stage.
+-- The feed is append-only for the app, and the worker prunes it.
 GRANT SELECT, INSERT ON event TO dinghy_app;
 --> statement-breakpoint
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO dinghy_worker, dinghy_backup;
