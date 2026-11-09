@@ -1,4 +1,4 @@
-import webPush from "web-push";
+import { generateRequestDetails } from "web-push";
 
 export interface PushTarget {
   endpoint: string;
@@ -62,7 +62,7 @@ export function createPush(keys: PushKeys, request: typeof fetch = fetch): Push 
       const timeout = AbortSignal.timeout(SEND_TIMEOUT_MS);
       try {
         // Inside the try, because a key it cannot use throws, and this device must fail alone.
-        const details = webPush.generateRequestDetails(
+        const details = generateRequestDetails(
           { endpoint: target.endpoint, keys: { p256dh: target.p256dh, auth: target.auth } },
           JSON.stringify(payload),
           {

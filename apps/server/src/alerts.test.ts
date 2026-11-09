@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { and, eq, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
-import webPush from "web-push";
+import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
@@ -42,7 +42,7 @@ import { startWorker, type Worker } from "./worker.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const logger = pino({ level: "silent" });
-const keys = { ...webPush.generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" };
+const keys = { ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" };
 const MAIN = fileURLToPath(new URL("./main.ts", import.meta.url));
 
 let database: TestDatabase;

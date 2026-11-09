@@ -13,7 +13,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Redis } from "iovalkey";
 import pg from "pg";
 import { pino } from "pino";
-import webPush from "web-push";
+import { generateVAPIDKeys } from "web-push";
 import { z } from "zod";
 import { signupsCsv } from "../../../ee/server/index.ts";
 import { BadArchiveError } from "./archive.ts";
@@ -670,7 +670,7 @@ async function setupCommand(
   );
   const secrets = process.env.DINGHY_SECRETS_DIR;
   if (secrets !== undefined && config.VAPID_PUBLIC_KEY === undefined) {
-    await writePushKeys(secrets, webPush.generateVAPIDKeys(), `mailto:${email}`);
+    await writePushKeys(secrets, generateVAPIDKeys(), `mailto:${email}`);
     console.log("\nRestart to turn on web push: docker compose restart app");
   }
   if (config.SMTP_URL === undefined) {
@@ -733,7 +733,7 @@ async function createOperatorCommand(
 async function main(): Promise<number> {
   const [command, ...args] = process.argv.slice(2);
   if (command === "push-keys") {
-    const keys = webPush.generateVAPIDKeys();
+    const keys = generateVAPIDKeys();
     console.log(`VAPID_PUBLIC_KEY=${keys.publicKey}\nVAPID_PRIVATE_KEY=${keys.privateKey}`);
     return 0;
   }
