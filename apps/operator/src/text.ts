@@ -326,10 +326,12 @@ const en = {
 
 export type TextId = keyof typeof en;
 
-/** The text for `id`, with each `{name}` in it replaced by `values.name`. */
+/**
+ * The text for `id`, with each `{name}` in it replaced by `values.name`. One pass with a function,
+ * so a value that holds `$&` or `{other}` shows as it is.
+ */
 export function t(id: TextId, values: Record<string, string | number> = {}): string {
-  return Object.entries(values).reduce(
-    (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
-    en[id],
+  return en[id].replace(/\{(\w+)\}/g, (match, name: string) =>
+    name in values ? String(values[name]) : match,
   );
 }

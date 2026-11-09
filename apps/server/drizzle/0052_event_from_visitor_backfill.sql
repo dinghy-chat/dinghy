@@ -5,7 +5,7 @@ SET "payload" = e."payload" || jsonb_build_object(
   'fromVisitor',
   COALESCE(
     (SELECT m."author_visitor_id" IS NOT NULL FROM "message" AS m
-     WHERE m."workspace_id" = e."workspace_id" AND m."id"::text = e."payload"->>'messageId'),
+     WHERE m."workspace_id" = e."workspace_id" AND m."id" = (e."payload"->>'messageId')::uuid),
     false
   )
 )

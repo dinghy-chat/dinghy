@@ -236,6 +236,31 @@ describe("chat migrate", () => {
     ]);
   });
 
+  test("page addresses longer than 2,000 characters are shortened", async () => {
+    await run(await migrationsBefore("0053_"));
+    const workspace = "00000000-0000-4000-8000-0000000000ef";
+    const visitor = "00000000-0000-4000-8000-0000000000f1";
+    const long = `https://example.com/${"a".repeat(2028)}`;
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Long', 'wk_00000000000000000000000000000003', 'secret')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, id, token_hash, last_page)
+       values ('${workspace}', '${visitor}', 'h2', '${long}')`,
+    );
+    await query(
+      `insert into conversation (workspace_id, visitor_id, started_page)
+       values ('${workspace}', '${visitor}', '${long}'), ('${workspace}', '${visitor}', 'https://example.com/')`,
+    );
+    await run();
+    expect(await query("select length(last_page) as n from visitor")).toEqual([{ n: 2000 }]);
+    expect(await query("select length(started_page) as n from conversation order by n")).toEqual([
+      { n: 20 },
+      { n: 2000 },
+    ]);
+  });
+
   test("a run with no pending migration takes no backup and changes nothing", async () => {
     await run();
     const before = await appliedCount();

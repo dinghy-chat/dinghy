@@ -632,10 +632,7 @@ export function Inbox({
       .filter((id) => id !== me.id)
       .flatMap((id) => members.find((member) => member.id === id)?.name ?? []);
     if (names.length === 0) return null;
-    return t(names.length === 1 ? "isReplying" : "areReplying").replace(
-      "{names}",
-      names.join(", "),
-    );
+    return t(names.length === 1 ? "isReplying" : "areReplying", { names: names.join(", ") });
   };
   const shown = useRef({ status, limit });
   useLayoutEffect(() => {

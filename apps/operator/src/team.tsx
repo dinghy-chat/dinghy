@@ -79,8 +79,11 @@ export function useTeam(api: WorkspaceApi, role: Role) {
     // same offset would add duplicates, and the list would then count past the end.
     if (loadingBlocked.current) return;
     loadingBlocked.current = true;
+    const started = loads.current;
     try {
       const page = await api.blockedVisitors(blocked.length);
+      // The list loaded again while this page was on its way, so its offset no longer fits.
+      if (loads.current !== started) return;
       setBlocked((current) => [...current, ...page.visitors]);
       setMoreBlocked(page.hasMore);
     } catch (failure) {
