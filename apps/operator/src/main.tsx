@@ -8,7 +8,10 @@ import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate } from "./nav.ts";
 import { t } from "./text.ts";
+import { applyTheme, savedTheme } from "./theme.ts";
 import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./ui.tsx";
+
+applyTheme(savedTheme());
 
 const WORKSPACE_KEY = "dinghy.workspace";
 

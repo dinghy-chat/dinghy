@@ -493,9 +493,14 @@ function ConversationRow({
 /**
  * Searches open and closed conversations as the operator types. It waits for a pause, and a newer
  * search cancels the one before, so a slow answer never replaces a newer one. Null means no search.
+ * Searching is true from the first key until the answer for the latest words arrives.
  */
-function useSearch(api: WorkspaceApi, query: string): Conversation[] | null {
+function useSearch(
+  api: WorkspaceApi,
+  query: string,
+): { found: Conversation[] | null; searching: boolean } {
   const [found, setFound] = useState<Conversation[] | null>(null);
+  const [answered, setAnswered] = useState("");
   const wanted = query.trim();
   useEffect(() => {
     if (wanted.length < SEARCH_MIN) {
@@ -505,9 +510,13 @@ function useSearch(api: WorkspaceApi, query: string): Conversation[] | null {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       api.search(wanted, controller.signal).then(
-        (result) => setFound(result.conversations),
+        (result) => {
+          setFound(result.conversations);
+          setAnswered(wanted);
+        },
         () => {
           // An aborted search has a newer one behind it, and a failed one keeps the last rows.
+          if (!controller.signal.aborted) setAnswered(wanted);
         },
       );
     }, SEARCH_WAIT_MS);
@@ -516,17 +525,31 @@ function useSearch(api: WorkspaceApi, query: string): Conversation[] | null {
       controller.abort();
     };
   }, [api, wanted]);
-  return wanted.length < SEARCH_MIN ? null : found;
+  if (wanted.length < SEARCH_MIN) return { found: null, searching: false };
+  return { found, searching: answered !== wanted };
 }
 
 /** The search field at the top of the list. Escape clears it. */
-function SearchField({ value, onChange }: { value: string; onChange(value: string): void }) {
+function SearchField({
+  value,
+  searching,
+  onChange,
+}: {
+  value: string;
+  searching: boolean;
+  onChange(value: string): void;
+}) {
   return (
     <div className="search">
-      <Icon name="search" size={18} />
+      {searching ? (
+        <span className="spinner" role="status" aria-label={t("searching")} />
+      ) : (
+        <Icon name="search" size={18} />
+      )}
       <input
         type="search"
         aria-label={t("searchLabel")}
+        aria-busy={searching}
         placeholder={t("searchPlaceholder")}
         maxLength={100}
         value={value}
@@ -585,7 +608,7 @@ export function Inbox({
   const [view, setView] = useState<View>("open");
   const visible = useTabVisible();
   const [query, setQuery] = useState("");
-  const found = useSearch(api, query);
+  const { found, searching } = useSearch(api, query);
   useEffect(prepareSound, []);
   const shownConversation = useRef(selected);
   useLayoutEffect(() => {
@@ -689,24 +712,6 @@ export function Inbox({
 
   return (
     <div className="shell">
-      {lost && (
-        <div className="banner" role="status">
-          {t("reconnecting")}
-        </div>
-      )}
-      {suspended ? (
-        <SuspendedBanner contact={me.contact} />
-      ) : waitsForCloud ? (
-        <WaitingBanner
-          api={api}
-          workspaceId={workspaceId}
-          email={me.email}
-          owner={role === "owner"}
-          billing={me.billing}
-        />
-      ) : (
-        <BillingBanner api={api} workspaceId={workspaceId} readOnly={readOnly} billing={billing} />
-      )}
       <div className={view !== status ? "app paging" : selected === null ? "app" : "app showing"}>
         <Sidebar
           me={me}
@@ -720,95 +725,122 @@ export function Inbox({
           onSwitch={onSwitch}
           onSignedOut={onSignedOut}
         />
-        <main className="panel">
-          {view === "settings" && (
-            <SettingsPage
+        <div className="stage">
+          {lost && (
+            <div className="banner" role="status">
+              {t("reconnecting")}
+            </div>
+          )}
+          {suspended ? (
+            <SuspendedBanner contact={me.contact} />
+          ) : waitsForCloud ? (
+            <WaitingBanner
               api={api}
-              me={me}
-              role={role}
               workspaceId={workspaceId}
-              workspaceName={name}
+              email={me.email}
+              owner={role === "owner"}
+              billing={me.billing}
+            />
+          ) : (
+            <BillingBanner
+              api={api}
+              workspaceId={workspaceId}
+              readOnly={readOnly}
               billing={billing}
-              waiting={waitsForCloud}
-              onLeft={() => navigate("/")}
             />
           )}
-          {view === "analytics" && <AnalyticsPage api={api} />}
-          {view === "alerts" && <AlertsPage api={api} />}
-          {view === "profile" && (
-            <ProfilePage
-              me={me}
-              onChanged={() => {
-                // The name shows on assignments and in the dropdown too, which read the members.
-                onAccountChanged();
-                loadMembers();
-              }}
-            />
-          )}
-          <div className="split">
-            <section className="list" aria-label={t(STATUS_LOOK[status].label)}>
-              <PageHead
-                title={t(STATUS_LOOK[status].label)}
-                context={found === null ? listContext(status, waiting) : foundContext(found.length)}
-              />
-              <SearchField value={query} onChange={setQuery} />
-              <ul className="rows">
-                {found === null && conversations.length === 0 && (
-                  <li className="nothing empty-boat">
-                    <Pond />
-                    <b>{t(STATUS_LOOK[status].empty)}</b>
-                    {t("emptyHint")}
-                  </li>
-                )}
-                {found !== null && found.length === 0 && (
-                  <li className="nothing">
-                    <b>{t("searchNone")}</b>
-                  </li>
-                )}
-                {(found ?? conversations).map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    conversation={conversation}
-                    selected={conversation.id === selected}
-                    members={members}
-                    replying={replying(conversation.id)}
-                    showClosed={found !== null && status === "open"}
-                    onSelect={() => setSelected(conversation.id)}
-                  />
-                ))}
-              </ul>
-              {hasMore && found === null && (
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => setLimit((current) => current + PAGE_SIZE)}
-                >
-                  {t("loadMore")}
-                </button>
-              )}
-            </section>
-            {selected === null ? (
-              <div className="thread">
-                <Harbor title={t("pickOne")} />
-              </div>
-            ) : (
-              <Thread
-                key={selected}
+          <main className="panel">
+            {view === "settings" && (
+              <SettingsPage
                 api={api}
-                meId={me.id}
-                drafts={drafts}
-                members={members}
-                replying={replying(selected)}
-                canDelete={role !== "agent" && !readOnly && !suspended}
-                repliesOffReason={suspended ? "suspendedHelp" : readOnly ? "readOnlyHelp" : null}
-                conversationId={selected}
-                version={threadVersion(selected)}
-                onBack={() => setSelected(null)}
-                onChanged={reload}
+                me={me}
+                role={role}
+                workspaceId={workspaceId}
+                workspaceName={name}
+                billing={billing}
+                waiting={waitsForCloud}
+                onLeft={() => navigate("/")}
               />
             )}
-          </div>
-        </main>
+            {view === "analytics" && <AnalyticsPage api={api} />}
+            {view === "alerts" && <AlertsPage api={api} />}
+            {view === "profile" && (
+              <ProfilePage
+                me={me}
+                onChanged={() => {
+                  // The name shows on assignments and in the dropdown too, which read the members.
+                  onAccountChanged();
+                  loadMembers();
+                }}
+              />
+            )}
+            <div className="split">
+              <section className="list" aria-label={t(STATUS_LOOK[status].label)}>
+                <PageHead
+                  title={t(STATUS_LOOK[status].label)}
+                  context={
+                    found === null ? listContext(status, waiting) : foundContext(found.length)
+                  }
+                />
+                <SearchField value={query} searching={searching} onChange={setQuery} />
+                <ul className="rows" aria-busy={searching}>
+                  {found === null && conversations.length === 0 && (
+                    <li className="nothing empty-boat">
+                      <Pond />
+                      <b>{t(STATUS_LOOK[status].empty)}</b>
+                      {t("emptyHint")}
+                    </li>
+                  )}
+                  {found !== null && found.length === 0 && !searching && (
+                    <li className="nothing">
+                      <b>{t("searchNone")}</b>
+                    </li>
+                  )}
+                  {(found ?? conversations).map((conversation) => (
+                    <ConversationRow
+                      key={conversation.id}
+                      conversation={conversation}
+                      selected={conversation.id === selected}
+                      members={members}
+                      replying={replying(conversation.id)}
+                      showClosed={found !== null && status === "open"}
+                      onSelect={() => setSelected(conversation.id)}
+                    />
+                  ))}
+                </ul>
+                {hasMore && found === null && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setLimit((current) => current + PAGE_SIZE)}
+                  >
+                    {t("loadMore")}
+                  </button>
+                )}
+              </section>
+              {selected === null ? (
+                <div className="thread">
+                  <Harbor title={t("pickOne")} />
+                </div>
+              ) : (
+                <Thread
+                  key={selected}
+                  api={api}
+                  meId={me.id}
+                  drafts={drafts}
+                  members={members}
+                  replying={replying(selected)}
+                  canDelete={role !== "agent" && !readOnly && !suspended}
+                  repliesOffReason={suspended ? "suspendedHelp" : readOnly ? "readOnlyHelp" : null}
+                  conversationId={selected}
+                  version={threadVersion(selected)}
+                  onBack={() => setSelected(null)}
+                  onChanged={reload}
+                />
+              )}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );

@@ -12,44 +12,77 @@
   font-display: swap;
 }
 
-/* Tokens, the same as the landing page in site/public/css/site.css. */
+/* Tokens, the same as the landing page in site/public/css/site.css. Each pair is light, then dark.
+   The device picks one, and theme.ts can fix it with data-theme. In the dark, --navy is the ink and
+   the strong fill, so it turns light, and --on-navy is the text on that fill. */
 :root {
-  color-scheme: light;
-  --navy: #0b2239;
-  --navy-light: #17335c;
+  color-scheme: light dark;
+  --navy: light-dark(#0b2239, #f2ead3);
+  --navy-light: light-dark(#17335c, #ffffff);
+  --on-navy: light-dark(#fff, #0b2239);
   --blue: #1f6bff;
-  --blue-deep: #1457d6;
+  --blue-deep: light-dark(#1457d6, #8ab8ff);
   --red: #e5352b;
   --red-deep: #bf241b;
   --yellow: #ffc917;
-  --yellow-pale: #fff6d6;
+  --yellow-pale: light-dark(#fff6d6, #243c56);
   --cream: #fff8df;
-  --fog: #f3f6f8;
-  --line: #e7e2d2;
-  --line-cool: #dfe5ea;
-  --text: #44546a;
-  --mute: #5f6e80;
+  --fog: light-dark(#f3f6f8, #1c3249);
+  --line: light-dark(#e7e2d2, #2a4058);
+  --line-cool: light-dark(#dfe5ea, #2f4660);
+  --text: light-dark(#44546a, #b9c5d2);
+  --mute: light-dark(#5f6e80, #8e9cad);
   /* Labels and secondary text that must read stronger than --text. */
-  --text-strong: #3b4658;
-  --green: #0f8a5f;
-  --bad: #c62a21;
-  --bad-soft: #fdeceb;
-  --bad-line: #f2c4c0;
-  --tile-blue: #e4f0ff;
-  --tile-peach: #ffe9e2;
-  --tile-yellow: #fff3cc;
-  --tile-mint: #d9f7ef;
+  --text-strong: light-dark(#3b4658, #d3dbe4);
+  --green: light-dark(#0f8a5f, #3fcf98);
+  --bad: light-dark(#c62a21, #ff8077);
+  --bad-soft: light-dark(#fdeceb, #3b2028);
+  --bad-line: light-dark(#f2c4c0, #6e3036);
+  --tile-blue: light-dark(#e4f0ff, #1d3a60);
+  --tile-peach: light-dark(#ffe9e2, #4a2f2e);
+  --tile-yellow: light-dark(#fff3cc, #463c1d);
+  --tile-mint: light-dark(#d9f7ef, #173f3a);
   --display: "Gabarito", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --rail: 232px;
-  --soft: #fbf5e3;
+  /* Around the panel: the yellow sky, or the night. */
+  --sky: light-dark(#ffc917, #081522);
+  /* The panel, cards, menus and fields. */
+  --surface: light-dark(#fff, #12253a);
+  /* Behind the messages of a conversation. */
+  --surface-dim: light-dark(#fcfbf8, #0e1f32);
+  --soft: light-dark(#fbf5e3, #1b3047);
   /* --soft under the pointer, and an open menu's button. */
-  --soft-hover: #f5ecd0;
+  --soft-hover: light-dark(#f5ecd0, #243c56);
+  --soft-edge: light-dark(#eadcae, #34506e);
   /* A row or a tab under the pointer. */
-  --row-hover: #fdfaf1;
-  --warm-line: #efe9da;
-  --d-hull: #0b2239;
+  --row-hover: light-dark(#fdfaf1, #172b41);
+  --warm-line: light-dark(#efe9da, #22374e);
+  --field-line: light-dark(#978a63, #3f5671);
+  --field-line-hover: light-dark(#7d714f, #58708d);
+  --field-readonly: light-dark(#fdfaf2, #0f2135);
+  /* The sidebar's buttons sit straight on the sky. */
+  --side-tint: light-dark(rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.06));
+  --side-tint-hover: light-dark(rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.11));
+  --side-mute: light-dark(#5c4a10, #8e9cad);
+  --warn-soft: light-dark(#fff1c2, #3f3415);
+  --warn-ink: light-dark(#6e5100, #ffd66b);
+  --switch-off: light-dark(#cfc6ad, #3a506a);
+  --switch-on: light-dark(#0b2239, #1f6bff);
+  --nobody-line: light-dark(#b8ae94, #4a607a);
+  --code: light-dark(#0b2239, #06111d);
+  --scroll: light-dark(rgb(11 34 57 / 0.18), rgb(255 255 255 / 0.16));
+  --scroll-hover: light-dark(rgb(11 34 57 / 0.35), rgb(255 255 255 / 0.3));
+  /* The patch of sky behind the empty states' boat. */
+  --pond: light-dark(#ffc917, #1b3047);
+  --d-hull: var(--navy);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* Base */
@@ -66,7 +99,7 @@ body,
 /* The sky's yellow, so a page that is still loading already looks like the next screen. */
 body {
   margin: 0;
-  background: var(--yellow);
+  background: var(--sky);
   color: var(--text);
   font: 400 15px / 1.5 var(--body);
   -webkit-font-smoothing: antialiased;
@@ -127,19 +160,19 @@ textarea {
   width: 100%;
   min-height: 46px;
   padding: 0 14px;
-  border: 1.5px solid #978a63;
+  border: 1.5px solid var(--field-line);
   border-radius: 12px;
-  background-color: #fff;
+  background-color: var(--surface);
   color: var(--navy);
   transition: border-color 0.15s;
 }
 input:hover,
 textarea:hover {
-  border-color: #7d714f;
+  border-color: var(--field-line-hover);
 }
 input[readonly] {
   border-color: var(--warm-line);
-  background-color: #fdfaf2;
+  background-color: var(--field-readonly);
   color: var(--text);
 }
 input[aria-invalid="true"] {
@@ -166,17 +199,17 @@ textarea {
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 6px;
-  background: rgb(11 34 57 / 0.18);
+  background: var(--scroll);
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(11 34 57 / 0.35);
+  background: var(--scroll-hover);
   background-clip: padding-box;
 }
 @supports not selector(::-webkit-scrollbar) {
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgb(11 34 57 / 0.2) transparent;
+    scrollbar-color: var(--scroll) transparent;
   }
 }
 
@@ -214,14 +247,14 @@ textarea {
 .primary,
 .navy {
   background: var(--navy);
-  color: #fff;
+  color: var(--on-navy);
 }
 .primary:hover,
 .navy:hover {
   background: var(--navy-light);
 }
 .outline {
-  background: #fff;
+  background: var(--surface);
   box-shadow: inset 0 0 0 1.5px var(--line-cool);
   color: var(--navy);
 }
@@ -229,7 +262,7 @@ textarea {
   box-shadow: inset 0 0 0 1.5px var(--navy);
 }
 .light {
-  background: #fff;
+  background: var(--surface);
   color: var(--navy);
 }
 .light:hover {
@@ -414,7 +447,7 @@ textarea {
   height: 118px;
   margin-bottom: 10px;
   border-radius: 24px;
-  background: var(--yellow);
+  background: var(--pond);
 }
 
 /* Sign in, signup, invite: the landing page's sky and sea around one card. The scene stays put
@@ -424,21 +457,21 @@ textarea {
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background-color: var(--yellow);
+  background-color: var(--sky);
   transition: background-color 0.5s ease;
 }
 /* The account screens follow one day, in the brand's yellows: pale at dawn, warm after noon. */
 .scene.morning {
-  background-color: #ffe27a;
+  background-color: light-dark(#ffe27a, #0d2036);
 }
 .scene.forenoon {
-  background-color: #ffd640;
+  background-color: light-dark(#ffd640, #0a1b2e);
 }
 .scene.noon {
-  background-color: var(--yellow);
+  background-color: var(--sky);
 }
 .scene.afternoon {
-  background-color: #ffbb1f;
+  background-color: light-dark(#ffbb1f, #071320);
 }
 .sky {
   position: absolute;
@@ -463,9 +496,18 @@ textarea {
   top: 22%;
   right: 9%;
 }
-/* Clouds pass in front of the sun, which rises behind them. */
+/* Clouds pass in front of the sun, which rises behind them. At night they are faint, and the sun
+   is the moon. */
 .cloud {
   z-index: 1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cloud {
+    opacity: 0.12;
+  }
+}
+:root[data-theme="dark"] .cloud {
+  opacity: 0.12;
 }
 .sun {
   position: absolute;
@@ -476,8 +518,8 @@ textarea {
   border-radius: 50%;
   background: var(--cream);
   box-shadow:
-    0 0 0 22px rgb(255 248 223 / 0.45),
-    0 0 0 46px rgb(255 248 223 / 0.25);
+    0 0 0 22px light-dark(rgb(255 248 223 / 0.45), rgb(255 248 223 / 0.1)),
+    0 0 0 46px light-dark(rgb(255 248 223 / 0.25), rgb(255 248 223 / 0.05));
   transform: translateX(-50%);
   transition:
     left 0.5s ease,
@@ -524,10 +566,10 @@ textarea {
   max-width: 420px;
   padding: 32px;
   border-radius: 24px;
-  background: #fff;
+  background: var(--surface);
   box-shadow:
     0 2px 4px rgb(11 34 57 / 0.06),
-    0 24px 60px rgb(11 34 57 / 0.16);
+    0 24px 60px light-dark(rgb(11 34 57 / 0.16), rgb(0 0 0 / 0.35));
 }
 .card .note {
   text-wrap: pretty;
@@ -561,14 +603,13 @@ textarea {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--yellow);
+  background: var(--sky);
 }
 .banner {
-  margin: 12px 12px 0 calc(var(--rail) + 12px);
   padding: 10px 16px;
   border-radius: 14px;
   background: var(--navy);
-  color: #fff;
+  color: var(--on-navy);
   font-size: 14.5px;
   text-align: center;
 }
@@ -581,7 +622,7 @@ textarea {
 }
 /* News, not a warning: the workspace waits for the cloud to open. */
 .waiting-banner {
-  background: #fff;
+  background: var(--surface);
   color: var(--navy);
 }
 .banner-short {
@@ -637,7 +678,7 @@ textarea {
   width: 100%;
   min-width: 0;
   border-radius: 14px;
-  background: rgb(255 255 255 / 0.55);
+  background: var(--side-tint);
   color: var(--navy);
   text-align: left;
   transition: background-color 0.15s;
@@ -651,7 +692,7 @@ button.workspace:hover,
 button.workspace[aria-expanded="true"],
 .me:hover,
 .me[aria-expanded="true"] {
-  background: rgb(255 255 255 / 0.85);
+  background: var(--side-tint-hover);
 }
 .workspace-menu {
   margin-bottom: 14px;
@@ -667,7 +708,7 @@ button.workspace[aria-expanded="true"],
   height: 28px;
   border-radius: 8px;
   background: var(--navy);
-  color: #fff;
+  color: var(--on-navy);
   font: 700 11.5px / 1 var(--display);
   letter-spacing: 0.02em;
 }
@@ -705,11 +746,11 @@ button.workspace[aria-expanded="true"],
     box-shadow 0.15s;
 }
 .nav button:hover {
-  background: rgb(255 255 255 / 0.45);
+  background: var(--side-tint);
 }
 .nav button[aria-current="page"],
 .me.current {
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 2px 10px rgb(120 80 0 / 0.12);
 }
 .nav svg {
@@ -744,7 +785,7 @@ button.workspace[aria-expanded="true"],
   height: 34px;
   border-radius: 50%;
   background: var(--navy);
-  color: #fff;
+  color: var(--on-navy);
   font: 700 13px / 1 var(--display);
 }
 .me-text {
@@ -763,7 +804,7 @@ button.workspace[aria-expanded="true"],
   font-weight: 650;
 }
 .me-text small {
-  color: #5c4a10;
+  color: var(--side-mute);
   font-size: 12.5px;
 }
 
@@ -776,10 +817,21 @@ button.workspace[aria-expanded="true"],
   min-height: 0;
   overflow: hidden;
   border-radius: 20px;
-  background: #fff;
+  background: var(--surface);
   box-shadow:
     0 0 0 1px rgb(120 80 0 / 0.06),
     0 14px 40px rgb(120 80 0 / 0.18);
+}
+/* The banners and the panel share the column beside the sidebar, so the sidebar starts at the top. */
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.stage > .panel {
+  flex: 1;
 }
 .split {
   display: grid;
@@ -816,14 +868,14 @@ button.workspace[aria-expanded="true"],
 }
 .pill.dark {
   background: var(--navy);
-  color: #fff;
+  color: var(--on-navy);
 }
 .pill:disabled,
 .pill.dark:disabled,
 .pill.danger:disabled {
   opacity: 1;
   background: var(--soft);
-  color: #8a8f99;
+  color: var(--mute);
 }
 .pill.dark:hover:not(:disabled) {
   background: var(--navy-light);
@@ -836,7 +888,7 @@ button.workspace[aria-expanded="true"],
   background: var(--red-deep);
 }
 .pill.danger-soft {
-  background: #fff;
+  background: var(--surface);
   box-shadow: inset 0 0 0 1.5px var(--bad-line);
   color: var(--bad);
 }
@@ -891,8 +943,8 @@ button.workspace[aria-expanded="true"],
   white-space: nowrap;
 }
 .chip.warn {
-  background: #fff1c2;
-  color: #6e5100;
+  background: var(--warn-soft);
+  color: var(--warn-ink);
 }
 
 /* The header of a page and of the inbox list. */
@@ -934,7 +986,7 @@ button.workspace[aria-expanded="true"],
   padding: 6px;
   overflow-y: auto;
   border-radius: 16px;
-  background: #fff;
+  background: var(--surface);
   box-shadow:
     0 0 0 1px rgb(120 80 0 / 0.08),
     0 4px 8px rgb(11 34 57 / 0.05),
@@ -1005,8 +1057,10 @@ button.workspace[aria-expanded="true"],
   flex: none;
   color: var(--blue-deep);
 }
+/* .danger alone is the red button, so the menu item clears its fill. */
 .item.danger {
   --duo: var(--bad);
+  background: none;
   color: var(--bad);
 }
 .item.danger.active {
@@ -1036,7 +1090,7 @@ button.workspace[aria-expanded="true"],
   font-size: 10.5px;
 }
 .avatar.nobody {
-  border: 1.5px dashed #b8ae94;
+  border: 1.5px dashed var(--nobody-line);
   background: transparent;
   color: var(--mute);
 }
@@ -1101,7 +1155,7 @@ button.workspace[aria-expanded="true"],
   overflow: visible;
   border: 0;
   border-radius: 20px;
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 24px 64px rgb(11 34 57 / 0.28);
   color: var(--text);
   animation: card-in 0.18s ease-out both;
@@ -1158,10 +1212,24 @@ button.workspace[aria-expanded="true"],
   min-height: 42px;
   padding-left: 40px;
   border-radius: 999px;
-  background-color: var(--soft);
 }
-.search input:focus-visible {
-  background-color: #fff;
+/* While a search runs, a small ring takes the magnifier's place. */
+.search .spinner {
+  position: absolute;
+  top: 50%;
+  left: 15px;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  border: 2px solid var(--line);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .list > .text-button {
   margin: 8px auto 20px;
@@ -1169,6 +1237,11 @@ button.workspace[aria-expanded="true"],
 .rows {
   display: grid;
   padding: 0 8px 12px;
+  transition: opacity 0.15s;
+}
+/* The rows a search will replace. */
+.rows[aria-busy="true"] {
+  opacity: 0.5;
 }
 .row {
   position: relative;
@@ -1260,7 +1333,7 @@ button.workspace[aria-expanded="true"],
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: #fcfbf8;
+  background: var(--surface-dim);
 }
 .thread.drop {
   outline: 3px dashed var(--blue);
@@ -1273,7 +1346,7 @@ button.workspace[aria-expanded="true"],
   gap: 12px;
   padding: 18px 28px;
   border-bottom: 1px solid var(--warm-line);
-  background: #fff;
+  background: var(--surface);
 }
 .who-is {
   display: flex;
@@ -1469,7 +1542,7 @@ button.workspace[aria-expanded="true"],
 }
 .msg.visitor {
   align-self: flex-start;
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 0 0 1px var(--warm-line);
   color: var(--navy);
 }
@@ -1524,7 +1597,7 @@ button.workspace[aria-expanded="true"],
   gap: 8px;
   padding: 8px;
   border-radius: 18px;
-  background: #fff;
+  background: var(--surface);
   box-shadow:
     0 0 0 1px var(--warm-line),
     0 6px 18px rgb(11 34 57 / 0.05);
@@ -1561,7 +1634,7 @@ button.workspace[aria-expanded="true"],
   height: 40px;
   border-radius: 50%;
   background: var(--navy);
-  color: #fff;
+  color: var(--on-navy);
   transition: background-color 0.15s;
 }
 .send:hover {
@@ -1581,7 +1654,7 @@ button.workspace[aria-expanded="true"],
   margin: 0 28px 24px;
   padding: 12px 16px;
   border-radius: 16px;
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 0 0 1px var(--warm-line);
   color: var(--navy);
 }
@@ -1606,7 +1679,7 @@ button.workspace[aria-expanded="true"],
   height: 180px;
   margin-bottom: 14px;
   border-radius: 28px;
-  background: var(--yellow);
+  background: var(--pond);
 }
 .harbor-sun {
   position: absolute;
@@ -1617,8 +1690,8 @@ button.workspace[aria-expanded="true"],
   border-radius: 50%;
   background: var(--cream);
   box-shadow:
-    0 0 0 9px rgb(255 248 223 / 0.42),
-    0 0 0 18px rgb(255 248 223 / 0.2);
+    0 0 0 9px light-dark(rgb(255 248 223 / 0.42), rgb(255 248 223 / 0.1)),
+    0 0 0 18px light-dark(rgb(255 248 223 / 0.2), rgb(255 248 223 / 0.05));
 }
 .harbor b {
   color: var(--navy);
@@ -1764,8 +1837,41 @@ button.workspace[aria-expanded="true"],
   border-radius: 3px 3px 0 0;
   background: var(--navy);
 }
+.bars span {
+  border-radius: 4px 4px 0 0;
+}
+.bars span:hover {
+  background: var(--soft-hover);
+}
 .bars span:hover i {
   background: var(--blue);
+}
+/* A chart with a card over the part under the pointer. analytics.tsx places it. */
+.tipped {
+  position: relative;
+}
+.chart-tip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 1px;
+  margin-top: -8px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  background: var(--navy);
+  box-shadow: 0 8px 24px rgb(11 34 57 / 0.2);
+  color: var(--on-navy);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: nowrap;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+}
+.chart-tip b {
+  font-weight: 650;
+}
+.chart-tip span {
+  opacity: 0.75;
 }
 .axis {
   display: flex;
@@ -1777,12 +1883,11 @@ button.workspace[aria-expanded="true"],
 }
 .by-operator {
   display: grid;
-  gap: 10px;
-  padding: 0;
-  list-style: none;
+  gap: 4px;
 }
-.by-operator li {
+.by-operator .operator {
   display: grid;
+  padding: 4px 0;
   grid-template-columns: minmax(80px, 160px) minmax(0, 1fr) 3ch;
   align-items: center;
   gap: 12px;
@@ -1806,6 +1911,9 @@ button.workspace[aria-expanded="true"],
   height: 100%;
   border-radius: 999px;
   background: var(--navy);
+}
+.by-operator .operator:hover .fill {
+  background: var(--blue);
 }
 .by-operator .count {
   color: var(--navy);
@@ -1844,6 +1952,9 @@ button.workspace[aria-expanded="true"],
 .cell.level-4 {
   background: var(--navy);
 }
+.cell:hover {
+  box-shadow: 0 0 0 2px var(--navy);
+}
 .stack {
   display: grid;
   gap: 12px;
@@ -1860,7 +1971,7 @@ button.workspace[aria-expanded="true"],
   padding: 16px 110px 16px 16px;
   overflow-x: auto;
   border-radius: 14px;
-  background: var(--navy);
+  background: var(--code);
   color: #e7eefb;
   font: 13.5px / 1.6 var(--mono);
   /* The snippet has one attribute per line. A long line scrolls instead of breaking a name. */
@@ -1960,7 +2071,7 @@ button.workspace[aria-expanded="true"],
 .tabs [aria-selected="true"],
 .tabs [aria-selected="true"]:hover {
   background: var(--soft);
-  box-shadow: inset 0 0 0 1.5px #eadcae;
+  box-shadow: inset 0 0 0 1.5px var(--soft-edge);
   color: var(--navy);
 }
 .tab-panel {
@@ -2170,7 +2281,7 @@ button.workspace[aria-expanded="true"],
   height: 28px;
   margin: 0;
   border-radius: 14px;
-  background: #cfc6ad;
+  background: var(--switch-off);
   appearance: none;
   cursor: pointer;
   transition: background-color 0.15s;
@@ -2188,7 +2299,7 @@ button.workspace[aria-expanded="true"],
   transition: left 0.15s;
 }
 .check input:checked {
-  background: var(--navy);
+  background: var(--switch-on);
 }
 .check input:checked::after {
   left: 21px;
@@ -2202,7 +2313,7 @@ button.workspace[aria-expanded="true"],
 }
 /* A chip keeps its edge on the selected row's cream. */
 .row[aria-current="true"] .chip:not(.warn) {
-  background: #fff;
+  background: var(--surface);
 }
 .about-visitor > summary svg {
   transform: rotate(-90deg);
@@ -2232,8 +2343,8 @@ button.workspace[aria-expanded="true"],
     gap: 4px;
     padding: 0 10px 10px;
   }
-  .banner {
-    margin: 10px 10px 0;
+  .stage {
+    gap: 8px;
   }
   .side {
     flex-flow: row wrap;
@@ -2279,7 +2390,7 @@ button.workspace[aria-expanded="true"],
   }
   /* A ring that takes no space, so the header does not move on Profile. */
   .me.current {
-    box-shadow: 0 0 0 3px #fff;
+    box-shadow: 0 0 0 3px var(--surface);
   }
   /* The title and the button share a row, and the line of context takes the full width below on
      every page, so a button on one tab cannot make it wrap differently from the next. */
@@ -2567,6 +2678,9 @@ button.workspace[aria-expanded="true"],
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .search .spinner {
+    animation-duration: 2.4s;
+  }
   .ship,
   .signin .card,
   .popup,

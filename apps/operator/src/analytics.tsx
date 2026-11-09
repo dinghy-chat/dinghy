@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
 import { Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -53,6 +53,73 @@ const hourName = (hour: number) =>
   new Date(2024, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" });
 const HOURS = Array.from({ length: 24 }, (_, hour) => hourName(hour));
 
+const conversations = (count: number) => (count === 1 ? t("chartOne") : t("chartMany", { count }));
+
+interface Tip {
+  value: string;
+  label: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * A chart whose parts carry data-value and data-label. The pointer over a part shows both in a
+ * card above it, kept inside the chart. The words for screen readers are in each figure's caption.
+ */
+function Tipped({
+  className,
+  hidden = false,
+  children,
+}: {
+  className: string;
+  /** The chart's caption already says it in words. */
+  hidden?: boolean;
+  children: ReactNode;
+}) {
+  const [tip, setTip] = useState<Tip | null>(null);
+  const card = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = card.current;
+    const width = box.current?.clientWidth ?? 0;
+    if (tip === null || element === null) return;
+    const half = element.offsetWidth / 2;
+    element.style.left = `${Math.min(Math.max(tip.x, half), width - half)}px`;
+  }, [tip]);
+  return (
+    <div
+      ref={box}
+      className={`tipped ${className}`}
+      aria-hidden={hidden || undefined}
+      onPointerOver={(event) => {
+        const part = (event.target as Element).closest<HTMLElement>("[data-value]");
+        const area = box.current;
+        if (part === null || area === null) {
+          setTip(null);
+          return;
+        }
+        const outer = area.getBoundingClientRect();
+        const inner = part.getBoundingClientRect();
+        setTip({
+          value: part.dataset.value ?? "",
+          label: part.dataset.label ?? "",
+          x: inner.left + inner.width / 2 - outer.left,
+          y: inner.top - outer.top,
+        });
+      }}
+      onPointerLeave={() => setTip(null)}
+    >
+      {children}
+      {tip !== null && (
+        <div ref={card} className="chart-tip" style={{ top: tip.y }} aria-hidden="true">
+          <b>{tip.value}</b>
+          <span>{tip.label}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Figures({ numbers }: { numbers: Analytics }) {
   const { firstReply } = numbers;
   const none = t("noReplies");
@@ -86,18 +153,19 @@ function PerDay({ days }: { days: Analytics["perDay"] }) {
       <figcaption className="visually-hidden">
         {t("perDaySummary", { day: dayName(busiest.date), count: busiest.conversations })}
       </figcaption>
-      <div className="bars" aria-hidden="true">
+      <Tipped className="bars" hidden>
         {days.map((day) => (
           <span
             key={day.date}
-            title={t("perDayBar", { day: dayName(day.date), count: day.conversations })}
+            data-value={conversations(day.conversations)}
+            data-label={dayName(day.date, { weekday: "long", month: "short", day: "numeric" })}
           >
             {day.conversations > 0 && (
               <i style={{ height: `${(day.conversations / most) * 100}%` }} />
             )}
           </span>
         ))}
-      </div>
+      </Tipped>
       <div className="axis" aria-hidden="true">
         <span>{first === undefined ? "" : dayName(first.date)}</span>
         <span>{t("perDayMost", { count: most })}</span>
@@ -110,18 +178,24 @@ function PerDay({ days }: { days: Analytics["perDay"] }) {
 function ByOperator({ operators }: { operators: Analytics["operators"] }) {
   if (operators.length === 0) return <p className="note">{t("noReplies")}</p>;
   const most = Math.max(...operators.map((one) => one.conversations));
+  const total = operators.reduce((sum, one) => sum + one.conversations, 0);
   return (
-    <ul className="by-operator">
+    <Tipped className="by-operator">
       {operators.map((one) => (
-        <li key={one.operatorId}>
+        <div
+          key={one.operatorId}
+          className="operator"
+          data-value={conversations(one.conversations)}
+          data-label={t("byOperatorShare", { share: percent(one.conversations / total) })}
+        >
           <span className="who">{one.name ?? t("formerOperator")}</span>
           <span className="track" aria-hidden="true">
             <span className="fill" style={{ width: `${(one.conversations / most) * 100}%` }} />
           </span>
           <span className="count">{one.conversations}</span>
-        </li>
+        </div>
       ))}
-    </ul>
+    </Tipped>
   );
 }
 
@@ -143,7 +217,7 @@ function Hours({ hours }: { hours: number[][] }) {
           count: top.count,
         })}
       </figcaption>
-      <div className="hours-grid" aria-hidden="true">
+      <Tipped className="hours-grid" hidden>
         <span />
         {HOURS.map((name, hour) => (
           <span key={name} className="hour-label">
@@ -159,15 +233,12 @@ function Hours({ hours }: { hours: number[][] }) {
               // biome-ignore lint/suspicious/noArrayIndexKey: the grid's cells never move.
               key={`${day}-${hour}`}
               className={`cell level-${count === 0 ? 0 : Math.ceil((count / most) * 4)}`}
-              title={t("hoursCell", {
-                day: WEEKDAYS[day] ?? "",
-                hour: hourName(hour),
-                count,
-              })}
+              data-value={conversations(count)}
+              data-label={t("hoursCell", { day: WEEKDAYS_LONG[day] ?? "", hour: hourName(hour) })}
             />
           )),
         ])}
-      </div>
+      </Tipped>
     </figure>
   );
 }
