@@ -18,7 +18,7 @@ const STATE_TEXT: Record<BillingState["state"], TextId> = {
 };
 
 const withDate = (id: TextId, date: string | null) =>
-  t(id).replace("{date}", date === null ? "" : new Date(date).toLocaleDateString());
+  t(id, { date: date === null ? "" : new Date(date).toLocaleDateString() });
 
 /**
  * The owner's billing state, on a server with billing on. Null until it loads, or for others. A
@@ -117,7 +117,7 @@ export function WaitingBanner({
     return (
       <div className="banner billing-banner waiting-banner" role="status">
         {/* A phone shows the short line, so the banner stays one line tall. */}
-        <span className="banner-long">{t("waitingBanner").replace("{email}", email)}</span>
+        <span className="banner-long">{t("waitingBanner", { email })}</span>
         <span className="banner-short">{t("waitingBannerShort")}</span>
       </div>
     );

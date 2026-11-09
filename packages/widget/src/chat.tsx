@@ -1,14 +1,7 @@
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
-import {
-  ApiError,
-  type ChatMessage,
-  createClient,
-  pageAddress,
-  pageTitle,
-  type Texts,
-} from "./client.ts";
+import { ApiError, type ChatMessage, createClient, type Texts } from "./client.ts";
 import {
   IMAGE_TYPES,
   imageProblem,
@@ -18,6 +11,8 @@ import {
   REFRESH_LIMIT_MS,
   REFUSED,
 } from "./compose.ts";
+import { usePageReports } from "./page-reports.ts";
+import { usePresence } from "./presence.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
 import { readToken, type WidgetContext, writeToken } from "./shared.ts";
 import { type TextId, t } from "./text.ts";
@@ -27,7 +22,7 @@ const CSS = `
 .panel{--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 32px);background:#fff;color:#0b2239;font:14.5px/21px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;border-radius:22px;overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
 .head{display:flex;align-items:center;gap:8px;padding:16px 10px 16px 16px;background:var(--d-primary,#0b2239);color:var(--d-primary-text,#fff)}
 .scene{flex:1;min-width:0;display:flex;align-items:center;gap:12px}
-.scene b{display:block;font-size:17px;font-weight:700;line-height:21px;letter-spacing:-.01em}
+.scene b{display:block;min-height:21px;font-size:17px;font-weight:700;line-height:21px;letter-spacing:-.01em}
 .scene small{display:block;font-size:13px;line-height:17px;opacity:.85}
 .waiting small::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:#2fd08a;vertical-align:1px}
 .sea,.port{position:relative;flex:none;width:46px;height:46px;overflow:hidden;background:#ffc917;border-radius:50%}
@@ -126,7 +121,6 @@ interface Line {
   status: "sent" | "sending" | "failed";
 }
 
-const PRESENCE_EVERY_MS = 30_000;
 const NEW_REPLY_SHOWN_MS = 5000;
 
 type SceneState = "waiting" | "sending" | "reply" | "away" | "lost" | "empty";
@@ -213,35 +207,20 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
 /** The workspace's own words where it set them, and Dinghy's text everywhere else. */
 type Say = (id: TextId) => string;
 
-const NO_TEXTS: Texts = { title: null, greeting: null, away: null };
+const OWN_TEXTS: Partial<Record<TextId, keyof Texts>> = {
+  title: "title",
+  empty: "greeting",
+  teamAway: "away",
+};
 
+/** Before the server answers, a text the workspace can set is empty rather than Dinghy's. */
 const sayer =
-  (texts: Texts): Say =>
-  (id) =>
-    (id === "title"
-      ? texts.title
-      : id === "empty"
-        ? texts.greeting
-        : id === "teamAway"
-          ? texts.away
-          : null) ?? t(id);
-
-const TITLE_WAIT_MS = 500;
-
-// A single-page site changes its address with the History API, which fires no event of its own.
-const NAVIGATED = "dinghy:navigated";
-let watchingHistory = false;
-function watchHistory() {
-  if (watchingHistory) return;
-  watchingHistory = true;
-  for (const name of ["pushState", "replaceState"] as const) {
-    const original = history[name];
-    history[name] = function (this: History, ...args: Parameters<History["pushState"]>) {
-      original.apply(this, args);
-      dispatchEvent(new Event(NAVIGATED));
-    };
-  }
-}
+  (texts: Texts | null): Say =>
+  (id) => {
+    const own = OWN_TEXTS[id];
+    if (own === undefined) return t(id);
+    return texts === null ? "" : (texts[own] ?? t(id));
+  };
 
 /** Math.max does not accept a bigint. */
 function larger(a: bigint, b: bigint): bigint {
@@ -385,8 +364,6 @@ function Chat({ context, open, setOpen }: ChatProps) {
   const { publicKey, base } = context;
   const fullPage = context.page === true;
   const [client] = useState(() => createClient(base, publicKey, undefined, !fullPage));
-  const [texts, setTexts] = useState(NO_TEXTS);
-  const say = sayer(texts);
   const [identity] = useState(() => context.getIdentity());
   const [token, setToken] = useState(() =>
     identity === null ? readToken(publicKey) : typeof identity === "string" ? identity : null,
@@ -415,13 +392,9 @@ function Chat({ context, open, setOpen }: ChatProps) {
   const [newReply, setNewReply] = useState(false);
   // True once the replay of history has ended, so only a message that arrives later is "new".
   const replayed = useRef(false);
-  // Null means unknown, and then the panel says nothing about the team.
-  const [online, setOnline] = useState<boolean | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
   const viewer = useRef<HTMLDialogElement>(null);
   const lastRefresh = useRef(0);
-  // False until the server says, so the form never promises an email that this server cannot send.
-  const [emailReplies, setEmailReplies] = useState(false);
   const [email, setEmail] = useState("");
   // Or why the last save failed.
   const [emailState, setEmailState] = useState<"idle" | "saved" | "emailInvalid" | "emailFailed">(
@@ -511,55 +484,13 @@ function Chat({ context, open, setOpen }: ChatProps) {
     return () => clearTimeout(timer);
   }, [newReply]);
 
-  // Only an open panel asks, so a page view costs the server nothing.
-  useEffect(() => {
-    if (!open || !visible) return;
-    const ask = () => {
-      client
-        .presence(fullPage ? token : null)
-        .then((state) => {
-          setOnline(state.online);
-          setEmailReplies(state.emailReplies);
-          setTexts(state.texts ?? NO_TEXTS);
-        })
-        .catch(() => setOnline(null));
-    };
-    ask();
-    const timer = setInterval(ask, PRESENCE_EVERY_MS);
-    return () => clearInterval(timer);
-  }, [client, fullPage, open, token, visible]);
-
-  // The page the visitor is on, for operators, when the chat loads and when the address changes.
-  // Only for a visitor who has chatted, so someone who never used the chat sends nothing.
-  useEffect(() => {
-    if (token === null || !chatted || fullPage) return;
-    let last = "";
-    const report = () => {
-      const address = pageAddress();
-      const title = pageTitle();
-      if (`${address} ${title}` === last) return;
-      last = `${address} ${title}`;
-      client.reportPage(token, address, title).catch(() => {
-        // Only a detail for operators. The next change of address tries again.
-        last = "";
-      });
-    };
-    // A single-page app sets its new title a moment after it changes the address.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const navigated = () => {
-      clearTimeout(timer);
-      timer = setTimeout(report, TITLE_WAIT_MS);
-    };
-    watchHistory();
-    report();
-    addEventListener(NAVIGATED, navigated);
-    addEventListener("popstate", navigated);
-    return () => {
-      clearTimeout(timer);
-      removeEventListener(NAVIGATED, navigated);
-      removeEventListener("popstate", navigated);
-    };
-  }, [chatted, client, fullPage, token]);
+  const { online, emailReplies, texts } = usePresence(
+    client,
+    fullPage ? token : null,
+    open && visible,
+  );
+  const say = sayer(texts);
+  usePageReports(client, token, chatted && !fullPage);
 
   // One request when a visible tab has a token gives the unread count and says whether a stream is
   // needed. A visitor with only closed conversations holds no stream. It runs again when a tab

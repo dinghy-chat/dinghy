@@ -31,8 +31,6 @@ import {
 import { visitorName } from "./visitor.ts";
 
 const teamFailure = (failure: unknown) => failureText(failure, { 409: "lastOwner" });
-const fill = (id: TextId, values: Record<string, string>) =>
-  Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, value), t(id));
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
@@ -253,7 +251,7 @@ function OriginsRow({
           {rows.map((row, index) => {
             const shown = checked && wrong(row);
             const errorId = `site-error-${row.key}`;
-            const name = fill("originsSite", { number: String(index + 1) });
+            const name = t("originsSite", { number: String(index + 1) });
             return (
               <li key={row.key}>
                 <div className="site">
@@ -281,7 +279,7 @@ function OriginsRow({
                   <button
                     type="button"
                     className="icon-button"
-                    aria-label={fill("originsRemove", { site: row.value.trim() || name })}
+                    aria-label={t("originsRemove", { site: row.value.trim() || name })}
                     onClick={() => remove(index)}
                   >
                     <Icon name="close" size={16} />
@@ -545,7 +543,7 @@ function MemberRow({
 }) {
   const self = member.id === me.id;
   const canRemove = self || role === "owner" || (role === "admin" && member.role === "agent");
-  const removeText = self ? t("leaveWorkspace") : fill("removeMember", { name: member.name });
+  const removeText = self ? t("leaveWorkspace") : t("removeMember", { name: member.name });
   return (
     <tr>
       <td>
@@ -564,7 +562,7 @@ function MemberRow({
       <td>
         {role === "owner" ? (
           <Select
-            label={fill("roleOf", { name: member.name })}
+            label={t("roleOf", { name: member.name })}
             value={member.role}
             className="role"
             disabled={lastOwner}
@@ -599,7 +597,7 @@ const daysLeft = (iso: string) =>
 
 function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): void }) {
   const days = daysLeft(pending.expiresAt);
-  const pendingText = fill(days === 1 ? "invitePendingOne" : "invitePendingMany", {
+  const pendingText = t(days === 1 ? "invitePendingOne" : "invitePendingMany", {
     days: String(days),
   });
   return (
@@ -624,7 +622,7 @@ function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): 
         <button
           type="button"
           className="text-button"
-          aria-label={fill("inviteRevokeLabel", {
+          aria-label={t("inviteRevokeLabel", {
             role: t(ROLE_TEXT[pending.role]),
             date: shortDate(pending.expiresAt),
           })}
@@ -813,8 +811,8 @@ function TeamTab({
         <Confirm
           title={
             leaving.self
-              ? fill("leaveTitle", { workspace: workspaceName })
-              : fill("removeTitle", { name: leaving.member.name })
+              ? t("leaveTitle", { workspace: workspaceName })
+              : t("removeTitle", { name: leaving.member.name })
           }
           text={leaving.self ? t("leaveText") : t("removeText")}
           confirm={leaving.self ? t("leaveYes") : t("removeYes")}
@@ -835,7 +833,7 @@ function BlockedRow({ api, team }: { api: WorkspaceApi; team: Team }) {
             <Avatar name={visitorName(person)} />
             <span className="who-lines">
               <strong>{visitorName(person)}</strong>
-              <span>{fill("blockedSince", { date: shortDate(person.blockedAt) })}</span>
+              <span>{t("blockedSince", { date: shortDate(person.blockedAt) })}</span>
             </span>
             <button
               type="button"
@@ -899,12 +897,12 @@ function Meter({
 }
 
 const operatorsText = (usage: Usage) =>
-  fill("usageOf", {
+  t("usageOf", {
     used: String(usage.operators.used),
     limit: String(usage.operators.limit),
   });
 const imagesText = (usage: Usage) =>
-  fill("usageOf", {
+  t("usageOf", {
     used: formatBytes(usage.imageBytes.used),
     limit: formatBytes(usage.imageBytes.limit),
   });
@@ -944,13 +942,13 @@ const TAB_TEXT: Record<Tab, TextId> = {
 /** The line under the title: the workspace, its plan and how full it is. */
 function settingsContext(name: string, usage: Usage | null, members: number): string {
   if (usage !== null) {
-    return fill("settingsContextCloud", {
+    return t("settingsContextCloud", {
       name,
       operators: operatorsText(usage),
       images: imagesText(usage),
     });
   }
-  return fill(members === 1 ? "settingsContextOne" : "settingsContextMany", {
+  return t(members === 1 ? "settingsContextOne" : "settingsContextMany", {
     name,
     count: String(members),
   });
@@ -1190,7 +1188,7 @@ function DeleteRow({
       </button>
       {open && (
         <Confirm
-          title={fill("deleteWorkspaceConfirmTitle", { name })}
+          title={t("deleteWorkspaceConfirmTitle", { name })}
           text={t("deleteWorkspaceConfirm")}
           confirm={t("deleteWorkspaceButton")}
           disabled={busy || typed.trim() !== name}
@@ -1198,7 +1196,7 @@ function DeleteRow({
           onCancel={() => setOpen(false)}
         >
           <Field
-            label={fill("deleteWorkspaceType", { name })}
+            label={t("deleteWorkspaceType", { name })}
             value={typed}
             onChange={setTyped}
             autoComplete="off"

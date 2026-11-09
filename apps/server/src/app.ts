@@ -36,7 +36,7 @@ import { createRateLimit, createSlots } from "./rate-limit.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
 import { registerExportRoute } from "./transfer.ts";
-import { registerWidgetRoutes } from "./widget.ts";
+import { registerWidgetRoutes, type WidgetToken } from "./widget.ts";
 import { registerWidgetFiles } from "./widget-files.ts";
 import { lastWorkerPass } from "./worker.ts";
 import { registerWorkspaceDelete } from "./workspace-delete.ts";
@@ -84,6 +84,8 @@ export interface AppEnv {
   Variables: {
     requestId: string;
     workspace: WidgetWorkspace;
+    /** The widget request's bearer token, which the widget's access check reads once. */
+    widgetToken: WidgetToken;
     operatorId: string;
     operatorName: string;
     operatorEmail: string;
@@ -321,7 +323,7 @@ export function createApp({
     ownOrigin,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
-  registerWidgetPresence(app, db, presence, alerts?.emailAvailable ?? false);
+  registerWidgetPresence(app, presence, alerts?.emailAvailable ?? false);
   if (ownOrigin !== undefined) {
     registerChatPage(app, { db, rateLimit, imagesOrigin: images?.origin });
   }

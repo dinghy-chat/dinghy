@@ -200,7 +200,7 @@ export function FinishPayment({
           className="btn outline"
           onClick={() => onSwitch(other.workspaceId)}
         >
-          {t("payOpenOther").replace("{name}", other.name)}
+          {t("payOpenOther", { name: other.name })}
         </button>
       ))}
       <button

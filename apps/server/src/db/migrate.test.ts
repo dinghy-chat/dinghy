@@ -180,16 +180,18 @@ describe("chat migrate", () => {
     );
     await run();
     // Made by the database's owner, which is not a superuser.
-    expect(await query("select extname from pg_extension where extname = 'pg_trgm'")).toEqual([
-      { extname: "pg_trgm" },
-    ]);
     expect(
       await query(
-        "select indexname from pg_indexes where indexname in ('message_body_trgm_idx', 'page_view_visitor_idx', 'conversation_created_idx') order by indexname",
+        "select extname from pg_extension where extname in ('pg_trgm', 'btree_gin') order by extname",
+      ),
+    ).toEqual([{ extname: "btree_gin" }, { extname: "pg_trgm" }]);
+    expect(
+      await query(
+        "select indexname from pg_indexes where indexname in ('message_body_trgm_idx', 'message_workspace_body_trgm_idx', 'page_view_visitor_idx', 'conversation_created_idx') order by indexname",
       ),
     ).toEqual([
       { indexname: "conversation_created_idx" },
-      { indexname: "message_body_trgm_idx" },
+      { indexname: "message_workspace_body_trgm_idx" },
       { indexname: "page_view_visitor_idx" },
     ]);
     expect(await query("select body from message where body ilike '%invoice%'")).toEqual([

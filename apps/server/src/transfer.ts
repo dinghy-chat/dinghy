@@ -46,10 +46,9 @@ const ExportFile = z.strictObject({
     allowedOrigins: z.array(z.string().max(300)).max(200),
     eventSeq: seq,
     feedGeneration: z.number().int().min(1).max(999_999_999),
-    // Added after 0.5.0, so an older file without them still imports.
-    widgetTitle: z.string().max(40).nullable().optional(),
-    widgetGreeting: z.string().max(200).nullable().optional(),
-    widgetAway: z.string().max(200).nullable().optional(),
+    widgetTitle: z.string().max(40).nullable(),
+    widgetGreeting: z.string().max(200).nullable(),
+    widgetAway: z.string().max(200).nullable(),
     createdAt: date,
   }),
   members: z.array(
@@ -69,18 +68,14 @@ const ExportFile = z.strictObject({
       externalId: z.string().max(512).nullable(),
       tokenHash: z.string().max(128).nullable(),
       email: z.string().max(320).nullable(),
-      // Added after 0.5.0, so an older file without it still imports.
-      name: z.string().max(100).nullable().optional(),
-      attributes: z.unknown().optional(),
-      // The name of `attributes` in files from 0.5.0 and earlier.
-      claims: z.unknown().optional(),
+      name: z.string().max(100).nullable(),
+      attributes: z.unknown(),
       identityIssuedAt: seq.nullable(),
       lastReadSeq: seq,
       blockedAt: nullableDate,
-      // Added after 0.5.0, so an older file without them still imports.
-      device: z.string().max(100).nullable().optional(),
-      lastPage: z.string().max(2048).nullable().optional(),
-      lastSeenAt: nullableDate.optional(),
+      device: z.string().max(100).nullable(),
+      lastPage: z.string().max(PAGE_PATH_MAX).nullable(),
+      lastSeenAt: nullableDate,
       createdAt: date,
     }),
   ),
@@ -90,8 +85,7 @@ const ExportFile = z.strictObject({
       visitorId: id,
       status: z.enum(["open", "closed"]),
       assigneeOperatorId: id.nullable(),
-      // Added after the first exports, so an older file without it still imports.
-      startedPage: z.string().max(2048).nullable().optional(),
+      startedPage: z.string().max(PAGE_PATH_MAX).nullable(),
       createdAt: date,
       updatedAt: date,
     }),
@@ -112,17 +106,14 @@ const ExportFile = z.strictObject({
   ),
   attachments: z.array(z.strictObject({ id, messageId: id, createdAt: date })),
   emailStops: z.array(z.strictObject({ addressHash: z.string().max(128), createdAt: date })),
-  // Added after 0.5.0, so an older file without it still imports.
-  pageViews: z
-    .array(
-      z.strictObject({
-        visitorId: id,
-        path: z.string().max(PAGE_PATH_MAX),
-        title: z.string().max(PAGE_TITLE_MAX).nullable(),
-        viewedAt: date,
-      }),
-    )
-    .optional(),
+  pageViews: z.array(
+    z.strictObject({
+      visitorId: id,
+      path: z.string().max(PAGE_PATH_MAX),
+      title: z.string().max(PAGE_TITLE_MAX).nullable(),
+      viewedAt: date,
+    }),
+  ),
 });
 
 type ExportData = z.infer<typeof ExportFile>;
@@ -182,7 +173,7 @@ async function pageViewsJson(tx: Transaction, workspaceId: string): Promise<Buff
             path: row.path,
             title: row.title,
             viewedAt: iso(row.viewedAt),
-          } satisfies NonNullable<ExportData["pageViews"]>[number]),
+          } satisfies ExportData["pageViews"][number]),
         )
         .join(",");
       pieces.push(Buffer.from(pieces.length === 0 ? text : `,${text}`));
@@ -460,9 +451,9 @@ async function insertWorkspace(
     // New and random, so a client's old cursor gets resync, even when one file is imported onto
     // two servers in turn at the same address. A count from the file would repeat there.
     feedGeneration: newGeneration(data.workspace.feedGeneration),
-    widgetTitle: data.workspace.widgetTitle ?? null,
-    widgetGreeting: data.workspace.widgetGreeting ?? null,
-    widgetAway: data.workspace.widgetAway ?? null,
+    widgetTitle: data.workspace.widgetTitle,
+    widgetGreeting: data.workspace.widgetGreeting,
+    widgetAway: data.workspace.widgetAway,
     createdAt: new Date(data.workspace.createdAt),
   });
 
@@ -511,14 +502,14 @@ async function insertWorkspace(
         externalId: row.externalId,
         tokenHash: row.tokenHash,
         email: row.email,
-        name: row.name ?? null,
-        attributes: row.attributes ?? row.claims,
+        name: row.name,
+        attributes: row.attributes,
         identityIssuedAt: row.identityIssuedAt === null ? null : BigInt(row.identityIssuedAt),
         lastReadSeq: BigInt(row.lastReadSeq),
         blockedAt: row.blockedAt === null ? null : new Date(row.blockedAt),
-        device: row.device ?? null,
-        lastPage: row.lastPage ?? null,
-        lastSeenAt: row.lastSeenAt ? new Date(row.lastSeenAt) : null,
+        device: row.device,
+        lastPage: row.lastPage,
+        lastSeenAt: row.lastSeenAt === null ? null : new Date(row.lastSeenAt),
         createdAt: new Date(row.createdAt),
       })),
     );
@@ -531,7 +522,7 @@ async function insertWorkspace(
         visitorId: row.visitorId,
         status: row.status,
         assigneeOperatorId: mapOperator(row.assigneeOperatorId),
-        startedPage: row.startedPage ?? null,
+        startedPage: row.startedPage,
         createdAt: new Date(row.createdAt),
         updatedAt: new Date(row.updatedAt),
       })),
@@ -555,7 +546,7 @@ async function insertWorkspace(
     );
   }
   for (const rows of batches(images)) await tx.insert(attachment).values(rows);
-  for (const rows of batches(data.pageViews ?? [])) {
+  for (const rows of batches(data.pageViews)) {
     await tx.insert(pageView).values(
       rows.map((row) => ({
         workspaceId,

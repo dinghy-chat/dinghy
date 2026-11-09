@@ -37,7 +37,7 @@ import { avatarLetters, isWaiting, title } from "./visitor.ts";
 const RETRY_LIMIT_MS = 30_000;
 const PAGE_SIZE = 50;
 const SEARCH_WAIT_MS = 250;
-const SEARCH_MIN = 2;
+const SEARCH_MIN = 3;
 const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
@@ -311,7 +311,7 @@ function WorkspaceSwitcher({
   }
   return (
     <Menu
-      label={t("workspaceMenu").replace("{name}", name)}
+      label={t("workspaceMenu", { name })}
       items={items}
       buttonClass="workspace"
       side="start"
@@ -391,7 +391,7 @@ function Sidebar({
   onSwitch(id: string): void;
   onSignedOut(): void;
 }) {
-  const waitingText = t("waitingCount").replace("{count}", String(waiting));
+  const waitingText = t("waitingCount", { count: waiting });
   return (
     <aside className="side">
       <div className="brand">
@@ -541,7 +541,7 @@ function SearchField({ value, onChange }: { value: string; onChange(value: strin
 
 /** The line under the list's title while a search shows its results. */
 function foundContext(count: number): string {
-  return count === 1 ? t("searchOne") : t("searchMany").replace("{count}", String(count));
+  return count === 1 ? t("searchOne") : t("searchMany", { count });
 }
 
 /** The line under the list's title: who waits, or what the closed list holds. */
@@ -549,7 +549,7 @@ function listContext(status: Status, waiting: number): string {
   if (status === "closed") return t("closedContext");
   if (waiting === 0) return t("waitingNone");
   if (waiting === 1) return t("waitingOne");
-  return t("waitingMany").replace("{count}", String(waiting));
+  return t("waitingMany", { count: waiting });
 }
 
 export function Inbox({

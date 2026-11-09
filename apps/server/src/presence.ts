@@ -4,10 +4,8 @@ import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
-import type { Database } from "./db/tenant.ts";
 import { MEMBER_ERRORS, OPERATOR_WRITE_ERRORS, okContent, WIDGET_ERRORS } from "./errors.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
-import { widgetTexts } from "./workspaces.ts";
 
 // A client that stops sending, because of a crash or a lost network, expires after this long.
 const DEFAULT_TTL_MS = 30_000;
@@ -253,15 +251,9 @@ export function registerOperatorPresence(app: App, presence: Presence): void {
   });
 }
 
-export function registerWidgetPresence(
-  app: App,
-  db: Database,
-  presence: Presence,
-  emailReplies: boolean,
-): void {
+export function registerWidgetPresence(app: App, presence: Presence, emailReplies: boolean): void {
   app.openapi(widgetRoute, async (c) => {
-    const { id } = c.get("workspace");
-    const [online, texts] = await Promise.all([presence.online(id), widgetTexts(db, id)]);
-    return c.json({ online, emailReplies, texts }, 200);
+    const { id, texts } = c.get("workspace");
+    return c.json({ online: await presence.online(id), emailReplies, texts }, 200);
   });
 }

@@ -95,8 +95,20 @@ test("the widget uses the workspace's own title and greeting", async ({ page }) 
     greeting: "Ask us anything at all.",
     away: null,
   });
+  // A slow first answer, so the header is read before the texts arrive.
+  let answer: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  await page.route("**/presence", async (route) => {
+    await held;
+    await route.continue();
+  });
   await page.goto(`${server.hostOrigin}/pricing`);
   await page.getByRole("button", { name: "Open chat" }).click();
+  await expect(page.locator(".head b")).toHaveText("");
+  await expect(page.getByText("Chat with us")).toHaveCount(0);
+  answer();
   await expect(page.locator(".head b")).toHaveText("Ask Acme");
   await expect(page.getByText("Ask us anything at all.")).toBeVisible();
 });

@@ -607,7 +607,7 @@ describe("access", () => {
     const { app } = instance();
     const now = Math.floor(Date.now() / 1000);
     const token = (plan: string, issuedAt: number) =>
-      new SignJWT({ claims: { plan } })
+      new SignJWT({ attributes: { plan } })
         .setProtectedHeader({ alg: "HS256" })
         .setAudience(a.publicKey)
         .setSubject("two-tabs")

@@ -9,11 +9,6 @@ const CLOCK_TOLERANCE_SECONDS = 60;
 const MAX_ATTRIBUTES_BYTES = 2048;
 const MAX_NAME_LENGTH = 100;
 
-const attributes = z
-  .record(z.string(), z.unknown())
-  .refine((value) => Buffer.byteLength(JSON.stringify(value)) <= MAX_ATTRIBUTES_BYTES)
-  .optional();
-
 const hostTokenPayload = z.object({
   sub: z.string().min(1).max(255),
   exp: z.number(),
@@ -30,9 +25,10 @@ const hostTokenPayload = z.object({
     .regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u)
     .optional()
     .catch(undefined),
-  attributes,
-  // The name in 0.5.0. `attributes` wins when a token has both.
-  claims: attributes,
+  attributes: z
+    .record(z.string(), z.unknown())
+    .refine((value) => Buffer.byteLength(JSON.stringify(value)) <= MAX_ATTRIBUTES_BYTES)
+    .optional(),
 });
 
 export interface HostIdentity {
@@ -69,7 +65,7 @@ export async function verifyHostToken(
       externalId: parsed.data.sub,
       email: parsed.data.email,
       name: parsed.data.name,
-      attributes: parsed.data.attributes ?? parsed.data.claims,
+      attributes: parsed.data.attributes,
       expiresAt: new Date(exp * 1000),
       issuedAt: iat,
     };

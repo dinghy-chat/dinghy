@@ -326,6 +326,10 @@ const en = {
 
 export type TextId = keyof typeof en;
 
-export function t(id: TextId): string {
-  return en[id];
+/** The text for `id`, with each `{name}` in it replaced by `values.name`. */
+export function t(id: TextId, values: Record<string, string | number> = {}): string {
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+    en[id],
+  );
 }

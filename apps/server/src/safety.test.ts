@@ -416,6 +416,7 @@ describe("blocking a visitor", () => {
     const listed = await asOperator(server, cookie, "GET", "/blocked-visitors");
     const { visitors } = (await listed.json()) as { visitors: { id: string }[] };
     expect(visitors.map((one) => one.id)).toEqual([visitorId]);
+    expect(visitors[0]).toHaveProperty("name", null);
     expect(
       (await asOperator(server, cookie, "DELETE", `/blocked-visitors/${visitorId}`)).status,
     ).toBe(200);

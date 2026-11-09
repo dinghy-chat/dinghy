@@ -16,12 +16,6 @@ const PERIODS: { value: Period; label: TextId }[] = [
 /** The browser's zone, which the server checks. Days and hours read in it. */
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-const fill = (id: TextId, values: Record<string, string | number>) =>
-  Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    t(id),
-  );
-
 /** "45 sec", "4 min", "1.5 hr", in the browser's words. */
 function duration(seconds: number): string {
   const unit = (value: number, name: "second" | "minute" | "hour") =>
@@ -90,13 +84,13 @@ function PerDay({ days }: { days: Analytics["perDay"] }) {
   return (
     <figure className="per-day">
       <figcaption className="visually-hidden">
-        {fill("perDaySummary", { day: dayName(busiest.date), count: busiest.conversations })}
+        {t("perDaySummary", { day: dayName(busiest.date), count: busiest.conversations })}
       </figcaption>
       <div className="bars" aria-hidden="true">
         {days.map((day) => (
           <span
             key={day.date}
-            title={fill("perDayBar", { day: dayName(day.date), count: day.conversations })}
+            title={t("perDayBar", { day: dayName(day.date), count: day.conversations })}
           >
             {day.conversations > 0 && (
               <i style={{ height: `${(day.conversations / most) * 100}%` }} />
@@ -106,7 +100,7 @@ function PerDay({ days }: { days: Analytics["perDay"] }) {
       </div>
       <div className="axis" aria-hidden="true">
         <span>{first === undefined ? "" : dayName(first.date)}</span>
-        <span>{fill("perDayMost", { count: most })}</span>
+        <span>{t("perDayMost", { count: most })}</span>
         <span>{last === undefined ? "" : dayName(last.date)}</span>
       </div>
     </figure>
@@ -143,7 +137,7 @@ function Hours({ hours }: { hours: number[][] }) {
   return (
     <figure className="hours">
       <figcaption className="visually-hidden">
-        {fill("hoursSummary", {
+        {t("hoursSummary", {
           day: WEEKDAYS_LONG[top.day] ?? "",
           hour: hourName(top.hour),
           count: top.count,
@@ -165,7 +159,7 @@ function Hours({ hours }: { hours: number[][] }) {
               // biome-ignore lint/suspicious/noArrayIndexKey: the grid's cells never move.
               key={`${day}-${hour}`}
               className={`cell level-${count === 0 ? 0 : Math.ceil((count / most) * 4)}`}
-              title={fill("hoursCell", {
+              title={t("hoursCell", {
                 day: WEEKDAYS[day] ?? "",
                 hour: hourName(hour),
                 count,
@@ -205,7 +199,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
   return (
     <Page
       title={t("analytics")}
-      context={fill("analyticsContext", { days, zone })}
+      context={t("analyticsContext", { days, zone })}
       actions={
         <Select<Period>
           label={t("period")}
@@ -221,7 +215,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
       ) : numbers.started === 0 ? (
         <div className="nothing empty-boat">
           <Pond />
-          <b>{fill("analyticsEmpty", { days })}</b>
+          <b>{t("analyticsEmpty", { days })}</b>
           {t("analyticsEmptyHint")}
         </div>
       ) : (
