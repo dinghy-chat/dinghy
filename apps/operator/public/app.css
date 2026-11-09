@@ -265,7 +265,7 @@ textarea {
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: 50%;
   color: var(--navy);
 }
 .icon-button:hover:not(:disabled) {
@@ -466,6 +466,10 @@ textarea {
 .cloud-b {
   top: 22%;
   right: 9%;
+}
+/* Clouds pass in front of the sun, which rises behind them. */
+.cloud {
+  z-index: 1;
 }
 .sun {
   position: absolute;
@@ -1107,7 +1111,7 @@ button.workspace[aria-expanded="true"],
   animation: card-in 0.18s ease-out both;
 }
 .dialog::backdrop {
-  background: rgb(11 34 57 / 0.45);
+  background: rgb(11 34 57 / 0.32);
 }
 .dialog-body {
   display: grid;
@@ -1141,6 +1145,27 @@ button.workspace[aria-expanded="true"],
 }
 .list .page-head {
   padding: 26px 24px 14px;
+}
+.search {
+  position: relative;
+  margin: 0 24px 12px;
+}
+.search svg {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  color: var(--quiet);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.search input {
+  min-height: 42px;
+  padding-left: 40px;
+  border-radius: 999px;
+  background-color: var(--soft);
+}
+.search input:focus-visible {
+  background-color: #fff;
 }
 .list > .btn {
   margin: 8px auto 20px;
@@ -1276,12 +1301,11 @@ button.workspace[aria-expanded="true"],
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The lines under the name wrap, so the page where the chat started is never cut off. */
 .who-text p {
-  overflow: hidden;
   color: var(--quiet);
   font-size: 13.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .thread-head .actions {
   gap: 10px;
@@ -1305,6 +1329,30 @@ button.workspace[aria-expanded="true"],
   background: var(--bad-soft);
   color: var(--bad);
 }
+/* The fold around the visitor's attributes and pages. */
+.about-visitor {
+  border-bottom: 1px solid var(--warm-line);
+}
+.about-visitor > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 28px;
+  color: var(--quiet);
+  font-size: 13.5px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.about-visitor > summary::-webkit-details-marker {
+  display: none;
+}
+.about-visitor > summary:hover {
+  color: var(--navy);
+}
+.about-body > :last-child {
+  border-bottom: 0;
+}
 .context {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -1319,6 +1367,77 @@ button.workspace[aria-expanded="true"],
 .context dd {
   overflow-wrap: anywhere;
   color: var(--navy);
+}
+/* The visitor's pages, newest first: a title as a link, and how long ago on the right. */
+.journey {
+  padding: 10px 28px;
+  border-bottom: 1px solid var(--warm-line);
+  font-size: 13.5px;
+}
+.journey h3 {
+  margin-bottom: 4px;
+  color: var(--quiet);
+  font: 600 13.5px / 1.4 var(--body);
+}
+.journey ol {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+}
+.journey li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.journey .page-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--navy);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.journey a.page-name {
+  color: var(--blue-deep);
+}
+.journey time {
+  flex: none;
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+}
+.journey .btn {
+  min-height: 28px;
+  margin-top: 4px;
+  padding: 0;
+}
+.context a,
+.who-text .visit a {
+  color: var(--blue-deep);
+}
+.who-text .visit {
+  color: var(--quiet);
+  /* It wraps, so the last page's link never hides behind an ellipsis. */
+  white-space: normal;
+}
+.who-text .visit-page {
+  display: block;
+  width: fit-content;
+}
+.online {
+  color: var(--green);
+  font-weight: 600;
+}
+.online::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  vertical-align: 1px;
 }
 .log {
   display: flex;
@@ -1574,9 +1693,9 @@ button.workspace[aria-expanded="true"],
   justify-self: start;
 }
 /* What cannot be undone: a red outline and a red button. */
+/* Outset by its padding, so its columns line up with the rows above it. */
 .danger-zone {
-  max-width: calc(960px + 49px);
-  margin: 16px -24.5px 0;
+  margin: 16px -24px 0;
   padding: 22px 23px;
   border: 1.5px solid #f2c4c0;
   border-radius: 18px;
@@ -1587,6 +1706,147 @@ button.workspace[aria-expanded="true"],
 .page-row + .danger-zone,
 .tab-panel > .danger-zone:first-child {
   border-top: 1.5px solid #f2c4c0;
+}
+/* Analytics: the headline numbers, then one row per chart. Bars and cells use the brand's navy
+   and blue on the cream track, as the usage meters do. */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 14px;
+  padding: 18px 0 24px;
+}
+/* The value at the foot of each card, so values line up when a label wraps. */
+.figures div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border: 1px solid var(--warm-line);
+  border-radius: 16px;
+}
+.figures dt {
+  color: var(--quiet);
+  font-size: 13.5px;
+}
+.figures dd {
+  margin-top: 6px;
+  color: var(--navy);
+  font: 700 26px / 1.1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.figures + .page-row {
+  border-top: 0;
+}
+/* Charts use the row's full width, out to the line above them. */
+.page-controls:has(> .per-day, > .by-operator, > .hours-grid, > figure) {
+  max-width: none;
+}
+.per-day,
+.hours {
+  margin: 0;
+  min-width: 0;
+}
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 140px;
+  /* Room above the tallest bar, clear of the rounded corners. */
+  padding: 14px 6px 6px;
+  border-radius: 12px;
+  background: var(--soft);
+}
+.bars span {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  height: 100%;
+}
+.bars i {
+  display: block;
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: var(--navy);
+}
+.bars span:hover i {
+  background: var(--blue);
+}
+.axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--quiet);
+  font-size: 12.5px;
+}
+.by-operator {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+.by-operator li {
+  display: grid;
+  grid-template-columns: minmax(80px, 160px) minmax(0, 1fr) 3ch;
+  align-items: center;
+  gap: 12px;
+}
+.by-operator .who {
+  overflow: hidden;
+  color: var(--navy);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.by-operator .track {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--soft);
+}
+.by-operator .fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--navy);
+}
+.by-operator .count {
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.hours-grid {
+  display: grid;
+  grid-template-columns: 3.2em repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  font-size: 11.5px;
+}
+.hour-label {
+  overflow: visible;
+  color: var(--quiet);
+  white-space: nowrap;
+}
+.day-label {
+  color: var(--quiet);
+  line-height: 18px;
+}
+.cell {
+  height: 18px;
+  border-radius: 3px;
+  background: var(--soft);
+}
+.cell.level-1 {
+  background: color-mix(in srgb, var(--blue) 25%, var(--soft));
+}
+.cell.level-2 {
+  background: color-mix(in srgb, var(--blue) 50%, var(--soft));
+}
+.cell.level-3 {
+  background: var(--blue);
+}
+.cell.level-4 {
+  background: var(--navy);
 }
 .stack {
   display: grid;
@@ -1645,14 +1905,17 @@ button.workspace[aria-expanded="true"],
 .inline-field .pill {
   min-height: 44px;
 }
-.copy-field .icon-button {
+.copy-field .icon-button,
+.site .icon-button {
   width: 44px;
   height: 44px;
-  border-radius: 12px;
   background: var(--soft);
 }
 .copy-field .icon-button:hover {
   background: #f5ecd0;
+}
+.site .icon-button:not(:hover) {
+  background: transparent;
 }
 .sites {
   display: grid;
@@ -1889,7 +2152,7 @@ button.workspace[aria-expanded="true"],
   border-top: 1px solid var(--warm-line);
 }
 .blocked .who-lines {
-  flex: 1;
+  min-width: 0;
 }
 .page-controls > .text-button {
   justify-self: start;
@@ -1933,6 +2196,36 @@ button.workspace[aria-expanded="true"],
 }
 .check input:checked::after {
   left: 21px;
+}
+
+/* Rules that must come after the general ones they refine. */
+.card .note strong {
+  color: var(--navy);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+/* A chip keeps its edge on the selected row's cream. */
+.row[aria-current="true"] .chip:not(.warn) {
+  background: #fff;
+}
+.about-visitor > summary svg {
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+.about-visitor[open] > summary svg {
+  transform: none;
+}
+
+/* A wide thread puts the visitor's attributes and pages side by side, to keep room for messages. */
+@media (min-width: 1200px) {
+  .about-body:has(> .context + .journey) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+  .about-body > .context {
+    align-content: start;
+    border-bottom: 0;
+  }
 }
 
 /* Tablet: the sidebar becomes a top bar on the yellow. */
@@ -2074,6 +2367,9 @@ button.workspace[aria-expanded="true"],
     flex: 1 1 100%;
     justify-content: space-between;
     margin: 0;
+    /* Five tabs fit a 360px phone. A narrower screen scrolls them, never the page. */
+    overflow-x: auto;
+    scrollbar-width: none;
   }
   .nav button {
     flex: 1;
@@ -2136,7 +2432,9 @@ button.workspace[aria-expanded="true"],
     flex: 1;
   }
   .replying,
-  .context {
+  .context,
+  .journey,
+  .about-visitor > summary {
     padding-inline: 14px;
   }
   .log {
@@ -2159,6 +2457,9 @@ button.workspace[aria-expanded="true"],
   .list .page-head {
     padding: 22px 18px 12px;
   }
+  .search {
+    margin-inline: 18px;
+  }
   .page-head h2 {
     font-size: 25px;
   }
@@ -2179,6 +2480,7 @@ button.workspace[aria-expanded="true"],
     overflow: visible;
   }
   .app .pill,
+  .dialog .pill,
   .app .select-button,
   .tabs [role="tab"] {
     min-height: 44px;
@@ -2242,6 +2544,17 @@ button.workspace[aria-expanded="true"],
   .card {
     padding: 24px 20px;
   }
+  /* Above the card, which starts near a quarter of the screen. */
+  .cloud-b {
+    top: 11%;
+  }
+  /* Two figures a row, and an odd last one takes the full row, so no card sits beside a gap. */
+  .figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .figures div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
   .signin {
     padding-bottom: 150px;
   }
@@ -2275,7 +2588,8 @@ button.workspace[aria-expanded="true"],
   .me,
   .select-button,
   .check input,
-  .check input::after {
+  .check input::after,
+  .about-visitor > summary svg {
     transition: none;
   }
 }

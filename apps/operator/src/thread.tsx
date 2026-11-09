@@ -14,13 +14,14 @@ import {
   type Conversation,
   type Member,
   type Message,
+  type PageView,
   type WorkspaceApi,
 } from "./api.ts";
 import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
-import { claimedName, title, visitorName } from "./visitor.ts";
+import { attributeName, otherIdentity, title, webLink } from "./visitor.ts";
 
 interface Line {
   id: string;
@@ -66,21 +67,126 @@ const bare = (page: string) => page.replace(/^https?:\/\//, "");
 
 /** Who the visitor is and where they came from: the quiet line under their name. */
 function origin(conversation: Conversation): string | null {
-  // The line adds the email and the user ID that the title does not already show.
-  const { visitor } = conversation;
-  const shown = visitorName(visitor);
-  const ids = [visitor.email, visitor.externalId].filter((one) => one !== shown);
+  // The header shows the last page on a line of its own, so the same page is not said twice.
   const page =
-    conversation.startedPage === null
+    conversation.startedPage === null || conversation.startedPage === conversation.visitor.lastPage
       ? null
       : t("startedOn").replace("{page}", bare(conversation.startedPage));
-  const parts = [...ids, page].filter((part) => part !== null);
-  return parts.length === 0 ? null : parts.join(" · ");
+  const parts = [...otherIdentity(conversation.visitor), page].filter((part) => part !== null);
+  return parts.length === 0 ? null : parts.join(SEPARATOR);
+}
+
+/** A no-break space after the dot keeps it with the next part, so a line never ends with a dot. */
+const SEPARATOR = " ·\u00a0";
+
+const MINUTE_MS = 60_000;
+const ONLINE_EVERY_MS = 30_000;
+
+/** "5 minutes ago", "yesterday", in the browser's words. Narrow is "5m ago" in English. */
+function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "long"): string {
+  const words = new Intl.RelativeTimeFormat([], { numeric: "auto", style });
+  const minutes = Math.round((new Date(iso).getTime() - now) / MINUTE_MS);
+  if (minutes > -60) return words.format(Math.min(minutes, 0), "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours > -24) return words.format(hours, "hour");
+  return words.format(Math.round(hours / 24), "day");
+}
+
+/**
+ * The visit, under who the visitor is: online now or when last seen, the device, and the page the
+ * widget last reported, as a link. Unknown parts are left out, never guessed.
+ */
+function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: boolean | null }) {
+  const seen =
+    online === true ? null : visitor.lastSeenAt === null ? null : ago(visitor.lastSeenAt);
+  const page = visitor.lastPage === null ? null : webLink(visitor.lastPage);
+  if (online !== true && seen === null && visitor.device === null && page === null) return null;
+  const parts = [
+    online === true ? (
+      <span key="online" className="online">
+        {t("onlineNow")}
+      </span>
+    ) : seen === null ? null : (
+      <span key="seen">{t("lastSeen").replace("{time}", seen)}</span>
+    ),
+    visitor.device === null ? null : <span key="device">{visitor.device}</span>,
+  ].filter((part) => part !== null);
+  return (
+    <p className="visit">
+      {parts.map((part, index) => (
+        <Fragment key={part.key}>
+          {index > 0 && SEPARATOR}
+          {part}
+        </Fragment>
+      ))}
+      {/* A line of its own, as an address is long and would wrap after a dot. */}
+      {page !== null && (
+        <a
+          className="visit-page"
+          href={page}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={page}
+        >
+          {bare(page)}
+        </a>
+      )}
+    </p>
+  );
+}
+
+const PAGES_FIRST = 5;
+
+/**
+ * The pages the visitor went through, newest first: the title, or the address when the page has
+ * none, as a link, and when. Five at first, and the rest of the 20 on request.
+ */
+function PageJourney({ pages }: { pages: PageView[] }) {
+  const [all, setAll] = useState(false);
+  if (pages.length === 0) return null;
+  const shown = all ? pages : pages.slice(0, PAGES_FIRST);
+  return (
+    <section className="journey" aria-label={t("pagesVisited")}>
+      <h3>{t("pagesVisited")}</h3>
+      <ol>
+        {shown.map((page) => {
+          const link = webLink(page.path);
+          const name = page.title ?? bare(page.path);
+          return (
+            <li key={`${page.path} ${page.viewedAt}`}>
+              {link === null ? (
+                <span className="page-name">{name}</span>
+              ) : (
+                <a
+                  className="page-name"
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={bare(link)}
+                >
+                  {name}
+                </a>
+              )}
+              <time dateTime={page.viewedAt} title={new Date(page.viewedAt).toLocaleString()}>
+                {ago(page.viewedAt, Date.now(), "narrow")}
+              </time>
+            </li>
+          );
+        })}
+      </ol>
+      {pages.length > PAGES_FIRST && (
+        <button type="button" className="btn link small" onClick={() => setAll(!all)}>
+          {all ? t("pagesFewer") : t("pagesAll").replace("{count}", String(pages.length))}
+        </button>
+      )}
+    </section>
+  );
 }
 
 /** What the operator can do with this conversation. */
 function ThreadHead({
   conversation,
+  online,
   members,
   canDelete,
   onBack,
@@ -90,6 +196,8 @@ function ThreadHead({
   onDelete,
 }: {
   conversation: Conversation;
+  /** A widget stream of the visitor's is open, or null when unknown. */
+  online: boolean | null;
   members: Member[];
   canDelete: boolean;
   onBack(): void;
@@ -129,6 +237,7 @@ function ThreadHead({
         <div className="who-text">
           <h2>{title(conversation)}</h2>
           {from !== null && <p title={from}>{from}</p>}
+          <Visit visitor={conversation.visitor} online={online} />
         </div>
       </div>
       <div className="actions">
@@ -163,25 +272,65 @@ function ThreadHead({
   );
 }
 
-/** What the host page told the server about this visitor, beyond the header: its claims. */
-function VisitorContext({ conversation }: { conversation: Conversation }) {
-  const { visitor } = conversation;
-  const rows: [string, string][] = [];
-  for (const [name, value] of Object.entries(visitor.claims ?? {})) {
-    // The title already shows the name.
-    if (name === "name" && claimedName(visitor) !== null) continue;
-    rows.push([name, typeof value === "string" ? value : JSON.stringify(value)]);
+/**
+ * What the host page told the server about this visitor, beyond the header: its custom attributes.
+ * A web address opens in a new tab, and every other value stays text.
+ */
+function contextRows(visitor: Conversation["visitor"]): [string, string, string | null][] {
+  const rows: [string, string, string | null][] = [];
+  for (const [name, value] of Object.entries(visitor.attributes ?? {})) {
+    // The title already shows a name from the attributes when the token has no `name`.
+    if (name === "name" && visitor.name === null && attributeName(visitor) !== null) continue;
+    rows.push([name, typeof value === "string" ? value : JSON.stringify(value), webLink(value)]);
   }
+  return rows;
+}
+
+function VisitorContext({ conversation }: { conversation: Conversation }) {
+  const rows = contextRows(conversation.visitor);
   if (rows.length === 0) return null;
   return (
     <dl className="context">
-      {rows.map(([name, value]) => (
+      {rows.map(([name, value, link]) => (
         <Fragment key={`${name}=${value}`}>
           <dt>{name}</dt>
-          <dd>{value}</dd>
+          <dd>
+            {link === null ? (
+              value
+            ) : (
+              <a href={link} target="_blank" rel="noopener noreferrer" title={link}>
+                {bare(link)}
+              </a>
+            )}
+          </dd>
         </Fragment>
       ))}
     </dl>
+  );
+}
+
+/**
+ * The visitor's attributes and pages, in a fold. It starts open on a wide screen and closed on a
+ * phone, where it would push the messages below the fold.
+ */
+function AboutVisitor({ conversation, pages }: { conversation: Conversation; pages: PageView[] }) {
+  const [open, setOpen] = useState(() => matchMedia("(min-width: 761px)").matches);
+  if (contextRows(conversation.visitor).length === 0 && pages.length === 0) return null;
+  return (
+    <details
+      className="about-visitor"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        {t("visitorDetails")}
+        <Icon name="chevron" size={12} />
+      </summary>
+      <div className="about-body">
+        <VisitorContext conversation={conversation} />
+        <PageJourney pages={pages} />
+      </div>
+    </details>
   );
 }
 
@@ -404,6 +553,8 @@ export function Thread({
   onChanged(): void;
 }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [online, setOnline] = useState<boolean | null>(null);
+  const [pages, setPages] = useState<PageView[]>([]);
   const [lines, setLines] = useState<Line[]>([]);
   // Here and not in the composer, which unmounts while the conversation is closed.
   const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
@@ -432,6 +583,8 @@ export function Thread({
       });
       setLoadFailure(null);
       setConversation(page.conversation);
+      setOnline(page.visitorOnline);
+      setPages(page.visitorPages);
       setLines((current) => page.messages.reduce(merge, current));
       const last = page.messages.at(-1);
       if (last !== undefined) position.current = last.seq;
@@ -440,6 +593,11 @@ export function Thread({
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   useEffect(load, [load, version]);
+  // The visitor's online state changes with no event, so it is read again now and then.
+  useEffect(() => {
+    const timer = setInterval(load, ONLINE_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [load]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line scrolls down.
   useEffect(() => {
@@ -601,6 +759,7 @@ export function Thread({
     >
       <ThreadHead
         conversation={conversation}
+        online={online}
         members={members}
         canDelete={canDelete}
         onBack={onBack}
@@ -628,7 +787,7 @@ export function Thread({
           {replying}
         </p>
       )}
-      <VisitorContext conversation={conversation} />
+      <AboutVisitor conversation={conversation} pages={pages} />
       <div className="log" role="log" aria-live="polite" ref={log}>
         {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
         {lines.map((line, index) => {

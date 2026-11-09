@@ -923,6 +923,7 @@ describe("settings", () => {
       publicKey: space.publicKey,
       allowedOrigins: [SITE],
       signingSecret: space.signingSecret,
+      widgetTexts: { title: null, greeting: null, away: null },
       // A self-hosted install has no limits.
       usage: null,
     });
@@ -1018,7 +1019,11 @@ describe("presence routes", () => {
     const widget = await app.request(`/v1/widget/${space.publicKey}/presence`, {
       headers: { origin: SITE },
     });
-    expect(await widget.json()).toEqual({ online: null, emailReplies: false });
+    expect(await widget.json()).toEqual({
+      online: null,
+      emailReplies: false,
+      texts: { title: null, greeting: null, away: null },
+    });
   });
 
   test("the widget's answer needs an allowed site and needs no token", async () => {

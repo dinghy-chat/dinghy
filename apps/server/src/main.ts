@@ -95,6 +95,7 @@ if (role === "web" || role === "all") {
     metricsToken: config.METRICS_TOKEN,
     widgetDirectory: config.WIDGET_DIR,
     operatorDirectory: config.OPERATOR_DIR,
+    publicUrl: config.PUBLIC_URL,
     checks: {
       postgres: () => withTimeout(pool.query("select 1")),
       valkey: () => withTimeout(valkey.ping()),

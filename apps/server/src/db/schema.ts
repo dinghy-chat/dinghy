@@ -64,6 +64,10 @@ export const workspace = pgTable(
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
     // Why, for the server's admin. Operators do not see it.
     suspendedReason: text("suspended_reason"),
+    // The widget's own words. Null means Dinghy's default text.
+    widgetTitle: text("widget_title"),
+    widgetGreeting: text("widget_greeting"),
+    widgetAway: text("widget_away"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -188,9 +192,11 @@ export const visitor = pgTable(
     // The SHA-256 of a signed-out visitor's browser token. The token itself is never stored.
     tokenHash: text("token_hash"),
     email: text("email"),
-    // User context signed by the host backend, for operators to read.
-    claims: jsonb("claims"),
-    // The issue time of the token that last set the email and claims.
+    // The name the host backend signed, on one line.
+    name: text("name"),
+    // Custom attributes signed by the host backend, for operators to read.
+    attributes: jsonb("attributes"),
+    // The issue time of the token that last set the name, email and attributes.
     identityIssuedAt: bigint("identity_issued_at", { mode: "bigint" }),
     // The position this visitor has read up to, so the unread count survives a page load.
     lastReadSeq: bigint("last_read_seq", { mode: "bigint" }).notNull().default(sql`0`),
@@ -200,6 +206,11 @@ export const visitor = pgTable(
     // When a signed-out visitor's browser token was last used, to a day. One unused for a year stops
     // working. A visitor from before this column counts from the upgrade.
     tokenUsedAt: timestamp("token_used_at", { withTimezone: true }).notNull().defaultNow(),
+    // A short line such as "Chrome on macOS", made from the widget's User-Agent, which is not kept.
+    device: text("device"),
+    // The page the widget last reported, as origin and path, and when.
+    lastPage: text("last_page"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -241,6 +252,8 @@ export const conversation = pgTable(
     index("conversation_visitor_idx").on(table.workspaceId, table.visitorId),
     // The inbox list: one status, newest activity first, paged by (updated_at, id).
     index("conversation_list_idx").on(table.workspaceId, table.status, table.updatedAt, table.id),
+    // Analytics read the conversations started in a period.
+    index("conversation_created_idx").on(table.workspaceId, table.createdAt),
   ],
 );
 
@@ -294,6 +307,8 @@ export const message = pgTable(
     ),
     unique("message_seq_key").on(table.workspaceId, table.seq),
     index("message_conversation_idx").on(table.workspaceId, table.conversationId, table.seq),
+    // Search finds a substring of a message, which only a trigram index can serve.
+    index("message_body_trgm_idx").using("gin", table.body.op("gin_trgm_ops")),
   ],
 );
 
@@ -347,6 +362,8 @@ export type EventKind = (typeof EVENT_KINDS)[number];
 export interface MessageCreatedPayload {
   messageId: string;
   conversationId: string;
+  /** Missing on events written by 0.5.0 and earlier. */
+  fromVisitor?: boolean;
 }
 
 export const event = pgTable(
@@ -426,6 +443,68 @@ export const workerHeartbeat = pgTable(
     passedAt: timestamp("passed_at", { withTimezone: true }).notNull(),
   },
   (table) => [check("worker_heartbeat_one_row", sql`${table.id}`)],
+);
+
+/**
+ * The link in a reply email that opens the conversation on this server. Only the token's hash is
+ * stored. It works many times until it expires, and goes with its conversation.
+ */
+export const chatLink = pgTable(
+  "chat_link",
+  {
+    workspaceId: workspaceId(),
+    id: id(),
+    tokenHash: text("token_hash").notNull().unique(),
+    visitorId: uuid("visitor_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "chat_link_visitor_fk",
+      columns: [table.workspaceId, table.visitorId],
+      foreignColumns: [visitor.workspaceId, visitor.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "chat_link_conversation_fk",
+      columns: [table.workspaceId, table.conversationId],
+      foreignColumns: [conversation.workspaceId, conversation.id],
+    }).onDelete("cascade"),
+    index("chat_link_conversation_idx").on(table.workspaceId, table.conversationId),
+    index("chat_link_visitor_idx").on(table.workspaceId, table.visitorId),
+    index("chat_link_expires_idx").on(table.expiresAt),
+  ],
+);
+
+/**
+ * A page a visitor who chatted went through, as the widget reported it. Only visitors who already
+ * have a conversation get rows, at most 100 each, and the worker deletes rows after 90 days.
+ */
+export const pageView = pgTable(
+  "page_view",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    id: id(),
+    visitorId: uuid("visitor_id").notNull(),
+    // The page's origin and path. Never a query string or hash.
+    path: text("path").notNull(),
+    title: text("title"),
+    viewedAt: timestamp("viewed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "page_view_visitor_fk",
+      columns: [table.workspaceId, table.visitorId],
+      foreignColumns: [visitor.workspaceId, visitor.id],
+    }).onDelete("cascade"),
+    index("page_view_visitor_idx").on(table.workspaceId, table.visitorId, table.viewedAt.desc()),
+    index("page_view_viewed_idx").on(table.viewedAt),
+  ],
 );
 
 /** An invite link. Only the token's hash is stored, and it works once. */

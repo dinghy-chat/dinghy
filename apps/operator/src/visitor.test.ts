@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Conversation } from "./api.ts";
-import { isWaiting, visitorLabel, visitorName } from "./visitor.ts";
+import { isWaiting, otherIdentity, visitorLabel, visitorName, webLink } from "./visitor.ts";
 
 describe("visitor labels", () => {
   test("a signed-out visitor gets a short code from its ID, the same every time", () => {
@@ -25,14 +25,14 @@ describe("visitor labels", () => {
     expect(visitorName({ id, email: null, externalId: null })).toBe(visitorLabel(id));
   });
 
-  test("a signed name claim wins, and a blank one is ignored", () => {
+  test("a name in the signed attributes wins, and a blank one is ignored", () => {
     const id = "7f3a9c2e-1b4d-4e8f-9a0b-1c2d3e4f5a6b";
     const email = "maria@example.com";
-    expect(visitorName({ id, email, externalId: null, claims: { name: " Maria Santos " } })).toBe(
-      "Maria Santos",
-    );
-    expect(visitorName({ id, email, externalId: null, claims: { name: "  " } })).toBe(email);
-    expect(visitorName({ id, email, externalId: null, claims: { name: 42 } })).toBe(email);
+    expect(
+      visitorName({ id, email, externalId: null, attributes: { name: " Maria Santos " } }),
+    ).toBe("Maria Santos");
+    expect(visitorName({ id, email, externalId: null, attributes: { name: "  " } })).toBe(email);
+    expect(visitorName({ id, email, externalId: null, attributes: { name: 42 } })).toBe(email);
   });
 });
 
@@ -43,7 +43,17 @@ describe("waiting", () => {
     updatedAt: "2026-11-07T10:00:00.000Z",
     assigneeOperatorId: null,
     startedPage: null,
-    visitor: { id: "v", email: null, externalId: null, claims: null, blocked: false },
+    visitor: {
+      id: "v",
+      email: null,
+      externalId: null,
+      name: null,
+      attributes: null,
+      blocked: false,
+      device: null,
+      lastPage: null,
+      lastSeenAt: null,
+    },
     lastMessage: { body: "hi", fromVisitor: true, createdAt: "2026-11-07T10:00:00.000Z" },
   };
 
@@ -56,5 +66,49 @@ describe("waiting", () => {
     expect(isWaiting({ ...base, lastMessage: reply })).toBe(false);
     expect(isWaiting({ ...base, status: "closed" })).toBe(false);
     expect(isWaiting({ ...base, lastMessage: null })).toBe(false);
+  });
+});
+
+describe("names and links", () => {
+  test("a signed name comes before the email and the user ID", () => {
+    expect(visitorName({ id: "v", name: "Ana", email: "a@example.com", externalId: "u1" })).toBe(
+      "Ana",
+    );
+    expect(visitorName({ id: "v", name: null, email: "a@example.com", externalId: "u1" })).toBe(
+      "a@example.com",
+    );
+  });
+
+  test("only an http or https address that parses becomes a link", () => {
+    expect(webLink("https://acme.example/account/42")).toBe("https://acme.example/account/42");
+    expect(webLink("HTTP://acme.example")).toBe("http://acme.example/");
+    for (const value of [
+      "javascript:alert(1)",
+      "data:text/html,hi",
+      "ftp://acme.example",
+      "https://",
+      " https://acme.example",
+      "acme.example",
+      42,
+      null,
+      { url: "https://acme.example" },
+    ]) {
+      expect(webLink(value)).toBeNull();
+    }
+  });
+});
+
+describe("the line under the visitor's name", () => {
+  test("keeps the email and the user ID that the title does not show", () => {
+    expect(otherIdentity({ name: "Ana", email: "ana@example.com", externalId: "u-1" })).toEqual([
+      "ana@example.com",
+      "u-1",
+    ]);
+    expect(otherIdentity({ name: null, email: "ana@example.com", externalId: "u-1" })).toEqual([
+      "u-1",
+    ]);
+    expect(otherIdentity({ name: "Ana", email: null, externalId: "u-1" })).toEqual(["u-1"]);
+    expect(otherIdentity({ name: null, email: null, externalId: "u-1" })).toEqual([]);
+    expect(otherIdentity({ name: null, email: null, externalId: null })).toEqual([]);
   });
 });

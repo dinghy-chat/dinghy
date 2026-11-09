@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { App } from "./app.ts";
 
-const FILES = ["loader.js", "widget.js"];
+const FILES = ["loader.js", "page.js", "widget.js"];
 
 /** Serves the widget bundles from a fixed list, so a request can never name another file. */
 export function registerWidgetFiles(app: App, directory: string): void {

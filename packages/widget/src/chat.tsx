@@ -1,7 +1,14 @@
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
-import { ApiError, type ChatMessage, createClient } from "./client.ts";
+import {
+  ApiError,
+  type ChatMessage,
+  createClient,
+  pageAddress,
+  pageTitle,
+  type Texts,
+} from "./client.ts";
 import {
   IMAGE_TYPES,
   imageProblem,
@@ -67,6 +74,7 @@ textarea{resize:none;height:44px}
 dialog{padding:0;border:0;background:transparent;max-width:95vw;max-height:95vh;overflow:auto}
 dialog::backdrop{background:rgb(11 34 57/.85)}
 dialog img{display:block;max-width:none}
+.panel.page{inset:0;margin:auto;width:100%;max-width:720px;height:auto;max-height:none;border-radius:0}
 .panel:focus{outline:none}
 .panel.drop{outline:3px dashed var(--d-accent,#e5352b);outline-offset:-6px}
 .pick{background:transparent;color:inherit;padding:0}
@@ -201,6 +209,39 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
   return inCommitOrder(others, line);
 }
 
+/** The workspace's own words where it set them, and Dinghy's text everywhere else. */
+type Say = (id: TextId) => string;
+
+const NO_TEXTS: Texts = { title: null, greeting: null, away: null };
+
+const sayer =
+  (texts: Texts): Say =>
+  (id) =>
+    (id === "title"
+      ? texts.title
+      : id === "empty"
+        ? texts.greeting
+        : id === "teamAway"
+          ? texts.away
+          : null) ?? t(id);
+
+const TITLE_WAIT_MS = 500;
+
+// A single-page site changes its address with the History API, which fires no event of its own.
+const NAVIGATED = "dinghy:navigated";
+let watchingHistory = false;
+function watchHistory() {
+  if (watchingHistory) return;
+  watchingHistory = true;
+  for (const name of ["pushState", "replaceState"] as const) {
+    const original = history[name];
+    history[name] = function (this: History, ...args: Parameters<History["pushState"]>) {
+      original.apply(this, args);
+      dispatchEvent(new Event(NAVIGATED));
+    };
+  }
+}
+
 /** Math.max does not accept a bigint. */
 function larger(a: bigint, b: bigint): bigint {
   return a > b ? a : b;
@@ -211,12 +252,15 @@ function ChatHead({
   scene,
   online,
   mascot,
+  say,
   onClose,
 }: {
   scene: SceneState;
   online: boolean | null;
   mascot: boolean;
-  onClose(): void;
+  say: Say;
+  /** Missing on the full-page chat, which has nothing to close. */
+  onClose?: () => void;
 }) {
   return (
     <div class="head">
@@ -233,15 +277,17 @@ function ChatHead({
           </Sea>
         )}
         <div>
-          <b>{t("title")}</b>
+          <b>{say("title")}</b>
           <small role="status">
-            {t(scene === "waiting" && online === true ? "teamOnline" : SCENES[scene].text)}
+            {say(scene === "waiting" && online === true ? "teamOnline" : SCENES[scene].text)}
           </small>
         </div>
       </div>
-      <button type="button" class="action icon" aria-label={t("close")} onClick={onClose}>
-        <Icon paths={CLOSE_ICON} size={24} />
-      </button>
+      {onClose !== undefined && (
+        <button type="button" class="action icon" aria-label={t("close")} onClick={onClose}>
+          <Icon paths={CLOSE_ICON} size={24} />
+        </button>
+      )}
     </div>
   );
 }
@@ -336,12 +382,17 @@ interface ChatProps {
  */
 function Chat({ context, open, setOpen }: ChatProps) {
   const { publicKey, base } = context;
-  const [client] = useState(() => createClient(base, publicKey));
+  const fullPage = context.page === true;
+  const [client] = useState(() => createClient(base, publicKey, undefined, !fullPage));
+  const [texts, setTexts] = useState(NO_TEXTS);
+  const say = sayer(texts);
   const [identity] = useState(() => context.getIdentity());
   const [token, setToken] = useState(() =>
     identity === null ? readToken(publicKey) : typeof identity === "string" ? identity : null,
   );
   const [openConversation, setOpenConversation] = useState(false);
+  // Has a conversation, open or closed. Only such a visitor's pages are reported.
+  const [chatted, setChatted] = useState(false);
   const [lastRead, setLastRead] = useState(0n);
   // The server's count, with the read position it was computed from.
   const [serverRead, setServerRead] = useState({ unread: 0, position: 0n });
@@ -464,17 +515,50 @@ function Chat({ context, open, setOpen }: ChatProps) {
     if (!open || !visible) return;
     const ask = () => {
       client
-        .presence()
+        .presence(fullPage ? token : null)
         .then((state) => {
           setOnline(state.online);
           setEmailReplies(state.emailReplies);
+          setTexts(state.texts ?? NO_TEXTS);
         })
         .catch(() => setOnline(null));
     };
     ask();
     const timer = setInterval(ask, PRESENCE_EVERY_MS);
     return () => clearInterval(timer);
-  }, [client, open, visible]);
+  }, [client, fullPage, open, token, visible]);
+
+  // The page the visitor is on, for operators, when the chat loads and when the address changes.
+  // Only for a visitor who has chatted, so someone who never used the chat sends nothing.
+  useEffect(() => {
+    if (token === null || !chatted || fullPage) return;
+    let last = "";
+    const report = () => {
+      const address = pageAddress();
+      const title = pageTitle();
+      if (`${address} ${title}` === last) return;
+      last = `${address} ${title}`;
+      client.reportPage(token, address, title).catch(() => {
+        // Only a detail for operators. The next change of address tries again.
+        last = "";
+      });
+    };
+    // A single-page app sets its new title a moment after it changes the address.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const navigated = () => {
+      clearTimeout(timer);
+      timer = setTimeout(report, TITLE_WAIT_MS);
+    };
+    watchHistory();
+    report();
+    addEventListener(NAVIGATED, navigated);
+    addEventListener("popstate", navigated);
+    return () => {
+      clearTimeout(timer);
+      removeEventListener(NAVIGATED, navigated);
+      removeEventListener("popstate", navigated);
+    };
+  }, [chatted, client, fullPage, token]);
 
   // One request when a visible tab has a token gives the unread count and says whether a stream is
   // needed. A visitor with only closed conversations holds no stream. It runs again when a tab
@@ -492,6 +576,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
         renewDelay.current = 0;
         // A send during this request leaves a conversation open that this response may not show.
         setOpenConversation(me.openConversation || sends.current !== sendsAtStart);
+        setChatted((current) => current || me.chatted);
         // The larger one, because this response can be older than a read in this tab.
         const position = BigInt(me.lastReadSeq);
         setLastRead((current) => larger(current, position));
@@ -671,6 +756,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
       });
       sends.current += 1;
       setOpenConversation(true);
+      setChatted(true);
       // A send that worked means a block was lifted, or the site was allowed again. Another warning,
       // such as an image that was too large, is about something else and stays.
       setProblem((current) =>
@@ -768,7 +854,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
     <section
       ref={panel}
       tabIndex={-1}
-      class={dropping ? "panel drop" : "panel"}
+      class={`panel${fullPage ? " page" : ""}${dropping ? " drop" : ""}`}
       onDragOver={(event) => {
         // A drag of selected text keeps its normal behavior.
         if (!event.dataTransfer?.types.includes("Files")) return;
@@ -782,16 +868,17 @@ function Chat({ context, open, setOpen }: ChatProps) {
         event.preventDefault();
         sendFiles(event.dataTransfer.files);
       }}
-      aria-label={t("title")}
+      aria-label={say("title")}
       onKeyDown={(event) => {
-        if (event.key === "Escape") setOpen(false);
+        if (event.key === "Escape" && !fullPage) setOpen(false);
       }}
     >
       <ChatHead
         scene={sceneState}
         online={online}
         mascot={context.mascot}
-        onClose={() => setOpen(false)}
+        say={say}
+        {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />
       <div class="log" role="log" aria-live="polite" ref={log}>
         {lines.length === 0 && (
@@ -802,7 +889,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
               </Sea>
             )}
             {/* Away, the header already asks for a message. */}
-            {sceneState !== "empty" && sceneState !== "away" && <p>{t("empty")}</p>}
+            {sceneState !== "empty" && sceneState !== "away" && <p>{say("empty")}</p>}
           </div>
         )}
         {lines.map((line) => (

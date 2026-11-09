@@ -22,6 +22,7 @@ import {
   invite,
   message,
   operator,
+  pageView,
   pushSubscription,
   verification,
   visitor,
@@ -215,7 +216,31 @@ const ATTACKS: Record<string, Attack> = {
   "GET /v1/widget/:key/presence": async ({ widget, a, b }) => {
     expect((await widget(a.publicKey, "GET", "presence", null, SITE_B)).status).toBe(403);
     const own = await widget(b.publicKey, "GET", "presence", null, SITE_B);
-    expect(Object.keys((await own.json()) as object)).toEqual(["online", "emailReplies"]);
+    expect(Object.keys((await own.json()) as object)).toEqual(["online", "emailReplies", "texts"]);
+  },
+  "POST /v1/widget/:key/page": async ({ widget, a, b, one, two, other }) => {
+    const pageOf = async (id: string) =>
+      (await owner.select().from(visitor).where(eq(visitor.id, id)))[0]?.lastPage;
+    const journeyOf = async (id: string) =>
+      (await owner.select().from(pageView).where(eq(pageView.visitorId, id))).map(
+        (row) => `${row.workspaceId} ${row.path}`,
+      );
+    const before = await pageOf(two.id);
+    const twoBefore = await journeyOf(two.id);
+    const otherBefore = await journeyOf(other.id);
+    const page = `${SITE_A}/isolation-${randomUUID()}`;
+    expect((await widget(a.publicKey, "POST", "page", one.token, SITE_A, { page })).status).toBe(
+      200,
+    );
+    expect(await pageOf(one.id)).toBe(page);
+    expect(await journeyOf(one.id)).toContain(`${a.id} ${page}`);
+    expect(await pageOf(two.id)).toBe(before);
+    expect(await journeyOf(two.id)).toEqual(twoBefore);
+    expect(await journeyOf(other.id)).toEqual(otherBefore);
+    expect(
+      (await widget(b.publicKey, "POST", "page", one.token, SITE_B, { page: `${SITE_B}/x` }))
+        .status,
+    ).toBe(401);
   },
 
   // ---- An image and a stop link, whose signatures name one workspace.
@@ -275,6 +300,48 @@ const ATTACKS: Record<string, Attack> = {
     const own = (await (await as(anna, "GET", inWorkspace(a.id))).json()) as { id: string };
     expect(own.id).toBe(a.id);
   },
+  "GET /v1/operator/workspaces/:workspaceId/analytics": async ({
+    operator: as,
+    anna,
+    sam,
+    a,
+    b,
+    secrets,
+  }) => {
+    const numbers = async (who: { cookie: string }, id: string) => {
+      const response = await as(who, "GET", inWorkspace(id, "/analytics?days=7&tz=UTC"));
+      return { status: response.status, text: await response.text() };
+    };
+    expect((await numbers(anna, b.id)).status).toBe(404);
+    const count = async (id: string) =>
+      (await owner.select().from(conversation).where(eq(conversation.workspaceId, id))).length;
+    // Sam is in both, and each workspace gives its own numbers.
+    for (const id of [a.id, b.id]) {
+      const { status, text } = await numbers(sam, id);
+      expect(status).toBe(200);
+      expect((JSON.parse(text) as { started: number }).started).toBe(await count(id));
+    }
+    const own = await numbers(anna, a.id);
+    expect(own.text).not.toContain(secrets.b);
+    expect(own.text).not.toContain(b.id);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/conversations/search": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    one,
+    other,
+    secrets,
+  }) => {
+    const search = (id: string, q: string) =>
+      as(anna, "GET", inWorkspace(id, `/conversations/search?q=${encodeURIComponent(q)}`));
+    expect((await search(b.id, "written")).status).toBe(404);
+    const text = await (await search(a.id, "written")).text();
+    expect(text).toContain(one.conversationId);
+    expect(text).not.toContain(other.conversationId);
+    expect(text).not.toContain(secrets.b);
+  },
   "GET /v1/operator/workspaces/:workspaceId/conversations": async ({
     operator: as,
     anna,
@@ -295,6 +362,7 @@ const ATTACKS: Record<string, Attack> = {
     anna,
     a,
     b,
+    one,
     other,
     secrets,
   }) => {
@@ -304,6 +372,17 @@ const ATTACKS: Record<string, Attack> = {
     expect(await crossed.text()).not.toContain(secrets.b);
     const there = inWorkspace(b.id, `/conversations/${other.conversationId}/messages?after=0`);
     expect((await as(anna, "GET", there)).status).toBe(404);
+    // A conversation's page journey is its own visitor's, never another one's.
+    const own = await as(
+      anna,
+      "GET",
+      inWorkspace(a.id, `/conversations/${one.conversationId}/messages`),
+    );
+    const { visitorPages } = (await own.json()) as { visitorPages: { title: string | null }[] };
+    const titles = visitorPages.map((page) => page.title);
+    expect(titles).toContain("written by one, the page");
+    expect(titles.join(" ")).not.toContain(secrets.two);
+    expect(titles.join(" ")).not.toContain(secrets.b);
   },
   "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages": async ({
     operator: as,
@@ -823,6 +902,11 @@ async function buildWorld(db: Database): Promise<World> {
       },
     );
     const { image } = (await uploaded.json()) as { image: { url: string } };
+    // A page in the visitor's journey, whose title holds their secret.
+    await widget(space.publicKey, "POST", "page", token, site, {
+      page: `${site}/journey`,
+      title: `${text}, the page`,
+    });
     return { id: visitorId, token, conversationId, image };
   };
 

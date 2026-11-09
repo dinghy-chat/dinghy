@@ -22,6 +22,8 @@ import {
   event,
   message,
   operator,
+  pageView,
+  visitor,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
@@ -181,6 +183,19 @@ async function makeSource(): Promise<Source> {
     .set({ removedAt: new Date() })
     .where(eq(workspaceMember.operatorId, gone.id));
   await owner.insert(emailStop).values({ workspaceId: space.id, addressHash: "a".repeat(64) });
+  await owner
+    .update(workspace)
+    .set({ widgetTitle: "Ask Acme", widgetGreeting: "Hello there", widgetAway: "Back soon" })
+    .where(eq(workspace.id, space.id));
+  await app.request(`/v1/widget/${space.publicKey}/page`, {
+    method: "POST",
+    headers: {
+      origin: SITE,
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ page: `${SITE}/docs?ref=ad`, title: "Docs" }),
+  });
 
   // Another workspace on the same install, which must stay out of the export.
   const otherVisitor = await app.request(`/v1/widget/${other.publicKey}/visitors`, {
@@ -447,6 +462,46 @@ describe("a round trip onto a fresh install", () => {
     expect(rows.map((row) => row.addressHash)).toEqual(["a".repeat(64)]);
   });
 
+  test("the widget's words and the visitor's details come along", async () => {
+    const [space] = await target.owner
+      .select()
+      .from(workspace)
+      .where(eq(workspace.id, source.space.id));
+    expect([space?.widgetTitle, space?.widgetGreeting, space?.widgetAway]).toEqual([
+      "Ask Acme",
+      "Hello there",
+      "Back soon",
+    ]);
+    const [before] = await source.install.owner
+      .select()
+      .from(visitor)
+      .where(eq(visitor.id, source.visitorId));
+    const [after] = await target.owner
+      .select()
+      .from(visitor)
+      .where(eq(visitor.id, source.visitorId));
+    expect(before?.lastPage).toBe(`${SITE}/docs`);
+    expect([after?.device, after?.lastPage]).toEqual([before?.device, before?.lastPage]);
+    // Streams in other tests move both sides' times, so the file is what this checks.
+    let exported: { visitors: { id: string; lastSeenAt?: string | null }[] } | undefined;
+    for await (const entry of readTar(once(archive))) {
+      if (entry.name === "export.json") exported = JSON.parse(Buffer.from(entry.bytes).toString());
+    }
+    const row = exported?.visitors.find((one) => one.id === source.visitorId);
+    expect(row?.lastSeenAt).toMatch(/^\d{4}-/);
+    expect(after?.lastSeenAt).toBeInstanceOf(Date);
+  });
+
+  test("the visitor's page journey comes along", async () => {
+    const rows = await target.owner
+      .select()
+      .from(pageView)
+      .where(eq(pageView.workspaceId, source.space.id));
+    expect(rows.map((row) => [row.visitorId, row.path, row.title])).toEqual([
+      [source.visitorId, `${SITE}/docs`, "Docs"],
+    ]);
+  });
+
   test("a repeated import is refused and changes nothing", async () => {
     const before = await files(target.directory);
     const messages = await target.owner.select().from(message);
@@ -531,6 +586,45 @@ describe("a bad file changes nothing", () => {
     expect(await target.owner.select().from(operator)).toHaveLength(before);
     expect(await files(target.directory)).toEqual([]);
   }
+
+  test("an export from 0.5.0, with no page journey, imports", async () => {
+    const old = await edited((data) => {
+      delete data.pageViews;
+    });
+    const target = await freshInstall();
+    await importArchive(target.db, target.store, once(old));
+    expect(await target.owner.select().from(pageView)).toEqual([]);
+    expect(await target.owner.select().from(visitor)).not.toEqual([]);
+  }, 30_000);
+
+  test("a page view of a visitor the file does not hold", async () => {
+    const bad = await edited((data) => {
+      (data.pageViews as Record<string, unknown>[]).push({
+        visitorId: randomUUID(),
+        path: `${SITE}/x`,
+        title: null,
+        viewedAt: new Date().toISOString(),
+      });
+    });
+    const target = await freshInstall();
+    await expect(importArchive(target.db, target.store, once(bad))).rejects.toThrow(ImportError);
+    expect(await target.owner.select().from(workspace)).toEqual([]);
+  }, 30_000);
+
+  test("an export from 0.5.0, whose visitors have claims, imports them as attributes", async () => {
+    const old = await edited((data) => {
+      for (const row of data.visitors as Record<string, unknown>[]) {
+        row.claims = { plan: "pro" };
+        delete row.attributes;
+        delete row.name;
+      }
+    });
+    const target = await freshInstall();
+    await importArchive(target.db, target.store, once(old));
+    const rows = await target.owner.select().from(visitor);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.attributes).toEqual({ plan: "pro" });
+  }, 30_000);
 
   test("a file cut off anywhere", async () => {
     await refuses(archive.subarray(0, archive.length - 1024), "cut off");

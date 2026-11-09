@@ -4,7 +4,21 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 
 ## Unreleased
 
-- A `name` string in the identity token's `claims` is the visitor's name in the operator app: the conversation's title in the inbox, the conversation header and the blocked list. The email and user ID move to the line under it.
+**Owner note:** the identity token's `claims` field is now called `attributes`, the name Intercom and Chatwoot use. Tokens made for 0.5.0 keep working with `claims`, and you can rename it on your server whenever you like. The operator API's visitor field changed from `claims` to `attributes` too, and an export holds `attributes`, while an export from 0.5.0 still imports.
+
+- The identity token takes an optional `name`, on one line, up to 100 characters. The operator app shows it as the visitor's name, before the email and the user ID. A custom attribute whose value is an `https://` or `http://` address shows as a link that opens in a new tab.
+- The conversation header shows whether the visitor has the chat open now, or when they were last seen, their browser and system, such as "Chrome on macOS", and the last page they were on, as a link. The widget reports the page when it loads and when the address changes, also in a single-page app, with no query string or `#` part, and at most 30 times a minute. The server keeps the short device line, not the User-Agent. Online state lives in Valkey, and without it the app shows nothing rather than a guess.
+- Owners and admins can change the chat's title, its greeting in an empty chat and its text for when nobody is online, in **Settings > Install**. An empty box keeps Dinghy's words.
+- The operator app can play a soft chime when a visitor writes in a conversation you don't have open, or while another window is in front of the app. A browser tab you are not on holds no live connection and stays silent; push notifications cover it. **Alerts > Play a sound for new messages** turns it off on this device.
+- The reply email to a visitor links to the conversation on a page of your Dinghy server, at `/chat/...`, where they can read and reply, in place of "go back to the site". Each email makes a new link that works for 30 days, the database keeps only its hash, and the worker deletes expired ones. An expired link, a deleted conversation, a blocked visitor or a closed workspace shows a plain page that says so. The email keeps its stop link.
+- A search box above the conversation list finds open and closed conversations by the visitor's name, email or user ID, or by message text, and shows the matching message.
+- **Pages visited**: below the conversation header, the pages the visitor went through, newest first, with each page's title as a link and how long ago. The widget now also sends the page's title. It reports pages only for a visitor who has chatted, and the server stores nothing for any other visitor, signed in or not. A visitor keeps the newest 100 pages, the worker deletes pages after 90 days, and deleting the visitor's last conversation deletes them. An export holds them, and an export from 0.5.0 still imports.
+- **Analytics**, a new page in the sidebar for every member: conversations per day, the median and 90th percentile time to the first reply, the share answered within 5 minutes, conversations closed, conversations by who answered first, and the busiest hours of the week, for the last 7, 30 or 90 days in your time zone. The numbers come from the conversations and messages Dinghy already stores; nothing new tracks visitors.
+- An export also holds the widget's own words and each visitor's device, last page and last-seen time.
+- `Dinghy.reset()` no longer leaves a key in the browser's storage for a visitor who never chatted.
+- Search uses a trigram index on message text, so a search of three letters or more no longer reads every message. The migration adds Postgres's `pg_trgm` extension, which the database's owner can add with no superuser, and builds the index, which takes a moment on a large install.
+- API: `POST /v1/widget/{key}/page`, `GET /v1/operator/workspaces/{workspaceId}/conversations/search`, `GET /v1/operator/workspaces/{workspaceId}/analytics`, `visitorPages` with a conversation's messages, `chatted` in the widget's `me` answer, `texts` in the widget's presence answer, `widgetTexts` in the settings, `visitorOnline` with a conversation's messages, and `fromVisitor` on a new message's `change` event. The settings `PATCH` takes `allowedOrigins`, `widgetTexts` or both.
+- A `name` string in the identity token's `attributes` (or `claims`), when the token has no `name` of its own, is the visitor's name in the operator app: the conversation's title in the inbox, the conversation header and the blocked list. The email and user ID move to the line under it.
 - Settings fits a phone: the tabs wrap so every one stays visible, and **Invite someone**, now only on **Team**, is a short **Invite** in the title row. The install snippet has one attribute per line, so no screen breaks it inside `data-key`.
 - An invite link that expired or was used shows a heading and a way on, **Sign in** or **Open Dinghy**, instead of a line of red text.
 - **Delete workspace** is an outline button, like **Replace the secret**. The confirm step keeps the filled red one.
@@ -12,6 +26,16 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 - On a touch screen, opening the chat no longer brings up the keyboard. Tapping the message field does. With a mouse, the field gets focus as before.
 - When nobody is online, the widget says "we will reply here" once, in its header.
 - Dinghy Cloud's early signup says what it is: the workspace works right away, and an email comes when the cloud opens. The button reads **Email me a sign-up link**, the workspace name has a hint, and the banner in the app is one short line.
+- A conversation's attributes and pages sit in **Visitor details**, open on a computer and folded on a phone, so a phone shows the messages first. The lines under the visitor's name wrap instead of cutting off the starting page.
+- While you search, the line under **Inbox** says how many conversations match, and a closed one in the results has a **Closed** chip.
+- **Settings > Install** shows the tag for your site first, and the greeting and away text in boxes that wrap.
+- The confirm dialog uses the app's pill buttons, 44 px tall on a phone, over a lighter backdrop. Icon buttons are round, and removing an allowed site has a 44 px target.
+- Analytics charts use the full width of their row, and the headline numbers line up when a label wraps.
+- "Check your email" shows the address in bold, and a used or expired invite says to ask the person who invited you for a new link. On a phone, the cloud no longer hides behind the card.
+- An expired chat link's page shows the logo and says why as its heading.
+- The conversation header puts the visitor's last page on a line of its own and leaves out the starting page when it is the same. On a wide screen, the visitor's attributes and pages sit side by side.
+- A web address among a visitor's attributes shows without `https://`, as the header's pages do. The boat in the sea keeps clear of the screen's edges, and the per-day chart leaves room above its tallest bar.
+- The sign-in card says there is no password, and the per-day chart says what it counts. On the **Data** tab, **Unblock** sits next to the visitor, and the **Delete this workspace** box lines its text up with the rows above.
 
 ## 0.5.0 (2026-11-08)
 

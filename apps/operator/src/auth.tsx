@@ -33,10 +33,7 @@ export function SignIn({
 
   if (sentTo !== null) {
     return (
-      <CheckEmail
-        text={t("checkEmailSignIn").replace("{email}", sentTo)}
-        onBack={() => setSentTo(null)}
-      />
+      <CheckEmail text={t("checkEmailSignIn")} email={sentTo} onBack={() => setSentTo(null)} />
     );
   }
   if (!emailAvailable) {
@@ -51,6 +48,7 @@ export function SignIn({
   return (
     <AuthPage time="morning" onSubmit={submit}>
       <h1>{t("signInTitle")}</h1>
+      <p className="note">{t("signInHelp")}</p>
       <Field
         label={t("email")}
         type="email"
@@ -73,12 +71,24 @@ export function SignIn({
 }
 
 /** After a link went out, for a sign-in, a signup or an invite. */
-export function CheckEmail({ text, onBack }: { text: string; onBack?(): void }) {
+export function CheckEmail({
+  text,
+  email,
+  onBack,
+}: {
+  /** A sentence with `{email}` in it, where the address shows in bold to check for a typo. */
+  text: string;
+  email: string;
+  onBack?(): void;
+}) {
+  const [before, after] = text.split("{email}");
   return (
     <AuthPage time="forenoon">
       <h1>{t("checkEmailTitle")}</h1>
       <p className="note" role="status">
-        {text}
+        {before}
+        <strong>{email}</strong>
+        {after}
       </p>
       {onBack !== undefined && (
         <button type="button" className="btn link" onClick={onBack}>

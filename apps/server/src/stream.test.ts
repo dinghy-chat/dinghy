@@ -624,7 +624,7 @@ describe("access", () => {
     const [row] = await withWorkspace(db, a.id, (tx) =>
       tx.select().from(visitor).where(eq(visitor.externalId, "two-tabs")),
     );
-    expect(row?.claims).toEqual({ plan: "pro" });
+    expect(row?.attributes).toEqual({ plan: "pro" });
   });
 
   test("a stream closes when its token expires", async () => {

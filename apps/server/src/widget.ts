@@ -6,8 +6,10 @@ import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
+import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
 import { conversation, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { deviceLine } from "./device.ts";
 import {
   BUSY,
   errorAnswer,
@@ -27,6 +29,7 @@ import {
   verifyHostToken,
 } from "./identity.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
+import { pageTitle, recordPage } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, wakeConversation } from "./live.ts";
 import {
@@ -42,6 +45,7 @@ import {
   WorkspaceClosedError,
 } from "./messages.ts";
 import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moderation.ts";
+import type { VisitorPresence } from "./presence.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
@@ -79,6 +83,8 @@ const VisitorSchema = z
     visitorId: z.string(),
     signedIn: z.boolean(),
     openConversation: z.boolean(),
+    // The visitor has a conversation, open or closed. Only then does the widget report pages.
+    chatted: z.boolean(),
     lastReadSeq: z.string(),
     unread: z.number(),
     // A stream from here reads only what follows the read position, as a closed panel needs.
@@ -155,6 +161,34 @@ const meRoute = createRoute({
 
 // The host page's address. Only its origin and path are kept, when a conversation starts.
 const PAGE = z.string().max(4096).optional();
+
+const pageRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/page",
+  security: VISITOR_TOKEN,
+  summary: "Report the page the visitor is on, for operators",
+  description:
+    "The widget sends this when it loads and when the page's address changes, and only for a visitor who already has a token because they used the chat. The server stores something only for a visitor who has a conversation, and never creates a visitor here. It keeps the origin and path, never the query or hash, the title, when it came, and a short device line made from the User-Agent, which it does not keep. Each report adds a row to the visitor's page journey, unless it repeats the newest one, and a visitor keeps the newest 100.",
+  request: {
+    params,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            page: z.string().max(4096),
+            // The document's title. The server keeps one line of 200 characters at most.
+            title: z.string().max(2000).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Noted", content: okContent },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
 
 /** The page's origin and path, or null unless it is on the site that sent the request. */
 function startedPage(page: string | undefined, origin: string | undefined): string | null {
@@ -352,13 +386,31 @@ function forbidden() {
   return Response.json(ORIGIN_NOT_ALLOWED, { status: 403 });
 }
 
+/**
+ * A chat link's page runs on this server's own origin, where a browser leaves Origin out of a GET.
+ * Only a chat link's token gets in from there, so the rest of the widget API stays closed to it.
+ */
+const fromChatPage = (origin: string | undefined, ownOrigin: string | undefined, token: string) =>
+  isChatLinkToken(token) &&
+  ownOrigin !== undefined &&
+  (origin === undefined || origin === ownOrigin);
+
 /** Finds the workspace, checks the Origin header exactly, and answers CORS for the allowed site. */
-function widgetAccess(db: Database) {
+function widgetAccess(db: Database, ownOrigin: string | undefined) {
   return createMiddleware<{ Variables: { workspace: WidgetWorkspace } }>(async (c, next) => {
     const key = c.req.param("key");
     const origin = c.req.header("origin");
+    if (key === undefined || !PUBLIC_KEY.test(key)) return forbidden();
+    if (fromChatPage(origin, ownOrigin, bearerToken(c.req.header("authorization")))) {
+      const found = await widgetWorkspace(db, key);
+      if (found === null) return forbidden();
+      c.set("workspace", found);
+      return next();
+    }
     // A browser sends Origin on these requests. An unknown key gets the same answer as a bad site.
-    if (key === undefined || origin === undefined || !PUBLIC_KEY.test(key)) return forbidden();
+    if (origin === undefined || isChatLinkToken(bearerToken(c.req.header("authorization")))) {
+      return forbidden();
+    }
     const found = await widgetWorkspace(db, key);
     if (found === null || !found.allowedOrigins.includes(origin)) return forbidden();
 
@@ -386,7 +438,8 @@ async function signedInVisitor(
   const issuedAt = BigInt(Math.floor(identity.issuedAt));
   const context = {
     ...(identity.email === undefined ? {} : { email: identity.email }),
-    ...(identity.claims === undefined ? {} : { claims: identity.claims }),
+    ...(identity.name === undefined ? {} : { name: identity.name }),
+    ...(identity.attributes === undefined ? {} : { attributes: identity.attributes }),
     identityIssuedAt: issuedAt,
   };
   const isThisUser = and(
@@ -428,6 +481,8 @@ interface Identified {
   visitorId: string;
   signedIn: boolean;
   expiresAt?: Date;
+  /** Came through a reply email's link, on this server's own page. */
+  link?: true;
 }
 
 function bearerToken(authorization: string | undefined): string {
@@ -484,6 +539,12 @@ async function authenticate(
     return visitorId === null ? null : { visitorId, signedIn: false };
   }
 
+  if (isChatLinkToken(token)) {
+    if (chatLinkWorkspace(token) !== found.id) return null;
+    const link = await withWorkspace(db, found.id, (tx) => chatLinkVisitor(tx, found.id, token));
+    return link === null ? null : { visitorId: link.visitorId, signedIn: false, link: true };
+  }
+
   const identity = await verifyHostToken(token, found.signingSecret, publicKey);
   if (identity === null) return null;
   return {
@@ -491,6 +552,30 @@ async function authenticate(
     signedIn: true,
     expiresAt: identity.expiresAt,
   };
+}
+
+/**
+ * The visitor a token names, without creating one: a page report must not store a signed-in user
+ * who never chatted. Undefined for a token that does not work, and null for no visitor yet.
+ */
+async function knownVisitor(
+  db: Database,
+  found: WidgetWorkspace,
+  publicKey: string,
+  authorization: string | undefined,
+): Promise<string | null | undefined> {
+  const token = bearerToken(authorization);
+  if (token === "") return undefined;
+  if (isBrowserToken(token)) return (await browserVisitor(db, found.id, token)) ?? undefined;
+  const identity = await verifyHostToken(token, found.signingSecret, publicKey);
+  if (identity === null) return undefined;
+  const [row] = await withWorkspace(db, found.id, (tx) =>
+    tx
+      .select({ id: visitor.id })
+      .from(visitor)
+      .where(and(eq(visitor.workspaceId, found.id), eq(visitor.externalId, identity.externalId))),
+  );
+  return row?.id ?? null;
 }
 
 /**
@@ -504,6 +589,11 @@ async function stillValid(
   authorization: string | undefined,
 ): Promise<boolean> {
   const token = bearerToken(authorization);
+  if (isChatLinkToken(token)) {
+    return (
+      (await withWorkspace(db, found.id, (tx) => chatLinkVisitor(tx, found.id, token))) !== null
+    );
+  }
   if (!isBrowserToken(token)) {
     return (await verifyHostToken(token, found.signingSecret, publicKey)) !== null;
   }
@@ -513,16 +603,12 @@ async function stillValid(
 async function visitorView(db: Database, workspaceId: string, identified: Identified) {
   const { visitorId, signedIn } = identified;
   return withWorkspace(db, workspaceId, async (tx) => {
-    const open = await tx
-      .select({ id: conversation.id })
+    // The open one first, if there is one.
+    const [newest] = await tx
+      .select({ status: conversation.status })
       .from(conversation)
-      .where(
-        and(
-          eq(conversation.workspaceId, workspaceId),
-          eq(conversation.visitorId, visitorId),
-          eq(conversation.status, "open"),
-        ),
-      )
+      .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
+      .orderBy(sql`${conversation.status} = 'open' desc`)
       .limit(1);
     const { lastReadSeq, unread } = await readState(tx, workspaceId, visitorId);
     const [current] = await tx
@@ -532,7 +618,8 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
     return {
       visitorId,
       signedIn,
-      openConversation: open.length > 0,
+      openConversation: newest?.status === "open",
+      chatted: newest !== undefined,
       lastReadSeq: lastReadSeq.toString(),
       unread,
       readCursor: formatCursor({ generation: current?.generation ?? 0, seq: lastReadSeq }),
@@ -549,6 +636,8 @@ function limitFor(method: string, path: string): [string, number, number] {
   if (path.endsWith("/visitors")) return ["widget-visitors", 20, 3600];
   if (path.endsWith("/messages")) return ["widget-send", 60, 60];
   if (path.endsWith("/images")) return ["widget-image", 20, 60];
+  // A single-page site reports each change of address, and a page should not need more.
+  if (path.endsWith("/page")) return ["widget-page", 30, 60];
   return ["widget-write", 120, 60];
 }
 
@@ -563,6 +652,10 @@ interface WidgetOptions {
   /** Counts open streams per visitor and per address, on every install. */
   slots: Slots;
   stream: StreamOptions;
+  /** Which visitors have a stream open, for the operator app. */
+  visitorPresence: VisitorPresence;
+  /** This server's own origin, where a chat link's page runs. */
+  ownOrigin: string | undefined;
 }
 
 /** A person with several tabs open. */
@@ -577,7 +670,19 @@ const CLIENT_STREAM_LIMIT = failure(
 
 export function registerWidgetRoutes(
   app: App,
-  { db, images, ipSecret, limits, live, logger, rateLimit, slots, stream }: WidgetOptions,
+  {
+    db,
+    images,
+    ipSecret,
+    limits,
+    live,
+    logger,
+    rateLimit,
+    slots,
+    stream,
+    visitorPresence,
+    ownOrigin,
+  }: WidgetOptions,
 ): void {
   const view = (workspaceId: string, message: StoredMessage) =>
     messageView(images, workspaceId, message);
@@ -589,7 +694,7 @@ export function registerWidgetRoutes(
   const identify = <P extends string, I extends Input>(c: Context<AppEnv, P, I>) =>
     authenticate(db, c.get("workspace"), c.req.param("key") ?? "", c.req.header("authorization"));
 
-  app.use("/v1/widget/:key/*", widgetAccess(db));
+  app.use("/v1/widget/:key/*", widgetAccess(db, ownOrigin));
   // After the access check, so a refusal here also carries the CORS headers the browser needs.
   app.use("/v1/widget/:key/*", async (c, next) => {
     const [name, max, windowSeconds] = limitFor(c.req.method, c.req.path);
@@ -607,7 +712,12 @@ export function registerWidgetRoutes(
       if (await isAddressBlocked(tx, workspaceId, ipHash)) return "blocked" as const;
       const [created] = await tx
         .insert(visitor)
-        .values({ workspaceId, tokenHash: sha256Hex(token), lastIpHash: ipHash })
+        .values({
+          workspaceId,
+          tokenHash: sha256Hex(token),
+          lastIpHash: ipHash,
+          device: deviceLine(c.req.header("user-agent")),
+        })
         .returning({ id: visitor.id });
       return created;
     });
@@ -636,7 +746,7 @@ export function registerWidgetRoutes(
           tx,
           found.id,
           { kind: "visitor", visitorId: identified.visitorId },
-          { ...input, page: startedPage(page, c.req.header("origin")) },
+          { ...input, page: identified.link ? null : startedPage(page, c.req.header("origin")) },
         );
       }),
     );
@@ -688,6 +798,18 @@ export function registerWidgetRoutes(
     const inWorkspace = await limits.openStream(found.id, "widget", lease);
     if (inWorkspace === null) return refuse(STREAM_LIMIT);
     held.push(inWorkspace);
+    held.push(visitorPresence.open(found.id, visitorId));
+    // When the stream ends, so "last seen" reads the end of the visit, not its first page.
+    held.push({
+      release() {
+        withWorkspace(db, found.id, (tx) =>
+          tx
+            .update(visitor)
+            .set({ lastSeenAt: sql`now()` })
+            .where(and(eq(visitor.workspaceId, found.id), eq(visitor.id, visitorId))),
+        ).catch((err: unknown) => logger.warn({ err }, "could not note when a visitor left"));
+      },
+    });
     return openLiveStream(c, {
       live,
       release,
@@ -700,7 +822,8 @@ export function registerWidgetRoutes(
       authorized: async () => {
         // Current data, so a changed origin list or signing secret ends the stream.
         const current = await widgetWorkspace(db, key);
-        if (current === null || !current.allowedOrigins.includes(origin)) return false;
+        if (current === null) return false;
+        if (!identified.link && !current.allowedOrigins.includes(origin)) return false;
         return stillValid(db, current, key, authorization);
       },
       read: async (position) => {
@@ -767,7 +890,11 @@ export function registerWidgetRoutes(
                 tx,
                 found.id,
                 { kind: "visitor", visitorId: identified.visitorId },
-                { clientId, image, page: startedPage(page, c.req.header("origin")) },
+                {
+                  clientId,
+                  image,
+                  page: identified.link ? null : startedPage(page, c.req.header("origin")),
+                },
                 limits,
               ),
             ),
@@ -800,7 +927,7 @@ export function registerWidgetRoutes(
     const identified = await identify(c);
     if (identified === null) return c.json(UNAUTHORIZED, 401);
     // A signed-in visitor's email comes from the host's signed token, not from the browser.
-    if (identified.signedIn) {
+    if (identified.signedIn || identified.link) {
       return c.json(failure("signed_in", "The host site sets this visitor's email."), 403);
     }
     const { email } = c.req.valid("json");
@@ -811,6 +938,25 @@ export function registerWidgetRoutes(
         .where(and(eq(visitor.workspaceId, found.id), eq(visitor.id, identified.visitorId))),
     );
     return c.json(await visitorView(db, found.id, identified), 200);
+  });
+
+  app.openapi(pageRoute, async (c) => {
+    const found = c.get("workspace");
+    const authorization = c.req.header("authorization");
+    // A chat link's page is this server's, and its address holds the link's token.
+    if (isChatLinkToken(bearerToken(authorization))) return c.json({ ok: true as const }, 200);
+    const visitorId = await knownVisitor(db, found, c.req.param("key"), authorization);
+    if (visitorId === undefined) return c.json(UNAUTHORIZED, 401);
+    if (visitorId === null) return c.json({ ok: true as const }, 200);
+    const { page, title } = c.req.valid("json");
+    await withWorkspace(db, found.id, (tx) =>
+      recordPage(tx, found.id, visitorId, {
+        path: startedPage(page, c.req.header("origin")),
+        title: pageTitle(title),
+        device: deviceLine(c.req.header("user-agent")),
+      }),
+    );
+    return c.json({ ok: true as const }, 200);
   });
 
   app.openapi(meRoute, async (c) => {

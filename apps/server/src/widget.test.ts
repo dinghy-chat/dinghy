@@ -105,7 +105,7 @@ describe("host tokens", () => {
       tx.select().from(visitor).where(eq(visitor.id, visitorId)),
     );
     expect(row?.email).toBe("pat@example.com");
-    expect(row?.claims).toEqual({ plan: "pro" });
+    expect(row?.attributes).toEqual({ plan: "pro" });
   });
 
   test.each<[string, TokenOptions]>([
@@ -243,6 +243,7 @@ describe("browser tokens", () => {
       visitorId: created.visitorId,
       signedIn: false,
       openConversation: false,
+      chatted: false,
       lastReadSeq: "0",
       unread: 0,
       readCursor: expect.stringMatching(/^\d+\.0$/),

@@ -4,7 +4,11 @@ import { buildWidget } from "../build.ts";
 
 // Limits in gzipped bytes. The loader runs on every page of the host site, and new chat features
 // must fit inside the chat's limit.
-const LIMITS: Record<string, number> = { "loader.js": 2000, "widget.js": 20_000 };
+const LIMITS: Record<string, number> = {
+  "loader.js": 2000,
+  "page.js": 1000,
+  "widget.js": 20_000,
+};
 
 test("the bundles use no API that exists only on secure pages", async () => {
   const files = await buildWidget();

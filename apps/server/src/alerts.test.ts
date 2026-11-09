@@ -784,13 +784,17 @@ describe("email", () => {
     expect(mail?.to).toBe("v@example.com");
     expect(mail?.subject).toBe("Acme replied to your message");
     const stop = emailStopUrl(PUBLIC_URL, AUTH_SECRET, space.id, "v@example.com");
+    // A link to this server's own page for the conversation, made for this email.
+    const chat = mail?.text.match(/\/chat\/(dcl_[A-Za-z0-9_-]+)/)?.[0];
+    expect(chat).toBeDefined();
     // Nobody proved the visitor's address, so it greets no name. The workspace signs it.
     expect(mail?.text).toBe(
       [
         "Hi,",
         "Acme replied to your message:",
         "First answer\n\nSecond answer",
-        "To answer, go back to the site and open the chat.",
+        `Read the conversation and answer here: ${new URL(chat ?? "", PUBLIC_URL).href}`,
+        "The link works for 30 days. Anyone who has it can read and reply, so don't forward this email.",
         "You got this because this address was entered in a chat with Acme. If that wasn't you, " +
           `or you'd rather not get these emails, stop them here: ${stop}`,
         "Cheers,\nThe Acme team",

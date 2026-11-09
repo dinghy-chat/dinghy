@@ -1,10 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
+import type { Database } from "./db/tenant.ts";
 import { MEMBER_ERRORS, OPERATOR_WRITE_ERRORS, okContent, WIDGET_ERRORS } from "./errors.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { widgetTexts } from "./workspaces.ts";
 
 // A client that stops sending, because of a crash or a lost network, expires after this long.
 const DEFAULT_TTL_MS = 30_000;
@@ -90,6 +93,62 @@ export function createPresence(
   };
 }
 
+/** A visitor counts as online while one of their widget streams is open. */
+export interface VisitorPresence {
+  /** Marks one open stream until `release`. It refreshes itself, so a dead instance's mark lapses. */
+  open(workspaceId: string, visitorId: string): { release(): void };
+  /** Null means unknown, so the operator app shows nothing rather than a wrong state. */
+  online(workspaceId: string, visitorId: string): Promise<boolean | null>;
+}
+
+const visitorKey = (workspaceId: string, visitorId: string) =>
+  `dinghy:visitor-online:${workspaceId}:${visitorId}`;
+
+/** Each open stream is one member of a sorted set, scored by when it lapses, as operators are. */
+export function createVisitorPresence(
+  valkey: Redis | null,
+  logger: Logger,
+  ttlMs = DEFAULT_TTL_MS,
+): VisitorPresence {
+  const write = (work: (client: Redis) => Promise<unknown>) => {
+    if (valkey === null) return;
+    work(valkey).catch((err: unknown) => logger.warn({ err }, "visitor presence is unavailable"));
+  };
+  return {
+    open(workspaceId, visitorId) {
+      const key = visitorKey(workspaceId, visitorId);
+      const member = randomUUID();
+      const mark = () =>
+        write((client) =>
+          client
+            .multi()
+            .zremrangebyscore(key, "-inf", Date.now())
+            .zadd(key, Date.now() + ttlMs, member)
+            .pexpire(key, ttlMs * 2)
+            .exec(),
+        );
+      mark();
+      const timer = setInterval(mark, ttlMs / 3);
+      timer.unref();
+      return {
+        release() {
+          clearInterval(timer);
+          write((client) => client.zrem(key, member));
+        },
+      };
+    },
+    async online(workspaceId, visitorId) {
+      if (valkey === null) return null;
+      try {
+        return (await valkey.zcount(visitorKey(workspaceId, visitorId), Date.now(), "+inf")) > 0;
+      } catch (err) {
+        logger.warn({ err }, "visitor presence is unavailable");
+        return null;
+      }
+    },
+  };
+}
+
 const params = z.object({ workspaceId: z.uuid() });
 
 const beatRoute = createRoute({
@@ -158,7 +217,16 @@ const widgetRoute = createRoute({
       description: "True or false, or null if this server cannot tell",
       content: {
         "application/json": {
-          schema: z.object({ online: z.boolean().nullable(), emailReplies: z.boolean() }),
+          schema: z.object({
+            online: z.boolean().nullable(),
+            emailReplies: z.boolean(),
+            // The workspace's own widget text. Null means the widget's default.
+            texts: z.object({
+              title: z.string().nullable(),
+              greeting: z.string().nullable(),
+              away: z.string().nullable(),
+            }),
+          }),
         },
       },
     },
@@ -185,8 +253,15 @@ export function registerOperatorPresence(app: App, presence: Presence): void {
   });
 }
 
-export function registerWidgetPresence(app: App, presence: Presence, emailReplies: boolean): void {
-  app.openapi(widgetRoute, async (c) =>
-    c.json({ online: await presence.online(c.get("workspace").id), emailReplies }, 200),
-  );
+export function registerWidgetPresence(
+  app: App,
+  db: Database,
+  presence: Presence,
+  emailReplies: boolean,
+): void {
+  app.openapi(widgetRoute, async (c) => {
+    const { id } = c.get("workspace");
+    const [online, texts] = await Promise.all([presence.online(id), widgetTexts(db, id)]);
+    return c.json({ online, emailReplies, texts }, 200);
+  });
 }

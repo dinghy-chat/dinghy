@@ -141,6 +141,63 @@ describe("chat migrate", () => {
     expect(await query("select token from session")).toEqual([{ token: "kept-session" }]);
   });
 
+  test("a visitor's claims from 0.5.0 become its attributes", async () => {
+    await run(await migrationsBefore("0043_"));
+    const workspace = "00000000-0000-4000-8000-0000000000cc";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000000', 'secret')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, external_id, claims)
+       values ('${workspace}', 'user-1', '{"plan":"pro"}')`,
+    );
+    await run();
+    expect(await query("select attributes, name, device from visitor")).toEqual([
+      { attributes: { plan: "pro" }, name: null, device: null },
+    ]);
+  });
+
+  test("the page journey and the search index arrive on a database with messages", async () => {
+    await run(await migrationsBefore("0046_"));
+    const workspace = "00000000-0000-4000-8000-0000000000dd";
+    const visitor = "00000000-0000-4000-8000-0000000000de";
+    const conversation = "00000000-0000-4000-8000-0000000000df";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000001', 'secret')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, id, token_hash) values ('${workspace}', '${visitor}', 'h')`,
+    );
+    await query(
+      `insert into conversation (workspace_id, id, visitor_id)
+       values ('${workspace}', '${conversation}', '${visitor}')`,
+    );
+    await query(
+      `insert into message (workspace_id, conversation_id, seq, kind, author_visitor_id, client_id, body)
+       values ('${workspace}', '${conversation}', 1, 'text', '${visitor}', 'c1', 'My invoice 4417')`,
+    );
+    await run();
+    // Made by the database's owner, which is not a superuser.
+    expect(await query("select extname from pg_extension where extname = 'pg_trgm'")).toEqual([
+      { extname: "pg_trgm" },
+    ]);
+    expect(
+      await query(
+        "select indexname from pg_indexes where indexname in ('message_body_trgm_idx', 'page_view_visitor_idx', 'conversation_created_idx') order by indexname",
+      ),
+    ).toEqual([
+      { indexname: "conversation_created_idx" },
+      { indexname: "message_body_trgm_idx" },
+      { indexname: "page_view_visitor_idx" },
+    ]);
+    expect(await query("select body from message where body ilike '%invoice%'")).toEqual([
+      { body: "My invoice 4417" },
+    ]);
+    expect(await query("select count(*)::int as count from page_view")).toEqual([{ count: 0 }]);
+  });
+
   test("a run with no pending migration takes no backup and changes nothing", async () => {
     await run();
     const before = await appliedCount();

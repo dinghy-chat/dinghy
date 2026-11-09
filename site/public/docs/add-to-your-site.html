@@ -166,7 +166,7 @@ Dinghy.close();
 </div>
 <h2 id="show-who-is-chatting"><a class="heading-link" href="#show-who-is-chatting">Show who is chatting</a></h2>
 <p>With no more work, a visitor is anonymous. Their chat stays in that browser, and they can leave an email in the chat so you can reply if they leave. A browser that does not come back for a year starts a new chat.</p>
-<p>If your site has logins, you can tell Dinghy who the user is. Their chat then follows them to every device, and operators see their email, your user ID and any claims you send. An anonymous chat from before the sign-in does not merge into it, and the widget shows the user&#39;s own chat.</p>
+<p>If your site has logins, you can tell Dinghy who the user is. Their chat then follows them to every device, and operators see their name, email, your user ID and any custom attributes you send. An anonymous chat from before the sign-in does not merge into it, and the widget shows the user&#39;s own chat.</p>
 <p>Your server signs a short token with the workspace&#39;s signing secret, and your page passes it to the widget.</p>
 <p><strong>1. On your server,</strong> sign the token. Copy the secret from <strong>Settings &gt; Signing secret</strong>, and keep it on your server only. This example uses the <code>jose</code> package for Node:</p>
 <div class="terminal doc-code terminal-plain">
@@ -176,7 +176,11 @@ Dinghy.close();
 <span class="code-keyword">const</span> secret = <span class="code-keyword">new</span> TextEncoder().encode(process.env.DINGHY_SIGNING_SECRET);
 
 <span class="code-keyword">export</span> <span class="code-keyword">function</span> dinghyToken(user) {
-  <span class="code-keyword">return</span> <span class="code-keyword">new</span> SignJWT({ email: user.email, claims: { name: user.name, plan: user.plan } })
+  <span class="code-keyword">return</span> <span class="code-keyword">new</span> SignJWT({
+    name: user.name,
+    email: user.email,
+    attributes: { plan: user.plan, account: <span class="code-string">`https://admin.example.com/users/${user.id}`</span> },
+  })
     .setProtectedHeader({ alg: <span class="code-string">&quot;HS256&quot;</span> })
     .setAudience(<span class="code-string">&quot;wk_your_public_key&quot;</span>)
     .setSubject(String(user.id))
@@ -193,10 +197,12 @@ Dinghy.close();
 <tr><td data-label="Field"><code>aud</code></td><td data-label="Value">Your public key from the tag</td></tr>
 <tr><td data-label="Field"><code>sub</code></td><td data-label="Value">Your user&#39;s ID, up to 255 characters</td></tr>
 <tr><td data-label="Field"><code>iat</code> and <code>exp</code></td><td data-label="Value">The issue time and the expiry, at most 24 hours apart</td></tr>
+<tr><td data-label="Field"><code>name</code></td><td data-label="Value">Optional. The name operators see, on one line, up to 100 characters. Anything else is dropped</td></tr>
 <tr><td data-label="Field"><code>email</code></td><td data-label="Value">Optional. One address, which operators see. Anything else, such as a list, is dropped</td></tr>
-<tr><td data-label="Field"><code>claims</code></td><td data-label="Value">Optional. Other facts that operators see, such as a plan, up to 2 KB of JSON. A <code>name</code> string becomes the chat&#39;s title in the inbox</td></tr>
+<tr><td data-label="Field"><code>attributes</code></td><td data-label="Value">Optional. Custom attributes that operators see, such as a plan, up to 2 KB of JSON. A value that starts with <code>https://</code> or <code>http://</code> shows as a link. A <code>name</code> here is the title when the token has no <code>name</code></td></tr>
 </tbody>
 </table></div>
+<p>A token made for Dinghy 0.5.0 sends its attributes as <code>claims</code>, and that still works. If a token has both, <code>attributes</code> wins.</p>
 <p><strong>2. On your page,</strong> pass a function that asks your server for a token. The widget calls it again when a token expires, so a tab that stays open keeps working:</p>
 <div class="terminal doc-code terminal-plain">
 <div class="terminal-bar"><span>JavaScript</span><button class="copy" type="button" data-copy="code-6"><span data-copy-label>Copy</span></button></div>
@@ -227,7 +233,13 @@ img-src https://chat.example.com;</code></pre>
 <li>Read the chat again after a refresh.</li>
 <li>See an unread count on the button.</li>
 <li>Leave an email, if they are not signed in and your Dinghy install has a mail server. They then get your reply by email if they left the page. With no mail server, the widget does not ask.</li>
+<li>Continue from the reply email. Its link opens the conversation on a page of your Dinghy server, at <code class="code-long">https://chat.example.com/chat/...</code>, where they can read and reply. The link works for 30 days, and each email has a new one. The email still has the link that stops these emails.</li>
 </ul>
+<h2 id="what-operators-see-about-a-visitor"><a class="heading-link" href="#what-operators-see-about-a-visitor">What operators see about a visitor</a></h2>
+<p>Once a visitor has chatted, the widget tells your Dinghy server the page they are on: when it loads, and when the address changes, also in a single-page app. It sends the page&#39;s address without its query string or <code>#</code> part, so a token or a search in the address never reaches Dinghy, and the page&#39;s title. The server also keeps a short line about the browser, such as &quot;Chrome on macOS&quot;, and not the browser&#39;s full description. Operators see whether the visitor has the chat open now, or when they were last seen, and the pages the visitor went through. Dinghy keeps a visitor&#39;s newest 100 pages, for 90 days at most, and deletes them with the visitor&#39;s last conversation.</p>
+<p>A visitor who never used the chat sends nothing, and the widget stores nothing in their browser: no cookie and nothing in <code>localStorage</code>. It stores its own token in <code>localStorage</code> only once the visitor sends a message, and a signed-in user&#39;s token is never stored. So the chat needs no cookie banner.</p>
+<h2 id="change-the-chats-words"><a class="heading-link" href="#change-the-chats-words">Change the chat&#39;s words</a></h2>
+<p>An owner or admin can change the chat&#39;s title, its greeting in an empty chat, and the line it shows when nobody is online, in <strong>Settings &gt; Install</strong>. An empty box keeps Dinghy&#39;s own words.</p>
 <p>The widget lives in its own Shadow DOM, so your site&#39;s styles do not change it, and its styles do not change your site.</p>
       </article>
       <aside class="docs-toc" aria-label="On this page">
@@ -239,6 +251,8 @@ img-src https://chat.example.com;</code></pre>
           <li><a href="#show-who-is-chatting">Show who is chatting</a></li>
           <li><a href="#if-your-site-has-a-content-security-policy">If your site has a Content Security Policy</a></li>
           <li><a href="#what-visitors-can-do">What visitors can do</a></li>
+          <li><a href="#what-operators-see-about-a-visitor">What operators see about a visitor</a></li>
+          <li><a href="#change-the-chats-words">Change the chat's words</a></li>
         </ol>
       </aside>
     </div>

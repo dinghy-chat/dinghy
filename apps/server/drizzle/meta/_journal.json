@@ -302,6 +302,48 @@
       "when": 1794162236388,
       "tag": "0042_email_proven_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794173777484,
+      "tag": "0043_visitor_attributes",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794173785219,
+      "tag": "0044_support_basics",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1794173800028,
+      "tag": "0045_chat_link_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1794175281212,
+      "tag": "0046_trigram_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794175289405,
+      "tag": "0047_page_journey",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794175289830,
+      "tag": "0048_page_view_grants",
+      "breakpoints": true
     }
   ]
 }

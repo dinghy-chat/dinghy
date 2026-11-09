@@ -12,9 +12,11 @@ export function visitorLabel(visitorId: string): string {
   return t("visitorLabel").replace("{code}", code);
 }
 
-/** The `name` claim the host site signed, when it is a string with text in it. */
-export function claimedName(visitor: { claims?: Record<string, unknown> | null }): string | null {
-  const name = visitor.claims?.name;
+/** A `name` in the signed attributes, when it is a string with text in it. Tokens put it there before `name` had its own field. */
+export function attributeName(visitor: {
+  attributes?: Record<string, unknown> | null;
+}): string | null {
+  const name = visitor.attributes?.name;
   return typeof name === "string" && name.trim() !== "" ? name.trim() : null;
 }
 
@@ -23,9 +25,32 @@ export function visitorName(visitor: {
   id: string;
   email: string | null;
   externalId: string | null;
-  claims?: Record<string, unknown> | null;
+  name?: string | null;
+  attributes?: Record<string, unknown> | null;
 }): string {
-  return claimedName(visitor) ?? visitor.email ?? visitor.externalId ?? visitorLabel(visitor.id);
+  return shownName(visitor) ?? visitorLabel(visitor.id);
+}
+
+function shownName(visitor: {
+  email: string | null;
+  externalId: string | null;
+  name?: string | null;
+  attributes?: Record<string, unknown> | null;
+}): string | null {
+  return visitor.name ?? attributeName(visitor) ?? visitor.email ?? visitor.externalId;
+}
+
+/** The email and user ID the title does not already show, so an operator can find the account. */
+export function otherIdentity(visitor: {
+  email: string | null;
+  externalId: string | null;
+  name?: string | null;
+  attributes?: Record<string, unknown> | null;
+}): string[] {
+  const shown = shownName(visitor);
+  return [visitor.email, visitor.externalId].filter(
+    (part): part is string => part !== null && part !== shown,
+  );
 }
 
 export function title(conversation: Conversation): string {
@@ -35,4 +60,13 @@ export function title(conversation: Conversation): string {
 /** True when the newest message is the visitor's, in an open conversation. */
 export function isWaiting(conversation: Conversation): boolean {
   return conversation.status === "open" && conversation.lastMessage?.fromVisitor === true;
+}
+
+/** A web address that is safe to open: only http and https, which a link may point to. */
+export function webLink(value: unknown): string | null {
+  if (typeof value !== "string" || !/^https?:\/\//i.test(value) || !URL.canParse(value)) {
+    return null;
+  }
+  const { protocol, href } = new URL(value);
+  return protocol === "https:" || protocol === "http:" ? href : null;
 }

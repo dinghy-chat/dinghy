@@ -102,11 +102,29 @@ const Member = z
 const PendingInvite = z
   .object({ id: z.string(), role: invitedRole, expiresAt: z.string() })
   .openapi("PendingInvite");
+/** The widget's own words. Null, or an empty text in a change, means the widget's default. */
+const widgetText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .regex(/^[^\p{Cc}]*$/u)
+    .nullable()
+    .transform((value) => (value === "" ? null : value));
+const WidgetTexts = z
+  .object({ title: widgetText(40), greeting: widgetText(200), away: widgetText(200) })
+  .openapi("WidgetTexts");
+
 const Settings = z
   .object({
     publicKey: z.string(),
     allowedOrigins: z.array(z.string()),
     signingSecret: z.string(),
+    widgetTexts: z.object({
+      title: z.string().nullable(),
+      greeting: z.string().nullable(),
+      away: z.string().nullable(),
+    }),
     // The plan's limits and how much of each is used, on Dinghy Cloud. Null with no limits.
     usage: z
       .object({
@@ -204,10 +222,15 @@ const patchSettingsRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/settings`,
   security: SESSION,
-  summary: "Replace the allowed origins",
+  summary: "Replace the allowed origins, the widget's texts, or both",
   request: {
     params: workspaceParams,
-    body: json(z.object({ allowedOrigins: z.array(z.string().max(300)).max(MAX_ORIGINS) })),
+    body: json(
+      z.object({
+        allowedOrigins: z.array(z.string().max(300)).max(MAX_ORIGINS).optional(),
+        widgetTexts: WidgetTexts.optional(),
+      }),
+    ),
   },
   responses: {
     200: reply("The settings", Settings),
@@ -392,11 +415,19 @@ async function readSettings(tx: Transaction, limits: Limits, workspaceId: string
       publicKey: workspace.publicKey,
       allowedOrigins: workspace.allowedOrigins,
       signingSecret: workspace.signingSecret,
+      title: workspace.widgetTitle,
+      greeting: workspace.widgetGreeting,
+      away: workspace.widgetAway,
     })
     .from(workspace)
     .where(eq(workspace.id, workspaceId));
   if (row === undefined) throw new Error("The workspace row is missing");
-  return { ...row, usage: await limits.usage(tx, workspaceId) };
+  const { title, greeting, away, ...rest } = row;
+  return {
+    ...rest,
+    widgetTexts: { title, greeting, away },
+    usage: await limits.usage(tx, workspaceId),
+  };
 }
 
 type MemberChange = { kind: "role"; role: Role } | { kind: "remove" };
@@ -634,8 +665,9 @@ export function registerTeamRoutes(
   app.openapi(patchSettingsRoute, async (c) => {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
+    const { allowedOrigins, widgetTexts } = c.req.valid("json");
     const origins = new Set<string>();
-    for (const origin of c.req.valid("json").allowedOrigins) {
+    for (const origin of allowedOrigins ?? []) {
       const normalized = normalizeOrigin(origin);
       if (normalized === null) {
         return c.json(failure("bad_origin", `This is not a valid origin: ${origin}`), 400);
@@ -643,16 +675,27 @@ export function registerTeamRoutes(
       origins.add(normalized);
     }
     const settings = await withWorkspace(db, id, async (tx) => {
-      await tx
-        .update(workspace)
-        .set({ allowedOrigins: [...origins] })
-        .where(eq(workspace.id, id));
+      const change = {
+        ...(allowedOrigins === undefined ? {} : { allowedOrigins: [...origins] }),
+        ...(widgetTexts === undefined
+          ? {}
+          : {
+              widgetTitle: widgetTexts.title,
+              widgetGreeting: widgetTexts.greeting,
+              widgetAway: widgetTexts.away,
+            }),
+      };
+      if (Object.keys(change).length > 0) {
+        await tx.update(workspace).set(change).where(eq(workspace.id, id));
+      }
       return readSettings(tx, limits, id);
     });
     // Origins are public, as every page that embeds the widget shows its own.
-    auditChange("origins.changed", id, c.get("operatorId"), {
-      allowedOrigins: settings.allowedOrigins,
-    });
+    if (allowedOrigins !== undefined) {
+      auditChange("origins.changed", id, c.get("operatorId"), {
+        allowedOrigins: settings.allowedOrigins,
+      });
+    }
     return c.json(settings, 200);
   });
 

@@ -24,7 +24,11 @@ const NOTICE =
 export async function buildWidget(outdir?: string): Promise<Record<string, Uint8Array>> {
   const output = outdir === undefined ? { write: false, outdir: "out" } : { outdir };
   const results = await Promise.all([
-    build({ ...options, ...output, entryPoints: { loader: source("loader.ts") } }),
+    build({
+      ...options,
+      ...output,
+      entryPoints: { loader: source("loader.ts"), page: source("page.ts") },
+    }),
     build({
       ...options,
       ...output,

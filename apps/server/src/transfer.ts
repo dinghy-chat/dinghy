@@ -12,6 +12,7 @@ import {
   emailStop,
   message,
   operator,
+  pageView,
   visitor,
   workspace,
   workspaceMember,
@@ -19,6 +20,7 @@ import {
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { processImage } from "./images.ts";
+import { PAGE_PATH_MAX, PAGE_TITLE_MAX } from "./journey.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
 
@@ -44,6 +46,10 @@ const ExportFile = z.strictObject({
     allowedOrigins: z.array(z.string().max(300)).max(200),
     eventSeq: seq,
     feedGeneration: z.number().int().min(1).max(999_999_999),
+    // Added after 0.5.0, so an older file without them still imports.
+    widgetTitle: z.string().max(40).nullable().optional(),
+    widgetGreeting: z.string().max(200).nullable().optional(),
+    widgetAway: z.string().max(200).nullable().optional(),
     createdAt: date,
   }),
   members: z.array(
@@ -63,10 +69,18 @@ const ExportFile = z.strictObject({
       externalId: z.string().max(512).nullable(),
       tokenHash: z.string().max(128).nullable(),
       email: z.string().max(320).nullable(),
-      claims: z.unknown(),
+      // Added after 0.5.0, so an older file without it still imports.
+      name: z.string().max(100).nullable().optional(),
+      attributes: z.unknown().optional(),
+      // The name of `attributes` in files from 0.5.0 and earlier.
+      claims: z.unknown().optional(),
       identityIssuedAt: seq.nullable(),
       lastReadSeq: seq,
       blockedAt: nullableDate,
+      // Added after 0.5.0, so an older file without them still imports.
+      device: z.string().max(100).nullable().optional(),
+      lastPage: z.string().max(2048).nullable().optional(),
+      lastSeenAt: nullableDate.optional(),
       createdAt: date,
     }),
   ),
@@ -98,6 +112,17 @@ const ExportFile = z.strictObject({
   ),
   attachments: z.array(z.strictObject({ id, messageId: id, createdAt: date })),
   emailStops: z.array(z.strictObject({ addressHash: z.string().max(128), createdAt: date })),
+  // Added after 0.5.0, so an older file without it still imports.
+  pageViews: z
+    .array(
+      z.strictObject({
+        visitorId: id,
+        path: z.string().max(PAGE_PATH_MAX),
+        title: z.string().max(PAGE_TITLE_MAX).nullable(),
+        viewedAt: date,
+      }),
+    )
+    .optional(),
 });
 
 type ExportData = z.infer<typeof ExportFile>;
@@ -136,6 +161,35 @@ async function messagesJson(tx: Transaction, workspaceId: string): Promise<Buffe
     const last = page.at(-1);
     if (last === undefined || page.length < EXPORT_PAGE) return pieces;
     after = last.seq;
+  }
+}
+
+/** The items of the `pageViews` array, one piece per page of EXPORT_PAGE rows. */
+async function pageViewsJson(tx: Transaction, workspaceId: string): Promise<Buffer[]> {
+  const pieces: Buffer[] = [];
+  for (let after = "00000000-0000-0000-0000-000000000000"; ; ) {
+    const page = await tx
+      .select()
+      .from(pageView)
+      .where(and(eq(pageView.workspaceId, workspaceId), gt(pageView.id, after)))
+      .orderBy(asc(pageView.id))
+      .limit(EXPORT_PAGE);
+    if (page.length > 0) {
+      const text = page
+        .map((row) =>
+          JSON.stringify({
+            visitorId: row.visitorId,
+            path: row.path,
+            title: row.title,
+            viewedAt: iso(row.viewedAt),
+          } satisfies NonNullable<ExportData["pageViews"]>[number]),
+        )
+        .join(",");
+      pieces.push(Buffer.from(pieces.length === 0 ? text : `,${text}`));
+    }
+    const last = page.at(-1);
+    if (last === undefined || page.length < EXPORT_PAGE) return pieces;
+    after = last.id;
   }
 }
 
@@ -178,7 +232,7 @@ async function readWorkspace(
         .where(eq(attachment.workspaceId, workspaceId));
       const stops = await tx.select().from(emailStop).where(eq(emailStop.workspaceId, workspaceId));
       // The same bytes as one JSON.stringify of the whole file, in the schema's key order.
-      const head: Omit<ExportData, "messages" | "attachments" | "emailStops"> = {
+      const head: Omit<ExportData, "messages" | "attachments" | "emailStops" | "pageViews"> = {
         version: VERSION,
         // The signing secret stays out. An export travels, and that secret signs in any user.
         workspace: {
@@ -188,6 +242,9 @@ async function readWorkspace(
           allowedOrigins: space.allowedOrigins,
           eventSeq: space.eventSeq.toString(),
           feedGeneration: space.feedGeneration,
+          widgetTitle: space.widgetTitle,
+          widgetGreeting: space.widgetGreeting,
+          widgetAway: space.widgetAway,
           createdAt: iso(space.createdAt),
         },
         members: members.map((row) => ({
@@ -200,10 +257,14 @@ async function readWorkspace(
           externalId: row.externalId,
           tokenHash: row.tokenHash,
           email: row.email,
-          claims: row.claims,
+          name: row.name,
+          attributes: row.attributes,
           identityIssuedAt: row.identityIssuedAt?.toString() ?? null,
           lastReadSeq: row.lastReadSeq.toString(),
           blockedAt: isoOrNull(row.blockedAt),
+          device: row.device,
+          lastPage: row.lastPage,
+          lastSeenAt: isoOrNull(row.lastSeenAt),
           createdAt: iso(row.createdAt),
         })),
         conversations: conversations.map((row) => ({
@@ -230,7 +291,9 @@ async function readWorkspace(
       const json = [
         Buffer.from(`${JSON.stringify(head).slice(0, -1)},"messages":[`),
         ...(await messagesJson(tx, workspaceId)),
-        Buffer.from(`],${JSON.stringify(tail).slice(1)}`),
+        Buffer.from(`],${JSON.stringify(tail).slice(1, -1)},"pageViews":[`),
+        ...(await pageViewsJson(tx, workspaceId)),
+        Buffer.from("]}"),
       ];
       return { json, storageKeys: new Map(attachments.map((row) => [row.id, row.storageKey])) };
     },
@@ -397,6 +460,9 @@ async function insertWorkspace(
     // New and random, so a client's old cursor gets resync, even when one file is imported onto
     // two servers in turn at the same address. A count from the file would repeat there.
     feedGeneration: newGeneration(data.workspace.feedGeneration),
+    widgetTitle: data.workspace.widgetTitle ?? null,
+    widgetGreeting: data.workspace.widgetGreeting ?? null,
+    widgetAway: data.workspace.widgetAway ?? null,
     createdAt: new Date(data.workspace.createdAt),
   });
 
@@ -445,10 +511,14 @@ async function insertWorkspace(
         externalId: row.externalId,
         tokenHash: row.tokenHash,
         email: row.email,
-        claims: row.claims,
+        name: row.name ?? null,
+        attributes: row.attributes ?? row.claims,
         identityIssuedAt: row.identityIssuedAt === null ? null : BigInt(row.identityIssuedAt),
         lastReadSeq: BigInt(row.lastReadSeq),
         blockedAt: row.blockedAt === null ? null : new Date(row.blockedAt),
+        device: row.device ?? null,
+        lastPage: row.lastPage ?? null,
+        lastSeenAt: row.lastSeenAt ? new Date(row.lastSeenAt) : null,
         createdAt: new Date(row.createdAt),
       })),
     );
@@ -485,6 +555,17 @@ async function insertWorkspace(
     );
   }
   for (const rows of batches(images)) await tx.insert(attachment).values(rows);
+  for (const rows of batches(data.pageViews ?? [])) {
+    await tx.insert(pageView).values(
+      rows.map((row) => ({
+        workspaceId,
+        visitorId: row.visitorId,
+        path: row.path,
+        title: row.title,
+        viewedAt: new Date(row.viewedAt),
+      })),
+    );
+  }
   for (const rows of batches(data.emailStops)) {
     await tx.insert(emailStop).values(
       rows.map((row) => ({

@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BillingBanner, useBilling, WaitingBanner } from "../../../ee/operator/billing.tsx";
 import { AlertsPage, leaveDevice, useDeviceSync } from "./alerts.tsx";
+import { AnalyticsPage } from "./analytics.tsx";
 import {
   ApiError,
   type Conversation,
@@ -17,6 +18,7 @@ import { useLatestLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { ProfilePage, SettingsPage } from "./settings.tsx";
+import { chime, prepareSound } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
 import {
@@ -34,6 +36,8 @@ import { isWaiting, title } from "./visitor.ts";
 
 const RETRY_LIMIT_MS = 30_000;
 const PAGE_SIZE = 50;
+const SEARCH_WAIT_MS = 250;
+const SEARCH_MIN = 2;
 const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
@@ -112,7 +116,13 @@ function useTabVisible(): boolean {
  * allow about six HTTP/1.1 connections per origin. A tab catches up from its cursor when it becomes
  * visible again.
  */
-function useChanges(api: WorkspaceApi, visible: boolean, onSignedOut: () => void) {
+function useChanges(
+  api: WorkspaceApi,
+  visible: boolean,
+  onSignedOut: () => void,
+  /** A visitor's new message, live, after the stream has caught up. */
+  onVisitorMessage: (conversationId: string | null) => void,
+) {
   const [lost, setLost] = useState(false);
   const [version, setVersion] = useState(0);
   const [teamVersion, setTeamVersion] = useState(0);
@@ -132,10 +142,15 @@ function useChanges(api: WorkspaceApi, visible: boolean, onSignedOut: () => void
     (async () => {
       while (!controller.signal.aborted) {
         let refusedMs: number | undefined;
+        // What a stream replays before `ready` is catch-up, and makes no sound.
+        let live = false;
         try {
           const reason = await api.stream(cursor.current, controller.signal, {
-            change(next, kind, conversationId) {
+            change(next, kind, conversationId, fromVisitor) {
               cursor.current = next;
+              if (live && kind === "message.created" && fromVisitor) {
+                onVisitorMessage(conversationId);
+              }
               // React batches these, so a long catch-up becomes few loads.
               setVersion((current) => current + 1);
               // A block or unblock is on the visitor, so it changes every one of their threads.
@@ -157,6 +172,7 @@ function useChanges(api: WorkspaceApi, visible: boolean, onSignedOut: () => void
               }
             },
             ready(next) {
+              live = true;
               // A first stream starts at the present, so a billing change since `me` loaded is
               // not on it.
               if (cursor.current === null) setBillingVersion((current) => current + 1);
@@ -195,7 +211,7 @@ function useChanges(api: WorkspaceApi, visible: boolean, onSignedOut: () => void
       }
     })();
     return () => controller.abort();
-  }, [api, onSignedOut, visible]);
+  }, [api, onSignedOut, onVisitorMessage, visible]);
 
   // A write refused as read-only means this page missed the change.
   useEffect(() => {
@@ -230,11 +246,12 @@ function SuspendedBanner({ contact }: { contact: string | null }) {
 }
 
 /** What the panel shows: one of the two lists, or a page. */
-type View = Status | "settings" | "alerts" | "profile";
+type View = Status | "analytics" | "settings" | "alerts" | "profile";
 
 const NAV: { view: Exclude<View, "profile">; label: TextId; icon: IconName }[] = [
   { view: "open", label: "inbox", icon: STATUS_LOOK.open.icon },
   { view: "closed", label: "closed", icon: STATUS_LOOK.closed.icon },
+  { view: "analytics", label: "analytics", icon: "chart" },
   { view: "alerts", label: "alerts", icon: "bell" },
   { view: "settings", label: "settings", icon: "gear" },
 ];
@@ -433,18 +450,22 @@ function ConversationRow({
   selected,
   members,
   replying,
+  showClosed,
   onSelect,
 }: {
   conversation: Conversation;
   selected: boolean;
   members: Member[];
   replying: string | null;
+  /** Search results mix open and closed conversations, so a closed one says so. */
+  showClosed: boolean;
   onSelect(): void;
 }) {
   const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
   const preview =
     conversation.lastMessage?.body ?? (conversation.lastMessage === null ? "" : t("image"));
   const waits = isWaiting(conversation);
+  const closed = showClosed && conversation.status === "closed";
   return (
     <li>
       <button type="button" className="row" aria-current={selected} onClick={onSelect}>
@@ -455,9 +476,10 @@ function ConversationRow({
             <time dateTime={conversation.updatedAt}>{shortTime(conversation.updatedAt)}</time>
           </span>
           <span className="preview">{preview}</span>
-          {(waits || replying !== null || assignee !== undefined) && (
+          {(waits || closed || replying !== null || assignee !== undefined) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
+              {closed && <span className="chip">{t("closed")}</span>}
               {assignee !== undefined && <span className="chip">{assignee.name}</span>}
               {replying !== null && <em>{replying}</em>}
             </span>
@@ -466,6 +488,60 @@ function ConversationRow({
       </button>
     </li>
   );
+}
+
+/**
+ * Searches open and closed conversations as the operator types. It waits for a pause, and a newer
+ * search cancels the one before, so a slow answer never replaces a newer one. Null means no search.
+ */
+function useSearch(api: WorkspaceApi, query: string): Conversation[] | null {
+  const [found, setFound] = useState<Conversation[] | null>(null);
+  const wanted = query.trim();
+  useEffect(() => {
+    if (wanted.length < SEARCH_MIN) {
+      setFound(null);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      api.search(wanted, controller.signal).then(
+        (result) => setFound(result.conversations),
+        () => {
+          // An aborted search has a newer one behind it, and a failed one keeps the last rows.
+        },
+      );
+    }, SEARCH_WAIT_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [api, wanted]);
+  return wanted.length < SEARCH_MIN ? null : found;
+}
+
+/** The search field at the top of the list. Escape clears it. */
+function SearchField({ value, onChange }: { value: string; onChange(value: string): void }) {
+  return (
+    <div className="search">
+      <Icon name="search" size={18} />
+      <input
+        type="search"
+        aria-label={t("searchLabel")}
+        placeholder={t("searchPlaceholder")}
+        maxLength={100}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onChange("");
+        }}
+      />
+    </div>
+  );
+}
+
+/** The line under the list's title while a search shows its results. */
+function foundContext(count: number): string {
+  return count === 1 ? t("searchOne") : t("searchMany").replace("{count}", String(count));
 }
 
 /** The line under the list's title: who waits, or what the closed list holds. */
@@ -508,10 +584,24 @@ export function Inbox({
   });
   const [view, setView] = useState<View>("open");
   const visible = useTabVisible();
+  const [query, setQuery] = useState("");
+  const found = useSearch(api, query);
+  useEffect(prepareSound, []);
+  const shownConversation = useRef(selected);
+  useLayoutEffect(() => {
+    // A page such as Analytics hides the thread, so its conversation is not in view then.
+    shownConversation.current = view === "open" || view === "closed" ? selected : null;
+  });
+  // A sound only when the operator is not already looking at that conversation.
+  const onVisitorMessage = useCallback((conversationId: string | null) => {
+    const looking = document.visibilityState === "visible" && document.hasFocus();
+    if (!looking || conversationId !== shownConversation.current) chime();
+  }, []);
   const { lost, version, threadVersion, teamVersion, billingVersion } = useChanges(
     api,
     visible,
     onSignedOut,
+    onVisitorMessage,
   );
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
@@ -646,6 +736,7 @@ export function Inbox({
               onLeft={() => navigate("/")}
             />
           )}
+          {view === "analytics" && <AnalyticsPage api={api} />}
           {view === "alerts" && <AlertsPage api={api} />}
           {view === "profile" && (
             <ProfilePage
@@ -661,28 +752,35 @@ export function Inbox({
             <section className="list" aria-label={t(STATUS_LOOK[status].label)}>
               <PageHead
                 title={t(STATUS_LOOK[status].label)}
-                context={listContext(status, waiting)}
+                context={found === null ? listContext(status, waiting) : foundContext(found.length)}
               />
+              <SearchField value={query} onChange={setQuery} />
               <ul className="rows">
-                {conversations.length === 0 && (
+                {found === null && conversations.length === 0 && (
                   <li className="nothing empty-boat">
                     <Pond />
                     <b>{t(STATUS_LOOK[status].empty)}</b>
                     {t("emptyHint")}
                   </li>
                 )}
-                {conversations.map((conversation) => (
+                {found !== null && found.length === 0 && (
+                  <li className="nothing">
+                    <b>{t("searchNone")}</b>
+                  </li>
+                )}
+                {(found ?? conversations).map((conversation) => (
                   <ConversationRow
                     key={conversation.id}
                     conversation={conversation}
                     selected={conversation.id === selected}
                     members={members}
                     replying={replying(conversation.id)}
+                    showClosed={found !== null && status === "open"}
                     onSelect={() => setSelected(conversation.id)}
                   />
                 ))}
               </ul>
-              {hasMore && (
+              {hasMore && found === null && (
                 <button
                   type="button"
                   className="btn link small"

@@ -66,12 +66,12 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     }
   };
 
-  if (sentTo !== null) return <CheckEmail text={t("checkEmail").replace("{email}", sentTo)} />;
+  if (sentTo !== null) return <CheckEmail text={t("checkEmail")} email={sentTo} />;
   if (invalid) {
     return (
       <AuthPage time="morning">
         <h1>{t("inviteInvalidTitle")}</h1>
-        <p className="note">{t("inviteInvalid")}</p>
+        <p className="note">{t("inviteInvalidHelp")}</p>
         <button type="button" className="btn primary large" onClick={() => navigate("/")}>
           {t(me === null ? "linkSignIn" : "inviteOpenApp")}
         </button>

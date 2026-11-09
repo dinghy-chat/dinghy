@@ -237,6 +237,9 @@
           "openConversation": {
             "type": "boolean"
           },
+          "chatted": {
+            "type": "boolean"
+          },
           "lastReadSeq": {
             "type": "string"
           },
@@ -251,6 +254,7 @@
           "visitorId",
           "signedIn",
           "openConversation",
+          "chatted",
           "lastReadSeq",
           "unread",
           "readCursor"
@@ -358,15 +362,37 @@
               "externalId": {
                 "type": ["string", "null"]
               },
-              "claims": {
+              "name": {
+                "type": ["string", "null"]
+              },
+              "attributes": {
                 "type": ["object", "null"],
                 "additionalProperties": {}
               },
               "blocked": {
                 "type": "boolean"
+              },
+              "device": {
+                "type": ["string", "null"]
+              },
+              "lastPage": {
+                "type": ["string", "null"]
+              },
+              "lastSeenAt": {
+                "type": ["string", "null"]
               }
             },
-            "required": ["id", "email", "externalId", "claims", "blocked"]
+            "required": [
+              "id",
+              "email",
+              "externalId",
+              "name",
+              "attributes",
+              "blocked",
+              "device",
+              "lastPage",
+              "lastSeenAt"
+            ]
           },
           "lastMessage": {
             "type": ["object", "null"],
@@ -464,6 +490,109 @@
           "createdAt": "2026-11-08T09:31:00.000Z"
         }
       },
+      "PageView": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "viewedAt": {
+            "type": "string"
+          }
+        },
+        "required": ["path", "title", "viewedAt"]
+      },
+      "Analytics": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer"
+          },
+          "timeZone": {
+            "type": "string"
+          },
+          "started": {
+            "type": "integer"
+          },
+          "closed": {
+            "type": "integer"
+          },
+          "answered": {
+            "type": "integer"
+          },
+          "firstReply": {
+            "type": "object",
+            "properties": {
+              "medianSeconds": {
+                "type": ["number", "null"]
+              },
+              "p90Seconds": {
+                "type": ["number", "null"]
+              },
+              "within5Minutes": {
+                "type": ["number", "null"]
+              }
+            },
+            "required": ["medianSeconds", "p90Seconds", "within5Minutes"]
+          },
+          "perDay": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string"
+                },
+                "conversations": {
+                  "type": "integer"
+                }
+              },
+              "required": ["date", "conversations"]
+            }
+          },
+          "operators": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operatorId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": ["string", "null"]
+                },
+                "conversations": {
+                  "type": "integer"
+                }
+              },
+              "required": ["operatorId", "name", "conversations"]
+            }
+          },
+          "hours": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "required": [
+          "days",
+          "timeZone",
+          "started",
+          "closed",
+          "answered",
+          "firstReply",
+          "perDay",
+          "operators",
+          "hours"
+        ]
+      },
       "Member": {
         "type": "object",
         "properties": {
@@ -514,6 +643,21 @@
           "signingSecret": {
             "type": "string"
           },
+          "widgetTexts": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": ["string", "null"]
+              },
+              "greeting": {
+                "type": ["string", "null"]
+              },
+              "away": {
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["title", "greeting", "away"]
+          },
           "usage": {
             "type": ["object", "null"],
             "properties": {
@@ -545,7 +689,28 @@
             "required": ["operators", "imageBytes"]
           }
         },
-        "required": ["publicKey", "allowedOrigins", "signingSecret", "usage"]
+        "required": ["publicKey", "allowedOrigins", "signingSecret", "widgetTexts", "usage"]
+      },
+      "WidgetTexts": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": ["string", "null"],
+            "maxLength": 40,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "greeting": {
+            "type": ["string", "null"],
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "away": {
+            "type": ["string", "null"],
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          }
+        },
+        "required": ["title", "greeting", "away"]
       },
       "AlertSettings": {
         "type": "object",
@@ -1350,6 +1515,118 @@
         }
       }
     },
+    "/v1/widget/{key}/page": {
+      "post": {
+        "security": [
+          {
+            "visitorToken": []
+          }
+        ],
+        "summary": "Report the page the visitor is on, for operators",
+        "description": "The widget sends this when it loads and when the page's address changes, and only for a visitor who already has a token because they used the chat. The server stores something only for a visitor who has a conversation, and never creates a visitor here. It keeps the origin and path, never the query or hash, the title, when it came, and a short device line made from the User-Agent, which it does not keep. Each report adds a row to the visitor's page journey, unless it repeats the newest one, and a visitor keeps the newest 100.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^wk_[0-9a-f]{32}$"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "page": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": ["page"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Noted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: the browser token or host token is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/widget/{key}/presence": {
       "get": {
         "summary": "Say whether the team is online. It names nobody.",
@@ -1376,9 +1653,24 @@
                     },
                     "emailReplies": {
                       "type": "boolean"
+                    },
+                    "texts": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": ["string", "null"]
+                        },
+                        "greeting": {
+                          "type": ["string", "null"]
+                        },
+                        "away": {
+                          "type": ["string", "null"]
+                        }
+                      },
+                      "required": ["title", "greeting", "away"]
                     }
                   },
-                  "required": ["online", "emailReplies"]
+                  "required": ["online", "emailReplies", "texts"]
                 }
               }
             }
@@ -1712,8 +2004,14 @@
                         "id": "0b6f1c6e-2f4a-4c1e-9a57-3f1b8f0e6d21",
                         "email": "ana@example.com",
                         "externalId": null,
-                        "claims": null,
-                        "blocked": false
+                        "name": "Ana Lima",
+                        "attributes": {
+                          "plan": "pro"
+                        },
+                        "blocked": false,
+                        "device": "Safari on iPhone",
+                        "lastPage": "https://www.example.com/pricing",
+                        "lastSeenAt": "2026-11-08T09:30:00.000Z"
                       },
                       "lastMessage": {
                         "body": "Do you have a yearly plan?",
@@ -1857,9 +2155,24 @@
                     },
                     "hasMore": {
                       "type": "boolean"
+                    },
+                    "visitorOnline": {
+                      "type": ["boolean", "null"]
+                    },
+                    "visitorPages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PageView"
+                      }
                     }
                   },
-                  "required": ["conversation", "messages", "hasMore"]
+                  "required": [
+                    "conversation",
+                    "messages",
+                    "hasMore",
+                    "visitorOnline",
+                    "visitorPages"
+                  ]
                 }
               }
             }
@@ -2053,6 +2366,99 @@
           },
           "503": {
             "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/search": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Search open and closed conversations, newest activity first",
+        "description": "Matches the visitor's name, email or user ID, or the text of a message, ignoring case. A conversation found by a message shows that message as its `lastMessage`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "q",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "At most 50 conversations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Conversation"
+                      }
+                    }
+                  },
+                  "required": ["conversations"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
             "content": {
               "application/json": {
                 "schema": {
@@ -2486,7 +2892,7 @@
           }
         ],
         "summary": "Stream the workspace's changes after a cursor",
-        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
@@ -2560,6 +2966,132 @@
           },
           "429": {
             "description": "too_many_streams: the workspace has too many open streams. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/analytics": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Support numbers for the last 7, 30 or 90 days",
+        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first operator message, and `operators` counts conversations by who sent that reply.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 30
+            },
+            "required": false,
+            "name": "days",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            },
+            "required": false,
+            "name": "tz",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The numbers",
+            "content": {
+              "application/json": {
+                "example": {
+                  "days": 7,
+                  "timeZone": "Europe/Paris",
+                  "started": 12,
+                  "closed": 9,
+                  "answered": 11,
+                  "firstReply": {
+                    "medianSeconds": 140,
+                    "p90Seconds": 1260,
+                    "within5Minutes": 0.67
+                  },
+                  "perDay": [
+                    {
+                      "date": "2026-11-02",
+                      "conversations": 3
+                    }
+                  ],
+                  "operators": [
+                    {
+                      "operatorId": "7a3e5b20-9c1d-4f6a-b8e2-4d0f1c9a6b53",
+                      "name": "Sam",
+                      "conversations": 11
+                    }
+                  ],
+                  "hours": [
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Analytics"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
             "content": {
               "application/json": {
                 "schema": {
@@ -4131,7 +4663,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Replace the allowed origins",
+        "summary": "Replace the allowed origins, the widget's texts, or both",
         "parameters": [
           {
             "schema": {
@@ -4157,9 +4689,11 @@
                       "maxLength": 300
                     },
                     "maxItems": 20
+                  },
+                  "widgetTexts": {
+                    "$ref": "#/components/schemas/WidgetTexts"
                   }
-                },
-                "required": ["allowedOrigins"]
+                }
               }
             }
           }

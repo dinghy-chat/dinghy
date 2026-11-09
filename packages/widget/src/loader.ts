@@ -174,7 +174,8 @@ if (script !== null && publicKey !== null && publicKey !== undefined) {
   };
 
   addEventListener("storage", (event) => {
-    if (event.key === RESET_PREFIX + publicKey) endSession();
+    // The removal right after the signal fires an event too, with no new value.
+    if (event.newValue && event.key === RESET_PREFIX + publicKey) endSession();
   });
 
   const queued = (globalThis.Dinghy as { q?: [keyof DinghyApi, ...unknown[]][] } | undefined)?.q;

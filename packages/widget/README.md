@@ -33,7 +33,9 @@ To call these before the loader finishes, queue them:
 <script>window.Dinghy = { q: [["identify", "TOKEN"]] };</script>
 ```
 
-Your backend signs the token with HS256 and the workspace's signing secret. It needs `sub` (your user ID), `aud` (the public key), `iat`, and `exp` at most 24 hours later. `email` and `claims` (an object up to 2 KB) are optional, and operators read them.
+Your backend signs the token with HS256 and the workspace's signing secret. It needs `sub` (your user ID), `aud` (the public key), `iat`, and `exp` at most 24 hours later. `email`, `name` (one line, up to 100 characters) and `attributes` (an object up to 2 KB, called `claims` in 0.5.0, which still works) are optional, and operators read them.
+
+The widget stores nothing in the browser until the visitor sends a message, and then only its own token in `localStorage`. Once the visitor has chatted, it reports the page's address, without its query string or `#` part, and its title, so operators see the pages the visitor went through.
 
 ## Content Security Policy
 
