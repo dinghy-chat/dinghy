@@ -4,6 +4,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The bundled Caddy image has the latest security fixes.
+- The server uses web-push 4.0 for push notifications, and the widget uses Preact 11.2.
+
 ## [0.7.0] - 2026-11-09
 
 ### Upgrading
