@@ -83,10 +83,9 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     <>
       <h1>{t("inviteTitle")}</h1>
       <p className="note">
-        {t(offer.role === "admin" ? "inviteAsAdmin" : "inviteAsAgent").replace(
-          "{workspace}",
-          offer.workspaceName,
-        )}
+        {t(offer.role === "admin" ? "inviteAsAdmin" : "inviteAsAgent", {
+          workspace: offer.workspaceName,
+        })}
       </p>
     </>
   );

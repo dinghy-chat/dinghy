@@ -21,7 +21,7 @@ import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
-import { attributeName, avatarLetters, otherIdentity, title, webLink } from "./visitor.ts";
+import { avatarLetters, otherIdentity, title, webLink } from "./visitor.ts";
 
 interface Line {
   id: string;
@@ -71,7 +71,7 @@ function origin(conversation: Conversation): string | null {
   const page =
     conversation.startedPage === null || conversation.startedPage === conversation.visitor.lastPage
       ? null
-      : t("startedOn").replace("{page}", bare(conversation.startedPage));
+      : t("startedOn", { page: bare(conversation.startedPage) });
   const parts = [...otherIdentity(conversation.visitor), page].filter((part) => part !== null);
   return parts.length === 0 ? null : parts.join(SEPARATOR);
 }
@@ -107,7 +107,7 @@ function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: 
         {t("onlineNow")}
       </span>
     ) : seen === null ? null : (
-      <span key="seen">{t("lastSeen").replace("{time}", seen)}</span>
+      <span key="seen">{t("lastSeen", { time: seen })}</span>
     ),
     visitor.device === null ? null : <span key="device">{visitor.device}</span>,
   ].filter((part) => part !== null);
@@ -175,8 +175,8 @@ function PageJourney({ pages }: { pages: PageView[] }) {
         })}
       </ol>
       {pages.length > PAGES_FIRST && (
-        <button type="button" className="btn link small" onClick={() => setAll(!all)}>
-          {all ? t("pagesFewer") : t("pagesAll").replace("{count}", String(pages.length))}
+        <button type="button" className="text-button" onClick={() => setAll(!all)}>
+          {all ? t("pagesFewer") : t("pagesAll", { count: pages.length })}
         </button>
       )}
     </section>
@@ -277,13 +277,11 @@ function ThreadHead({
  * A web address opens in a new tab, and every other value stays text.
  */
 function contextRows(visitor: Conversation["visitor"]): [string, string, string | null][] {
-  const rows: [string, string, string | null][] = [];
-  for (const [name, value] of Object.entries(visitor.attributes ?? {})) {
-    // The title already shows a name from the attributes when the token has no `name`.
-    if (name === "name" && visitor.name === null && attributeName(visitor) !== null) continue;
-    rows.push([name, typeof value === "string" ? value : JSON.stringify(value), webLink(value)]);
-  }
-  return rows;
+  return Object.entries(visitor.attributes ?? {}).map(([name, value]) => [
+    name,
+    typeof value === "string" ? value : JSON.stringify(value),
+    webLink(value),
+  ]);
 }
 
 function VisitorContext({ conversation }: { conversation: Conversation }) {

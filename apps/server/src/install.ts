@@ -81,8 +81,8 @@ export async function runInit(root: string): Promise<number> {
     url("dinghy_worker", workerPassword),
   );
   await keep(join(app, "auth_secret"), APP_USER, newSecret);
-  // An install from before Valkey had a password gets one here, on its next start. Valkey saves
-  // nothing, so its two copies always follow this one, even if only some volumes were lost.
+  // Valkey saves nothing, so its two copies always follow this one, even if only some volumes
+  // were lost.
   const valkeyPassword = await keep(join(migrate, "valkey"), APP_USER, newSecret);
   await follow(join(valkey, "valkey.conf"), VALKEY_USER, `requirepass ${valkeyPassword}\n`);
   await follow(join(app, "valkey_url"), APP_USER, `redis://:${valkeyPassword}@valkey:6379`);

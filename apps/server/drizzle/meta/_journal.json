@@ -344,6 +344,41 @@
       "when": 1794175289830,
       "tag": "0048_page_view_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794233142211,
+      "tag": "0049_btree_gin_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794233149010,
+      "tag": "0050_search_index_per_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794233730877,
+      "tag": "0051_widget_texts_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794234574648,
+      "tag": "0052_event_from_visitor_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794235378058,
+      "tag": "0053_page_address_limit",
+      "breakpoints": true
     }
   ]
 }

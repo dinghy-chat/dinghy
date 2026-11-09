@@ -9,7 +9,7 @@ import { operatorNames } from "./messages.ts";
 
 // Support numbers from the conversations and messages already stored. Nothing here tracks anyone.
 
-export const PERIODS = [7, 30, 90] as const;
+const PERIODS = [7, 30, 90] as const;
 const FAST_REPLY_SECONDS = 5 * 60;
 
 /**
@@ -122,7 +122,7 @@ interface Row extends Record<string, unknown> {
 }
 
 /** One statement, so every number reads the same rows. */
-export async function readAnalytics(
+async function readAnalytics(
   tx: Transaction,
   workspaceId: string,
   days: number,

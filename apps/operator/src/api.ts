@@ -1,12 +1,16 @@
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
 
-export interface Visitor {
+/** Who a visitor is, as the host site signed it. Every list that names a visitor holds this. */
+export interface VisitorIdentity {
   id: string;
   email: string | null;
   externalId: string | null;
   /** The name the host site signed. */
   name: string | null;
+}
+
+export interface Visitor extends VisitorIdentity {
   /** Custom attributes the host site signed. */
   attributes: Record<string, unknown> | null;
   blocked: boolean;
@@ -113,10 +117,7 @@ export interface PendingInvite {
   expiresAt: string;
 }
 
-export interface BlockedVisitor {
-  id: string;
-  email: string | null;
-  externalId: string | null;
+export interface BlockedVisitor extends VisitorIdentity {
   blockedAt: string;
 }
 

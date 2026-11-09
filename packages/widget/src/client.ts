@@ -10,7 +10,7 @@ export interface ChatMessage {
   body: string | null;
   image: { url: string; width: number; height: number } | null;
   /** The image was deleted after 12 months, on Dinghy Cloud. */
-  imageRemoved?: boolean;
+  imageRemoved: boolean;
   createdAt: string;
 }
 
@@ -53,8 +53,11 @@ interface Me {
  */
 const DEADLINES = { requestMs: 30_000, uploadMs: 5 * 60_000 };
 
+/** The longest page address the server keeps, as PAGE_PATH_MAX in the server's journey.ts. */
+const PAGE_PATH_MAX = 2000;
+
 /** The host page, so an operator sees where a chat started. It never holds a query or hash. */
-export const pageAddress = () => (location.origin + location.pathname).slice(0, 2000);
+export const pageAddress = () => (location.origin + location.pathname).slice(0, PAGE_PATH_MAX);
 
 /** The page's title on one line, as the server keeps it. */
 export const pageTitle = () => document.title.replace(/\s+/g, " ").trim().slice(0, 200);
@@ -70,6 +73,8 @@ export interface Texts {
  * `hostPage` is false on the chat page that a reply email opens, whose address holds its token and
  * must never reach the server as a page.
  */
+export type Client = ReturnType<typeof createClient>;
+
 export function createClient(
   base: string,
   publicKey: string,
@@ -99,7 +104,7 @@ export function createClient(
     me: (token: string) => call<Me>("me", token),
     /** The token only on the chat page, where it is what lets the request in. */
     presence: (token: string | null) =>
-      call<{ online: boolean | null; emailReplies: boolean; texts?: Texts }>("presence", token),
+      call<{ online: boolean | null; emailReplies: boolean; texts: Texts }>("presence", token),
     reportPage: (token: string, address: string, title: string) =>
       call<{ ok: true }>("page", token, {
         method: "POST",

@@ -7,10 +7,12 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { type App, createApp } from "./app.ts";
+import { createChatLink } from "./chat-link.ts";
 import { conversation, visitor } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { withWorkspace } from "./db/tenant.ts";
-import { normalizeOrigin, verifyHostToken } from "./identity.ts";
+import { newBrowserToken, normalizeOrigin, verifyHostToken } from "./identity.ts";
+import { tokenKind, widgetToken } from "./widget.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = "https://app.example.com";
@@ -28,11 +30,11 @@ interface TokenOptions {
   subject?: string | null;
   expires?: string | number | null;
   issued?: number | null;
-  claims?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
 }
 
 function hostToken(options: TokenOptions = {}): Promise<string> {
-  let builder = new SignJWT(options.claims ?? {})
+  let builder = new SignJWT(options.payload ?? {})
     .setProtectedHeader({ alg: "HS256" })
     .setAudience(options.audience ?? a.publicKey);
   if (options.issued !== null) builder = builder.setIssuedAt(options.issued);
@@ -69,6 +71,41 @@ afterAll(async () => {
   await database.drop();
 });
 
+describe("token kinds", () => {
+  // The worker makes chat links, so this uses the owner's role.
+  async function chatLinkToken() {
+    return withWorkspace(database.connect("migrator").db, a.id, async (tx) => {
+      const [row] = await tx
+        .insert(visitor)
+        .values({ workspaceId: a.id, externalId: `kinds-${Date.now()}` })
+        .returning({ id: visitor.id });
+      if (row === undefined) throw new Error("No visitor");
+      const [chat] = await tx
+        .insert(conversation)
+        .values({ workspaceId: a.id, visitorId: row.id })
+        .returning({ id: conversation.id });
+      if (chat === undefined) throw new Error("No conversation");
+      return createChatLink(tx, a.id, row.id, chat.id, Date.now());
+    });
+  }
+
+  test.each<[string, () => Promise<string> | string]>([
+    ["browser", newBrowserToken],
+    ["link", chatLinkToken],
+    ["host", () => hostToken()],
+  ])("a %s token is named by the one function, read from the bearer header", async (kind, make) => {
+    const token = await make();
+    expect(tokenKind(token)).toBe(kind);
+    expect(widgetToken(`Bearer ${token}`)).toEqual({ value: token, kind });
+  });
+
+  test("no token, or another scheme, has no kind", () => {
+    expect(tokenKind("")).toBeNull();
+    expect(widgetToken(undefined)).toEqual({ value: "", kind: null });
+    expect(widgetToken(`Basic ${newBrowserToken()}`)).toEqual({ value: "", kind: null });
+  });
+});
+
 describe("host tokens", () => {
   test("a valid token identifies a signed-in visitor", async () => {
     const response = await me(await hostToken());
@@ -95,10 +132,10 @@ describe("host tokens", () => {
     expect(new Set(ids).size).toBe(1);
   });
 
-  test("the email and claims in a token reach the visitor row", async () => {
+  test("the email and attributes in a token reach the visitor row", async () => {
     const token = await hostToken({
       subject: "context",
-      claims: { email: "pat@example.com", claims: { plan: "pro" } },
+      payload: { email: "pat@example.com", attributes: { plan: "pro" } },
     });
     const { visitorId } = (await (await me(token)).json()) as { visitorId: string };
     const [row] = await withWorkspace(db, a.id, (tx) =>
@@ -115,7 +152,7 @@ describe("host tokens", () => {
     ["a token with no subject", { subject: null }],
     ["a token for another audience", { audience: "wk_other" }],
     ["a token signed with the wrong secret", { secret: "a-different-secret-of-enough-length" }],
-    ["a token with oversized claims", { claims: { claims: { big: "x".repeat(3000) } } }],
+    ["a token with oversized attributes", { payload: { attributes: { big: "x".repeat(3000) } } }],
     ["a token with no issue time", { issued: null }],
   ])("%s fails", async (_name, options) => {
     expect((await me(await hostToken(options))).status).toBe(401);
@@ -139,7 +176,7 @@ describe("host tokens", () => {
     async (email) => {
       const token = await hostToken({
         subject: `email-${String(email).slice(0, 32)}`,
-        claims: { email },
+        payload: { email },
       });
       expect((await me(token)).status).toBe(200);
     },
@@ -150,7 +187,7 @@ describe("host tokens", () => {
     ["a@example.com;b@example.com"],
     ["Pat <a@example.com>"],
   ])("the email %j is dropped, so a reply goes to one address at most", async (email) => {
-    const token = await hostToken({ subject: `list-${email}`, claims: { email } });
+    const token = await hostToken({ subject: `list-${email}`, payload: { email } });
     const response = await me(token);
     expect(response.status).toBe(200);
     const { visitorId } = (await response.json()) as { visitorId: string };
@@ -165,7 +202,7 @@ describe("host tokens", () => {
     const token = await hostToken({
       subject: "unchanged",
       issued,
-      claims: { claims: { plan: "pro" } },
+      payload: { attributes: { plan: "pro" } },
     });
     await me(token);
     const version = async () => {
@@ -382,7 +419,7 @@ describe("saving an email", () => {
   });
 
   test("a signed-in visitor cannot replace the email the host signed", async () => {
-    const token = await hostToken({ subject: "owned", claims: { email: "owner@example.com" } });
+    const token = await hostToken({ subject: "owned", payload: { email: "owner@example.com" } });
     const { visitorId } = (await (await me(token)).json()) as { visitorId: string };
     expect((await save(token, "attacker@example.com")).status).toBe(403);
     const [row] = await withWorkspace(db, a.id, (tx) =>

@@ -180,22 +180,85 @@ describe("chat migrate", () => {
     );
     await run();
     // Made by the database's owner, which is not a superuser.
-    expect(await query("select extname from pg_extension where extname = 'pg_trgm'")).toEqual([
-      { extname: "pg_trgm" },
-    ]);
     expect(
       await query(
-        "select indexname from pg_indexes where indexname in ('message_body_trgm_idx', 'page_view_visitor_idx', 'conversation_created_idx') order by indexname",
+        "select extname from pg_extension where extname in ('pg_trgm', 'btree_gin') order by extname",
+      ),
+    ).toEqual([{ extname: "btree_gin" }, { extname: "pg_trgm" }]);
+    expect(
+      await query(
+        "select indexname from pg_indexes where indexname in ('message_body_trgm_idx', 'message_workspace_body_trgm_idx', 'page_view_visitor_idx', 'conversation_created_idx') order by indexname",
       ),
     ).toEqual([
       { indexname: "conversation_created_idx" },
-      { indexname: "message_body_trgm_idx" },
+      { indexname: "message_workspace_body_trgm_idx" },
       { indexname: "page_view_visitor_idx" },
     ]);
     expect(await query("select body from message where body ilike '%invoice%'")).toEqual([
       { body: "My invoice 4417" },
     ]);
     expect(await query("select count(*)::int as count from page_view")).toEqual([{ count: 0 }]);
+  });
+
+  test("a message event without fromVisitor gets it from its message", async () => {
+    await run(await migrationsBefore("0052_"));
+    const workspace = "00000000-0000-4000-8000-0000000000ee";
+    const visitor = "00000000-0000-4000-8000-0000000000e1";
+    const conversation = "00000000-0000-4000-8000-0000000000e2";
+    const message = "00000000-0000-4000-8000-0000000000e3";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000002', 'secret')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, id, token_hash) values ('${workspace}', '${visitor}', 'h')`,
+    );
+    await query(
+      `insert into conversation (workspace_id, id, visitor_id)
+       values ('${workspace}', '${conversation}', '${visitor}')`,
+    );
+    await query(
+      `insert into message (workspace_id, id, conversation_id, seq, kind, author_visitor_id, client_id, body)
+       values ('${workspace}', '${message}', '${conversation}', 1, 'text', '${visitor}', 'c1', 'Hi')`,
+    );
+    const payload = (id: string) => `{"messageId":"${id}","conversationId":"${conversation}"}`;
+    await query(
+      `insert into event (workspace_id, seq, kind, payload) values
+       ('${workspace}', 1, 'message.created', '${payload(message)}'),
+       ('${workspace}', 2, 'message.created', '${payload("00000000-0000-4000-8000-0000000000e4")}'),
+       ('${workspace}', 3, 'conversation.closed', '{"conversationId":"${conversation}"}')`,
+    );
+    await run();
+    expect(await query("select payload->'fromVisitor' as from from event order by seq")).toEqual([
+      { from: true },
+      { from: false },
+      { from: null },
+    ]);
+  });
+
+  test("page addresses longer than 2,000 characters are shortened", async () => {
+    await run(await migrationsBefore("0053_"));
+    const workspace = "00000000-0000-4000-8000-0000000000ef";
+    const visitor = "00000000-0000-4000-8000-0000000000f1";
+    const long = `https://example.com/${"a".repeat(2028)}`;
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Long', 'wk_00000000000000000000000000000003', 'secret')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, id, token_hash, last_page)
+       values ('${workspace}', '${visitor}', 'h2', '${long}')`,
+    );
+    await query(
+      `insert into conversation (workspace_id, visitor_id, started_page)
+       values ('${workspace}', '${visitor}', '${long}'), ('${workspace}', '${visitor}', 'https://example.com/')`,
+    );
+    await run();
+    expect(await query("select length(last_page) as n from visitor")).toEqual([{ n: 2000 }]);
+    expect(await query("select length(started_page) as n from conversation order by n")).toEqual([
+      { n: 20 },
+      { n: 2000 },
+    ]);
   });
 
   test("a run with no pending migration takes no backup and changes nothing", async () => {

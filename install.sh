@@ -228,14 +228,7 @@ fi
 
 # ---- The nightly backup. Its output and any failure go to the system log, tagged dinghy-backup.
 backup_skipped=""
-# An earlier release's line threw the output away, so a failure went unseen. The new line
-# replaces it, and the old one stays if the new one cannot be added.
-old_backup=0
-if [ -f /etc/cron.d/dinghy ] && grep -q '^# Added by the Dinghy installer' /etc/cron.d/dinghy &&
-  grep -q '>/dev/null' /etc/cron.d/dinghy; then
-  old_backup=1
-fi
-if [ "$backup_cron" = 1 ] && { [ ! -f /etc/cron.d/dinghy ] || [ "$old_backup" = 1 ]; }; then
+if [ "$backup_cron" = 1 ] && [ ! -f /etc/cron.d/dinghy ]; then
   if [ "$(id -u)" != 0 ]; then
     backup_skipped="the installer did not run as root"
   elif [ ! -d /etc/cron.d ] || ! { pgrep -x cron || pgrep -x crond; } >/dev/null 2>&1; then

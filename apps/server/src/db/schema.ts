@@ -307,8 +307,13 @@ export const message = pgTable(
     ),
     unique("message_seq_key").on(table.workspaceId, table.seq),
     index("message_conversation_idx").on(table.workspaceId, table.conversationId, table.seq),
-    // Search finds a substring of a message, which only a trigram index can serve.
-    index("message_body_trgm_idx").using("gin", table.body.op("gin_trgm_ops")),
+    // Search finds a substring of a message, which only a trigram index can serve. The workspace
+    // leads it, so a search reads only its own workspace's entries.
+    index("message_workspace_body_trgm_idx").using(
+      "gin",
+      table.workspaceId,
+      table.body.op("gin_trgm_ops"),
+    ),
   ],
 );
 
@@ -362,8 +367,7 @@ export type EventKind = (typeof EVENT_KINDS)[number];
 export interface MessageCreatedPayload {
   messageId: string;
   conversationId: string;
-  /** Missing on events written by 0.5.0 and earlier. */
-  fromVisitor?: boolean;
+  fromVisitor: boolean;
 }
 
 export const event = pgTable(

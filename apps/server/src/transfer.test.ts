@@ -587,14 +587,21 @@ describe("a bad file changes nothing", () => {
     expect(await files(target.directory)).toEqual([]);
   }
 
-  test("an export from 0.5.0, with no page journey, imports", async () => {
-    const old = await edited((data) => {
-      delete data.pageViews;
-    });
-    const target = await freshInstall();
-    await importArchive(target.db, target.store, once(old));
-    expect(await target.owner.select().from(pageView)).toEqual([]);
-    expect(await target.owner.select().from(visitor)).not.toEqual([]);
+  test("a file from before this version, with no page journey or visitor names, is refused", async () => {
+    await refuses(
+      await edited((data) => {
+        delete data.pageViews;
+      }),
+    );
+    await refuses(
+      await edited((data) => {
+        for (const row of data.visitors as Record<string, unknown>[]) {
+          row.claims = row.attributes;
+          delete row.attributes;
+          delete row.name;
+        }
+      }),
+    );
   }, 30_000);
 
   test("a page view of a visitor the file does not hold", async () => {
@@ -609,21 +616,6 @@ describe("a bad file changes nothing", () => {
     const target = await freshInstall();
     await expect(importArchive(target.db, target.store, once(bad))).rejects.toThrow(ImportError);
     expect(await target.owner.select().from(workspace)).toEqual([]);
-  }, 30_000);
-
-  test("an export from 0.5.0, whose visitors have claims, imports them as attributes", async () => {
-    const old = await edited((data) => {
-      for (const row of data.visitors as Record<string, unknown>[]) {
-        row.claims = { plan: "pro" };
-        delete row.attributes;
-        delete row.name;
-      }
-    });
-    const target = await freshInstall();
-    await importArchive(target.db, target.store, once(old));
-    const rows = await target.owner.select().from(visitor);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) expect(row.attributes).toEqual({ plan: "pro" });
   }, 30_000);
 
   test("a file cut off anywhere", async () => {

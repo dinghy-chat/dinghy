@@ -1,4 +1,4 @@
-import type { Conversation } from "./api.ts";
+import type { Conversation, VisitorIdentity } from "./api.ts";
 import { t } from "./text.ts";
 
 // Crockford's base32: no I, L, O or U, so a code read aloud is not mistaken for another.
@@ -14,49 +14,25 @@ function visitorCode(visitorId: string): string {
 
 /** The label for a visitor with no name, such as "Visitor 7F3K". */
 export function visitorLabel(visitorId: string): string {
-  return t("visitorLabel").replace("{code}", visitorCode(visitorId));
+  return t("visitorLabel", { code: visitorCode(visitorId) });
 }
 
 /** The avatar's letters: the code's first two for a visitor with no name, so they differ. */
-export function avatarLetters(visitor: Conversation["visitor"]): string | undefined {
+export function avatarLetters(visitor: VisitorIdentity): string | undefined {
   return shownName(visitor) === null ? visitorCode(visitor.id).slice(0, 2) : undefined;
 }
 
-/** A `name` in the signed attributes, when it is a string with text in it. Tokens put it there before `name` had its own field. */
-export function attributeName(visitor: {
-  attributes?: Record<string, unknown> | null;
-}): string | null {
-  const name = visitor.attributes?.name;
-  return typeof name === "string" && name.trim() !== "" ? name.trim() : null;
-}
-
 /** The name, email or user ID the host site gave, or the short code for a signed-out visitor. */
-export function visitorName(visitor: {
-  id: string;
-  email: string | null;
-  externalId: string | null;
-  name?: string | null;
-  attributes?: Record<string, unknown> | null;
-}): string {
+export function visitorName(visitor: VisitorIdentity): string {
   return shownName(visitor) ?? visitorLabel(visitor.id);
 }
 
-function shownName(visitor: {
-  email: string | null;
-  externalId: string | null;
-  name?: string | null;
-  attributes?: Record<string, unknown> | null;
-}): string | null {
-  return visitor.name ?? attributeName(visitor) ?? visitor.email ?? visitor.externalId;
+function shownName(visitor: Omit<VisitorIdentity, "id">): string | null {
+  return visitor.name ?? visitor.email ?? visitor.externalId;
 }
 
 /** The email and user ID the title does not already show, so an operator can find the account. */
-export function otherIdentity(visitor: {
-  email: string | null;
-  externalId: string | null;
-  name?: string | null;
-  attributes?: Record<string, unknown> | null;
-}): string[] {
+export function otherIdentity(visitor: Omit<VisitorIdentity, "id">): string[] {
   const shown = shownName(visitor);
   return [visitor.email, visitor.externalId].filter(
     (part): part is string => part !== null && part !== shown,

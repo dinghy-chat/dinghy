@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type pg from "pg";
 import { workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
@@ -49,10 +49,18 @@ export async function insertWorkspace(
   await tx.insert(workspace).values({ ...keys, name, allowedOrigins: origins, active });
 }
 
+/** The widget's own words for a workspace. Null means the widget's default text. */
+export interface WidgetTexts {
+  title: string | null;
+  greeting: string | null;
+  away: string | null;
+}
+
 export interface WidgetWorkspace {
   id: string;
   allowedOrigins: string[];
   signingSecret: string;
+  texts: WidgetTexts;
 }
 
 /** Finds a workspace by its public key. The caller has no workspace context yet. */
@@ -64,25 +72,18 @@ export async function widgetWorkspace(
     id: string;
     allowed_origins: string[];
     signing_secret: string;
-  }>(sql`select id, allowed_origins, signing_secret from widget_workspace(${publicKey})`);
+    widget_title: string | null;
+    widget_greeting: string | null;
+    widget_away: string | null;
+  }>(sql`select * from widget_workspace(${publicKey})`);
   const row = result.rows[0];
   if (row === undefined) return null;
-  return { id: row.id, allowedOrigins: row.allowed_origins, signingSecret: row.signing_secret };
-}
-
-/** The widget's own words for a workspace. Null means the widget's default text. */
-export async function widgetTexts(db: Database, workspaceId: string) {
-  const [row] = await withWorkspace(db, workspaceId, (tx) =>
-    tx
-      .select({
-        title: workspace.widgetTitle,
-        greeting: workspace.widgetGreeting,
-        away: workspace.widgetAway,
-      })
-      .from(workspace)
-      .where(eq(workspace.id, workspaceId)),
-  );
-  return row ?? { title: null, greeting: null, away: null };
+  return {
+    id: row.id,
+    allowedOrigins: row.allowed_origins,
+    signingSecret: row.signing_secret,
+    texts: { title: row.widget_title, greeting: row.widget_greeting, away: row.widget_away },
+  };
 }
 
 /**

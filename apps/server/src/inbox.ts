@@ -311,7 +311,7 @@ const searchRoute = createRoute({
     "Matches the visitor's name, email or user ID, or the text of a message, ignoring case. A conversation found by a message shows that message as its `lastMessage`.",
   request: {
     params: workspaceParams,
-    query: z.object({ q: z.string().trim().min(2).max(100) }),
+    query: z.object({ q: z.string().trim().min(3).max(100) }),
   },
   responses: {
     200: {

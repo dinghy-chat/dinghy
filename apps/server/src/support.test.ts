@@ -157,11 +157,9 @@ describe("host token attributes and name", () => {
   const verify = async (payload: Record<string, unknown>) =>
     verifyHostToken(await hostToken(payload), a.signingSecret, a.publicKey);
 
-  test("attributes, and claims as the 0.5.0 name for them", async () => {
+  test("attributes are read, and a `claims` field is ignored", async () => {
     expect((await verify({ attributes: { plan: "pro" } }))?.attributes).toEqual({ plan: "pro" });
-    expect((await verify({ claims: { plan: "old" } }))?.attributes).toEqual({ plan: "old" });
-    const both = await verify({ attributes: { plan: "new" }, claims: { plan: "old" } });
-    expect(both?.attributes).toEqual({ plan: "new" });
+    expect((await verify({ claims: { plan: "old" } }))?.attributes).toBeUndefined();
   });
 
   test("attributes over 2 KB refuse the token", async () => {
@@ -356,6 +354,23 @@ describe("page journey", () => {
     expect(row?.title).toHaveLength(200);
     expect(row?.path).toHaveLength(2000);
     expect((await report(token, "/x", "t".repeat(2001))).status).toBe(400);
+  });
+
+  test("the starting page and the last page keep the same 2,000 characters", async () => {
+    const { visitorId, token } = await newVisitor();
+    const long = `/${"p".repeat(2500)}`;
+    const sent = await widget(a.publicKey, "messages", token, {
+      method: "POST",
+      body: { clientId: randomUUID(), body: "Hi", page: `${SITE}${long}` },
+    });
+    const { conversationId } = (await sent.json()) as { conversationId: string };
+    await report(token, long);
+    const [started] = await owner
+      .select({ page: conversation.startedPage })
+      .from(conversation)
+      .where(eq(conversation.id, conversationId));
+    expect(started?.page).toHaveLength(2000);
+    expect((await visitorRow(visitorId))?.lastPage).toHaveLength(2000);
   });
 
   test("a page on another site adds no row", async () => {
@@ -675,8 +690,9 @@ describe("search", () => {
     expect((await search(`secret ${tag}`)).body.conversations).toEqual([]);
   });
 
-  test("a query must be 2 to 100 characters", async () => {
-    expect((await search("a")).status).toBe(400);
+  test("a query must be 3 to 100 characters", async () => {
+    expect((await search("ab")).status).toBe(400);
+    expect((await search(" ab ")).status).toBe(400);
     expect((await search("x".repeat(101))).status).toBe(400);
   });
 });

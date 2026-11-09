@@ -100,9 +100,7 @@ Any JWT library works, in any language. The token must have these fields:
 | `iat` and `exp` | The issue time and the expiry, at most 24 hours apart |
 | `name` | Optional. The name operators see, on one line, up to 100 characters. Anything else is dropped |
 | `email` | Optional. One address, which operators see. Anything else, such as a list, is dropped |
-| `attributes` | Optional. Custom attributes that operators see, such as a plan, up to 2 KB of JSON. A value that starts with `https://` or `http://` shows as a link. A `name` here is the title when the token has no `name` |
-
-A token made for Dinghy 0.5.0 sends its attributes as `claims`, and that still works. If a token has both, `attributes` wins.
+| `attributes` | Optional. Custom attributes that operators see, such as a plan, up to 2 KB of JSON. A value that starts with `https://` or `http://` shows as a link |
 
 **2. On your page,** pass a function that asks your server for a token. The widget calls it again when a token expires, so a tab that stays open keeps working:
 

@@ -104,7 +104,7 @@ const ErrorBody = z
   .openapi("Error", { example: { error: { code: "not_found", message: "This does not exist." } } });
 
 /** The OpenAPI content of an error answer, and of an answer that only says it worked. */
-export const errorContent = { "application/json": { schema: ErrorBody } };
+const errorContent = { "application/json": { schema: ErrorBody } };
 export const okContent = { "application/json": { schema: z.object({ ok: z.literal(true) }) } };
 
 /** An error answer in a route's OpenAPI responses. */
