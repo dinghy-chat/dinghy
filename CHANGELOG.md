@@ -34,6 +34,7 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 - "Check your email" shows the address in bold, and a used or expired invite says to ask the person who invited you for a new link. On a phone, the cloud no longer hides behind the card.
 - An expired chat link's page shows the logo and says why as its heading.
 - The conversation header puts the visitor's last page on a line of its own and leaves out the starting page when it is the same. On a wide screen, the visitor's attributes and pages sit side by side.
+- A web address among a visitor's attributes shows without `https://`, as the header's pages do. The boat in the sea keeps clear of the screen's edges, and the per-day chart leaves room above its tallest bar.
 - The sign-in card says there is no password, and the per-day chart says what it counts. On the **Data** tab, **Unblock** sits next to the visitor, and the **Delete this workspace** box lines its text up with the rows above.
 
 ## 0.5.0 (2026-11-08)

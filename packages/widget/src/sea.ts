@@ -132,7 +132,9 @@ export function startSea(host: HTMLElement, options: SeaOptions): () => void {
 
   const placeBoat = (t: number) => {
     const boatHeight = boatWidth * HEIGHT_PER_WIDTH;
-    const x = width * boatAt + Math.sin(t * 0.35) * drift;
+    // Clear of the edges, so a narrow screen never cuts the bow or the stern.
+    const edge = boatWidth / 2 + 12;
+    const x = Math.min(width - edge, Math.max(edge, width * boatAt + Math.sin(t * 0.35) * drift));
     const surface = surfaceY(x, boatLayer, t);
     const slope =
       surfaceY(x + boatWidth * 0.4, boatLayer, t) - surfaceY(x - boatWidth * 0.4, boatLayer, t);

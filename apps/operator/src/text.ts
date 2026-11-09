@@ -7,7 +7,7 @@ const en = {
   signInTitle: "Sign in to Dinghy",
   email: "Email",
   signInSend: "Email me a sign-in link",
-  signInHelp: "We email you a link that signs you in. There is no password.",
+  signInHelp: "We email you a link. No password needed.",
   signInNoMail:
     "This server doesn't send email, so ask its admin for a sign-in link. They make one with: chat sign-in-link followed by your email.",
   checkEmailTitle: "Check your email",

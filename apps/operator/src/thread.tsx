@@ -298,8 +298,8 @@ function VisitorContext({ conversation }: { conversation: Conversation }) {
             {link === null ? (
               value
             ) : (
-              <a href={link} target="_blank" rel="noopener noreferrer">
-                {value}
+              <a href={link} target="_blank" rel="noopener noreferrer" title={link}>
+                {bare(link)}
               </a>
             )}
           </dd>

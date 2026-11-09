@@ -1751,7 +1751,8 @@ button.workspace[aria-expanded="true"],
   align-items: flex-end;
   gap: 2px;
   height: 140px;
-  padding: 6px;
+  /* Room above the tallest bar, clear of the rounded corners. */
+  padding: 14px 6px 6px;
   border-radius: 12px;
   background: var(--soft);
 }
