@@ -329,11 +329,11 @@ export function initials(name: string): string {
 }
 
 /** A round tile with initials. The same name always gets the same tint. */
-export function Avatar({ name }: { name: string }) {
+export function Avatar({ name, letters }: { name: string; letters?: string | undefined }) {
   const sum = [...name].reduce((total, character) => total + (character.codePointAt(0) ?? 0), 0);
   return (
     <span className={`avatar tint-${sum % TINT_COUNT}`} aria-hidden="true">
-      {initials(name)}
+      {letters ?? initials(name)}
     </span>
   );
 }

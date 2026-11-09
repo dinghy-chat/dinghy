@@ -32,7 +32,7 @@ import {
   Pond,
   ROLE_TEXT,
 } from "./ui.tsx";
-import { isWaiting, title } from "./visitor.ts";
+import { avatarLetters, isWaiting, title } from "./visitor.ts";
 
 const RETRY_LIMIT_MS = 30_000;
 const PAGE_SIZE = 50;
@@ -469,7 +469,7 @@ function ConversationRow({
   return (
     <li>
       <button type="button" className="row" aria-current={selected} onClick={onSelect}>
-        <Avatar name={title(conversation)} />
+        <Avatar name={title(conversation)} letters={avatarLetters(conversation.visitor)} />
         <span className="row-text">
           <span className="row-top">
             <strong>{title(conversation)}</strong>

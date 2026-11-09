@@ -90,6 +90,13 @@ h3 {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
+h1,
+h2 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
+}
 button,
 input,
 textarea {

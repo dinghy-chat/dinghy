@@ -4,12 +4,22 @@ import { t } from "./text.ts";
 // Crockford's base32: no I, L, O or U, so a code read aloud is not mistaken for another.
 const LETTERS = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/** A short code from the visitor's ID, the same on every load, such as "Visitor 7F3K". */
-export function visitorLabel(visitorId: string): string {
+/** A short code from the visitor's ID, the same on every load, such as "7F3K". */
+function visitorCode(visitorId: string): string {
   const bits = Number.parseInt(visitorId.replaceAll("-", "").slice(0, 5), 16) || 0;
   let code = "";
   for (let shift = 15; shift >= 0; shift -= 5) code += LETTERS[(bits >> shift) & 31];
-  return t("visitorLabel").replace("{code}", code);
+  return code;
+}
+
+/** The label for a visitor with no name, such as "Visitor 7F3K". */
+export function visitorLabel(visitorId: string): string {
+  return t("visitorLabel").replace("{code}", visitorCode(visitorId));
+}
+
+/** The avatar's letters: the code's first two for a visitor with no name, so they differ. */
+export function avatarLetters(visitor: Conversation["visitor"]): string | undefined {
+  return shownName(visitor) === null ? visitorCode(visitor.id).slice(0, 2) : undefined;
 }
 
 /** A `name` in the signed attributes, when it is a string with text in it. Tokens put it there before `name` had its own field. */

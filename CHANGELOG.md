@@ -2,6 +2,12 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
+## Unreleased
+
+- On a phone, the open chat fills the screen, as in Crisp and Intercom, and keeps clear of the notch and the home bar. On a computer it still floats in the corner.
+- A visitor with no name gets the first two characters of their code as initials, such as "7F" for "Visitor 7F3K", so two of them no longer look the same.
+- Headings and short texts in the operator app break their lines more evenly, and the **Visitor details** row is 44 px tall on a phone.
+
 ## 0.6.0 (2026-11-09)
 
 **Owner note:** the identity token's `claims` field is now called `attributes`, the name Intercom and Chatwoot use. Tokens made for 0.5.0 keep working with `claims`, and you can rename it on your server whenever you like. The operator API's visitor field changed from `claims` to `attributes` too, and an export holds `attributes`, while an export from 0.5.0 still imports.
