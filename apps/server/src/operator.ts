@@ -137,6 +137,12 @@ export function registerOperatorRoutes(
     if (c.req.method !== "GET" && c.req.header("origin") !== publicOrigin) {
       return c.json(WRONG_ORIGIN, 403);
     }
+    // The whole body first, so the session and membership checks see the state when the request
+    // ends. Otherwise a member could send a body slowly and finish it after their removal. Hono
+    // keeps the text for the route. An image streams instead, and its route checks again.
+    if (c.req.method !== "GET" && !c.req.path.endsWith("/images")) {
+      await c.req.text().catch(() => undefined);
+    }
     const { response: found, headers } = await auth.api.getSession({
       headers: c.req.raw.headers,
       returnHeaders: true,
