@@ -227,7 +227,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
       ) : (
         <>
           <Figures numbers={numbers} />
-          <PageRow title={t("perDayTitle")}>
+          <PageRow title={t("perDayTitle")} help={t("perDayHelp")}>
             <PerDay days={numbers.perDay} />
           </PageRow>
           <PageRow title={t("byOperatorTitle")} help={t("byOperatorHelp")}>

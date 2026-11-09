@@ -1350,7 +1350,7 @@ button.workspace[aria-expanded="true"],
 .about-visitor > summary:hover {
   color: var(--navy);
 }
-.about-visitor > :last-child {
+.about-body > :last-child {
   border-bottom: 0;
 }
 .context {
@@ -1420,6 +1420,10 @@ button.workspace[aria-expanded="true"],
   color: var(--quiet);
   /* It wraps, so the last page's link never hides behind an ellipsis. */
   white-space: normal;
+}
+.who-text .visit-page {
+  display: block;
+  width: fit-content;
 }
 .online {
   color: var(--green);
@@ -1689,8 +1693,9 @@ button.workspace[aria-expanded="true"],
   justify-self: start;
 }
 /* What cannot be undone: a red outline and a red button. */
+/* Outset by its padding, so its columns line up with the rows above it. */
 .danger-zone {
-  margin: 16px 0 0;
+  margin: 16px -24px 0;
   padding: 22px 23px;
   border: 1.5px solid #f2c4c0;
   border-radius: 18px;
@@ -2146,7 +2151,7 @@ button.workspace[aria-expanded="true"],
   border-top: 1px solid var(--warm-line);
 }
 .blocked .who-lines {
-  flex: 1;
+  min-width: 0;
 }
 .page-controls > .text-button {
   justify-self: start;
@@ -2208,6 +2213,18 @@ button.workspace[aria-expanded="true"],
 }
 .about-visitor[open] > summary svg {
   transform: none;
+}
+
+/* A wide thread puts the visitor's attributes and pages side by side, to keep room for messages. */
+@media (min-width: 1200px) {
+  .about-body:has(> .context + .journey) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+  .about-body > .context {
+    align-content: start;
+    border-bottom: 0;
+  }
 }
 
 /* Tablet: the sidebar becomes a top bar on the yellow. */
@@ -2462,6 +2479,7 @@ button.workspace[aria-expanded="true"],
     overflow: visible;
   }
   .app .pill,
+  .dialog .pill,
   .app .select-button,
   .tabs [role="tab"] {
     min-height: 44px;
@@ -2528,6 +2546,13 @@ button.workspace[aria-expanded="true"],
   /* Above the card, which starts near a quarter of the screen. */
   .cloud-b {
     top: 11%;
+  }
+  /* Two figures a row, and an odd last one takes the full row, so no card sits beside a gap. */
+  .figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .figures div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
   .signin {
     padding-bottom: 150px;

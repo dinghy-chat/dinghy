@@ -48,6 +48,7 @@ export function SignIn({
   return (
     <AuthPage time="morning" onSubmit={submit}>
       <h1>{t("signInTitle")}</h1>
+      <p className="note">{t("signInHelp")}</p>
       <Field
         label={t("email")}
         type="email"

@@ -30,9 +30,11 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 - While you search, the line under **Inbox** says how many conversations match, and a closed one in the results has a **Closed** chip.
 - **Settings > Install** shows the tag for your site first, and the greeting and away text in boxes that wrap.
 - The confirm dialog uses the app's pill buttons, 44 px tall on a phone, over a lighter backdrop. Icon buttons are round, and removing an allowed site has a 44 px target.
-- Analytics charts use the full width of their row, and the headline numbers line up when a label wraps. The **Delete this workspace** box lines up with the rows above it.
+- Analytics charts use the full width of their row, and the headline numbers line up when a label wraps.
 - "Check your email" shows the address in bold, and a used or expired invite says to ask the person who invited you for a new link. On a phone, the cloud no longer hides behind the card.
 - An expired chat link's page shows the logo and says why as its heading.
+- The conversation header puts the visitor's last page on a line of its own and leaves out the starting page when it is the same. On a wide screen, the visitor's attributes and pages sit side by side.
+- The sign-in card says there is no password, and the per-day chart says what it counts. On the **Data** tab, **Unblock** sits next to the visitor, and the **Delete this workspace** box lines its text up with the rows above.
 
 ## 0.5.0 (2026-11-08)
 

@@ -107,7 +107,7 @@ const LOGO =
  * logo and the reason as its heading. The logo holds still: the page has nothing to wait for.
  */
 const notice = (title: string, help?: string) =>
-  html`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="robots" content="noindex"><title>${CHAT_PAGE_TEXT.title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:#0b2239;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:440px;padding:28px;border-radius:14px;background:#fff;color:#0b2239}h1{margin:14px 0 0;font-size:20px;line-height:1.3;font-weight:650}p{margin:8px 0 0;color:#5f6e80}svg{display:block}</style><main>${raw(LOGO)}<h1>${title}</h1>${help === undefined ? "" : html`<p>${help}</p>`}</main></html>`;
+  html`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="robots" content="noindex"><title>${CHAT_PAGE_TEXT.title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:#0b2239;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:440px;padding:28px;border-radius:14px;background:#fff;color:#0b2239}h1{margin:14px 0 0;font-size:20px;line-height:1.3;font-weight:650;text-wrap:balance}p{margin:8px 0 0;color:#5f6e80}svg{display:block}</style><main>${raw(LOGO)}<h1>${title}</h1>${help === undefined ? "" : html`<p>${help}</p>`}</main></html>`;
 
 interface ChatPageOptions {
   db: Database;

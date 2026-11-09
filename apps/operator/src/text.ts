@@ -7,6 +7,7 @@ const en = {
   signInTitle: "Sign in to Dinghy",
   email: "Email",
   signInSend: "Email me a sign-in link",
+  signInHelp: "We email you a link that signs you in. There is no password.",
   signInNoMail:
     "This server doesn't send email, so ask its admin for a sign-in link. They make one with: chat sign-in-link followed by your email.",
   checkEmailTitle: "Check your email",
@@ -231,6 +232,7 @@ const en = {
   statClosed: "Closed now",
   noReplies: "No replies yet",
   perDayTitle: "Conversations per day",
+  perDayHelp: "New conversations each day.",
   perDaySummary: "The busiest day was {day}, with {count}.",
   perDayBar: "{day}: {count}",
   perDayMost: "Most in a day: {count}",

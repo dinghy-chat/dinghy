@@ -67,8 +67,9 @@ const bare = (page: string) => page.replace(/^https?:\/\//, "");
 
 /** Who the visitor is and where they came from: the quiet line under their name. */
 function origin(conversation: Conversation): string | null {
+  // The header shows the last page on a line of its own, so the same page is not said twice.
   const page =
-    conversation.startedPage === null
+    conversation.startedPage === null || conversation.startedPage === conversation.visitor.lastPage
       ? null
       : t("startedOn").replace("{page}", bare(conversation.startedPage));
   const parts = [...otherIdentity(conversation.visitor), page].filter((part) => part !== null);
@@ -109,11 +110,6 @@ function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: 
       <span key="seen">{t("lastSeen").replace("{time}", seen)}</span>
     ),
     visitor.device === null ? null : <span key="device">{visitor.device}</span>,
-    page === null ? null : (
-      <a key="page" href={page} target="_blank" rel="noopener noreferrer" title={page}>
-        {bare(page)}
-      </a>
-    ),
   ].filter((part) => part !== null);
   return (
     <p className="visit">
@@ -123,6 +119,18 @@ function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: 
           {part}
         </Fragment>
       ))}
+      {/* A line of its own, as an address is long and would wrap after a dot. */}
+      {page !== null && (
+        <a
+          className="visit-page"
+          href={page}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={page}
+        >
+          {bare(page)}
+        </a>
+      )}
     </p>
   );
 }
@@ -318,8 +326,10 @@ function AboutVisitor({ conversation, pages }: { conversation: Conversation; pag
         {t("visitorDetails")}
         <Icon name="chevron" size={12} />
       </summary>
-      <VisitorContext conversation={conversation} />
-      <PageJourney pages={pages} />
+      <div className="about-body">
+        <VisitorContext conversation={conversation} />
+        <PageJourney pages={pages} />
+      </div>
     </details>
   );
 }
