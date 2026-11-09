@@ -563,7 +563,7 @@ export function PageRow({
  * The account screens follow one day: sign in in the early morning, the email by mid-morning, the
  * link at midday and the workspace's setup in the afternoon.
  */
-export type TimeOfDay = "morning" | "forenoon" | "noon" | "afternoon";
+type TimeOfDay = "morning" | "forenoon" | "noon" | "afternoon";
 
 /** Where the boat rests and where the sun lies, as shares of the width, at each time of day. */
 const DAY: Record<TimeOfDay, { boatAt: number; sunAt: number }> = {

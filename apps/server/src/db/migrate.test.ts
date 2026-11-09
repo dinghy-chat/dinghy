@@ -200,6 +200,42 @@ describe("chat migrate", () => {
     expect(await query("select count(*)::int as count from page_view")).toEqual([{ count: 0 }]);
   });
 
+  test("a message event without fromVisitor gets it from its message", async () => {
+    await run(await migrationsBefore("0052_"));
+    const workspace = "00000000-0000-4000-8000-0000000000ee";
+    const visitor = "00000000-0000-4000-8000-0000000000e1";
+    const conversation = "00000000-0000-4000-8000-0000000000e2";
+    const message = "00000000-0000-4000-8000-0000000000e3";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000002', 'secret')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, id, token_hash) values ('${workspace}', '${visitor}', 'h')`,
+    );
+    await query(
+      `insert into conversation (workspace_id, id, visitor_id)
+       values ('${workspace}', '${conversation}', '${visitor}')`,
+    );
+    await query(
+      `insert into message (workspace_id, id, conversation_id, seq, kind, author_visitor_id, client_id, body)
+       values ('${workspace}', '${message}', '${conversation}', 1, 'text', '${visitor}', 'c1', 'Hi')`,
+    );
+    const payload = (id: string) => `{"messageId":"${id}","conversationId":"${conversation}"}`;
+    await query(
+      `insert into event (workspace_id, seq, kind, payload) values
+       ('${workspace}', 1, 'message.created', '${payload(message)}'),
+       ('${workspace}', 2, 'message.created', '${payload("00000000-0000-4000-8000-0000000000e4")}'),
+       ('${workspace}', 3, 'conversation.closed', '{"conversationId":"${conversation}"}')`,
+    );
+    await run();
+    expect(await query("select payload->'fromVisitor' as from from event order by seq")).toEqual([
+      { from: true },
+      { from: false },
+      { from: null },
+    ]);
+  });
+
   test("a run with no pending migration takes no backup and changes nothing", async () => {
     await run();
     const before = await appliedCount();

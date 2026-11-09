@@ -10,7 +10,7 @@ export interface ChatMessage {
   body: string | null;
   image: { url: string; width: number; height: number } | null;
   /** The image was deleted after 12 months, on Dinghy Cloud. */
-  imageRemoved?: boolean;
+  imageRemoved: boolean;
   createdAt: string;
 }
 

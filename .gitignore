@@ -8,5 +8,4 @@ coverage/
 dist/
 test-results/
 playwright-report/
-packages/widget/dist/
 CLAUDE.local.md

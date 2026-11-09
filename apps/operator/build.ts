@@ -37,7 +37,3 @@ export async function buildOperator(outdir: string): Promise<void> {
     await copyFile(here(`./public/${file}`), `${outdir}/${file}`);
   }
 }
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await buildOperator(here("./dist"));
-}

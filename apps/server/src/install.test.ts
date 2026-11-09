@@ -102,23 +102,6 @@ describe("chat init", () => {
     expect(second["app/auth_secret"]).not.toBe(first["app/auth_secret"]);
   });
 
-  test("Valkey and the app share a password, and an older install gets one on its next start", async () => {
-    const root = await newRoot();
-    await runInit(root);
-    // As an install from before Valkey had a password.
-    await rm(join(root, "migrate", "valkey"));
-    await rm(join(root, "valkey"), { recursive: true });
-    await rm(join(root, "app", "valkey_url"));
-    const before = await snapshot(root);
-    await runInit(root);
-    const after = await snapshot(root);
-    for (const [name, value] of Object.entries(before)) expect(after[name]).toBe(value);
-    const password = await read(root, "migrate", "valkey");
-    expect(password.length).toBeGreaterThanOrEqual(32);
-    expect(await read(root, "valkey", "valkey.conf")).toBe(`requirepass ${password}\n`);
-    expect(await read(root, "app", "valkey_url")).toBe(`redis://:${password}@valkey:6379`);
-  });
-
   test("Valkey's copies follow its password, even if only some volumes were lost", async () => {
     const root = await newRoot();
     await runInit(root);

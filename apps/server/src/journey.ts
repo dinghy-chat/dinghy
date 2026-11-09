@@ -3,15 +3,15 @@ import { conversation, pageView, visitor } from "./db/schema.ts";
 import type { Database, Transaction } from "./db/tenant.ts";
 
 /** The newest rows a visitor keeps, so a long visit cannot grow without end. */
-export const PAGES_KEPT = 100;
+const PAGES_KEPT = 100;
 /** The newest rows an operator sees. */
-export const PAGES_SHOWN = 20;
+const PAGES_SHOWN = 20;
 export const PAGE_TITLE_MAX = 200;
 /** The longest page address kept, for the starting page, the last page and the journey alike. */
 export const PAGE_PATH_MAX = 2000;
 const KEPT_DAYS = 90;
 
-export interface PageSeen {
+interface PageSeen {
   path: string;
   title: string | null;
   viewedAt: Date;

@@ -15,7 +15,7 @@ export const CHAT_LINK_DAYS = 30;
 const DAY_MS = 24 * 60 * 60_000;
 
 // Every string a person reads has a key, so a locale can be added later.
-export const CHAT_PAGE_TEXT = {
+const CHAT_PAGE_TEXT = {
   title: "Chat",
   expired: "This link has expired, or its conversation was deleted.",
   expiredHelp: "Go back to the site and open the chat to write again.",

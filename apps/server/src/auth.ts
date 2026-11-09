@@ -24,7 +24,7 @@ export { LINK_MINUTES };
  * What a link is for. It picks the confirm page's button and where the browser goes after it.
  * `add-workspace` is a sign-in that lands on the workspace setup, for cloud signup with an account.
  */
-export type LinkPurpose = "sign-in" | "signup" | "add-workspace" | "join";
+type LinkPurpose = "sign-in" | "signup" | "add-workspace" | "join";
 
 /**
  * The link an email carries: a page of the operator app, whose button uses the token. Opening it
@@ -93,7 +93,7 @@ export const deliverLinks = <T>(deliver: Delivery, work: () => T): T => delivery
 const SHOWN_LINK = "shown-link:";
 
 /** Whether a link reaches its owner by email, or another way, such as a command's output. */
-export type LinkRoute = "email" | "shown";
+type LinkRoute = "email" | "shown";
 
 /** A one-time sign-in token for `email`, made without sending anything. */
 async function signInToken(auth: Auth, email: string, route: LinkRoute): Promise<string> {

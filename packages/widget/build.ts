@@ -42,7 +42,3 @@ export async function buildWidget(outdir?: string): Promise<Record<string, Uint8
     ),
   );
 }
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await buildWidget(fileURLToPath(new URL("./dist", import.meta.url)));
-}

@@ -132,7 +132,7 @@ function usePopup(labels: string[], start: () => number) {
   };
 }
 
-export interface Choice<V extends string> {
+interface Choice<V extends string> {
   value: V;
   label: string;
   /** A picture before the label, such as an avatar. */
