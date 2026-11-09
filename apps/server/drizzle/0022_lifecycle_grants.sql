@@ -81,8 +81,8 @@ REVOKE ALL ON FUNCTION purge_deleted_workspaces() FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION purge_deleted_workspaces() TO dinghy_worker;
 --> statement-breakpoint
--- Stage 25 activated a workspace only when a payment cleared, so an active one with a subscription
--- has paid.
+-- Before this migration, a workspace became active only when a payment cleared, so an active one
+-- with a subscription has paid.
 UPDATE subscription AS s SET paid_at = s.created_at
   FROM workspace AS w
   WHERE w.id = s.workspace_id AND w.active AND s.paid_at IS NULL;

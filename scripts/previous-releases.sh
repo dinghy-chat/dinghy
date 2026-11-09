@@ -2,7 +2,7 @@
 # Prints the images that the upgrade check starts from: the oldest release tagged in this repository,
 # and the latest published release before this commit when it differs. A tag whose release failed
 # has no image, so it is skipped. With no earlier release, it prints nothing and the check skips the
-# upgrade. Needs the tags (check out with fetch-depth: 0) and a docker login to ghcr.io.
+# upgrade. Needs the tags (check out with fetch-depth: 0).
 set -euo pipefail
 
 published() { docker manifest inspect "ghcr.io/dinghy-chat/dinghy:$1" >/dev/null 2>&1; }
