@@ -418,6 +418,9 @@ function conversationView(
   };
 }
 
+/** The session ended or the operator left the workspace during an upload. Its transaction rolls back. */
+class AccessEndedError extends Error {}
+
 /** The session is current and its operator is still a member: one statement, as each wake runs it. */
 async function mayStillRead(
   tx: Transaction,
@@ -579,24 +582,30 @@ export function registerInboxRoutes(
           .receive(
             c.req.raw,
             id,
+            // The upload can take minutes, so the session and membership are read again here.
             (image) =>
-              withWorkspace(db, id, (tx) =>
-                appendMessage(
+              withWorkspace(db, id, async (tx) => {
+                if (!(await mayStillRead(tx, c.get("sessionId"), operatorId, id))) {
+                  throw new AccessEndedError();
+                }
+                return appendMessage(
                   tx,
                   id,
                   { kind: "operator", operatorId, conversationId },
                   { clientId, image },
                   limits,
-                ),
-              ),
+                );
+              }),
             c.get("clientIp"),
           )
           .catch((error: unknown) => {
             if (error instanceof ConversationClosedError) return "closed" as const;
+            if (error instanceof AccessEndedError) return "ended" as const;
             throw error;
           }),
       );
       if (outcome === "closed") return c.json(CLOSED, 409);
+      if (outcome === "ended") return c.json(NOT_FOUND, 404);
       if (outcome instanceof WorkspaceClosedError) {
         const refused = closedFailure(outcome.access);
         return c.json(refused.body, refused.status);
