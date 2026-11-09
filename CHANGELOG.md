@@ -26,6 +26,13 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 - On a touch screen, opening the chat no longer brings up the keyboard. Tapping the message field does. With a mouse, the field gets focus as before.
 - When nobody is online, the widget says "we will reply here" once, in its header.
 - Dinghy Cloud's early signup says what it is: the workspace works right away, and an email comes when the cloud opens. The button reads **Email me a sign-up link**, the workspace name has a hint, and the banner in the app is one short line.
+- A conversation's attributes and pages sit in **Visitor details**, open on a computer and folded on a phone, so a phone shows the messages first. The lines under the visitor's name wrap instead of cutting off the starting page.
+- While you search, the line under **Inbox** says how many conversations match, and a closed one in the results has a **Closed** chip.
+- **Settings > Install** shows the tag for your site first, and the greeting and away text in boxes that wrap.
+- The confirm dialog uses the app's pill buttons, 44 px tall on a phone, over a lighter backdrop. Icon buttons are round, and removing an allowed site has a 44 px target.
+- Analytics charts use the full width of their row, and the headline numbers line up when a label wraps. The **Delete this workspace** box lines up with the rows above it.
+- "Check your email" shows the address in bold, and a used or expired invite says to ask the person who invited you for a new link. On a phone, the cloud no longer hides behind the card.
+- An expired chat link's page shows the logo and says why as its heading.
 
 ## 0.5.0 (2026-11-08)
 

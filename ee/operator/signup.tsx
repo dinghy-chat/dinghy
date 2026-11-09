@@ -48,7 +48,7 @@ export function Signup({ early }: { early: boolean }) {
     }
   };
 
-  if (sentTo !== null) return <CheckEmail text={t("checkEmail").replace("{email}", sentTo)} />;
+  if (sentTo !== null) return <CheckEmail text={t("checkEmail")} email={sentTo} />;
   return (
     <AuthPage time="morning" onSubmit={submit}>
       <h1>{t("signupTitle")}</h1>

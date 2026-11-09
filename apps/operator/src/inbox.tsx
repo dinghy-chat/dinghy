@@ -450,18 +450,22 @@ function ConversationRow({
   selected,
   members,
   replying,
+  showClosed,
   onSelect,
 }: {
   conversation: Conversation;
   selected: boolean;
   members: Member[];
   replying: string | null;
+  /** Search results mix open and closed conversations, so a closed one says so. */
+  showClosed: boolean;
   onSelect(): void;
 }) {
   const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
   const preview =
     conversation.lastMessage?.body ?? (conversation.lastMessage === null ? "" : t("image"));
   const waits = isWaiting(conversation);
+  const closed = showClosed && conversation.status === "closed";
   return (
     <li>
       <button type="button" className="row" aria-current={selected} onClick={onSelect}>
@@ -472,9 +476,10 @@ function ConversationRow({
             <time dateTime={conversation.updatedAt}>{shortTime(conversation.updatedAt)}</time>
           </span>
           <span className="preview">{preview}</span>
-          {(waits || replying !== null || assignee !== undefined) && (
+          {(waits || closed || replying !== null || assignee !== undefined) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
+              {closed && <span className="chip">{t("closed")}</span>}
               {assignee !== undefined && <span className="chip">{assignee.name}</span>}
               {replying !== null && <em>{replying}</em>}
             </span>
@@ -532,6 +537,11 @@ function SearchField({ value, onChange }: { value: string; onChange(value: strin
       />
     </div>
   );
+}
+
+/** The line under the list's title while a search shows its results. */
+function foundContext(count: number): string {
+  return count === 1 ? t("searchOne") : t("searchMany").replace("{count}", String(count));
 }
 
 /** The line under the list's title: who waits, or what the closed list holds. */
@@ -742,7 +752,7 @@ export function Inbox({
             <section className="list" aria-label={t(STATUS_LOOK[status].label)}>
               <PageHead
                 title={t(STATUS_LOOK[status].label)}
-                context={listContext(status, waiting)}
+                context={found === null ? listContext(status, waiting) : foundContext(found.length)}
               />
               <SearchField value={query} onChange={setQuery} />
               <ul className="rows">
@@ -765,6 +775,7 @@ export function Inbox({
                     selected={conversation.id === selected}
                     members={members}
                     replying={replying(conversation.id)}
+                    showClosed={found !== null && status === "open"}
                     onSelect={() => setSelected(conversation.id)}
                   />
                 ))}

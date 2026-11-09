@@ -386,14 +386,10 @@ export function Confirm({
         <div className="dialog-text">{text}</div>
         {children}
         <div className="dialog-actions">
-          <button
-            type="button"
-            className="btn outline small"
-            onClick={() => dialog.current?.close()}
-          >
+          <button type="button" className="pill" onClick={() => dialog.current?.close()}>
             {t("cancel")}
           </button>
-          <button type="submit" className="btn danger small" disabled={disabled}>
+          <button type="submit" className="pill danger" disabled={disabled}>
             {confirm}
           </button>
         </div>

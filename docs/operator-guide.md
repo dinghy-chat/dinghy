@@ -27,7 +27,9 @@ Under the visitor's name, the header shows their email and user ID, when the nam
 
 For a signed-in user, the conversation shows the name, email, user ID and custom attributes that [your site sent](add-to-your-site.md#show-who-is-chatting). An attribute that is a web address is a link.
 
-Below the header, **Pages visited** lists the pages the visitor went through after they first chatted, newest first, with how long ago. Each one shows the page's title, or its address when it has none, and opens in a new tab. It shows 5, and **Show all** shows up to 20. The list reads the pages again every 30 seconds. Dinghy keeps a visitor's newest 100 pages for 90 days, and deleting the visitor's last conversation deletes them.
+The attributes and the pages sit in **Visitor details**, below the header. It starts open on a computer and folded on a phone, so the messages keep the screen; select it to open or fold it.
+
+**Pages visited** lists the pages the visitor went through after they first chatted, newest first, with how long ago. Each one shows the page's title, or its address when it has none, and opens in a new tab. It shows 5, and **Show all** shows up to 20. The list reads the pages again every 30 seconds. Dinghy keeps a visitor's newest 100 pages for 90 days, and deleting the visitor's last conversation deletes them.
 
 ## See how support is going
 
@@ -87,7 +89,7 @@ Someone in two workspaces switches between them with the workspace name at the t
 
 ## The other settings
 
-- **Install** has the chat's title, its greeting in an empty chat and its text for when nobody is online, then the tag for your site, with a **Copy** button. An empty box keeps Dinghy's own words.
+- **Install** has the tag for your site, with a **Copy** button, then the chat's title, its greeting in an empty chat and its text for when nobody is online. An empty box keeps Dinghy's own words.
 - **Allowed sites** lists the sites that can load the chat, one per row. **Add a site** adds a row, and each row says if its address is not a site such as `https://example.com`.
 - **Signing secret** is for [signed-in users](add-to-your-site.md#show-who-is-chatting). It stays hidden until you select the eye. **Replace the secret** asks first, because the old one stops working at once.
 - **Data** has **Download an export**, which saves all conversations and images as one file that imports into a self-hosted Dinghy, and **Delete workspace**.

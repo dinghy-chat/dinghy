@@ -265,7 +265,7 @@ textarea {
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: 50%;
   color: var(--navy);
 }
 .icon-button:hover:not(:disabled) {
@@ -466,6 +466,10 @@ textarea {
 .cloud-b {
   top: 22%;
   right: 9%;
+}
+/* Clouds pass in front of the sun, which rises behind them. */
+.cloud {
+  z-index: 1;
 }
 .sun {
   position: absolute;
@@ -1107,7 +1111,7 @@ button.workspace[aria-expanded="true"],
   animation: card-in 0.18s ease-out both;
 }
 .dialog::backdrop {
-  background: rgb(11 34 57 / 0.45);
+  background: rgb(11 34 57 / 0.32);
 }
 .dialog-body {
   display: grid;
@@ -1297,12 +1301,11 @@ button.workspace[aria-expanded="true"],
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The lines under the name wrap, so the page where the chat started is never cut off. */
 .who-text p {
-  overflow: hidden;
   color: var(--quiet);
   font-size: 13.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .thread-head .actions {
   gap: 10px;
@@ -1325,6 +1328,30 @@ button.workspace[aria-expanded="true"],
 .replying.blocked {
   background: var(--bad-soft);
   color: var(--bad);
+}
+/* The fold around the visitor's attributes and pages. */
+.about-visitor {
+  border-bottom: 1px solid var(--warm-line);
+}
+.about-visitor > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 28px;
+  color: var(--quiet);
+  font-size: 13.5px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.about-visitor > summary::-webkit-details-marker {
+  display: none;
+}
+.about-visitor > summary:hover {
+  color: var(--navy);
+}
+.about-visitor > :last-child {
+  border-bottom: 0;
 }
 .context {
   display: grid;
@@ -1663,8 +1690,7 @@ button.workspace[aria-expanded="true"],
 }
 /* What cannot be undone: a red outline and a red button. */
 .danger-zone {
-  max-width: calc(960px + 49px);
-  margin: 16px -24.5px 0;
+  margin: 16px 0 0;
   padding: 22px 23px;
   border: 1.5px solid #f2c4c0;
   border-radius: 18px;
@@ -1684,7 +1710,11 @@ button.workspace[aria-expanded="true"],
   gap: 14px;
   padding: 18px 0 24px;
 }
+/* The value at the foot of each card, so values line up when a label wraps. */
 .figures div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   padding: 16px 18px;
   border: 1px solid var(--warm-line);
   border-radius: 16px;
@@ -1701,6 +1731,10 @@ button.workspace[aria-expanded="true"],
 }
 .figures + .page-row {
   border-top: 0;
+}
+/* Charts use the row's full width, out to the line above them. */
+.page-controls:has(> .per-day, > .by-operator, > .hours-grid, > figure) {
+  max-width: none;
 }
 .per-day,
 .hours {
@@ -1865,14 +1899,17 @@ button.workspace[aria-expanded="true"],
 .inline-field .pill {
   min-height: 44px;
 }
-.copy-field .icon-button {
+.copy-field .icon-button,
+.site .icon-button {
   width: 44px;
   height: 44px;
-  border-radius: 12px;
   background: var(--soft);
 }
 .copy-field .icon-button:hover {
   background: #f5ecd0;
+}
+.site .icon-button:not(:hover) {
+  background: transparent;
 }
 .sites {
   display: grid;
@@ -2155,6 +2192,24 @@ button.workspace[aria-expanded="true"],
   left: 21px;
 }
 
+/* Rules that must come after the general ones they refine. */
+.card .note strong {
+  color: var(--navy);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+/* A chip keeps its edge on the selected row's cream. */
+.row[aria-current="true"] .chip:not(.warn) {
+  background: #fff;
+}
+.about-visitor > summary svg {
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+.about-visitor[open] > summary svg {
+  transform: none;
+}
+
 /* Tablet: the sidebar becomes a top bar on the yellow. */
 @media (max-width: 1000px) {
   .app {
@@ -2360,7 +2415,8 @@ button.workspace[aria-expanded="true"],
   }
   .replying,
   .context,
-  .journey {
+  .journey,
+  .about-visitor > summary {
     padding-inline: 14px;
   }
   .log {
@@ -2469,6 +2525,10 @@ button.workspace[aria-expanded="true"],
   .card {
     padding: 24px 20px;
   }
+  /* Above the card, which starts near a quarter of the screen. */
+  .cloud-b {
+    top: 11%;
+  }
   .signin {
     padding-bottom: 150px;
   }
@@ -2502,7 +2562,8 @@ button.workspace[aria-expanded="true"],
   .me,
   .select-button,
   .check input,
-  .check input::after {
+  .check input::after,
+  .about-visitor > summary svg {
     transition: none;
   }
 }

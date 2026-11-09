@@ -137,12 +137,14 @@ function WidgetTextsRow({
         />
         <Field
           label={t("widgetGreetingLabel")}
+          multiline
           placeholder={widgetText("empty")}
           maxLength={200}
           {...field("greeting")}
         />
         <Field
           label={t("widgetAwayLabel")}
+          multiline
           placeholder={widgetText("teamAway")}
           maxLength={200}
           {...field("away")}
@@ -1096,8 +1098,8 @@ export function SettingsPage({
         )}
         {tab === "install" && settings !== null && (
           <>
-            <WidgetTextsRow api={api} settings={settings} onSaved={setSettings} />
             <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
+            <WidgetTextsRow api={api} settings={settings} onSaved={setSettings} />
           </>
         )}
         {tab === "sites" && settings !== null && (

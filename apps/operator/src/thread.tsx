@@ -72,8 +72,11 @@ function origin(conversation: Conversation): string | null {
       ? null
       : t("startedOn").replace("{page}", bare(conversation.startedPage));
   const parts = [...otherIdentity(conversation.visitor), page].filter((part) => part !== null);
-  return parts.length === 0 ? null : parts.join(" · ");
+  return parts.length === 0 ? null : parts.join(SEPARATOR);
 }
+
+/** A no-break space after the dot keeps it with the next part, so a line never ends with a dot. */
+const SEPARATOR = " ·\u00a0";
 
 const MINUTE_MS = 60_000;
 const ONLINE_EVERY_MS = 30_000;
@@ -116,7 +119,7 @@ function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: 
     <p className="visit">
       {parts.map((part, index) => (
         <Fragment key={part.key}>
-          {index > 0 && " · "}
+          {index > 0 && SEPARATOR}
           {part}
         </Fragment>
       ))}
@@ -265,14 +268,18 @@ function ThreadHead({
  * What the host page told the server about this visitor, beyond the header: its custom attributes.
  * A web address opens in a new tab, and every other value stays text.
  */
-function VisitorContext({ conversation }: { conversation: Conversation }) {
-  const { visitor } = conversation;
+function contextRows(visitor: Conversation["visitor"]): [string, string, string | null][] {
   const rows: [string, string, string | null][] = [];
   for (const [name, value] of Object.entries(visitor.attributes ?? {})) {
     // The title already shows a name from the attributes when the token has no `name`.
     if (name === "name" && visitor.name === null && attributeName(visitor) !== null) continue;
     rows.push([name, typeof value === "string" ? value : JSON.stringify(value), webLink(value)]);
   }
+  return rows;
+}
+
+function VisitorContext({ conversation }: { conversation: Conversation }) {
+  const rows = contextRows(conversation.visitor);
   if (rows.length === 0) return null;
   return (
     <dl className="context">
@@ -291,6 +298,29 @@ function VisitorContext({ conversation }: { conversation: Conversation }) {
         </Fragment>
       ))}
     </dl>
+  );
+}
+
+/**
+ * The visitor's attributes and pages, in a fold. It starts open on a wide screen and closed on a
+ * phone, where it would push the messages below the fold.
+ */
+function AboutVisitor({ conversation, pages }: { conversation: Conversation; pages: PageView[] }) {
+  const [open, setOpen] = useState(() => matchMedia("(min-width: 761px)").matches);
+  if (contextRows(conversation.visitor).length === 0 && pages.length === 0) return null;
+  return (
+    <details
+      className="about-visitor"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        {t("visitorDetails")}
+        <Icon name="chevron" size={12} />
+      </summary>
+      <VisitorContext conversation={conversation} />
+      <PageJourney pages={pages} />
+    </details>
   );
 }
 
@@ -747,8 +777,7 @@ export function Thread({
           {replying}
         </p>
       )}
-      <VisitorContext conversation={conversation} />
-      <PageJourney pages={pages} />
+      <AboutVisitor conversation={conversation} pages={pages} />
       <div className="log" role="log" aria-live="polite" ref={log}>
         {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
         {lines.map((line, index) => {

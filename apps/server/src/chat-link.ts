@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
-import { html } from "hono/html";
+import { html, raw } from "hono/html";
 import type { App } from "./app.ts";
 import { chatLink, visitor, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace, workspaceAccess } from "./db/tenant.ts";
@@ -98,9 +98,16 @@ const SECURITY = {
 const NOTICE_CSP =
   "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-/** A plain page that says why the chat cannot open, in the style of the email stop page. */
+// The logo mark, drawn here as in the widget's loader: the server image does not ship packages/.
+const LOGO =
+  '<svg width="44" height="44" viewBox="0 0 52 52" aria-hidden="true"><path fill="#0b2239" d="M25 2h1.9v38H25zM3 39H49C47.5 45 42 49 36 49H16C10 49 4.5 45 3 39z"/><path fill="#e5352b" d="M28 6C37 14 43 25 45 36H28z"/><path fill="#ffc917" d="M24 12C18 20 12 28 8 36H24z"/></svg>';
+
+/**
+ * A plain page that says why the chat cannot open, in the style of the email stop page, with the
+ * logo and the reason as its heading. The logo holds still: the page has nothing to wait for.
+ */
 const notice = (title: string, help?: string) =>
-  html`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="robots" content="noindex"><title>${CHAT_PAGE_TEXT.title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:#0b2239;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:440px;padding:28px;border-radius:14px;background:#fff;color:#0b2239}p{margin:0}p+p{margin-top:8px;color:#5f6e80}</style><main><p>${title}</p>${help === undefined ? "" : html`<p>${help}</p>`}</main></html>`;
+  html`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="robots" content="noindex"><title>${CHAT_PAGE_TEXT.title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:#0b2239;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:440px;padding:28px;border-radius:14px;background:#fff;color:#0b2239}h1{margin:14px 0 0;font-size:20px;line-height:1.3;font-weight:650}p{margin:8px 0 0;color:#5f6e80}svg{display:block}</style><main>${raw(LOGO)}<h1>${title}</h1>${help === undefined ? "" : html`<p>${help}</p>`}</main></html>`;
 
 interface ChatPageOptions {
   db: Database;

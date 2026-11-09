@@ -89,21 +89,44 @@ interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "value"
   label: string;
   /** A short line under the field, which a screen reader reads after the label. */
   hint?: string;
+  /** A sentence or two, which a one-line box would cut off on a phone. */
+  multiline?: boolean;
   value: string;
   onChange(value: string): void;
 }
 
-export function Field({ label, hint, value, onChange, ...input }: FieldProps) {
+export function Field({ label, hint, multiline = false, value, onChange, ...input }: FieldProps) {
   const hintId = useId();
+  const controlId = useId();
+  const describedBy = hint === undefined ? undefined : hintId;
   return (
-    <label className="field">
+    <label className="field" htmlFor={controlId}>
       <span>{label}</span>
-      <input
-        {...input}
-        aria-describedby={hint === undefined ? undefined : hintId}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {multiline ? (
+        // One line of text that wraps: the server takes no line breaks, so Enter saves as in a box.
+        <textarea
+          id={controlId}
+          rows={2}
+          placeholder={input.placeholder}
+          maxLength={input.maxLength}
+          aria-describedby={describedBy}
+          value={value}
+          onChange={(event) => onChange(event.target.value.replace(/[\r\n]+/g, " "))}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
+        />
+      ) : (
+        <input
+          {...input}
+          id={controlId}
+          aria-describedby={describedBy}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
       {hint !== undefined && (
         <small className="hint" id={hintId}>
           {hint}
