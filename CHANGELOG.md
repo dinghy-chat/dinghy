@@ -2,7 +2,7 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
-## Unreleased
+## 0.6.0 (2026-11-09)
 
 **Owner note:** the identity token's `claims` field is now called `attributes`, the name Intercom and Chatwoot use. Tokens made for 0.5.0 keep working with `claims`, and you can rename it on your server whenever you like. The operator API's visitor field changed from `claims` to `attributes` too, and an export holds `attributes`, while an export from 0.5.0 still imports.
 
