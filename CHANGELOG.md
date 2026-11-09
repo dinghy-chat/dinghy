@@ -2,7 +2,7 @@
 
 Each release says what changed and what an owner must do. To move Postgres to a new major version, a release says so, and `docs/self-hosting.md` has the steps.
 
-## Unreleased
+## 0.7.0 (2026-11-09)
 
 **Owner note:** the identity token must send custom attributes as `attributes`. A `claims` field is no longer read, and a `name` inside the attributes is no longer the visitor's name: use the token's own `name`. `chat import` reads only exports made by this version.
 
