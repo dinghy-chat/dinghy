@@ -9,7 +9,7 @@ import { Redis } from "iovalkey";
 import { SignJWT } from "jose";
 import pg from "pg";
 import { pino } from "pino";
-import webPush from "web-push";
+import { generateVAPIDKeys } from "web-push";
 import type { CloudSettings } from "../../../ee/server/index.ts";
 import { buildWidget } from "../../../packages/widget/build.ts";
 import { buildOperator } from "../../operator/build.ts";
@@ -101,13 +101,12 @@ export async function startE2EServer(
   const mailer = captureMail();
   const valkey = new Redis(VALKEY_URL, { enableOfflineQueue: false, maxRetriesPerRequest: 1 });
   const pushed: string[] = [];
-  const push = createPush(
-    { ...webPush.generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" },
-    (async (url: string) => {
-      pushed.push(url);
-      return new Response(null, { status: 201 });
-    }) as typeof fetch,
-  );
+  const push = createPush({ ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" }, (async (
+    url: string,
+  ) => {
+    pushed.push(url);
+    return new Response(null, { status: 201 });
+  }) as typeof fetch);
   // Moves forward, so every image URL handed out so far has expired.
   let imageClockMs = 0;
   app = createApp({

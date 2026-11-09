@@ -7,7 +7,7 @@ import { SignJWT } from "jose";
 import { pino } from "pino";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import webPush from "web-push";
+import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { pressLinkButton, signedInOperator } from "../test/operators.ts";
@@ -43,7 +43,7 @@ const GOOD_P256DH =
   "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8";
 const GOOD_AUTH = "tBHItJI5svbpez7KI4CCXg";
 const logger = pino({ level: "silent" });
-const pushKeys = { ...webPush.generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" };
+const pushKeys = { ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" };
 
 let database: TestDatabase;
 let owner: Database;
