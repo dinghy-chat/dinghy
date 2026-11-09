@@ -712,8 +712,9 @@ export async function searchConversations(
   limit: number,
 ): Promise<ConversationSummary[]> {
   const pattern = containing(text);
-  // The matches first, so the previews below are read for one page of them only. A trigram index
-  // finds the messages that hold three characters or more.
+  // The matches first, so the previews below are read for one page of them only. The trigram index
+  // on (workspace_id, body) serves this. Under row-level security Postgres uses only its workspace
+  // part, because ILIKE is not leakproof, so a search reads its own workspace's messages only.
   const inMessages = tx
     .select({ id: message.conversationId })
     .from(message)
@@ -737,7 +738,7 @@ export async function searchConversations(
     .limit(limit);
   // The newest matching message of each conversation.
   const hit = tx
-    .select({ body: message.body, createdAt: message.createdAt })
+    .select({ body: message.body })
     .from(message)
     .where(
       and(
@@ -764,7 +765,6 @@ export async function searchConversations(
     .select({
       ...conversationColumns,
       hitBody: hit.body,
-      hitCreatedAt: hit.createdAt,
       lastBody: newest.body,
       lastAuthorVisitorId: newest.authorVisitorId,
       lastCreatedAt: newest.createdAt,
@@ -775,25 +775,17 @@ export async function searchConversations(
     .leftJoinLateral(newest, sql`true`)
     .where(and(eq(conversation.workspaceId, workspaceId), inArray(conversation.id, matched)))
     .orderBy(desc(conversation.updatedAt), desc(conversation.id));
-  return rows.map(
-    ({ hitBody, hitCreatedAt, lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
-      ...row,
-      // The matching message's text is the preview. Who wrote last and when still come from the
-      // newest message, so a conversation shows as waiting only when the visitor wrote last.
-      lastMessage:
-        hitCreatedAt !== null && lastCreatedAt !== null
-          ? {
-              body: hitBody,
-              fromVisitor: lastAuthorVisitorId !== null,
-              createdAt: lastCreatedAt,
-            }
-          : lastCreatedAt === null
-            ? null
-            : {
-                body: lastBody,
-                fromVisitor: lastAuthorVisitorId !== null,
-                createdAt: lastCreatedAt,
-              },
-    }),
-  );
+  // The matching message's text is the preview. Who wrote last and when still come from the
+  // newest message, so a conversation shows as waiting only when the visitor wrote last.
+  return rows.map(({ hitBody, lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
+    ...row,
+    lastMessage:
+      lastCreatedAt === null
+        ? null
+        : {
+            body: hitBody ?? lastBody,
+            fromVisitor: lastAuthorVisitorId !== null,
+            createdAt: lastCreatedAt,
+          },
+  }));
 }

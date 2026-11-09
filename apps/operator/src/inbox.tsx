@@ -783,7 +783,7 @@ export function Inbox({
               {hasMore && found === null && (
                 <button
                   type="button"
-                  className="btn link small"
+                  className="text-button"
                   onClick={() => setLimit((current) => current + PAGE_SIZE)}
                 >
                   {t("loadMore")}

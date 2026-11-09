@@ -199,10 +199,9 @@ Dinghy.close();
 <tr><td data-label="Field"><code>iat</code> and <code>exp</code></td><td data-label="Value">The issue time and the expiry, at most 24 hours apart</td></tr>
 <tr><td data-label="Field"><code>name</code></td><td data-label="Value">Optional. The name operators see, on one line, up to 100 characters. Anything else is dropped</td></tr>
 <tr><td data-label="Field"><code>email</code></td><td data-label="Value">Optional. One address, which operators see. Anything else, such as a list, is dropped</td></tr>
-<tr><td data-label="Field"><code>attributes</code></td><td data-label="Value">Optional. Custom attributes that operators see, such as a plan, up to 2 KB of JSON. A value that starts with <code>https://</code> or <code>http://</code> shows as a link. A <code>name</code> here is the title when the token has no <code>name</code></td></tr>
+<tr><td data-label="Field"><code>attributes</code></td><td data-label="Value">Optional. Custom attributes that operators see, such as a plan, up to 2 KB of JSON. A value that starts with <code>https://</code> or <code>http://</code> shows as a link</td></tr>
 </tbody>
 </table></div>
-<p>A token made for Dinghy 0.5.0 sends its attributes as <code>claims</code>, and that still works. If a token has both, <code>attributes</code> wins.</p>
 <p><strong>2. On your page,</strong> pass a function that asks your server for a token. The widget calls it again when a token expires, so a tab that stays open keeps working:</p>
 <div class="terminal doc-code terminal-plain">
 <div class="terminal-bar"><span>JavaScript</span><button class="copy" type="button" data-copy="code-6"><span data-copy-label>Copy</span></button></div>

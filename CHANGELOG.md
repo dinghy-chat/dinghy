@@ -4,6 +4,11 @@ Each release says what changed and what an owner must do. To move Postgres to a 
 
 ## Unreleased
 
+**Owner note:** the identity token must send custom attributes as `attributes`. A `claims` field is no longer read, and a `name` inside the attributes is no longer the visitor's name: use the token's own `name`. `chat import` reads only exports made by this version.
+
+- Search needs 3 characters or more, and it uses one index per workspace: the trigram index on message text now starts with the workspace. The migration adds Postgres's `btree_gin` extension, which the database's owner can add with no superuser, and rebuilds the index, which takes a moment on a large install.
+- The widget's header waits for the workspace's own title, so it never shows Dinghy's title first. Its presence answer no longer costs a second database query.
+- The blocked list shows a signed-in visitor's name.
 - Security: an operator request now ends with the state at its end, not its start. Before, a member could start a write, send its body slowly, and finish it after an owner removed them or ended their session, for up to 5 minutes. A removed admin could then read the new signing secret after its rotation, and a removed owner could delete the workspace. The server now reads the whole body before it checks the session and the membership, and an image upload checks both again before it saves the message.
 - On a phone, the open chat fills the screen, as in Crisp and Intercom, and keeps clear of the notch and the home bar. On a computer it still floats in the corner.
 - A visitor with no name gets the first two characters of their code as initials, such as "7F" for "Visitor 7F3K", so two of them no longer look the same.

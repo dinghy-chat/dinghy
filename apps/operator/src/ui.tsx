@@ -85,6 +85,34 @@ export function StatusNote({ text }: { text: TextId | null }) {
   );
 }
 
+/** The outcome of a save: a status when it worked, an alert when it failed. */
+export type Note = { ok: boolean; text: TextId } | null;
+
+export function SaveNote({ note }: { note: Note }) {
+  if (note === null) return null;
+  return note.ok ? <StatusNote text={note.text} /> : <ErrorNote text={note.text} />;
+}
+
+export function CopyButton({ value, label = t("copy") }: { value: string; label?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className="pill small copy"
+      aria-label={done ? t("copied") : label}
+      onClick={() =>
+        void navigator.clipboard.writeText(value).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 2000);
+        })
+      }
+    >
+      <Icon name={done ? "check" : "copy"} size={16} />
+      {done ? t("copied") : t("copy")}
+    </button>
+  );
+}
+
 interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
   label: string;
   /** A short line under the field, which a screen reader reads after the label. */

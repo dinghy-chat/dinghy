@@ -2399,7 +2399,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 2,
+              "minLength": 3,
               "maxLength": 100
             },
             "required": true,
@@ -3638,11 +3638,14 @@
                           "externalId": {
                             "type": ["string", "null"]
                           },
+                          "name": {
+                            "type": ["string", "null"]
+                          },
                           "blockedAt": {
                             "type": "string"
                           }
                         },
-                        "required": ["id", "email", "externalId", "blockedAt"]
+                        "required": ["id", "email", "externalId", "name", "blockedAt"]
                       }
                     }
                   },

@@ -175,7 +175,7 @@ function PageJourney({ pages }: { pages: PageView[] }) {
         })}
       </ol>
       {pages.length > PAGES_FIRST && (
-        <button type="button" className="btn link small" onClick={() => setAll(!all)}>
+        <button type="button" className="text-button" onClick={() => setAll(!all)}>
           {all ? t("pagesFewer") : t("pagesAll", { count: pages.length })}
         </button>
       )}
