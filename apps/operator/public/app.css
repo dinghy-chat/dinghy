@@ -20,6 +20,10 @@
   --navy: light-dark(#0b2239, #f2ead3);
   --navy-light: light-dark(#17335c, #ffffff);
   --on-navy: light-dark(#fff, #0b2239);
+  /* The main buttons: navy by day, the brand's yellow at night. */
+  --fill: light-dark(#0b2239, #ffc917);
+  --fill-hover: light-dark(#17335c, #ffd640);
+  --on-fill: light-dark(#fff, #0b2239);
   --blue: #1f6bff;
   --blue-deep: light-dark(#1457d6, #8ab8ff);
   --red: #e5352b;
@@ -246,12 +250,12 @@ textarea {
 }
 .primary,
 .navy {
-  background: var(--navy);
-  color: var(--on-navy);
+  background: var(--fill);
+  color: var(--on-fill);
 }
 .primary:hover,
 .navy:hover {
-  background: var(--navy-light);
+  background: var(--fill-hover);
 }
 .outline {
   background: var(--surface);
@@ -867,8 +871,8 @@ button.workspace[aria-expanded="true"],
   background: var(--soft-hover);
 }
 .pill.dark {
-  background: var(--navy);
-  color: var(--on-navy);
+  background: var(--fill);
+  color: var(--on-fill);
 }
 .pill:disabled,
 .pill.dark:disabled,
@@ -878,7 +882,7 @@ button.workspace[aria-expanded="true"],
   color: var(--mute);
 }
 .pill.dark:hover:not(:disabled) {
-  background: var(--navy-light);
+  background: var(--fill-hover);
 }
 .pill.danger {
   background: var(--red);
@@ -1633,12 +1637,12 @@ button.workspace[aria-expanded="true"],
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--navy);
-  color: var(--on-navy);
+  background: var(--fill);
+  color: var(--on-fill);
   transition: background-color 0.15s;
 }
 .send:hover {
-  background: var(--navy-light);
+  background: var(--fill-hover);
 }
 .box input.file {
   position: absolute;
