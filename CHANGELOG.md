@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The theme choice (system, light or dark) is in the menu under your name, not on Profile.
+
 ## [0.8.0] - 2026-11-09
 
 ### Added
