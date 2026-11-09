@@ -412,6 +412,37 @@ describe("a suspension that lands while a message is on its way", () => {
     },
   );
 
+  test("an operator's upload that finishes after their removal stores no message and no file", async () => {
+    const { created, conversationId } = await setUp();
+    const before = await messageCount(created.id);
+    const image = await gatedImage();
+    const response = withImages.request(
+      `/v1/operator/workspaces/${created.id}/conversations/${conversationId}/images?clientId=slow`,
+      {
+        method: "POST",
+        headers: { origin: ORIGIN, cookie },
+        body: image.body,
+        duplex: "half",
+      } as RequestInit,
+    );
+    await image.started;
+    await owner
+      .update(workspaceMember)
+      .set({ removedAt: new Date() })
+      .where(
+        and(
+          eq(workspaceMember.workspaceId, created.id),
+          eq(workspaceMember.operatorId, operatorId),
+        ),
+      );
+    image.finish();
+
+    const answer = await response;
+    expect(answer.status).toBe(404);
+    expect(await messageCount(created.id)).toBe(before);
+    expect(await storedFiles()).toEqual([]);
+  });
+
   test.each(["visitor", "operator"] as const)(
     "a text message from the %s that waits on the lock of `chat suspend` is refused",
     async (sender) => {

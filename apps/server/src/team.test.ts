@@ -491,6 +491,50 @@ describe("each role can do only what it should", () => {
     expect((await call("GET", inSpace("/settings"), admin)).status).toBe(403);
   });
 
+  test("a body sent slowly cannot finish after its sender's removal", async () => {
+    const boss = await person("owner");
+    const admin = await person("admin");
+    // The server reads "{", then waits for the rest, which comes after the removal. With a
+    // Content-Length, the body limit lets the body stream instead of reading it first.
+    let finish = () => {};
+    let reading = () => {};
+    const waiting = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{"));
+      },
+      pull(controller) {
+        reading();
+        return new Promise<void>((resolve) => {
+          finish = () => {
+            controller.enqueue(new TextEncoder().encode("}"));
+            controller.close();
+            resolve();
+          };
+        });
+      },
+    });
+    const pending = app.request(inSpace("/settings"), {
+      method: "PATCH",
+      headers: {
+        cookie: admin.cookie,
+        origin: ORIGIN,
+        "content-type": "application/json",
+        "content-length": "2",
+      },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    await waiting;
+    expect((await call("DELETE", inSpace(`/members/${admin.id}`), boss)).status).toBe(200);
+    finish();
+    const response = await pending;
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("signingSecret");
+  });
+
   test("a member of another workspace sees nothing here", async () => {
     const other = await createWorkspace(db, "Other", [SITE]);
     const outsider = await person("owner", other.id);
