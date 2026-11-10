@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-10
+
 ### Changed
 
 - The dashboard has calmer colours: a warm grey frame instead of the yellow, navy for your own messages instead of the bright blue, lighter shadows, outline icons without the tinted fill, the theme choice on the Profile page instead of the account menu, and off-white buttons at night instead of yellow. The sign-in screens keep the yellow sky.
@@ -211,7 +213,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/dinghy-chat/dinghy/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/dinghy-chat/dinghy/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/dinghy-chat/dinghy/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/dinghy-chat/dinghy/compare/v0.8.0...v0.9.0
