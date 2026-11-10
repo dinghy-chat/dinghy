@@ -2066,7 +2066,7 @@ main {
 
 .footer-links {
   display: grid;
-  grid-template-columns: repeat(3, auto);
+  grid-template-columns: repeat(4, auto);
   gap: 24px;
 }
 
@@ -2451,6 +2451,11 @@ main:has(> .lost) {
 
 .docs-water::after {
   background-position: 0 92px, 0 74px, 0 50px, 0 26px;
+}
+
+/* The terms and privacy pages: one column of text, no docs menu. */
+.legal-body {
+  padding-block: clamp(36px, 4.4vw, 60px) clamp(72px, 8vw, 120px);
 }
 
 .docs-body {
@@ -3105,6 +3110,10 @@ main:has(> .lost) {
 @media (max-width: 820px) {
   .footer-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .footer-links {
+    grid-template-columns: repeat(2, auto);
   }
 
   .chain,
