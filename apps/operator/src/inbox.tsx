@@ -844,6 +844,7 @@ export function Inbox({
                     api={api}
                     workspaceId={workspaceId}
                     hasConversations={conversations.length > 0}
+                    version={version}
                     onOpen={(tab) => showView("settings", tab)}
                   />
                 )}

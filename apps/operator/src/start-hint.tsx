@@ -39,17 +39,21 @@ export function StartHint({
   api,
   workspaceId,
   hasConversations,
+  version,
   onOpen,
 }: {
   api: WorkspaceApi;
   workspaceId: string;
   /** The open list has a conversation, so the workspace is in use and the hint goes for good. */
   hasConversations: boolean;
+  /** Goes up when the inbox catches up, so a conversation closed meanwhile is found. */
+  version: number;
   onOpen(tab: SettingsTab): void;
 }) {
   const [hidden, setHidden] = useState(() => wasHidden(workspaceId));
   // Null until the closed list answers: a workspace whose conversations are all closed is in use.
   const [closedNone, setClosedNone] = useState<boolean | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a new check.
   useEffect(() => {
     if (hidden) return;
     if (hasConversations) {
@@ -74,7 +78,7 @@ export function StartHint({
     return () => {
       current = false;
     };
-  }, [api, hidden, hasConversations, workspaceId]);
+  }, [api, hidden, hasConversations, workspaceId, version]);
   if (hidden || hasConversations || closedNone !== true) return null;
   return (
     <section className="start" aria-labelledby="start-title">
