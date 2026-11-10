@@ -193,7 +193,7 @@
 <tr><td data-label="Setting"><code>HTTP_PORT</code>, <code>HTTPS_PORT</code></td><td data-label="Purpose">The ports Caddy listens on with the <code>tls</code> profile, 80 and 443 by default. Certificates need those two ports from the internet, so change these only when something in front forwards them here</td></tr>
 </tbody>
 </table></div>
-<p>Without a mail server, Dinghy still works. Operators sign in with a link that you make for them, with <code class="code-long">docker compose exec app chat sign-in-link &lt;email&gt;</code>, and the sign-in page tells them to ask you. Someone new who opens an invite signs in at once, and nothing checks their email, so send each invite link only to the person it is for.</p>
+<p>Without a mail server, Dinghy still works. Operators sign in with a link that you make for them, with <code class="code-long">docker compose exec app chat sign-in-link &lt;email&gt;</code>, and the sign-in page tells them to ask you. Inviting someone shows you a link instead of emailing it. Someone new who opens it signs in at once, and nothing checks their email, so send each invite link only to the person it is for.</p>
 <h3 id="a-separate-origin-for-images"><a class="heading-link" href="#a-separate-origin-for-images">A separate origin for images</a></h3>
 <p>Images come from visitors you do not know. Dinghy re-encodes each one and serves it with headers that stop scripts, but a second origin adds one more wall: nothing served there can ever act as the app. To use one:</p>
 <ol>
