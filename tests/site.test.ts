@@ -4,6 +4,9 @@ import { describe, expect, test } from "vitest";
 import { buildDocs, docsFiles } from "../site/build-docs.ts";
 
 const PUBLIC = "site/public";
+/** Dinghy's own chat, the one script from another origin, as its opening tag. */
+const WIDGET_TAG =
+  '<script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async>';
 
 function filesUnder(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true, recursive: true })
@@ -51,10 +54,14 @@ describe.each(pages)("%s", (page) => {
     }
   });
 
-  test("it loads scripts, styles and fonts only from this site", () => {
+  test("it loads scripts, styles and fonts only from this site, and Dinghy's own chat", () => {
     const tags = html.match(/<(script|link|img)\b[^>]*>/g) ?? [];
-    const loaded = tags.filter((tag) => !/rel="canonical"/.test(tag));
+    const loaded = tags.filter((tag) => !/rel="canonical"/.test(tag) && tag !== WIDGET_TAG);
     for (const tag of loaded) expect(tag).not.toMatch(/\s(src|href)="https?:/);
+  });
+
+  test("it has Dinghy's chat once", () => {
+    expect(html.split(`${WIDGET_TAG}</script>`)).toHaveLength(2);
   });
 
   test("it has no inline style or handler, which the CSP would block", () => {
@@ -80,10 +87,10 @@ test("the share image exists", () => {
   expect(existsSync(join(PUBLIC, "og.png"))).toBe(true);
 });
 
-test("_headers sets the CSP and caches fonts for a year", () => {
+test("_headers sets the CSP, which allows Dinghy's chat, and caches fonts for a year", () => {
   const headers = readFileSync(join(PUBLIC, "_headers"), "utf8");
   expect(headers).toContain(
-    "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "Content-Security-Policy: default-src 'none'; script-src 'self' https://app.dinghy.chat; style-src 'self'; img-src 'self' data: https://app.dinghy.chat https://img.dinghychat.com; font-src 'self'; connect-src https://app.dinghy.chat; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   );
   expect(headers).toMatch(/\/fonts\/\*\n\s+Cache-Control: public, max-age=31536000, immutable/);
 });
