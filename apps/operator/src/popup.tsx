@@ -249,6 +249,11 @@ export interface MenuItem {
   danger?: boolean;
   /** A line above this item, to set a group apart. */
   divider?: boolean;
+  /**
+   * Shows the item as its icon alone, in one row with the row items next to it. The label stays its
+   * accessible name and its tooltip.
+   */
+  row?: boolean;
 }
 
 /** A button that opens a menu of actions. */
@@ -279,6 +284,35 @@ export function Menu({
     popup.hide(true);
     items[index]?.onSelect();
   };
+  const renderItem = (item: MenuItem, index: number) => (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
+    // biome-ignore lint/a11y/noStaticElementInteractions: the role is menuitem or menuitemradio.
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on menuitemradio only.
+    <div
+      key={index}
+      id={popup.itemId(index)}
+      data-index={index}
+      role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+      tabIndex={-1}
+      aria-checked={item.checked}
+      aria-label={item.row === true ? item.label : undefined}
+      title={item.row === true ? item.label : undefined}
+      className={[
+        "item",
+        index === popup.active && "active",
+        item.danger === true && "danger",
+        item.divider === true && "divided",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onPointerMove={() => popup.setActive(index)}
+      onClick={() => choose(index)}
+    >
+      {item.lead}
+      {item.row !== true && <span className="item-label">{item.label}</span>}
+      {item.checked === true && item.row !== true && <Icon name="check" size={16} />}
+    </div>
+  );
   return (
     <div className={`menu-wrap ${className}`} ref={popup.wrap}>
       <button
@@ -303,34 +337,22 @@ export function Menu({
           aria-activedescendant={popup.itemId(popup.active)}
           onKeyDown={(event) => popup.onPopupKey(event, choose)}
         >
-          {items.map((item, index) => (
-            // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
-            // biome-ignore lint/a11y/noStaticElementInteractions: the role is menuitem or menuitemradio.
-            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on menuitemradio only.
-            <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: two workspaces can share a name.
-              key={index}
-              id={popup.itemId(index)}
-              data-index={index}
-              role={item.checked === undefined ? "menuitem" : "menuitemradio"}
-              tabIndex={-1}
-              aria-checked={item.checked}
-              className={[
-                "item",
-                index === popup.active && "active",
-                item.danger === true && "danger",
-                item.divider === true && "divided",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onPointerMove={() => popup.setActive(index)}
-              onClick={() => choose(index)}
-            >
-              {item.lead}
-              <span className="item-label">{item.label}</span>
-              {item.checked === true && <Icon name="check" size={16} />}
-            </div>
-          ))}
+          {items.map((item, index) => {
+            if (item.row === true && items[index - 1]?.row === true) return null;
+            if (item.row !== true) return renderItem(item, index);
+            const row: number[] = [];
+            for (let at = index; items[at]?.row === true; at++) row.push(at);
+            return (
+              // biome-ignore lint/a11y/useSemanticElements: a menu holds menu items and groups, not a fieldset.
+              <div
+                key={`row-${item.label}`}
+                className={item.divider === true ? "item-row divided" : "item-row"}
+                role="group"
+              >
+                {row.map((at) => renderItem({ ...(items[at] as MenuItem), divider: false }, at))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

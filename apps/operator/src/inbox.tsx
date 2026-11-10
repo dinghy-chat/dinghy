@@ -364,6 +364,7 @@ function UserMenu({
           lead: <Icon name={choice.icon} size={18} />,
           checked: theme === choice.value,
           divider: index === 0,
+          row: true,
           onSelect: () => {
             setTheme(choice.value);
             setThemeState(choice.value);

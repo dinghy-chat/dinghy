@@ -1064,10 +1064,39 @@ button.workspace[aria-expanded="true"],
 .item.danger.active {
   background: var(--bad-soft);
 }
-.item.divided {
+/* Choices shown as icons alone, side by side, such as the theme. The chosen one sits raised. */
+.item-row {
+  position: relative;
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 2px;
+  margin: 0 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--soft);
+}
+.item-row .item {
+  justify-content: center;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 9px;
+  color: var(--mute);
+}
+.item-row .active {
+  background: var(--soft-hover);
+}
+.item-row .item[aria-checked="true"] {
+  background: light-dark(#fff, #2e3e51);
+  box-shadow: 0 1px 2px rgb(11 34 57 / 0.12);
+  color: var(--navy);
+}
+.item.divided,
+.item-row.divided {
   margin-top: 9px;
 }
-.item.divided::before {
+.item.divided::before,
+.item-row.divided::before {
   content: "";
   position: absolute;
   top: -5px;
