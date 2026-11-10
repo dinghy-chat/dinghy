@@ -543,21 +543,6 @@ describe("a round trip onto a fresh install", () => {
     expect(served.headers.get("content-type")).toBe("image/webp");
   });
 
-  test("a file from before logos imports, with no logo", async () => {
-    const parts: Uint8Array[] = [];
-    for await (const entry of readTar(once(archive))) {
-      const data =
-        entry.name === "export.json" ? JSON.parse(Buffer.from(entry.bytes).toString()) : null;
-      if (data !== null) delete data.workspace.logo;
-      const bytes = data === null ? entry.bytes : Buffer.from(JSON.stringify(data));
-      parts.push(...tarEntry(entry.name, bytes));
-    }
-    parts.push(tarEnd());
-    const fresh = await freshInstall();
-    await importArchive(fresh.db, fresh.store, once(Buffer.concat(parts)));
-    expect(await fresh.owner.select().from(workspaceLogo)).toEqual([]);
-  }, 30_000);
-
   test("an API key comes along revoked, with no token, and its replies keep its name", async () => {
     const text = archive.toString("latin1");
     expect(text).not.toContain(source.key.token);

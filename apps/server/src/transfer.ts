@@ -52,12 +52,11 @@ const ExportFile = z.strictObject({
     widgetTitle: z.string().max(40).nullable(),
     widgetGreeting: z.string().max(200).nullable(),
     widgetAway: z.string().max(200).nullable(),
-    // In base64. Files from before logos have none.
+    // In base64, or null with no logo.
     logo: z
       .base64()
       .max(Math.ceil(LOGO_MAX_BYTES / 3) * 4)
-      .nullable()
-      .optional(),
+      .nullable(),
     createdAt: date,
   }),
   members: z.array(
@@ -475,7 +474,7 @@ async function storeImages(
 
 /** The file's logo, encoded again as an upload is, because this file may have come from anywhere. */
 async function readLogo(data: ExportData): Promise<Buffer | null> {
-  if (data.workspace.logo == null) return null;
+  if (data.workspace.logo === null) return null;
   const logo = await processLogo(Buffer.from(data.workspace.logo, "base64"));
   if (typeof logo === "string") throw new ImportError(`The logo cannot be used: ${logo}.`);
   return logo;
