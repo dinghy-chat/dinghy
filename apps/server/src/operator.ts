@@ -4,7 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
-import { ownerCount } from "./account-delete.ts";
+import { isSoleOwner } from "./account-delete.ts";
 import {
   type Actor,
   apiKeyToken,
@@ -326,7 +326,7 @@ export function registerOperatorRoutes(
                   .from(workspace)
                   .where(eq(workspace.id, workspaceId))
               )[0],
-              soleOwner: role === "owner" && (await ownerCount(tx, workspaceId)) === 1,
+              soleOwner: await isSoleOwner(tx, workspaceId, role),
             }));
             return { ...membership, ...accessFlags(access), name: row?.name ?? "", soleOwner };
           }),
