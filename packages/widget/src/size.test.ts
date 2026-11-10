@@ -5,7 +5,9 @@ import { buildWidget } from "../build.ts";
 // Limits in gzipped bytes. The loader runs on every page of the host site, and new chat features
 // must fit inside the chat's limit.
 const LIMITS: Record<string, number> = {
-  "loader.js": 2000,
+  // 2,100 since the full page API, which must work before the chat loads: open, on, setContext,
+  // configure, and a reset from another tab.
+  "loader.js": 2100,
   "page.js": 1000,
   "widget.js": 20_000,
 };

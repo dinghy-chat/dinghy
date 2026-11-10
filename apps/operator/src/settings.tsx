@@ -10,6 +10,7 @@ import {
   type WorkspaceApi,
   type WorkspaceSettings,
 } from "./api.ts";
+import { ApiKeysRow, WebhooksRow } from "./integrations.tsx";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, InviteDialog, imagesText, operatorsText, TeamTab, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
@@ -413,13 +414,14 @@ export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
   );
 }
 
-type Tab = "team" | "install" | "sites" | "secret" | "data";
+type Tab = "team" | "install" | "sites" | "secret" | "api" | "data";
 
 const TAB_TEXT: Record<Tab, TextId> = {
   team: "tabTeam",
   install: "tabInstall",
   sites: "originsTitle",
   secret: "secretTitle",
+  api: "tabApi",
   data: "tabData",
 };
 
@@ -539,7 +541,7 @@ export function SettingsPage({
           },
         };
   const tabs: Tab[] = ["team"];
-  if (settings !== null) tabs.push("install", "sites", "secret");
+  if (settings !== null) tabs.push("install", "sites", "secret", "api");
   if (role === "owner" || team.blocked.length > 0) tabs.push("data");
   const tab = tabs.includes(picked) ? picked : "team";
 
@@ -589,6 +591,12 @@ export function SettingsPage({
         )}
         {tab === "secret" && settings !== null && (
           <SecretRow api={api} settings={settings} onSaved={setSettings} />
+        )}
+        {tab === "api" && settings !== null && (
+          <>
+            <ApiKeysRow api={api} />
+            <WebhooksRow api={api} />
+          </>
         )}
         {tab === "data" && (
           <>

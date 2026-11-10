@@ -1,3 +1,4 @@
+import type { PageContext } from "./shared.ts";
 import { readStream, retryAfterMs } from "./stream.ts";
 
 export interface ChatMessage {
@@ -12,6 +13,11 @@ export interface ChatMessage {
   /** The image was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
   createdAt: string;
+}
+
+/** A send's answer: the message, and whether it started a new conversation. */
+export interface SentMessage extends ChatMessage {
+  conversationStarted: boolean;
 }
 
 export class ApiError extends Error {
@@ -110,6 +116,9 @@ export function createClient(
         method: "POST",
         body: JSON.stringify({ page: address, title }),
       }),
+    /** The page's setContext() data. It replaces what the server kept before. */
+    reportContext: (token: string, context: PageContext) =>
+      call<{ ok: true }>("context", token, { method: "POST", body: JSON.stringify({ context }) }),
     saveEmail: (token: string, email: string) =>
       call<Me>("me", token, { method: "PATCH", body: JSON.stringify({ email }) }),
     markRead: (token: string, seq: string) =>
@@ -134,10 +143,10 @@ export function createClient(
         },
       );
       if (!response.ok) throw await refused(response);
-      return (await response.json()) as ChatMessage;
+      return (await response.json()) as SentMessage;
     },
     send: (token: string, clientId: string, body: string) =>
-      call<ChatMessage>("messages", token, {
+      call<SentMessage>("messages", token, {
         method: "POST",
         body: JSON.stringify({ clientId, body, page: page() }),
       }),

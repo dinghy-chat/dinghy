@@ -36,6 +36,8 @@ Two layers keep workspaces apart:
 
 Table owners and superusers bypass row-level security, so the app never connects as either. `chat migrate` creates four roles (`apps/server/src/db/roles.ts`): `dinghy_migrator` owns the tables and runs migrations, `dinghy_app` and `dinghy_worker` are the `web` and `worker` logins, with `NOBYPASSRLS`, and `dinghy_backup` is the only role that bypasses row-level security, to dump the whole database. `apps/server/src/isolation.test.ts` attacks every route from another workspace.
 
+A workspace API key (`dk_...`) names its workspace in the token, so its lookup runs under that workspace's policy too. The member check (`apps/server/src/member.ts`) gives a key an agent's role in its own workspace and nothing anywhere else, and lets it call only the routes whose OpenAPI `security` lists `apiKey`. MCP at `/v1/mcp` calls the same functions as those routes.
+
 ## Messages, events and cursors
 
 A message and its row in the `event` table commit in one Postgres transaction. The first statement takes the workspace row's lock and increments its event sequence, so the order of the sequence matches the order of commits. A client that holds cursor N can never miss an event below N that commits later.
@@ -55,12 +57,15 @@ Dinghy does not use Postgres `LISTEN/NOTIFY`, because `NOTIFY` takes a global lo
 Background work lives in Postgres tables, and the worker claims rows with `FOR UPDATE SKIP LOCKED` and a claim that expires. So several workers can run at once, and a crashed worker's rows come back after the claim ends. One loop, in `apps/server/src/worker.ts`, runs these in order:
 
 1. Fan out alerts: turn new visitor messages into one delivery per operator device and email.
-2. Send the claimed deliveries: web push and email.
-3. Delete stored image files that are queued for deletion.
-4. Prune old events and finished rows. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
-5. Purge workspaces that an owner deleted.
+2. Fan out webhooks: turn each event that a workspace's webhooks asked for into one delivery per webhook. An event is flagged for this only when its workspace had an enabled webhook when it committed.
+3. Send the claimed deliveries: web push, email and webhooks. Webhooks have their own slots, so a slow receiver never holds an alert back.
+4. Delete stored image files that are queued for deletion.
+5. Prune old events and finished rows. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
+6. Purge workspaces that an owner deleted.
 
 Each step runs on its own, so a step that fails is logged and the others still run. Every 30 seconds at most, a worker records that its loop still finishes, and `/readyz` reports `"worker":"stale"` when no worker did for 5 minutes. On Dinghy Cloud, the subscription lifecycle runs in the same loop with its own 10-minute claim, because one step can wait on Stripe and on email.
+
+A webhook checks every address its host resolves to when it connects, so a name that later points at a private address cannot reach this server's network.
 
 Delivery is at least once. A claim counts as an attempt, and a worker that stops after a send but before its commit sends that alert again. A push carries the event's ID as its tag, so the phone replaces the first notification.
 

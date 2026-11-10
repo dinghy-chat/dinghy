@@ -55,6 +55,9 @@ LOG_LEVEL=
 # characters. The route stays off without it, because it should not be public.
 METRICS_TOKEN=
 
+# Optional. Webhooks go only to https addresses on the public internet. Set this to true to let them
+# go over http and to private addresses too, such as a service on your own network. Off by default.
+WEBHOOK_ALLOW_PRIVATE=
 # Optional. Sends errors to your own Sentry project, such as https://key@o1.ingest.sentry.io/2. Without
 # it, Dinghy loads no error reporting and sends nothing anywhere.
 SENTRY_DSN=

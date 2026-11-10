@@ -1,5 +1,6 @@
-import { and, asc, desc, eq, gt, ilike, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import {
+  apiKey,
   attachment,
   conversation,
   type EventKind,
@@ -8,14 +9,16 @@ import {
   message,
   operator,
   visitor,
+  webhook,
   workspace,
 } from "./db/schema.ts";
 import { type Transaction, type WorkspaceAccess, workspaceAccess, writable } from "./db/tenant.ts";
 import { type Limits, NO_LIMITS, StorageFullError } from "./limits.ts";
 
-type Author =
+export type Author =
   | { kind: "visitor"; visitorId: string }
-  | { kind: "operator"; operatorId: string; conversationId: string };
+  | { kind: "operator"; operatorId: string; conversationId: string }
+  | { kind: "key"; apiKeyId: string; conversationId: string };
 
 export interface StoredMessage {
   id: string;
@@ -23,8 +26,10 @@ export interface StoredMessage {
   seq: bigint;
   kind: "text" | "image";
   fromVisitor: boolean;
-  /** The operator who sent it, or null for a visitor's message. */
+  /** The operator who sent it, or null for a visitor's message or a key's. */
   authorOperatorId: string | null;
+  /** The API key that sent it, or null. */
+  authorApiKeyId: string | null;
   /** The sender's own ID, so a client can match a stream copy to its pending line. */
   clientId: string;
   body: string | null;
@@ -41,6 +46,7 @@ const messageColumns = {
   kind: message.kind,
   authorOperatorId: message.authorOperatorId,
   authorVisitorId: message.authorVisitorId,
+  authorApiKeyId: message.authorApiKeyId,
   clientId: message.clientId,
   body: message.body,
   metadata: message.metadata,
@@ -54,6 +60,7 @@ interface MessageRow {
   kind: "text" | "image";
   authorOperatorId: string | null;
   authorVisitorId: string | null;
+  authorApiKeyId: string | null;
   clientId: string;
   body: string | null;
   metadata: unknown;
@@ -76,7 +83,7 @@ async function openConversationId(
   workspaceId: string,
   visitorId: string,
   startedPage: string | null,
-): Promise<string> {
+): Promise<{ id: string; created: boolean }> {
   const [open] = await tx
     .select({ id: conversation.id })
     .from(conversation)
@@ -89,14 +96,21 @@ async function openConversationId(
     )
     .orderBy(desc(conversation.createdAt))
     .limit(1);
-  if (open !== undefined) return open.id;
+  if (open !== undefined) return { id: open.id, created: false };
   const [created] = await tx
     .insert(conversation)
     .values({ workspaceId, visitorId, startedPage })
     .returning({ id: conversation.id });
   if (created === undefined) throw new Error("The conversation insert returned no row");
-  return created.id;
+  return { id: created.id, created: true };
 }
+
+/**
+ * True when the workspace has an enabled webhook, read in the event's own insert, so a workspace
+ * with none gives the worker nothing to do.
+ */
+const wantsWebhook = (workspaceId: string) =>
+  sql<boolean>`exists (select 1 from ${webhook} where ${webhook.workspaceId} = ${workspaceId} and ${webhook.enabled})`;
 
 export interface NewImage {
   attachmentId: string;
@@ -160,7 +174,7 @@ export async function appendMessage(
   author: Author,
   input: { clientId: string; body?: string; image?: NewImage; page?: string | null },
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
-): Promise<{ message: StoredMessage; created: boolean }> {
+): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
   const seq = await nextSeq(tx, workspaceId);
   // A statement of its own, after the lock: it sees every change committed before the lock.
   const access = await workspaceAccess(tx, workspaceId);
@@ -169,16 +183,35 @@ export async function appendMessage(
   const sender =
     author.kind === "visitor"
       ? eq(message.authorVisitorId, author.visitorId)
-      : eq(message.authorOperatorId, author.operatorId);
+      : author.kind === "operator"
+        ? eq(message.authorOperatorId, author.operatorId)
+        : eq(message.authorApiKeyId, author.apiKeyId);
   const [existing] = await tx
     .select(messageColumns)
     .from(message)
     .where(and(eq(message.workspaceId, workspaceId), sender, eq(message.clientId, input.clientId)));
-  if (existing !== undefined) return { message: stored(existing), created: false };
+  if (existing !== undefined) {
+    // A retry after a lost answer must still tell the widget, so this asks whether the original
+    // was its conversation's first message. Only a visitor's message starts one.
+    const original = { message: stored(existing), created: false };
+    if (author.kind !== "visitor") return { ...original, conversationStarted: false };
+    const [earlier] = await tx
+      .select({ id: message.id })
+      .from(message)
+      .where(
+        and(
+          eq(message.workspaceId, workspaceId),
+          eq(message.conversationId, existing.conversationId),
+          lt(message.seq, existing.seq),
+        ),
+      )
+      .limit(1);
+    return { ...original, conversationStarted: earlier === undefined };
+  }
 
   // After the retry lookup, and under the lock, so a close cannot slip in before this reply and a
   // retry of a reply that already committed still gets its original message.
-  if (author.kind === "operator") {
+  if (author.kind !== "visitor") {
     const [target] = await tx
       .select({ status: conversation.status })
       .from(conversation)
@@ -194,10 +227,11 @@ export async function appendMessage(
     throw new StorageFullError();
   }
 
-  const conversationId =
+  const target =
     author.kind === "visitor"
       ? await openConversationId(tx, workspaceId, author.visitorId, input.page ?? null)
-      : author.conversationId;
+      : { id: author.conversationId, created: false };
+  const conversationId = target.id;
   const [row] = await tx
     .insert(message)
     .values({
@@ -219,7 +253,9 @@ export async function appendMessage(
             },
       ...(author.kind === "visitor"
         ? { authorVisitorId: author.visitorId }
-        : { authorOperatorId: author.operatorId }),
+        : author.kind === "operator"
+          ? { authorOperatorId: author.operatorId }
+          : { authorApiKeyId: author.apiKeyId }),
     })
     .returning(messageColumns);
   if (row === undefined) throw new Error("The message insert returned no row");
@@ -245,14 +281,16 @@ export async function appendMessage(
       messageId: row.id,
       conversationId,
       fromVisitor: author.kind === "visitor",
+      ...(target.created ? { conversationCreated: true } : {}),
     } satisfies MessageCreatedPayload,
     needsAlert: true,
+    needsWebhook: wantsWebhook(workspaceId),
   });
   await tx
     .update(conversation)
     .set({ updatedAt: sql`now()` })
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  return { message: stored(row), created: true };
+  return { message: stored(row), created: true, conversationStarted: target.created };
 }
 
 interface ReadState {
@@ -286,7 +324,7 @@ export async function readState(
         and(
           eq(message.workspaceId, workspaceId),
           eq(conversation.visitorId, visitorId),
-          isNotNull(message.authorOperatorId),
+          isNull(message.authorVisitorId),
           gt(message.seq, row.lastReadSeq),
         ),
       ),
@@ -399,6 +437,7 @@ export interface ConversationRow {
   visitorExternalId: string | null;
   visitorName: string | null;
   visitorAttributes: unknown;
+  visitorPageContext: unknown;
   visitorDevice: string | null;
   visitorLastPage: string | null;
   visitorLastSeenAt: Date | null;
@@ -416,6 +455,7 @@ const conversationColumns = {
   visitorExternalId: visitor.externalId,
   visitorName: visitor.name,
   visitorAttributes: visitor.attributes,
+  visitorPageContext: visitor.pageContext,
   visitorDevice: visitor.device,
   visitorLastPage: visitor.lastPage,
   visitorLastSeenAt: visitor.lastSeenAt,
@@ -526,6 +566,52 @@ export async function operatorNames(
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
+/** The names of these API keys, by ID. A revoked key keeps its row, so old replies keep its name. */
+export async function apiKeyNames(
+  tx: Transaction,
+  workspaceId: string,
+  ids: Iterable<string | null>,
+): Promise<Map<string, string>> {
+  const wanted = [...new Set([...ids].filter((id) => id !== null))];
+  if (wanted.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: apiKey.id, name: apiKey.name })
+    .from(apiKey)
+    .where(and(eq(apiKey.workspaceId, workspaceId), inArray(apiKey.id, wanted)));
+  return new Map(rows.map((row) => [row.id, row.name]));
+}
+
+/** Each message's author name, by the operator's or the key's ID. Both are random UUIDs. */
+export async function authorNames(
+  tx: Transaction,
+  workspaceId: string,
+  messages: Pick<StoredMessage, "authorOperatorId" | "authorApiKeyId">[],
+): Promise<Map<string, string>> {
+  const operators = await operatorNames(
+    tx,
+    messages.map((one) => one.authorOperatorId),
+  );
+  const keys = await apiKeyNames(
+    tx,
+    workspaceId,
+    messages.map((one) => one.authorApiKeyId),
+  );
+  return new Map([...operators, ...keys]);
+}
+
+/** One message, or null when it was deleted. */
+export async function findMessage(
+  tx: Transaction,
+  workspaceId: string,
+  messageId: string,
+): Promise<StoredMessage | null> {
+  const [row] = await tx
+    .select(messageColumns)
+    .from(message)
+    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
+  return row === undefined ? null : stored(row);
+}
+
 export async function findConversation(
   tx: Transaction,
   workspaceId: string,
@@ -587,6 +673,7 @@ export async function setConversationStatus(
     seq,
     kind: status === "closed" ? "conversation.closed" : "conversation.reopened",
     payload: { conversationId },
+    needsWebhook: wantsWebhook(workspaceId),
   });
 }
 
@@ -609,6 +696,7 @@ export async function assignConversation(
     seq,
     kind: "conversation.assigned",
     payload: { conversationId },
+    needsWebhook: wantsWebhook(workspaceId),
   });
   return true;
 }

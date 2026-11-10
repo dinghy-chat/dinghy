@@ -47,10 +47,19 @@ export interface Analytics {
   };
   perDay: { date: string; conversations: number }[];
   /** By who sent the first reply. */
-  operators: { operatorId: string; name: string | null; conversations: number }[];
+  operators: {
+    /** One of the two is set: a member, or an API key that sent the first reply. */
+    operatorId: string | null;
+    apiKeyId: string | null;
+    name: string | null;
+    conversations: number;
+  }[];
   /** Weekday (Monday first) by hour. */
   hours: number[][];
 }
+
+/** Values a page sent about the visitor, unsigned. */
+export type PageContext = Record<string, string | number | boolean | null>;
 
 export interface Conversation {
   id: string;
@@ -60,6 +69,8 @@ export interface Conversation {
   /** The page where the visitor started it, as origin and path. */
   startedPage: string | null;
   visitor: Visitor;
+  /** What the host page sent with setContext(). Nobody signed it, so it is not verified. */
+  pageContext: PageContext | null;
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: string } | null;
 }
 
@@ -71,6 +82,8 @@ export interface Message {
   fromVisitor: boolean;
   /** The operator who sent it, and their current name. Both null for a visitor's message. */
   authorOperatorId: string | null;
+  /** The API key that sent it. Then `authorName` is the key's name. */
+  authorApiKeyId: string | null;
   authorName: string | null;
   clientId: string;
   body: string | null;
@@ -140,6 +153,52 @@ export interface WidgetTexts {
   title: string | null;
   greeting: string | null;
   away: string | null;
+}
+
+/** A workspace API key. Its token is shown only when it is made. */
+export interface ApiKey {
+  id: string;
+  /** Visitors and operators see this name on the key's replies. */
+  name: string;
+  createdByName: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export const WEBHOOK_EVENTS = [
+  "conversation.created",
+  "message.created",
+  "conversation.closed",
+  "conversation.reopened",
+  "conversation.assigned",
+] as const;
+export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
+
+export interface Webhook {
+  id: string;
+  url: string;
+  events: WebhookEvent[];
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  eventId: string;
+  type: string;
+  status: "pending" | "sent" | "failed";
+  attempts: number;
+  /** The HTTP status of the last attempt, or null when it got no answer. */
+  lastStatus: number | null;
+  lastError: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+export interface WebhookTest {
+  delivered: boolean;
+  status: number | null;
+  error: string | null;
 }
 
 export interface AlertSettings {
@@ -280,6 +339,22 @@ export function workspaceApi(workspaceId: string) {
       }),
     rotateSecret: () => post<WorkspaceSettings>(`${base}/settings/rotate-secret`, {}),
     exportUrl: `${base}/export`,
+    apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
+    createApiKey: (name: string) => post<ApiKey & { token: string }>(`${base}/api-keys`, { name }),
+    revokeApiKey: (id: string) =>
+      call<{ ok: true }>(`${base}/api-keys/${id}`, { method: "DELETE" }),
+    webhooks: () => call<{ webhooks: Webhook[] }>(`${base}/webhooks`),
+    createWebhook: (url: string, events: WebhookEvent[]) =>
+      post<Webhook & { secret: string }>(`${base}/webhooks`, { url, events }),
+    changeWebhook: (id: string, change: Partial<Pick<Webhook, "url" | "events" | "enabled">>) =>
+      call<Webhook>(`${base}/webhooks/${id}`, { method: "PATCH", body: JSON.stringify(change) }),
+    deleteWebhook: (id: string) =>
+      call<{ ok: true }>(`${base}/webhooks/${id}`, { method: "DELETE" }),
+    rotateWebhookSecret: (id: string) =>
+      post<Webhook & { secret: string }>(`${base}/webhooks/${id}/rotate-secret`, {}),
+    testWebhook: (id: string) => post<WebhookTest>(`${base}/webhooks/${id}/test`, {}),
+    webhookDeliveries: (id: string) =>
+      call<{ deliveries: WebhookDelivery[] }>(`${base}/webhooks/${id}/deliveries`),
     billing: () => call<BillingState>(`${base}/billing`),
     analytics: (days: AnalyticsDays, timeZone: string) =>
       call<Analytics>(`${base}/analytics?days=${days}&tz=${encodeURIComponent(timeZone)}`),

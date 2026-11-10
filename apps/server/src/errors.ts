@@ -100,6 +100,7 @@ export const ERROR_CODES = [
   "too_slow",
   "unauthorized",
   "unsupported_media_type",
+  "webhook_limit",
   "workspace_deleted",
 ] as const;
 type ErrorCode = (typeof ERROR_CODES)[number];
@@ -149,6 +150,13 @@ export const RATE_LIMITED = {
   429: errorAnswer("too_many_requests: over the rate limit. Retry after `retry-after`"),
 };
 
+/** A route that a workspace API key may call: each key has its own rate limit. */
+export const KEY_LIMITED = {
+  429: errorAnswer(
+    "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+  ),
+};
+
 /** The answers every widget route can give, from the access check and the rate limit. */
 export const WIDGET_ERRORS = {
   403: errorAnswer(
@@ -170,7 +178,9 @@ export const WIDGET_WRITE_ERRORS = {
 };
 
 /** The answers every operator route can give, from the session check. */
-export const OPERATOR_ERRORS = { 401: errorAnswer("unauthorized: no valid session") };
+export const OPERATOR_ERRORS = {
+  401: errorAnswer("unauthorized: no valid session, or the API key is not valid or was revoked"),
+};
 /** Any operator request but a GET: it must come from the server's own pages. */
 export const OPERATOR_POST_ERRORS = {
   ...OPERATOR_ERRORS,

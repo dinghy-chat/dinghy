@@ -10,6 +10,7 @@ import { type CloudSettings, createCloud } from "../../../ee/server/index.ts";
 import serverPackage from "../package.json" with { type: "json" };
 import { registerAlertRoutes, registerEmailStop } from "./alert-routes.ts";
 import { registerAnalyticsRoute } from "./analytics.ts";
+import { type Actor, registerApiKeyRoutes } from "./api-keys.ts";
 import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
 import { registerChatPage } from "./chat-link.ts";
@@ -17,10 +18,11 @@ import { clientIp } from "./client-ip.ts";
 import type { Database } from "./db/tenant.ts";
 import { safeErrorFields } from "./errors.ts";
 import { type Images, registerImageFiles } from "./images.ts";
-import { registerInboxRoutes } from "./inbox.ts";
+import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { type Live, noLive } from "./live.ts";
 import type { Mailer } from "./mailer.ts";
+import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
 import { registerModerationRoutes } from "./moderation.ts";
 import { registerOperatorRoutes } from "./operator.ts";
@@ -36,6 +38,7 @@ import { createRateLimit, createSlots } from "./rate-limit.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
 import { registerExportRoute } from "./transfer.ts";
+import { PUBLIC_ONLY, registerWebhookRoutes, type WebhookPolicy } from "./webhooks.ts";
 import { registerWidgetRoutes, type WidgetToken } from "./widget.ts";
 import { registerWidgetFiles } from "./widget-files.ts";
 import { lastWorkerPass } from "./worker.ts";
@@ -78,6 +81,8 @@ export interface AppOptions {
   widgetDirectory?: string | undefined;
   /** The server's public URL. Without it, the reply email's chat page is off. */
   publicUrl?: string | undefined;
+  /** Whether webhooks may go over http and to private addresses. Off by default. */
+  webhooks?: WebhookPolicy;
 }
 
 export interface AppEnv {
@@ -86,6 +91,9 @@ export interface AppEnv {
     workspace: WidgetWorkspace;
     /** The widget request's bearer token, which the widget's access check reads once. */
     widgetToken: WidgetToken;
+    /** Who makes an operator API request: a signed-in operator, or a workspace API key. */
+    actor: Actor;
+    /** The rest are set only for a signed-in operator, never for an API key. */
     operatorId: string;
     operatorName: string;
     operatorEmail: string;
@@ -185,6 +193,7 @@ export function createApp({
   stream = DEFAULT_STREAM,
   widgetDirectory,
   publicUrl,
+  webhooks = PUBLIC_ONLY,
 }: AppOptions): App {
   const app: App = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -341,6 +350,16 @@ export function createApp({
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);
     registerInboxRoutes(app, { db, images, limits, live, logger, stream, visitorPresence });
+    registerApiKeyRoutes(app, db, logger);
+    registerWebhookRoutes(app, { db, logger, policy: webhooks });
+    registerMcp(app, {
+      db,
+      live,
+      rateLimit,
+      inbox: createInbox({ db, images, live, visitorPresence }),
+      publicOrigin: new URL(String(auth.options.baseURL)).origin,
+      version,
+    });
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, presence);
     registerModerationRoutes(app, db, live);
@@ -388,7 +407,7 @@ export function createApp({
       title: "Dinghy API",
       version,
       description:
-        "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie). Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`, a BetterAuth pass-through that is not part of the versioned API.",
+        "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie, or a workspace API key on the routes whose security lists `apiKey`). MCP lives at `/v1/mcp`, with an API key. Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`, a BetterAuth pass-through that is not part of the versioned API.",
     },
   });
 

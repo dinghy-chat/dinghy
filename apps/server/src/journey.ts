@@ -1,3 +1,4 @@
+import { z } from "@hono/zod-openapi";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { conversation, pageView, visitor } from "./db/schema.ts";
 import type { Database, Transaction } from "./db/tenant.ts";
@@ -10,6 +11,19 @@ export const PAGE_TITLE_MAX = 200;
 /** The longest page address kept, for the starting page, the last page and the journey alike. */
 export const PAGE_PATH_MAX = 2000;
 const KEPT_DAYS = 90;
+
+/**
+ * What a host page sent with `Dinghy.setContext()`: a few unsigned values for operators to read.
+ * The widget checks the same limits before it sends.
+ */
+export const PageContextSchema = z
+  .record(
+    z.string().min(1).max(40),
+    z.union([z.string().max(200), z.number(), z.boolean(), z.null()]),
+  )
+  .refine((value) => Object.keys(value).length <= 20)
+  .openapi("PageContext", { example: { plan: "pro", seats: 4, trial: false } });
+export type PageContext = z.infer<typeof PageContextSchema>;
 
 interface PageSeen {
   path: string;
@@ -80,6 +94,30 @@ export async function recordPage(
 }
 
 /**
+ * Replaces what the host page sent with setContext(). Like a page, it is kept only for a visitor who
+ * has chatted, so a page that calls it for every visitor stores nothing. Returns false then.
+ */
+export async function recordPageContext(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+  context: PageContext,
+): Promise<boolean> {
+  const updated = await tx
+    .update(visitor)
+    .set({ pageContext: Object.keys(context).length === 0 ? null : context })
+    .where(
+      and(
+        eq(visitor.workspaceId, workspaceId),
+        eq(visitor.id, visitorId),
+        sql`exists (select 1 from ${conversation} where ${conversation.workspaceId} = ${workspaceId} and ${conversation.visitorId} = ${visitorId})`,
+      ),
+    )
+    .returning({ id: visitor.id });
+  return updated.length > 0;
+}
+
+/**
  * Takes the visitor row's lock, as an update of it would. A caller that also writes the workspace
  * takes this first, as a send and a block do, so the two locks never come in opposite orders. It
  * leaves the key alone, so a send that starts a conversation can still check its foreign key.
@@ -108,7 +146,7 @@ export function visitorPages(
 }
 
 /**
- * The journey belongs to a visitor who chatted. When their last conversation goes, it goes too, so
+ * The journey, and what the page sent, belong to a visitor who chatted. When their last conversation goes, it goes too, so
  * a delete leaves no trace of where they browsed. The caller holds the visitor's lock already, from
  * before the workspace's.
  */
@@ -120,6 +158,11 @@ export async function forgetPagesWithoutChat(
   await tx.execute(sql`
     DELETE FROM page_view WHERE workspace_id = ${workspaceId} AND visitor_id = ${visitorId}
       AND NOT EXISTS (SELECT 1 FROM conversation
+        WHERE workspace_id = ${workspaceId} AND visitor_id = ${visitorId})`);
+  // What the page sent goes with the journey.
+  await tx.execute(sql`
+    UPDATE visitor SET page_context = NULL WHERE workspace_id = ${workspaceId} AND id = ${visitorId}
+      AND page_context IS NOT NULL AND NOT EXISTS (SELECT 1 FROM conversation
         WHERE workspace_id = ${workspaceId} AND visitor_id = ${visitorId})`);
 }
 

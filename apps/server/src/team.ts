@@ -3,7 +3,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
 import type { Logger } from "pino";
-import { SESSION } from "./api-security.ts";
+import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, LINK_MINUTES, signInNow } from "./auth.ts";
@@ -14,6 +14,7 @@ import {
   FORBIDDEN,
   failure,
   INVALID,
+  KEY_LIMITED,
   LINK_INVALID,
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
@@ -253,7 +254,7 @@ const rotateSecretRoute = createRoute({
 const assignRoute = createRoute({
   method: "put",
   path: `${PREFIX}/conversations/{conversationId}/assignee`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary: "Assign a conversation to a member, or clear it with null",
   request: {
     params: workspaceParams.extend({ conversationId: z.uuid() }),
@@ -261,6 +262,7 @@ const assignRoute = createRoute({
   },
   responses: {
     200: ok,
+    ...KEY_LIMITED,
     ...MEMBER_WRITE_ERRORS,
     400: errorAnswer(
       "invalid_request: the request is not valid. not_a_member: this person is not a member",
@@ -486,6 +488,40 @@ async function changeMember(
   await recordTeamChange(tx, workspaceId);
   return "ok";
 }
+
+/**
+ * Assigns a conversation to an active member, or clears it with null, and wakes the inboxes. The
+ * route and the MCP tool share it.
+ */
+export async function assignTo(
+  db: Database,
+  live: Live,
+  workspaceId: string,
+  conversationId: string,
+  operatorId: string | null,
+): Promise<"ok" | "not_member" | "none"> {
+  const result = await withWorkspace(db, workspaceId, async (tx) => {
+    if (operatorId !== null) {
+      const [member] = await tx
+        .select({ id: workspaceMember.operatorId })
+        .from(workspaceMember)
+        .where(
+          and(
+            eq(workspaceMember.workspaceId, workspaceId),
+            eq(workspaceMember.operatorId, operatorId),
+            isNull(workspaceMember.removedAt),
+          ),
+        );
+      if (member === undefined) return "not_member" as const;
+    }
+    const found = await assignConversation(tx, workspaceId, conversationId, operatorId);
+    return found ? ("ok" as const) : ("none" as const);
+  });
+  if (result === "ok") live.wake(workspaceId, OPERATORS);
+  return result;
+}
+
+export const NOT_A_MEMBER = failure("not_a_member", "This person is not in this workspace.");
 
 interface TeamOptions {
   auth: Auth;
@@ -714,31 +750,11 @@ export function registerTeamRoutes(
   });
 
   app.openapi(assignRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
     const { operatorId } = c.req.valid("json");
-    const result = await withWorkspace(db, id, async (tx) => {
-      if (operatorId !== null) {
-        const [member] = await tx
-          .select({ id: workspaceMember.operatorId })
-          .from(workspaceMember)
-          .where(
-            and(
-              eq(workspaceMember.workspaceId, id),
-              eq(workspaceMember.operatorId, operatorId),
-              isNull(workspaceMember.removedAt),
-            ),
-          );
-        if (member === undefined) return "not_member" as const;
-      }
-      const found = await assignConversation(tx, id, conversationId, operatorId);
-      return found ? ("ok" as const) : ("none" as const);
-    });
-    if (result === "not_member") {
-      return c.json(failure("not_a_member", "This person is not in this workspace."), 400);
-    }
+    const result = await assignTo(db, live, c.get("memberWorkspaceId"), conversationId, operatorId);
+    if (result === "not_member") return c.json(NOT_A_MEMBER, 400);
     if (result === "none") return c.json(NOT_FOUND, 404);
-    live.wake(id, OPERATORS);
     return c.json({ ok: true as const }, 200);
   });
 

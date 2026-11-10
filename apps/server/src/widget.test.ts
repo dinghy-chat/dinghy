@@ -462,6 +462,100 @@ describe("open conversations", () => {
     await withWorkspace(db, a.id, (tx) => tx.update(conversation).set({ status: "closed" }));
     expect(await read()).toBe(false);
   });
+
+  test("a send says when it started a conversation, and so does its retry", async () => {
+    const { token } = (await (await newVisitor()).json()) as { token: string };
+    const send = async (clientId: string) =>
+      (
+        (await (
+          await app.request(`/v1/widget/${a.publicKey}/messages`, {
+            method: "POST",
+            headers: {
+              origin: ORIGIN,
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ clientId, body: "hello" }),
+          })
+        ).json()) as { conversationStarted: boolean }
+      ).conversationStarted;
+    expect(await send("s1")).toBe(true);
+    // A retry after a lost answer still says so, or the page would miss the start.
+    expect(await send("s1")).toBe(true);
+    expect(await send("s2")).toBe(false);
+    // A close from the inbox, then a send: the server starts a new conversation.
+    await withWorkspace(db, a.id, (tx) => tx.update(conversation).set({ status: "closed" }));
+    expect(await send("s3")).toBe(true);
+  });
+});
+
+describe("what the page sends with setContext", () => {
+  const post = (token: string, path: string, body: unknown) =>
+    app.request(`/v1/widget/${a.publicKey}/${path}`, {
+      method: "POST",
+      headers: {
+        origin: ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  const contextOf = async (visitorId: string) =>
+    (
+      await withWorkspace(db, a.id, (tx) =>
+        tx.select().from(visitor).where(eq(visitor.id, visitorId)),
+      )
+    )[0]?.pageContext;
+
+  test("is kept only for a visitor who chatted, and each report replaces the last", async () => {
+    const { visitorId, token } = (await (await newVisitor()).json()) as {
+      visitorId: string;
+      token: string;
+    };
+    expect((await post(token, "context", { context: { plan: "pro" } })).status).toBe(200);
+    expect(await contextOf(visitorId)).toBeNull();
+    await post(token, "messages", { clientId: "context-1", body: "hello" });
+    await post(token, "context", {
+      context: { plan: "pro", seats: 3, trial: false, coupon: null },
+    });
+    expect(await contextOf(visitorId)).toEqual({
+      plan: "pro",
+      seats: 3,
+      trial: false,
+      coupon: null,
+    });
+    await post(token, "context", { context: { cart: 42.5 } });
+    expect(await contextOf(visitorId)).toEqual({ cart: 42.5 });
+    await post(token, "context", { context: {} });
+    expect(await contextOf(visitorId)).toBeNull();
+  });
+
+  test("refuses more than 20 keys, a long key or string, and anything but a flat value", async () => {
+    const { token } = (await (await newVisitor()).json()) as { token: string };
+    const many = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`k${index}`, index]));
+    for (const context of [
+      many,
+      { ["k".repeat(41)]: 1 },
+      { "": 1 },
+      { note: "x".repeat(201) },
+      { nested: { deep: true } },
+      { list: [1, 2] },
+      "plan=pro",
+    ]) {
+      expect((await post(token, "context", { context })).status).toBe(400);
+    }
+    const twenty = Object.fromEntries(
+      Array.from({ length: 20 }, (_, index) => [`k${index}`, index]),
+    );
+    expect((await post(token, "context", { context: twenty })).status).toBe(200);
+    expect(
+      (await post(token, "context", { context: { ["k".repeat(40)]: "x".repeat(200) } })).status,
+    ).toBe(200);
+  });
+
+  test("needs the visitor's token", async () => {
+    expect((await post("dbt_wrong", "context", { context: { plan: "pro" } })).status).toBe(401);
+  });
 });
 
 describe("the widget files", () => {

@@ -41,6 +41,12 @@ const schema = z.object({
   // same server. Image URLs then use it, and the image route answers only there.
   IMAGES_ORIGIN: z.url().optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "silent"]).default("info"),
+  // Off by default: webhooks go only to https addresses on the public internet. Set it to true on a
+  // self-hosted install that sends webhooks to its own network, over http or to a private address.
+  WEBHOOK_ALLOW_PRIVATE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   // The metrics route stays off unless this is set, because it should not be public.
   METRICS_TOKEN: z.string().min(16).optional(),
   // The cloud plan's billing, read by ee/server. It stays off unless all three are set, so a

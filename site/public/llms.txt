@@ -1,0 +1,61 @@
+# Dinghy
+
+> Dinghy is a small, open-source live support chat. Visitors chat in a widget on your site, and your team answers in the operator app. It runs on one small server with Postgres and Valkey, or on Dinghy Cloud. The server is AGPL and the widget is MIT.
+
+The docs are in plain Markdown on GitHub, at https://github.com/dinghy-chat/dinghy/tree/main/docs, and as pages at https://dinghy.chat/docs/.
+
+## Install the chat on a site
+
+- [Add the chat to your site](https://dinghy.chat/docs/add-to-your-site): the tag, colors, position, theming, the browser API, signed-in users and the CSP.
+- [Self-hosting](https://dinghy.chat/docs/self-hosting): run your own Dinghy server.
+
+Add one tag before `</body>`, with the workspace's public key from Settings > Widget snippet:
+
+```html
+<script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
+```
+
+Then add the site's origin, such as `https://www.example.com`, to Settings > Allowed sites. In an app with a bundler, use the npm package instead: `npm install @dinghy-chat/widget`, then `init({ url: "https://chat.example.com", key: "wk_your_public_key" })` once, in the browser. It returns the typed `Dinghy` object.
+
+Tag attributes: `data-primary` and `data-accent` (six-digit hex colors), `data-mascot="false"`, `data-launcher="hidden"`, `data-position="left"`, `data-offset-x` and `data-offset-y` (pixels). CSS variables on the `dinghy-chat` element: `--dinghy-font`, `--dinghy-radius`, `--dinghy-launcher-radius`.
+
+## Browser API
+
+`window.Dinghy`, also returned by `init` from `@dinghy-chat/widget`:
+
+- `open({ message? })`: opens the chat. `message` fills the message box and is not sent.
+- `close()`, `toggle()`, `show()`, `hide()` (the launcher button).
+- `identify(token)`: signs in a user. `token` is an HS256 JWT that your server signs with the workspace's signing secret, with `sub`, `aud` (the public key), `iat`, `exp` at most 24 hours later, and optional `name`, `email` and `attributes`. Pass a function that returns a promise of a token so it can renew. Never put the secret in the browser.
+- `reset()`: call at sign-out.
+- `setContext({ key: value })`: unsigned facts for operators, up to 20 keys. Values are strings up to 200 characters, numbers, booleans or null. Sent only for a visitor who has chatted.
+- `configure({ primary, accent, position, offsetX, offsetY, zIndex })`.
+- `on(event, callback)` returns an unsubscribe function. Events: `ready`, `open`, `close`, `unread` (count), `message:sent` and `message:received` (`{ body }`), `conversation:started`.
+- `state`: `{ ready, open, unread }`.
+- Before the script loads, queue calls: `window.Dinghy = { q: [["open"], ["on", "unread", fn]] }`.
+
+## Server API
+
+- [API](https://dinghy.chat/docs/api): versioning, authentication, errors, live streams, API keys, webhooks and MCP.
+- The OpenAPI document of any server is at `/v1/openapi.json`.
+
+The operator API lives under `/v1/operator/workspaces/{workspaceId}/`. A program authenticates with a workspace API key, which an owner or admin creates in Settings > API: send `Authorization: Bearer dk_...`. A key works only in its own workspace, with an agent's permissions: list, search and read conversations, reply, send images, close, reopen and assign. Messages it sends show the key's name as their author. Every error is `{ "error": { "code", "message" } }`. Send a `clientId` that you generate with each reply, so a retry cannot post it twice.
+
+## Webhooks
+
+An owner or admin adds up to 5 HTTPS endpoints in Settings > API. Events: `conversation.created`, `message.created`, `conversation.closed`, `conversation.reopened` and `conversation.assigned`. The body is `{ id, type, createdAt, workspaceId, data }`, where `data` holds the conversation and the message in the operator API's shape. Delivery is at least once, so drop repeats by `id` (also in the `Dinghy-Event-Id` header). Verify `Dinghy-Signature: t=<unix seconds>,v1=<hex>`, where `v1` is the HMAC-SHA256 of `<t>.<raw body>` with the webhook's signing secret. Failed deliveries retry for about a day.
+
+## MCP
+
+Each server is an MCP server at `POST /v1/mcp` (Streamable HTTP, JSON responses), with the same API key. With Claude Code:
+
+```sh
+claude mcp add --transport http dinghy https://chat.example.com/v1/mcp --header "Authorization: Bearer dk_..."
+```
+
+Tools: `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`.
+
+## Optional
+
+- [Operator guide](https://dinghy.chat/docs/operator-guide)
+- [Architecture](https://dinghy.chat/docs/architecture)
+- [Troubleshooting](https://dinghy.chat/docs/troubleshooting)

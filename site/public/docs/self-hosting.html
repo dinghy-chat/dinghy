@@ -188,6 +188,7 @@
 <tr><td data-label="Setting"><code>TRUSTED_PROXY_HOPS</code></td><td data-label="Purpose">See below</td></tr>
 <tr><td data-label="Setting"><code>LOG_LEVEL</code></td><td data-label="Purpose"><code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code> or <code>silent</code></td></tr>
 <tr><td data-label="Setting"><code>METRICS_TOKEN</code></td><td data-label="Purpose">Turns on Prometheus metrics at <code>/metrics</code>, with this token as the bearer token. At least 16 characters</td></tr>
+<tr><td data-label="Setting"><code>WEBHOOK_ALLOW_PRIVATE</code></td><td data-label="Purpose"><code>true</code> lets <a href="/docs/api#webhooks">webhooks</a> go over <code>http</code> and to private addresses, such as a service on your own network. Off by default: a webhook then goes only to an <code>https</code> address that is on the public internet, checked each time it sends</td></tr>
 <tr><td data-label="Setting"><code>SENTRY_DSN</code></td><td data-label="Purpose">Sends errors to your own <a href="https://sentry.io">Sentry</a> project: what the server logs as an error, and crashes. It sends no request data, no logs and no traces. Optional. Without it, nothing is sent anywhere</td></tr>
 <tr><td data-label="Setting"><code>HTTP_PORT</code>, <code>HTTPS_PORT</code></td><td data-label="Purpose">The ports Caddy listens on with the <code>tls</code> profile, 80 and 443 by default. Certificates need those two ports from the internet, so change these only when something in front forwards them here</td></tr>
 </tbody>

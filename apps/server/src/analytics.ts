@@ -5,7 +5,13 @@ import type { App } from "./app.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure, INVALID, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
-import { operatorNames } from "./messages.ts";
+import { authorNames } from "./messages.ts";
+
+/** A replier's operator or key, in the shape `authorNames` reads. */
+const replierIds = (one: { operatorId: string | null; apiKeyId: string | null }) => ({
+  authorOperatorId: one.operatorId,
+  authorApiKeyId: one.apiKeyId,
+});
 
 // Support numbers from the conversations and messages already stored. Nothing here tracks anyone.
 
@@ -45,10 +51,11 @@ const Analytics = z
     }),
     // One entry per day of the period, oldest first, in the given time zone.
     perDay: z.array(z.object({ date: z.string(), conversations: z.number().int() })),
-    // By who sent the first reply, most first.
+    // By who sent the first reply, most first: an operator, or an API key.
     operators: z.array(
       z.object({
-        operatorId: z.string(),
+        operatorId: z.string().nullable(),
+        apiKeyId: z.string().nullable(),
         name: z.string().nullable(),
         conversations: z.number().int(),
       }),
@@ -66,7 +73,7 @@ const analyticsRoute = createRoute({
   security: SESSION,
   summary: "Support numbers for the last 7, 30 or 90 days",
   description:
-    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first operator message, and `operators` counts conversations by who sent that reply.",
+    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply.",
   request: {
     params: z.object({ workspaceId: z.uuid() }),
     query: z.object({
@@ -95,6 +102,7 @@ const analyticsRoute = createRoute({
             operators: [
               {
                 operatorId: "7a3e5b20-9c1d-4f6a-b8e2-4d0f1c9a6b53",
+                apiKeyId: null,
                 name: "Sam",
                 conversations: 11,
               },
@@ -117,7 +125,7 @@ interface Row extends Record<string, unknown> {
   median: number | null;
   p90: number | null;
   per_day: { date: string; conversations: number }[];
-  repliers: { operatorId: string; conversations: number }[];
+  repliers: { operatorId: string | null; apiKeyId: string | null; conversations: number }[];
   hours: { dow: number; hour: number; conversations: number }[];
 }
 
@@ -139,13 +147,14 @@ async function readAnalytics(
       SELECT c.status,
              (c.created_at AT TIME ZONE ${timeZone}) AS local_at,
              extract(epoch FROM reply.created_at - c.created_at) AS wait,
-             reply.author_operator_id AS replier
+             reply.author_operator_id AS operator_id,
+             reply.author_api_key_id AS api_key_id
       FROM bounds
       JOIN conversation AS c ON c.workspace_id = ${workspaceId} AND c.created_at >= bounds.since
       LEFT JOIN LATERAL (
-        SELECT m.created_at, m.author_operator_id FROM message AS m
+        SELECT m.created_at, m.author_operator_id, m.author_api_key_id FROM message AS m
         WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
-          AND m.author_operator_id IS NOT NULL
+          AND m.author_visitor_id IS NULL
         ORDER BY m.seq LIMIT 1
       ) AS reply ON true
     )
@@ -163,11 +172,12 @@ async function readAnalytics(
                     generate_series(bounds.first_day, local_today.day, interval '1 day') AS d(day)
                LEFT JOIN started AS s ON s.local_at::date = d.day::date
                GROUP BY d.day) AS g) AS per_day,
-      (SELECT coalesce(json_agg(json_build_object('operatorId', r.replier,
+      (SELECT coalesce(json_agg(json_build_object('operatorId', r.operator_id,
+                                                  'apiKeyId', r.api_key_id,
                                                   'conversations', r.n)
-                                ORDER BY r.n DESC, r.replier), '[]')
-         FROM (SELECT replier, count(*)::int AS n FROM started
-               WHERE replier IS NOT NULL GROUP BY replier) AS r) AS repliers,
+                                ORDER BY r.n DESC, r.operator_id, r.api_key_id), '[]')
+         FROM (SELECT operator_id, api_key_id, count(*)::int AS n FROM started
+               WHERE wait IS NOT NULL GROUP BY operator_id, api_key_id) AS r) AS repliers,
       (SELECT coalesce(json_agg(json_build_object('dow', h.dow, 'hour', h.hour,
                                                   'conversations', h.n)), '[]')
          FROM (SELECT extract(isodow FROM local_at)::int AS dow,
@@ -175,10 +185,7 @@ async function readAnalytics(
                FROM started GROUP BY 1, 2) AS h) AS hours`);
   const row = result.rows[0];
   if (row === undefined) throw new Error("The analytics query returned no row");
-  const names = await operatorNames(
-    tx,
-    row.repliers.map((one) => one.operatorId),
-  );
+  const names = await authorNames(tx, workspaceId, row.repliers.map(replierIds));
   const hours = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
   for (const cell of row.hours) {
     const day = hours[cell.dow - 1];
@@ -196,7 +203,10 @@ async function readAnalytics(
       within5Minutes: row.started === 0 ? null : row.fast / row.started,
     },
     perDay: row.per_day,
-    operators: row.repliers.map((one) => ({ ...one, name: names.get(one.operatorId) ?? null })),
+    operators: row.repliers.map((one) => ({
+      ...one,
+      name: names.get(one.operatorId ?? one.apiKeyId ?? "") ?? null,
+    })),
     hours,
   };
 }
