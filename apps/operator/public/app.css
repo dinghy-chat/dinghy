@@ -664,11 +664,11 @@ textarea {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 18px 12px 4px 18px;
+  padding: 10px 12px 4px 18px;
   color: var(--navy);
 }
 .brand {
-  padding: 2px 8px 18px;
+  padding: 2px 8px 12px;
 }
 /* In the sidebar, a focus ring in navy, like its labels. */
 .side :focus-visible {
@@ -702,7 +702,7 @@ button.workspace[aria-expanded="true"],
   margin-bottom: 14px;
 }
 .side > .workspace {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .ws-tile {
   display: grid;
