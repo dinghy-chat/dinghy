@@ -24,6 +24,7 @@ import {
   LINK_INVALID,
   OPERATOR_ERRORS,
   safeErrorFields,
+  UNAUTHORIZED,
   WRONG_ORIGIN,
 } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
@@ -33,8 +34,6 @@ import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
-
-const UNAUTHORIZED = failure("unauthorized", "Sign in to continue.");
 
 const AccountName = z.strictObject({
   name: z
@@ -184,7 +183,8 @@ export function registerOperatorRoutes(
     });
     // A renewed session sends a new cookie, or an active operator would be signed out in a week.
     for (const cookie of headers.getSetCookie()) c.header("set-cookie", cookie, { append: true });
-    if (found === null) return c.json(UNAUTHORIZED, 401);
+    // The delete ends the account's sessions, and this holds even if one were left.
+    if (found === null || found.user.deletedAt != null) return c.json(UNAUTHORIZED, 401);
     c.set("actor", { kind: "operator", operatorId: found.user.id, name: found.user.name });
     c.set("operatorId", found.user.id);
     c.set("operatorName", found.user.name);
@@ -244,15 +244,22 @@ export function registerOperatorRoutes(
   });
 
   // An operator changes only their own name here. The email is the login, and the image is unused.
-  app.post("/v1/auth/update-user", async (c, next) => {
-    const body = await c.req.raw
-      .clone()
-      .json()
-      .catch(() => null);
-    if (!AccountName.safeParse(body).success) {
+  // Dinghy answers it instead of BetterAuth, so the write can refuse an account deleted after the
+  // session was read: one statement, which waits for the delete's row lock and checks again.
+  app.post("/v1/auth/update-user", async (c) => {
+    const parsed = AccountName.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
       return c.json(failure("invalid_name", "Send a name of 1 to 100 characters."), 400);
     }
-    await next();
+    const found = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (found === null) return c.json(UNAUTHORIZED, 401);
+    const [changed] = await db
+      .update(operator)
+      .set({ name: parsed.data.name })
+      .where(and(eq(operator.id, found.user.id), isNull(operator.deletedAt)))
+      .returning({ id: operator.id });
+    if (changed === undefined) return c.json(UNAUTHORIZED, 401);
+    return c.json({ status: true }, 200);
   });
 
   // The confirm page's button uses the link. Opening the emailed page uses nothing, and a GET of

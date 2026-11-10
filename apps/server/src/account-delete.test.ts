@@ -5,13 +5,21 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
-import { addOperator, captureMail, openLink, pressLinkButton, signIn } from "../test/operators.ts";
+import {
+  addOperator,
+  captureMail,
+  deletedDuring,
+  openLink,
+  pressLinkButton,
+  signIn,
+} from "../test/operators.ts";
 import { FORMER_MEMBER_NAME } from "./account-delete.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth, signInLink } from "./auth.ts";
 import {
   account,
   event,
+  invite,
   operator,
   pushSubscription,
   session,
@@ -19,6 +27,7 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { sha256Hex } from "./identity.ts";
 import type { Live } from "./live.ts";
 import { appendMessage } from "./messages.ts";
 import { createWorkspace } from "./workspaces.ts";
@@ -295,5 +304,57 @@ describe("a server with no mail server", () => {
     expect(await done.json()).toEqual({ deleted: true });
     expect(await operatorRow(first.id)).toMatchObject({ name: FORMER_MEMBER_NAME });
     expect((await me(first)).status).toBe(401);
+  });
+});
+
+describe("a request that passed the session check before the delete committed", () => {
+  const send = (as: Person, method: string, path: string, body: unknown) =>
+    app.request(path, {
+      method,
+      headers: { cookie: as.cookie, origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("the session check refuses a deleted account, even with a session left", async () => {
+    const { first } = await team();
+    await owner.update(operator).set({ deletedAt: new Date() }).where(eq(operator.id, first.id));
+    expect((await me(first)).status).toBe(401);
+  });
+
+  test("cannot write its name over the erased one", async () => {
+    const { first } = await team();
+    const answer = await deletedDuring(owner, first.id, () =>
+      send(first, "POST", "/v1/auth/update-user", { name: "Back again" }),
+    );
+    expect(answer.status).toBe(401);
+    expect(await operatorRow(first.id)).toMatchObject({ name: FORMER_MEMBER_NAME });
+  });
+
+  test("cannot join a workspace with an invite", async () => {
+    const { first } = await team();
+    const other = await createWorkspace(db, "Elsewhere", []);
+    const inviter = await person(other.id, "owner");
+    const token = `${other.id}.${randomUUID()}`;
+    await owner.insert(invite).values({
+      workspaceId: other.id,
+      tokenHash: sha256Hex(token),
+      role: "member",
+      email: first.email,
+      mailed: false,
+      createdBy: inviter.id,
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
+    const answer = await deletedDuring(owner, first.id, () =>
+      send(first, "POST", "/v1/operator/invites/accept", { token }),
+    );
+    expect(answer.status).toBe(401);
+    expect(
+      await owner
+        .select()
+        .from(workspaceMember)
+        .where(
+          and(eq(workspaceMember.workspaceId, other.id), eq(workspaceMember.operatorId, first.id)),
+        ),
+    ).toEqual([]);
   });
 });

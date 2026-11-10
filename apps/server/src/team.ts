@@ -18,7 +18,7 @@ import {
   workspaceLogo,
   workspaceMember,
 } from "./db/schema.ts";
-import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { type Database, lockLiveOperator, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
   FORBIDDEN,
@@ -34,6 +34,7 @@ import {
   RATE_LIMITED,
   ROLE_WRITE_ERRORS,
   safeErrorFields,
+  UNAUTHORIZED,
   WRONG_ORIGIN,
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
@@ -456,12 +457,15 @@ const usable = (workspaceId: string, tokenHash: string) =>
 class AlreadyMemberError extends Error {}
 /** The invite was used, revoked or expired. Its transaction rolls back. */
 class InviteUnusableError extends Error {}
+/** The account was deleted while the invite was used. Its transaction rolls back. */
+class OperatorDeletedError extends Error {}
 
 /**
  * Uses the invite and adds the member together, so a token works once. It throws
  * InviteUnusableError if the invite cannot be used, and AlreadyMemberError if this person became a
  * member in the meantime, so a second invite cannot change an active member's role and stays
- * usable. It throws OperatorLimitError if the workspace would have too many operators.
+ * usable. It throws OperatorLimitError if the workspace would have too many operators, and
+ * OperatorDeletedError if the account was deleted, even by a delete still in flight.
  */
 async function consumeInvite(
   tx: Transaction,
@@ -470,6 +474,7 @@ async function consumeInvite(
   tokenHash: string,
   operatorId: string,
 ): Promise<void> {
+  if (!(await lockLiveOperator(tx, operatorId))) throw new OperatorDeletedError();
   const [used] = await tx
     .update(invite)
     .set({ usedAt: new Date(), usedBy: operatorId })
@@ -496,6 +501,7 @@ function joinFailure(error: unknown) {
   if (error instanceof InviteUnusableError) return "invite_invalid" as const;
   if (error instanceof AlreadyMemberError) return "member" as const;
   if (error instanceof OperatorLimitError) return "operator_limit" as const;
+  if (error instanceof OperatorDeletedError) return "gone" as const;
   throw error;
 }
 
@@ -1113,7 +1119,7 @@ export function registerTeamRoutes(
         .set({
           name: sql`case when ${operator.name} = '' then ${pending.name ?? ""} else ${operator.name} end`,
         })
-        .where(eq(operator.email, email))
+        .where(and(eq(operator.email, email), isNull(operator.deletedAt)))
         .returning({ id: operator.id });
       if (found === undefined) return "gone" as const;
       await consumeInvite(tx, limits, workspaceId, pending.inviteHash, found.id);
@@ -1155,6 +1161,7 @@ export function registerTeamRoutes(
       await consumeInvite(tx, limits, workspaceId, tokenHash, operatorId);
       return "joined" as const;
     }).catch(joinFailure);
+    if (result === "gone") return c.json(UNAUTHORIZED, 401);
     if (result === "other_email") return c.json(OTHER_EMAIL, 403);
     if (result === "member") return c.json(ALREADY_MEMBER, 409);
     if (result === "operator_limit") return c.json(OPERATOR_LIMIT, 409);

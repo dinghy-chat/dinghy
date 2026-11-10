@@ -548,7 +548,7 @@ interface ReplyCopy {
  * What came of a transaction. `unknown` is a connection lost during it, maybe after Postgres
  * committed, so whatever the transaction may point to must stay.
  */
-export type CommitOutcome = "committed" | "rolled_back" | "unknown";
+type CommitOutcome = "committed" | "rolled_back" | "unknown";
 
 /** What a reply came to. The routes and the MCP tools answer each the same way. */
 export type ReplyOutcome =

@@ -20,6 +20,7 @@ import {
   subscription,
   visitor,
   workspace,
+  workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { createImages } from "../../apps/server/src/images.ts";
@@ -29,7 +30,7 @@ import { localStore } from "../../apps/server/src/storage.ts";
 import { widgetWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
-import { openSignInLink, signIn } from "../../apps/server/test/operators.ts";
+import { deletedDuring, openSignInLink, signIn } from "../../apps/server/test/operators.ts";
 import { createBilling } from "./billing.ts";
 import { runLifecycle } from "./lifecycle.ts";
 import { signupsCsv } from "./signup.ts";
@@ -299,6 +300,28 @@ describe("early signup", () => {
     });
     expect(later.status).toBe(200);
     expect(welcomes().map((mail) => mail.to)).toEqual([email]);
+  });
+
+  test("an account deleted while its onboarding ran gets no name and no workspace", async () => {
+    const email = `early-${randomUUID()}@example.com`;
+    const cookie = await linkSignup(early, email);
+    const [account] = await owner
+      .select({ id: operator.id })
+      .from(operator)
+      .where(eq(operator.email, email));
+    const operatorId = account?.id ?? "";
+    const answer = await deletedDuring(owner, operatorId, () =>
+      request(early, "POST", "/v1/operator/workspaces", {
+        cookie,
+        body: { name: "Nora", workspaceName: "Ghost" },
+      }),
+    );
+    expect(answer.status).toBe(401);
+    const [row] = await owner.select().from(operator).where(eq(operator.id, operatorId));
+    expect(row?.name).toBe("Former team member");
+    expect(
+      await owner.select().from(workspaceMember).where(eq(workspaceMember.operatorId, operatorId)),
+    ).toEqual([]);
   });
 
   test("the onboarding needs a session, a name and a workspace name", async () => {
