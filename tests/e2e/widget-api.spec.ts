@@ -98,7 +98,8 @@ test("a callback that throws does not stop the others, and on() returns a way to
   await launcher(page).click();
   await expect(input(page)).toBeVisible();
   await expect.poll(() => events(page)).toEqual(["ready", "open"]);
-  expect(errors).toEqual(["A broken callback"]);
+  // Firefox reports a page error to Playwright later than the events, so this waits for it too.
+  await expect.poll(() => errors).toEqual(["A broken callback"]);
 });
 
 test("an open chat opens again after a reload in the same tab, once the visitor has a token", async ({
