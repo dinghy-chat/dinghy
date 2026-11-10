@@ -441,6 +441,7 @@ describe("the rules", () => {
       paymentFailedAt: null,
       readOnlyAt: null,
       cancelAtPeriodEnd: false,
+      currentPeriodEnd: null,
     };
     const paid = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
     const kinds = (emails: { kind: string }[]) => emails.map((email) => email.kind);
@@ -478,6 +479,17 @@ describe("the rules", () => {
         billingEmails(before, { ...paid, cancelAtPeriodEnd: true, currentPeriodEnd: soon }, now),
       ),
     ).toEqual(["cancellation"]);
+    // Stripe moves the end of a cancelled plan: no second cancellation, a reminder for the new end.
+    const cancelled = { ...before, cancelAtPeriodEnd: true, currentPeriodEnd: end };
+    const later = new Date(end.getTime() + 9 * DAY_MS);
+    expect(
+      billingEmails(cancelled, { ...paid, cancelAtPeriodEnd: true, currentPeriodEnd: later }, now),
+    ).toEqual([
+      { kind: "ending_soon", occurrenceAt: later, dueAt: new Date(later.getTime() - 3 * DAY_MS) },
+    ]);
+    expect(
+      billingEmails(cancelled, { ...paid, cancelAtPeriodEnd: true, currentPeriodEnd: end }, now),
+    ).toEqual([]);
   });
 });
 
@@ -526,7 +538,7 @@ describe("the subscription lifecycle", () => {
     // To the owner, who proved this address, by name, in the voice every email shares.
     const text = mailsAbout(paid.name)[1]?.text ?? "";
     expect(text.startsWith("Hi Owner,\n\n")).toBe(true);
-    expect(text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
+    expect(text.endsWith("\n\nCheers,\nJulien from Dinghy")).toBe(true);
     expect(text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
     expect(text).toContain(day(new Date(clock.getTime() + READ_ONLY_DAYS * DAY_MS)));
     // A later pass sends nothing again.
@@ -995,18 +1007,26 @@ describe("the subscription lifecycle", () => {
     expect(await leftovers(paid.workspaceId)).toEqual([]);
   });
 
-  test("a cancellation while a payment fails still sends the cancellation email", async () => {
+  test("a cancellation while a payment fails sends its email, with the date service stops", async () => {
     const paid = await paidWorkspace();
-    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    const failedAt = new Date(clock);
+    // A renewal failed, so the unpaid period runs a month from now.
+    const periodEnd = Math.floor((failedAt.getTime() + 30 * DAY_MS) / 1000);
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due", {
+      current_period_end: periodEnd,
+    });
     await lifecycle();
     await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due", {
       cancel_at_period_end: true,
+      current_period_end: periodEnd,
     });
     await lifecycle();
-    const end = (await row(paid.workspaceId))?.currentPeriodEnd ?? new Date(0);
+    // Service stops when the grace ends, which is before the period's end.
+    const graceEnd = new Date(failedAt.getTime() + GRACE_DAYS * DAY_MS);
+    expect(graceEnd < ((await row(paid.workspaceId))?.currentPeriodEnd ?? new Date(0))).toBe(true);
     expect(subjectsTo(paid.email)).toEqual([
       `The payment for ${paid.name} didn't go through`,
-      `${paid.name} stays on until ${day(end)}`,
+      `${paid.name} stays on until ${day(graceEnd)}`,
     ]);
   });
 

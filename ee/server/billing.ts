@@ -400,6 +400,7 @@ export function createBilling(
             paymentFailedAt: subscription.paymentFailedAt,
             readOnlyAt: subscription.readOnlyAt,
             cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+            currentPeriodEnd: subscription.currentPeriodEnd,
           })
           .from(subscription)
           .where(eq(subscription.workspaceId, workspaceId))

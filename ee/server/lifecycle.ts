@@ -27,7 +27,7 @@ import { letter } from "../../apps/server/src/letter.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import type { Billing } from "./billing.ts";
-import { lifecycleMail, onboardingStopUrl } from "./lifecycle-emails.ts";
+import { LIFECYCLE_SIGN_OFF, lifecycleMail, onboardingStopUrl } from "./lifecycle-emails.ts";
 
 /**
  * Stripe's subscription statuses that pay for service. This set and the two below live in this
@@ -141,7 +141,7 @@ const on = (kind: LifecycleEmailKind, occurrenceAt: Date, days = 0): QueuedEmail
 /** The fields that a Stripe change compares with, read under the row's lock before it writes. */
 export type BillingBefore = Pick<
   LifecycleRow,
-  "paidAt" | "paymentFailedAt" | "readOnlyAt" | "cancelAtPeriodEnd"
+  "paidAt" | "paymentFailedAt" | "readOnlyAt" | "cancelAtPeriodEnd" | "currentPeriodEnd"
 >;
 
 /** The emails that a change of Stripe's state starts, from the state before it and after it. */
@@ -178,17 +178,22 @@ export function billingEmails(
   return [...emails, ...cancellationEmails(before, after, at)];
 }
 
-/** A new cancellation's emails: now, and a reminder before the end unless the end is close. */
+/**
+ * A cancellation's emails: one now when it is new, and a reminder before the end, unless the end
+ * is close. If Stripe moves the end of a cancelled plan, the reminder follows the new end.
+ */
 function cancellationEmails(
   before: BillingBefore | undefined,
   after: { cancelAtPeriodEnd: boolean; currentPeriodEnd: Date | null },
   at: Date,
 ): QueuedEmail[] {
-  if (!after.cancelAtPeriodEnd || before?.cancelAtPeriodEnd === true) return [];
-  const emails = [on("cancellation", at)];
+  if (!after.cancelAtPeriodEnd) return [];
+  const isNew = before?.cancelAtPeriodEnd !== true;
   const end = after.currentPeriodEnd;
+  const moved = !isNew && end?.getTime() !== before?.currentPeriodEnd?.getTime();
+  const emails = isNew ? [on("cancellation", at)] : [];
   // A cancellation in the last days already says when the plan ends.
-  if (end !== null && addDays(end, -ENDING_SOON_DAYS) > at) {
+  if ((isNew || moved) && end !== null && addDays(end, -ENDING_SOON_DAYS) > at) {
     emails.push(on("ending_soon", end, -ENDING_SOON_DAYS));
   }
   return emails;
@@ -600,7 +605,8 @@ async function sendLifecycleEmails({
       });
       // Each owner signed in with a link to this address, so their own name is safe here.
       try {
-        await mailer?.send(owner.email, mail.subject, letter(mail.body, owner.name), mail.headers);
+        const body = letter(mail.body, owner.name, undefined, LIFECYCLE_SIGN_OFF);
+        await mailer?.send(owner.email, mail.subject, body, mail.headers);
         delivered += 1;
       } catch (err) {
         lastError = err;
@@ -636,11 +642,19 @@ async function sendLifecycleEmails({
 const MAIL_DAYS = { readOnly: READ_ONLY_DAYS };
 
 /** The dates an email names, from its occurrence and the workspace's state. */
+/** When service stops: the period's end, or the end of a failed payment's grace if sooner. */
+function serviceEnd(state: EmailState): Date | null {
+  const graceEnd = state.paymentFailedAt && addDays(state.paymentFailedAt, GRACE_DAYS);
+  if (graceEnd === null) return state.currentPeriodEnd;
+  if (state.currentPeriodEnd === null) return graceEnd;
+  return graceEnd < state.currentPeriodEnd ? graceEnd : state.currentPeriodEnd;
+}
+
 function emailDates(email: ClaimedEmail, state: EmailState) {
   return {
     payUntil: addDays(email.occurrenceAt, GRACE_DAYS),
     deleteOn: addDays(email.occurrenceAt, READ_ONLY_DAYS),
-    endsOn: email.kind === "ending_soon" ? email.occurrenceAt : state.currentPeriodEnd,
+    endsOn: email.kind === "ending_soon" ? email.occurrenceAt : serviceEnd(state),
   };
 }
 

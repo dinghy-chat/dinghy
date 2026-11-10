@@ -9,6 +9,9 @@ import { workspaceMember } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { limitByIp, type RateLimit } from "../../apps/server/src/rate-limit.ts";
 
+/** The founder signs the cloud's lifecycle emails, and replies reach the founder too. */
+export const LIFECYCLE_SIGN_OFF = "Cheers,\nJulien from Dinghy";
+
 /** Where replies to every lifecycle email go. */
 const SUPPORT_ADDRESS = "support@dinghy.chat";
 const INSTALL_DOCS_URL = "https://dinghy.chat/docs/add-to-your-site";
@@ -39,8 +42,8 @@ const date = (value: Date | null) =>
     timeZone: "UTC",
   }) ?? "";
 
-// Plain text. Every string has a key here, so a locale can be added later. The voice is a small
-// team writing to one person: short, warm, exact about dates, and never pushy.
+// Plain text. Every string has a key here, so a locale can be added later. The voice is the founder
+// writing to one person: short, warm, exact about dates, and never pushy.
 const text = {
   readySubject: (name: string) => `${name} is ready`,
   readyBody: (c: MailContext) => [
@@ -55,7 +58,7 @@ const text = {
     "Add your site in Settings under Allowed sites, then paste the code from Install the chat " +
       `into your pages: ${c.settingsUrl}`,
     `The steps are here too: ${INSTALL_DOCS_URL}`,
-    "If something doesn't work, just reply and we'll help.",
+    "If something doesn't work, just reply and I'll help.",
   ],
   teamSubject: "Working with someone?",
   teamBody: (c: MailContext) => [
@@ -66,22 +69,22 @@ const text = {
   ],
   checkInSubject: "How's it going?",
   checkInBody: (c: MailContext) => [
-    `It's been a week with ${c.name}, so we wanted to check in.`,
-    "Is anything confusing, missing or just annoying? We'd really like to know, and good news " +
-      "is welcome too.",
-    "Just hit reply. A real person reads every answer. And if you're busy, no need to write.",
+    `It's been a week with ${c.name}, so I wanted to check in.`,
+    "Is anything confusing, missing or just annoying? I'd really like to know, and good news is " +
+      "welcome too.",
+    "Just hit reply. I read every answer myself. And if you're busy, no need to write.",
   ],
   reviewSubject: "Would you leave a short review?",
   reviewBody: (c: MailContext, url: string) => [
     `If Dinghy has been useful for ${c.name}, would you leave a short review? It helps other ` +
-      `small teams find us: ${url}`,
-    "If it hasn't been great, we'd rather hear why. Just reply. Either way is fine.",
+      `small teams find it: ${url}`,
+    "If it hasn't been great, I'd rather hear why. Just reply. Either way is fine.",
   ],
   feedbackSubject: "What would you change?",
   feedbackBody: (c: MailContext) => [
     `It's been a month with ${c.name}. If you could change one thing about Dinghy, what would ` +
       "it be?",
-    "Just reply. A real person reads every answer. And if you'd rather skip it, that's fine.",
+    "Just reply. I read every answer myself. And if you'd rather skip it, that's fine.",
   ],
   stopLine: (url: string) => `Rather not get tips and check-ins? Stop them here: ${url}`,
   cancellationSubject: (name: string, endsOn: Date | null) =>
@@ -91,7 +94,7 @@ const text = {
     `After that, the chat goes off and the workspace stays read-only for ${c.days.readOnly} days, ` +
       "so your team can still read conversations and download an export. Then we delete it.",
     `Changed your mind? You can renew any time in Settings under Billing: ${c.settingsUrl}`,
-    "And if you have a minute, we'd love to know why you're leaving. Just reply.",
+    "And if you have a minute, I'd love to know why you're leaving. Just reply.",
   ],
   endingSoonSubject: (name: string, endsOn: Date | null) => `${name} ends on ${date(endsOn)}`,
   endingSoonBody: (c: MailContext) => [
@@ -122,7 +125,7 @@ const text = {
     `The payment for ${c.name} still hasn't gone through, so on ${date(c.payUntil)} the chat ` +
       "goes off and the workspace turns read-only.",
     `Updating the card in Settings under Billing keeps it running: ${c.settingsUrl}`,
-    "If something's wrong on our side, just reply and we'll sort it out.",
+    "If something's wrong on our side, just reply and I'll sort it out.",
   ],
   paymentRecoveredSubject: (name: string) => `All good with ${name}`,
   paymentRecoveredBody: (c: MailContext) => [
