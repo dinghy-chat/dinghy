@@ -91,6 +91,7 @@ const en = {
   accountHelp: "Your teammates see your name next to your replies. Visitors don't.",
   accountName: "Name",
   accountEmailHelp: "You sign in with this email. It's the same in every workspace.",
+  theme: "Theme",
   themeSystem: "System",
   themeLight: "Light",
   themeDark: "Dark",

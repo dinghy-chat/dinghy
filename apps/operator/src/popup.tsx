@@ -250,7 +250,15 @@ export interface MenuItem {
   /** For a choice among items, such as the current workspace: a check, read as checked. */
   checked?: boolean;
   danger?: boolean;
-  /** A line above this item, to set a group apart. On a row, the first item's line sets it apart. */
+  /** A line above this item, to set a group apart. */
+  divider?: boolean;
+}
+
+/** A labeled row of choices shown as their icons alone, such as the theme. */
+export interface MenuRow {
+  label: string;
+  /** Each choice's label stays its accessible name and its tooltip. */
+  choices: MenuItem[];
   divider?: boolean;
 }
 
@@ -266,11 +274,8 @@ export function Menu({
 }: {
   /** The button's accessible name. */
   label: string;
-  /**
-   * The items, top to bottom. An array is one row of choices shown as their icons alone, such as the
-   * theme: each label stays its accessible name and its tooltip.
-   */
-  items: (MenuItem | MenuItem[])[];
+  /** The items, top to bottom. */
+  items: (MenuItem | MenuRow)[];
   /** What the button shows. */
   children: ReactNode;
   buttonClass: string;
@@ -279,7 +284,7 @@ export function Menu({
   className?: string;
 }) {
   // The keys move through the items in order, rows included.
-  const flat = items.flat();
+  const flat = items.flatMap((entry) => ("choices" in entry ? entry.choices : entry));
   const popup = usePopup(
     flat.map((item) => item.label),
     () => 0,
@@ -345,14 +350,20 @@ export function Menu({
           onKeyDown={(event) => popup.onPopupKey(event, choose)}
         >
           {items.map((entry) =>
-            Array.isArray(entry) ? (
+            "choices" in entry ? (
               // biome-ignore lint/a11y/useSemanticElements: a menu holds menu items and groups, not a fieldset.
               <div
-                key={`row-${entry[0]?.label}`}
-                className={entry[0]?.divider === true ? "item-row divided" : "item-row"}
+                key={entry.label}
+                className={entry.divider === true ? "item-row divided" : "item-row"}
                 role="group"
+                aria-label={entry.label}
               >
-                {entry.map((item) => renderItem(item, true))}
+                <span className="item-label" aria-hidden="true">
+                  {entry.label}
+                </span>
+                <span className="item-choices">
+                  {entry.choices.map((item) => renderItem(item, true))}
+                </span>
               </div>
             ) : (
               renderItem(entry)

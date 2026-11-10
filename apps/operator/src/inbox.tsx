@@ -359,16 +359,19 @@ function UserMenu({
       className="me-menu"
       items={[
         { label: t("profile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
-        THEMES.map((choice, index) => ({
-          label: t(choice.label),
-          lead: <Icon name={choice.icon} size={18} />,
-          checked: theme === choice.value,
-          divider: index === 0,
-          onSelect: () => {
-            setTheme(choice.value);
-            setThemeState(choice.value);
-          },
-        })),
+        {
+          label: t("theme"),
+          divider: true,
+          choices: THEMES.map((choice) => ({
+            label: t(choice.label),
+            lead: <Icon name={choice.icon} size={16} />,
+            checked: theme === choice.value,
+            onSelect: () => {
+              setTheme(choice.value);
+              setThemeState(choice.value);
+            },
+          })),
+        },
         {
           divider: true,
           label: t("signOut"),
