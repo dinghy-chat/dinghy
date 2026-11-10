@@ -134,10 +134,10 @@ export function registerOperatorRoutes(
       .select({ id: operator.id })
       .from(operator)
       .where(and(eq(operator.email, email), isNull(operator.deletedAt)));
-    // Only where anyone may sign up, which already mails any address. A self-hosted server mails
-    // only its operators, so nobody can make it write to strangers.
-    if (known === undefined && !signup) return;
     if (known === undefined) {
+      // Only where anyone may sign up, which already mails any address. A self-hosted server mails
+      // only its operators, so nobody can make it write to strangers.
+      if (!signup) return;
       const mail = noAccountMail(`${publicOrigin}/signup`);
       await mailer.send(email, mail.subject, mail.body);
       audit(logger, "sign_in.no_account", { account: emailAddressHash(email).slice(0, 16), ip });

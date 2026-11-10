@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import { FORMER_MEMBER_NAME } from "../src/account-delete.ts";
 import { type Auth, signInLink } from "../src/auth.ts";
 import { operator, workspaceMember } from "../src/db/schema.ts";
 import type { Database } from "../src/db/tenant.ts";
@@ -168,10 +169,10 @@ export async function deletedDuring<T>(
       if (tries === LOCK_WAIT_TRIES) throw new Error("The request never waited for the account");
       await delay(LOCK_WAIT_POLL_MS);
     }
-    await client.query(
-      "update operator set deleted_at = now(), name = 'Former team member' where id = $1",
-      [operatorId],
-    );
+    await client.query("update operator set deleted_at = now(), name = $2 where id = $1", [
+      operatorId,
+      FORMER_MEMBER_NAME,
+    ]);
     await client.query("commit");
     await settled;
     return await answer;
