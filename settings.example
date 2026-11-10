@@ -55,6 +55,10 @@ LOG_LEVEL=
 # characters. The route stays off without it, because it should not be public.
 METRICS_TOKEN=
 
+# Optional. Sends errors to your own Sentry project, such as https://key@o1.ingest.sentry.io/2. Without
+# it, Dinghy loads no error reporting and sends nothing anywhere.
+SENTRY_DSN=
+
 # Optional. The ports Caddy listens on with the tls profile. Certificates need 80 and 443 from the
 # internet, so change these only when something in front forwards those ports here.
 HTTP_PORT=

@@ -153,6 +153,8 @@ services:
       IMAGES_ORIGIN: ${IMAGES_ORIGIN:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Optional. Your own Sentry project for errors. Without it, nothing is sent anywhere.
+      SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
       # Writable, because chat setup runs here and saves the push keys in it.
       - secrets-app:/secrets

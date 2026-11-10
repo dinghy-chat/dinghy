@@ -90,6 +90,7 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `TRUSTED_PROXY_HOPS` | See below |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent` |
 | `METRICS_TOKEN` | Turns on Prometheus metrics at `/metrics`, with this token as the bearer token. At least 16 characters |
+| `SENTRY_DSN` | Sends errors to your own [Sentry](https://sentry.io) project: what the server logs as an error, and crashes. It sends no request data, no logs and no traces. Optional. Without it, nothing is sent anywhere |
 | `HTTP_PORT`, `HTTPS_PORT` | The ports Caddy listens on with the `tls` profile, 80 and 443 by default. Certificates need those two ports from the internet, so change these only when something in front forwards them here |
 
 Without a mail server, Dinghy still works. Operators sign in with a link that you make for them, with `docker compose exec app chat sign-in-link <email>`, and the sign-in page tells them to ask you. Someone new who opens an invite signs in at once, and nothing checks their email, so send each invite link only to the person it is for.
