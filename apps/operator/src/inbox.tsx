@@ -20,17 +20,16 @@ import { Menu, type MenuItem } from "./popup.tsx";
 import { ProfilePage, SettingsPage } from "./settings.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
-import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import { Thread } from "./thread.tsx";
 import {
   Avatar,
+  EmptyArt,
   Harbor,
   Icon,
   type IconName,
   initials,
   Logo,
   PageHead,
-  Pond,
   ROLE_TEXT,
 } from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
@@ -43,9 +42,12 @@ const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
 
-const STATUS_LOOK: Record<Status, { label: TextId; empty: TextId; icon: "inbox" | "done" }> = {
-  open: { label: "inbox", empty: "noOpen", icon: "inbox" },
-  closed: { label: "closed", empty: "noClosed", icon: "done" },
+const STATUS_LOOK: Record<
+  Status,
+  { label: TextId; empty: TextId; hint: TextId; icon: "inbox" | "done" }
+> = {
+  open: { label: "inbox", empty: "noOpen", hint: "emptyHint", icon: "inbox" },
+  closed: { label: "closed", empty: "noClosed", hint: "closedHint", icon: "done" },
 };
 
 /** The time today, and the date before today. */
@@ -325,13 +327,7 @@ function WorkspaceSwitcher({
   );
 }
 
-const THEMES: { value: Theme; label: TextId; icon: IconName }[] = [
-  { value: "system", label: "themeSystem", icon: "monitor" },
-  { value: "light", label: "themeLight", icon: "sun" },
-  { value: "dark", label: "themeDark", icon: "moon" },
-];
-
-/** The operator at the foot of the sidebar, with their profile, the theme and sign out. */
+/** The operator at the foot of the sidebar, with their profile and sign out. */
 function UserMenu({
   me,
   role,
@@ -346,7 +342,6 @@ function UserMenu({
   onProfile(): void;
   onSignedOut(): void;
 }) {
-  const [theme, setThemeState] = useState(savedTheme);
   return (
     <Menu
       label={t("userMenu")}
@@ -356,16 +351,6 @@ function UserMenu({
       className="me-menu"
       items={[
         { label: t("profile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
-        ...THEMES.map((choice, index) => ({
-          label: t(choice.label),
-          lead: <Icon name={choice.icon} size={18} />,
-          checked: theme === choice.value,
-          divider: index === 0,
-          onSelect: () => {
-            setTheme(choice.value);
-            setThemeState(choice.value);
-          },
-        })),
         {
           divider: true,
           label: t("signOut"),
@@ -804,10 +789,10 @@ export function Inbox({
                 <SearchField value={query} searching={searching} onChange={setQuery} />
                 <ul className="rows" aria-busy={searching}>
                   {found === null && conversations.length === 0 && (
-                    <li className="nothing empty-boat">
-                      <Pond />
+                    <li className="list-empty">
+                      <EmptyArt scene={status === "open" ? "day" : "evening"} />
                       <b>{t(STATUS_LOOK[status].empty)}</b>
-                      {t("emptyHint")}
+                      {t(STATUS_LOOK[status].hint)}
                     </li>
                   )}
                   {found !== null && found.length === 0 && !searching && (

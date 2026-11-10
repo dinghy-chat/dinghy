@@ -4,6 +4,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard has calmer colours: a warm grey frame instead of the yellow, navy for your own messages instead of the bright blue, lighter shadows, outline icons without the tinted fill, the theme choice on the Profile page instead of the account menu, and off-white buttons at night instead of yellow. The sign-in screens keep the yellow sky.
+- An empty Inbox shows a small drawing of the boat by day, and an empty Closed list shows it under the moon. Closed also says that closed conversations appear there.
+
 ## [0.11.0] - 2026-11-10
 
 ### Upgrading

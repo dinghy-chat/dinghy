@@ -12,28 +12,23 @@
   font-display: swap;
 }
 
-/* Tokens, the same as the landing page in site/public/css/site.css. Each pair is light, then dark.
-   The device picks one, and theme.ts can fix it with data-theme. In the dark, --navy is the ink and
-   the strong fill, so it turns light, and --on-navy is the text on that fill. */
+/* Tokens. Each pair is light, then dark. The device picks one, and theme.ts can fix it with
+   data-theme. In the dark, --navy is the ink and the strong fill, so it turns light, and --on-navy
+   is the text on that fill. */
 :root {
   color-scheme: light dark;
-  --navy: light-dark(#0b2239, #f2ead3);
-  --navy-light: light-dark(#17335c, #ffffff);
+  --navy: light-dark(#0b2239, #eef2f6);
   --on-navy: light-dark(#fff, #0b2239);
-  /* The main buttons: navy by day, the brand's yellow at night. */
-  --fill: light-dark(#0b2239, #ffc917);
-  --fill-hover: light-dark(#17335c, #ffd640);
+  /* The main buttons: navy by day, off-white at night. */
+  --fill: light-dark(#0b2239, #e9eef4);
+  --fill-hover: light-dark(#17335c, #ffffff);
   --on-fill: light-dark(#fff, #0b2239);
   --blue: #1f6bff;
   --blue-deep: light-dark(#1457d6, #8ab8ff);
   --red: #e5352b;
   --red-deep: #bf241b;
-  --yellow: #ffc917;
-  --yellow-pale: light-dark(#fff6d6, #243c56);
   --cream: #fff8df;
-  --fog: light-dark(#f3f6f8, #1c3249);
-  --line: light-dark(#e7e2d2, #2a4058);
-  --line-cool: light-dark(#dfe5ea, #2f4660);
+  --line: light-dark(#e6e4dd, #263443);
   --text: light-dark(#44546a, #b9c5d2);
   --mute: light-dark(#5f6e80, #8e9cad);
   /* Labels and secondary text that must read stronger than --text. */
@@ -42,45 +37,45 @@
   --bad: light-dark(#c62a21, #ff8077);
   --bad-soft: light-dark(#fdeceb, #3b2028);
   --bad-line: light-dark(#f2c4c0, #6e3036);
-  --tile-blue: light-dark(#e4f0ff, #1d3a60);
-  --tile-peach: light-dark(#ffe9e2, #4a2f2e);
-  --tile-yellow: light-dark(#fff3cc, #463c1d);
-  --tile-mint: light-dark(#d9f7ef, #173f3a);
+  --tile-blue: light-dark(#e6ecf3, #1f3147);
+  --tile-peach: light-dark(#f3e8e4, #3a2a2b);
+  --tile-yellow: light-dark(#f1ecdb, #383220);
+  --tile-mint: light-dark(#e3eee9, #1b3833);
   --display: "Gabarito", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --rail: 232px;
-  /* Around the panel: the yellow sky, or the night. */
-  --sky: light-dark(#ffc917, #081522);
+  /* Around the panel: warm paper grey, or the night. */
+  --sky: light-dark(#f3f2ee, #0b141d);
   /* The panel, cards, menus and fields. */
-  --surface: light-dark(#fff, #12253a);
+  --surface: light-dark(#fff, #131e2a);
   /* Behind the messages of a conversation. */
-  --surface-dim: light-dark(#fcfbf8, #0e1f32);
-  --soft: light-dark(#fbf5e3, #1b3047);
+  --surface-dim: light-dark(#fafaf8, #0f1924);
+  --soft: light-dark(#f1f0ec, #1c2937);
   /* --soft under the pointer, and an open menu's button. */
-  --soft-hover: light-dark(#f5ecd0, #243c56);
-  --soft-edge: light-dark(#eadcae, #34506e);
+  --soft-hover: light-dark(#e8e6e0, #243344);
+  --soft-edge: light-dark(#dcd9d0, #2e3e51);
   /* A row or a tab under the pointer. */
-  --row-hover: light-dark(#fdfaf1, #172b41);
-  --warm-line: light-dark(#efe9da, #22374e);
-  --field-line: light-dark(#978a63, #3f5671);
-  --field-line-hover: light-dark(#7d714f, #58708d);
-  --field-readonly: light-dark(#fdfaf2, #0f2135);
+  --row-hover: light-dark(#f8f7f4, #172230);
+  --field-line: light-dark(#c4c1b6, #3a4a5c);
+  --field-line-hover: light-dark(#a9a59a, #52657a);
+  --field-readonly: light-dark(#fafaf8, #101a25);
   /* The sidebar's buttons sit straight on the sky. */
-  --side-tint: light-dark(rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.06));
-  --side-tint-hover: light-dark(rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.11));
-  --side-mute: light-dark(#5c4a10, #8e9cad);
-  --warn-soft: light-dark(#fff1c2, #3f3415);
-  --warn-ink: light-dark(#6e5100, #ffd66b);
-  --switch-off: light-dark(#cfc6ad, #3a506a);
-  --switch-on: light-dark(#0b2239, #1f6bff);
-  --nobody-line: light-dark(#b8ae94, #4a607a);
-  --code: light-dark(#0b2239, #06111d);
+  --side-tint: light-dark(rgb(11 34 57 / 0.05), rgb(255 255 255 / 0.05));
+  --side-tint-hover: light-dark(rgb(11 34 57 / 0.09), rgb(255 255 255 / 0.09));
+  --side-mute: light-dark(#6f6c63, #8693a2);
+  --warn-soft: light-dark(#fdf3d7, #3a3115);
+  --warn-ink: light-dark(#7a5600, #ffd66b);
+  --switch-off: light-dark(#d3d0c7, #33445a);
+  --nobody-line: light-dark(#bdb9ae, #4a5b70);
+  --code: light-dark(#0b2239, #070e15);
   --scroll: light-dark(rgb(11 34 57 / 0.18), rgb(255 255 255 / 0.16));
   --scroll-hover: light-dark(rgb(11 34 57 / 0.35), rgb(255 255 255 / 0.3));
   /* The patch of sky behind the empty states' boat. */
-  --pond: light-dark(#ffc917, #1b3047);
+  --pond: light-dark(#eceae4, #1c2937);
   --d-hull: var(--navy);
+  /* The operator's own messages. */
+  --bubble: light-dark(#0b2239, #2b3f57);
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -100,7 +95,7 @@ body,
 #root {
   height: 100%;
 }
-/* The sky's yellow, so a page that is still loading already looks like the next screen. */
+/* The sky's grey, so a page that is still loading already looks like the next screen. */
 body {
   margin: 0;
   background: var(--sky);
@@ -175,7 +170,7 @@ textarea:hover {
   border-color: var(--field-line-hover);
 }
 input[readonly] {
-  border-color: var(--warm-line);
+  border-color: var(--line);
   background-color: var(--field-readonly);
   color: var(--text);
 }
@@ -259,18 +254,11 @@ textarea {
 }
 .outline {
   background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px var(--line-cool);
+  box-shadow: inset 0 0 0 1.5px var(--line);
   color: var(--navy);
 }
 .outline:hover {
   box-shadow: inset 0 0 0 1.5px var(--navy);
-}
-.light {
-  background: var(--surface);
-  color: var(--navy);
-}
-.light:hover {
-  background: var(--yellow-pale);
 }
 .danger {
   background: var(--red);
@@ -287,11 +275,6 @@ textarea {
 .link:hover {
   text-decoration: underline;
 }
-/* Phosphor duotone icons. The light layer takes a brand color from its place. */
-.duo {
-  fill: var(--duo, var(--blue));
-  opacity: var(--duo-opacity, 0.3);
-}
 .icon-button {
   display: grid;
   flex: none;
@@ -302,7 +285,7 @@ textarea {
   color: var(--navy);
 }
 .icon-button:hover:not(:disabled) {
-  background: var(--fog);
+  background: var(--soft);
 }
 .quiet-danger {
   color: var(--mute);
@@ -461,18 +444,16 @@ textarea {
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background-color: var(--sky);
+  background-color: light-dark(#ffc917, #081522);
   transition: background-color 0.5s ease;
 }
-/* The account screens follow one day, in the brand's yellows: pale at dawn, warm after noon. */
+/* The account screens follow one day, in the brand's yellows: pale at dawn, warm after noon. The
+   app itself stays on the calm --sky. */
 .scene.morning {
   background-color: light-dark(#ffe27a, #0d2036);
 }
 .scene.forenoon {
   background-color: light-dark(#ffd640, #0a1b2e);
-}
-.scene.noon {
-  background-color: var(--sky);
 }
 .scene.afternoon {
   background-color: light-dark(#ffbb1f, #071320);
@@ -602,7 +583,7 @@ textarea {
   height: 230px;
 }
 
-/* The app: a labeled sidebar on the flat yellow, and one white panel that floats beside it. */
+/* The app: a labeled sidebar on the paper grey, and one white panel that floats beside it. */
 .shell {
   display: flex;
   flex-direction: column;
@@ -656,21 +637,19 @@ textarea {
   white-space: nowrap;
 }
 
-/* Sidebar, straight on the yellow: navy labels and navy duotone icons. */
+/* Sidebar, straight on the grey: navy labels and navy icons. */
 .side {
-  --duo: var(--navy);
-  --duo-opacity: 0.25;
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 18px 12px 4px 18px;
+  padding: 10px 12px 4px 18px;
   color: var(--navy);
 }
 .brand {
-  padding: 2px 8px 18px;
+  padding: 2px 8px 12px;
 }
-/* On the yellow, a focus ring in navy: blue would be too faint. */
+/* In the sidebar, a focus ring in navy, like its labels. */
 .side :focus-visible {
   outline-color: var(--navy);
 }
@@ -702,7 +681,7 @@ button.workspace[aria-expanded="true"],
   margin-bottom: 14px;
 }
 .side > .workspace {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .ws-tile {
   display: grid;
@@ -755,7 +734,7 @@ button.workspace[aria-expanded="true"],
 .nav button[aria-current="page"],
 .me.current {
   background: var(--surface);
-  box-shadow: 0 2px 10px rgb(120 80 0 / 0.12);
+  box-shadow: 0 1px 2px rgb(11 34 57 / 0.06);
 }
 .nav svg {
   flex: none;
@@ -823,8 +802,8 @@ button.workspace[aria-expanded="true"],
   border-radius: 20px;
   background: var(--surface);
   box-shadow:
-    0 0 0 1px rgb(120 80 0 / 0.06),
-    0 14px 40px rgb(120 80 0 / 0.18);
+    0 0 0 1px light-dark(rgb(11 34 57 / 0.06), rgb(255 255 255 / 0.04)),
+    0 1px 3px rgb(11 34 57 / 0.04);
 }
 /* The banners and the panel share the column beside the sidebar, so the sidebar starts at the top. */
 .stage {
@@ -849,7 +828,6 @@ button.workspace[aria-expanded="true"],
 
 /* Pills: the panel's buttons. */
 .pill {
-  --duo: currentColor;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -920,7 +898,6 @@ button.workspace[aria-expanded="true"],
   background: var(--soft-hover);
 }
 .text-button {
-  --duo: currentColor;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -934,7 +911,6 @@ button.workspace[aria-expanded="true"],
   text-decoration: underline;
 }
 .chip {
-  --duo: currentColor;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -992,9 +968,9 @@ button.workspace[aria-expanded="true"],
   border-radius: 16px;
   background: var(--surface);
   box-shadow:
-    0 0 0 1px rgb(120 80 0 / 0.08),
+    0 0 0 1px rgb(11 34 57 / 0.08),
     0 4px 8px rgb(11 34 57 / 0.05),
-    0 16px 40px rgb(120 80 0 / 0.18);
+    0 12px 32px rgb(11 34 57 / 0.1);
   color: var(--navy);
   font-size: 14.5px;
   text-align: left;
@@ -1026,8 +1002,6 @@ button.workspace[aria-expanded="true"],
   }
 }
 .item {
-  --duo: var(--navy);
-  --duo-opacity: 0.25;
   position: relative;
   display: flex;
   align-items: center;
@@ -1063,7 +1037,6 @@ button.workspace[aria-expanded="true"],
 }
 /* .danger alone is the red button, so the menu item clears its fill. */
 .item.danger {
-  --duo: var(--bad);
   background: none;
   color: var(--bad);
 }
@@ -1079,7 +1052,7 @@ button.workspace[aria-expanded="true"],
   top: -5px;
   right: 4px;
   left: 4px;
-  border-top: 1px solid var(--warm-line);
+  border-top: 1px solid var(--line);
 }
 .item .avatar,
 .select-button .avatar {
@@ -1195,7 +1168,7 @@ button.workspace[aria-expanded="true"],
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
-  border-right: 1px solid var(--warm-line);
+  border-right: 1px solid var(--line);
 }
 .list .page-head {
   padding: 26px 24px 14px;
@@ -1264,7 +1237,7 @@ button.workspace[aria-expanded="true"],
   top: 0;
   right: 16px;
   left: 16px;
-  border-top: 1px solid var(--warm-line);
+  border-top: 1px solid var(--line);
 }
 .row:hover {
   background: var(--row-hover);
@@ -1329,6 +1302,69 @@ button.workspace[aria-expanded="true"],
 .empty-boat {
   padding-top: 48px;
 }
+/* An empty list: a small drawing, a line that says the list is empty, and a hint. */
+.list-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 40px 16px;
+  color: var(--mute);
+  font-size: 14px;
+  text-align: center;
+}
+.list-empty b {
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 600;
+}
+/* The empty-list drawing: navy line work on the paper, with the pennant the only colour. */
+.empty-art {
+  width: 120px;
+  height: 120px;
+  clip-path: circle(50%);
+  margin-bottom: 14px;
+  color: var(--navy);
+}
+.empty-sky {
+  fill: var(--soft);
+}
+.empty-water {
+  fill: var(--line);
+}
+.empty-sun {
+  fill: light-dark(#fff, #2e3e51);
+}
+.empty-ink,
+.empty-ripple {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.empty-ink {
+  stroke: currentColor;
+  stroke-width: 2.5;
+}
+.empty-ripple {
+  stroke: var(--mute);
+  stroke-width: 2;
+  opacity: 0.5;
+}
+.empty-star {
+  fill: var(--mute);
+  opacity: 0.6;
+}
+.empty-sail {
+  fill: var(--surface);
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.empty-hull {
+  fill: currentColor;
+}
+.empty-flag {
+  fill: var(--red);
+}
 
 /* A conversation. */
 .thread {
@@ -1349,7 +1385,7 @@ button.workspace[aria-expanded="true"],
   align-items: center;
   gap: 12px;
   padding: 18px 28px;
-  border-bottom: 1px solid var(--warm-line);
+  border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
 .who-is {
@@ -1393,7 +1429,7 @@ button.workspace[aria-expanded="true"],
 }
 .replying {
   padding: 8px 28px;
-  border-bottom: 1px solid var(--warm-line);
+  border-bottom: 1px solid var(--line);
   color: var(--blue-deep);
   font-size: 14px;
   font-weight: 600;
@@ -1404,7 +1440,7 @@ button.workspace[aria-expanded="true"],
 }
 /* The fold around the visitor's attributes and pages. */
 .about-visitor {
-  border-bottom: 1px solid var(--warm-line);
+  border-bottom: 1px solid var(--line);
 }
 .about-visitor > summary {
   display: flex;
@@ -1431,7 +1467,7 @@ button.workspace[aria-expanded="true"],
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 2px 14px;
   padding: 10px 28px;
-  border-bottom: 1px solid var(--warm-line);
+  border-bottom: 1px solid var(--line);
   font-size: 13.5px;
 }
 .context dt {
@@ -1444,7 +1480,7 @@ button.workspace[aria-expanded="true"],
 /* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
 .page-context {
   padding: 10px 28px;
-  border-bottom: 1px solid var(--warm-line);
+  border-bottom: 1px solid var(--line);
   font-size: 13.5px;
 }
 .page-context h3 {
@@ -1458,7 +1494,7 @@ button.workspace[aria-expanded="true"],
 /* The visitor's pages, newest first: a title as a link, and how long ago on the right. */
 .journey {
   padding: 10px 28px;
-  border-bottom: 1px solid var(--warm-line);
+  border-bottom: 1px solid var(--line);
   font-size: 13.5px;
 }
 .journey h3 {
@@ -1551,7 +1587,7 @@ button.workspace[aria-expanded="true"],
   max-width: min(60%, 560px);
   padding: 10px 14px;
   border-radius: 18px;
-  background: var(--blue);
+  background: var(--bubble);
   color: #fff;
   font-size: 15px;
   line-height: 1.4;
@@ -1561,13 +1597,13 @@ button.workspace[aria-expanded="true"],
 .msg.visitor {
   align-self: flex-start;
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--warm-line);
+  box-shadow: 0 0 0 1px var(--line);
   color: var(--navy);
 }
 /* An image deleted after 12 months: a quiet note where it was. */
 .msg.removed {
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--warm-line);
+  box-shadow: inset 0 0 0 1.5px var(--line);
   color: var(--mute);
   font-style: italic;
 }
@@ -1593,7 +1629,7 @@ button.workspace[aria-expanded="true"],
   max-width: min(60%, 360px);
   overflow: hidden;
   border-radius: 18px;
-  box-shadow: 0 0 0 1px var(--warm-line);
+  box-shadow: 0 0 0 1px var(--line);
 }
 .shot.visitor {
   align-self: flex-start;
@@ -1617,7 +1653,7 @@ button.workspace[aria-expanded="true"],
   border-radius: 18px;
   background: var(--surface);
   box-shadow:
-    0 0 0 1px var(--warm-line),
+    0 0 0 1px var(--line),
     0 6px 18px rgb(11 34 57 / 0.05);
 }
 .box:focus-within {
@@ -1640,8 +1676,6 @@ button.workspace[aria-expanded="true"],
   outline: 0;
 }
 .box .icon-button {
-  --duo: var(--navy);
-  --duo-opacity: 0.2;
   color: var(--mute);
 }
 .send {
@@ -1673,11 +1707,10 @@ button.workspace[aria-expanded="true"],
   padding: 12px 16px;
   border-radius: 16px;
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--warm-line);
+  box-shadow: 0 0 0 1px var(--line);
   color: var(--navy);
 }
 .closed svg {
-  --duo: var(--green);
   flex: none;
 }
 
@@ -1750,7 +1783,7 @@ button.workspace[aria-expanded="true"],
   grid-template-columns: minmax(180px, 300px) minmax(0, 1fr);
   gap: 16px 40px;
   padding: 24px 0;
-  border-top: 1px solid var(--warm-line);
+  border-top: 1px solid var(--line);
 }
 .page-body > .page-row:first-child,
 .profile > .page-row:first-child,
@@ -1808,7 +1841,7 @@ button.workspace[aria-expanded="true"],
   flex-direction: column;
   justify-content: space-between;
   padding: 16px 18px;
-  border: 1px solid var(--warm-line);
+  border: 1px solid var(--line);
   border-radius: 16px;
 }
 .figures dt {
@@ -2086,8 +2119,46 @@ button.workspace[aria-expanded="true"],
   color: var(--navy);
   background: var(--row-hover);
 }
+/* The theme on the Profile page: radio buttons drawn as the tabs' pills, with an icon on each. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.choices label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 15px 0 12px;
+  border-radius: 999px;
+  color: var(--text-strong);
+  font-weight: 600;
+  cursor: pointer;
+}
+/* The radio stays in the page for the keys and screen readers, under its pill. */
+.choices input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.choices label:hover {
+  color: var(--navy);
+  background: var(--row-hover);
+}
+.choices label:has(:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
 .tabs [aria-selected="true"],
-.tabs [aria-selected="true"]:hover {
+.tabs [aria-selected="true"]:hover,
+.choices label:has(:checked) {
   background: var(--soft);
   box-shadow: inset 0 0 0 1.5px var(--soft-edge);
   color: var(--navy);
@@ -2111,7 +2182,7 @@ button.workspace[aria-expanded="true"],
 }
 .members td {
   padding: 14px 12px;
-  border-top: 1px solid var(--warm-line);
+  border-top: 1px solid var(--line);
   vertical-align: middle;
 }
 .members .avatar {
@@ -2198,7 +2269,6 @@ button.workspace[aria-expanded="true"],
   font-size: 13.5px;
 }
 .lock-note svg {
-  --duo-opacity: 0.2;
   flex: none;
 }
 .tab-panel > .bad {
@@ -2219,7 +2289,7 @@ button.workspace[aria-expanded="true"],
 }
 .meter {
   padding: 18px 20px;
-  border: 1px solid var(--warm-line);
+  border: 1px solid var(--line);
   border-radius: 16px;
 }
 .meter-top {
@@ -2277,7 +2347,7 @@ button.workspace[aria-expanded="true"],
 }
 .blocked > li + li,
 .item-list > li + li {
-  border-top: 1px solid var(--warm-line);
+  border-top: 1px solid var(--line);
 }
 .blocked .who-lines {
   min-width: 0;
@@ -2373,7 +2443,7 @@ button.workspace[aria-expanded="true"],
   transition: left 0.15s;
 }
 .check input:checked {
-  background: var(--switch-on);
+  background: var(--fill);
 }
 .check input:checked::after {
   left: 21px;
@@ -2409,7 +2479,7 @@ button.workspace[aria-expanded="true"],
   }
 }
 
-/* Tablet: the sidebar becomes a top bar on the yellow. */
+/* Tablet: the sidebar becomes a top bar on the grey. */
 @media (max-width: 1000px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
