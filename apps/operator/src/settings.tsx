@@ -13,6 +13,7 @@ import {
   type WorkspaceSettings,
 } from "./api.ts";
 import { ApiKeysRow, WebhooksRow } from "./integrations.tsx";
+import { navigate } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, InviteDialog, imagesText, operatorsText, TeamTab, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
@@ -503,8 +504,15 @@ function ThemeChoice() {
 /** Where the account's delete sends a sole owner: a workspace's Team tab or its delete dialog. */
 export type OwnerStep = "team" | "delete";
 
-/** The operator deletes their account, once no workspace would be left without an owner. */
-function DeleteAccountRow({
+/** Opens another workspace on its Team tab or its delete dialog. */
+export const openOwnerStep = (workspaceId: string, step: OwnerStep) =>
+  navigate(`/?workspace=${workspaceId}&settings=${step}`);
+
+/**
+ * The operator deletes their account, once no workspace would be left without an owner. The
+ * Profile page shows it, and so does every screen an operator can land on without a workspace.
+ */
+export function DeleteAccount({
   me,
   emailAvailable,
   keepsLastWorkspace,
@@ -543,7 +551,7 @@ function DeleteAccountRow({
   const [before, after = ""] = t("deleteAccountType").split("{email}");
   const matches = typed.trim().toLowerCase() === me.email.toLowerCase();
   return (
-    <PageRow title={t("deleteAccountTitle")} help={t("deleteAccountHelp")} danger>
+    <>
       {blockers.length > 0 && (
         <>
           <p className="note">{t("deleteAccountBlocked")}</p>
@@ -559,13 +567,16 @@ function DeleteAccountRow({
                   >
                     {t("deleteAccountWorkspace")}
                   </button>
-                  <button
-                    type="button"
-                    className="pill small"
-                    onClick={() => onOpen(one.workspaceId, "team")}
-                  >
-                    {t("deleteAccountMakeOwner")}
-                  </button>
+                  {/* A workspace that waits for payment has no Team tab until it is paid. */}
+                  {(one.active || one.waiting) && (
+                    <button
+                      type="button"
+                      className="pill small"
+                      onClick={() => onOpen(one.workspaceId, "team")}
+                    >
+                      {t("deleteAccountMakeOwner")}
+                    </button>
+                  )}
                 </span>
               </li>
             ))}
@@ -618,7 +629,7 @@ function DeleteAccountRow({
           <ErrorNote text={error} />
         </Confirm>
       )}
-    </PageRow>
+    </>
   );
 }
 
@@ -690,13 +701,15 @@ export function ProfilePage({
         </PageRow>
       </form>
       {/* Outside the form, because its dialog has a form of its own. */}
-      <DeleteAccountRow
-        me={me}
-        emailAvailable={emailAvailable}
-        keepsLastWorkspace={keepsLastWorkspace}
-        onOpen={onOpenWorkspace}
-        onDeleted={onAccountDeleted}
-      />
+      <PageRow title={t("deleteAccountTitle")} help={t("deleteAccountHelp")} danger>
+        <DeleteAccount
+          me={me}
+          emailAvailable={emailAvailable}
+          keepsLastWorkspace={keepsLastWorkspace}
+          onOpen={onOpenWorkspace}
+          onDeleted={onAccountDeleted}
+        />
+      </PageRow>
     </Page>
   );
 }
@@ -988,6 +1001,54 @@ function DeleteRow({
   onDeleted(): void;
 }) {
   const [open, setOpen] = useState(startOpen);
+  const help = cloud
+    ? `${t("deleteWorkspaceHelp")} ${t("deleteWorkspaceCloud")}`
+    : t("deleteWorkspaceHelp");
+  return (
+    <PageRow title={t("deleteWorkspaceTitle")} help={help} danger>
+      {/* An outline, as for replacing the secret. The filled red is for the confirm step. */}
+      <button type="button" className="pill danger-soft" onClick={() => setOpen(true)}>
+        {t("deleteWorkspaceOpen")}
+      </button>
+      {open && (
+        <DeleteWorkspaceDialog
+          api={api}
+          name={name}
+          cloud={cloud}
+          deletion={deletion}
+          exportUrl={api.exportUrl}
+          onDeleted={onDeleted}
+          onCancel={() => setOpen(false)}
+        />
+      )}
+    </PageRow>
+  );
+}
+
+/**
+ * The dialog that deletes a workspace once its name is typed. The settings show it, and so does
+ * the payment screen of a workspace that never paid, which has no counts and no export.
+ */
+export function DeleteWorkspaceDialog({
+  api,
+  name,
+  cloud,
+  deletion,
+  exportUrl,
+  onDeleted,
+  onCancel,
+}: {
+  api: Pick<WorkspaceApi, "deleteWorkspace">;
+  name: string;
+  /** A paid cloud workspace, whose subscription the delete ends. */
+  cloud: boolean;
+  /** What the delete removes, when it is known. */
+  deletion: Deletion | null;
+  /** Where to download an export first, when the workspace can export. */
+  exportUrl: string | null;
+  onDeleted(): void;
+  onCancel(): void;
+}) {
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1010,60 +1071,43 @@ function DeleteRow({
   };
   // The name sits inside the sentence, so each language puts it where its grammar needs it.
   const [before, after = ""] = t("deleteWorkspaceType").split("{name}");
-  const help = cloud
-    ? `${t("deleteWorkspaceHelp")} ${t("deleteWorkspaceCloud")}`
-    : t("deleteWorkspaceHelp");
   const only = deletion?.onlyWorkspace ?? false;
   const goes = deletion === null ? t("deleteWorkspaceConfirm") : deletionText(deletion);
   return (
-    <PageRow title={t("deleteWorkspaceTitle")} help={help} danger>
-      {/* An outline, as for replacing the secret. The filled red is for the confirm step. */}
-      <button
-        type="button"
-        className="pill danger-soft"
-        onClick={() => {
-          setTyped("");
-          setError(null);
-          setOpen(true);
-        }}
-      >
-        {t("deleteWorkspaceOpen")}
-      </button>
-      {open && (
-        <Confirm
-          title={t("deleteWorkspaceConfirmTitle", { name })}
-          text={
+    <Confirm
+      title={t("deleteWorkspaceConfirmTitle", { name })}
+      text={
+        <>
+          <p>{cloud ? `${goes} ${t("deleteWorkspaceCloud")}` : goes}</p>
+          {exportUrl !== null && (
+            <a className="pill small" href={exportUrl} download>
+              {t("deleteWorkspaceExport")}
+            </a>
+          )}
+        </>
+      }
+      confirm={t("deleteWorkspaceButton")}
+      disabled={busy || only || typed.trim() !== name}
+      onConfirm={() => void submit()}
+      onCancel={onCancel}
+    >
+      {only ? (
+        <p className="note">{t("deleteWorkspaceOnly")}</p>
+      ) : (
+        <Field
+          label={
             <>
-              <p>{cloud ? `${goes} ${t("deleteWorkspaceCloud")}` : goes}</p>
-              <a className="pill small" href={api.exportUrl} download>
-                {t("deleteWorkspaceExport")}
-              </a>
+              {before}
+              <CopyText value={name} />
+              {after}
             </>
           }
-          confirm={t("deleteWorkspaceButton")}
-          disabled={busy || only || typed.trim() !== name}
-          onConfirm={() => void submit()}
-          onCancel={() => setOpen(false)}
-        >
-          {only ? (
-            <p className="note">{t("deleteWorkspaceOnly")}</p>
-          ) : (
-            <Field
-              label={
-                <>
-                  {before}
-                  <CopyText value={name} />
-                  {after}
-                </>
-              }
-              value={typed}
-              onChange={setTyped}
-              autoComplete="off"
-            />
-          )}
-          <ErrorNote text={error} />
-        </Confirm>
+          value={typed}
+          onChange={setTyped}
+          autoComplete="off"
+        />
       )}
-    </PageRow>
+      <ErrorNote text={error} />
+    </Confirm>
   );
 }

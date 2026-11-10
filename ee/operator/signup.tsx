@@ -8,9 +8,15 @@ import {
   signOut,
   signUp,
   startCheckout,
+  workspaceApi,
 } from "../../apps/operator/src/api.ts";
 import { CheckEmail } from "../../apps/operator/src/auth.tsx";
 import { navigate } from "../../apps/operator/src/nav.ts";
+import {
+  DeleteAccount,
+  DeleteWorkspaceDialog,
+  openOwnerStep,
+} from "../../apps/operator/src/settings.tsx";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { AuthPage, ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
 import { CHECKOUT_FAILURES } from "./billing.tsx";
@@ -78,14 +84,18 @@ export function Signup({ early }: { early: boolean }) {
  */
 export function Onboarding({
   early,
-  initialName,
+  me,
+  emailAvailable,
   onSignedOut,
+  onAccountDeleted,
 }: {
   early: boolean;
-  initialName: string;
+  me: Me;
+  emailAvailable: boolean;
   onSignedOut(): void;
+  onAccountDeleted(): void;
 }) {
-  const [name, setName] = useState(initialName);
+  const [name, setName] = useState(me.name);
   const [workspaceName, setWorkspaceName] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
@@ -111,58 +121,85 @@ export function Onboarding({
   };
 
   return (
-    <AuthPage time="afternoon" onSubmit={submit}>
-      <h1>{t("onboardingTitle")}</h1>
-      {!early && <p className="note">{t("signupHelp")}</p>}
-      <Field
-        label={t("yourName")}
-        autoComplete="name"
-        required
-        maxLength={100}
-        pattern=".*\S.*"
-        value={name}
-        onChange={setName}
-      />
-      <Field
-        label={t("signupWorkspace")}
-        hint={t("signupWorkspaceHint")}
-        autoComplete="organization"
-        required
-        maxLength={100}
-        pattern=".*\S.*"
-        value={workspaceName}
-        onChange={setWorkspaceName}
-      />
-      <ErrorNote text={error} />
-      <button type="submit" className="btn primary large" disabled={busy}>
-        {t("onboardingSubmit")}
-      </button>
-      <button
-        type="button"
-        className="btn link"
-        onClick={() => void signOut().finally(onSignedOut)}
-      >
-        {t("signOut")}
-      </button>
+    <AuthPage time="afternoon">
+      {/* Its own form, as the account's delete below has a dialog with a form of its own. */}
+      <form className="card-form" onSubmit={submit}>
+        <h1>{t("onboardingTitle")}</h1>
+        {!early && <p className="note">{t("signupHelp")}</p>}
+        <Field
+          label={t("yourName")}
+          autoComplete="name"
+          required
+          maxLength={100}
+          pattern=".*\S.*"
+          value={name}
+          onChange={setName}
+        />
+        <Field
+          label={t("signupWorkspace")}
+          hint={t("signupWorkspaceHint")}
+          autoComplete="organization"
+          required
+          maxLength={100}
+          pattern=".*\S.*"
+          value={workspaceName}
+          onChange={setWorkspaceName}
+        />
+        <ErrorNote text={error} />
+        <button type="submit" className="btn primary large" disabled={busy}>
+          {t("onboardingSubmit")}
+        </button>
+        <button
+          type="button"
+          className="btn link"
+          onClick={() => void signOut().finally(onSignedOut)}
+        >
+          {t("signOut")}
+        </button>
+      </form>
+      {/* An account with no workspace has no Profile page, so its delete is here. */}
+      {me.workspaces.length === 0 && (
+        <DeleteAccount
+          me={me}
+          emailAvailable={emailAvailable}
+          keepsLastWorkspace={false}
+          onOpen={openOwnerStep}
+          onDeleted={onAccountDeleted}
+        />
+      )}
     </AuthPage>
   );
 }
 
 /** A workspace that waits for payment. Only its owner can pay. */
 export function FinishPayment({
+  me,
   workspace,
   others,
+  emailAvailable,
   onSwitch,
   onSignedOut,
+  onWorkspaceDeleted,
+  onAccountDeleted,
 }: {
+  me: Me;
   workspace: Me["workspaces"][number];
   /** The operator's paid workspaces, so this screen is never a dead end. */
   others: Me["workspaces"];
+  emailAvailable: boolean;
   onSwitch(id: string): void;
   onSignedOut(): void;
+  onWorkspaceDeleted(name: string): void;
+  onAccountDeleted(): void;
 }) {
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
+  // The account's delete, on another workspace's Profile page, opens this one to delete it.
+  const [deleting, setDeleting] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("workspace") === workspace.workspaceId && params.get("settings") === "delete";
+  });
+  const isOwner = workspace.role === "owner";
   const pay = async () => {
     setError(null);
     setBusy(true);
@@ -177,7 +214,7 @@ export function FinishPayment({
     <AuthPage time="afternoon">
       <h1>{t("payTitle")}</h1>
       <p className="note">{workspace.name}</p>
-      {workspace.role === "owner" ? (
+      {isOwner ? (
         <>
           <p className="note">{t("payHelp")}</p>
           <ErrorNote text={error} />
@@ -210,6 +247,35 @@ export function FinishPayment({
       >
         {t("signOut")}
       </button>
+      {/* A sole owner finds the same button in the account's delete, below. */}
+      {isOwner && !workspace.soleOwner && (
+        <button type="button" className="pill danger-soft" onClick={() => setDeleting(true)}>
+          {t("deleteWorkspaceOpen")}
+        </button>
+      )}
+      <DeleteAccount
+        me={me}
+        emailAvailable={emailAvailable}
+        keepsLastWorkspace={false}
+        onOpen={(id, step) => {
+          if (id === workspace.workspaceId) setDeleting(true);
+          else openOwnerStep(id, step);
+        }}
+        onDeleted={onAccountDeleted}
+      />
+      {deleting && (
+        // Nothing was paid, so no subscription ends, and the workspace shows no counts and has no
+        // export until it is paid.
+        <DeleteWorkspaceDialog
+          api={workspaceApi(workspace.workspaceId)}
+          name={workspace.name}
+          cloud={false}
+          deletion={null}
+          exportUrl={null}
+          onDeleted={() => onWorkspaceDeleted(workspace.name)}
+          onCancel={() => setDeleting(false)}
+        />
+      )}
     </AuthPage>
   );
 }

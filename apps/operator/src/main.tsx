@@ -7,6 +7,7 @@ import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate } from "./nav.ts";
+import { DeleteAccount, openOwnerStep } from "./settings.tsx";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
 import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./ui.tsx";
@@ -70,6 +71,11 @@ function App() {
   // The workspace this operator just deleted, for a note in the next one.
   const [deletedName, setDeletedName] = useState<string | null>(null);
   const [accountDeleted, setAccountDeleted] = useState(false);
+  const accountGone = useCallback(() => setAccountDeleted(true), []);
+  const workspaceDeleted = useCallback((name: string) => {
+    setDeletedName(name);
+    navigate("/");
+  }, []);
   // Signup is open only on the cloud plan. A self-hosted server shows none.
   const [meta, setMeta] = useState<Meta | "loading">("loading");
   useEffect(() => {
@@ -106,8 +112,10 @@ function App() {
     return (
       <Onboarding
         early={meta.signup === "early"}
-        initialName={me.name}
+        me={me}
+        emailAvailable={meta.email}
         onSignedOut={() => navigate("/")}
+        onAccountDeleted={accountGone}
       />
     );
   }
@@ -131,7 +139,13 @@ function App() {
   // On the cloud, an account with no workspace finishes its signup, even after closing the tab.
   if (first === undefined && meta.signup !== null) {
     return (
-      <Onboarding early={meta.signup === "early"} initialName={me.name} onSignedOut={signedOut} />
+      <Onboarding
+        early={meta.signup === "early"}
+        me={me}
+        emailAvailable={meta.email}
+        onSignedOut={signedOut}
+        onAccountDeleted={accountGone}
+      />
     );
   }
   if (first === undefined) {
@@ -145,6 +159,14 @@ function App() {
         >
           {t("signOut")}
         </button>
+        {/* With no workspace there is no Profile page, so the account's delete is here. */}
+        <DeleteAccount
+          me={me}
+          emailAvailable={meta.email}
+          keepsLastWorkspace
+          onOpen={openOwnerStep}
+          onDeleted={accountGone}
+        />
       </AuthPage>
     );
   }
@@ -152,10 +174,14 @@ function App() {
   if (!opens(first)) {
     return (
       <FinishPayment
+        me={me}
         workspace={first}
         others={me.workspaces.filter(opens)}
+        emailAvailable={meta.email}
         onSwitch={switchTo}
         onSignedOut={signedOut}
+        onWorkspaceDeleted={workspaceDeleted}
+        onAccountDeleted={accountGone}
       />
     );
   }
@@ -170,12 +196,9 @@ function App() {
       onSwitch={switchTo}
       onAccountChanged={load}
       deletedName={deletedName}
-      onWorkspaceDeleted={(name) => {
-        setDeletedName(name);
-        navigate("/");
-      }}
+      onWorkspaceDeleted={workspaceDeleted}
       onCloseDeleted={() => setDeletedName(null)}
-      onAccountDeleted={() => setAccountDeleted(true)}
+      onAccountDeleted={accountGone}
     />
   );
 }

@@ -41,6 +41,15 @@ async function signIn(page: Page, server: Server, email: string) {
   await openLink(page, await server.signInLink(email));
 }
 
+/** Deletes the signed-in account from the screen it is on, with the link that `index` emails. */
+async function deleteAccount(page: Page, server: Server, email: string, index: number) {
+  await page.getByRole("button", { name: "Delete my account" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Email me the link" }).click();
+  await expect(page.getByText(`We sent a link to ${email}`)).toBeVisible();
+  await openLink(page, await server.linkTo(email, index), "Delete my account");
+  await expect(page.getByRole("heading", { name: "Your account was deleted." })).toBeVisible();
+}
+
 /** The fake Checkout page's session, and the workspace it pays for. */
 async function onCheckout(page: Page, server: Server) {
   const stripe = server.stripe;
@@ -84,6 +93,28 @@ test.describe("with billing on", () => {
     await expect(page.getByRole("heading", { name: "Finish payment" })).toBeVisible();
     await page.getByRole("button", { name: "Pay on Stripe" }).click();
     await onCheckout(page, server);
+  });
+
+  test("an owner who never paid deletes the workspace from the payment screen, then the account", async ({
+    page,
+  }) => {
+    const email = `nora-${Date.now()}@example.com`;
+    await createAccount(page, server, email);
+    await onboard(page, "Never Paid");
+    await onCheckout(page, server);
+    await page.goto(server.apiOrigin);
+    await expect(page.getByRole("heading", { name: "Finish payment" })).toBeVisible();
+
+    // The only owner: the account's delete names the workspace, which has no Team tab to hand over.
+    await expect(page.getByRole("button", { name: "Make someone an owner" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Delete workspace" }).click();
+    const dialog = page.getByRole("alertdialog");
+    await dialog.getByLabel("Type Never Paid to confirm").fill("Never Paid");
+    await dialog.getByRole("button", { name: "Delete the workspace" }).click();
+
+    // With no workspace left, the onboarding is where the account's delete is.
+    await expect(page.getByRole("heading", { name: "Set up your workspace" })).toBeVisible();
+    await deleteAccount(page, server, email, 1);
   });
 
   test("an unpaid second workspace keeps a way back to the paid one", async ({ page }) => {
@@ -147,6 +178,13 @@ test.describe("with no Stripe keys", () => {
       data: { name: "Nora", workspaceName: "X" },
     });
     expect(create.status()).toBe(404);
+  });
+
+  test("an operator with no workspace can still delete their account", async ({ page }) => {
+    const email = `lone-${Date.now()}@example.com`;
+    await server.createOperator(email, { member: false });
+    await signIn(page, server, email);
+    await deleteAccount(page, server, email, 0);
   });
 });
 

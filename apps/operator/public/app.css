@@ -628,6 +628,15 @@ textarea {
   width: auto;
   min-height: 40px;
 }
+/* A form inside a card, beside a part with a form of its own, such as the account's delete. It
+   keeps the card's own spacing. */
+.card-form {
+  display: contents;
+}
+/* The account's or the workspace's delete at the foot of a card: quiet, and not full width. */
+.card > .danger-soft {
+  justify-self: center;
+}
 .shore {
   position: absolute;
   inset: auto 0 0;

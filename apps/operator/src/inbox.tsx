@@ -17,7 +17,7 @@ import {
 import { useLatestLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
-import { ProfilePage, SettingsPage, type SettingsTab } from "./settings.tsx";
+import { openOwnerStep, ProfilePage, SettingsPage, type SettingsTab } from "./settings.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
 import { type TextId, t } from "./text.ts";
@@ -838,7 +838,7 @@ export function Inbox({
                 keepsLastWorkspace={!canCreate}
                 onOpenWorkspace={(id, step) => {
                   if (id !== workspaceId) {
-                    navigate(`/?workspace=${id}&settings=${step}`);
+                    openOwnerStep(id, step);
                     return;
                   }
                   showView("settings", step === "delete" ? "data" : "team");
