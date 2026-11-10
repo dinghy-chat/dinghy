@@ -1113,6 +1113,7 @@ describe("settings", () => {
       allowedOrigins: [SITE],
       signingSecret: space.signingSecret,
       widgetTexts: { title: null, greeting: null, away: null },
+      logoUrl: null,
       // A self-hosted install has no limits.
       usage: null,
     });
@@ -1212,6 +1213,7 @@ describe("presence routes", () => {
       online: null,
       emailReplies: false,
       texts: { title: null, greeting: null, away: null },
+      logoUrl: null,
     });
   });
 

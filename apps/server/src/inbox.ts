@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { session, workspace } from "./db/schema.ts";
+import { session, workspace, workspaceLogo } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
@@ -26,6 +26,7 @@ import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
+import type { LogoUrl } from "./logo.ts";
 import { closedFailure, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import {
   type Author,
@@ -137,7 +138,14 @@ const workspaceRoute = createRoute({
       description: "The workspace",
       content: {
         "application/json": {
-          schema: z.object({ id: z.string(), name: z.string() }).openapi("InboxWorkspace"),
+          schema: z
+            .object({
+              id: z.string(),
+              name: z.string(),
+              // The logo's address, which changes with each upload. Null with no logo.
+              logoUrl: z.string().nullable(),
+            })
+            .openapi("InboxWorkspace"),
         },
       },
     },
@@ -639,20 +647,29 @@ async function keyStillHolds(db: Database, actor: KeyActor) {
   if (!(await keyStillValid(db, actor))) throw new AccessEndedError();
 }
 
-export function registerInboxRoutes(app: App, options: InboxOptions) {
-  const { db, images, limits, live, logger, stream } = options;
+export function registerInboxRoutes(app: App, options: InboxOptions & { logoUrl: LogoUrl }) {
+  const { db, images, limits, live, logger, logoUrl, stream } = options;
   const inbox = createInbox(options);
 
   app.openapi(workspaceRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const [row] = await withWorkspace(db, id, (tx) =>
       tx
-        .select({ id: workspace.id, name: workspace.name })
+        .select({
+          id: workspace.id,
+          name: workspace.name,
+          publicKey: workspace.publicKey,
+          logoUpdatedAt: workspaceLogo.updatedAt,
+        })
         .from(workspace)
+        .leftJoin(workspaceLogo, eq(workspaceLogo.workspaceId, workspace.id))
         .where(eq(workspace.id, id)),
     );
     if (row === undefined) return c.json(NOT_FOUND, 404);
-    return c.json(row, 200);
+    return c.json(
+      { id: row.id, name: row.name, logoUrl: logoUrl(row.publicKey, row.logoUpdatedAt) },
+      200,
+    );
   });
 
   app.openapi(listRoute, async (c) => {

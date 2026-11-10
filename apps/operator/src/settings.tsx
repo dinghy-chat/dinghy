@@ -61,6 +61,77 @@ function SnippetRow({ publicKey, waiting }: { publicKey: string; waiting: boolea
   );
 }
 
+const LOGO_TYPES = "image/png,image/jpeg,image/webp";
+
+/** The logo at the top of the chat, in place of the boat. */
+function LogoRow({
+  api,
+  logoUrl,
+  onSaved,
+}: {
+  api: WorkspaceApi;
+  logoUrl: string | null;
+  onSaved(saved: WorkspaceSettings): void;
+}) {
+  const picker = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<Note>(null);
+  const change = async (save: () => Promise<WorkspaceSettings>, done: TextId) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      onSaved(await save());
+      setNote({ ok: true, text: done });
+    } catch (failure) {
+      setNote({
+        ok: false,
+        text: failureText(failure, { 400: "logoWrongType", 413: "logoTooLarge" }),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <PageRow title={t("logoTitle")} help={t("logoHelp")}>
+      <div className="logo-row">
+        {logoUrl !== null && <img className="logo-preview" src={logoUrl} alt={t("logoPreview")} />}
+        <input
+          ref={picker}
+          type="file"
+          accept={LOGO_TYPES}
+          hidden
+          aria-label={t("logoUpload")}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            // Cleared, so picking the same file again uploads it again.
+            event.currentTarget.value = "";
+            if (file !== undefined) void change(() => api.setLogo(file), "logoSaved");
+          }}
+        />
+        <button
+          type="button"
+          className="pill dark"
+          disabled={busy}
+          onClick={() => picker.current?.click()}
+        >
+          {t(logoUrl === null ? "logoUpload" : "logoReplace")}
+        </button>
+        {logoUrl !== null && (
+          <button
+            type="button"
+            className="pill"
+            disabled={busy}
+            onClick={() => void change(api.removeLogo, "logoRemoved")}
+          >
+            {t("logoRemove")}
+          </button>
+        )}
+      </div>
+      <SaveNote note={note} />
+    </PageRow>
+  );
+}
+
 /** The widget's title, greeting and away text. An empty box means the widget's own default. */
 function WidgetTextsRow({
   api,
@@ -449,7 +520,8 @@ export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
   );
 }
 
-type Tab = "team" | "install" | "sites" | "secret" | "api" | "data";
+export type SettingsTab = "team" | "install" | "sites" | "secret" | "api" | "data";
+type Tab = SettingsTab;
 
 const TAB_TEXT: Record<Tab, TextId> = {
   team: "tabTeam",
@@ -528,7 +600,9 @@ export function SettingsPage({
   billing,
   waiting,
   emailAvailable,
+  initialTab = "team",
   onLeft,
+  onLogoChanged,
 }: {
   api: WorkspaceApi;
   me: Me;
@@ -541,12 +615,16 @@ export function SettingsPage({
   waiting: boolean;
   /** The server sends email, so invites go by email. */
   emailAvailable: boolean;
+  /** The tab that opens first, such as Install from the inbox's first steps. */
+  initialTab?: Tab;
   onLeft(): void;
+  /** The logo changed, so the sidebar shows the new one. */
+  onLogoChanged(logoUrl: string | null): void;
 }) {
   const team = useTeam(api, role);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [settingsFailure, setSettingsFailure] = useState<TextId | null>(null);
-  const [picked, setPicked] = useState<Tab>("team");
+  const [picked, setPicked] = useState<Tab>(initialTab);
   const [inviting, setInviting] = useState(false);
 
   useEffect(() => {
@@ -620,6 +698,14 @@ export function SettingsPage({
         )}
         {tab === "install" && settings !== null && (
           <>
+            <LogoRow
+              api={api}
+              logoUrl={settings.logoUrl}
+              onSaved={(saved) => {
+                setSettings(saved);
+                onLogoChanged(saved.logoUrl);
+              }}
+            />
             <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
             <WidgetTextsRow api={api} settings={settings} onSaved={setSettings} />
           </>

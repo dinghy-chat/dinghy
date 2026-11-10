@@ -21,6 +21,7 @@ import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { type Live, noLive } from "./live.ts";
+import { logoUrls, registerLogoFile } from "./logo.ts";
 import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
@@ -272,6 +273,12 @@ export function createApp({
 
   // First, so a separate image origin serves images and nothing else.
   if (images !== undefined) registerImageFiles(app, db, images, logger);
+  // Before the widget routes, whose access check would refuse an <img>'s request.
+  registerLogoFile(app, db, images?.origin);
+  // Logos come from the image origin, like every user image, or from this server's own.
+  const logoUrl = logoUrls(
+    images?.origin ?? publicUrl ?? (auth === undefined ? "" : String(auth.options.baseURL)),
+  );
 
   // Liveness: the process answers. A restart cannot fix a database outage, so it checks nothing.
   app.get("/healthz", (c) => c.json({ status: "ok" }));
@@ -332,7 +339,7 @@ export function createApp({
     ownOrigin,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
-  registerWidgetPresence(app, presence, alerts?.emailAvailable ?? false);
+  registerWidgetPresence(app, presence, alerts?.emailAvailable ?? false, logoUrl);
   if (ownOrigin !== undefined) {
     registerChatPage(app, { db, rateLimit, imagesOrigin: images?.origin });
   }
@@ -349,7 +356,16 @@ export function createApp({
     });
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);
-    registerInboxRoutes(app, { db, images, limits, live, logger, stream, visitorPresence });
+    registerInboxRoutes(app, {
+      db,
+      images,
+      limits,
+      live,
+      logger,
+      logoUrl,
+      stream,
+      visitorPresence,
+    });
     registerApiKeyRoutes(app, db, logger);
     registerWebhookRoutes(app, { db, logger, policy: webhooks });
     registerMcp(app, {
@@ -370,6 +386,7 @@ export function createApp({
       limits,
       live,
       logger,
+      logoUrl,
       mailer,
       rateLimit,
     });

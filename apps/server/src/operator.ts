@@ -26,6 +26,7 @@ import {
   WRONG_ORIGIN,
 } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
+import { LOGO_MAX_BYTES, LOGO_TOO_LARGE } from "./images.ts";
 import { signInMail } from "./letter.ts";
 import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
@@ -169,7 +170,9 @@ export function registerOperatorRoutes(
     // ends. Otherwise a member could send a body slowly and finish it after their removal. Hono
     // keeps the text for the route. An image streams instead, and its route checks again.
     if (c.req.method !== "GET" && !c.req.path.endsWith("/images")) {
-      await c.req.text().catch(() => undefined);
+      // A logo is binary, which reading it as text would garble for its route.
+      const body = c.req.path.endsWith("/logo") ? c.req.arrayBuffer() : c.req.text();
+      await body.catch(() => undefined);
     }
     const { response: found, headers } = await auth.api.getSession({
       headers: c.req.raw.headers,
@@ -269,9 +272,16 @@ export function registerOperatorRoutes(
   app.on(["GET", "POST"], "/v1/auth/*", (c) => auth.handler(c.req.raw));
 
   const smallBody = bodyLimit({ maxSize: 64 * 1024 });
+  const logoBody = bodyLimit({
+    maxSize: LOGO_MAX_BYTES,
+    onError: (c) => c.json(LOGO_TOO_LARGE, 413),
+  });
   app.use(
     "/v1/operator/*",
-    (c, next) => (c.req.path.endsWith("/images") ? next() : smallBody(c, next)),
+    (c, next) => {
+      if (c.req.path.endsWith("/images")) return next();
+      return (c.req.path.endsWith("/logo") ? logoBody : smallBody)(c, next);
+    },
     requireOperator,
   );
   app.use("/v1/operator/push-test", async (c, next) => {

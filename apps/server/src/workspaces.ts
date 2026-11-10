@@ -61,6 +61,8 @@ export interface WidgetWorkspace {
   allowedOrigins: string[];
   signingSecret: string;
   texts: WidgetTexts;
+  /** When the logo last changed, or null with no logo. */
+  logoUpdatedAt: Date | null;
 }
 
 /** Finds a workspace by its public key. The caller has no workspace context yet. */
@@ -75,6 +77,8 @@ export async function widgetWorkspace(
     widget_title: string | null;
     widget_greeting: string | null;
     widget_away: string | null;
+    // Text, because Drizzle's driver leaves timestamps unparsed.
+    logo_updated_at: string | null;
   }>(sql`select * from widget_workspace(${publicKey})`);
   const row = result.rows[0];
   if (row === undefined) return null;
@@ -83,6 +87,7 @@ export async function widgetWorkspace(
     allowedOrigins: row.allowed_origins,
     signingSecret: row.signing_secret,
     texts: { title: row.widget_title, greeting: row.widget_greeting, away: row.widget_away },
+    logoUpdatedAt: row.logo_updated_at === null ? null : new Date(row.logo_updated_at),
   };
 }
 

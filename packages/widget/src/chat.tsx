@@ -36,6 +36,7 @@ const CSS = `
 .scene small{display:block;font-size:13px;line-height:17px;opacity:.85}
 .waiting small::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:#2fd08a;vertical-align:1px}
 .sea,.port{position:relative;flex:none;width:46px;height:46px;overflow:hidden;background:#ffc917;border-radius:50%}
+.logo{flex:none;width:36px;height:36px;border-radius:10px;object-fit:contain;background:#fff}
 .sea canvas,.port canvas{position:absolute;left:0;top:0;width:100%;height:100%}
 .float{position:absolute;left:0;top:0;z-index:1;transform-origin:50% 88%}
 .sea-front{z-index:2}
@@ -272,17 +273,22 @@ function larger(a: bigint, b: bigint): bigint {
   return a > b ? a : b;
 }
 
-/** The panel's title bar: the boat's scene, what it means in words, and the close button. */
+/**
+ * The panel's title bar: the workspace's logo or the boat's scene, what the scene means in words,
+ * and the close button.
+ */
 function ChatHead({
   scene,
   online,
   mascot,
+  logoUrl,
   say,
   onClose,
 }: {
   scene: SceneState;
   online: boolean | null;
   mascot: boolean;
+  logoUrl: string | null;
   say: Say;
   /** Missing on the full-page chat, which has nothing to close. */
   onClose?: () => void;
@@ -290,16 +296,21 @@ function ChatHead({
   return (
     <div class="head">
       <div class={`scene ${scene === "empty" ? "empty-state" : scene}`}>
-        {mascot && (
-          <Sea
-            class="sea"
-            options={HEAD_SEA}
-            boat={boatSvg(SCENES[scene].boat, 32)}
-            boatClass="ship"
-          >
-            {scene === "away" && <i class="moon" />}
-            {scene === "sending" && <i class="parcel" />}
-          </Sea>
+        {/* The title beside it names the company, so the logo needs no text of its own. */}
+        {logoUrl !== null ? (
+          <img class="logo" src={logoUrl} alt="" />
+        ) : (
+          mascot && (
+            <Sea
+              class="sea"
+              options={HEAD_SEA}
+              boat={boatSvg(SCENES[scene].boat, 32)}
+              boatClass="ship"
+            >
+              {scene === "away" && <i class="moon" />}
+              {scene === "sending" && <i class="parcel" />}
+            </Sea>
+          )
         )}
         <div>
           <b>{say("title")}</b>
@@ -549,7 +560,7 @@ function Chat({ context, open, setOpen, quiet, prefill, clearPrefill, contextVer
     return () => clearTimeout(timer);
   }, [newReply]);
 
-  const { online, emailReplies, texts } = usePresence(
+  const { online, emailReplies, texts, logoUrl } = usePresence(
     client,
     fullPage ? token : null,
     open && visible,
@@ -898,6 +909,7 @@ function Chat({ context, open, setOpen, quiet, prefill, clearPrefill, contextVer
         scene={sceneState}
         online={online}
         mascot={context.mascot}
+        logoUrl={logoUrl}
         say={say}
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />

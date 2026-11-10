@@ -407,6 +407,20 @@
       "when": 1794342888732,
       "tag": "0057_member_role",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794344109514,
+      "tag": "0058_workspace_logo",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794344109956,
+      "tag": "0059_workspace_logo_grants",
+      "breakpoints": true
     }
   ]
 }

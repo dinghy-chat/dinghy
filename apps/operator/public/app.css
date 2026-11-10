@@ -300,6 +300,21 @@ textarea {
   align-items: center;
   gap: 6px;
 }
+.logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+/* White behind it, as in the chat's header, so a transparent logo looks the same in both. */
+.logo-preview {
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  object-fit: contain;
+  background: #fff;
+}
 
 /* Small shared parts */
 .logo {
@@ -1060,6 +1075,10 @@ button.workspace[aria-expanded="true"],
   height: 24px;
   font-size: 10px;
 }
+img.ws-tile {
+  object-fit: contain;
+  background: #fff;
+}
 .item .ws-tile {
   width: 24px;
   height: 24px;
@@ -1316,6 +1335,35 @@ button.workspace[aria-expanded="true"],
   color: var(--navy);
   font-size: 15px;
   font-weight: 600;
+}
+/* The first steps under an empty inbox. A link per step, so nothing is required. */
+.start {
+  display: grid;
+  gap: 2px;
+  margin: 0 16px 20px;
+  padding: 14px 16px 10px;
+  border-radius: 14px;
+  background: var(--tile-blue);
+}
+.start h3 {
+  margin: 0 0 4px;
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 600;
+}
+.start ol {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.start .text-button {
+  padding: 0;
+}
+.start .text-button.quiet {
+  justify-self: start;
+  color: var(--mute);
+  font-weight: 500;
 }
 /* The empty-list drawing: navy line work on the paper, with the pennant the only colour. */
 .empty-art {
