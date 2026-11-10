@@ -8,6 +8,7 @@ import type { Logger } from "pino";
 import { Counter, collectDefaultMetrics, Gauge, Histogram, Registry } from "prom-client";
 import { type CloudSettings, createCloud } from "../../../ee/server/index.ts";
 import serverPackage from "../package.json" with { type: "json" };
+import { registerAccountDelete } from "./account-delete.ts";
 import { registerAlertRoutes, registerEmailStop } from "./alert-routes.ts";
 import { registerAnalyticsRoute } from "./analytics.ts";
 import { type Actor, registerApiKeyRoutes } from "./api-keys.ts";
@@ -307,7 +308,16 @@ export function createApp({
   const cloud =
     auth === undefined
       ? undefined
-      : createCloud(cloudSettings, { auth, db, live, logger, mailer, rateLimit, valkey });
+      : createCloud(cloudSettings, {
+          auth,
+          db,
+          live,
+          logger,
+          mailer,
+          rateLimit,
+          store: images?.store,
+          valkey,
+        });
   app.openapi(metaRoute, (c) =>
     c.json({
       name: "dinghy",
@@ -356,7 +366,16 @@ export function createApp({
     });
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);
+    registerAccountDelete(app, {
+      db,
+      live,
+      logger,
+      mailer,
+      publicUrl: String(auth.options.baseURL),
+      rateLimit,
+    });
     registerInboxRoutes(app, {
+      copyReply: cloud?.copyReply,
       db,
       images,
       limits,
@@ -372,7 +391,7 @@ export function createApp({
       db,
       live,
       rateLimit,
-      inbox: createInbox({ db, images, live, visitorPresence }),
+      inbox: createInbox({ copyReply: cloud?.copyReply, db, images, live, visitorPresence }),
       publicOrigin: new URL(String(auth.options.baseURL)).origin,
       version,
     });
@@ -389,6 +408,7 @@ export function createApp({
       logoUrl,
       mailer,
       rateLimit,
+      keepsLastWorkspace: cloud === undefined,
     });
     if (alerts !== undefined) {
       registerAlertRoutes(app, {
@@ -403,6 +423,7 @@ export function createApp({
       db,
       beforeDelete: cloud?.beforeDelete,
       now: cloud?.now,
+      keepsLastWorkspace: cloud === undefined,
       live,
       logger,
       rateLimit,

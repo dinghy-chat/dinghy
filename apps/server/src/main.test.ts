@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
+import { createTestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 
 const MAIN = fileURLToPath(new URL("./main.ts", import.meta.url));
@@ -98,3 +99,22 @@ test("a missing setting stops the start", async () => {
   const { child } = start("web", { DATABASE_URL: "" });
   expect(await exitCode(child)).not.toBe(0);
 });
+
+test("the web role refuses to start when the welcome operator is not in the welcome workspace", async () => {
+  const database = await createTestDatabase();
+  await database.migrate();
+  try {
+    const { child, output } = start("web", {
+      DATABASE_URL: database.url("app"),
+      CLOUD_SIGNUP: "early",
+      CLOUD_WELCOME_WORKSPACE_ID: crypto.randomUUID(),
+      CLOUD_WELCOME_OPERATOR_EMAIL: "nobody@example.com",
+    });
+    expect(await exitCode(child)).toBe(2);
+    expect(output()).toContain(
+      "CLOUD_WELCOME_OPERATOR_EMAIL is not an active member of CLOUD_WELCOME_WORKSPACE_ID",
+    );
+  } finally {
+    await database.drop();
+  }
+}, 30_000);

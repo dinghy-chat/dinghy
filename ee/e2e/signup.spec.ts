@@ -41,6 +41,15 @@ async function signIn(page: Page, server: Server, email: string) {
   await openLink(page, await server.signInLink(email));
 }
 
+/** Deletes the signed-in account from the screen it is on, with the link that `index` emails. */
+async function deleteAccount(page: Page, server: Server, email: string, index: number) {
+  await page.getByRole("button", { name: "Delete my account" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Email me the link" }).click();
+  await expect(page.getByText(`We sent a link to ${email}`)).toBeVisible();
+  await openLink(page, await server.linkTo(email, index), "Delete my account");
+  await expect(page.getByRole("heading", { name: "Your account was deleted." })).toBeVisible();
+}
+
 /** The fake Checkout page's session, and the workspace it pays for. */
 async function onCheckout(page: Page, server: Server) {
   const stripe = server.stripe;
@@ -84,6 +93,28 @@ test.describe("with billing on", () => {
     await expect(page.getByRole("heading", { name: "Finish payment" })).toBeVisible();
     await page.getByRole("button", { name: "Pay on Stripe" }).click();
     await onCheckout(page, server);
+  });
+
+  test("an owner who never paid deletes the workspace from the payment screen, then the account", async ({
+    page,
+  }) => {
+    const email = `nora-${Date.now()}@example.com`;
+    await createAccount(page, server, email);
+    await onboard(page, "Never Paid");
+    await onCheckout(page, server);
+    await page.goto(server.apiOrigin);
+    await expect(page.getByRole("heading", { name: "Finish payment" })).toBeVisible();
+
+    // The only owner: the account's delete names the workspace, which has no Team tab to hand over.
+    await expect(page.getByRole("button", { name: "Make someone an owner" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Delete workspace" }).click();
+    const dialog = page.getByRole("alertdialog");
+    await dialog.getByLabel("Type Never Paid to confirm").fill("Never Paid");
+    await dialog.getByRole("button", { name: "Delete the workspace" }).click();
+
+    // With no workspace left, the onboarding is where the account's delete is.
+    await expect(page.getByRole("heading", { name: "Set up your workspace" })).toBeVisible();
+    await deleteAccount(page, server, email, 1);
   });
 
   test("an unpaid second workspace keeps a way back to the paid one", async ({ page }) => {
@@ -137,7 +168,9 @@ test.describe("with no Stripe keys", () => {
     await server.createOperator(email, { member: false });
     await signIn(page, server, email);
     await expect(
-      page.getByText("You are not in a workspace yet. Ask its owner for an invite."),
+      page.getByText(
+        "You are not in a workspace on this server. Ask a workspace's owner for an invite.",
+      ),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Set up your workspace" })).toHaveCount(0);
     const create = await page.request.post(`${server.apiOrigin}/v1/operator/workspaces`, {
@@ -146,13 +179,20 @@ test.describe("with no Stripe keys", () => {
     });
     expect(create.status()).toBe(404);
   });
+
+  test("an operator with no workspace can still delete their account", async ({ page }) => {
+    const email = `lone-${Date.now()}@example.com`;
+    await server.createOperator(email, { member: false });
+    await signIn(page, server, email);
+    await deleteAccount(page, server, email, 0);
+  });
 });
 
 test.describe("with early signup and no Stripe keys", () => {
   let server: Server;
 
   test.beforeAll(async () => {
-    server = await startCloudE2EServer({ early: true });
+    server = await startCloudE2EServer({ early: true, welcome: true });
   });
 
   test.afterAll(async () => {
@@ -171,7 +211,7 @@ test.describe("with early signup and no Stripe keys", () => {
     }
   });
 
-  test("sign up, land in the inbox with the sample conversation, reply, and see no install code yet @smoke", async ({
+  test("sign up, land in the inbox with the founder's welcome, reply, and see no install code yet @smoke", async ({
     page,
   }) => {
     const email = `nora-${Date.now()}@example.com`;
@@ -190,9 +230,10 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.getByRole("status").locator(".banner-long")).toHaveText(
       `Dinghy Cloud opens soon. We will email ${email} when you can turn it on.`,
     );
-    await page.locator(".row", { hasText: "Sample visitor" }).click();
+    await page.locator(".row", { hasText: "Julien from Dinghy" }).click();
+    await expect(page.getByText("Welcome chat with the founder")).toBeVisible();
     await expect(
-      page.getByText("Hi! This is a sample conversation.", { exact: false }),
+      page.getByText("Hi, I'm Julien, the founder of Dinghy.", { exact: false }),
     ).toHaveCount(2);
     const reply = page.getByRole("textbox", { name: "Your reply" });
     await reply.fill("Thanks, got it!");
@@ -220,7 +261,7 @@ test.describe("with early signup and no Stripe keys", () => {
     await signIn(page, server, email);
     await onboard(page, "Late Shop");
     await expect(page.getByRole("heading", { name: "Late Shop" })).toBeVisible();
-    await expect(page.locator(".row", { hasText: "Sample visitor" })).toBeVisible();
+    await expect(page.locator(".row", { hasText: "Julien from Dinghy" })).toBeVisible();
   });
 
   test("an existing account that signs up again gets a sign-in link, then adds a workspace", async ({

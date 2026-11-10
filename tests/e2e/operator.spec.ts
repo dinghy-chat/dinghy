@@ -600,3 +600,37 @@ test("the … menu blocks with the keyboard too", async ({ browser }) => {
   await moreAction(operator, "Unblock");
   await expect(operator.getByText("This visitor is blocked")).toHaveCount(0);
 });
+
+test("the install code is one colored line, and a webhook's events are checkboxes", async ({
+  browser,
+}) => {
+  const page = await signedIn(browser);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("tab", { name: "Install" }).click();
+  const code = page.locator(".code-block code");
+  await expect(code).toHaveText(
+    /^<script src="[^"]+\/widget\/loader\.js" data-key="wk_[^"]+" async><\/script>$/,
+  );
+  await expect(code.locator(".code-attr")).toHaveText(["src", "data-key", "async"]);
+
+  await page.getByRole("tab", { name: "API" }).click();
+  const add = page.getByRole("button", { name: "Add webhook" });
+  const events = page.getByRole("group", { name: "Events" }).getByRole("checkbox");
+  await expect(events).toHaveCount(5);
+  await expect(
+    page.getByRole("checkbox", { name: /A message is sent\s*message\.created/ }),
+  ).toBeChecked();
+  await expect(add).toBeDisabled();
+  const url = "https://hooks.example.com/dinghy/with/a/rather/long/path/for/the/row";
+  await page.getByRole("textbox", { name: "Address" }).fill(url);
+  for (const box of await events.all()) await box.uncheck();
+  await expect(add).toBeDisabled();
+  await events.nth(1).check();
+  await events.nth(2).check();
+  await events.nth(3).check();
+  await add.click();
+  const hook = page.locator(".hook", { hasText: url });
+  await expect(hook.locator(".hook-url")).toHaveAttribute("title", url);
+  await expect(hook).toContainText("3 events");
+  await expect(page.getByRole("checkbox", { name: `Send events to ${url}` })).toBeChecked();
+});

@@ -9,6 +9,8 @@ import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, LINK_MINUTES, signInNow } from "./auth.ts";
 import {
+  attachment,
+  conversation,
   invite,
   operator,
   verification,
@@ -16,7 +18,7 @@ import {
   workspaceLogo,
   workspaceMember,
 } from "./db/schema.ts";
-import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { type Database, lockLiveOperator, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
   FORBIDDEN,
@@ -32,6 +34,7 @@ import {
   RATE_LIMITED,
   ROLE_WRITE_ERRORS,
   safeErrorFields,
+  UNAUTHORIZED,
   WRONG_ORIGIN,
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
@@ -45,6 +48,7 @@ import { type Mailer, recipientRejected } from "./mailer.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { assignConversation, recordTeamChange } from "./messages.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
+import { isOnlyWorkspace } from "./workspace-delete.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -159,6 +163,14 @@ const Settings = z
         imageBytes: z.object({ used: z.number(), limit: z.number() }),
       })
       .nullable(),
+    // What a delete removes, and whether it is refused: on a self-hosted server, the only
+    // workspace that is not deleted stays.
+    deletion: z.object({
+      conversations: z.number(),
+      images: z.number(),
+      members: z.number(),
+      onlyWorkspace: z.boolean(),
+    }),
   })
   .openapi("WorkspaceSettings");
 
@@ -459,12 +471,15 @@ const usable = (workspaceId: string, tokenHash: string) =>
 class AlreadyMemberError extends Error {}
 /** The invite was used, revoked or expired. Its transaction rolls back. */
 class InviteUnusableError extends Error {}
+/** The account was deleted while the invite was used. Its transaction rolls back. */
+class OperatorDeletedError extends Error {}
 
 /**
  * Uses the invite and adds the member together, so a token works once. It throws
  * InviteUnusableError if the invite cannot be used, and AlreadyMemberError if this person became a
  * member in the meantime, so a second invite cannot change an active member's role and stays
- * usable. It throws OperatorLimitError if the workspace would have too many operators.
+ * usable. It throws OperatorLimitError if the workspace would have too many operators, and
+ * OperatorDeletedError if the account was deleted, even by a delete still in flight.
  */
 async function consumeInvite(
   tx: Transaction,
@@ -473,6 +488,7 @@ async function consumeInvite(
   tokenHash: string,
   operatorId: string,
 ): Promise<void> {
+  if (!(await lockLiveOperator(tx, operatorId))) throw new OperatorDeletedError();
   const [used] = await tx
     .update(invite)
     .set({ usedAt: new Date(), usedBy: operatorId })
@@ -499,13 +515,35 @@ function joinFailure(error: unknown) {
   if (error instanceof InviteUnusableError) return "invite_invalid" as const;
   if (error instanceof AlreadyMemberError) return "member" as const;
   if (error instanceof OperatorLimitError) return "operator_limit" as const;
+  if (error instanceof OperatorDeletedError) return "gone" as const;
   throw error;
+}
+
+/** What the settings read besides the workspace's rows. */
+interface SettingsSources {
+  limits: Limits;
+  logoUrl: LogoUrl;
+  keepsLastWorkspace: boolean;
+}
+
+/** What deleting the workspace removes, so the owner's confirm can say it with numbers. */
+async function deletionContents(tx: Transaction, workspaceId: string) {
+  const counted = (table: typeof conversation | typeof attachment) =>
+    tx.$count(table, eq(table.workspaceId, workspaceId));
+  const [conversations, images, members] = await Promise.all([
+    counted(conversation),
+    counted(attachment),
+    tx.$count(
+      workspaceMember,
+      and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)),
+    ),
+  ]);
+  return { conversations, images, members };
 }
 
 async function readSettings(
   tx: Transaction,
-  limits: Limits,
-  logoUrl: LogoUrl,
+  { limits, logoUrl, keepsLastWorkspace }: SettingsSources,
   workspaceId: string,
 ) {
   const [row] = await tx
@@ -528,6 +566,10 @@ async function readSettings(
     widgetTexts: { title, greeting, away },
     logoUrl: logoUrl(row.publicKey, logoUpdatedAt),
     usage: await limits.usage(tx, workspaceId),
+    deletion: {
+      ...(await deletionContents(tx, workspaceId)),
+      onlyWorkspace: keepsLastWorkspace && (await isOnlyWorkspace(tx, workspaceId)),
+    },
   };
 }
 
@@ -589,6 +631,13 @@ async function changeMember(
 }
 
 /**
+ * The operator leaves the workspace, as a member who leaves from the Team tab: "last_owner" when they
+ * are its only owner. Run it in the workspace's context.
+ */
+export const leaveWorkspace = (tx: Transaction, workspaceId: string, operatorId: string) =>
+  changeMember(tx, workspaceId, operatorId, operatorId, { kind: "remove" });
+
+/**
  * Assigns a conversation to an active member, or clears it with null, and wakes the inboxes. The
  * route and the MCP tool share it.
  */
@@ -632,12 +681,15 @@ interface TeamOptions {
   /** Sends join links. Without one, a new operator signs in from the join's answer. */
   mailer: Mailer | undefined;
   rateLimit: RateLimit;
+  /** True on a self-hosted server, which keeps its last workspace. */
+  keepsLastWorkspace: boolean;
 }
 
 export function registerTeamRoutes(
   app: App,
-  { auth, db, limits, live, logger, logoUrl, mailer, rateLimit }: TeamOptions,
+  { auth, db, limits, live, logger, logoUrl, mailer, rateLimit, keepsLastWorkspace }: TeamOptions,
 ): void {
+  const sources = { limits, logoUrl, keepsLastWorkspace };
   const publicUrl = String(auth.options.baseURL);
   const publicOrigin = new URL(publicUrl).origin;
   const auditChange = (event: string, workspaceId: string, operatorId: string, fields = {}) =>
@@ -875,7 +927,7 @@ export function registerTeamRoutes(
   app.openapi(getSettingsRoute, async (c) => {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
-    return c.json(await withWorkspace(db, id, (tx) => readSettings(tx, limits, logoUrl, id)), 200);
+    return c.json(await withWorkspace(db, id, (tx) => readSettings(tx, sources, id)), 200);
   });
 
   app.openapi(patchSettingsRoute, async (c) => {
@@ -904,7 +956,7 @@ export function registerTeamRoutes(
       if (Object.keys(change).length > 0) {
         await tx.update(workspace).set(change).where(eq(workspace.id, id));
       }
-      return readSettings(tx, limits, logoUrl, id);
+      return readSettings(tx, sources, id);
     });
     // Origins are public, as every page that embeds the widget shows its own.
     if (allowedOrigins !== undefined) {
@@ -923,7 +975,7 @@ export function registerTeamRoutes(
         .update(workspace)
         .set({ signingSecret: randomBytes(32).toString("base64url") })
         .where(eq(workspace.id, id));
-      return readSettings(tx, limits, logoUrl, id);
+      return readSettings(tx, sources, id);
     });
     auditChange("signing_secret.rotated", id, c.get("operatorId"));
     return c.json(settings, 200);
@@ -940,7 +992,7 @@ export function registerTeamRoutes(
         .insert(workspaceLogo)
         .values({ workspaceId: id, ...saved })
         .onConflictDoUpdate({ target: workspaceLogo.workspaceId, set: saved });
-      return readSettings(tx, limits, logoUrl, id);
+      return readSettings(tx, sources, id);
     });
     return c.json(settings, 200);
   });
@@ -950,7 +1002,7 @@ export function registerTeamRoutes(
     const id = c.get("memberWorkspaceId");
     const settings = await withWorkspace(db, id, async (tx) => {
       await tx.delete(workspaceLogo).where(eq(workspaceLogo.workspaceId, id));
-      return readSettings(tx, limits, logoUrl, id);
+      return readSettings(tx, sources, id);
     });
     return c.json(settings, 200);
   });
@@ -1097,7 +1149,7 @@ export function registerTeamRoutes(
         .set({
           name: sql`case when ${operator.name} = '' then ${pending.name ?? ""} else ${operator.name} end`,
         })
-        .where(eq(operator.email, email))
+        .where(and(eq(operator.email, email), isNull(operator.deletedAt)))
         .returning({ id: operator.id });
       if (found === undefined) return "gone" as const;
       await consumeInvite(tx, limits, workspaceId, pending.inviteHash, found.id);
@@ -1139,6 +1191,7 @@ export function registerTeamRoutes(
       await consumeInvite(tx, limits, workspaceId, tokenHash, operatorId);
       return "joined" as const;
     }).catch(joinFailure);
+    if (result === "gone") return c.json(UNAUTHORIZED, 401);
     if (result === "other_email") return c.json(OTHER_EMAIL, 403);
     if (result === "member") return c.json(ALREADY_MEMBER, 409);
     if (result === "operator_limit") return c.json(OPERATOR_LIMIT, 409);

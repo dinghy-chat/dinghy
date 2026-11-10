@@ -362,6 +362,10 @@ export function Confirm({
 }) {
   const dialog = useModal();
   const titleId = useId();
+  // A field is what the confirm waits for, so it takes the focus from a link or a button above it.
+  useEffect(() => {
+    dialog.current?.querySelector("input")?.focus();
+  }, [dialog]);
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
     <dialog

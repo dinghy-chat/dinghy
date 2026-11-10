@@ -4,6 +4,14 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- Settings shows the install code on one line, colored as in the docs. A new webhook's events are checkboxes, each with its code name.
+
+### Fixed
+
+- Switches are easier to see in both themes. A saved webhook's row shows its address again.
+
 ## [0.14.0] - 2026-11-10
 
 ### Changed

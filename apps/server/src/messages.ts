@@ -12,7 +12,14 @@ import {
   webhook,
   workspace,
 } from "./db/schema.ts";
-import { type Transaction, type WorkspaceAccess, workspaceAccess, writable } from "./db/tenant.ts";
+import {
+  type Transaction,
+  type WorkspaceAccess,
+  welcomeAccess,
+  workspaceAccess,
+  writable,
+  writableFor,
+} from "./db/tenant.ts";
 import { type Limits, NO_LIMITS, StorageFullError } from "./limits.ts";
 
 export type Author =
@@ -155,6 +162,23 @@ async function nextSeq(tx: Transaction, workspaceId: string): Promise<bigint> {
 }
 
 /**
+ * Whether the message goes to a welcome chat. A welcome chat's visitor has no other conversation,
+ * so a visitor's message, which is a copy from the other side, is checked by its visitor.
+ */
+async function inWelcomeChat(tx: Transaction, workspaceId: string, author: Author) {
+  const target =
+    author.kind === "visitor"
+      ? eq(conversation.visitorId, author.visitorId)
+      : eq(conversation.id, author.conversationId);
+  const [row] = await tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), target, eq(conversation.welcome, true)))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
  * Writes a message and its event in the caller's transaction. A retry returns the original.
  *
  * The first statement takes the workspace row lock, and the lock lasts until commit. So the order
@@ -172,13 +196,22 @@ export async function appendMessage(
   tx: Transaction,
   workspaceId: string,
   author: Author,
-  input: { clientId: string; body?: string; image?: NewImage; page?: string | null },
+  input: {
+    clientId: string;
+    body?: string;
+    image?: NewImage;
+    page?: string | null;
+    /** False for a message that nobody needs to hear about, such as the cloud's welcome. */
+    alert?: boolean;
+  },
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
   const seq = await nextSeq(tx, workspaceId);
   // A statement of its own, after the lock: it sees every change committed before the lock.
-  const access = await workspaceAccess(tx, workspaceId);
-  if (!writable(access)) throw new WorkspaceClosedError(access);
+  const found = await workspaceAccess(tx, workspaceId);
+  const welcome = !writable(found) && (await inWelcomeChat(tx, workspaceId, author));
+  const access = welcome ? await welcomeAccess(tx, workspaceId, found) : found;
+  if (!writableFor(access, { welcome })) throw new WorkspaceClosedError(access);
 
   const sender =
     author.kind === "visitor"
@@ -283,7 +316,7 @@ export async function appendMessage(
       fromVisitor: author.kind === "visitor",
       ...(target.created ? { conversationCreated: true } : {}),
     } satisfies MessageCreatedPayload,
-    needsAlert: true,
+    needsAlert: input.alert ?? true,
     needsWebhook: wantsWebhook(workspaceId),
   });
   await tx
@@ -431,6 +464,7 @@ export interface ConversationRow {
   updatedAt: Date;
   assigneeOperatorId: string | null;
   startedPage: string | null;
+  welcome: boolean;
   visitorId: string;
   visitorBlockedAt: Date | null;
   visitorEmail: string | null;
@@ -449,6 +483,7 @@ const conversationColumns = {
   updatedAt: conversation.updatedAt,
   assigneeOperatorId: conversation.assigneeOperatorId,
   startedPage: conversation.startedPage,
+  welcome: conversation.welcome,
   visitorId: conversation.visitorId,
   visitorBlockedAt: visitor.blockedAt,
   visitorEmail: visitor.email,

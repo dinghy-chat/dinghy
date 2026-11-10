@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { SignJWT } from "jose";
 import { pino } from "pino";
@@ -382,6 +382,54 @@ describe("replies", () => {
     expect(
       (await write("POST", `${path}/messages`, { clientId: "late", body: "Now" })).status,
     ).toBe(201);
+  });
+});
+
+describe("a read-only workspace's welcome chat", () => {
+  test("an operator replies there in text and nowhere else, and suspension still stops it", async () => {
+    const space = await createWorkspace(db, "Lapsed", [WIDGET_ORIGIN]);
+    const as = await operatorSession("lapsed@example.com", space.id);
+    const inSpace = (path: string) => `/v1/operator/workspaces/${space.id}${path}`;
+    const made = await write("POST", inSpace("/api-keys"), { name: "Bot" }, as);
+    const { token } = (await made.json()) as { token: string };
+    const welcome = (await visitorSends(space.publicKey, "Hi")).conversationId;
+    const other = (await visitorSends(space.publicKey, "Hello")).conversationId;
+    await owner
+      .update(schema.conversation)
+      .set({ welcome: true })
+      .where(eq(schema.conversation.id, welcome));
+    await owner
+      .insert(schema.subscription)
+      .values({ workspaceId: space.id, stripeCustomerId: "cus_test", readOnlyAt: new Date() });
+    const replyIn = (chat: string, by = as) =>
+      write("POST", inSpace(`/conversations/${chat}/messages`), { clientId: "r1", body: "Hi" }, by);
+
+    expect((await replyIn(welcome)).status).toBe(201);
+    const refused = await replyIn(other);
+    expect(refused.status).toBe(402);
+    expect(await refused.json()).toMatchObject({ error: { code: "read_only" } });
+    const byKey = await app.request(inSpace(`/conversations/${welcome}/messages`), {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ clientId: "k1", body: "Hi" }),
+    });
+    expect(byKey.status).toBe(402);
+    // Closing is another write, which read-only still refuses in the welcome chat.
+    expect(
+      (await write("PATCH", inSpace(`/conversations/${welcome}`), { status: "closed" }, as)).status,
+    ).toBe(402);
+
+    await owner
+      .update(schema.workspace)
+      .set({ suspendedAt: new Date() })
+      .where(eq(schema.workspace.id, space.id));
+    const suspended = await write(
+      "POST",
+      inSpace(`/conversations/${welcome}/messages`),
+      { clientId: "r2", body: "Again" },
+      as,
+    );
+    expect(suspended.status).toBe(403);
   });
 });
 

@@ -202,7 +202,7 @@ An export holds a workspace's conversations, visitors, team, settings and images
 
 ## Deleting a workspace
 
-An owner deletes a workspace in Settings, under "Delete this workspace", by typing its name. It is gone for its team and its widget at once. Within a few minutes, the worker deletes its conversations, visitors, settings and images, then the workspace itself. Operator accounts stay, because one login can belong to other workspaces. Download an export first to keep a copy. The nightly backups on this disk still hold the workspace until the newest 7 have replaced them, and a backup bucket keeps it until its own lifecycle rule expires it.
+An owner deletes a workspace in Settings, under **Data**, with **Delete workspace**. The dialog lists what goes: the workspace's conversations, images and team members, with their numbers. It offers **Download an export first**, then asks for the workspace's name. A self-hosted server keeps its last workspace, so the delete is refused when only one is left, and the dialog says why. The workspace is gone for its team and its widget at once. Within a few minutes, the worker deletes its conversations, visitors, settings and images, then the workspace itself. Operator accounts stay, because one login can belong to other workspaces. The nightly backups on this disk still hold the workspace until the newest 7 have replaced them, and a backup bucket keeps it until its own lifecycle rule expires it.
 
 ## Backups
 

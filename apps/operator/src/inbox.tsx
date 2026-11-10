@@ -17,7 +17,7 @@ import {
 import { useLatestLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
-import { ProfilePage, SettingsPage, type SettingsTab } from "./settings.tsx";
+import { openOwnerStep, ProfilePage, SettingsPage, type SettingsTab } from "./settings.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
 import { type TextId, t } from "./text.ts";
@@ -598,6 +598,10 @@ export function Inbox({
   onSignedOut,
   onSwitch,
   onAccountChanged,
+  deletedName,
+  onWorkspaceDeleted,
+  onCloseDeleted,
+  onAccountDeleted,
 }: {
   me: Me;
   workspaceId: string;
@@ -609,6 +613,11 @@ export function Inbox({
   onSwitch(id: string): void;
   /** The operator's name or a workspace's billing changed, so `me` must load again. */
   onAccountChanged(): void;
+  /** The workspace the operator just deleted, for a note, or null. */
+  deletedName: string | null;
+  onWorkspaceDeleted(name: string): void;
+  onCloseDeleted(): void;
+  onAccountDeleted(): void;
 }) {
   const api = useMemo(() => workspaceApi(workspaceId), [workspaceId]);
   useDeviceSync();
@@ -626,8 +635,17 @@ export function Inbox({
     const params = new URLSearchParams(location.search);
     return params.get("workspace") === workspaceId ? params.get("conversation") : null;
   });
-  const [view, setView] = useState<View>("open");
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("team");
+  // The account's delete can open this workspace on its Team tab or its delete dialog.
+  const [ownerStep] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    const step = params.get("workspace") === workspaceId ? params.get("settings") : null;
+    return step === "team" || step === "delete" ? step : null;
+  });
+  const [view, setView] = useState<View>(ownerStep === null ? "open" : "settings");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>(
+    ownerStep === "delete" ? "data" : "team",
+  );
+  const [openDelete, setOpenDelete] = useState(ownerStep === "delete");
   const visible = useTabVisible();
   const [query, setQuery] = useState("");
   const { found, searching } = useSearch(api, query);
@@ -725,6 +743,9 @@ export function Inbox({
 
   const showView = (next: View, tab: SettingsTab = "team") => {
     setSettingsTab(tab);
+    setOpenDelete(false);
+    // The account's delete reads who owns what, which can change in Settings.
+    if (next === "profile") onAccountChanged();
     // Settings can change the team, so the names in the list load again after it.
     if (view === "settings" && next !== "settings") loadMembers();
     setView(next);
@@ -759,6 +780,19 @@ export function Inbox({
               {t("reconnecting")}
             </div>
           )}
+          {deletedName !== null && (
+            <div className="banner deleted-banner" role="status">
+              {t("workspaceDeleted", { name: deletedName })}
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t("close")}
+                onClick={onCloseDeleted}
+              >
+                <Icon name="close" size={14} />
+              </button>
+            </div>
+          )}
           {suspended ? (
             <SuspendedBanner contact={me.contact} />
           ) : waitsForCloud ? (
@@ -789,7 +823,9 @@ export function Inbox({
                 waiting={waitsForCloud}
                 emailAvailable={emailAvailable}
                 initialTab={settingsTab}
+                openDelete={openDelete}
                 onLeft={() => navigate("/")}
+                onDeleted={onWorkspaceDeleted}
                 onLogoChanged={setLogoUrl}
               />
             )}
@@ -798,6 +834,17 @@ export function Inbox({
             {view === "profile" && (
               <ProfilePage
                 me={me}
+                emailAvailable={emailAvailable}
+                keepsLastWorkspace={!canCreate}
+                onOpenWorkspace={(id, step) => {
+                  if (id !== workspaceId) {
+                    openOwnerStep(id, step);
+                    return;
+                  }
+                  showView("settings", step === "delete" ? "data" : "team");
+                  setOpenDelete(step === "delete");
+                }}
+                onAccountDeleted={onAccountDeleted}
                 onChanged={() => {
                   // The name shows on assignments and in the dropdown too, which read the members.
                   onAccountChanged();
@@ -871,7 +918,8 @@ export function Inbox({
                   members={members}
                   replying={replying(selected)}
                   canDelete={role !== "member" && !readOnly && !suspended}
-                  repliesOffReason={suspended ? "suspendedHelp" : readOnly ? "readOnlyHelp" : null}
+                  readOnly={readOnly}
+                  suspended={suspended}
                   conversationId={selected}
                   version={threadVersion(selected)}
                   onBack={() => setSelected(null)}

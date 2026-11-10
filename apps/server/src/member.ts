@@ -3,7 +3,12 @@ import { createMiddleware } from "hono/factory";
 import { matchedRoutes } from "hono/route";
 import type { Actor } from "./api-keys.ts";
 import type { App } from "./app.ts";
-import { type Database, operatorWorkspaces, type WorkspaceAccess, writable } from "./db/tenant.ts";
+import {
+  type Database,
+  operatorWorkspaces,
+  type WorkspaceAccess,
+  writableFor,
+} from "./db/tenant.ts";
 import { FORBIDDEN, failure, NOT_FOUND } from "./errors.ts";
 import type { Role } from "./team.ts";
 
@@ -18,13 +23,22 @@ const SUSPENDED = failure("suspended", "This workspace is suspended. Nobody can 
  * itself, so the rule sits next to the route and shows in the API document. A write without it is
  * refused while the workspace is read-only or suspended.
  * - `closed`: works while the workspace is read-only or suspended. Presence, paying, and what takes
- *   access away: removing a member, revoking an invite, deleting the workspace.
+ *   access away: removing a member, revoking an invite.
  * - `unpaid`: also works while the workspace waits for its first payment. Only Checkout.
+ * - `always`: `closed`, and also while the workspace waits for its first payment. Only deleting the
+ *   workspace, so an owner who never paid can still remove it, and then their account.
+ * - `welcome`: lets an operator through while the workspace is read-only. Only the text reply, which
+ *   goes in only in the welcome chat, as the write checks under the workspace row lock.
  */
 const ACCESS_EXTENSION = "x-workspace-access";
 export const OPEN_WHILE_CLOSED = { [ACCESS_EXTENSION]: "closed" } as const;
 export const OPEN_WHILE_UNPAID = { [ACCESS_EXTENSION]: "unpaid" } as const;
-type AccessRule = "closed" | "unpaid";
+export const OPEN_ALWAYS = { [ACCESS_EXTENSION]: "always" } as const;
+export const OPEN_TO_WELCOME = { [ACCESS_EXTENSION]: "welcome" } as const;
+const ACCESS_RULES = ["closed", "unpaid", "always", "welcome"] as const;
+type AccessRule = (typeof ACCESS_RULES)[number];
+const isAccessRule = (rule: unknown): rule is AccessRule =>
+  ACCESS_RULES.some((one) => one === rule);
 
 interface RouteRules {
   /** Each route's rule, keyed as Hono matches it: `POST /v1/operator/workspaces/:workspaceId/...`. */
@@ -41,7 +55,7 @@ function routeRules(app: App): RouteRules {
     const key = `${definition.route.method.toUpperCase()} ${path}`;
     if (definition.route.security?.some((scheme) => "apiKey" in scheme)) rules.keys.add(key);
     const rule: unknown = definition.route[ACCESS_EXTENSION];
-    if (rule === "closed" || rule === "unpaid") rules.access.set(key, rule);
+    if (isAccessRule(rule)) rules.access.set(key, rule);
   }
   return rules;
 }
@@ -92,9 +106,15 @@ export function registerMemberCheck(app: App, db: Database): void {
     const { rule, keyAllowed } = routeOf(c);
     if (actor.kind === "key" && !keyAllowed) return c.json(FORBIDDEN, 403);
     // A cloud signup that waits for payment: only its owner's Checkout works until then.
-    if (access === "waiting_payment" && rule !== "unpaid") return c.json(PAYMENT_REQUIRED, 402);
-    const writes = c.req.method !== "GET" && c.req.method !== "HEAD" && rule === undefined;
-    if (writes && !writable(access)) {
+    if (access === "waiting_payment" && rule !== "unpaid" && rule !== "always") {
+      return c.json(PAYMENT_REQUIRED, 402);
+    }
+    const writes =
+      c.req.method !== "GET" &&
+      c.req.method !== "HEAD" &&
+      (rule === undefined || rule === "welcome");
+    const welcome = rule === "welcome" && actor.kind === "operator";
+    if (writes && !writableFor(access, { welcome })) {
       const refused = closedFailure(access);
       return c.json(refused.body, refused.status);
     }

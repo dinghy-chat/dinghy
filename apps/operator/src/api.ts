@@ -29,6 +29,22 @@ export interface PageView {
   viewedAt: string;
 }
 
+/** On Dinghy Cloud: what a welcome chat is linked to. */
+export type WelcomeChat =
+  | { with: "founder" }
+  | {
+      with: "workspace";
+      name: string;
+      access:
+        | "active"
+        | "waiting_cloud"
+        | "read_only"
+        | "suspended"
+        | "waiting_payment"
+        | "deleted";
+    }
+  | { with: "deleted" };
+
 export type AnalyticsDays = 7 | 30 | 90;
 
 /** Support numbers about the conversations that started in the period. */
@@ -108,6 +124,8 @@ export interface Me {
     waiting: boolean;
     /** The server's admin suspended it: operators can read, and nobody can send. */
     suspended: boolean;
+    /** This operator is its only owner, so they cannot delete their account yet. */
+    soleOwner: boolean;
   }[];
   /** True on the cloud plan, where a workspace waits for payment. */
   billing: boolean;
@@ -149,6 +167,8 @@ export interface WorkspaceSettings {
   logoUrl: string | null;
   /** The plan's limits and their use, on Dinghy Cloud. Null with no limits. */
   usage: Usage | null;
+  /** What a delete removes. A self-hosted server keeps its only workspace. */
+  deletion: { conversations: number; images: number; members: number; onlyWorkspace: boolean };
 }
 
 /** The widget's own words. Null means the default. */
@@ -279,6 +299,15 @@ export const redeemJoinLink = (token: string) =>
 export const signOut = () => post<unknown>("/v1/auth/sign-out", {});
 export const updateName = (name: string) => post<unknown>("/v1/auth/update-user", { name });
 export const getMe = () => call<Me>("/v1/operator/me");
+/**
+ * Deletes the account. With email, a link goes to it and `deleted` is false. Without, the typed
+ * email confirms, and the account is gone.
+ */
+export const requestAccountDelete = (email?: string) =>
+  post<{ deleted: boolean }>("/v1/operator/account/delete", email === undefined ? {} : { email });
+/** Uses a delete link's token, from the button on the page the link opens. */
+export const confirmAccountDelete = (token: string) =>
+  post<{ ok: true }>("/v1/account/delete", { token });
 export interface Meta {
   billing: boolean;
   /** How cloud signup works here, or null where nobody can sign up. */
@@ -455,6 +484,8 @@ export function workspaceApi(workspaceId: string) {
         visitorOnline: boolean | null;
         /** The visitor's newest pages, newest first, at most 20. */
         visitorPages: PageView[];
+        /** A welcome chat on Dinghy Cloud, which has no visit or pages. Null otherwise. */
+        welcome: WelcomeChat | null;
       }>(`${conversation(id)}/messages?after=${after}`),
     /** Open and closed conversations by visitor or message text. A newer search aborts this one. */
     search: (query: string, signal: AbortSignal) =>

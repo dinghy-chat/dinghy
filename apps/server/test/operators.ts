@@ -61,8 +61,11 @@ export const openLink = async (app: Server, url: string): Promise<Response> =>
 /** Selects the button on the page a link opens: it posts the link's token, as the app does. */
 export function pressLinkButton(app: Server, url: string): Promise<Response> | Response {
   const parsed = new URL(url);
-  const path =
-    parsed.searchParams.get("for") === "join" ? "/v1/invites/open" : "/v1/auth/magic-link/verify";
+  const paths: Record<string, string> = {
+    join: "/v1/invites/open",
+    "delete-account": "/v1/account/delete",
+  };
+  const path = paths[parsed.searchParams.get("for") ?? ""] ?? "/v1/auth/magic-link/verify";
   return app.request(path, {
     method: "POST",
     headers: { origin: parsed.origin, "content-type": "application/json" },
@@ -124,4 +127,56 @@ export function captureMail(): Mailer & {
       throw new Error(`No email with a link reached ${address}`);
     },
   };
+}
+
+const LOCK_WAIT_POLL_MS = 20;
+const LOCK_WAIT_TRIES = 250;
+
+/**
+ * Deletes an account while `request` runs, as a delete that commits after the request's session
+ * check: it holds the operator's row as the account's delete does, starts `request`, and commits
+ * once the request waits for a lock. The answer comes after the commit.
+ */
+export async function deletedDuring<T>(
+  owner: Database,
+  operatorId: string,
+  request: () => T | Promise<T>,
+): Promise<T> {
+  const client = await owner.$client.connect();
+  try {
+    await client.query("begin");
+    await client.query("select 1 from operator where id = $1 for update", [operatorId]);
+    const answer = Promise.resolve(request());
+    // Settled now, so a refusal before the commit is not an unhandled rejection.
+    let answered = false;
+    const settled = answer.then(
+      () => {
+        answered = true;
+      },
+      () => {
+        answered = true;
+      },
+    );
+    for (let tries = 0; !answered; tries += 1) {
+      const { rows } = await owner.$client.query<{ waiting: number }>(
+        // pg_locks, because pg_stat_activity hides another role's wait from this one.
+        `select count(*)::int as waiting from pg_locks as l
+         join pg_stat_activity as a on a.pid = l.pid
+         where not l.granted and a.datname = current_database()`,
+      );
+      if ((rows[0]?.waiting ?? 0) > 0) break;
+      if (tries === LOCK_WAIT_TRIES) throw new Error("The request never waited for the account");
+      await delay(LOCK_WAIT_POLL_MS);
+    }
+    await client.query(
+      "update operator set deleted_at = now(), name = 'Former team member' where id = $1",
+      [operatorId],
+    );
+    await client.query("commit");
+    await settled;
+    return await answer;
+  } finally {
+    // Closed, not pooled, so a failure cannot leave a transaction open on a pooled connection.
+    client.release(true);
+  }
 }

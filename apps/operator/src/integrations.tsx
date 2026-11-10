@@ -175,7 +175,7 @@ export function ApiKeysRow({ api }: { api: WorkspaceApi }) {
   );
 }
 
-/** The switches that pick a webhook's events. */
+/** The checkboxes that pick a new webhook's events. Nothing is saved until the form is sent. */
 function EventPicker({
   events,
   onChange,
@@ -187,10 +187,7 @@ function EventPicker({
     <fieldset className="events">
       <legend>{t("webhookEvents")}</legend>
       {WEBHOOK_EVENTS.map((kind) => (
-        <label className="check" key={kind}>
-          <span>
-            {t(EVENT_TEXT[kind])} <code>{kind}</code>
-          </span>
+        <label className="event-option" key={kind}>
           <input
             type="checkbox"
             checked={events.includes(kind)}
@@ -202,10 +199,23 @@ function EventPicker({
               )
             }
           />
+          <span className="event-text">
+            {t(EVENT_TEXT[kind])}
+            <code>{kind}</code>
+          </span>
         </label>
       ))}
     </fieldset>
   );
+}
+
+/** Up to this many events show by their code names in a webhook's row. More show as a count. */
+const NAMED_EVENTS_MAX = 2;
+
+function EventsSummary({ events }: { events: WebhookEvent[] }) {
+  if (events.length > NAMED_EVENTS_MAX)
+    return <span>{t("webhookEventCount", { count: events.length })}</span>;
+  return <span className="hook-events">{events.join(", ")}</span>;
 }
 
 /** The text for a test send's result. */
@@ -285,8 +295,10 @@ function WebhookItem({
     <li className="hook">
       <div className="hook-head">
         <span className="who-lines">
-          <strong className="mono">{hook.url}</strong>
-          <span>{hook.events.map((kind) => t(EVENT_TEXT[kind])).join(", ")}</span>
+          <strong className="mono hook-url" title={hook.url}>
+            {hook.url}
+          </strong>
+          <EventsSummary events={hook.events} />
         </span>
         <label className="check hook-switch">
           <span className="visually-hidden">{t("webhookEnabledLabel", { url: hook.url })}</span>
