@@ -306,6 +306,8 @@ export const deleteDevice = (endpoint: string) =>
   });
 export interface InviteOffer {
   workspaceName: string;
+  /** Who made the invite. Empty when they have no name. */
+  inviterName: string;
   role: "admin" | "member";
   /** Only this email can use the invite. */
   email: string;

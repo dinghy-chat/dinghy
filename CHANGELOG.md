@@ -4,6 +4,12 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- Sending an invite waits for the mail server. The dialog then says who it went to, with **Invite someone else** and **Done**. If the address doesn't exist or the email can't be sent, the dialog says so, and the invite is revoked.
+- The invite page names the workspace and who invited you: "Join Acme", "Ana invited you@example.com to join as an admin."
+- API: `POST /v1/operator/workspaces/{workspaceId}/invites` answers 422 `email_rejected` when the mail server refuses the address, and 502 `mail_failed` when the email could not be sent. `POST /v1/invites/preview` answers `inviterName`.
+
 ## [0.13.0] - 2026-11-10
 
 ### Upgrading

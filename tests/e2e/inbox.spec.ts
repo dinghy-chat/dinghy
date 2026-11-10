@@ -28,7 +28,7 @@ test.beforeEach(async () => {
 async function signedIn(browser: Browser, email: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   await openLink(page, await server.signInLink(email));
-  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
   return page;
 }
 

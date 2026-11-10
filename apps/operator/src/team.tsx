@@ -275,7 +275,8 @@ export function InviteDialog({
   const titleId = useId();
   const [email, setEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
-  const [link, setLink] = useState<{ url: string; email: string } | null>(null);
+  // After a send: the email it went to, and the link to hand out when the server sends no email.
+  const [made, setMade] = useState<{ email: string; url: string | null } | null>(null);
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -285,14 +286,19 @@ export function InviteDialog({
     setBusy(true);
     try {
       const created = await api.createInvite(email.trim(), inviteRole);
-      if (created.token === null) {
-        dialog.current?.close();
-        return;
-      }
-      const url = new URL(`/invite?token=${encodeURIComponent(created.token)}`, location.origin);
-      setLink({ url: url.href, email: created.email });
+      const url =
+        created.token === null
+          ? null
+          : new URL(`/invite?token=${encodeURIComponent(created.token)}`, location.origin).href;
+      setMade({ email: created.email, url });
     } catch (failure) {
-      setError(failureText(failure, { 409: "inviteeIsMember" }));
+      setError(
+        failureText(failure, {
+          409: "inviteeIsMember",
+          422: "inviteRejected",
+          502: "inviteMailFailed",
+        }),
+      );
     } finally {
       setBusy(false);
     }
@@ -311,8 +317,10 @@ export function InviteDialog({
     >
       <form className="dialog-body" onSubmit={(event) => void send(event)}>
         <h2 id={titleId}>{t("invitesTitle")}</h2>
-        <p className="dialog-text">{t(emailAvailable ? "inviteHelpMail" : "inviteHelpLink")}</p>
-        {link === null ? (
+        {made === null && (
+          <p className="dialog-text">{t(emailAvailable ? "inviteHelpMail" : "inviteHelpLink")}</p>
+        )}
+        {made === null ? (
           <>
             <Field
               label={t("email")}
@@ -330,30 +338,53 @@ export function InviteDialog({
               <p className="hint">{t("inviteMemberHelp")}</p>
             )}
           </>
+        ) : made.url === null ? (
+          <p className="invite-sent" role="status">
+            <Icon name="check" size={18} />
+            <span>{t("inviteSent", { email: made.email })}</span>
+          </p>
         ) : (
           <div className="created">
-            <p className="hint">{t("inviteLink", { email: link.email })}</p>
+            <p className="hint">{t("inviteLink", { email: made.email })}</p>
             <div className="copy-field">
               <input
                 className="mono"
                 readOnly
                 aria-label={t("inviteLinkLabel")}
-                value={link.url}
+                value={made.url}
                 onFocus={(event) => event.target.select()}
               />
-              <CopyButton value={link.url} label={t("inviteLinkCopy")} />
+              <CopyButton value={made.url} label={t("inviteLinkCopy")} />
             </div>
           </div>
         )}
         <ErrorNote text={error} />
         <div className="dialog-actions">
-          <button type="button" className="pill" onClick={() => dialog.current?.close()}>
-            {link === null ? t("cancel") : t("done")}
-          </button>
-          {link === null && (
-            <button type="submit" className="pill dark" disabled={busy}>
-              {t(emailAvailable ? "inviteSend" : "inviteCreate")}
-            </button>
+          {made === null ? (
+            <>
+              <button type="button" className="pill" onClick={() => dialog.current?.close()}>
+                {t("cancel")}
+              </button>
+              <button type="submit" className="pill dark" disabled={busy}>
+                {t(busy ? "inviteSending" : emailAvailable ? "inviteSend" : "inviteCreate")}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="pill"
+                onClick={() => {
+                  setMade(null);
+                  setEmail("");
+                }}
+              >
+                {t("inviteAnother")}
+              </button>
+              <button type="button" className="pill dark" onClick={() => dialog.current?.close()}>
+                {t("done")}
+              </button>
+            </>
           )}
         </div>
       </form>
