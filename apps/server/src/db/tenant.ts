@@ -41,13 +41,15 @@ export function withWorkspace<T>(
  * What a workspace allows, from the `workspace_access` SQL function, which works it out for the
  * operator API, the widget and a write under the workspace row lock.
  */
-export type WorkspaceAccess =
-  | "active"
-  | "waiting_cloud"
-  | "read_only"
-  | "suspended"
-  | "waiting_payment"
-  | "deleted";
+export const WORKSPACE_ACCESS = [
+  "active",
+  "waiting_cloud",
+  "read_only",
+  "suspended",
+  "waiting_payment",
+  "deleted",
+] as const;
+export type WorkspaceAccess = (typeof WORKSPACE_ACCESS)[number];
 
 /** Messages and other changes go in only while the workspace is active or waits for the cloud. */
 export const writable = (access: WorkspaceAccess) =>

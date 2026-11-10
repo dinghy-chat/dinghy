@@ -8,6 +8,7 @@ import { session, workspace, workspaceLogo } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
+  WORKSPACE_ACCESS,
   type WorkspaceAccess,
   withWorkspace,
 } from "./db/tenant.ts";
@@ -228,14 +229,7 @@ const WelcomeChat = z
     z.object({
       with: z.literal("workspace"),
       name: z.string(),
-      access: z.enum([
-        "active",
-        "waiting_cloud",
-        "read_only",
-        "suspended",
-        "waiting_payment",
-        "deleted",
-      ]),
+      access: z.enum(WORKSPACE_ACCESS),
     }),
     // The other side deleted its conversation, or its whole workspace, and with it the link.
     z.object({ with: z.literal("deleted") }),
