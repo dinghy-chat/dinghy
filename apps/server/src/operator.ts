@@ -1,9 +1,10 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
+import { ownerCount } from "./account-delete.ts";
 import {
   type Actor,
   apiKeyToken,
@@ -73,6 +74,9 @@ const meRoute = createRoute({
                   // True while the server's admin has suspended it: nobody can send, the widget
                   // is off, and operators can read.
                   suspended: z.boolean(),
+                  // True when the operator is its only owner, so they cannot leave it or delete
+                  // their account until they delete it or make someone else an owner.
+                  soleOwner: z.boolean(),
                 }),
               ),
               billing: z.boolean(),
@@ -128,7 +132,7 @@ export function registerOperatorRoutes(
     const [known] = await db
       .select({ id: operator.id })
       .from(operator)
-      .where(eq(operator.email, email));
+      .where(and(eq(operator.email, email), isNull(operator.deletedAt)));
     if (known === undefined) return;
     await deliverLinks(
       ({ token }) => {
@@ -297,13 +301,17 @@ export function registerOperatorRoutes(
         email: c.get("operatorEmail"),
         workspaces: await Promise.all(
           (await operatorWorkspaces(db, id)).map(async ({ access, ...membership }) => {
-            const [row] = await withWorkspace(db, membership.workspaceId, (tx) =>
-              tx
-                .select({ name: workspace.name })
-                .from(workspace)
-                .where(eq(workspace.id, membership.workspaceId)),
-            );
-            return { ...membership, ...accessFlags(access), name: row?.name ?? "" };
+            const { workspaceId, role } = membership;
+            const { row, soleOwner } = await withWorkspace(db, workspaceId, async (tx) => ({
+              row: (
+                await tx
+                  .select({ name: workspace.name })
+                  .from(workspace)
+                  .where(eq(workspace.id, workspaceId))
+              )[0],
+              soleOwner: role === "owner" && (await ownerCount(tx, workspaceId)) === 1,
+            }));
+            return { ...membership, ...accessFlags(access), name: row?.name ?? "", soleOwner };
           }),
         ),
         billing,

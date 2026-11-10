@@ -44,6 +44,7 @@
                   "busy",
                   "checkout_retry_later",
                   "conversation_closed",
+                  "email_mismatch",
                   "email_taken",
                   "email_unavailable",
                   "forbidden",
@@ -53,6 +54,7 @@
                   "invite_invalid",
                   "invite_other_email",
                   "last_owner",
+                  "last_workspace",
                   "link_invalid",
                   "name_mismatch",
                   "no_customer",
@@ -66,6 +68,7 @@
                   "push_unavailable",
                   "read_only",
                   "signed_in",
+                  "sole_owner",
                   "storage_full",
                   "suspended",
                   "too_large",
@@ -329,6 +332,9 @@
                 },
                 "suspended": {
                   "type": "boolean"
+                },
+                "soleOwner": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -338,7 +344,8 @@
                 "active",
                 "readOnly",
                 "waiting",
-                "suspended"
+                "suspended",
+                "soleOwner"
               ]
             }
           },
@@ -850,6 +857,24 @@
               }
             },
             "required": ["operators", "imageBytes"]
+          },
+          "deletion": {
+            "type": "object",
+            "properties": {
+              "conversations": {
+                "type": "number"
+              },
+              "images": {
+                "type": "number"
+              },
+              "members": {
+                "type": "number"
+              },
+              "onlyWorkspace": {
+                "type": "boolean"
+              }
+            },
+            "required": ["conversations", "images", "members", "onlyWorkspace"]
           }
         },
         "required": [
@@ -858,7 +883,8 @@
           "signingSecret",
           "widgetTexts",
           "logoUrl",
-          "usage"
+          "usage",
+          "deletion"
         ]
       },
       "WidgetTexts": {
@@ -2163,6 +2189,235 @@
         }
       }
     },
+    "/v1/operator/account/delete": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Delete your account. With a mail server, this emails a link that deletes it. Without one, send the account's email to delete it now",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "`deleted` is true when the account is gone, and false when a link went to its email, which works once for 15 minutes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["deleted"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. email_mismatch: on a server with no mail server, the email sent is not the account's",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "sole_owner: the operator is the only owner of the workspaces in `workspaceIds`. Delete each one, or make someone else an owner, first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": ["sole_owner"]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "workspaceIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["code", "message", "workspaceIds"]
+                    }
+                  },
+                  "required": ["error"]
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/delete": {
+      "post": {
+        "summary": "Use a delete link's token, from the button on the page the link opens",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": ["token"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The account is deleted, and every session it had ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. link_invalid: the link expired or was already used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: another site sent this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "sole_owner: the operator is the only owner of the workspaces in `workspaceIds`. Delete each one, or make someone else an owner, first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": ["sole_owner"]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "workspaceIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["code", "message", "workspaceIds"]
+                    }
+                  },
+                  "required": ["error"]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/workspaces/{workspaceId}": {
       "get": {
         "security": [
@@ -2334,6 +2589,16 @@
           },
           "404": {
             "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "last_workspace: on a self-hosted server, the last workspace that is not deleted stays",
             "content": {
               "application/json": {
                 "schema": {

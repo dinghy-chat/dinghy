@@ -32,7 +32,7 @@ const en = {
   readOnlyRefused: "This workspace is read-only, so this cannot change.",
   suspendedRefused: "This workspace is suspended, so this cannot change.",
   paymentRequiredRefused: "This workspace waits for its first payment, so this cannot change yet.",
-  noWorkspace: "You are not in a workspace yet. Ask its owner for an invite.",
+  noWorkspace: "You are not in a workspace on this server. Ask a workspace's owner for an invite.",
   signOut: "Sign out",
   inbox: "Inbox",
   mainMenu: "Main menu",
@@ -412,13 +412,48 @@ const en = {
   deleteWorkspaceTitle: "Delete this workspace",
   deleteWorkspaceHelp:
     "This deletes every conversation, image and setting for good. Download an export first to keep a copy.",
-  deleteWorkspaceCloud: "The subscription ends at once, with no refund.",
+  deleteWorkspaceCloud: "The subscription ends today, with no refund.",
   deleteWorkspaceOpen: "Delete workspace",
   deleteWorkspaceConfirmTitle: "Delete {name}?",
   deleteWorkspaceConfirm: "Everything in this workspace is deleted for good. This can't be undone.",
   deleteWorkspaceType: "Type {name} to confirm",
   deleteWorkspaceButton: "Delete the workspace",
   deleteWorkspaceFailed: "The workspace could not be deleted. Try again.",
+  deleteWorkspaceCounts: "{conversations}, {images} and {members} are deleted for good.",
+  deleteCountConversationsOne: "1 conversation",
+  deleteCountConversations: "{count} conversations",
+  deleteCountImagesOne: "1 image",
+  deleteCountImages: "{count} images",
+  deleteCountMembersOne: "1 team member",
+  deleteCountMembers: "{count} team members",
+  deleteWorkspaceExport: "Download an export first",
+  deleteWorkspaceOnly: "This is the only workspace on this server.",
+  workspaceDeleted: "{name} was deleted.",
+  deleteAccountTitle: "Delete my account",
+  deleteAccountHelp:
+    "This takes you out of every workspace and erases your name and email. Your old replies stay, from a former team member.",
+  deleteAccountOpen: "Delete my account",
+  deleteAccountBlocked:
+    "You are the only owner of these workspaces. Delete each one, or make someone else an owner, first.",
+  deleteAccountOnlyServer:
+    "This server keeps its last workspace. If it is one of these, make someone else its owner.",
+  deleteAccountWorkspace: "Delete workspace",
+  deleteAccountMakeOwner: "Make someone an owner",
+  deleteAccountConfirmTitle: "Delete your account?",
+  deleteAccountConfirmEmail:
+    "We email you a link to confirm. Your account is deleted when you open it. This can't be undone.",
+  deleteAccountConfirmTyped: "Your account is deleted at once. This can't be undone.",
+  deleteAccountType: "Type {email} to confirm",
+  deleteAccountSend: "Email me the link",
+  deleteAccountButton: "Delete my account",
+  deleteAccountSent: "We sent a link to {email}. It works once, for the next 15 minutes.",
+  deleteAccountFailed: "Your account could not be deleted. Try again.",
+  deleteAccountSoleOwner:
+    "You are the only owner of a workspace. Delete it, or make someone else an owner, first.",
+  emailMismatch: "That is not your account's email.",
+  linkDeleteAccountTitle: "Delete your account",
+  linkDeleteAccountHelp: "This deletes your Dinghy account for good. It can't be undone.",
+  accountDeleted: "Your account was deleted.",
 };
 
 export type TextId = keyof typeof en;

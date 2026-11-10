@@ -93,6 +93,9 @@ export const operator = pgTable("operator", {
   // sessions. Nothing ever sets it back.
   emailProven: boolean("email_proven").notNull().default(true),
   image: text("image"),
+  // Set when the operator deletes their account. The row stays, with its personal data erased, so
+  // the messages and member rows that point to it keep working.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   // Cloud only. When the cloud's welcome email went out, so an account gets it once, whatever it does after.
   welcomedAt: timestamp("welcomed_at", { withTimezone: true }),
   createdAt: createdAt(),

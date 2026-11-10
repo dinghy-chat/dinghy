@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { type FormEvent, useState } from "react";
-import { askSignInLink, redeemJoinLink, redeemSignInLink } from "./api.ts";
+import { askSignInLink, confirmAccountDelete, redeemJoinLink, redeemSignInLink } from "./api.ts";
 import { navigate } from "./nav.ts";
 import { type TextId, t } from "./text.ts";
 import { AppLink, AuthPage, ErrorNote, Field, failureText } from "./ui.tsx";
@@ -104,13 +104,25 @@ export function CheckEmail({
  * where to ask for a new link.
  */
 const PURPOSES = {
-  "sign-in": { title: "linkWelcomeBack", button: "linkSignIn", again: "/" },
-  signup: { title: "linkWelcome", button: "linkSignup", again: "/signup" },
+  "sign-in": { title: "linkWelcomeBack", button: "linkSignIn", help: "linkHelp", again: "/" },
+  signup: { title: "linkWelcome", button: "linkSignup", help: "linkHelp", again: "/signup" },
   // Cloud signup with an email that has an account: sign in, then add a workspace.
-  "add-workspace": { title: "linkWelcomeBack", button: "linkSignIn", again: "/signup" },
+  "add-workspace": {
+    title: "linkWelcomeBack",
+    button: "linkSignIn",
+    help: "linkHelp",
+    again: "/signup",
+  },
   // Only the invite makes a new join link, and the sign-in page cannot: the account may not exist.
-  join: { title: "linkJoinTitle", button: "linkJoin", again: null },
-} satisfies Record<string, { title: TextId; button: TextId; again: string | null }>;
+  join: { title: "linkJoinTitle", button: "linkJoin", help: "linkHelp", again: null },
+  // Only the account's Profile page makes a new delete link.
+  "delete-account": {
+    title: "linkDeleteAccountTitle",
+    button: "deleteAccountButton",
+    help: "linkDeleteAccountHelp",
+    again: null,
+  },
+} satisfies Record<string, { title: TextId; button: TextId; help: TextId; again: string | null }>;
 type Purpose = keyof typeof PURPOSES;
 /** The answers that use up a join link, unlike a lost connection, which leaves it to try again. */
 const SPENT = new Set<TextId>(["inviteInvalid", "operatorLimit"]);
@@ -124,12 +136,18 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
   const kind = isPurpose(purpose) ? purpose : "sign-in";
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleted, setDeleted] = useState(false);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     setBusy(true);
     try {
+      if (kind === "delete-account") {
+        await confirmAccountDelete(token);
+        setDeleted(true);
+        return;
+      }
       if (kind === "join") {
         const { workspaceId } = await redeemJoinLink(token);
         navigate(`/?workspace=${workspaceId}`);
@@ -143,6 +161,7 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
     }
   };
 
+  if (deleted) return <AccountDeleted />;
   const { again } = PURPOSES[kind];
   // A refused join link is used up too, so its button would only say the link expired.
   if (error === "linkInvalid" || (again === null && error !== null && SPENT.has(error))) {
@@ -160,11 +179,23 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
   return (
     <AuthPage time="noon" onSubmit={submit}>
       <h1>{t(PURPOSES[kind].title)}</h1>
-      <p className="note">{t("linkHelp")}</p>
+      <p className="note">{t(PURPOSES[kind].help)}</p>
       <ErrorNote text={error} />
       <button type="submit" className="btn primary large" disabled={busy}>
         {t(PURPOSES[kind].button)}
       </button>
+    </AuthPage>
+  );
+}
+
+/** After the account's delete, by its link or in the app. Its sessions ended with it. */
+export function AccountDeleted() {
+  return (
+    <AuthPage time="noon">
+      <h1>{t("accountDeleted")}</h1>
+      <AppLink className="btn primary large" href="/">
+        {t("linkSignIn")}
+      </AppLink>
     </AuthPage>
   );
 }

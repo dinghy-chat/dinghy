@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -13,6 +13,7 @@ import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import {
   apiKey,
+  attachment,
   conversation,
   message,
   pageView,
@@ -22,6 +23,7 @@ import {
   webhookDelivery,
   workspace,
   workspaceLogo,
+  workspaceMember,
 } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createImages } from "./images.ts";
@@ -141,6 +143,8 @@ afterAll(async () => {
 
 describe("the owner's delete", () => {
   test("works on a self-hosted install, with no Stripe", async () => {
+    // A self-hosted server keeps its last workspace, so this one is not the last.
+    await createWorkspace(db, "Stays", []);
     const created = await createWorkspace(db, "Home", []);
     const { id: selfId, email } = await addOperator({
       auth,
@@ -230,5 +234,145 @@ describe("a self-hosted install", () => {
     expect(await widgetWorkspace(db, created.publicKey)).not.toBeNull();
     expect(await workspaceRow(created.id)).toMatchObject({ active: true, deletedAt: null });
     expect(await subscriptionRow(created.id)).toBeUndefined();
+  });
+});
+
+/** A workspace with an owner who is signed in. */
+async function ownedWorkspace(name: string) {
+  const created = await createWorkspace(db, name, []);
+  const { id, email } = await addOperator({ auth, owner, name: "Owner", workspaceId: created.id });
+  return { ...created, ownerId: id, cookie: await signIn(app, auth, email) };
+}
+
+/** Marks every other workspace deleted for `work`, then brings them back for the other tests. */
+async function asOnlyWorkspaces(keep: string[], work: () => Promise<void>) {
+  const others = await owner
+    .update(workspace)
+    .set({ deletedAt: new Date() })
+    .where(and(isNull(workspace.deletedAt), notInArray(workspace.id, keep)))
+    .returning({ id: workspace.id });
+  try {
+    await work();
+  } finally {
+    const ids = others.map((one) => one.id);
+    if (ids.length > 0) {
+      await owner.update(workspace).set({ deletedAt: null }).where(inArray(workspace.id, ids));
+    }
+  }
+}
+
+const deleteAs = (space: { id: string; cookie: string }, name: string, server = app) =>
+  server.request(`/v1/operator/workspaces/${space.id}`, {
+    method: "DELETE",
+    headers: {
+      origin: ORIGIN,
+      "x-forwarded-for": IP,
+      "content-type": "application/json",
+      cookie: space.cookie,
+    },
+    body: JSON.stringify({ name }),
+  });
+
+const settingsOf = async (space: { id: string; cookie: string }) => {
+  const response = await request("GET", `/v1/operator/workspaces/${space.id}/settings`, {
+    cookie: space.cookie,
+  });
+  return (await response.json()) as {
+    deletion: { conversations: number; images: number; members: number; onlyWorkspace: boolean };
+  };
+};
+
+describe("the last workspace", () => {
+  test("a self-hosted server refuses to delete it, and the settings say why", async () => {
+    const last = await ownedWorkspace("Last");
+    await asOnlyWorkspaces([last.id], async () => {
+      expect((await settingsOf(last)).deletion.onlyWorkspace).toBe(true);
+      const response = await deleteAs(last, "Last");
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: { code: "last_workspace" } });
+      expect(await workspaceRow(last.id)).toMatchObject({ deletedAt: null });
+    });
+    expect((await settingsOf(last)).deletion.onlyWorkspace).toBe(false);
+  });
+
+  test("two owners who delete the last two at once leave one", async () => {
+    const first = await ownedWorkspace("First");
+    const second = await ownedWorkspace("Second");
+    await asOnlyWorkspaces([first.id, second.id], async () => {
+      const answers = await Promise.all([deleteAs(first, "First"), deleteAs(second, "Second")]);
+      expect(answers.map((one) => one.status).sort()).toEqual([200, 409]);
+      const kept = await owner
+        .select({ id: workspace.id })
+        .from(workspace)
+        .where(and(isNull(workspace.deletedAt), inArray(workspace.id, [first.id, second.id])));
+      expect(kept).toHaveLength(1);
+    });
+  });
+
+  test("the cloud has no such limit", async () => {
+    const cloudApp = createApp({
+      auth,
+      db,
+      logger,
+      valkey,
+      cloud: { signup: "early" },
+      trustedProxyHops: 1,
+      limitScale: 100,
+      checks: { postgres: ok, valkey: ok },
+    });
+    const last = await ownedWorkspace("Cloud Last");
+    await asOnlyWorkspaces([last.id], async () => {
+      expect((await deleteAs(last, "Cloud Last", cloudApp)).status).toBe(200);
+    });
+    expect((await workspaceRow(last.id))?.deletedAt).not.toBeNull();
+  });
+});
+
+test("the settings count what a delete removes", async () => {
+  const space = await ownedWorkspace("Counted");
+  const teammate = await addOperator({ auth, owner, workspaceId: space.id, role: "member" });
+  const gone = await addOperator({ auth, owner, workspaceId: space.id, role: "member" });
+  await owner
+    .update(workspaceMember)
+    .set({ removedAt: new Date() })
+    .where(eq(workspaceMember.operatorId, gone.id));
+  const [guest] = await owner
+    .insert(visitor)
+    .values({ workspaceId: space.id, tokenHash: `counted-${teammate.id}` })
+    .returning({ id: visitor.id });
+  const visitorId = guest?.id ?? "";
+  const talks = await owner
+    .insert(conversation)
+    .values([
+      { workspaceId: space.id, visitorId },
+      { workspaceId: space.id, visitorId },
+    ])
+    .returning({ id: conversation.id });
+  const [said] = await owner
+    .insert(message)
+    .values({
+      workspaceId: space.id,
+      conversationId: talks[0]?.id ?? "",
+      seq: 1n,
+      kind: "image",
+      clientId: "counted-1",
+      authorVisitorId: visitorId,
+    })
+    .returning({ id: message.id });
+  await owner.insert(attachment).values({
+    workspaceId: space.id,
+    messageId: said?.id ?? "",
+    storageKey: "counted.webp",
+    byteSize: 10,
+    contentType: "image/webp",
+    width: 1,
+    height: 1,
+  });
+  expect((await settingsOf(space)).deletion).toEqual({
+    conversations: 2,
+    images: 1,
+    // The owner and the teammate. A removed member is not on the team.
+    members: 2,
+    onlyWorkspace: false,
   });
 });

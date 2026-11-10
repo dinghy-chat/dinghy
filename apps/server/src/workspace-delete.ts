@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { workspace } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
   failure,
@@ -16,6 +16,16 @@ import {
 import { type Live, OPERATORS } from "./live.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
+
+/** Whether `workspaceId` is the only workspace on the server that is not deleted. */
+export async function isOnlyWorkspace(tx: Transaction, workspaceId: string): Promise<boolean> {
+  const result = await tx.execute<{ other: boolean }>(
+    sql`select other_workspace_exists(${workspaceId}) as other`,
+  );
+  return result.rows[0]?.other !== true;
+}
+
+const ONLY_WORKSPACE = failure("last_workspace", "This is the only workspace on this server.");
 
 /**
  * Removes deleted workspaces' data. A workspace row goes once the worker has removed its images,
@@ -55,6 +65,9 @@ const deleteRoute = createRoute({
       "invalid_request: the request is not valid. name_mismatch: the typed name does not match",
     ),
     403: errorAnswer(`forbidden: only an owner can delete it. ${WRONG_ORIGIN_TEXT}`),
+    409: errorAnswer(
+      "last_workspace: on a self-hosted server, the last workspace that is not deleted stays",
+    ),
     429: errorAnswer("too_many_requests: too many attempts. Retry after `retry-after`"),
     502: errorAnswer(
       "billing_unavailable: the subscription could not be canceled, so nothing was deleted",
@@ -71,6 +84,8 @@ interface WorkspaceDeleteOptions {
   beforeDelete?: ((workspaceId: string) => Promise<void>) | undefined;
   /** The clock for the deletion time, which the cloud's tests control. */
   now?: (() => Date) | undefined;
+  /** True on a self-hosted server, which keeps its last workspace. The cloud has no such limit. */
+  keepsLastWorkspace: boolean;
   live: Live;
   logger: Logger;
   rateLimit: RateLimit;
@@ -79,7 +94,15 @@ interface WorkspaceDeleteOptions {
 /** The owner's delete. Call this after the inbox routes, so it runs behind their member check. */
 export function registerWorkspaceDelete(
   app: App,
-  { db, beforeDelete, now = () => new Date(), live, logger, rateLimit }: WorkspaceDeleteOptions,
+  {
+    db,
+    beforeDelete,
+    now = () => new Date(),
+    keepsLastWorkspace,
+    live,
+    logger,
+    rateLimit,
+  }: WorkspaceDeleteOptions,
 ) {
   app.openapi(deleteRoute, async (c) => {
     if (c.get("memberRole") !== "owner") {
@@ -108,12 +131,19 @@ export function registerWorkspaceDelete(
       );
     }
     // On the cloud, the worker closes a payment page opened from now on, before the purge.
-    await withWorkspace(db, id, (tx) =>
-      tx
+    const deleted = await withWorkspace(db, id, async (tx) => {
+      if (keepsLastWorkspace) {
+        // Two owners who delete the last two workspaces at once take turns, and the second stops.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('workspace-delete'))`);
+        if (await isOnlyWorkspace(tx, id)) return false;
+      }
+      await tx
         .update(workspace)
         .set({ deletedAt: now() })
-        .where(and(eq(workspace.id, id), isNull(workspace.deletedAt))),
-    );
+        .where(and(eq(workspace.id, id), isNull(workspace.deletedAt)));
+      return true;
+    });
+    if (!deleted) return c.json(ONLY_WORKSPACE, 409);
     logger.info({ workspaceId: id }, "an owner deleted a workspace");
     // Open inboxes reconnect, and find the workspace gone.
     live.wake(id, OPERATORS);

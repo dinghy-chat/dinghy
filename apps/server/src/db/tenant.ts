@@ -81,7 +81,10 @@ interface Membership {
 }
 
 /** Lists an operator's workspaces. Sign-in has no workspace yet, so this is a named lookup. */
-export async function operatorWorkspaces(db: Database, operatorId: string): Promise<Membership[]> {
+export async function operatorWorkspaces(
+  db: Database | Transaction,
+  operatorId: string,
+): Promise<Membership[]> {
   const result = await db.execute<{
     workspace_id: string;
     role: Membership["role"];

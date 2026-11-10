@@ -652,6 +652,20 @@ textarea {
   background: var(--surface);
   color: var(--navy);
 }
+/* News after the owner's delete, which the operator closes. */
+.deleted-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-block: 4px;
+  background: var(--surface);
+  color: var(--navy);
+}
+.deleted-banner .icon-button {
+  width: 32px;
+  height: 32px;
+}
 .banner-short {
   display: none;
 }
@@ -1897,6 +1911,21 @@ img.ws-tile {
 }
 .danger-zone h3 {
   color: var(--bad);
+}
+/* The workspaces that keep an account's delete waiting, each with its two ways out. */
+.blockers {
+  display: grid;
+  gap: 8px;
+}
+.blockers li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--soft);
 }
 .page-row + .danger-zone,
 .tab-panel > .danger-zone:first-child {

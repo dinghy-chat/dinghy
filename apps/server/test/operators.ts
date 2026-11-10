@@ -61,8 +61,11 @@ export const openLink = async (app: Server, url: string): Promise<Response> =>
 /** Selects the button on the page a link opens: it posts the link's token, as the app does. */
 export function pressLinkButton(app: Server, url: string): Promise<Response> | Response {
   const parsed = new URL(url);
-  const path =
-    parsed.searchParams.get("for") === "join" ? "/v1/invites/open" : "/v1/auth/magic-link/verify";
+  const paths: Record<string, string> = {
+    join: "/v1/invites/open",
+    "delete-account": "/v1/account/delete",
+  };
+  const path = paths[parsed.searchParams.get("for") ?? ""] ?? "/v1/auth/magic-link/verify";
   return app.request(path, {
     method: "POST",
     headers: { origin: parsed.origin, "content-type": "application/json" },

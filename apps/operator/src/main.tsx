@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
-import { LinkPage, SignIn } from "./auth.tsx";
+import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate } from "./nav.ts";
@@ -52,6 +52,7 @@ function App() {
         // A later move has its own answer coming. This one must not overwrite it.
         if (here() !== next) return;
         setMe(account);
+        setAccountDeleted(false);
         // A new address can name a workspace, which wins over the last one picked.
         setPicked(null);
         setAt(next);
@@ -66,6 +67,9 @@ function App() {
     };
   }, []);
   const signedOut = useCallback(() => setMe(null), []);
+  // The workspace this operator just deleted, for a note in the next one.
+  const [deletedName, setDeletedName] = useState<string | null>(null);
+  const [accountDeleted, setAccountDeleted] = useState(false);
   // Signup is open only on the cloud plan. A self-hosted server shows none.
   const [meta, setMeta] = useState<Meta | "loading">("loading");
   useEffect(() => {
@@ -83,6 +87,7 @@ function App() {
   if (path === "/link") {
     return <LinkPage purpose={query.get("for") ?? ""} token={query.get("token") ?? ""} />;
   }
+  if (accountDeleted) return <AccountDeleted />;
   if (me === "loading" || meta === "loading") {
     // An operator who used the app on this device most likely has it open again.
     return rememberedWorkspace() === null ? <SceneLoading /> : <ShellLoading />;
@@ -116,6 +121,7 @@ function App() {
     me.workspaces.find(opens) ??
     me.workspaces[0];
   const switchTo = (id: string) => {
+    setDeletedName(null);
     rememberWorkspace(id);
     // The conversation in the address belongs to the old workspace.
     history.replaceState(null, "", "/");
@@ -163,6 +169,13 @@ function App() {
       onSignedOut={load}
       onSwitch={switchTo}
       onAccountChanged={load}
+      deletedName={deletedName}
+      onWorkspaceDeleted={(name) => {
+        setDeletedName(name);
+        navigate("/");
+      }}
+      onCloseDeleted={() => setDeletedName(null)}
+      onAccountDeleted={() => setAccountDeleted(true)}
     />
   );
 }

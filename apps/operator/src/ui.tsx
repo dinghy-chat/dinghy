@@ -38,6 +38,9 @@ const BY_CODE: Record<string, TextId> = {
   suspended: "suspendedRefused",
   read_only: "readOnlyRefused",
   payment_required: "paymentRequiredRefused",
+  last_workspace: "deleteWorkspaceOnly",
+  sole_owner: "deleteAccountSoleOwner",
+  email_mismatch: "emailMismatch",
 };
 
 /**

@@ -421,6 +421,20 @@
       "when": 1794344109956,
       "tag": "0059_workspace_logo_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794345932480,
+      "tag": "0060_account_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794345932929,
+      "tag": "0061_account_delete_grants",
+      "breakpoints": true
     }
   ]
 }
