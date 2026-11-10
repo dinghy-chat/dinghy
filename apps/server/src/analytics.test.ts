@@ -37,7 +37,7 @@ afterAll(async () => {
   await database.drop();
 });
 
-async function person(workspaceId: string, name: string, role: "owner" | "agent" = "owner") {
+async function person(workspaceId: string, name: string, role: "owner" | "member" = "owner") {
   const added = await addOperator({ auth, owner, name, workspaceId, role });
   return { id: added.id, cookie: await signIn(app, auth, added.email) };
 }
@@ -155,7 +155,7 @@ describe("a workspace with conversations", () => {
   beforeAll(async () => {
     space = await createWorkspace(db, "Busy", []);
     sam = await person(space.id, "Sam");
-    lea = await person(space.id, "Lea", "agent");
+    lea = await person(space.id, "Lea", "member");
     await seed(space.id, {
       startedAt: recent,
       reply: { by: sam.id, afterMs: MINUTE },
@@ -232,7 +232,7 @@ describe("a workspace with conversations", () => {
     expect(tokyo).not.toEqual(utc);
   });
 
-  test("an agent can read them", async () => {
+  test("a member can read them", async () => {
     expect((await analytics(space.id, lea.cookie, "days=7&tz=UTC")).status).toBe(200);
   });
 

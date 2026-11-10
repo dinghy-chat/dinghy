@@ -211,7 +211,7 @@ describe("managing webhooks", () => {
     expect(await sixth.json()).toMatchObject({ error: { code: "webhook_limit" } });
   });
 
-  test("an agent cannot see or change webhooks", async () => {
+  test("a member cannot see or change webhooks", async () => {
     const made = await addWebhook(["message.created"]);
     const agent = await signedInOperator({
       app,
@@ -219,7 +219,7 @@ describe("managing webhooks", () => {
       owner,
       name: "Ari",
       workspaceId: space.id,
-      role: "agent",
+      role: "member",
     });
     const as = (method: string, path: string, body?: unknown) =>
       app.request(path, {

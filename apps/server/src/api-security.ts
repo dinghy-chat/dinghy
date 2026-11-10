@@ -32,6 +32,6 @@ export function registerSecuritySchemes(registry: OpenAPIHono["openAPIRegistry"]
     type: "http",
     scheme: "bearer",
     description:
-      "A workspace API key, `dk_...`, that an owner or admin creates in Settings. It works only in its own workspace, with an agent's permissions: read, search, reply, close, reopen and assign conversations. It needs no Origin.",
+      "A workspace API key, `dk_...`, that an owner or admin creates in Settings. It works only in its own workspace, with a member's permissions: read, search, reply, close, reopen and assign conversations. It needs no Origin.",
   });
 }

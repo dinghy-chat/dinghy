@@ -71,7 +71,8 @@ test("a write refused as read-only shows the banner, when the page missed the ch
   await expect(banner).toHaveCount(0);
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Invite someone" }).click();
-  await page.getByRole("button", { name: "Create invite link" }).click();
+  await page.getByRole("dialog").getByLabel("Email").fill("new@example.com");
+  await page.getByRole("button", { name: "Send invite" }).click();
   await expect(banner).toBeVisible();
 });
 

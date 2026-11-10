@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { Logger } from "pino";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
@@ -25,9 +26,10 @@ import {
   ROLE_WRITE_ERRORS,
   safeErrorFields,
   WRONG_ORIGIN,
+  WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
 import { emailAddressHash, normalizeOrigin, sha256Hex } from "./identity.ts";
-import { joinMail } from "./letter.ts";
+import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import type { Mailer } from "./mailer.ts";
@@ -35,10 +37,15 @@ import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { assignConversation, recordTeamChange } from "./messages.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 
-export type Role = "owner" | "admin" | "agent";
+export type Role = "owner" | "admin" | "member";
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}";
 const INVITE_LIFETIME_MS = 7 * 24 * 3_600_000;
+const HOUR_SECONDS = 3600;
+/** Invite emails a workspace may send in an hour. */
+const INVITE_MAILS_PER_WORKSPACE = 20;
+/** Invite emails one address may get in an hour, from all workspaces together. */
+const INVITE_MAILS_PER_ADDRESS = 5;
 const MAX_ORIGINS = 20;
 
 const LAST_OWNER = failure(
@@ -51,17 +58,20 @@ const EMAIL_TAKEN = failure(
   "This email already has an account. Sign in, then open the invite again.",
 );
 const ALREADY_MEMBER = failure("already_member", "You are already in this workspace.");
+const INVITEE_IS_MEMBER = failure("already_member", "This person is already in the workspace.");
+const NAME_NEEDED = failure("invalid_request", "Send a name for the new account.");
+const OTHER_EMAIL = failure("invite_other_email", "This invite is for another email address.");
 
-const RANK: Record<Role, number> = { agent: 0, admin: 1, owner: 2 };
+const RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 };
 
 /** The rules in one place, so a route cannot apply a looser version of them. */
 export const allowed = {
   settings: (role: Role) => role === "owner" || role === "admin",
   invite: (role: Role, invited: Role) =>
-    invited !== "owner" && (role === "owner" || (role === "admin" && invited === "agent")),
+    invited !== "owner" && (role === "owner" || (role === "admin" && invited === "member")),
   changeRole: (role: Role) => role === "owner",
   remove: (role: Role, target: Role, isSelf: boolean) =>
-    isSelf || role === "owner" || (role === "admin" && target === "agent"),
+    isSelf || role === "owner" || (role === "admin" && target === "member"),
 };
 
 const ok = {
@@ -83,8 +93,8 @@ const inviteErrors = {
   ...RATE_LIMITED,
 };
 
-const roleEnum = z.enum(["owner", "admin", "agent"]);
-const invitedRole = z.enum(["admin", "agent"]);
+const roleEnum = z.enum(["owner", "admin", "member"]);
+const invitedRole = z.enum(["admin", "member"]);
 const workspaceParams = z.object({ workspaceId: z.uuid() });
 const memberParams = workspaceParams.extend({ operatorId: z.uuid() });
 const inviteParams = workspaceParams.extend({ inviteId: z.uuid() });
@@ -101,7 +111,7 @@ const Member = z
   .object({ id: z.string(), name: z.string(), email: z.string(), role: roleEnum })
   .openapi("Member");
 const PendingInvite = z
-  .object({ id: z.string(), role: invitedRole, expiresAt: z.string() })
+  .object({ id: z.string(), email: z.string(), role: invitedRole, expiresAt: z.string() })
   .openapi("PendingInvite");
 /** The widget's own words. Null, or an empty text in a change, means the widget's default. */
 const widgetText = (max: number) =>
@@ -191,12 +201,22 @@ const createInviteRoute = createRoute({
   method: "post",
   path: `${PREFIX}/invites`,
   security: SESSION,
-  summary: "Create an invite link. Its token is shown only in this response.",
-  request: { params: workspaceParams, body: json(z.object({ role: invitedRole })) },
+  summary:
+    "Invite an email address. With a mail server, the invite goes by email. An earlier invite to the same address stops working.",
+  request: {
+    params: workspaceParams,
+    body: json(z.object({ email: z.email().max(254), role: invitedRole })),
+  },
   responses: {
-    201: reply("The invite", PendingInvite.extend({ token: z.string() })),
+    201: reply(
+      "The invite. `token` is null when the invite went by email. On a server with no mail server, it is shown only here, for you to send to the person",
+      PendingInvite.extend({ token: z.string().nullable() }),
+    ),
     ...ROLE_WRITE_ERRORS,
-    409: errorAnswer("operator_limit: the workspace has as many operators as its plan allows"),
+    409: errorAnswer(
+      "already_member: this person is already in the workspace. operator_limit: the workspace has as many operators as its plan allows",
+    ),
+    ...RATE_LIMITED,
   },
 });
 
@@ -278,7 +298,15 @@ const previewRoute = createRoute({
   summary: "Read what an invite link offers",
   request: { body: json(tokenBody) },
   responses: {
-    200: reply("The invite", z.object({ workspaceName: z.string(), role: invitedRole })),
+    200: reply(
+      "The invite, the email it is for, and whether that email has an account",
+      z.object({
+        workspaceName: z.string(),
+        role: invitedRole,
+        email: z.string(),
+        hasAccount: z.boolean(),
+      }),
+    ),
     ...inviteErrors,
   },
 });
@@ -286,23 +314,27 @@ const previewRoute = createRoute({
 const joinRoute = createRoute({
   method: "post",
   path: "/v1/invites/join",
-  summary: "Ask for the link that creates an account, or signs in to one, and joins with an invite",
+  summary:
+    "Join with an invite, as the email it is for. With no account, this creates one and signs in. With an account, a link to join goes to the email",
   request: {
     body: json(
       tokenBody.extend({
-        name: z.string().trim().min(1).max(100),
-        email: z.email().max(254),
+        // Names a new account. An existing account keeps its own name.
+        name: z.string().trim().min(1).max(100).optional(),
       }),
     ),
   },
   responses: {
     200: reply(
-      "With a mail server, the link went to the email, and `signInUrl` is null: the answer is the same whether or not the email has an account. Without one, open `signInUrl`",
-      z.object({ ok: z.literal(true), signInUrl: z.string().nullable() }),
+      "With a workspace ID, the new account joined and is signed in, with the session cookie set. Null means the email has an account: a link to join went to it, and works for 15 minutes",
+      z.object({ workspaceId: z.string().nullable() }),
     ),
     ...inviteErrors,
+    400: errorAnswer(
+      "invalid_request: the request is not valid, or it has no name and the email has no account",
+    ),
     409: errorAnswer(
-      "email_taken: on a server with no mail server, the email has an account. Sign in, then accept the invite",
+      "email_taken: the invite was not emailed and the email has an account. Sign in, then accept the invite. operator_limit: the workspace has as many operators as its plan allows",
     ),
   },
 });
@@ -311,7 +343,7 @@ const openRoute = createRoute({
   method: "post",
   path: "/v1/invites/open",
   summary:
-    "Use a join link's token, from the button on the page the link opens: create the account if needed, join, and sign in",
+    "Use a join link's token, from the button on the page the link opens: join with the account, and sign in",
   request: { body: json(tokenBody) },
   responses: {
     200: reply(
@@ -322,9 +354,7 @@ const openRoute = createRoute({
     400: errorAnswer(
       "invalid_request: the request is not valid. link_invalid: the link expired or was already used",
     ),
-    409: errorAnswer(
-      "operator_limit: the workspace has the most operators its plan allows. email_taken: on a server with no mail server, the email has an account",
-    ),
+    409: errorAnswer("operator_limit: the workspace has the most operators its plan allows"),
   },
 });
 
@@ -332,11 +362,9 @@ const openRoute = createRoute({
 const PendingJoin = z.object({
   workspaceId: z.uuid(),
   inviteHash: z.string(),
-  name: z.string(),
+  // Names the account only if it has no name yet, such as after an unfinished signup.
+  name: z.string().optional(),
   email: z.string(),
-  // False on a server with no mail server, where nobody proved the email: it joins only as a new
-  // account, so an invite cannot sign anyone in to an account that exists.
-  proven: z.boolean(),
 });
 const JOIN_LINK = "invite-join:";
 
@@ -350,6 +378,9 @@ const acceptRoute = createRoute({
     200: reply("The workspace", z.object({ workspaceId: z.string() })),
     ...OPERATOR_WRITE_ERRORS,
     ...INVITE_INVALID,
+    403: errorAnswer(
+      `${WRONG_ORIGIN_TEXT}. invite_other_email: the invite is for another email address`,
+    ),
     409: errorAnswer(
       "already_member: already in this workspace. operator_limit: the workspace has as many operators as its plan allows",
     ),
@@ -409,6 +440,14 @@ async function consumeInvite(
   if (joined === undefined) throw new AlreadyMemberError();
   if (!(await limits.operatorsFit(tx, workspaceId))) throw new OperatorLimitError();
   await recordTeamChange(tx, workspaceId);
+}
+
+/** The answer for an error that rolled back a join. Any other error goes on up. */
+function joinFailure(error: unknown) {
+  if (error instanceof InviteUnusableError) return "invite_invalid" as const;
+  if (error instanceof AlreadyMemberError) return "member" as const;
+  if (error instanceof OperatorLimitError) return "operator_limit" as const;
+  throw error;
 }
 
 async function readSettings(tx: Transaction, limits: Limits, workspaceId: string) {
@@ -614,7 +653,12 @@ export function registerTeamRoutes(
     const id = c.get("memberWorkspaceId");
     const rows = await withWorkspace(db, id, (tx) =>
       tx
-        .select({ id: invite.id, role: invite.role, expiresAt: invite.expiresAt })
+        .select({
+          id: invite.id,
+          email: invite.email,
+          role: invite.role,
+          expiresAt: invite.expiresAt,
+        })
         .from(invite)
         .where(
           and(
@@ -629,8 +673,8 @@ export function registerTeamRoutes(
     return c.json(
       {
         invites: rows.map((row) => ({
-          id: row.id,
-          role: row.role as "admin" | "agent",
+          ...row,
+          role: row.role as "admin" | "member",
           expiresAt: row.expiresAt.toISOString(),
         })),
       },
@@ -640,8 +684,23 @@ export function registerTeamRoutes(
 
   app.openapi(createInviteRoute, async (c) => {
     const { role } = c.req.valid("json");
+    const email = c.req.valid("json").email.toLowerCase();
     const id = c.get("memberWorkspaceId");
     const operatorId = c.get("operatorId");
+    // Checked again below, with the row locked. This one keeps a refused request off the limits.
+    if (!allowed.invite(c.get("memberRole"), role)) return c.json(FORBIDDEN, 403);
+    if (mailer !== undefined) {
+      // Each invite emails an address that the admin picks.
+      const wait =
+        (await rateLimit.hit("invite-mail", id, INVITE_MAILS_PER_WORKSPACE, HOUR_SECONDS)) ??
+        (await rateLimit.hit(
+          "invite-mail-to",
+          emailAddressHash(email),
+          INVITE_MAILS_PER_ADDRESS,
+          HOUR_SECONDS,
+        ));
+      if (wait !== null) return tooManyRequests(c, wait);
+    }
     const token = `${id}.${randomBytes(32).toString("base64url")}`;
     const expiresAt = new Date(Date.now() + INVITE_LIFETIME_MS);
     const created = await withWorkspace(db, id, async (tx) => {
@@ -658,7 +717,31 @@ export function registerTeamRoutes(
           ),
         )
         .for("no key update");
-      if (creator === undefined || !allowed.invite(creator.role, role)) return null;
+      if (creator === undefined || !allowed.invite(creator.role, role)) return "forbidden" as const;
+      const [member] = await tx
+        .select({ id: operator.id })
+        .from(workspaceMember)
+        .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
+        .where(
+          and(
+            eq(workspaceMember.workspaceId, id),
+            eq(operator.email, email),
+            isNull(workspaceMember.removedAt),
+          ),
+        );
+      if (member !== undefined) return "member" as const;
+      // Inviting someone again replaces their invite, so only the newest link works.
+      await tx
+        .update(invite)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(invite.workspaceId, id),
+            eq(invite.email, email),
+            isNull(invite.usedAt),
+            isNull(invite.revokedAt),
+          ),
+        );
       if (!(await limits.mayInvite(tx, id))) return "full" as const;
       const [row] = await tx
         .insert(invite)
@@ -666,16 +749,33 @@ export function registerTeamRoutes(
           workspaceId: id,
           tokenHash: sha256Hex(token),
           role,
+          email,
+          mailed: mailer !== undefined,
           createdBy: operatorId,
           expiresAt,
         })
         .returning({ id: invite.id });
-      return row ?? null;
+      const [named] = await tx
+        .select({ name: workspace.name })
+        .from(workspace)
+        .where(eq(workspace.id, id));
+      if (row === undefined || named === undefined) throw new Error("The invite row is missing");
+      return { id: row.id, workspaceName: named.name };
     });
-    if (created === null) return c.json(FORBIDDEN, 403);
+    if (created === "forbidden") return c.json(FORBIDDEN, 403);
+    if (created === "member") return c.json(INVITEE_IS_MEMBER, 409);
     if (created === "full") return c.json(OPERATOR_LIMIT, 409);
     auditChange("invite.created", id, operatorId, { inviteId: created.id, role });
-    return c.json({ id: created.id, role, expiresAt: expiresAt.toISOString(), token }, 201);
+    const answer = { id: created.id, email, role, expiresAt: expiresAt.toISOString() };
+    // With no mail server, the admin hands the link out, so the answer is the only place it shows.
+    if (mailer === undefined) return c.json({ ...answer, token }, 201);
+    const url = new URL("/invite", publicUrl);
+    url.searchParams.set("token", token);
+    const mail = inviteMail(url.href, created.workspaceName, role);
+    mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {
+      logger.error(safeErrorFields(err), "could not send an invite");
+    });
+    return c.json({ ...answer, token: null }, 201);
   });
 
   app.openapi(revokeInviteRoute, async (c) => {
@@ -761,63 +861,107 @@ export function registerTeamRoutes(
   app.use("/v1/invites/*", limitByIp(rateLimit, "invites", 20, 60));
   app.use("/v1/invites/*", bodyLimit({ maxSize: 8 * 1024 }));
 
+  /** The invite a token names, if it can still be used. */
+  const readInvite = async (workspaceId: string, tokenHash: string) => {
+    const [row] = await withWorkspace(db, workspaceId, (tx) =>
+      tx
+        .select({
+          workspaceName: workspace.name,
+          role: invite.role,
+          email: invite.email,
+          mailed: invite.mailed,
+          hasAccount: sql<boolean>`exists (select 1 from ${operator} where ${operator.email} = ${invite.email})`,
+        })
+        .from(invite)
+        .innerJoin(workspace, eq(workspace.id, invite.workspaceId))
+        .where(usable(workspaceId, tokenHash)),
+    );
+    return row;
+  };
+
+  /** Signs `email` in, with the session cookie on the answer. */
+  const startSession = async (c: Context, email: string, route: "email" | "shown") => {
+    const cookies = await signInNow(auth, db, email, c.req.raw.headers, route);
+    if (cookies === null) throw new Error("A sign-in token made just now did not work");
+    for (const cookie of cookies) c.header("set-cookie", cookie, { append: true });
+  };
+
+  const joined = (workspaceId: string, operatorId: string) => {
+    auditChange("invite.used", workspaceId, operatorId);
+    live.wake(workspaceId, OPERATORS);
+  };
+
   app.openapi(previewRoute, async (c) => {
     if (c.req.header("origin") !== publicOrigin) return c.json(WRONG_ORIGIN, 403);
     const parsed = parseToken(c.req.valid("json").token);
     if (parsed === null) return c.json(BAD_INVITE, 404);
-    const [row] = await withWorkspace(db, parsed.workspaceId, (tx) =>
-      tx
-        .select({ workspaceName: workspace.name, role: invite.role })
-        .from(invite)
-        .innerJoin(workspace, eq(workspace.id, invite.workspaceId))
-        .where(usable(parsed.workspaceId, parsed.tokenHash)),
-    );
+    const row = await readInvite(parsed.workspaceId, parsed.tokenHash);
     if (row === undefined) return c.json(BAD_INVITE, 404);
-    return c.json({ workspaceName: row.workspaceName, role: row.role as "admin" | "agent" }, 200);
+    // Only the invitee holds the token, or on a server with no mail server, whoever the admin gave
+    // it to. So the email, and whether it has an account, tell a stranger nothing.
+    return c.json(
+      {
+        workspaceName: row.workspaceName,
+        role: row.role as "admin" | "member",
+        email: row.email,
+        hasAccount: row.hasAccount,
+      },
+      200,
+    );
   });
 
   app.openapi(joinRoute, async (c) => {
     if (c.req.header("origin") !== publicOrigin) return c.json(WRONG_ORIGIN, 403);
     const { token, name } = c.req.valid("json");
-    const email = c.req.valid("json").email.toLowerCase();
     const parsed = parseToken(token);
     if (parsed === null) return c.json(BAD_INVITE, 404);
     const { workspaceId, tokenHash } = parsed;
-    const [valid] = await withWorkspace(db, workspaceId, (tx) =>
-      tx.select({ id: invite.id }).from(invite).where(usable(workspaceId, tokenHash)),
-    );
-    if (valid === undefined) return c.json(BAD_INVITE, 404);
-    // Each one sends an email to an address that whoever holds the invite picks.
-    const wait = await rateLimit.hit("invite-join-email", emailAddressHash(email), 5, 3600);
-    if (wait !== null) return tooManyRequests(c, wait);
-    if (mailer === undefined) {
-      const [taken] = await db
-        .select({ id: operator.id })
-        .from(operator)
-        .where(eq(operator.email, email));
-      if (taken !== undefined) return c.json(EMAIL_TAKEN, 409);
+    const offer = await readInvite(workspaceId, tokenHash);
+    if (offer === undefined) return c.json(BAD_INVITE, 404);
+    const { email, mailed } = offer;
+    if (!offer.hasAccount) {
+      if (name === undefined) return c.json(NAME_NEEDED, 400);
+      const result = await withWorkspace(db, workspaceId, async (tx) => {
+        const [created] = await tx
+          .insert(operator)
+          .values({ name, email, emailProven: mailed })
+          .onConflictDoNothing()
+          .returning({ id: operator.id });
+        // The account appeared in the meantime, so it joins as an existing one, below.
+        if (created === undefined) return "exists" as const;
+        await consumeInvite(tx, limits, workspaceId, tokenHash, created.id);
+        return { operatorId: created.id };
+      }).catch(joinFailure);
+      if (result === "invite_invalid") return c.json(BAD_INVITE, 404);
+      if (result === "operator_limit") return c.json(OPERATOR_LIMIT, 409);
+      if (typeof result === "object") {
+        joined(workspaceId, result.operatorId);
+        // A mailed token proves the mailbox. Otherwise the admin who handed it out vouches for it.
+        await startSession(c, email, mailed ? "email" : "shown");
+        return c.json({ workspaceId }, 200);
+      }
     }
+    // The email has an account, and only its mailbox may sign in to it.
+    if (!mailed || mailer === undefined) return c.json(EMAIL_TAKEN, 409);
+    const wait = await rateLimit.hit("invite-join-email", emailAddressHash(email), 5, HOUR_SECONDS);
+    if (wait !== null) return tooManyRequests(c, wait);
     const linkToken = randomBytes(32).toString("base64url");
     const pending: z.infer<typeof PendingJoin> = {
       workspaceId,
       inviteHash: tokenHash,
       name,
       email,
-      proven: mailer !== undefined,
     };
     await db.insert(verification).values({
       identifier: `${JOIN_LINK}${sha256Hex(linkToken)}`,
       value: JSON.stringify(pending),
       expiresAt: new Date(Date.now() + LINK_MINUTES * 60_000),
     });
-    const url = confirmUrl(publicUrl, "join", linkToken);
-    // With no mail server, the person who handed out the invite vouches for whoever holds it.
-    if (mailer === undefined) return c.json({ ok: true as const, signInUrl: url }, 200);
-    const mail = joinMail(url);
+    const mail = joinMail(confirmUrl(publicUrl, "join", linkToken));
     mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {
       logger.error(safeErrorFields(err), "could not send a join link");
     });
-    return c.json({ ok: true as const, signInUrl: null }, 200);
+    return c.json({ workspaceId: null }, 200);
   });
 
   app.openapi(openRoute, async (c) => {
@@ -836,54 +980,24 @@ export function registerTeamRoutes(
     const pending = PendingJoin.parse(JSON.parse(row.value));
     const { workspaceId, email } = pending;
     const result = await withWorkspace(db, workspaceId, async (tx) => {
-      const [created] = await tx
-        .insert(operator)
-        .values({ name: pending.name, email, emailProven: pending.proven })
-        .onConflictDoNothing()
+      // An account left unnamed, such as by an unfinished signup, takes the typed name.
+      const [found] = await tx
+        .update(operator)
+        .set({
+          name: sql`case when ${operator.name} = '' then ${pending.name ?? ""} else ${operator.name} end`,
+        })
+        .where(eq(operator.email, email))
         .returning({ id: operator.id });
-      let operatorId = created?.id;
-      if (operatorId === undefined) {
-        if (!pending.proven) return "email_taken" as const;
-        // The email is proven, so an account left unnamed, such as by an unfinished signup,
-        // takes the typed name. A name it already has stays.
-        const [found] = await tx
-          .update(operator)
-          .set({
-            name: sql`case when ${operator.name} = '' then ${pending.name} else ${operator.name} end`,
-          })
-          .where(eq(operator.email, email))
-          .returning({ id: operator.id });
-        operatorId = found?.id;
-        if (operatorId === undefined) throw new Error("The operator row is missing");
-      }
-      await consumeInvite(tx, limits, workspaceId, pending.inviteHash, operatorId);
-      return { operatorId };
-    }).catch((error: unknown) => {
-      if (error instanceof InviteUnusableError) return "invite_invalid" as const;
-      // Already in the workspace: the link still signs in.
-      if (error instanceof AlreadyMemberError) return "member" as const;
-      if (error instanceof OperatorLimitError) return "operator_limit" as const;
-      throw error;
-    });
-    if (typeof result === "object") {
-      auditChange("invite.used", workspaceId, result.operatorId);
-      live.wake(workspaceId, OPERATORS);
-    } else if (result === "invite_invalid") {
-      return c.json(BAD_INVITE, 404);
-    } else if (result === "operator_limit") {
-      return c.json(OPERATOR_LIMIT, 409);
-    } else if (result === "email_taken") {
-      return c.json(EMAIL_TAKEN, 409);
-    }
-    const cookies = await signInNow(
-      auth,
-      db,
-      email,
-      c.req.raw.headers,
-      pending.proven ? "email" : "shown",
-    );
-    if (cookies === null) throw new Error("A sign-in token made just now did not work");
-    for (const cookie of cookies) c.header("set-cookie", cookie, { append: true });
+      if (found === undefined) return "gone" as const;
+      await consumeInvite(tx, limits, workspaceId, pending.inviteHash, found.id);
+      return { operatorId: found.id };
+    }).catch(joinFailure);
+    if (result === "gone") return c.json(LINK_INVALID, 400);
+    if (result === "invite_invalid") return c.json(BAD_INVITE, 404);
+    if (result === "operator_limit") return c.json(OPERATOR_LIMIT, 409);
+    // Already in the workspace: the link still signs in.
+    if (typeof result === "object") joined(workspaceId, result.operatorId);
+    await startSession(c, email, "email");
     return c.json({ workspaceId }, 200);
   });
 
@@ -893,6 +1007,12 @@ export function registerTeamRoutes(
     const { workspaceId, tokenHash } = parsed;
     const operatorId = c.get("operatorId");
     const result = await withWorkspace(db, workspaceId, async (tx) => {
+      const [offered] = await tx
+        .select({ email: invite.email })
+        .from(invite)
+        .where(usable(workspaceId, tokenHash));
+      if (offered === undefined) return "invite_invalid" as const;
+      if (offered.email !== c.get("operatorEmail").toLowerCase()) return "other_email" as const;
       const [current] = await tx
         .select({ removedAt: workspaceMember.removedAt })
         .from(workspaceMember)
@@ -907,17 +1027,12 @@ export function registerTeamRoutes(
       if (current !== undefined) return "member" as const;
       await consumeInvite(tx, limits, workspaceId, tokenHash, operatorId);
       return "joined" as const;
-    }).catch((error: unknown) => {
-      if (error instanceof InviteUnusableError) return "invalid" as const;
-      if (error instanceof AlreadyMemberError) return "member" as const;
-      if (error instanceof OperatorLimitError) return "full" as const;
-      throw error;
-    });
+    }).catch(joinFailure);
+    if (result === "other_email") return c.json(OTHER_EMAIL, 403);
     if (result === "member") return c.json(ALREADY_MEMBER, 409);
-    if (result === "full") return c.json(OPERATOR_LIMIT, 409);
-    if (result === "invalid") return c.json(BAD_INVITE, 404);
-    auditChange("invite.used", workspaceId, operatorId);
-    live.wake(workspaceId, OPERATORS);
+    if (result === "operator_limit") return c.json(OPERATOR_LIMIT, 409);
+    if (result === "invite_invalid") return c.json(BAD_INVITE, 404);
+    joined(workspaceId, operatorId);
     return c.json({ workspaceId }, 200);
   });
 }

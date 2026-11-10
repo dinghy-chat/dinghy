@@ -70,10 +70,10 @@ export function registerMemberCheck(app: App, db: Database): void {
 
   /** The workspace's access and the caller's role in it, or null when it is not theirs. */
   const membershipOf = async (actor: Actor, workspaceId: string) => {
-    // A key has an agent's role in its own workspace, and does not exist anywhere else.
+    // A key has a member's role in its own workspace, and does not exist anywhere else.
     if (actor.kind === "key") {
       return actor.workspaceId === workspaceId
-        ? { access: actor.access, role: "agent" as const }
+        ? { access: actor.access, role: "member" as const }
         : null;
     }
     const memberships = await operatorWorkspaces(db, actor.operatorId);

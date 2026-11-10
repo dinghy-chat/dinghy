@@ -583,6 +583,7 @@ export function Inbox({
   me,
   workspaceId,
   canCreate,
+  emailAvailable,
   onSignedOut,
   onSwitch,
   onAccountChanged,
@@ -591,6 +592,8 @@ export function Inbox({
   workspaceId: string;
   /** Dinghy Cloud lets an operator make another workspace. */
   canCreate: boolean;
+  /** The server sends email, so invites go by email. */
+  emailAvailable: boolean;
   onSignedOut(): void;
   onSwitch(id: string): void;
   /** The operator's name or a workspace's billing changed, so `me` must load again. */
@@ -633,7 +636,7 @@ export function Inbox({
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
   // The roster is newer than `me`, because a role can change while this page is open.
-  const role = members.find((member) => member.id === me.id)?.role ?? membership?.role ?? "agent";
+  const role = members.find((member) => member.id === me.id)?.role ?? membership?.role ?? "member";
   const readOnly = membership?.readOnly ?? false;
   const suspended = membership?.suspended ?? false;
   const waitsForCloud = membership?.waiting ?? false;
@@ -763,6 +766,7 @@ export function Inbox({
                 workspaceName={name}
                 billing={billing}
                 waiting={waitsForCloud}
+                emailAvailable={emailAvailable}
                 onLeft={() => navigate("/")}
               />
             )}
@@ -834,7 +838,7 @@ export function Inbox({
                   drafts={drafts}
                   members={members}
                   replying={replying(selected)}
-                  canDelete={role !== "agent" && !readOnly && !suspended}
+                  canDelete={role !== "member" && !readOnly && !suspended}
                   repliesOffReason={suspended ? "suspendedHelp" : readOnly ? "readOnlyHelp" : null}
                   conversationId={selected}
                   version={threadVersion(selected)}

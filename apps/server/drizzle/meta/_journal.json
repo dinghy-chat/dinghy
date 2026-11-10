@@ -393,6 +393,20 @@
       "when": 1794305914669,
       "tag": "0055_agent_api_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1794342146208,
+      "tag": "0056_invite_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1794342888732,
+      "tag": "0057_member_role",
+      "breakpoints": true
     }
   ]
 }

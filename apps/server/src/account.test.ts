@@ -31,7 +31,7 @@ const post = (path: string, body: unknown, cookie: string) =>
 const signIn = (email: string) => signInTo(app, auth, email);
 
 const newOperator = (email: string) =>
-  addOperator({ auth, owner, email, name: "Anna", workspaceId, role: "agent" });
+  addOperator({ auth, owner, email, name: "Anna", workspaceId, role: "member" });
 
 const me = async (cookie: string) => app.request("/v1/operator/me", { headers: { cookie } });
 

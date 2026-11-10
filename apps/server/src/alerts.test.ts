@@ -119,7 +119,7 @@ async function addOperator(email: string, options: { alertEmail?: boolean } = {}
   await owner.insert(workspaceMember).values({
     workspaceId: space.id,
     operatorId: id,
-    role: "agent",
+    role: "member",
     alertEmail: options.alertEmail ?? false,
   });
   return id;
@@ -1246,7 +1246,7 @@ describe("the routes", () => {
       owner,
       email: `route-${randomUUID()}@example.com`,
       workspaceId: space.id,
-      role: "agent",
+      role: "member",
     }));
   });
 

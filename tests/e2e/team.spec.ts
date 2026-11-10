@@ -41,49 +41,52 @@ async function settingsTab(page: Page, tab: string) {
   await page.getByRole("tab", { name: tab }).click();
 }
 
-async function inviteLink(page: Page, role: "Agent" | "Admin" = "Agent"): Promise<string> {
+/** Invites an email from Settings. The server emails the invite, and this returns its link. */
+async function invite(page: Page, email: string, role: "Member" | "Admin" = "Member") {
+  const before = server.mail.filter((one) => one.to === email).length;
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Invite someone" }).click();
-  await pick(page, "Role for the invite", role);
-  await page.getByRole("button", { name: "Create invite link" }).click();
-  const link = page.getByRole("textbox", { name: "Invite link" });
-  await expect(link).toHaveValue(/\/invite\?token=/);
-  const url = await link.inputValue();
-  await page.getByRole("button", { name: "Done" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("We'll email them a link to join.")).toBeVisible();
+  await dialog.getByLabel("Email").fill(email);
+  await dialog.getByRole("radio", { name: role }).check();
+  await dialog.getByRole("button", { name: "Send invite" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".members .email-cell").getByText(email)).toBeVisible();
   await page.getByRole("button", { name: "Inbox", exact: true }).click();
-  return url;
+  return server.linkTo(email, before);
 }
 
+/** Opens an invite with no account, and joins with a name only: the invite holds the email. */
 async function joinAsNew(browser: Browser, url: string, name: string): Promise<Page> {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(url);
   await expect(page.getByRole("heading", { name: "Join a workspace" })).toBeVisible();
-  const email = `${name.toLowerCase()}@example.com`;
-  await page.getByLabel("Your name").fill(name);
-  await page.getByLabel("Email").fill(email);
+  await expect(
+    page.getByText(`You're joining as ${name.toLowerCase()}@example.com.`),
+  ).toBeVisible();
+  await expect(page.getByLabel("Email")).toHaveCount(0);
   await expect(page.getByLabel(/password/i)).toHaveCount(0);
+  await page.getByLabel("Your name").fill(name);
   await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
-  // The link joins and signs in, in this same browser.
-  await openLink(page, await server.linkTo(email), "Join the team");
   await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
   return page;
 }
 
-test("an owner invites an agent, assigns a chat to them, then removes them @smoke", async ({
+test("an owner invites a member, assigns a chat to them, then removes them @smoke", async ({
   browser,
 }) => {
   const boss = await signedIn(browser);
-  const url = await inviteLink(boss);
-  const agent = await joinAsNew(browser, url, "Ben");
+  const url = await invite(boss, "ben@example.com");
+  const member = await joinAsNew(browser, url, "Ben");
 
-  // An agent sees the team, and no settings for the widget.
-  await agent.getByRole("button", { name: "Settings" }).click();
-  await expect(agent.locator(".members .email-cell").getByText("ben@example.com")).toBeVisible();
-  await expect(agent.getByText("Signing secret")).toHaveCount(0);
-  await expect(agent.getByText("Invite someone")).toHaveCount(0);
-  await agent.getByRole("button", { name: "Inbox", exact: true }).click();
+  // A member sees the team, and no settings for the widget.
+  await member.getByRole("button", { name: "Settings" }).click();
+  await expect(member.locator(".members .email-cell").getByText("ben@example.com")).toBeVisible();
+  await expect(member.getByText("Signing secret")).toHaveCount(0);
+  await expect(member.getByText("Invite someone")).toHaveCount(0);
+  await member.getByRole("button", { name: "Inbox", exact: true }).click();
 
   // The same link does not work twice.
   const stranger = await (await browser.newContext()).newPage();
@@ -98,8 +101,8 @@ test("an owner invites an agent, assigns a chat to them, then removes them @smok
   await boss.locator(".row", { hasText: "assign me" }).click();
   await pick(boss, "Assign to", "Ben");
   await expect(boss.locator(".row", { hasText: "assign me" })).toContainText("Ben");
-  // The agent's open app learns this from the stream.
-  await expect(agent.locator(".row", { hasText: "assign me" })).toContainText("Ben");
+  // The member's open app learns this from the stream.
+  await expect(member.locator(".row", { hasText: "assign me" })).toContainText("Ben");
 
   await boss.getByRole("button", { name: "Settings" }).click();
   await boss.getByRole("button", { name: "Remove Ben" }).click();
@@ -109,8 +112,8 @@ test("an owner invites an agent, assigns a chat to them, then removes them @smok
   await boss.getByRole("button", { name: "Inbox", exact: true }).click();
   await expect(boss.locator(".row", { hasText: "assign me" })).not.toContainText("Ben");
 
-  await agent.reload();
-  await expect(agent.getByText("You are not in a workspace yet.")).toBeVisible();
+  await member.reload();
+  await expect(member.getByText("You are not in a workspace yet.")).toBeVisible();
   await server.closeConversations();
 });
 
@@ -173,27 +176,62 @@ test("an owner changes the allowed sites and replaces the secret", async ({ brow
   await expect(secret).not.toHaveValue(before);
 });
 
-test("a used join link says to open the invite again, with no way to the sign-in page", async ({
+test("an existing account joins by an emailed link, which works once", async ({ browser }) => {
+  const boss = await signedIn(browser);
+  await server.createOperator("eve@example.com", { member: false });
+  const url = await invite(boss, "eve@example.com");
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(url);
+  await expect(page.getByLabel("Your name")).toHaveCount(0);
+  await page.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  const link = await server.linkTo("eve@example.com", 1);
+  await openLink(page, link, "Join the team");
+  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
+
+  const again = await (await browser.newContext()).newPage();
+  await openLink(again, link, "Join the team");
+  await expect(again.getByRole("alert")).toHaveText(
+    "That link has expired or was already used. Open your invite link again to get a new one.",
+  );
+  await expect(again.getByRole("link")).toHaveCount(0);
+  await expect(again.getByRole("button")).toHaveCount(0);
+  for (const one of [boss, page, again]) await one.context().close();
+});
+
+test("revoking an invite asks first, and someone signed in as another email cannot use it", async ({
   browser,
 }) => {
   const boss = await signedIn(browser);
-  const url = await inviteLink(boss);
-  const joined = await joinAsNew(browser, url, "Eve");
-  const page = await (await browser.newContext()).newPage();
-  await openLink(page, await server.linkTo("eve@example.com"), "Join the team");
-  await expect(page.getByRole("alert")).toHaveText(
-    "That link has expired or was already used. Open your invite link again to get a new one.",
+  const url = await invite(boss, "rex@example.com");
+  const other = await signedIn(browser, "owner@example.com");
+  await other.goto(url);
+  await expect(
+    other.getByText("This invite is for rex@example.com. You're signed in as owner@example.com."),
+  ).toBeVisible();
+  await expect(other.getByRole("button", { name: "Join", exact: true })).toHaveCount(0);
+
+  await boss.getByRole("button", { name: "Settings" }).click();
+  const revoke = boss.getByRole("button", { name: "Revoke the invite for rex@example.com" });
+  await revoke.click();
+  await expect(boss.getByRole("alertdialog")).toContainText(
+    "Revoke the invite for rex@example.com?",
   );
-  await expect(page.getByRole("link")).toHaveCount(0);
-  await expect(page.getByRole("button")).toHaveCount(0);
-  for (const one of [boss, joined, page]) await one.context().close();
+  await boss.getByRole("button", { name: "Cancel" }).click();
+  await expect(revoke).toBeVisible();
+  await revoke.click();
+  await boss.getByRole("button", { name: "Revoke invite" }).click();
+  await expect(revoke).toHaveCount(0);
+  await other.reload();
+  await expect(other.getByRole("heading", { name: "This invite no longer works" })).toBeVisible();
+  for (const one of [boss, other]) await one.context().close();
 });
 
 test("someone with an account joins a second workspace and switches between them", async ({
   browser,
 }) => {
   const boss = await signedIn(browser);
-  const url = await inviteLink(boss);
+  const url = await invite(boss, "multi@example.com");
   const other = await server.createSecondWorkspace("Other", "multi@example.com");
   const page = await signedIn(browser, "multi@example.com");
   await page.goto(url);
@@ -227,8 +265,8 @@ test("an open app sees team changes, and a removal opens the other workspace", a
   browser,
 }) => {
   const boss = await signedIn(browser);
-  const url = await inviteLink(boss);
-  const laterUrl = await inviteLink(boss);
+  const url = await invite(boss, "two@example.com");
+  const laterUrl = await invite(boss, "cara@example.com");
   await server.createSecondWorkspace("Elsewhere", "two@example.com");
   const person = await signedIn(browser, "two@example.com");
   await person.goto(url);
@@ -255,7 +293,7 @@ test("an open app sees team changes, and a removal opens the other workspace", a
   await joinAsNew(browser, laterUrl, "Cara");
   await expect.poll(assignees).toContain("Cara");
 
-  // A promotion shows in the agent's open app, with no reload.
+  // A promotion shows in the member's open app, with no reload.
   await person.getByRole("button", { name: "Settings" }).click();
   await expect(person.getByText("Signing secret")).toHaveCount(0);
   await person.getByRole("button", { name: "Inbox", exact: true }).click();
@@ -305,7 +343,7 @@ test("a window whose session ended elsewhere reconnects with the new one", async
   await server.closeConversations();
 });
 
-test("an owner downloads an export from Settings, and an agent sees no link", async ({
+test("an owner downloads an export from Settings, and a member sees no link", async ({
   browser,
 }) => {
   const boss = await signedIn(browser);
@@ -318,11 +356,11 @@ test("an owner downloads an export from Settings, and an agent sees no link", as
   expect(await download.failure()).toBeNull();
   await boss.getByRole("button", { name: "Inbox", exact: true }).click();
 
-  const url = await inviteLink(boss);
-  const agent = await joinAsNew(browser, url, "Dana");
-  await agent.getByRole("button", { name: "Settings" }).click();
-  await expect(agent.locator(".members .email-cell").getByText("dana@example.com")).toBeVisible();
-  await expect(agent.getByRole("link", { name: "Download an export" })).toHaveCount(0);
+  const url = await invite(boss, "dana@example.com");
+  const member = await joinAsNew(browser, url, "Dana");
+  await member.getByRole("button", { name: "Settings" }).click();
+  await expect(member.locator(".members .email-cell").getByText("dana@example.com")).toBeVisible();
+  await expect(member.getByRole("link", { name: "Download an export" })).toHaveCount(0);
 });
 
 test("the settings fit on a phone", async ({ browser }) => {

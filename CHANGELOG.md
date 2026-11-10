@@ -4,6 +4,25 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Upgrading
+
+- An invite now goes to one email address. The upgrade revokes the invites that are still pending, so invite those people again.
+- The `agent` role is now `member`, in the app and in the API. The upgrade renames it for everyone. A script that sends or reads `"agent"` must use `"member"`.
+
+### Added
+
+- **Invite someone** asks for an email. With a mail server, Dinghy emails the invite. Without one, it shows a link to send yourself. Inviting the same email again replaces the old invite.
+- Someone new joins from the invite with a name only, in one step. Someone who already has an account gets a link by email to join, or accepts while signed in with that email.
+- API: `POST /v1/operator/workspaces/{workspaceId}/invites` takes `email`, answers 409 `already_member` for someone already in the workspace, and its `token` is null when the invite went by email. Pending invites list their `email`.
+- API: `POST /v1/invites/preview` answers `email` and `hasAccount`.
+- API: `POST /v1/operator/invites/accept` answers 403 `invite_other_email` when the invite is for another email.
+
+### Changed
+
+- The invite dialog picks the role with two buttons and says what each role can do.
+- A pending invite shows its email, and revoking it asks first.
+- API: `POST /v1/invites/join` takes `{ token, name }` and answers `{ workspaceId }`: the new account's workspace, or null when a link went to an existing account's email.
+
 ## [0.12.0] - 2026-11-10
 
 ### Changed

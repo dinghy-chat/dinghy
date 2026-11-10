@@ -21,7 +21,7 @@
       "apiKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A workspace API key, `dk_...`, that an owner or admin creates in Settings. It works only in its own workspace, with an agent's permissions: read, search, reply, close, reopen and assign conversations. It needs no Origin."
+        "description": "A workspace API key, `dk_...`, that an owner or admin creates in Settings. It works only in its own workspace, with a member's permissions: read, search, reply, close, reopen and assign conversations. It needs no Origin."
       }
     },
     "schemas": {
@@ -89,6 +89,7 @@
                   "invalid_name",
                   "invalid_request",
                   "invite_invalid",
+                  "invite_other_email",
                   "last_owner",
                   "link_invalid",
                   "name_mismatch",
@@ -760,7 +761,7 @@
           },
           "role": {
             "type": "string",
-            "enum": ["owner", "admin", "agent"]
+            "enum": ["owner", "admin", "member"]
           }
         },
         "required": ["id", "name", "email", "role"]
@@ -771,15 +772,18 @@
           "id": {
             "type": "string"
           },
+          "email": {
+            "type": "string"
+          },
           "role": {
             "type": "string",
-            "enum": ["admin", "agent"]
+            "enum": ["admin", "member"]
           },
           "expiresAt": {
             "type": "string"
           }
         },
-        "required": ["id", "role", "expiresAt"]
+        "required": ["id", "email", "role", "expiresAt"]
       },
       "WorkspaceSettings": {
         "type": "object",
@@ -5757,7 +5761,7 @@
                 "properties": {
                   "role": {
                     "type": "string",
-                    "enum": ["owner", "admin", "agent"]
+                    "enum": ["owner", "admin", "member"]
                   }
                 },
                 "required": ["role"]
@@ -6081,7 +6085,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Create an invite link. Its token is shown only in this response.",
+        "summary": "Invite an email address. With a mail server, the invite goes by email. An earlier invite to the same address stops working.",
         "parameters": [
           {
             "schema": {
@@ -6100,19 +6104,24 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
                   "role": {
                     "type": "string",
-                    "enum": ["admin", "agent"]
+                    "enum": ["admin", "member"]
                   }
                 },
-                "required": ["role"]
+                "required": ["email", "role"]
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "The invite",
+            "description": "The invite. `token` is null when the invite went by email. On a server with no mail server, it is shown only here, for you to send to the person",
             "content": {
               "application/json": {
                 "schema": {
@@ -6124,7 +6133,7 @@
                       "type": "object",
                       "properties": {
                         "token": {
-                          "type": "string"
+                          "type": ["string", "null"]
                         }
                       },
                       "required": ["token"]
@@ -6185,7 +6194,7 @@
             }
           },
           "409": {
-            "description": "operator_limit: the workspace has as many operators as its plan allows",
+            "description": "already_member: this person is already in the workspace. operator_limit: the workspace has as many operators as its plan allows",
             "content": {
               "application/json": {
                 "schema": {
@@ -6196,6 +6205,16 @@
           },
           "413": {
             "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {
@@ -6808,7 +6827,7 @@
         },
         "responses": {
           "200": {
-            "description": "The invite",
+            "description": "The invite, the email it is for, and whether that email has an account",
             "content": {
               "application/json": {
                 "schema": {
@@ -6819,10 +6838,16 @@
                     },
                     "role": {
                       "type": "string",
-                      "enum": ["admin", "agent"]
+                      "enum": ["admin", "member"]
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "hasAccount": {
+                      "type": "boolean"
                     }
                   },
-                  "required": ["workspaceName", "role"]
+                  "required": ["workspaceName", "role", "email", "hasAccount"]
                 }
               }
             }
@@ -6882,7 +6907,7 @@
     },
     "/v1/invites/join": {
       "post": {
-        "summary": "Ask for the link that creates an account, or signs in to one, and joins with an invite",
+        "summary": "Join with an invite, as the email it is for. With no account, this creates one and signs in. With an account, a link to join goes to the email",
         "requestBody": {
           "required": true,
           "content": {
@@ -6898,41 +6923,32 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 100
-                  },
-                  "email": {
-                    "type": "string",
-                    "maxLength": 254,
-                    "format": "email"
                   }
                 },
-                "required": ["token", "name", "email"]
+                "required": ["token"]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "With a mail server, the link went to the email, and `signInUrl` is null: the answer is the same whether or not the email has an account. Without one, open `signInUrl`",
+            "description": "With a workspace ID, the new account joined and is signed in, with the session cookie set. Null means the email has an account: a link to join went to it, and works for 15 minutes",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [true]
-                    },
-                    "signInUrl": {
+                    "workspaceId": {
                       "type": ["string", "null"]
                     }
                   },
-                  "required": ["ok", "signInUrl"]
+                  "required": ["workspaceId"]
                 }
               }
             }
           },
           "400": {
-            "description": "invalid_request: the request is not valid",
+            "description": "invalid_request: the request is not valid, or it has no name and the email has no account",
             "content": {
               "application/json": {
                 "schema": {
@@ -6962,7 +6978,7 @@
             }
           },
           "409": {
-            "description": "email_taken: on a server with no mail server, the email has an account. Sign in, then accept the invite",
+            "description": "email_taken: the invite was not emailed and the email has an account. Sign in, then accept the invite. operator_limit: the workspace has as many operators as its plan allows",
             "content": {
               "application/json": {
                 "schema": {
@@ -6996,7 +7012,7 @@
     },
     "/v1/invites/open": {
       "post": {
-        "summary": "Use a join link's token, from the button on the page the link opens: create the account if needed, join, and sign in",
+        "summary": "Use a join link's token, from the button on the page the link opens: join with the account, and sign in",
         "requestBody": {
           "required": true,
           "content": {
@@ -7063,7 +7079,7 @@
             }
           },
           "409": {
-            "description": "operator_limit: the workspace has the most operators its plan allows. email_taken: on a server with no mail server, the email has an account",
+            "description": "operator_limit: the workspace has the most operators its plan allows",
             "content": {
               "application/json": {
                 "schema": {
@@ -7158,7 +7174,7 @@
             }
           },
           "403": {
-            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "description": "origin_not_allowed: the request did not come from this server's own pages. invite_other_email: the invite is for another email address",
             "content": {
               "application/json": {
                 "schema": {

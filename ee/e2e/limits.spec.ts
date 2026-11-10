@@ -39,7 +39,8 @@ test("a workspace with 5 operators shows the limit when an owner creates an invi
   await expect(images).toHaveClass(/ ok/);
   await expect(page.getByText("Each image is kept for 12 months.")).toBeVisible();
   await page.getByRole("button", { name: "Invite someone" }).click();
-  await page.getByRole("button", { name: "Create invite link" }).click();
+  await page.getByRole("dialog").getByLabel("Email").fill("new@example.com");
+  await page.getByRole("button", { name: "Send invite" }).click();
   await expect(
     page.getByText("This workspace has 5 operators, the most the plan allows."),
   ).toBeVisible();

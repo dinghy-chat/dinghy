@@ -22,7 +22,17 @@ const text = {
     text.linkLasts,
     "Didn't ask to join? You can ignore this email, and nothing happens.",
   ],
+  inviteSubject: (workspace: string) => `Join ${workspace} on Dinghy`,
+  inviteBody: (url: string, workspace: string, role: "admin" | "member") => [
+    `You're invited to join ${workspace} on Dinghy as ${role === "admin" ? "an admin" : "a member"}:`,
+    url,
+    "The link works once, for the next 7 days.",
+    "Didn't expect this? You can ignore this email.",
+  ],
 };
+
+/** The longest workspace name an invite shows, so a name cannot fill the subject line. */
+const WORKSPACE_NAME_MAX = 80;
 
 // One line, so a name cannot add paragraphs of its own.
 const oneLine = (words: string | undefined) => words?.replace(/\s+/g, " ").trim();
@@ -44,11 +54,20 @@ export const signInMail = (url: string) => ({
   body: letter(text.signInBody(url)),
 });
 
-/** The link that finishes joining a workspace from its invite. The address is not proven yet. */
+/** The link that joins an existing account to a workspace, from an invite that was emailed to it. */
 export const joinMail = (url: string) => ({
   subject: text.joinSubject,
   body: letter(text.joinBody(url)),
 });
+
+/** An invite to a workspace. Its admin picked this address and the workspace's name. */
+export function inviteMail(url: string, workspaceName: string, role: "admin" | "member") {
+  const workspace = (oneLine(workspaceName) ?? "").slice(0, WORKSPACE_NAME_MAX);
+  return {
+    subject: text.inviteSubject(workspace),
+    body: letter(text.inviteBody(url, workspace, role)),
+  };
+}
 
 /** The sentence that says how long a link works, for the emails in ee/. */
 export const LINK_LASTS = text.linkLasts;

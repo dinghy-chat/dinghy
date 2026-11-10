@@ -3,9 +3,11 @@ import { type FormEvent, useEffect, useState } from "react";
 import {
   ApiError,
   acceptInvite,
+  type InviteOffer,
   joinWithInvite,
   type Me,
   previewInvite,
+  signOut,
   updateName,
 } from "./api.ts";
 import { CheckEmail } from "./auth.tsx";
@@ -14,12 +16,9 @@ import { type TextId, t } from "./text.ts";
 import { AuthPage, ErrorNote, Field, failureText, SceneLoading } from "./ui.tsx";
 
 export function InvitePage({ token, me }: { token: string; me: Me | null }) {
-  const [offer, setOffer] = useState<{ workspaceName: string; role: "admin" | "agent" } | null>(
-    null,
-  );
+  const [offer, setOffer] = useState<InviteOffer | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
@@ -40,6 +39,8 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     } catch (failure) {
       if (failure instanceof ApiError && failure.code === "operator_limit") {
         setError("operatorLimit");
+      } else if (failure instanceof ApiError && failure.code === "invite_other_email") {
+        setError("inviteOtherEmail");
       } else if (failure instanceof ApiError && failure.status === 409) {
         // Someone already in the workspace has nothing to do here.
         navigate("/");
@@ -49,18 +50,18 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     }
   };
 
-  // The link joins, for a new account or one this email already has, and signs in.
+  // A new account joins and signs in at once. An existing one gets a link by email.
   const join = async (event: FormEvent) => {
     event.preventDefault();
+    if (offer === null) return;
     setError(null);
     try {
-      const { signInUrl } = await joinWithInvite(token, name.trim(), email.trim());
-      // A server with no mail server answers with the link itself.
-      if (signInUrl !== null) {
-        navigate(signInUrl);
+      const joined = await joinWithInvite(token, offer.hasAccount ? undefined : name.trim());
+      if (joined.workspaceId !== null) {
+        navigate(`/?workspace=${joined.workspaceId}`);
         return;
       }
-      setSentTo(email.trim());
+      setSentTo(offer.email);
     } catch (failure) {
       setError(failureText(failure, { 409: "emailTaken", 404: "inviteInvalid" }));
     }
@@ -83,12 +84,28 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     <>
       <h1>{t("inviteTitle")}</h1>
       <p className="note">
-        {t(offer.role === "admin" ? "inviteAsAdmin" : "inviteAsAgent", {
+        {t(offer.role === "admin" ? "inviteAsAdmin" : "inviteAsMember", {
           workspace: offer.workspaceName,
         })}
       </p>
     </>
   );
+  if (me !== null && me.email.toLowerCase() !== offer.email) {
+    return (
+      <AuthPage time="morning">
+        {heading}
+        <p className="note">{t("inviteOtherAccount", { invited: offer.email, me: me.email })}</p>
+        <button
+          type="button"
+          className="btn primary large"
+          // The page loads again at the same invite, signed out.
+          onClick={() => void signOut().finally(() => location.reload())}
+        >
+          {t("signOut")}
+        </button>
+      </AuthPage>
+    );
+  }
   if (me !== null) {
     return (
       <AuthPage time="morning" onSubmit={(event) => void accept(event)}>
@@ -117,23 +134,18 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   return (
     <AuthPage time="morning" onSubmit={join}>
       {heading}
-      <Field
-        label={t("yourName")}
-        autoComplete="name"
-        required
-        maxLength={100}
-        pattern=".*\S.*"
-        value={name}
-        onChange={setName}
-      />
-      <Field
-        label={t("email")}
-        required
-        type="email"
-        autoComplete="email"
-        value={email}
-        onChange={setEmail}
-      />
+      <p className="note">{t("inviteJoiningAs", { email: offer.email })}</p>
+      {!offer.hasAccount && (
+        <Field
+          label={t("yourName")}
+          autoComplete="name"
+          required
+          maxLength={100}
+          pattern=".*\S.*"
+          value={name}
+          onChange={setName}
+        />
+      )}
       <ErrorNote text={error} />
       <button type="submit" className="btn primary large">
         {t("inviteJoin")}

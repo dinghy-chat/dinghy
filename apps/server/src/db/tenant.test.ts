@@ -411,7 +411,7 @@ describe("the operator lookup", () => {
   test("it lists active workspaces and skips a removed membership", async () => {
     await owner
       .insert(workspaceMember)
-      .values({ workspaceId: B, operatorId: REMOVED, role: "agent", removedAt: new Date() });
+      .values({ workspaceId: B, operatorId: REMOVED, role: "member", removedAt: new Date() });
     expect(await operatorWorkspaces(app, REMOVED)).toEqual([]);
     const active = await operatorWorkspaces(app, OPERATOR);
     expect(active.map((row) => row.workspaceId).sort()).toEqual([A, B]);

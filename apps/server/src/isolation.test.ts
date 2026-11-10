@@ -73,12 +73,15 @@ interface VisitorWorld {
   image: { url: string };
 }
 
+/** A body that invites a new email as a member. */
+const invitation = () => ({ email: `invited-${randomUUID()}@example.com`, role: "member" });
+
 interface World {
   server: App;
   a: NewWorkspace;
   b: NewWorkspace;
-  anna: { id: string; cookie: string };
-  bea: { id: string; cookie: string };
+  anna: { id: string; email: string; cookie: string };
+  bea: { id: string; email: string; cookie: string };
   /** In both workspaces, so a query that filters only by operator reaches the wrong row. */
   sam: { id: string; cookie: string };
   /** Made first, so a query with no filter that takes the first row gets this one. */
@@ -86,7 +89,7 @@ interface World {
   one: VisitorWorld;
   two: VisitorWorld;
   other: VisitorWorld;
-  inviteB: { id: string; token: string };
+  inviteB: { id: string; email: string; token: string };
   /** An API key in each workspace, and a webhook in the other one. */
   keyA: { id: string; token: string };
   keyB: { id: string; token: string };
@@ -495,7 +498,7 @@ const ATTACKS: Record<string, Attack> = {
     a,
     b,
   }) => {
-    const role = { role: "agent" };
+    const role = { role: "member" };
     expect((await as(anna, "PATCH", inWorkspace(a.id, `/members/${bea.id}`), role)).status).toBe(
       404,
     );
@@ -535,7 +538,7 @@ const ATTACKS: Record<string, Attack> = {
     expect(text).not.toContain(inviteB.id);
   },
   "POST /v1/operator/workspaces/:workspaceId/invites": async ({ operator: as, anna, a, b }) => {
-    const body = { role: "agent" };
+    const body = { email: `invited-${randomUUID()}@example.com`, role: "member" };
     expect((await as(anna, "POST", inWorkspace(b.id, "/invites"), body)).status).toBe(404);
     const made = await as(anna, "POST", inWorkspace(a.id, "/invites"), body);
     const { token } = (await made.json()) as { token: string };
@@ -768,7 +771,9 @@ const ATTACKS: Record<string, Attack> = {
     await owner.insert(invite).values({
       workspaceId: b.id,
       tokenHash: createHash("sha256").update(token).digest("hex"),
-      role: "agent",
+      role: "member",
+      email: `crossed-${randomUUID()}@example.com`,
+      mailed: false,
       createdBy: bea.id,
       expiresAt: new Date(Date.now() + 60_000),
     });
@@ -787,19 +792,18 @@ const ATTACKS: Record<string, Attack> = {
     expect(response.status).toBe(404);
   },
   "POST /v1/invites/join": async ({ server, inviteB, a }) => {
-    const email = `moved-${randomUUID()}@example.com`;
     const moved = inviteB.token.replace(inviteB.token.split(".")[0] ?? "", a.id);
     const response = await server.request("/v1/invites/join", {
       method: "POST",
       headers: { origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify({ token: moved, name: "Mover", email }),
+      body: JSON.stringify({ token: moved, name: "Mover" }),
     });
     expect(response.status).toBe(404);
-    expect(await owner.select().from(operator).where(eq(operator.email, email))).toEqual([]);
+    const invited = await owner.select().from(operator).where(eq(operator.email, inviteB.email));
+    expect(invited).toEqual([]);
   },
-  "POST /v1/invites/open": async ({ server, inviteB, a }) => {
+  "POST /v1/invites/open": async ({ server, inviteB, a, bea }) => {
     // A join link that names workspace A with workspace B's invite, as a tampered row would.
-    const email = `opened-${randomUUID()}@example.com`;
     const token = randomUUID();
     await owner.insert(verification).values({
       identifier: `invite-join:${createHash("sha256").update(token).digest("hex")}`,
@@ -807,8 +811,7 @@ const ATTACKS: Record<string, Attack> = {
         workspaceId: a.id,
         inviteHash: createHash("sha256").update(inviteB.token).digest("hex"),
         name: "Mover",
-        email,
-        proven: true,
+        email: bea.email,
       }),
       expiresAt: new Date(Date.now() + 60_000),
     });
@@ -816,7 +819,11 @@ const ATTACKS: Record<string, Attack> = {
     expect(opened.status).toBe(404);
     expect(await opened.json()).toMatchObject({ error: { code: "invite_invalid" } });
     expect(opened.headers.getSetCookie()).toEqual([]);
-    expect(await owner.select().from(operator).where(eq(operator.email, email))).toEqual([]);
+    const joined = await owner
+      .select()
+      .from(workspaceMember)
+      .where(and(eq(workspaceMember.workspaceId, a.id), eq(workspaceMember.operatorId, bea.id)));
+    expect(joined).toEqual([]);
     const [row] = await owner.select().from(invite).where(eq(invite.id, inviteB.id));
     expect(row?.usedAt).toBeNull();
     // A made-up link opens nothing.
@@ -826,7 +833,7 @@ const ATTACKS: Record<string, Attack> = {
   "POST /v1/operator/invites/accept": async ({ operator: as, anna, a, inviteB }) => {
     const moved = inviteB.token.replace(inviteB.token.split(".")[0] ?? "", a.id);
     expect((await as(anna, "POST", "/v1/operator/invites/accept", { token: moved })).status).toBe(
-      409,
+      404,
     );
     const [row] = await owner.select().from(invite).where(eq(invite.id, inviteB.id));
     expect(row?.usedAt).toBeNull();
@@ -1090,7 +1097,8 @@ async function buildWorld(db: Database): Promise<World> {
     auth: "tBHItJI5svbpez7KI4CCXg",
   });
   const madeInvite = await operatorCall(bea, "POST", inWorkspace(b.id, "/invites"), {
-    role: "agent",
+    email: `invited-${randomUUID()}@example.com`,
+    role: "member",
   });
   const withKey: World["withKey"] = (token, method, path, body) =>
     Promise.resolve(
@@ -1125,7 +1133,7 @@ async function buildWorld(db: Database): Promise<World> {
     one: await visitorIn(a, SITE_A, "written by one"),
     two: await visitorIn(a, SITE_A, "written by two, in the same workspace"),
     other: await visitorIn(b, SITE_B, "written in the other workspace"),
-    inviteB: (await madeInvite.json()) as { id: string; token: string },
+    inviteB: (await madeInvite.json()) as { id: string; email: string; token: string },
     keyA: await madeKey(anna, a, "Helper A"),
     keyB: await madeKey(bea, b, "Helper B"),
     hookB: (await madeHook.json()) as { id: string; secret: string; url: string },
@@ -1189,24 +1197,20 @@ describe.each([
 
     test("a role change stays in its workspace, and so does the role that allows it", async () => {
       const { operator: as, anna, sam, a, b } = world;
-      await as(anna, "PATCH", inWorkspace(a.id, `/members/${sam.id}`), { role: "agent" });
-      expect((await memberOf(a.id, sam.id))?.role).toBe("agent");
+      await as(anna, "PATCH", inWorkspace(a.id, `/members/${sam.id}`), { role: "member" });
+      expect((await memberOf(a.id, sam.id))?.role).toBe("member");
       expect((await memberOf(b.id, sam.id))?.role).toBe("admin");
-      // An agent here may not invite here, and an admin there still may invite there.
-      expect((await as(sam, "POST", inWorkspace(a.id, "/invites"), { role: "agent" })).status).toBe(
-        403,
-      );
-      expect((await as(sam, "POST", inWorkspace(b.id, "/invites"), { role: "agent" })).status).toBe(
-        201,
-      );
+      // A member here may not invite here, and an admin there still may invite there.
+      expect((await as(sam, "POST", inWorkspace(a.id, "/invites"), invitation())).status).toBe(403);
+      expect((await as(sam, "POST", inWorkspace(b.id, "/invites"), invitation())).status).toBe(201);
       await as(anna, "PATCH", inWorkspace(a.id, `/members/${sam.id}`), { role: "owner" });
     });
 
     test("removal and its revoked links stay in their workspace", async () => {
       const { operator: as, anna, sam, a, b } = world;
-      const here = await as(sam, "POST", inWorkspace(a.id, "/invites"), { role: "agent" });
+      const here = await as(sam, "POST", inWorkspace(a.id, "/invites"), invitation());
       const hereId = ((await here.json()) as { id: string }).id;
-      const there = await as(sam, "POST", inWorkspace(b.id, "/invites"), { role: "agent" });
+      const there = await as(sam, "POST", inWorkspace(b.id, "/invites"), invitation());
       const thereId = ((await there.json()) as { id: string }).id;
 
       await as(anna, "DELETE", inWorkspace(a.id, `/members/${sam.id}`));
@@ -1226,9 +1230,7 @@ describe.each([
           })
         ).status,
       ).toBe(400);
-      expect((await as(sam, "POST", inWorkspace(a.id, "/invites"), { role: "agent" })).status).toBe(
-        404,
-      );
+      expect((await as(sam, "POST", inWorkspace(a.id, "/invites"), invitation())).status).toBe(404);
       await owner
         .update(workspaceMember)
         .set({ removedAt: null, role: "owner" })
@@ -1238,7 +1240,10 @@ describe.each([
 
   test("a member of another workspace can still join this one by invite", async () => {
     const { operator: as, anna, bea, a } = world;
-    const made = await as(anna, "POST", inWorkspace(a.id, "/invites"), { role: "agent" });
+    const made = await as(anna, "POST", inWorkspace(a.id, "/invites"), {
+      email: bea.email,
+      role: "member",
+    });
     const { token } = (await made.json()) as { token: string };
     const accepted = await as(bea, "POST", "/v1/operator/invites/accept", { token });
     expect(accepted.status).toBe(200);

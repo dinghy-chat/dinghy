@@ -527,6 +527,7 @@ export function SettingsPage({
   workspaceName,
   billing,
   waiting,
+  emailAvailable,
   onLeft,
 }: {
   api: WorkspaceApi;
@@ -538,6 +539,8 @@ export function SettingsPage({
   billing: BillingState | null;
   /** The workspace waits for the cloud to open, so its widget is off. */
   waiting: boolean;
+  /** The server sends email, so invites go by email. */
+  emailAvailable: boolean;
   onLeft(): void;
 }) {
   const team = useTeam(api, role);
@@ -547,7 +550,7 @@ export function SettingsPage({
   const [inviting, setInviting] = useState(false);
 
   useEffect(() => {
-    if (role === "agent") return;
+    if (role === "member") return;
     let current = true;
     setSettingsFailure(null);
     api.settings().then(
@@ -587,7 +590,7 @@ export function SettingsPage({
       // The invite button belongs to the team, so only its tab shows it. The line above stays on
       // every tab, so the tabs do not move when one is picked.
       actions={
-        role === "agent" || tab !== "team" ? undefined : (
+        role === "member" || tab !== "team" ? undefined : (
           <button type="button" className="pill dark invite" onClick={() => setInviting(true)}>
             <Icon name="plusBold" size={14} />
             {/* On a phone the short label keeps the button in the title row. */}
@@ -653,6 +656,7 @@ export function SettingsPage({
         <InviteDialog
           api={api}
           role={role}
+          emailAvailable={emailAvailable}
           onClose={() => {
             setInviting(false);
             team.load();
