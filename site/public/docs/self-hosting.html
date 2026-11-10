@@ -121,7 +121,7 @@
 <p>On a new Linux server, run:</p>
 <div class="terminal doc-code">
 <div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-1"><span data-copy-label>Copy</span></button></div>
-<pre class="terminal-code" id="code-1"><code><span class="term-line">git clone -b v0.8.0 https://github.com/dinghy-chat/dinghy.git</span>
+<pre class="terminal-code" id="code-1"><code><span class="term-line">git clone -b v0.9.0 https://github.com/dinghy-chat/dinghy.git</span>
 <span class="term-line">cd dinghy</span>
 <span class="term-line">sudo ./install.sh</span></code></pre>
 </div>
@@ -140,7 +140,7 @@
 <p>This one line does the same on a new server:</p>
 <div class="terminal doc-code">
 <div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-2"><span data-copy-label>Copy</span></button></div>
-<pre class="terminal-code" id="code-2"><code><span class="term-line">curl -fsSL https://raw.githubusercontent.com/dinghy-chat/dinghy/v0.8.0/install.sh | sudo bash</span></code></pre>
+<pre class="terminal-code" id="code-2"><code><span class="term-line">curl -fsSL https://raw.githubusercontent.com/dinghy-chat/dinghy/v0.9.0/install.sh | sudo bash</span></code></pre>
 </div>
 <h2 id="what-you-need"><a class="heading-link" href="#what-you-need">What you need</a></h2>
 <ul>
@@ -329,7 +329,7 @@
 <div class="terminal doc-code">
 <div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-10"><span data-copy-label>Copy</span></button></div>
 <pre class="terminal-code" id="code-10"><code><span class="term-line">git fetch --tags</span>
-<span class="term-line">git switch --detach v0.8.0<span class="code-comment">   # the release you want</span></span>
+<span class="term-line">git switch --detach v0.9.0<span class="code-comment">   # the release you want</span></span>
 <span class="term-line">docker compose up -d --wait</span></code></pre>
 </div>
 <p><code>chat migrate</code> takes a backup first if a migration would change your data, and prints its path: <code class="code-long">Backed up to /data/backups/&lt;file&gt; before migrating</code>. That file is your way back. <code>docker compose logs migrate</code> shows the line again later. If it says <code>The database is up to date</code> instead, the release changed no data.</p>
@@ -355,7 +355,7 @@
 <p>Most releases do not change the Postgres major version. If one does, the release notes say so, and Postgres refuses to start on the old data until you run this, so the app cannot come up on an empty database.</p>
 <div class="terminal doc-code">
 <div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-13"><span data-copy-label>Copy</span></button></div>
-<pre class="terminal-code" id="code-13"><code><span class="term-line">git switch --detach v0.8.0<span class="code-comment">   # the release that moved Postgres</span></span>
+<pre class="terminal-code" id="code-13"><code><span class="term-line">git switch --detach v0.9.0<span class="code-comment">   # the release that moved Postgres</span></span>
 <span class="term-line">scripts/upgrade-postgres.sh</span></code></pre>
 </div>
 <p>The script stops the app, takes a normal backup on the old version, loads it on the new version, and starts the app. The app is down for all of that, and the time grows with the database. It needs free space for that backup, plus what a restore needs.</p>
