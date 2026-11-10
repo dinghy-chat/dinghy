@@ -18,7 +18,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - `Dinghy.setContext()` sends details from the page, such as a plan, for a visitor who has chatted. Operators see them under **From the page**, marked as not verified, and the API returns them as `pageContext`.
 - The tag takes `data-position`, `data-offset-x` and `data-offset-y`. A page can set the CSS variables `--dinghy-font`, `--dinghy-radius` and `--dinghy-launcher-radius` on the `dinghy-chat` element.
 - A chat that was open opens again after a reload in the same tab, for a visitor who has chatted or is signed in.
-- The `@dinghy/widget` npm package, with `init()` and the API's types.
+- The `@dinghy-chat/widget` npm package, with `init()` and the API's types.
 - `llms.txt` on dinghy.chat, and a prompt in the docs to ask a coding agent to install Dinghy.
 
 ### Changed

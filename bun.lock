@@ -71,7 +71,7 @@
       },
     },
     "packages/widget": {
-      "name": "@dinghy/widget",
+      "name": "@dinghy-chat/widget",
       "version": "0.10.0",
       "devDependencies": {
         "esbuild": "^0.28.2",
@@ -125,13 +125,13 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.6.6", "", { "os": "win32", "cpu": "x64" }, "sha512-B7KMG26A4I9lAuxwBGMmiVcjMGAeJRoz+pzFt9brRvOAsIrgOu8ptJld5rUWui6tM1uiJwxeJhhDPuAiZtxXdw=="],
 
+    "@dinghy-chat/widget": ["@dinghy-chat/widget@workspace:packages/widget"],
+
     "@dinghy/ee": ["@dinghy/ee@workspace:ee"],
 
     "@dinghy/operator": ["@dinghy/operator@workspace:apps/operator"],
 
     "@dinghy/server": ["@dinghy/server@workspace:apps/server"],
-
-    "@dinghy/widget": ["@dinghy/widget@workspace:packages/widget"],
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
 

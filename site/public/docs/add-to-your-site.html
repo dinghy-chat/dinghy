@@ -233,14 +233,14 @@ Dinghy.on(<span class="code-string">&quot;message:sent&quot;</span>, ({ body }) 
 <span class="code-tag">&lt;script</span> <span class="code-attr">src</span>=<span class="code-string">&quot;https://chat.example.com/widget/loader.js&quot;</span> <span class="code-attr">data-key</span>=<span class="code-string">&quot;wk_your_public_key&quot;</span> async<span class="code-tag">&gt;</span><span class="code-tag">&lt;/script</span><span class="code-tag">&gt;</span></code></pre>
 </div>
 <h3 id="install-it-from-npm"><a class="heading-link" href="#install-it-from-npm">Install it from npm</a></h3>
-<p>In an app with a bundler, the <code>@dinghy/widget</code> package adds the tag for you and gives typed calls:</p>
+<p>In an app with a bundler, the <code>@dinghy-chat/widget</code> package adds the tag for you and gives typed calls:</p>
 <div class="terminal doc-code">
 <div class="terminal-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-9"><span data-copy-label>Copy</span></button></div>
-<pre class="terminal-code" id="code-9"><code><span class="term-line">npm install @dinghy/widget</span></code></pre>
+<pre class="terminal-code" id="code-9"><code><span class="term-line">npm install @dinghy-chat/widget</span></code></pre>
 </div>
 <div class="terminal doc-code terminal-plain">
 <div class="terminal-bar"><span>Code</span><button class="copy" type="button" data-copy="code-10"><span data-copy-label>Copy</span></button></div>
-<pre class="terminal-code" id="code-10"><code>import { init } from &quot;@dinghy/widget&quot;;
+<pre class="terminal-code" id="code-10"><code>import { init } from &quot;@dinghy-chat/widget&quot;;
 
 const dinghy = init({
   url: &quot;https://chat.example.com&quot;,
@@ -263,7 +263,7 @@ public key is wk_your_public_key.
 
 1. Load the widget on every page where visitors may need help. In a plain site, add
    &lt;script src=&quot;https://chat.example.com/widget/loader.js&quot; data-key=&quot;wk_your_public_key&quot; async&gt;&lt;/script&gt;
-   before &lt;/body&gt;. In an app with a bundler, install @dinghy/widget and call
+   before &lt;/body&gt;. In an app with a bundler, install @dinghy-chat/widget and call
    init({ url, key }) once at startup, in the browser only.
 2. If the app has a Content Security Policy, allow https://chat.example.com in script-src,
    connect-src and img-src.

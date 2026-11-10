@@ -107,3 +107,33 @@ jobs:
       - env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: gh api repos/dinghy-chat/dinghy-internal/dispatches -f event_type=deploy -f "client_payload[version]=${GITHUB_REF_NAME#v}"
+
+  # The @dinghy-chat/widget npm package, at the release's version. npm trusts this workflow file
+  # (trusted publishing), so no token is stored, and the package says which commit built it.
+  npm:
+    needs: publish
+    if: github.repository == 'dinghy-chat/dinghy'
+    runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile
+      # npm only publishes here. Trusted publishing needs npm 11.5.1 or later. A re-run of a
+      # release that is already on npm changes nothing.
+      - working-directory: packages/widget
+        run: |
+          printf '%s\n11.5.1\n' "$(npm --version)" | sort -V -C -r || { echo "npm 11.5.1 or later is needed"; exit 1; }
+          version="${GITHUB_REF_NAME#v}"
+          if npm view "@dinghy-chat/widget@$version" version >/dev/null 2>&1; then
+            echo "@dinghy-chat/widget@$version is already on npm"
+          else
+            npm publish --access public --provenance
+          fi

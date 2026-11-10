@@ -138,14 +138,14 @@ The script loads with `async`, so `Dinghy` may not exist yet when your own scrip
 
 ### Install it from npm
 
-In an app with a bundler, the `@dinghy/widget` package adds the tag for you and gives typed calls:
+In an app with a bundler, the `@dinghy-chat/widget` package adds the tag for you and gives typed calls:
 
 ```sh
-npm install @dinghy/widget
+npm install @dinghy-chat/widget
 ```
 
 ```ts
-import { init } from "@dinghy/widget";
+import { init } from "@dinghy-chat/widget";
 
 const dinghy = init({
   url: "https://chat.example.com",
@@ -171,7 +171,7 @@ public key is wk_your_public_key.
 
 1. Load the widget on every page where visitors may need help. In a plain site, add
    <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
-   before </body>. In an app with a bundler, install @dinghy/widget and call
+   before </body>. In an app with a bundler, install @dinghy-chat/widget and call
    init({ url, key }) once at startup, in the browser only.
 2. If the app has a Content Security Policy, allow https://chat.example.com in script-src,
    connect-src and img-src.

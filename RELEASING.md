@@ -11,6 +11,7 @@ pull requests ──merge──► main
                           ▼
    tag v0.9.0 ──► Image workflow: tests, builds amd64 and arm64, publishes the image
                           ├──► GitHub Release, with the version's CHANGELOG section as notes
+                          ├──► @dinghy-chat/widget on npm, at the same version
                           └──► Dinghy Cloud deploy
 ```
 
@@ -32,7 +33,9 @@ The pull request skips the CI job: each change in it already passed CI, and the 
 
 ## After the merge
 
-The Release workflow sees that `package.json` names a version with no tag, and tags the merge commit. The tag starts the Image workflow. It publishes the image only after the tests, the image checks, the vulnerability scan, the install check and the upgrade check pass on both architectures. Then it creates the GitHub Release and starts the Dinghy Cloud deploy.
+The Release workflow sees that `package.json` names a version with no tag, and tags the merge commit. The tag starts the Image workflow. It publishes the image only after the tests, the image checks, the vulnerability scan, the install check and the upgrade check pass on both architectures. Then it creates the GitHub Release, publishes `@dinghy-chat/widget` to npm and starts the Dinghy Cloud deploy.
+
+npm trusts the Image workflow for `@dinghy-chat/widget` (trusted publishing), so the repository stores no npm token, and each version on npm shows the commit that built it. That trust is set in the package's settings on npmjs.com, under **Trusted publishing**: GitHub Actions, `dinghy-chat/dinghy`, workflow `image.yml`. A re-run skips a version that is already on npm.
 
 If the Image workflow fails, the tag has no image, and nothing deploys. `main` already names the new version in `README.md`, `compose.yaml` and the docs, so an install that follows them fails until the next release. Fix the problem on `main` at once, and merge the next release pull request.
 

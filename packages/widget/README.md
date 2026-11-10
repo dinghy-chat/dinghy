@@ -11,11 +11,11 @@ The chat widget for [Dinghy](https://dinghy.chat), a small live support chat you
 ## Or add it from npm
 
 ```sh
-npm install @dinghy/widget
+npm install @dinghy-chat/widget
 ```
 
 ```ts
-import { init } from "@dinghy/widget";
+import { init } from "@dinghy-chat/widget";
 
 const dinghy = init({ url: "https://chat.example.com", key: "YOUR_PUBLIC_KEY" });
 dinghy.on("unread", (count) => console.log(count));

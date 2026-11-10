@@ -15,13 +15,13 @@ Add one tag before `</body>`, with the workspace's public key from Settings > Wi
 <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
 ```
 
-Then add the site's origin, such as `https://www.example.com`, to Settings > Allowed sites. In an app with a bundler, use the npm package instead: `npm install @dinghy/widget`, then `init({ url: "https://chat.example.com", key: "wk_your_public_key" })` once, in the browser. It returns the typed `Dinghy` object.
+Then add the site's origin, such as `https://www.example.com`, to Settings > Allowed sites. In an app with a bundler, use the npm package instead: `npm install @dinghy-chat/widget`, then `init({ url: "https://chat.example.com", key: "wk_your_public_key" })` once, in the browser. It returns the typed `Dinghy` object.
 
 Tag attributes: `data-primary` and `data-accent` (six-digit hex colors), `data-mascot="false"`, `data-launcher="hidden"`, `data-position="left"`, `data-offset-x` and `data-offset-y` (pixels). CSS variables on the `dinghy-chat` element: `--dinghy-font`, `--dinghy-radius`, `--dinghy-launcher-radius`.
 
 ## Browser API
 
-`window.Dinghy`, also returned by `init` from `@dinghy/widget`:
+`window.Dinghy`, also returned by `init` from `@dinghy-chat/widget`:
 
 - `open({ message? })`: opens the chat. `message` fills the message box and is not sent.
 - `close()`, `toggle()`, `show()`, `hide()` (the launcher button).
