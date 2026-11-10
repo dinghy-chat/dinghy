@@ -162,6 +162,7 @@ const en = {
   widgetTextsSaved: "Saved.",
   snippetHelp:
     "Paste this just before the closing </body> tag on every page that should show the chat.",
+  codeHtml: "HTML",
   snippetWaiting: "Your install code appears when the cloud opens.",
   copy: "Copy",
   copied: "Copied",
@@ -391,6 +392,7 @@ const en = {
   webhookEventClosed: "A conversation is closed",
   webhookEventReopened: "A conversation is reopened",
   webhookEventAssigned: "A conversation is assigned",
+  webhookEventCount: "{count} events",
   webhookAdd: "Add webhook",
   webhookBadUrl: "Use an https address that is reachable from the internet.",
   webhookLimit: "This workspace has 5 webhooks, the most it can have.",

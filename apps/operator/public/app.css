@@ -66,9 +66,19 @@
   --side-mute: light-dark(#6f6c63, #8693a2);
   --warn-soft: light-dark(#fdf3d7, #3a3115);
   --warn-ink: light-dark(#7a5600, #ffd66b);
-  --switch-off: light-dark(#d3d0c7, #33445a);
+  /* A switch's track when off: 3:1 against the card, and the white knob 3:1 against it. */
+  --switch-off: light-dark(#8a867b, #62758b);
   --nobody-line: light-dark(#bdb9ae, #4a5b70);
   --code: light-dark(#0b2239, #070e15);
+  /* A code block is dark in both themes, as in the docs, so its ink and colors are single values. */
+  --code-bar: light-dark(#17335c, #15212e);
+  --code-ink: #eef4fb;
+  --code-mute: #a4b8d0;
+  --code-tag: #ff9d84;
+  --code-attr: #8fc5ff;
+  --code-string: #ffd76a;
+  --code-number: #7fe0b8;
+  --code-comment: #8ea3bd;
   --scroll: light-dark(rgb(11 34 57 / 0.18), rgb(255 255 255 / 0.16));
   --scroll-hover: light-dark(rgb(11 34 57 / 0.35), rgb(255 255 255 / 0.3));
   /* The patch of sky behind the empty states' boat. */
@@ -2122,24 +2132,61 @@ img.ws-tile {
   color: var(--mute);
 }
 .code-block {
-  position: relative;
   min-width: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--code);
+  /* In the dark the block is darker than the card, and the line keeps its edge. */
+  box-shadow: 0 0 0 1px var(--line);
+}
+.code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 5px 0 16px;
+  background: var(--code-bar);
+  color: var(--code-mute);
+  font: 500 13.5px / 1 var(--body);
+}
+.code-bar .copy {
+  background: none;
+  color: var(--code-mute);
+}
+.code-bar .copy:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--code-ink);
+}
+.code-bar .copy:focus-visible {
+  outline-color: var(--code-ink);
+  outline-offset: -2px;
 }
 .code-block pre {
   margin: 0;
-  padding: 16px 110px 16px 16px;
+  padding: 14px 16px 16px;
   overflow-x: auto;
-  border-radius: 14px;
-  background: var(--code);
-  color: #e7eefb;
-  font: 13.5px / 1.6 var(--mono);
-  /* The snippet has one attribute per line. A long line scrolls instead of breaking a name. */
+  color: var(--code-ink);
+  font: 13.5px / 1.7 var(--mono);
+  /* A long line scrolls sideways instead of breaking inside a tag. */
   white-space: pre;
 }
-.code-block .pill {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+.code-tag,
+.code-keyword {
+  color: var(--code-tag);
+}
+.code-attr,
+.code-key {
+  color: var(--code-attr);
+}
+.code-string {
+  color: var(--code-string);
+}
+.code-number {
+  color: var(--code-number);
+}
+.code-comment {
+  color: var(--code-comment);
 }
 .mono {
   font-family: var(--mono);
@@ -2465,7 +2512,7 @@ img.ws-tile {
   align-items: center;
   gap: 12px;
 }
-.hook-switch {
+.check.hook-switch {
   width: auto;
 }
 .hook-actions {
@@ -2475,20 +2522,63 @@ img.ws-tile {
 }
 .events {
   display: grid;
-  gap: 10px;
+  gap: 2px;
   margin: 0;
   padding: 0;
   border: 0;
 }
 .events legend {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   color: var(--navy);
   font-weight: 600;
+}
+.event-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--navy);
+  font-weight: 500;
+  cursor: pointer;
+}
+.event-option:hover {
+  background: var(--row-hover);
+}
+.event-option input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--fill);
+  cursor: pointer;
+}
+.event-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 .events code,
 .deliveries code {
   color: var(--mute);
   font: 12.5px / 1.4 var(--mono);
+}
+/* The address on one line, cut with an ellipsis. Pointing at it, or moving into its row with the
+   keyboard, shows it in full. */
+.item-list .who-lines .hook-url {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item-list .who-lines .hook-url:hover,
+.hook:focus-within .hook-url {
+  overflow: visible;
+  white-space: normal;
+}
+.hook-events {
+  font-family: var(--mono);
+  font-size: 12.5px;
 }
 .deliveries {
   display: grid;
@@ -2542,8 +2632,10 @@ img.ws-tile {
 .check input:checked {
   background: var(--fill);
 }
+/* On the light track that --fill makes in the dark, the knob turns dark. */
 .check input:checked::after {
   left: 21px;
+  background: var(--on-fill);
 }
 
 /* Rules that must come after the general ones they refine. */
@@ -2878,13 +2970,6 @@ img.ws-tile {
   }
   .lock-note svg {
     margin-top: 3px;
-  }
-  .code-block pre {
-    padding: 14px 14px 58px;
-  }
-  .code-block .pill {
-    top: auto;
-    bottom: 10px;
   }
   .card {
     padding: 24px 20px;

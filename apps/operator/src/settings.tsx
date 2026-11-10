@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type CodeLanguage, highlight } from "../../../packages/widget/src/highlight.ts";
 import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import {
   type BillingState,
@@ -31,11 +32,50 @@ import {
   StatusNote,
 } from "./ui.tsx";
 
-function CodeBlock({ value }: { value: string }) {
+/** The code's lines as text and colored spans. Each span's key is where it starts in the code. */
+function codeNodes(value: string, language: CodeLanguage): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let at = 0;
+  highlight(value, language).forEach((line, index) => {
+    if (index > 0) {
+      nodes.push("\n");
+      at += 1;
+    }
+    for (const { kind, text } of line.tokens) {
+      nodes.push(
+        kind === null ? (
+          text
+        ) : (
+          <span key={at} className={`code-${kind}`}>
+            {text}
+          </span>
+        ),
+      );
+      at += text.length;
+    }
+  });
+  return nodes;
+}
+
+/** Code to paste, colored as in the docs. Copy copies the exact text. */
+function CodeBlock({
+  value,
+  language,
+  title,
+}: {
+  value: string;
+  language: CodeLanguage;
+  title: string;
+}) {
   return (
     <div className="code-block">
-      <pre>{value}</pre>
-      <CopyButton value={value} />
+      <div className="code-bar">
+        <span>{title}</span>
+        <CopyButton value={value} />
+      </div>
+      <pre>
+        <code>{codeNodes(value, language)}</code>
+      </pre>
     </div>
   );
 }
@@ -49,16 +89,11 @@ function SnippetRow({ publicKey, waiting }: { publicKey: string; waiting: boolea
       </PageRow>
     );
   }
-  // One attribute per line, so no screen breaks the tag inside an attribute.
-  const snippet = [
-    "<script",
-    `  src="${location.origin}/widget/loader.js"`,
-    `  data-key="${publicKey}"`,
-    "  async></script>",
-  ].join("\n");
+  // One line, as a developer pastes it. It scrolls sideways in its box instead of breaking.
+  const snippet = `<script src="${location.origin}/widget/loader.js" data-key="${publicKey}" async></script>`;
   return (
     <PageRow title={t("snippetTitle")} help={t("snippetHelp")}>
-      <CodeBlock value={snippet} />
+      <CodeBlock value={snippet} language="html" title={t("codeHtml")} />
     </PageRow>
   );
 }
