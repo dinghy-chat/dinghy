@@ -72,6 +72,23 @@ export async function workspaceAccess(
   return result.rows[0]?.access ?? "deleted";
 }
 
+/**
+ * The access a welcome chat's message goes in by. `workspace_access` reports waiting for payment
+ * before suspension, which the payment screen and the member check rely on, so the welcome
+ * exception reads the suspension itself: a suspended workspace takes no message whatever it paid.
+ */
+export async function welcomeAccess(
+  tx: Transaction,
+  workspaceId: string,
+  access: WorkspaceAccess,
+): Promise<WorkspaceAccess> {
+  if (access !== "waiting_payment") return access;
+  const result = await tx.execute<{ suspended: boolean }>(
+    sql`select suspended_at is not null as suspended from workspace where id = ${workspaceId}`,
+  );
+  return result.rows[0]?.suspended === true ? "suspended" : access;
+}
+
 /** The access as the operator app reads it: whether the workspace is paid for, and what is off. */
 export function accessFlags(access: WorkspaceAccess) {
   return {

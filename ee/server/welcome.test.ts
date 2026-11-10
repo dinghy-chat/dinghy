@@ -706,6 +706,22 @@ describe("when the new workspace stops taking messages", () => {
     },
   );
 
+  test("a suspension before the first payment stops the copies too", async () => {
+    const acme = await signUp(paying, "Acme");
+    const link = await linkOf(acme.workspaceId);
+    await owner
+      .update(workspace)
+      .set({ suspendedAt: new Date() })
+      .where(eq(workspace.id, acme.workspaceId));
+    const before = await messagesIn(acme.workspaceId, link.customerConversationId);
+    expect(
+      (await reply(paying, julien.cookie, dinghy.id, link.founderConversationId, "Hello?")).status,
+    ).toBe(201);
+    expect(await messagesIn(acme.workspaceId, link.customerConversationId)).toHaveLength(
+      before.length,
+    );
+  });
+
   test("its deletion takes the link, and Dinghy keeps its side as history", async () => {
     const acme = await signUp(early);
     const link = await linkOf(acme.workspaceId);

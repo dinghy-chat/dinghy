@@ -13,6 +13,7 @@ import {
   type Database,
   enterWorkspace,
   type Transaction,
+  welcomeAccess,
   withWorkspace,
   workspaceAccess,
   writable,
@@ -222,7 +223,11 @@ async function copyInto(
   file: NewImage | undefined,
   limits: Limits,
 ): Promise<{ visitorId: string; usedFile: boolean } | null> {
-  const access = await workspaceAccess(tx, other.workspaceId);
+  const access = await welcomeAccess(
+    tx,
+    other.workspaceId,
+    await workspaceAccess(tx, other.workspaceId),
+  );
   if (!writableFor(access, { welcome: true })) return null;
   const theirs = await chatVisitor(tx, other);
   if (theirs === null || theirs.blockedAt !== null) return null;

@@ -15,6 +15,7 @@ import {
 import {
   type Transaction,
   type WorkspaceAccess,
+  welcomeAccess,
   workspaceAccess,
   writable,
   writableFor,
@@ -207,8 +208,9 @@ export async function appendMessage(
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
   const seq = await nextSeq(tx, workspaceId);
   // A statement of its own, after the lock: it sees every change committed before the lock.
-  const access = await workspaceAccess(tx, workspaceId);
-  const welcome = !writable(access) && (await inWelcomeChat(tx, workspaceId, author));
+  const found = await workspaceAccess(tx, workspaceId);
+  const welcome = !writable(found) && (await inWelcomeChat(tx, workspaceId, author));
+  const access = welcome ? await welcomeAccess(tx, workspaceId, found) : found;
   if (!writableFor(access, { welcome })) throw new WorkspaceClosedError(access);
 
   const sender =
