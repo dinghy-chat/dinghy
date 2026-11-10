@@ -366,8 +366,8 @@ export function Avatar({ name, letters }: { name: string; letters?: string | und
   );
 }
 
-// Phosphor Icons (MIT), duotone weight: the light layer first, then the main one. The CSS
-// gives the light layer a brand color that fits its place.
+// Phosphor Icons (MIT), duotone weight: the light layer first, then the main one. The CSS hides
+// the light layer, so the icons show as outlines; keeping it lets a later palette bring it back.
 const ICONS = {
   inbox: [
     "M216,48V160H179.31a8,8,0,0,0-5.66,2.34l-19.31,19.32a8,8,0,0,1-5.66,2.34H107.31a8,8,0,0,1-5.66-2.34L82.34,162.34A8,8,0,0,0,76.68,160H40V48a8,8,0,0,1,8-8H208A8,8,0,0,1,216,48Z",

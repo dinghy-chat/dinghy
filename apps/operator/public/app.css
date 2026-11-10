@@ -289,10 +289,9 @@ textarea {
 .link:hover {
   text-decoration: underline;
 }
-/* Phosphor duotone icons. The light layer takes a brand color from its place. */
+/* Phosphor icons draw a light fill under their outline. The calm palette shows the outline only. */
 .duo {
-  fill: var(--duo, var(--blue));
-  opacity: var(--duo-opacity, 0.3);
+  display: none;
 }
 .icon-button {
   display: grid;
@@ -659,10 +658,8 @@ textarea {
   white-space: nowrap;
 }
 
-/* Sidebar, straight on the grey: navy labels and navy duotone icons. */
+/* Sidebar, straight on the grey: navy labels and navy icons. */
 .side {
-  --duo: var(--navy);
-  --duo-opacity: 0.25;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -852,7 +849,6 @@ button.workspace[aria-expanded="true"],
 
 /* Pills: the panel's buttons. */
 .pill {
-  --duo: currentColor;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -923,7 +919,6 @@ button.workspace[aria-expanded="true"],
   background: var(--soft-hover);
 }
 .text-button {
-  --duo: currentColor;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -937,7 +932,6 @@ button.workspace[aria-expanded="true"],
   text-decoration: underline;
 }
 .chip {
-  --duo: currentColor;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1029,8 +1023,6 @@ button.workspace[aria-expanded="true"],
   }
 }
 .item {
-  --duo: var(--navy);
-  --duo-opacity: 0.25;
   position: relative;
   display: flex;
   align-items: center;
@@ -1066,7 +1058,6 @@ button.workspace[aria-expanded="true"],
 }
 /* .danger alone is the red button, so the menu item clears its fill. */
 .item.danger {
-  --duo: var(--bad);
   background: none;
   color: var(--bad);
 }
@@ -1356,7 +1347,6 @@ button.workspace[aria-expanded="true"],
   border-radius: 50%;
   background: var(--soft);
   color: var(--mute);
-  --duo: var(--mute);
 }
 
 /* A conversation. */
@@ -1669,8 +1659,6 @@ button.workspace[aria-expanded="true"],
   outline: 0;
 }
 .box .icon-button {
-  --duo: var(--navy);
-  --duo-opacity: 0.2;
   color: var(--mute);
 }
 .send {
@@ -1706,7 +1694,6 @@ button.workspace[aria-expanded="true"],
   color: var(--navy);
 }
 .closed svg {
-  --duo: var(--green);
   flex: none;
 }
 
@@ -2227,7 +2214,6 @@ button.workspace[aria-expanded="true"],
   font-size: 13.5px;
 }
 .lock-note svg {
-  --duo-opacity: 0.2;
   flex: none;
 }
 .tab-panel > .bad {
