@@ -21,6 +21,10 @@ concurrency:
 
 jobs:
   check:
+    # The bot's release pull request changes only version numbers and the changelog. Every change in it
+    # already passed this job, and the Image workflow runs it again on the release tag. A fork's branch
+    # named release still runs it.
+    if: github.head_ref != 'release' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
     timeout-minutes: 10
     services:

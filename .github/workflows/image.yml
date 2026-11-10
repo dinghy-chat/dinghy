@@ -70,3 +70,40 @@ jobs:
           image="ghcr.io/dinghy-chat/dinghy:${GITHUB_REF_NAME#v}"
           docker buildx imagetools create --tag "$image" "$image-amd64" "$image-arm64"
           docker buildx imagetools inspect "$image"
+
+  # The GitHub Release, with the version's section of CHANGELOG.md as its notes. Watchers of the
+  # repository's releases get a notice.
+  github-release:
+    needs: publish
+    runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## /{on=0} on' CHANGELOG.md > notes.md
+          printf '\nImage: `ghcr.io/dinghy-chat/dinghy:%s`\n' "$version" >> notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Dinghy $version" --notes-file notes.md
+
+  # Starts the Deploy workflow of the private dinghy-internal repository, which puts the release on
+  # Dinghy Cloud. It needs the dinghy-chat-release GitHub App, which a fork does not have.
+  deploy-cloud:
+    needs: publish
+    if: github.repository == 'dinghy-chat/dinghy'
+    runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: dinghy-chat
+          repositories: dinghy-internal
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: gh api repos/dinghy-chat/dinghy-internal/dispatches -f event_type=deploy -f "client_payload[version]=${GITHUB_REF_NAME#v}"

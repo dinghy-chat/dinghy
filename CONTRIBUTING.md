@@ -55,7 +55,7 @@ Some changes need one more step:
 - A change to `apps/server/src/db/schema.ts` needs a migration. Run `bun run db:generate` and commit the new file in `apps/server/drizzle/`. Migrations go forward only, and must work on existing data. Grants, policies and functions go in a file from `bun x drizzle-kit generate --custom`, run in `apps/server`.
 - A change to an API route needs a new `apps/server/openapi.json`. Run `bun run openapi:generate`, then `bun x biome format --write apps/server/openapi.json`.
 - A change to `docs/*.md` or `docs/media/` needs the site's docs pages rebuilt. Run `bun run docs:build` and commit the files it writes in `site/public/docs/`. The site tests fail when the two differ.
-- A change that users see needs a line in `CHANGELOG.md` under `## [Unreleased]`, in its group: `### Upgrading` when an owner must act, then `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed` or `### Security`.
+- A change that users see needs a line in `CHANGELOG.md` under `## [Unreleased]`, in its group: `### Upgrading` when an owner must act, then `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed` or `### Security`. The group sets the next version, and a merge releases nothing: see [RELEASING.md](RELEASING.md).
 
 ## How the code is laid out
 
