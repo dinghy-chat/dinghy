@@ -338,20 +338,6 @@ describe("inviting by email", () => {
     expect(again.headers.getSetCookie()).toEqual([]);
   });
 
-  test("an account an unfinished signup left unnamed must send a name, and takes it", async () => {
-    const email = newEmail();
-    await owner.insert(operator).values({ name: "", email, emailVerified: true });
-    const boss = await person("owner");
-    const token = await mailInvite(boss, email);
-    const offer = await call("POST", "/v1/invites/preview", null, { token });
-    expect(await offer.json()).toMatchObject({ hasAccount: true, needsName: true });
-    expect((await join(token, { server: mailApp, name: null })).status).toBe(400);
-    expect((await join(token, { server: mailApp, name: "Nina" })).status).toBe(200);
-    const { cookie } = await openJoin(await mail.linkTo(email, 1), mailApp);
-    const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
-    expect(await me.json()).toMatchObject({ name: "Nina" });
-  });
-
   test("an expired join link changes nothing", async () => {
     const existing = await person(null);
     const boss = await person("owner");
@@ -374,7 +360,11 @@ describe("inviting by email", () => {
       .returning({ id: operator.id, email: operator.email });
     if (unnamed === undefined) throw new Error("No operator");
     const boss = await person("owner");
-    await join(await mailInvite(boss, unnamed.email), { server: mailApp });
+    const token = await mailInvite(boss, unnamed.email);
+    const offer = await call("POST", "/v1/invites/preview", null, { token });
+    expect(await offer.json()).toMatchObject({ hasAccount: true, needsName: true });
+    expect((await join(token, { server: mailApp, name: null })).status).toBe(400);
+    await join(token, { server: mailApp });
     const { cookie } = await openJoin(await mail.linkTo(unnamed.email, 1), mailApp);
     const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
     expect(await me.json()).toMatchObject({ id: unnamed.id, name: "New Person" });
@@ -917,6 +907,33 @@ describe("invites", () => {
     expect(accepted.status).toBe(409);
     expect((await memberRow(someone.id))?.role).toBe("member");
     expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
+  });
+
+  test("two inviters inviting one email at once leave one usable invite", async () => {
+    const boss = await person("owner");
+    const admin = await person("admin");
+    const email = newEmail();
+    // Holding the address lock makes both requests wait at the same point, then go one by one.
+    let both: Promise<Response[]> | undefined;
+    await owner.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`invite:${space.id}:${email}`}, 0))`,
+      );
+      both = Promise.all(
+        [boss, admin].map((who) =>
+          Promise.resolve(call("POST", inSpace("/invites"), who, { email, role: "member" })),
+        ),
+      );
+      await untilWaiting(owner, 2);
+    });
+    const results = (await both) ?? [];
+    expect(results.map((result) => result.status)).toEqual([201, 201]);
+    const rows = await owner
+      .select()
+      .from(invite)
+      .where(and(eq(invite.workspaceId, space.id), eq(invite.email, email)));
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((row) => row.revokedAt === null)).toHaveLength(1);
   });
 
   test("two invites accepted at once leave one role, and the other invite usable", async () => {
