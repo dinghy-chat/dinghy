@@ -137,7 +137,9 @@ test.describe("with no Stripe keys", () => {
     await server.createOperator(email, { member: false });
     await signIn(page, server, email);
     await expect(
-      page.getByText("You are not in a workspace yet. Ask its owner for an invite."),
+      page.getByText(
+        "You are not in a workspace on this server. Ask a workspace's owner for an invite.",
+      ),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Set up your workspace" })).toHaveCount(0);
     const create = await page.request.post(`${server.apiOrigin}/v1/operator/workspaces`, {
