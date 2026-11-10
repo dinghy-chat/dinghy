@@ -449,7 +449,8 @@ export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
   );
 }
 
-type Tab = "team" | "install" | "sites" | "secret" | "api" | "data";
+export type SettingsTab = "team" | "install" | "sites" | "secret" | "api" | "data";
+type Tab = SettingsTab;
 
 const TAB_TEXT: Record<Tab, TextId> = {
   team: "tabTeam",
@@ -528,6 +529,7 @@ export function SettingsPage({
   billing,
   waiting,
   emailAvailable,
+  initialTab = "team",
   onLeft,
 }: {
   api: WorkspaceApi;
@@ -541,12 +543,14 @@ export function SettingsPage({
   waiting: boolean;
   /** The server sends email, so invites go by email. */
   emailAvailable: boolean;
+  /** The tab that opens first, such as Install from the inbox's first steps. */
+  initialTab?: Tab;
   onLeft(): void;
 }) {
   const team = useTeam(api, role);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [settingsFailure, setSettingsFailure] = useState<TextId | null>(null);
-  const [picked, setPicked] = useState<Tab>("team");
+  const [picked, setPicked] = useState<Tab>(initialTab);
   const [inviting, setInviting] = useState(false);
 
   useEffect(() => {

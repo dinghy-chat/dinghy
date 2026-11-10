@@ -17,8 +17,9 @@ import {
 import { useLatestLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
-import { ProfilePage, SettingsPage } from "./settings.tsx";
+import { ProfilePage, SettingsPage, type SettingsTab } from "./settings.tsx";
 import { chime, prepareSound } from "./sound.ts";
+import { StartHint } from "./start-hint.tsx";
 import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
 import {
@@ -613,6 +614,7 @@ export function Inbox({
     return params.get("workspace") === workspaceId ? params.get("conversation") : null;
   });
   const [view, setView] = useState<View>("open");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("team");
   const visible = useTabVisible();
   const [query, setQuery] = useState("");
   const { found, searching } = useSearch(api, query);
@@ -704,7 +706,8 @@ export function Inbox({
       .catch(() => {});
   }, [api]);
 
-  const showView = (next: View) => {
+  const showView = (next: View, tab: SettingsTab = "team") => {
+    setSettingsTab(tab);
     // Settings can change the team, so the names in the list load again after it.
     if (view === "settings" && next !== "settings") loadMembers();
     setView(next);
@@ -767,6 +770,7 @@ export function Inbox({
                 billing={billing}
                 waiting={waitsForCloud}
                 emailAvailable={emailAvailable}
+                initialTab={settingsTab}
                 onLeft={() => navigate("/")}
               />
             )}
@@ -816,6 +820,13 @@ export function Inbox({
                     />
                   ))}
                 </ul>
+                {status === "open" && found === null && role !== "agent" && (
+                  <StartHint
+                    workspaceId={workspaceId}
+                    hasConversations={conversations.length > 0}
+                    onOpen={(tab) => showView("settings", tab)}
+                  />
+                )}
                 {hasMore && found === null && (
                   <button
                     type="button"
