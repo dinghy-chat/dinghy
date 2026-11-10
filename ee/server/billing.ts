@@ -581,6 +581,8 @@ export function registerBillingRoutes(
         client_reference_id: id,
         "line_items[0][price]": billing.priceId,
         "line_items[0][quantity]": "1",
+        // Stripe sells as the merchant of record, and so collects and files the sales tax and VAT.
+        "managed_payments[enabled]": "true",
         "metadata[workspace_id]": id,
         "metadata[dinghy_attempt]": String(attempt),
         "subscription_data[metadata][workspace_id]": id,

@@ -4,7 +4,12 @@ import { DATABASE_URL } from "./env.ts";
 
 export default async function setup(): Promise<void> {
   const admin = new pg.Client({ connectionString: DATABASE_URL });
-  await admin.connect();
+  await admin.connect().catch((error: unknown) => {
+    throw new Error(
+      `The tests need Postgres at ${DATABASE_URL}, and it did not answer. Start the test services with \`bun run dev:services\`.`,
+      { cause: error },
+    );
+  });
   try {
     await ensureRoles(admin);
     // The isolation suite runs as these. Row-level security would hide a missing workspace filter,
