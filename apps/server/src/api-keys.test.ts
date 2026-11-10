@@ -339,6 +339,10 @@ describe("what a key can do", () => {
     expect(await reply.json()).toMatchObject({ error: { code: "suspended" } });
     const rows = await owner.select().from(message).where(eq(message.clientId, "p1"));
     expect(rows).toEqual([]);
+    // The owner can still cut the key off while the workspace is closed.
+    const revoked = await asOperator(boss.cookie, "DELETE", `${base}/api-keys/${key.id}`);
+    expect(revoked.status).toBe(200);
+    expect((await withKey(key.token, "GET", `${base}/conversations`)).status).toBe(401);
   });
 
   test("its last use is noted, at most once a minute", async () => {

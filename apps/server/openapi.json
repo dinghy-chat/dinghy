@@ -135,6 +135,21 @@
           }
         }
       },
+      "Image": {
+        "type": ["object", "null"],
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": ["url", "width", "height"]
+      },
       "Message": {
         "type": "object",
         "properties": {
@@ -194,21 +209,6 @@
           "imageRemoved": false,
           "createdAt": "2026-11-08T09:30:00.000Z"
         }
-      },
-      "Image": {
-        "type": ["object", "null"],
-        "properties": {
-          "url": {
-            "type": "string"
-          },
-          "width": {
-            "type": "number"
-          },
-          "height": {
-            "type": "number"
-          }
-        },
-        "required": ["url", "width", "height"]
       },
       "MessagePage": {
         "type": "object",
@@ -1006,7 +1006,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Message"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Message"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "conversationStarted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["conversationStarted"]
+                    }
+                  ],
+                  "example": {
+                    "id": "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
+                    "conversationId": "5d0c1f7e-8a3b-4e52-b1f4-2c9e7a6d4b10",
+                    "seq": "42",
+                    "kind": "text",
+                    "fromVisitor": true,
+                    "clientId": "m_4f9a2c",
+                    "body": "Do you have a yearly plan?",
+                    "image": null,
+                    "imageRemoved": false,
+                    "createdAt": "2026-11-08T09:30:00.000Z"
+                  }
                 }
               }
             }
@@ -1016,7 +1041,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Message"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Message"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "conversationStarted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["conversationStarted"]
+                    }
+                  ],
+                  "example": {
+                    "id": "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
+                    "conversationId": "5d0c1f7e-8a3b-4e52-b1f4-2c9e7a6d4b10",
+                    "seq": "42",
+                    "kind": "text",
+                    "fromVisitor": true,
+                    "clientId": "m_4f9a2c",
+                    "body": "Do you have a yearly plan?",
+                    "image": null,
+                    "imageRemoved": false,
+                    "createdAt": "2026-11-08T09:30:00.000Z"
+                  }
                 }
               }
             }
@@ -1301,7 +1351,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Message"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Message"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "conversationStarted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["conversationStarted"]
+                    }
+                  ],
+                  "example": {
+                    "id": "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
+                    "conversationId": "5d0c1f7e-8a3b-4e52-b1f4-2c9e7a6d4b10",
+                    "seq": "42",
+                    "kind": "text",
+                    "fromVisitor": true,
+                    "clientId": "m_4f9a2c",
+                    "body": "Do you have a yearly plan?",
+                    "image": null,
+                    "imageRemoved": false,
+                    "createdAt": "2026-11-08T09:30:00.000Z"
+                  }
                 }
               }
             }
@@ -1311,7 +1386,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Message"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Message"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "conversationStarted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["conversationStarted"]
+                    }
+                  ],
+                  "example": {
+                    "id": "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
+                    "conversationId": "5d0c1f7e-8a3b-4e52-b1f4-2c9e7a6d4b10",
+                    "seq": "42",
+                    "kind": "text",
+                    "fromVisitor": true,
+                    "clientId": "m_4f9a2c",
+                    "body": "Do you have a yearly plan?",
+                    "image": null,
+                    "imageRemoved": false,
+                    "createdAt": "2026-11-08T09:30:00.000Z"
+                  }
                 }
               }
             }
@@ -3555,6 +3655,7 @@
     },
     "/v1/operator/workspaces/{workspaceId}/api-keys/{keyId}": {
       "delete": {
+        "x-workspace-access": "closed",
         "security": [
           {
             "sessionCookie": []
@@ -4060,6 +4161,7 @@
         }
       },
       "delete": {
+        "x-workspace-access": "closed",
         "security": [
           {
             "sessionCookie": []

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { z } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
 import {
@@ -195,15 +194,16 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
         clientId: z
           .string()
           .regex(/^[A-Za-z0-9_-]{1,64}$/)
-          .optional()
-          .describe("Your own ID for this reply, up to 64 letters, digits, - or _"),
+          .describe(
+            "Your own ID for this reply, up to 64 letters, digits, - or _. Send the same one on a retry",
+          ),
       }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
         replyAnswer(
           await inbox.reply(workspaceId, actor, input.conversationId, {
             body: input.body,
-            clientId: input.clientId ?? `mcp-${randomUUID()}`,
+            clientId: input.clientId,
           }),
         ),
     }),

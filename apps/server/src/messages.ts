@@ -174,7 +174,7 @@ export async function appendMessage(
   author: Author,
   input: { clientId: string; body?: string; image?: NewImage; page?: string | null },
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
-): Promise<{ message: StoredMessage; created: boolean }> {
+): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
   const seq = await nextSeq(tx, workspaceId);
   // A statement of its own, after the lock: it sees every change committed before the lock.
   const access = await workspaceAccess(tx, workspaceId);
@@ -190,7 +190,9 @@ export async function appendMessage(
     .select(messageColumns)
     .from(message)
     .where(and(eq(message.workspaceId, workspaceId), sender, eq(message.clientId, input.clientId)));
-  if (existing !== undefined) return { message: stored(existing), created: false };
+  if (existing !== undefined) {
+    return { message: stored(existing), created: false, conversationStarted: false };
+  }
 
   // After the retry lookup, and under the lock, so a close cannot slip in before this reply and a
   // retry of a reply that already committed still gets its original message.
@@ -273,7 +275,7 @@ export async function appendMessage(
     .update(conversation)
     .set({ updatedAt: sql`now()` })
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  return { message: stored(row), created: true };
+  return { message: stored(row), created: true, conversationStarted: target.created };
 }
 
 interface ReadState {

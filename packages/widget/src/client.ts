@@ -15,6 +15,11 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+/** A send's answer: the message, and whether it started a new conversation. */
+export interface SentMessage extends ChatMessage {
+  conversationStarted: boolean;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   /** The server's error code, such as blocked or origin_not_allowed, when its answer had one. */
@@ -138,10 +143,10 @@ export function createClient(
         },
       );
       if (!response.ok) throw await refused(response);
-      return (await response.json()) as ChatMessage;
+      return (await response.json()) as SentMessage;
     },
     send: (token: string, clientId: string, body: string) =>
-      call<ChatMessage>("messages", token, {
+      call<SentMessage>("messages", token, {
         method: "POST",
         body: JSON.stringify({ clientId, body, page: page() }),
       }),

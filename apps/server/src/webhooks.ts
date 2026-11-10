@@ -29,6 +29,7 @@ import {
 } from "./errors.ts";
 import type { Images } from "./images.ts";
 import { conversationView, messageView } from "./inbox.ts";
+import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { authorNames, findConversation, findMessage } from "./messages.ts";
 import { retryDelayMs } from "./retry.ts";
 import { allowed } from "./team.ts";
@@ -330,6 +331,7 @@ const changeRoute = createRoute({
 
 const deleteRoute = createRoute({
   method: "delete",
+  ...OPEN_WHILE_CLOSED,
   path: `${PREFIX}/{webhookId}`,
   security: SESSION,
   summary: "Delete a webhook and its deliveries",

@@ -155,7 +155,7 @@ describe("the protocol", () => {
     expect(reply?.inputSchema).toMatchObject({
       type: "object",
       properties: { conversationId: { type: "string" }, body: { type: "string" } },
-      required: ["conversationId", "body"],
+      required: ["conversationId", "body", "clientId"],
     });
     expect(reply?.annotations.readOnlyHint).toBe(false);
     expect(tools.find((tool) => tool.name === "get_conversation")?.annotations.readOnlyHint).toBe(
@@ -299,14 +299,14 @@ describe("the tools", () => {
     });
     const rows = await owner.select().from(message).where(eq(message.clientId, "claude-1"));
     expect(rows).toHaveLength(1);
-    // With no clientId, it makes one.
+    // A random fallback would let a retry after a lost answer send twice, so the ID is required.
     const second = await callTool("reply", { conversationId, body: "Anything else?" });
-    expect((second.structuredContent.message as { clientId: string }).clientId).toMatch(/^mcp-/);
+    expect(second.isError).toBe(true);
   });
 
   test("close, reopen and assign change the conversation", async () => {
     expect((await callTool("close_conversation", { conversationId })).isError).toBe(false);
-    const closed = await callTool("reply", { conversationId, body: "Too late" });
+    const closed = await callTool("reply", { conversationId, body: "Too late", clientId: "late" });
     expect(closed.isError).toBe(true);
     expect(closed.content[0]?.text).toMatch(/^conversation_closed: /);
     expect(closed.structuredContent).toMatchObject({ error: { code: "conversation_closed" } });

@@ -462,6 +462,30 @@ describe("open conversations", () => {
     await withWorkspace(db, a.id, (tx) => tx.update(conversation).set({ status: "closed" }));
     expect(await read()).toBe(false);
   });
+
+  test("a send says when it started a conversation, and a retry says it did not", async () => {
+    const { token } = (await (await newVisitor()).json()) as { token: string };
+    const send = async (clientId: string) =>
+      (
+        (await (
+          await app.request(`/v1/widget/${a.publicKey}/messages`, {
+            method: "POST",
+            headers: {
+              origin: ORIGIN,
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ clientId, body: "hello" }),
+          })
+        ).json()) as { conversationStarted: boolean }
+      ).conversationStarted;
+    expect(await send("s1")).toBe(true);
+    expect(await send("s1")).toBe(false);
+    expect(await send("s2")).toBe(false);
+    // A close from the inbox, then a send: the server starts a new conversation.
+    await withWorkspace(db, a.id, (tx) => tx.update(conversation).set({ status: "closed" }));
+    expect(await send("s3")).toBe(true);
+  });
 });
 
 describe("what the page sends with setContext", () => {

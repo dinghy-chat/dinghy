@@ -404,6 +404,8 @@ interface ChatProps {
   quiet: boolean;
   /** A message that open({ message }) puts in the composer. */
   prefill: { text: string } | null;
+  /** Drops the pre-filled message once the visitor sends, so a remount does not bring it back. */
+  clearPrefill(value: null): void;
   /** Grows with each setContext(). */
   contextVersion: number;
 }
@@ -412,7 +414,7 @@ interface ChatProps {
  * One visitor's session. identify() and reset() remount this component, so nothing from the old
  * identity survives: its stream closes, and a late response updates a component that is gone.
  */
-function Chat({ context, open, setOpen, quiet, prefill, contextVersion }: ChatProps) {
+function Chat({ context, open, setOpen, quiet, prefill, clearPrefill, contextVersion }: ChatProps) {
   const { publicKey, base } = context;
   const fullPage = context.page === true;
   const [client] = useState(() => createClient(base, publicKey, undefined, !fullPage));
@@ -467,8 +469,6 @@ function Chat({ context, open, setOpen, quiet, prefill, contextVersion }: ChatPr
   const panel = useRef<HTMLElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const creatingVisitor = useRef<Promise<string> | null>(null);
-  // Conversations this chat has seen, so a send into a new one tells the page it started.
-  const conversations = useRef(new Set<string>());
 
   useEffect(() => {
     alive.current = true;
@@ -650,7 +650,6 @@ function Chat({ context, open, setOpen, quiet, prefill, contextVersion }: ChatPr
               if (controller.signal.aborted) return;
               cursor.current = next;
               setDelivered((current) => larger(current, BigInt(message.seq)));
-              conversations.current.add(message.conversationId);
               if (replayed.current && !message.fromVisitor) {
                 setNewReply(true);
                 emit(context, "message:received", { body: message.body });
@@ -767,10 +766,8 @@ function Chat({ context, open, setOpen, quiet, prefill, contextVersion }: ChatPr
       });
       sends.current += 1;
       emit(context, "message:sent", { body: file === undefined ? body : null });
-      if (!openConversation && !conversations.current.has(sent.conversationId)) {
-        emit(context, "conversation:started", undefined);
-      }
-      conversations.current.add(sent.conversationId);
+      // The server's answer, because a stream copy or a close from the inbox can race the send.
+      if (sent.conversationStarted) emit(context, "conversation:started", undefined);
       setOpenConversation(true);
       setChatted(true);
       // A send that worked means a block was lifted, or the site was allowed again. Another warning,
@@ -813,6 +810,7 @@ function Chat({ context, open, setOpen, quiet, prefill, contextVersion }: ChatPr
     const body = draft.trim();
     if (body === "") return;
     setDraft("");
+    clearPrefill(null);
     const id = newClientId();
     setLines((current) => [
       ...current,
@@ -1032,7 +1030,11 @@ function Root({ context }: { context: WidgetContext }) {
         context.state.open = false;
         setOpenState(false);
       },
-      session: () => setSession((current) => current + 1),
+      session: () => {
+        // A reset leaves no identity, and the next visitor must not get this one's draft.
+        if (context.identity === null) setPrefill(null);
+        setSession((current) => current + 1);
+      },
       context: () => setContextVersion((current) => current + 1),
     };
     context.chat = handlers;
@@ -1046,6 +1048,7 @@ function Root({ context }: { context: WidgetContext }) {
       // The removal right after the signal fires an event too, with no new value.
       if (event.newValue && event.key === RESET_PREFIX + publicKey) {
         context.identity = null;
+        context.pageContext = null;
         handlers.session();
       }
     };
@@ -1071,6 +1074,7 @@ function Root({ context }: { context: WidgetContext }) {
       setOpen={setOpen}
       quiet={quiet}
       prefill={prefill}
+      clearPrefill={setPrefill}
       contextVersion={contextVersion}
     />
   );

@@ -41,6 +41,8 @@ In a read-only or suspended workspace, operators can read and export, and a writ
 
 A message or an image carries a `clientId` that the client makes, such as `m_4f9a2c`. A retry with the same `clientId` returns the first message and creates nothing, so a client can retry a send after any network error.
 
+A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry answers false.
+
 ## Visitors
 
 The operator API's `Conversation` describes the visitor: `name`, `email`, `externalId`, `attributes` (the custom attributes your site signed), `blocked`, `device` (such as `"Chrome on macOS"`), `lastPage` and `lastSeenAt`. The conversation also has `pageContext`: what the page last sent with `Dinghy.setContext()`, or null. Your site does not sign it, so anyone can change it in their browser. Treat it as a hint, never as proof. A conversation's messages also answer `visitorOnline`: true while the visitor has a widget stream open, and null when the server cannot tell.

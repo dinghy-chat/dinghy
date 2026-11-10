@@ -21,6 +21,7 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
+import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { allowed } from "./team.ts";
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}";
@@ -171,6 +172,7 @@ const createKeyRoute = createRoute({
 
 const revokeRoute = createRoute({
   method: "delete",
+  ...OPEN_WHILE_CLOSED,
   path: `${PREFIX}/api-keys/{keyId}`,
   security: SESSION,
   summary: "Revoke an API key. Its replies keep its name",

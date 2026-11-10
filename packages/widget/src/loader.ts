@@ -144,7 +144,8 @@ if (script && publicKey) {
       // Only the tab that called reset() clears the token. Another tab can handle this event late,
       // after a new chat has started, and it must not delete that chat's token.
       writeToken(publicKey, null);
-      context.identity = null;
+      // The next visitor in this browser must not inherit the last one's page data.
+      context.identity = context.pageContext = null;
       context.chat?.session();
       broadcastReset(publicKey);
     },

@@ -262,6 +262,9 @@ const MessageSchema = z
     },
   });
 
+// Only a send answers this: true when this message started a new conversation. A retry answers false.
+const SentSchema = MessageSchema.extend({ conversationStarted: z.boolean() });
+
 /** A send's 403: the access check, or a block on this visitor. */
 const SEND_REFUSED = {
   403: errorAnswer(
@@ -303,11 +306,11 @@ const sendMessageRoute = createRoute({
   responses: {
     200: {
       description: "A retry. This is the original message",
-      content: { "application/json": { schema: MessageSchema } },
+      content: { "application/json": { schema: SentSchema } },
     },
     201: {
       description: "The new message",
-      content: { "application/json": { schema: MessageSchema } },
+      content: { "application/json": { schema: SentSchema } },
     },
     ...WIDGET_WRITE_ERRORS,
     ...BUSY,
@@ -325,11 +328,11 @@ const sendImageRoute = createRoute({
   responses: {
     200: {
       description: "A retry. This is the original message",
-      content: { "application/json": { schema: MessageSchema } },
+      content: { "application/json": { schema: SentSchema } },
     },
     201: {
       description: "The new message",
-      content: { "application/json": { schema: MessageSchema } },
+      content: { "application/json": { schema: SentSchema } },
     },
     ...WIDGET_TOKEN_ERRORS,
     ...IMAGE_UPLOAD_ERRORS,
@@ -827,7 +830,10 @@ export function registerWidgetRoutes(
     if (result.created) {
       wakeConversation(live, found.id, identified.visitorId);
     }
-    return c.json(view(found.id, result.message), result.created ? 201 : 200);
+    return c.json(
+      { ...view(found.id, result.message), conversationStarted: result.conversationStarted },
+      result.created ? 201 : 200,
+    );
   });
 
   app.openapi(streamRoute, async (c) => {
@@ -977,7 +983,11 @@ export function registerWidgetRoutes(
       if (outcome.result.created) {
         wakeConversation(live, found.id, identified.visitorId);
       }
-      return c.json(view(found.id, outcome.result.message), outcome.result.created ? 201 : 200);
+      const { result } = outcome;
+      return c.json(
+        { ...view(found.id, result.message), conversationStarted: result.conversationStarted },
+        result.created ? 201 : 200,
+      );
     });
   }
 
