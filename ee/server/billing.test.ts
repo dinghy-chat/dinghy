@@ -273,6 +273,7 @@ describe("before payment", () => {
     expect(session?.params.get("mode")).toBe("subscription");
     expect(session?.params.get("client_reference_id")).toBe(created.workspaceId);
     expect(session?.params.get("line_items[0][price]")).toBe(STRIPE_PRICE_ID);
+    expect(session?.params.get("managed_payments[enabled]")).toBe("true");
     expect(session?.params.get("subscription_data[metadata][workspace_id]")).toBe(
       created.workspaceId,
     );
