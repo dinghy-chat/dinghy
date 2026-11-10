@@ -58,6 +58,9 @@ METRICS_TOKEN=
 # Optional. Webhooks go only to https addresses on the public internet. Set this to true to let them
 # go over http and to private addresses too, such as a service on your own network. Off by default.
 WEBHOOK_ALLOW_PRIVATE=
+# Optional. Sends errors to your own Sentry project, such as https://key@o1.ingest.sentry.io/2. Without
+# it, Dinghy loads no error reporting and sends nothing anywhere.
+SENTRY_DSN=
 
 # Optional. The ports Caddy listens on with the tls profile. Certificates need 80 and 443 from the
 # internet, so change these only when something in front forwards those ports here.

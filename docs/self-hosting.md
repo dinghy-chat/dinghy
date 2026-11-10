@@ -7,7 +7,7 @@ Dinghy runs on one small server with Docker. It needs no third-party account and
 On a new Linux server, run:
 
 ```sh
-git clone -b v0.8.0 https://github.com/dinghy-chat/dinghy.git
+git clone -b v0.10.0 https://github.com/dinghy-chat/dinghy.git
 cd dinghy
 sudo ./install.sh
 ```
@@ -31,7 +31,7 @@ If you ran it with `sudo`, and your user is not in the `docker` group, use `sudo
 This one line does the same on a new server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dinghy-chat/dinghy/v0.8.0/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/dinghy-chat/dinghy/v0.10.0/install.sh | sudo bash
 ```
 
 ## What you need
@@ -91,6 +91,7 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent` |
 | `METRICS_TOKEN` | Turns on Prometheus metrics at `/metrics`, with this token as the bearer token. At least 16 characters |
 | `WEBHOOK_ALLOW_PRIVATE` | `true` lets [webhooks](api.md#webhooks) go over `http` and to private addresses, such as a service on your own network. Off by default: a webhook then goes only to an `https` address that is on the public internet, checked each time it sends |
+| `SENTRY_DSN` | Sends errors to your own [Sentry](https://sentry.io) project: what the server logs as an error, and crashes. It sends no request data, no logs and no traces. Optional. Without it, nothing is sent anywhere |
 | `HTTP_PORT`, `HTTPS_PORT` | The ports Caddy listens on with the `tls` profile, 80 and 443 by default. Certificates need those two ports from the internet, so change these only when something in front forwards them here |
 
 Without a mail server, Dinghy still works. Operators sign in with a link that you make for them, with `docker compose exec app chat sign-in-link <email>`, and the sign-in page tells them to ask you. Someone new who opens an invite signs in at once, and nothing checks their email, so send each invite link only to the person it is for.
@@ -260,7 +261,7 @@ Read [the changelog](../CHANGELOG.md) first. Then get the new release, and start
 
 ```sh
 git fetch --tags
-git switch --detach v0.8.0   # the release you want
+git switch --detach v0.10.0   # the release you want
 docker compose up -d --wait
 ```
 
@@ -295,7 +296,7 @@ Messages, conversations and settings changed since that backup are lost, so do i
 Most releases do not change the Postgres major version. If one does, the release notes say so, and Postgres refuses to start on the old data until you run this, so the app cannot come up on an empty database.
 
 ```sh
-git switch --detach v0.8.0   # the release that moved Postgres
+git switch --detach v0.10.0   # the release that moved Postgres
 scripts/upgrade-postgres.sh
 ```
 

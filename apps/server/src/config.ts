@@ -60,6 +60,10 @@ const schema = z.object({
   // can sign up and use the dashboard, and the widget stays off until the cloud opens. With Stripe
   // keys set, signup asks for payment first, whatever this says.
   CLOUD_SIGNUP: z.enum(["early"]).optional(),
+  // Optional. Errors go to this Sentry project, which the owner of the install chooses. Unset, the
+  // Sentry SDK is never loaded.
+  SENTRY_DSN: z.url().optional(),
+  SENTRY_ENVIRONMENT: z.string().min(1).default("production"),
 });
 
 export type Config = z.infer<typeof schema>;

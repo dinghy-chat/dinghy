@@ -5,10 +5,12 @@ import { Redis } from "iovalkey";
 import pg from "pg";
 import { pino } from "pino";
 import { cloudFromConfig } from "../../../ee/server/index.ts";
+import serverPackage from "../package.json" with { type: "json" };
 import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { loadConfig, pushKeysFromConfig } from "./config.ts";
 import * as schema from "./db/schema.ts";
+import { startErrorReports } from "./error-reports.ts";
 import { createImages } from "./images.ts";
 import { createLive, createSignals } from "./live.ts";
 import { createMailer } from "./mailer.ts";
@@ -43,6 +45,8 @@ if (!isRole(role)) {
 }
 
 const config = loadConfig(process.env);
+// Before the logger, so that Sentry sees what it writes.
+const stopErrorReports = await startErrorReports(config, role, serverPackage.version);
 const logger = pino({ level: config.LOG_LEVEL });
 const stops: (() => Promise<unknown>)[] = [];
 const pushKeys = pushKeysFromConfig(config);
@@ -171,7 +175,8 @@ async function stop(signal: string): Promise<void> {
     logger.error("stop timed out");
     process.exit(1);
   }, STOP_TIMEOUT_MS);
-  for (const stopOne of stops) {
+  // Error reports last, so they still send what the other stops log.
+  for (const stopOne of stopErrorReports === undefined ? stops : [...stops, stopErrorReports]) {
     await stopOne().catch((err: unknown) => logger.error({ err }, "stop failed"));
   }
   clearTimeout(forced);

@@ -1,6 +1,6 @@
 {
   "name": "@dinghy/widget",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "description": "Add the Dinghy chat to your site from code, with a typed API.",
   "type": "module",
   "license": "MIT",

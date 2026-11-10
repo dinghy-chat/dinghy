@@ -1,12 +1,13 @@
 {
   "name": "@dinghy/server",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
   "dependencies": {
     "@hono/node-server": "^2.1.6",
     "@hono/zod-openapi": "^1.6.3",
+    "@sentry/node": "11.9.0",
     "aws4fetch": "^1.0.20",
     "better-auth": "^1.7.18",
     "drizzle-orm": "^0.45.4",

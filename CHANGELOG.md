@@ -23,9 +23,20 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Changed
 
-- The theme choice (system, light or dark) is in the menu under your name, not on Profile.
 - `Dinghy.onUnreadChange(callback)` is gone. Use `Dinghy.on("unread", callback)`, which also calls back at once with the count.
 - Analytics' `operators` entries have `apiKeyId`, and `operatorId` is null for a reply sent with an API key.
+
+## [0.10.0] - 2026-11-10
+
+### Added
+
+- `SENTRY_DSN` sends the server's errors to your own Sentry project. Without it, Dinghy sends nothing anywhere.
+
+## [0.9.0] - 2026-11-10
+
+### Changed
+
+- The theme choice (system, light or dark) is in the menu under your name, not on Profile.
 
 ## [0.8.0] - 2026-11-09
 
@@ -193,7 +204,9 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/dinghy-chat/dinghy/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/dinghy-chat/dinghy/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dinghy-chat/dinghy/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dinghy-chat/dinghy/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dinghy-chat/dinghy/compare/v0.6.0...v0.7.0
