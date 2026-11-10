@@ -6,8 +6,15 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [0.15.0] - 2026-11-10
 
+### Added
+
+- Operators can delete their account from **Profile**, and from any screen they see without a workspace. If they are the only owner of a workspace, they first delete it or make someone else an owner. An email link confirms the deletion, or the operator types their email when the server has no mail. Their name and email are erased, and their old messages show "Former team member".
+- The workspace delete dialog lists what goes (conversations, images and team members) and offers the export first. After the delete, the app opens your next workspace.
+
 ### Changed
 
+- A self-hosted server keeps its last workspace: the delete dialog says why its button is off.
+- The docs pages on the website are built from `docs/*.md` when the site deploys, and are no longer in the repository.
 - Settings shows the install code on one line, colored as in the docs. A new webhook's events are checkboxes, each with its code name.
 
 ### Fixed
