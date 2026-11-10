@@ -1,18 +1,24 @@
 /**
- * Builds the docs section of dinghy.chat from docs/*.md, which stay the source of truth.
- * Run `bun run docs:build` after a change to a doc, and commit the pages it writes.
- * tests/site.test.ts fails when a committed page differs from what this script makes now.
+ * Builds the docs section of dinghy.chat from docs/*.md, the only source. The pages it writes in
+ * site/public/docs are not committed: the Site workflow builds them before it tests and deploys.
+ * Run `bun run docs:build` to preview the site locally.
  */
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { type Token, type Tokens, Marked } from "marked";
+import {
+  type CodeLanguage,
+  type CodeLine,
+  highlight,
+  isCodeLanguage,
+} from "../packages/widget/src/highlight.ts";
 
 const REPO = "https://github.com/dinghy-chat/dinghy";
 const SITE = "https://dinghy.chat";
 /** Dinghy's own chat, on every page of the site, from Dinghy Cloud. The CSP in _headers allows it. */
 const WIDGET =
   '<script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async></script>';
-export const OUT = "site/public/docs";
+const OUT = "site/public/docs";
 
 interface Page {
   source: string;
@@ -123,54 +129,39 @@ const ICON_GITHUB =
 const ICON_CHEVRON =
   '<svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path class="duo" d="M208,96l-80,80L48,96Z"/><path d="M215.39,92.94A8,8,0,0,0,208,88H48a8,8,0,0,0-5.66,13.66l80,80a8,8,0,0,0,11.32,0l80-80A8,8,0,0,0,215.39,92.94ZM128,164.69,67.31,104H188.69Z"/></svg>';
 
-const CODE_LABELS: Record<string, string> = {
+const CODE_LABELS: Record<CodeLanguage, string> = {
   sh: "Terminal",
   html: "HTML",
+  css: "CSS",
   js: "JavaScript",
+  ts: "TypeScript",
+  json: "JSON",
   nginx: "nginx",
   text: "Text",
 };
 
-/** Paints tokens that match `pattern`: each named group becomes a span of that class. */
-function paint(line: string, pattern: RegExp): string {
-  let html = "";
-  let last = 0;
-  for (const match of line.matchAll(pattern)) {
-    const index = match.index ?? 0;
-    html += escape(line.slice(last, index));
-    const [kind, text = ""] =
-      Object.entries(match.groups ?? {}).find(([, value]) => value !== undefined) ?? [];
-    html += kind ? `<span class="code-${kind}">${escape(text)}</span>` : escape(match[0]);
-    last = index + match[0].length;
-  }
-  return html + escape(line.slice(last));
-}
-
-const HIGHLIGHT: Record<string, RegExp> = {
-  html: /(?<tag><\/?[a-zA-Z][\w-]*|\/?>)|(?<attr>(?<=\s)[\w-]+(?==))|(?<string>"[^"]*")/g,
-  js: /(?<comment>\/\/.*$)|(?<string>"[^"]*"|`[^`]*`)|(?<keyword>\b(?:import|from|export|function|const|return|async|await|new)\b)/g,
-  nginx: /(?<comment>#.*$)|(?<keyword>^\s*[a-z_]+(?=\s))|(?<string>\$[a-z_]+)/g,
+const PROMPT_CLASS: Record<CodeLine["prompt"], string> = {
+  command: "term-line",
+  continued: "term-line term-more",
+  none: "term-note",
 };
 
-/** A shell line: a full comment, or a command with an optional comment at the end. */
-function shellLine(line: string): string {
-  if (line.startsWith("#")) return `<span class="term-note">${escape(line)}</span>`;
-  const [, command = line, note] = line.match(/^(.*?)(\s+#\s.*)?$/) ?? [];
-  const tail = note ? `<span class="code-comment">${escape(note)}</span>` : "";
-  return `<span class="term-line">${escape(command)}${tail}</span>`;
+function lineHtml(line: CodeLine, language: CodeLanguage): string {
+  const html = line.tokens
+    .map(({ kind, text }) => (kind ? `<span class="code-${kind}">${escape(text)}</span>` : escape(text)))
+    .join("");
+  return language === "sh" ? `<span class="${PROMPT_CLASS[line.prompt]}">${html}</span>` : html;
 }
 
 function codeBlock(text: string, lang: string, id: string): string {
-  const label = CODE_LABELS[lang] ?? "Code";
-  const lines = text.split("\n");
-  const pattern = HIGHLIGHT[lang];
-  const body =
-    lang === "sh"
-      ? lines.filter((line) => line.trim()).map(shellLine)
-      : lines.map((line) => (pattern ? paint(line, pattern) : escape(line)));
+  if (!isCodeLanguage(lang)) throw new Error(`A code block has no known language: "${lang}".`);
+  const lines = highlight(text, lang).filter(
+    (line) => lang !== "sh" || line.tokens.some((token) => token.text.trim()),
+  );
+  const body = lines.map((line) => lineHtml(line, lang));
   const kind = lang === "sh" ? "" : " terminal-plain";
   return `<div class="terminal doc-code${kind}">
-<div class="terminal-bar"><span>${label}</span><button class="copy" type="button" data-copy="${id}"><span data-copy-label>Copy</span></button></div>
+<div class="terminal-bar"><span>${CODE_LABELS[lang]}</span><button class="copy" type="button" data-copy="${id}"><span data-copy-label>Copy</span></button></div>
 <pre class="terminal-code" id="${id}"><code>${body.join("\n")}</code></pre>
 </div>\n`;
 }
@@ -394,7 +385,7 @@ ${FOOTER}
 }
 
 /** Every file the docs section needs, by path, with the contents it should have now. */
-export function buildDocs(): Map<string, string | Buffer> {
+function buildDocs(): Map<string, string | Buffer> {
   const files = new Map<string, string | Buffer>();
   for (const page of PAGES) {
     const { html, images } = buildPage(page);
@@ -404,17 +395,15 @@ export function buildDocs(): Map<string, string | Buffer> {
   return files;
 }
 
-if (import.meta.main) {
+/** Writes the docs section afresh, and returns how many files it wrote. */
+export function writeDocs(): number {
   rmSync(OUT, { recursive: true, force: true });
   const files = buildDocs();
   for (const [path, contents] of files) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, contents);
   }
-  console.log(`Wrote ${files.size} files to ${OUT}.`);
+  return files.size;
 }
 
-export const docsFiles = () =>
-  readdirSync(OUT, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => join(entry.parentPath, entry.name));
+if (import.meta.main) console.log(`Wrote ${writeDocs()} files to ${OUT}.`);

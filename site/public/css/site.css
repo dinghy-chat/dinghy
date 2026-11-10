@@ -2879,6 +2879,23 @@ main:has(> .lost) {
   color: #ff9d84;
 }
 
+.code-number {
+  color: #7fe0b8;
+}
+
+.code-key {
+  color: #8fc5ff;
+}
+
+/* The next line of a long command lines up after the prompt, with no prompt of its own. */
+.term-more::before {
+  visibility: hidden;
+}
+
+.code-line .term-line {
+  display: block;
+}
+
 /* The docs home: the first steps as cards. */
 .docs-home .doc > ol {
   display: grid;

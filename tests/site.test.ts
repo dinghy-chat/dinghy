@@ -1,9 +1,11 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildDocs, docsFiles } from "../site/build-docs.ts";
+import { writeDocs } from "../site/build-docs.ts";
 
 const PUBLIC = "site/public";
+// The docs pages are built, not committed, so the tests check the pages that docs/*.md make now.
+writeDocs();
 /** Dinghy's own chat, the one script from another origin, as its opening tag. */
 const WIDGET_TAG =
   '<script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async>';
@@ -117,11 +119,18 @@ test("the self-hosting page installs and upgrades to the release in compose.yaml
   for (const version of versions) expect(version).toBe(`v${release}`);
 });
 
-test("the docs pages match docs/*.md: run `bun run docs:build` after changing a doc", () => {
-  const expected = buildDocs();
-  expect(docsFiles().sort()).toEqual([...expected.keys()].sort());
-  for (const [file, contents] of expected) {
-    expect(readFileSync(file).equals(Buffer.from(contents)), `${file} is out of date`).toBe(true);
+test("each doc in the sidebar has its page, and its code blocks name a language", () => {
+  const docs = pages.filter((page) => page.startsWith("docs/"));
+  const sidebar = readPage("docs/index.html").match(/<nav class="docs-side"[\s\S]*?<\/nav>/)?.[0];
+  const links = attributeValues(sidebar ?? "", "href");
+  expect(links.length).toBeGreaterThanOrEqual(9);
+  for (const href of links) expect(fileForPath(href), href).toBeDefined();
+  for (const page of docs) {
+    const html = readPage(page);
+    const labels = [...html.matchAll(/<div class="terminal-bar"><span>([^<]+)<\/span>/g)];
+    for (const [, label] of labels) expect(label, page).not.toBe("Code");
+    if (labels.some(([, label]) => label !== "Text"))
+      expect(html, page).toMatch(/<span class="(code|term)-[a-z]+/);
   }
 });
 
