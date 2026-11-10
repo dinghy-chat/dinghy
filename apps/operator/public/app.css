@@ -55,8 +55,6 @@
   /* --soft under the pointer, and an open menu's button. */
   --soft-hover: light-dark(#e8e6e0, #243344);
   --soft-edge: light-dark(#dcd9d0, #2e3e51);
-  /* A small surface raised off --soft, such as the chosen theme or the empty list's sun. */
-  --raised: light-dark(#fff, #2e3e51);
   /* A row or a tab under the pointer. */
   --row-hover: light-dark(#f8f7f4, #172230);
   --field-line: light-dark(#c4c1b6, #3a4a5c);
@@ -1045,38 +1043,35 @@ button.workspace[aria-expanded="true"],
 .item.danger.active {
   background: var(--bad-soft);
 }
-/* A labeled row of choices shown as icons, such as the theme. The label lines up with the items'
-   labels, and the chosen icon sits raised on a small track. */
+/* A labeled row of choices shown as icons, such as the theme. It lines up with the items, and the
+   chosen icon sits on a tile. */
 .item-row {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 40px;
-  padding: 4px 6px 4px 38px;
+  padding: 4px 4px 4px 10px;
   font-weight: 500;
 }
 .item-choices {
   display: flex;
   gap: 2px;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--soft);
 }
 .item-choices .item {
   justify-content: center;
   width: 30px;
-  min-height: 26px;
+  min-height: 30px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   color: var(--mute);
 }
 .item-choices .active {
+  background: var(--soft);
   color: var(--navy);
 }
 .item-choices .item[aria-checked="true"] {
-  background: var(--raised);
-  box-shadow: 0 1px 2px rgb(11 34 57 / 0.12);
+  background: var(--soft-hover);
   color: var(--navy);
 }
 .item.divided,
@@ -1370,7 +1365,7 @@ button.workspace[aria-expanded="true"],
   fill: var(--line);
 }
 .empty-sun {
-  fill: var(--raised);
+  fill: light-dark(#fff, #2e3e51);
 }
 .empty-ink,
 .empty-ripple {

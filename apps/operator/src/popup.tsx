@@ -257,6 +257,7 @@ export interface MenuItem {
 /** A labeled row of choices shown as their icons alone, such as the theme. */
 export interface MenuRow {
   label: string;
+  lead?: ReactNode;
   /** Each choice's label stays its accessible name and its tooltip. */
   choices: MenuItem[];
   divider?: boolean;
@@ -358,6 +359,7 @@ export function Menu({
                 role="group"
                 aria-label={entry.label}
               >
+                {entry.lead}
                 <span className="item-label" aria-hidden="true">
                   {entry.label}
                 </span>

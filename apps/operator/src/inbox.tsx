@@ -361,7 +361,7 @@ function UserMenu({
         { label: t("profile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
         {
           label: t("theme"),
-          divider: true,
+          lead: <Icon name="circleHalf" size={18} />,
           choices: THEMES.map((choice) => ({
             label: t(choice.label),
             lead: <Icon name={choice.icon} size={16} />,
