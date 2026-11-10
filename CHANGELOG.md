@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-10
+
 ### Upgrading
 
 - `chat import` reads only exports made by this version, because an export now holds API keys and what the page sent with `setContext()`.
@@ -204,7 +206,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/dinghy-chat/dinghy/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/dinghy-chat/dinghy/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/dinghy-chat/dinghy/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dinghy-chat/dinghy/compare/v0.7.1...v0.8.0
