@@ -174,6 +174,7 @@ function App() {
   if (!opens(first)) {
     return (
       <FinishPayment
+        key={first.workspaceId}
         me={me}
         workspace={first}
         others={me.workspaces.filter(opens)}
