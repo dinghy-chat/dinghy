@@ -141,7 +141,7 @@ async function stripeSays(
   workspaceId: string,
   subscriptionId: string,
   status: string,
-  extra: { cancel_at_period_end?: boolean } = {},
+  extra: { cancel_at_period_end?: boolean; cancel_at?: number | null } = {},
 ) {
   const found = stripe.subscriptions.get(subscriptionId);
   if (found === undefined) throw new Error(`No subscription ${subscriptionId}`);
@@ -395,6 +395,18 @@ describe("the rules", () => {
 });
 
 describe("the subscription lifecycle", () => {
+  test("a portal cancellation under flexible billing, which sets cancel_at, also ends the plan", async () => {
+    const paid = await paidWorkspace();
+    const found = stripe.subscriptions.get(paid.subscriptionId);
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "active", {
+      cancel_at: found?.current_period_end ?? null,
+    });
+    expect(await billingOf(paid)).toMatchObject({ state: "ending" });
+    // Resubscribing in the portal clears the date.
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "active", { cancel_at: null });
+    expect(await billingOf(paid)).toMatchObject({ state: "active" });
+  });
+
   test("a cancellation keeps full service until the paid period ends, then turns read-only", async () => {
     const paid = await paidWorkspace();
     await stripeSays(paid.workspaceId, paid.subscriptionId, "active", {

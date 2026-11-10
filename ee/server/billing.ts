@@ -162,6 +162,8 @@ const stripeSubscription = z.object({
   // Newer API versions keep the period on each item.
   current_period_end: z.number().optional(),
   cancel_at_period_end: z.boolean().optional(),
+  // With flexible billing, which Managed Payments uses, the portal cancels by setting this date.
+  cancel_at: z.number().nullish(),
   items: z
     .object({ data: z.array(z.object({ current_period_end: z.number().optional() })) })
     .optional(),
@@ -365,7 +367,7 @@ export function createBilling(
         stripeSubscriptionId: current.id,
         status: current.status,
         currentPeriodEnd: periodEnd === undefined ? null : new Date(periodEnd * 1000),
-        cancelAtPeriodEnd: current.cancel_at_period_end ?? false,
+        cancelAtPeriodEnd: (current.cancel_at_period_end ?? false) || current.cancel_at != null,
         // A payment ends a failure and a read-only time. A repeated failure keeps the first time.
         ...(PAID.has(current.status)
           ? {
