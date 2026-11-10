@@ -92,6 +92,7 @@ const en = {
   accountName: "Name",
   accountEmailHelp: "You sign in with this email. It's the same in every workspace.",
   theme: "Theme",
+  themeHelp: "Only on this device.",
   themeSystem: "System",
   themeLight: "Light",
   themeDark: "Dark",

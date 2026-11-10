@@ -92,9 +92,6 @@ function usePopup(labels: string[], start: () => number) {
     const moves: Record<string, number> = {
       ArrowDown: Math.min(active + 1, last),
       ArrowUp: Math.max(active - 1, 0),
-      // A menu's row of icons reads left to right.
-      ArrowRight: Math.min(active + 1, last),
-      ArrowLeft: Math.max(active - 1, 0),
       Home: 0,
       End: last,
       PageDown: Math.min(active + 5, last),
@@ -254,15 +251,6 @@ export interface MenuItem {
   divider?: boolean;
 }
 
-/** A labeled row of choices shown as their icons alone, such as the theme. */
-export interface MenuRow {
-  label: string;
-  lead?: ReactNode;
-  /** Each choice's label stays its accessible name and its tooltip. */
-  choices: MenuItem[];
-  divider?: boolean;
-}
-
 /** A button that opens a menu of actions. */
 export function Menu({
   label,
@@ -275,8 +263,7 @@ export function Menu({
 }: {
   /** The button's accessible name. */
   label: string;
-  /** The items, top to bottom. */
-  items: (MenuItem | MenuRow)[];
+  items: MenuItem[];
   /** What the button shows. */
   children: ReactNode;
   buttonClass: string;
@@ -284,47 +271,13 @@ export function Menu({
   direction?: Direction;
   className?: string;
 }) {
-  // The keys move through the items in order, rows included.
-  const flat = items.flatMap((entry) => ("choices" in entry ? entry.choices : entry));
   const popup = usePopup(
-    flat.map((item) => item.label),
+    items.map((item) => item.label),
     () => 0,
   );
   const choose = (index: number) => {
     popup.hide(true);
-    flat[index]?.onSelect();
-  };
-  const renderItem = (item: MenuItem, inRow = false) => {
-    const index = flat.indexOf(item);
-    return (
-      // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
-      // biome-ignore lint/a11y/noStaticElementInteractions: the role is menuitem or menuitemradio.
-      // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on menuitemradio only.
-      <div
-        key={index}
-        id={popup.itemId(index)}
-        data-index={index}
-        role={item.checked === undefined ? "menuitem" : "menuitemradio"}
-        tabIndex={-1}
-        aria-checked={item.checked}
-        aria-label={inRow ? item.label : undefined}
-        title={inRow ? item.label : undefined}
-        className={[
-          "item",
-          index === popup.active && "active",
-          item.danger === true && "danger",
-          item.divider === true && !inRow && "divided",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onPointerMove={() => popup.setActive(index)}
-        onClick={() => choose(index)}
-      >
-        {item.lead}
-        {!inRow && <span className="item-label">{item.label}</span>}
-        {item.checked === true && !inRow && <Icon name="check" size={16} />}
-      </div>
-    );
+    items[index]?.onSelect();
   };
   return (
     <div className={`menu-wrap ${className}`} ref={popup.wrap}>
@@ -350,27 +303,34 @@ export function Menu({
           aria-activedescendant={popup.itemId(popup.active)}
           onKeyDown={(event) => popup.onPopupKey(event, choose)}
         >
-          {items.map((entry) =>
-            "choices" in entry ? (
-              // biome-ignore lint/a11y/useSemanticElements: a menu holds menu items and groups, not a fieldset.
-              <div
-                key={entry.label}
-                className={entry.divider === true ? "item-row divided" : "item-row"}
-                role="group"
-                aria-label={entry.label}
-              >
-                {entry.lead}
-                <span className="item-label" aria-hidden="true">
-                  {entry.label}
-                </span>
-                <span className="item-choices">
-                  {entry.choices.map((item) => renderItem(item, true))}
-                </span>
-              </div>
-            ) : (
-              renderItem(entry)
-            ),
-          )}
+          {items.map((item, index) => (
+            // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
+            // biome-ignore lint/a11y/noStaticElementInteractions: the role is menuitem or menuitemradio.
+            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on menuitemradio only.
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: two workspaces can share a name.
+              key={index}
+              id={popup.itemId(index)}
+              data-index={index}
+              role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+              tabIndex={-1}
+              aria-checked={item.checked}
+              className={[
+                "item",
+                index === popup.active && "active",
+                item.danger === true && "danger",
+                item.divider === true && "divided",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onPointerMove={() => popup.setActive(index)}
+              onClick={() => choose(index)}
+            >
+              {item.lead}
+              <span className="item-label">{item.label}</span>
+              {item.checked === true && <Icon name="check" size={16} />}
+            </div>
+          ))}
         </div>
       )}
     </div>

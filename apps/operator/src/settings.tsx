@@ -14,12 +14,14 @@ import { ApiKeysRow, WebhooksRow } from "./integrations.tsx";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, InviteDialog, imagesText, operatorsText, TeamTab, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
+import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import {
   CopyButton,
   ErrorNote,
   Field,
   failureText,
   Icon,
+  type IconName,
   type Note,
   Page,
   PageRow,
@@ -360,6 +362,36 @@ function SecretRow({
 }
 
 /** The operator's own name and email, the same in every workspace. */
+const THEMES: { value: Theme; label: TextId; icon: IconName }[] = [
+  { value: "system", label: "themeSystem", icon: "monitor" },
+  { value: "light", label: "themeLight", icon: "sun" },
+  { value: "dark", label: "themeDark", icon: "moon" },
+];
+
+/** Light, dark, or the device's own setting. It applies at once, on this device only. */
+function ThemeChoice() {
+  const [theme, setThemeState] = useState(savedTheme);
+  return (
+    <fieldset className="choices" aria-label={t("theme")}>
+      {THEMES.map((choice) => (
+        <label key={choice.value}>
+          <input
+            type="radio"
+            name="theme"
+            checked={theme === choice.value}
+            onChange={() => {
+              setTheme(choice.value);
+              setThemeState(choice.value);
+            }}
+          />
+          <Icon name={choice.icon} size={16} />
+          {t(choice.label)}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
   const [name, setName] = useState(me.name);
   const [note, setNote] = useState<Note>(null);
@@ -408,6 +440,9 @@ export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
         </PageRow>
         <PageRow title={t("email")} help={t("accountEmailHelp")}>
           <input aria-label={t("email")} value={me.email} readOnly />
+        </PageRow>
+        <PageRow title={t("theme")} help={t("themeHelp")}>
+          <ThemeChoice />
         </PageRow>
       </form>
     </Page>

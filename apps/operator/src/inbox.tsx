@@ -20,7 +20,6 @@ import { Menu, type MenuItem } from "./popup.tsx";
 import { ProfilePage, SettingsPage } from "./settings.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
-import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import { Thread } from "./thread.tsx";
 import {
   Avatar,
@@ -328,13 +327,7 @@ function WorkspaceSwitcher({
   );
 }
 
-const THEMES: { value: Theme; label: TextId; icon: IconName }[] = [
-  { value: "system", label: "themeSystem", icon: "monitor" },
-  { value: "light", label: "themeLight", icon: "sun" },
-  { value: "dark", label: "themeDark", icon: "moon" },
-];
-
-/** The operator at the foot of the sidebar, with their profile, the theme and sign out. */
+/** The operator at the foot of the sidebar, with their profile and sign out. */
 function UserMenu({
   me,
   role,
@@ -349,7 +342,6 @@ function UserMenu({
   onProfile(): void;
   onSignedOut(): void;
 }) {
-  const [theme, setThemeState] = useState(savedTheme);
   return (
     <Menu
       label={t("userMenu")}
@@ -359,19 +351,6 @@ function UserMenu({
       className="me-menu"
       items={[
         { label: t("profile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
-        {
-          label: t("theme"),
-          lead: <Icon name="circleHalf" size={18} />,
-          choices: THEMES.map((choice) => ({
-            label: t(choice.label),
-            lead: <Icon name={choice.icon} size={16} />,
-            checked: theme === choice.value,
-            onSelect: () => {
-              setTheme(choice.value);
-              setThemeState(choice.value);
-            },
-          })),
-        },
         {
           divider: true,
           label: t("signOut"),
