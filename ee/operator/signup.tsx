@@ -16,6 +16,7 @@ import {
   DeleteAccount,
   DeleteWorkspaceDialog,
   openOwnerStep,
+  ownerStepIn,
 } from "../../apps/operator/src/settings.tsx";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { AuthPage, ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
@@ -204,10 +205,7 @@ export function FinishPayment({
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   // The account's delete, on another workspace's Profile page, opens this one to delete it.
-  const [deleting, setDeleting] = useState(() => {
-    const params = new URLSearchParams(location.search);
-    return params.get("workspace") === workspace.workspaceId && params.get("settings") === "delete";
-  });
+  const [deleting, setDeleting] = useState(() => ownerStepIn(workspace.workspaceId) === "delete");
   const isOwner = workspace.role === "owner";
   const pay = async () => {
     setError(null);

@@ -17,7 +17,13 @@ import {
 import { useLatestLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
-import { openOwnerStep, ProfilePage, SettingsPage, type SettingsTab } from "./settings.tsx";
+import {
+  openOwnerStep,
+  ownerStepIn,
+  ProfilePage,
+  SettingsPage,
+  type SettingsTab,
+} from "./settings.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
 import { type TextId, t } from "./text.ts";
@@ -653,11 +659,7 @@ export function Inbox({
     return params.get("workspace") === workspaceId ? params.get("conversation") : null;
   });
   // The account's delete can open this workspace on its Team tab or its delete dialog.
-  const [ownerStep] = useState(() => {
-    const params = new URLSearchParams(location.search);
-    const step = params.get("workspace") === workspaceId ? params.get("settings") : null;
-    return step === "team" || step === "delete" ? step : null;
-  });
+  const [ownerStep] = useState(() => ownerStepIn(workspaceId));
   const [view, setView] = useState<View>(ownerStep === null ? "open" : "settings");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>(
     ownerStep === "delete" ? "data" : "team",
