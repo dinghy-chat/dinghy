@@ -114,7 +114,7 @@ afterAll(async () => {
 });
 
 describe("asking for a link", () => {
-  test("a known and an unknown email get the same answer, and only the known one an email", async () => {
+  test("a known and an unknown email get the same answer, and only the known one a link", async () => {
     await newOperator(email("known"));
     const known = await askLink(email("known"));
     const unknown = await askLink(email("unknown"));
@@ -125,7 +125,12 @@ describe("asking for a link", () => {
     expect(link.startsWith(`${ORIGIN}/link?for=sign-in&token=`)).toBe(true);
     // The unknown email's work runs after the answer, so give it the time the known one took.
     await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(mail.countTo(email("unknown"))).toBe(0);
+    // It gets a note instead of a link. This server has no signup, so the note points to an invite.
+    const [note, ...more] = mail.sent.filter((one) => one.to === email("unknown"));
+    expect(more).toEqual([]);
+    expect(note?.subject).toBe("You don't have a Dinghy account yet");
+    expect(note?.text).toContain("ask its owner for an invite");
+    expect(note?.text).not.toContain("token=");
     const [sent] = mail.sent.filter((one) => one.to === email("known"));
     expect(sent?.subject).toBe("Your Dinghy sign-in link");
     expect(sent?.text.startsWith("Hi,\n\n")).toBe(true);

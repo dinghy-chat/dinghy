@@ -362,6 +362,7 @@ export function createApp({
       logger,
       mailer,
       rateLimit,
+      signup: cloud !== undefined,
       valkey,
     });
     // Right after the session check, so every workspace route runs behind it, whatever its order.

@@ -230,7 +230,7 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.getByRole("status").locator(".banner-long")).toHaveText(
       `Dinghy Cloud opens soon. We will email ${email} when you can turn it on.`,
     );
-    await page.locator(".row", { hasText: "Julien from Dinghy" }).click();
+    // The welcome chat opens by itself, with no click.
     await expect(page.getByText("Welcome chat with the founder")).toBeVisible();
     await expect(
       page.getByText("Hi, I'm Julien, the founder of Dinghy.", { exact: false }),

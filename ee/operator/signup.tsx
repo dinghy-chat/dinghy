@@ -88,12 +88,15 @@ export function Onboarding({
   emailAvailable,
   onSignedOut,
   onAccountDeleted,
+  deletedName = null,
 }: {
   early: boolean;
   me: Me;
   emailAvailable: boolean;
   onSignedOut(): void;
   onAccountDeleted(): void;
+  /** The workspace the operator just deleted, when it was their last one. */
+  deletedName?: string | null;
 }) {
   const [name, setName] = useState(me.name);
   const [workspaceName, setWorkspaceName] = useState("");
@@ -124,6 +127,11 @@ export function Onboarding({
     <AuthPage time="afternoon">
       {/* Its own form, as the account's delete below has a dialog with a form of its own. */}
       <form className="card-form" onSubmit={submit}>
+        {deletedName !== null && (
+          <p className="note" role="status">
+            {t("workspaceDeleted", { name: deletedName })}
+          </p>
+        )}
         <h1>{t("onboardingTitle")}</h1>
         {!early && <p className="note">{t("signupHelp")}</p>}
         <Field
@@ -157,8 +165,9 @@ export function Onboarding({
           {t("signOut")}
         </button>
       </form>
-      {/* An account with no workspace has no Profile page, so its delete is here. */}
-      {me.workspaces.length === 0 && (
+      {/* Right after deleting their last workspace, an operator may want to leave for good, and
+          has no Profile page. A new account setting up sees no delete. */}
+      {deletedName !== null && me.workspaces.length === 0 && (
         <DeleteAccount
           me={me}
           emailAvailable={emailAvailable}

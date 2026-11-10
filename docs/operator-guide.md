@@ -69,7 +69,7 @@ A phone can delay or drop a notification, so do not rely on one for urgent work.
 
 Select your name at the bottom of the sidebar, then **Profile**, to change the name your teammates see. **Sign out** is in the same menu.
 
-**Delete my account** is in **Profile** too, and on every screen you see without a workspace: the workspace setup, the payment screen and the screen that asks for an invite. It takes you out of every workspace, ends your sessions, and erases your name and email. The workspaces keep their conversations, and your old replies show as from "Former team member".
+**Delete my account** is in **Profile** too, on the payment screen, on the screen that asks for an invite, and on the workspace setup right after you delete your last workspace. It takes you out of every workspace, ends your sessions, and erases your name and email. The workspaces keep their conversations, and your old replies show as from "Former team member".
 
 A workspace where you are the only owner blocks the delete. The dialog lists each one, with a way to delete it or to make someone else its owner. A workspace that waits for its first payment can only be deleted. A self-hosted server keeps its last workspace, so if it is one of these, make someone else its owner.
 

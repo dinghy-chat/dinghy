@@ -103,6 +103,8 @@ const Conversation = z
     assigneeOperatorId: z.string().nullable(),
     // The page where the visitor started it, as origin and path, if the widget reported one.
     startedPage: z.string().nullable(),
+    // On Dinghy Cloud, a welcome chat with Dinghy's founder. False everywhere else.
+    welcome: z.boolean(),
     // What the host page last sent with `Dinghy.setContext()`. Unsigned, so not verified.
     pageContext: PageContextSchema.nullable(),
     visitor: z.object({
@@ -476,6 +478,7 @@ export function conversationView(
     updatedAt: row.updatedAt.toISOString(),
     assigneeOperatorId: row.assigneeOperatorId,
     startedPage: row.startedPage,
+    welcome: row.welcome,
     pageContext: PageContextSchema.nullable().catch(null).parse(row.visitorPageContext),
     visitor: {
       id: row.visitorId,

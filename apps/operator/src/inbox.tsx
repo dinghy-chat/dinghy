@@ -702,6 +702,8 @@ export function Inbox({
     shown.current = { status, limit };
   });
 
+  // The first open list of a new workspace holds only the welcome chat, which opens by itself.
+  const firstList = useRef(true);
   const reload = useLatestLoad(async () => {
     const wanted = shown.current;
     try {
@@ -716,6 +718,11 @@ export function Inbox({
       setListed(true);
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
+      if (firstList.current && wanted.status === "open") {
+        firstList.current = false;
+        const [only, ...rest] = page.conversations;
+        if (only?.welcome && rest.length === 0) setSelected((current) => current ?? only.id);
+      }
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 401) onSignedOut();
     }

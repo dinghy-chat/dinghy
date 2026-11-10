@@ -145,6 +145,7 @@ function App() {
         emailAvailable={meta.email}
         onSignedOut={signedOut}
         onAccountDeleted={accountGone}
+        deletedName={deletedName}
       />
     );
   }

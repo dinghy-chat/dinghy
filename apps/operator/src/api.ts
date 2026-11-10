@@ -88,6 +88,8 @@ export interface Conversation {
   /** What the host page sent with setContext(). Nobody signed it, so it is not verified. */
   pageContext: PageContext | null;
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: string } | null;
+  /** A welcome chat on Dinghy Cloud. */
+  welcome: boolean;
 }
 
 export interface Message {

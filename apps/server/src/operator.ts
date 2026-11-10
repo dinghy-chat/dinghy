@@ -29,7 +29,7 @@ import {
 } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
 import { LOGO_MAX_BYTES, LOGO_TOO_LARGE } from "./images.ts";
-import { signInMail } from "./letter.ts";
+import { noAccountMail, signInMail } from "./letter.ts";
 import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
@@ -103,6 +103,8 @@ interface OperatorOptions {
   billing: boolean;
   /** Who a suspended workspace's operators write to, on the cloud. */
   contact: string | null;
+  /** True when anyone can sign up here, as on the cloud. */
+  signup: boolean;
 }
 
 const LinkRequest = z.strictObject({ email: z.email().max(254) });
@@ -120,19 +122,24 @@ const AUTH_ROUTES = new Set([
 
 export function registerOperatorRoutes(
   app: App,
-  { auth, billing, contact, db, logger, mailer, rateLimit, valkey }: OperatorOptions,
+  { auth, billing, contact, db, logger, mailer, rateLimit, signup, valkey }: OperatorOptions,
 ) {
   const publicOrigin = new URL(String(auth.options.baseURL)).origin;
   const links = createLinkLimit(valkey, logger);
 
-  /** Sends a link to an operator, and nothing to an email with no account. */
+  /** Sends a link to an operator, and a note that says how to get an account to any other email. */
   const sendLink = async (email: string, ip: string) => {
     if (mailer === undefined) return;
     const [known] = await db
       .select({ id: operator.id })
       .from(operator)
       .where(and(eq(operator.email, email), isNull(operator.deletedAt)));
-    if (known === undefined) return;
+    if (known === undefined) {
+      const mail = noAccountMail(signup ? `${publicOrigin}/signup` : null);
+      await mailer.send(email, mail.subject, mail.body);
+      audit(logger, "sign_in.no_account", { account: emailAddressHash(email).slice(0, 16), ip });
+      return;
+    }
     await deliverLinks(
       ({ token }) => {
         const mail = signInMail(confirmUrl(publicOrigin, "sign-in", token));
