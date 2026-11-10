@@ -1338,15 +1338,55 @@ button.workspace[aria-expanded="true"],
   font-size: 15px;
   font-weight: 600;
 }
-.list-empty-icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  margin-bottom: 8px;
-  border-radius: 50%;
-  background: var(--soft);
-  color: var(--mute);
+/* The empty-list drawing: navy line work on the paper, with the pennant the only colour. */
+.empty-art {
+  width: 120px;
+  height: 120px;
+  margin-bottom: 14px;
+  color: var(--navy);
+}
+.empty-sky {
+  fill: var(--soft);
+}
+.empty-water {
+  fill: var(--line);
+}
+.empty-sun {
+  fill: light-dark(#fff, #2e3e51);
+}
+.empty-ink,
+.empty-rope,
+.empty-ripple {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.empty-ink {
+  stroke: currentColor;
+  stroke-width: 2.5;
+}
+.empty-rope,
+.empty-ripple {
+  stroke: var(--mute);
+  stroke-width: 2;
+}
+.empty-ripple {
+  opacity: 0.5;
+}
+.empty-rope {
+  opacity: 0.8;
+}
+.empty-sail {
+  fill: var(--surface);
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.empty-hull {
+  fill: currentColor;
+}
+.empty-flag {
+  fill: var(--red);
 }
 
 /* A conversation. */

@@ -22,7 +22,17 @@ import { chime, prepareSound } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
 import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import { Thread } from "./thread.tsx";
-import { Avatar, Harbor, Icon, type IconName, initials, Logo, PageHead, ROLE_TEXT } from "./ui.tsx";
+import {
+  Avatar,
+  EmptyArt,
+  Harbor,
+  Icon,
+  type IconName,
+  initials,
+  Logo,
+  PageHead,
+  ROLE_TEXT,
+} from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
 
 const RETRY_LIMIT_MS = 30_000;
@@ -798,9 +808,7 @@ export function Inbox({
                 <ul className="rows" aria-busy={searching}>
                   {found === null && conversations.length === 0 && (
                     <li className="list-empty">
-                      <span className="list-empty-icon">
-                        <Icon name={STATUS_LOOK[status].icon} size={20} />
-                      </span>
+                      <EmptyArt scene={status === "open" ? "sailing" : "moored"} />
                       <b>{t(STATUS_LOOK[status].empty)}</b>
                       {t(STATUS_LOOK[status].hint)}
                     </li>
