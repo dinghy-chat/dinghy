@@ -37,15 +37,13 @@ export interface CloudSettings {
   signup?: "early" | undefined;
   /** Smaller limits, for tests. The plan's own apply otherwise. */
   limits?: LimitOptions | undefined;
-  /** Where the 30-day email asks for a review. Without it, the email asks for a reply instead. */
-  reviewUrl?: string | undefined;
 }
 
 /** The cloud's settings, or none on a self-hosted install, which leaves them all unset. */
 export function cloudFromConfig(config: Config): CloudSettings | undefined {
   const billing = billingFromConfig(config);
   if (billing === undefined && config.CLOUD_SIGNUP === undefined) return undefined;
-  return { billing, signup: config.CLOUD_SIGNUP, reviewUrl: config.CLOUD_REVIEW_URL };
+  return { billing, signup: config.CLOUD_SIGNUP };
 }
 
 export interface CloudDeps {
@@ -147,7 +145,6 @@ export function cloudWorkerStep(
         mailer,
         publicUrl,
         secret,
-        reviewUrl: settings.reviewUrl,
       });
     }
   };

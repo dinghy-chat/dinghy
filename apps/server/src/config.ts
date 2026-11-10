@@ -60,9 +60,6 @@ const schema = z.object({
   // can sign up and use the dashboard, and the widget stays off until the cloud opens. With Stripe
   // keys set, signup asks for payment first, whatever this says.
   CLOUD_SIGNUP: z.enum(["early"]).optional(),
-  // Cloud only, and optional. The page where the email sent 30 days after the first payment asks
-  // the owner for a review. Unset, that email asks them to reply with feedback instead.
-  CLOUD_REVIEW_URL: z.url().optional(),
   // Optional. Errors go to this Sentry project, which the owner of the install chooses. Unset, the
   // Sentry SDK is never loaded.
   SENTRY_DSN: z.url().optional(),

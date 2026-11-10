@@ -115,11 +115,9 @@ const workerBilling = () =>
 const lifecycle = ({
   mailer: sender = mailer,
   batch,
-  reviewUrl,
 }: {
   mailer?: Mailer | null;
   batch?: number;
-  reviewUrl?: string;
 } = {}) =>
   runLifecycle({
     db: workerDb,
@@ -128,7 +126,6 @@ const lifecycle = ({
     mailer: sender ?? undefined,
     publicUrl: PUBLIC_URL,
     secret: AUTH_SECRET,
-    reviewUrl,
     ...(batch === undefined ? {} : { batch }),
   });
 
@@ -1090,6 +1087,8 @@ describe("the lifecycle emails", () => {
     const sent = mails.filter((mail) => mail.to === paid.email).slice(1);
     for (const mail of sent) {
       expect(mail.text).toContain(`${PUBLIC_URL}/v1/onboarding-stop/${paid.workspaceId}/`);
+      // One short line under the signature, and the last line of the email.
+      expect(mail.text).toMatch(/Julien from Dinghy\n\nUnsubscribe: \S+$/);
       expect(mail.headers?.["list-unsubscribe"]).toBe(`<${PUBLIC_URL}${stopLink(mail.text)}>`);
       expect(mail.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
     }
@@ -1097,18 +1096,6 @@ describe("the lifecycle emails", () => {
     for (const mail of sent) expect(mail.headers?.["reply-to"]).toBe("support@dinghy.chat");
     expect(sent[1]?.text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
     expect(sent[3]?.text).toContain("Just reply");
-  });
-
-  test("the 30-day email asks for a review when the review page is set", async () => {
-    const paid = await paidWorkspace({ onboarding: true });
-    later(ONBOARDING_DAYS.review);
-    await lifecycle({ reviewUrl: "https://reviews.example.com/dinghy" });
-    const review = mails.find(
-      (mail) => mail.to === paid.email && mail.subject === "Would you leave a short review?",
-    );
-    expect(review?.to).toBe(paid.email);
-    expect(review?.text).toContain("https://reviews.example.com/dinghy");
-    expect(review?.headers?.["reply-to"]).toBe("support@dinghy.chat");
   });
 
   test("the install email is skipped once the widget has run on a site", async () => {

@@ -242,8 +242,6 @@ interface LifecycleOptions {
   publicUrl: string;
   /** Signs the stop link in onboarding emails. */
   secret: string;
-  /** Where the 30-day email asks for a review. Without it, the email asks for a reply instead. */
-  reviewUrl?: string | undefined;
   batch?: number;
 }
 
@@ -538,7 +536,6 @@ async function sendLifecycleEmails({
   mailer,
   publicUrl,
   secret,
-  reviewUrl,
   batch = 20,
   now,
 }: LifecycleOptions & { now: Date }): Promise<void> {
@@ -596,7 +593,6 @@ async function sendLifecycleEmails({
         name: found.name,
         settingsUrl: `${publicUrl.replace(/\/$/, "")}/?workspace=${email.workspaceId}`,
         signInUrl: publicUrl,
-        reviewUrl,
         stopUrl: isOnboarding
           ? onboardingStopUrl(publicUrl, secret, email.workspaceId, owner.operatorId)
           : undefined,
@@ -605,7 +601,9 @@ async function sendLifecycleEmails({
       });
       // Each owner signed in with a link to this address, so their own name is safe here.
       try {
-        const body = letter(mail.body, owner.name, undefined, LIFECYCLE_SIGN_OFF);
+        // The unsubscribe line sits under the signature, out of the way of the message.
+        const signed = letter(mail.body, owner.name, undefined, LIFECYCLE_SIGN_OFF);
+        const body = mail.footer === undefined ? signed : `${signed}\n\n${mail.footer}`;
         await mailer?.send(owner.email, mail.subject, body, mail.headers);
         delivered += 1;
       } catch (err) {

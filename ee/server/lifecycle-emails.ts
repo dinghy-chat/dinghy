@@ -24,7 +24,6 @@ export interface MailContext {
   /** Opens the workspace, where Settings has Billing, Export and the install code. */
   settingsUrl: string;
   signInUrl: string;
-  reviewUrl: string | undefined;
   /** The owner's own stop link, in onboarding emails only. */
   stopUrl: string | undefined;
   days: { readOnly: number };
@@ -74,19 +73,13 @@ const text = {
       "welcome too.",
     "Just hit reply. I read every answer myself. And if you're busy, no need to write.",
   ],
-  reviewSubject: "Would you leave a short review?",
-  reviewBody: (c: MailContext, url: string) => [
-    `If Dinghy has been useful for ${c.name}, would you leave a short review? It helps other ` +
-      `small teams find it: ${url}`,
-    "If it hasn't been great, I'd rather hear why. Just reply. Either way is fine.",
-  ],
   feedbackSubject: "What would you change?",
   feedbackBody: (c: MailContext) => [
     `It's been a month with ${c.name}. If you could change one thing about Dinghy, what would ` +
       "it be?",
     "Just reply. I read every answer myself. And if you'd rather skip it, that's fine.",
   ],
-  stopLine: (url: string) => `Rather not get tips and check-ins? Stop them here: ${url}`,
+  stopLine: (url: string) => `Unsubscribe: ${url}`,
   cancellationSubject: (name: string, endsOn: Date | null) =>
     `${name} stays on until ${date(endsOn)}`,
   cancellationBody: (c: MailContext) => [
@@ -182,10 +175,8 @@ const MAILS: Record<Kind, (c: MailContext) => Mail> = {
   install: (c) => ({ subject: text.installSubject, body: text.installBody(c) }),
   team: (c) => ({ subject: text.teamSubject, body: text.teamBody(c) }),
   check_in: (c) => ({ subject: text.checkInSubject, body: text.checkInBody(c) }),
-  review: (c) =>
-    c.reviewUrl === undefined
-      ? { subject: text.feedbackSubject, body: text.feedbackBody(c) }
-      : { subject: text.reviewSubject, body: text.reviewBody(c, c.reviewUrl) },
+  // The day-30 email. It asks what to change, and a reply reaches a person.
+  review: (c) => ({ subject: text.feedbackSubject, body: text.feedbackBody(c) }),
   cancellation: (c) => ({
     subject: text.cancellationSubject(c.name, c.endsOn),
     body: text.cancellationBody(c),
@@ -226,13 +217,14 @@ const MAILS: Record<Kind, (c: MailContext) => Mail> = {
   deleted: (c) => ({ subject: text.deletedSubject(c.name), body: text.deletedBody(c) }),
 };
 
-/** One email's subject, paragraphs and headers. An onboarding email ends with its stop link. */
+/** One email's subject, paragraphs, footer and headers. An onboarding email's footer unsubscribes. */
 export function lifecycleMail(kind: Kind, context: MailContext) {
   const { subject, body } = MAILS[kind](context);
   const { stopUrl } = context;
   return {
     subject,
-    body: stopUrl === undefined ? body : [...body, text.stopLine(stopUrl)],
+    body,
+    footer: stopUrl === undefined ? undefined : text.stopLine(stopUrl),
     headers: {
       // Several emails invite a reply, and an answer to any of them should reach a person.
       "reply-to": SUPPORT_ADDRESS,
