@@ -9,9 +9,14 @@ import type { DatabaseError } from "pg";
 function databaseErrorWithStack(error: unknown, code: string | undefined): Error {
   const safe = new Error(`A database query failed with code ${code ?? "unknown"}.`);
   safe.name = "DatabaseError";
+  // The frames come after the message, which holds the parameters and can span many lines.
+  const head = error instanceof Error ? `${error.name}: ${error.message}` : "";
   const frames =
-    error instanceof Error && error.stack !== undefined
-      ? error.stack.split("\n").filter((line) => line.startsWith("    at "))
+    error instanceof Error && error.stack?.startsWith(head)
+      ? error.stack
+          .slice(head.length)
+          .split("\n")
+          .filter((line) => line.startsWith("    at "))
       : [];
   safe.stack = [`${safe.name}: ${safe.message}`, ...frames].join("\n");
   return safe;

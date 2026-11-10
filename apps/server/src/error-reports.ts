@@ -52,15 +52,14 @@ export async function startErrorReports(
     // device token.
     defaultIntegrations: false,
     integrations: [
+      // It exits, as Node does, so Docker starts the server again. With no rejection handler, Node
+      // turns an unhandled rejection into an uncaught exception, which comes here too.
       Sentry.onUncaughtExceptionIntegration(),
-      // Strict, as Node is without Sentry: the process exits and Docker starts it again.
-      Sentry.onUnhandledRejectionIntegration({ mode: "strict" }),
       Sentry.linkedErrorsIntegration(),
       Sentry.contextLinesIntegration(),
       Sentry.dedupeIntegration(),
       Sentry.pinoIntegration({ error: { levels: ["error", "fatal"] }, log: { levels: [] } }),
     ],
-    beforeBreadcrumb: () => null,
     beforeSend: scrubEvent,
   });
   return () => Sentry.close(2000);

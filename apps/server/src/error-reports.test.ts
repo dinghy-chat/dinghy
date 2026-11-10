@@ -89,9 +89,10 @@ test("a database error keeps its stack for the report, and none of its parameter
     code: "23505",
     constraint: "operator_email_key",
   });
+  // A parameter can hold lines that look like stack frames, as a pasted trace does.
   const wrapped = new DrizzleQueryError(
     "insert into operator values ($1)",
-    ["someone@example.com"],
+    ["someone@example.com\n    at leaked (/private/message:1:1)"],
     database,
   );
   const fields = safeErrorFields(wrapped);
@@ -99,5 +100,6 @@ test("a database error keeps its stack for the report, and none of its parameter
   expect(err.message).toBe("A database query failed with code 23505.");
   expect(err.stack).toContain("error-reports.test.ts");
   expect(JSON.stringify({ ...fields, stack: err.stack })).not.toContain("someone@example.com");
+  expect(err.stack).not.toContain("leaked");
   expect(fields.databaseError).toMatchObject({ code: "23505", constraint: "operator_email_key" });
 });
