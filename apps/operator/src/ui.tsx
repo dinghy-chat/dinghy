@@ -96,20 +96,29 @@ export function SaveNote({ note }: { note: Note }) {
   return note.ok ? <StatusNote text={note.text} /> : <ErrorNote text={note.text} />;
 }
 
+/** How long a copy control says it copied. */
+const COPIED_MS = 2000;
+
+/** Copies `value` on demand, and is true for a moment after. */
+function useCopy(value: string): [done: boolean, copy: () => void] {
+  const [done, setDone] = useState(false);
+  const copy = () =>
+    void navigator.clipboard.writeText(value).then(() => {
+      setDone(true);
+      setTimeout(() => setDone(false), COPIED_MS);
+    });
+  return [done, copy];
+}
+
 /** A value in running text, in bold, that copies itself when clicked. */
 export function CopyText({ value }: { value: string }) {
-  const [done, setDone] = useState(false);
+  const [done, copy] = useCopy(value);
   return (
     <button
       type="button"
       className="copy-text"
       title={done ? t("copied") : t("copy")}
-      onClick={() =>
-        void navigator.clipboard.writeText(value).then(() => {
-          setDone(true);
-          setTimeout(() => setDone(false), 2000);
-        })
-      }
+      onClick={copy}
     >
       {value}
       {done && <small role="status">{t("copied")}</small>}
@@ -118,18 +127,13 @@ export function CopyText({ value }: { value: string }) {
 }
 
 export function CopyButton({ value, label = t("copy") }: { value: string; label?: string }) {
-  const [done, setDone] = useState(false);
+  const [done, copy] = useCopy(value);
   return (
     <button
       type="button"
       className="pill small copy"
       aria-label={done ? t("copied") : label}
-      onClick={() =>
-        void navigator.clipboard.writeText(value).then(() => {
-          setDone(true);
-          setTimeout(() => setDone(false), 2000);
-        })
-      }
+      onClick={copy}
     >
       <Icon name={done ? "check" : "copy"} size={16} />
       {done ? t("copied") : t("copy")}
