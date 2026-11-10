@@ -47,7 +47,7 @@ import type { WidgetWorkspace } from "./workspaces.ts";
 
 const { version } = serverPackage;
 
-export interface Checks {
+interface Checks {
   postgres(): Promise<void>;
   valkey(): Promise<void>;
 }

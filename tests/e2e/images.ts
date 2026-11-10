@@ -2,7 +2,7 @@ import { deflateSync } from "node:zlib";
 import type { Locator } from "@playwright/test";
 
 /** A small valid PNG, built here so the tests need no image library or fixture file. */
-export function testPng(width = 16, height = 8): Buffer {
+function testPng(width = 16, height = 8): Buffer {
   const crcTable = Array.from({ length: 256 }, (_, n) => {
     let c = n;
     for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;

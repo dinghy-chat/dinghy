@@ -3,7 +3,7 @@ import { failure } from "./errors.ts";
 
 export type StreamKind = "widget" | "operator";
 
-export interface Usage {
+interface Usage {
   operators: { used: number; limit: number };
   imageBytes: { used: number; limit: number };
 }

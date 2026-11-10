@@ -59,7 +59,7 @@ function ShownOnce({ label, value }: { label: string; value: string }) {
 }
 
 /** One line of the key list: who made it and when it was last used. */
-export function apiKeyLine(key: ApiKey): string {
+function apiKeyLine(key: ApiKey): string {
   const made =
     key.createdByName === null
       ? t("apiKeyMade", { date: when(key.createdAt) })
@@ -209,7 +209,7 @@ function EventPicker({
 }
 
 /** The text for a test send's result. */
-export function testResultText(result: WebhookTest): { ok: boolean; text: string } {
+function testResultText(result: WebhookTest): { ok: boolean; text: string } {
   if (result.delivered)
     return { ok: true, text: t("webhookTestOk", { status: result.status ?? "" }) };
   if (result.status !== null) {

@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
-    "lint": "biome check .",
+    "lint": "biome check . && knip",
     "test": "vitest run",
     "dev": "node apps/server/scripts/dev.ts",
     "dev:services": "docker compose -f compose.dev.yaml up -d --wait",
@@ -29,6 +29,7 @@
     "@biomejs/biome": "^2.6.6",
     "@playwright/test": "^1.65.0",
     "@types/node": "24",
+    "knip": "^6.45.0",
     "marked": "^18.1.3",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"

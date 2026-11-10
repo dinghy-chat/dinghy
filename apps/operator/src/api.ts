@@ -10,7 +10,7 @@ export interface VisitorIdentity {
   name: string | null;
 }
 
-export interface Visitor extends VisitorIdentity {
+interface Visitor extends VisitorIdentity {
   /** Custom attributes the host site signed. */
   attributes: Record<string, unknown> | null;
   blocked: boolean;
@@ -59,7 +59,7 @@ export interface Analytics {
 }
 
 /** Values a page sent about the visitor, unsigned. */
-export type PageContext = Record<string, string | number | boolean | null>;
+type PageContext = Record<string, string | number | boolean | null>;
 
 export interface Conversation {
   id: string;

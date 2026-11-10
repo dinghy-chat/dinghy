@@ -38,8 +38,6 @@ export interface CloudSettings {
   limits?: LimitOptions | undefined;
 }
 
-export { CLOUD_CONTACT } from "./signup.ts";
-
 /** The cloud's settings, or none on a self-hosted install, which leaves them all unset. */
 export function cloudFromConfig(config: Config): CloudSettings | undefined {
   const billing = billingFromConfig(config);

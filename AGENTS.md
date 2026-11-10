@@ -27,7 +27,22 @@ Three things matter more than any feature:
 - Code in `packages/` must not import from `apps/`. A product feature goes outside `ee/`. Every file in `ee/` keeps its license line.
 - The widget must stay small: `packages/widget/src/size.test.ts` holds the limits.
 - Every animated boat state also has text, and `prefers-reduced-motion` stops the animation.
-- Comments say why, not what. Keep functions short, and delete before you add.
+- Keep functions short.
+
+## Code quality
+
+- Delete before you add. Remove dead code, unused exports, unused files and unused dependencies in the same pull request that makes them unused. Do not comment code out: git keeps the history.
+- Repeat yourself once. Extract a shared function when the third copy appears, and only when the copies change for the same reason. Two similar blocks that serve different features stay separate.
+- Build for the callers that exist now, not for one you expect later. No interface with one implementation, no option that no caller passes, no generic parameter that is always the same type.
+- Name things after what they hold: `unreadCount`, not `n` or `data`. A boolean reads as a question: `isOpen`, `hasAttachments`. Use the product's words (workspace, operator, visitor, conversation) and one word for each idea.
+- No magic values. A number or string with meaning gets a named constant next to the code that uses it, with its unit in the name: `RETRY_DELAY_MS`. A value that a self-hoster may change goes in settings, with a safe default.
+- Validate at the edges with Zod and trust the types inside. Do not check again a value that a schema already parsed.
+- Make invalid states impossible: a discriminated union beats two optional fields that must not both be set.
+- Handle an error where you can do something about it. Do not catch an error only to log it and continue. An error that a user reads has a text key.
+- Watch the costs that matter here: one query per list, not one per row; an index for every filter a route uses; no I/O inside a loop when a batch works; no new dependency in the widget. For any other speed-up, show a measurement in the pull request.
+- Keep a module's public exports small. Code that other modules import goes through the module's index, not deep paths.
+- Comments say why, not what. A comment that repeats the code is noise, and a TODO needs an issue number.
+- Match the code around you. If you think a pattern is wrong, change it everywhere in its own pull request, or leave it.
 
 ## Tests
 

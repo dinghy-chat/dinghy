@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["pg_dump"],
+  "ignoreDependencies": ["preact"],
+  "workspaces": {
+    ".": {
+      "entry": ["site/public/js/{main,lost,docs}.js", "tests/**/*.{test,spec}.ts"],
+      "project": ["site/**/*.{ts,js}", "tests/**/*.ts"]
+    },
+    "apps/server": {
+      "entry": ["src/main.ts", "src/cli.ts", "scripts/*.ts", "load/*.ts"]
+    },
+    "apps/operator": {
+      "entry": ["build.ts", "src/main.tsx"]
+    },
+    "packages/widget": {
+      "entry": ["build.ts", "src/{index,loader,page,chat}.ts{,x}"]
+    }
+  }
+}

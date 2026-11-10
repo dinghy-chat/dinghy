@@ -553,7 +553,7 @@ export async function countWaiting(tx: Transaction, workspaceId: string): Promis
 }
 
 /** The names of these operators, by ID. A removed member keeps a name, so old replies keep it. */
-export async function operatorNames(
+async function operatorNames(
   tx: Transaction,
   ids: Iterable<string | null>,
 ): Promise<Map<string, string>> {
@@ -567,7 +567,7 @@ export async function operatorNames(
 }
 
 /** The names of these API keys, by ID. A revoked key keeps its row, so old replies keep its name. */
-export async function apiKeyNames(
+async function apiKeyNames(
   tx: Transaction,
   workspaceId: string,
   ids: Iterable<string | null>,

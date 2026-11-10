@@ -64,7 +64,7 @@ export interface DinghyApi {
 export type QueuedCall = [string, ...unknown[]];
 
 /** What the chat bundle gives the loader once it runs. */
-export interface ChatHandlers {
+interface ChatHandlers {
   open(message: string | undefined): void;
   close(): void;
   /** identify() or reset(): start again. */

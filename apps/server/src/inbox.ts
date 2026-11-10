@@ -413,7 +413,7 @@ export function messageView(
     image: imageView(images, workspaceId, image),
   };
 }
-export type MessageView = ReturnType<typeof messageView>;
+type MessageView = ReturnType<typeof messageView>;
 
 /** A conversation as the operator API shows it. */
 export function conversationView(
@@ -444,7 +444,6 @@ export function conversationView(
         : { ...lastMessage, createdAt: lastMessage.createdAt.toISOString() },
   };
 }
-export type ConversationView = ReturnType<typeof conversationView>;
 
 /** The session ended or the operator left the workspace during an upload. Its transaction rolls back. */
 class AccessEndedError extends Error {}
