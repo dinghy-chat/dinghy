@@ -17,6 +17,7 @@ import { type TextId, t } from "./text.ts";
 import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import {
   CopyButton,
+  CopyText,
   ErrorNote,
   Field,
   failureText,
@@ -786,6 +787,8 @@ function DeleteRow({
       );
     }
   };
+  // The name sits inside the sentence, so each language puts it where its grammar needs it.
+  const [before, after = ""] = t("deleteWorkspaceType").split("{name}");
   const help = cloud
     ? `${t("deleteWorkspaceHelp")} ${t("deleteWorkspaceCloud")}`
     : t("deleteWorkspaceHelp");
@@ -813,7 +816,13 @@ function DeleteRow({
           onCancel={() => setOpen(false)}
         >
           <Field
-            label={t("deleteWorkspaceType", { name })}
+            label={
+              <>
+                {before}
+                <CopyText value={name} />
+                {after}
+              </>
+            }
             value={typed}
             onChange={setTyped}
             autoComplete="off"

@@ -93,6 +93,27 @@ export function SaveNote({ note }: { note: Note }) {
   return note.ok ? <StatusNote text={note.text} /> : <ErrorNote text={note.text} />;
 }
 
+/** A value in running text, in bold, that copies itself when clicked. */
+export function CopyText({ value }: { value: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className="copy-text"
+      title={done ? t("copied") : t("copy")}
+      onClick={() =>
+        void navigator.clipboard.writeText(value).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 2000);
+        })
+      }
+    >
+      {value}
+      {done && <small role="status">{t("copied")}</small>}
+    </button>
+  );
+}
+
 export function CopyButton({ value, label = t("copy") }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
@@ -114,7 +135,8 @@ export function CopyButton({ value, label = t("copy") }: { value: string; label?
 }
 
 interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
-  label: string;
+  /** Text, or text with a control in it, such as a name to copy. */
+  label: ReactNode;
   /** A short line under the field, which a screen reader reads after the label. */
   hint?: string;
   /** A sentence or two, which a one-line box would cut off on a phone. */
