@@ -168,7 +168,7 @@ export function startWorker({
   const stopping = new AbortController();
   const bounded =
     mailer === undefined ? undefined : boundedMailer(mailer, stopping.signal, mailTimeoutMs);
-  const cloudStep = cloudWorkerStep(cloud, { db, logger, publicUrl, signals });
+  const cloudStep = cloudWorkerStep(cloud, { db, logger, publicUrl, secret, signals });
   const channels = { push: push !== undefined, email: mailer !== undefined };
   let wake = () => {};
 

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { pino } from "pino";
 import { subscription } from "../../../apps/server/src/db/schema.ts";
 import { startE2EServer } from "../../../apps/server/test/e2e-server.ts";
+import { AUTH_SECRET } from "../../../apps/server/test/env.ts";
 import { createBilling } from "../billing.ts";
 import { runLifecycle } from "../lifecycle.ts";
 import {
@@ -77,6 +78,7 @@ export async function startCloudE2EServer({ billing = false, early = false } = {
         billing: createBilling(keys, workerDb, logger, signals),
         logger,
         publicUrl: apiOrigin,
+        secret: AUTH_SECRET,
       });
     },
     /** Makes a workspace read-only in the database alone, as if this page missed the change. */

@@ -18,6 +18,7 @@ import {
   registerBillingRoutes,
 } from "./billing.ts";
 import { runLifecycle } from "./lifecycle.ts";
+import { registerOnboardingStop } from "./lifecycle-emails.ts";
 import { createLimits, type LimitOptions } from "./limits.ts";
 import { removeOldImages } from "./retention.ts";
 import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
@@ -36,13 +37,15 @@ export interface CloudSettings {
   signup?: "early" | undefined;
   /** Smaller limits, for tests. The plan's own apply otherwise. */
   limits?: LimitOptions | undefined;
+  /** Where the 30-day email asks for a review. Without it, the email asks for a reply instead. */
+  reviewUrl?: string | undefined;
 }
 
 /** The cloud's settings, or none on a self-hosted install, which leaves them all unset. */
 export function cloudFromConfig(config: Config): CloudSettings | undefined {
   const billing = billingFromConfig(config);
   if (billing === undefined && config.CLOUD_SIGNUP === undefined) return undefined;
-  return { billing, signup: config.CLOUD_SIGNUP };
+  return { billing, signup: config.CLOUD_SIGNUP, reviewUrl: config.CLOUD_REVIEW_URL };
 }
 
 export interface CloudDeps {
@@ -101,6 +104,7 @@ export function createCloud(
     registerRoutes(app) {
       if (billing !== undefined && client !== undefined) {
         registerBillingRoutes(app, { auth, billing, client, db, rateLimit });
+        registerOnboardingStop(app, { db, secret: auth.options.secret, rateLimit });
       }
       registerSignup(app, { auth, db, logger, mailer, mode: signup, rateLimit, valkey });
     },
@@ -111,6 +115,8 @@ export interface CloudWorkerDeps {
   db: Database;
   logger: Logger;
   publicUrl: string;
+  /** Signs the stop link in onboarding emails. */
+  secret: string;
   signals: Signals;
 }
 
@@ -123,7 +129,7 @@ export type CloudWorkerStep = (pass: { mailer: Mailer | undefined }) => Promise<
  */
 export function cloudWorkerStep(
   settings: CloudSettings | undefined,
-  { db, logger, publicUrl, signals }: CloudWorkerDeps,
+  { db, logger, publicUrl, secret, signals }: CloudWorkerDeps,
 ): CloudWorkerStep | undefined {
   if (settings === undefined) return undefined;
   const billing =
@@ -134,7 +140,15 @@ export function cloudWorkerStep(
     const removed = await removeOldImages(db);
     if (removed > 0) logger.info({ removed }, "removed images older than 12 months");
     if (billing !== undefined) {
-      await runLifecycle({ db, billing, logger, mailer, publicUrl });
+      await runLifecycle({
+        db,
+        billing,
+        logger,
+        mailer,
+        publicUrl,
+        secret,
+        reviewUrl: settings.reviewUrl,
+      });
     }
   };
 }

@@ -4,25 +4,30 @@ import {
   type Column,
   eq,
   inArray,
+  isNotNull,
   isNull,
   lt,
+  lte,
   notInArray,
   or,
-  type SQL,
   sql,
 } from "drizzle-orm";
 import type { Logger } from "pino";
 import {
+  lifecycleEmail,
+  type lifecycleEmailKind,
   operator,
   subscription,
+  visitor,
   workspace,
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
-import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
+import { type Database, type Transaction, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { letter } from "../../apps/server/src/letter.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import type { Billing } from "./billing.ts";
+import { lifecycleMail, onboardingStopUrl } from "./lifecycle-emails.ts";
 
 /**
  * Stripe's subscription statuses that pay for service. This set and the two below live in this
@@ -35,16 +40,21 @@ export const FAILING = new Set(["past_due", "unpaid"]);
 export const ENDED = new Set(["canceled", "incomplete_expired"]);
 
 /** Full service after the first failed payment, while Stripe retries it. */
-export const GRACE_DAYS = 14;
+export const GRACE_DAYS = 7;
 /** Read-only time after the subscription ended or the grace ran out, before deletion. */
-export const READ_ONLY_DAYS = 30;
-/** How long before deletion the owners get a last warning. */
+export const READ_ONLY_DAYS = 90;
+/** How long before deletion the owners get the first warning, and the last one. */
+export const FIRST_DELETION_WARNING_DAYS = 30;
 export const DELETION_WARNING_DAYS = 7;
+/** How many days after a failed payment the owners get a reminder. The last day gets one too. */
+export const PAYMENT_REMINDER_DAYS = 3;
+/** How long before a canceled plan ends the owners hear about it again. */
+export const ENDING_SOON_DAYS = 3;
+/** The onboarding emails, by days after the first payment. */
+export const ONBOARDING_DAYS = { install: 1, team: 3, check_in: 7, review: 30 } as const;
 
 const DAY_MS = 86_400_000;
 const addDays = (date: Date, days: number) => new Date(date.getTime() + days * DAY_MS);
-
-type Notice = "payment_failed" | "read_only" | "deletion_soon";
 
 /** The stored fields that decide a workspace's billing state. */
 export interface LifecycleRow {
@@ -52,7 +62,6 @@ export interface LifecycleRow {
   paidAt: Date | null;
   paymentFailedAt: Date | null;
   readOnlyAt: Date | null;
-  notice: string | null;
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
 }
@@ -96,11 +105,7 @@ export function billingState(
   };
 }
 
-const NOTICE_ORDER: (string | null)[] = [null, "payment_failed", "read_only", "deletion_soon"];
-const sent = (row: LifecycleRow, notice: Notice) =>
-  NOTICE_ORDER.indexOf(row.notice) >= NOTICE_ORDER.indexOf(notice);
-
-type Step = { kind: "read_only" } | { kind: "delete" } | { kind: "notice"; notice: Notice };
+type Step = "read_only" | "delete";
 
 /**
  * The next thing the worker does for a subscription, from stored times and Stripe's status alone.
@@ -109,72 +114,93 @@ type Step = { kind: "read_only" } | { kind: "delete" } | { kind: "notice"; notic
 export function nextStep(row: LifecycleRow, now: Date): Step | null {
   if (row.paidAt === null) return null;
   if (row.readOnlyAt === null) {
-    if (row.status !== null && ENDED.has(row.status)) return { kind: "read_only" };
-    if (row.paymentFailedAt === null) return null;
-    if (now >= addDays(row.paymentFailedAt, GRACE_DAYS)) return { kind: "read_only" };
-    if (row.status !== null && FAILING.has(row.status) && !sent(row, "payment_failed")) {
-      return { kind: "notice", notice: "payment_failed" };
+    if (row.status !== null && ENDED.has(row.status)) return "read_only";
+    if (row.paymentFailedAt !== null && now >= addDays(row.paymentFailedAt, GRACE_DAYS)) {
+      return "read_only";
     }
     return null;
   }
-  const deleteAt = addDays(row.readOnlyAt, READ_ONLY_DAYS);
-  if (now >= deleteAt) return { kind: "delete" };
-  if (now >= addDays(deleteAt, -DELETION_WARNING_DAYS)) {
-    return sent(row, "deletion_soon") ? null : { kind: "notice", notice: "deletion_soon" };
-  }
-  return sent(row, "read_only") ? null : { kind: "notice", notice: "read_only" };
+  return now >= addDays(row.readOnlyAt, READ_ONLY_DAYS) ? "delete" : null;
 }
 
-const date = (value: Date) => value.toISOString().slice(0, 10);
+type LifecycleEmailKind = (typeof lifecycleEmailKind.enumValues)[number];
 
-// Plain text. Every string has a key here, so a locale can be added later.
-const text = {
-  paymentFailedSubject: (name: string) => `The payment for ${name} didn't go through`,
-  paymentFailedBody: (name: string, until: Date, url: string) => [
-    `The payment for your Dinghy workspace ${name} didn't go through. Stripe will try again on ` +
-      "its own.",
-    `Everything keeps working until ${date(until)}. If no payment clears by then, the workspace ` +
-      "turns read-only: the chat widget goes off and nobody can reply.",
-    `You can update the card in Settings, under Billing: ${url}`,
-  ],
-  readOnlySubject: (name: string) => `${name} is now read-only`,
-  readOnlyBody: (name: string, deleteOn: Date, url: string) => [
-    `Your Dinghy workspace ${name} no longer has a paid subscription, so it's read-only now. The ` +
-      "chat widget is off. Your team can still sign in, read conversations and download an " +
-      "export, but nobody can reply.",
-    `Pay again and you get everything back, with all its data: ${url}`,
-    `If nobody pays, the workspace and all its data are deleted on ${date(deleteOn)}.`,
-  ],
-  deletionSubject: (name: string, deleteOn: Date) => `${name} will be deleted on ${date(deleteOn)}`,
-  deletionBody: (name: string, deleteOn: Date, url: string) => [
-    `Your Dinghy workspace ${name} has been read-only since its subscription ended. On ` +
-      `${date(deleteOn)}, the workspace and all its data, images included, are deleted for good.`,
-    `To keep it, pay again: ${url}`,
-    "If you'd rather keep a copy, download an export in Settings before then.",
-  ],
-};
-
-function noticeMail(notice: Notice, name: string, row: LifecycleRow, url: string) {
-  if (notice === "payment_failed") {
-    const until = addDays(row.paymentFailedAt ?? new Date(), GRACE_DAYS);
-    return {
-      subject: text.paymentFailedSubject(name),
-      body: text.paymentFailedBody(name, until, url),
-    };
-  }
-  const deleteOn = addDays(row.readOnlyAt ?? new Date(), READ_ONLY_DAYS);
-  if (notice === "read_only") {
-    return { subject: text.readOnlySubject(name), body: text.readOnlyBody(name, deleteOn, url) };
-  }
-  return {
-    subject: text.deletionSubject(name, deleteOn),
-    body: text.deletionBody(name, deleteOn, url),
-  };
+/** An email to queue: once per kind and occurrence, sent by the worker from `dueAt` on. */
+export interface QueuedEmail {
+  kind: LifecycleEmailKind;
+  occurrenceAt: Date;
+  dueAt: Date;
 }
 
-/** Where the notice stands in NOTICE_ORDER, in SQL. An unknown one counts as none sent. */
-const noticeRank = sql`case ${subscription.notice}
-  when 'payment_failed' then 1 when 'read_only' then 2 when 'deletion_soon' then 3 else 0 end`;
+const on = (kind: LifecycleEmailKind, occurrenceAt: Date, days = 0): QueuedEmail => ({
+  kind,
+  occurrenceAt,
+  dueAt: addDays(occurrenceAt, days),
+});
+
+/** The fields that a Stripe change compares with, read under the row's lock before it writes. */
+export type BillingBefore = Pick<
+  LifecycleRow,
+  "paidAt" | "paymentFailedAt" | "readOnlyAt" | "cancelAtPeriodEnd"
+>;
+
+/** The emails that a change of Stripe's state starts, from the state before it and after it. */
+export function billingEmails(
+  before: BillingBefore | undefined,
+  after: { status: string; cancelAtPeriodEnd: boolean; currentPeriodEnd: Date | null },
+  at: Date,
+): QueuedEmail[] {
+  if (FAILING.has(after.status)) {
+    // A repeated failure keeps the first time, and so its emails.
+    if (before?.paymentFailedAt != null || before?.readOnlyAt != null) return [];
+    return [
+      on("payment_failed", at),
+      on("payment_reminder", at, PAYMENT_REMINDER_DAYS),
+      on("payment_last_day", at, GRACE_DAYS - 1),
+    ];
+  }
+  if (!PAID.has(after.status)) return [];
+  const emails: QueuedEmail[] = [];
+  if (before?.paidAt == null) {
+    emails.push(on("ready", at));
+    for (const [kind, days] of Object.entries(ONBOARDING_DAYS) as [LifecycleEmailKind, number][]) {
+      emails.push(on(kind, at, days));
+    }
+  } else if (before.readOnlyAt !== null) {
+    emails.push({ kind: "welcome_back", occurrenceAt: before.readOnlyAt, dueAt: at });
+  } else if (before.paymentFailedAt !== null) {
+    emails.push({ kind: "payment_recovered", occurrenceAt: before.paymentFailedAt, dueAt: at });
+  }
+  if (after.cancelAtPeriodEnd && before?.cancelAtPeriodEnd !== true) {
+    emails.push(on("cancellation", at));
+    const end = after.currentPeriodEnd;
+    // A cancellation in the last days already says when the plan ends.
+    if (end !== null && addDays(end, -ENDING_SOON_DAYS) > at) {
+      emails.push(on("ending_soon", end, -ENDING_SOON_DAYS));
+    }
+  }
+  return emails;
+}
+
+/** The emails that going read-only starts: now, then the two warnings before deletion. */
+const readOnlyEmails = (readOnlyAt: Date): QueuedEmail[] => [
+  on("read_only", readOnlyAt),
+  on("deletion_30", readOnlyAt, READ_ONLY_DAYS - FIRST_DELETION_WARNING_DAYS),
+  on("deletion_7", readOnlyAt, READ_ONLY_DAYS - DELETION_WARNING_DAYS),
+];
+
+/** Queues emails in the caller's transaction, so they commit with the change that caused them. */
+export async function queueEmails(
+  tx: Transaction,
+  workspaceId: string,
+  emails: QueuedEmail[],
+): Promise<void> {
+  if (emails.length === 0) return;
+  await tx
+    .insert(lifecycleEmail)
+    .values(emails.map((email) => ({ workspaceId, ...email })))
+    .onConflictDoNothing();
+}
 
 /**
  * The rules of `nextStep` as a filter, so the batch limit applies only to rows with work due.
@@ -183,19 +209,11 @@ const noticeRank = sql`case ${subscription.notice}
 function dueBy(now: Date) {
   const ago = (days: number) => addDays(now, -days).toISOString();
   const ended = inArray(subscription.status, [...ENDED]);
-  const failing = inArray(subscription.status, [...FAILING]);
   return sql`${subscription.paidAt} is not null and (
     (${subscription.readOnlyAt} is null and (
-      ${ended}
-      or ${subscription.paymentFailedAt} <= ${ago(GRACE_DAYS)}::timestamptz
-      or (${subscription.paymentFailedAt} is not null and ${failing} and ${noticeRank} < 1)
+      ${ended} or ${subscription.paymentFailedAt} <= ${ago(GRACE_DAYS)}::timestamptz
     ))
-    or (${subscription.readOnlyAt} is not null and (
-      (${subscription.readOnlyAt} <= ${ago(READ_ONLY_DAYS - DELETION_WARNING_DAYS)}::timestamptz
-        and ${noticeRank} < 3)
-      or ${subscription.readOnlyAt} <= ${ago(READ_ONLY_DAYS)}::timestamptz
-      or ${noticeRank} < 2
-    ))
+    or ${subscription.readOnlyAt} <= ${ago(READ_ONLY_DAYS)}::timestamptz
   )`;
 }
 
@@ -205,10 +223,15 @@ interface LifecycleOptions {
   logger: Logger;
   mailer?: Mailer | undefined;
   publicUrl: string;
-  /** How long a claim lasts, so a crashed worker's rows come back. */
-  claimMs?: number;
+  /** Signs the stop link in onboarding emails. */
+  secret: string;
+  /** Where the 30-day email asks for a review. Without it, the email asks for a reply instead. */
+  reviewUrl?: string | undefined;
   batch?: number;
 }
+
+/** How long a worker holds a row it acts on, so a crashed worker's rows come back. */
+const CLAIM_MS = 10 * 60_000;
 
 const columns = {
   workspaceId: subscription.workspaceId,
@@ -217,7 +240,6 @@ const columns = {
   paidAt: subscription.paidAt,
   paymentFailedAt: subscription.paymentFailedAt,
   readOnlyAt: subscription.readOnlyAt,
-  notice: subscription.notice,
   currentPeriodEnd: subscription.currentPeriodEnd,
   cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
 };
@@ -225,28 +247,21 @@ const columns = {
 type Claimed = LifecycleRow & { workspaceId: string; customerId: string };
 
 /**
- * The column still holds the time the worker read. A Date keeps milliseconds, and node-postgres
- * truncates the microseconds that Postgres keeps, so both sides are truncated alike.
+ * The column holds this time. A Date keeps milliseconds, and node-postgres truncates the
+ * microseconds that Postgres keeps, so both sides are truncated alike.
  */
-const still = (column: Column, value: Date | null) =>
+const sameTime = (column: Column, value: Date | null) =>
   value === null
     ? isNull(column)
     : sql`date_trunc('milliseconds', ${column}) = ${value.toISOString()}::timestamptz`;
 
 /**
  * One pass over the subscriptions that have lifecycle work. It claims rows with SKIP LOCKED and a
- * claim time, so two workers never act on the same one, and acts with no transaction open.
- * Returns how many it acted on.
+ * claim time, so two workers never act on the same one, and acts with no transaction open. Then it
+ * sends the emails that are due. Returns how many subscriptions it acted on.
  */
-export async function runLifecycle({
-  db,
-  billing,
-  logger,
-  mailer,
-  publicUrl,
-  claimMs = 10 * 60_000,
-  batch = 20,
-}: LifecycleOptions): Promise<number> {
+export async function runLifecycle(options: LifecycleOptions): Promise<number> {
+  const { db, billing, logger, batch = 20 } = options;
   const now = billing.now();
   const claimed = await db.transaction(async (tx) => {
     const rows = await tx
@@ -262,7 +277,7 @@ export async function runLifecycle({
     for (const row of due) {
       await tx
         .update(subscription)
-        .set({ claimedUntil: new Date(now.getTime() + claimMs) })
+        .set({ claimedUntil: new Date(now.getTime() + CLAIM_MS) })
         .where(eq(subscription.workspaceId, row.workspaceId));
     }
     return due;
@@ -276,64 +291,49 @@ export async function runLifecycle({
       logger.warn({ err, workspaceId: row.workspaceId }, "a lifecycle step failed and will retry");
     }
   }
+  await sendLifecycleEmails({ ...options, now });
   await clearDeletedBilling(db, billing, logger);
   return claimed.length;
 
-  /**
-   * Writes only while `unchanged` holds, and can let the row go. The guards name the fields that
-   * decide the step, not the revision, because the webhook of the worker's own cancel moves it.
-   */
-  async function finish(
-    row: Claimed,
-    change: Partial<typeof subscription.$inferInsert>,
-    unchanged: SQL | undefined,
-    { release = true, billingChanged = false } = {},
-  ) {
-    const written = await withWorkspace(db, row.workspaceId, async (tx) => {
-      const rows = await tx
-        .update(subscription)
-        .set({ ...change, ...(release && { claimedUntil: null }) })
-        .where(and(eq(subscription.workspaceId, row.workspaceId), unchanged))
-        .returning({ id: subscription.workspaceId });
-      // In the same commit, so an inbox that misses the signal still finds it from its cursor.
-      if (rows.length > 0 && billingChanged) await recordBillingChange(tx, row.workspaceId);
-      return rows.length > 0;
-    });
-    if (written && billingChanged) billing.changed(row.workspaceId);
-    return written;
-  }
-
   async function act(row: Claimed) {
     const step = nextStep(row, now);
-    if (step === null) return;
-    if (step.kind === "read_only") {
-      // A payment whose webhook never came keeps the workspace, even after a cancellation: the
-      // owner may have paid again through a new Checkout. After 14 days of failed payments,
-      // Dinghy ends the subscription itself, so a late retry never charges for a read-only
-      // workspace and paying again is always a new Checkout.
-      if (await keptByPayment(row)) return;
-      if (row.status !== null && !ENDED.has(row.status)) await billing.cancelAll(row.customerId);
-      // The claim stays for the email that follows, so no other worker sends it too.
-      // A payment since the claim clears the failure or makes the status paid, and stops this.
-      const stillDue = and(
-        isNull(subscription.readOnlyAt),
-        still(subscription.paidAt, row.paidAt),
-        still(subscription.paymentFailedAt, row.paymentFailedAt),
-        or(isNull(subscription.status), notInArray(subscription.status, [...PAID])),
-      );
-      if (
-        await finish(row, { readOnlyAt: now }, stillDue, { release: false, billingChanged: true })
-      ) {
-        logger.info({ workspaceId: row.workspaceId }, "a workspace became read-only");
-        await act({ ...row, readOnlyAt: now });
-      }
-      return;
-    }
-    if (step.kind === "delete") {
-      await deleteAfterCheck(row);
-      return;
-    }
-    await sendNotice(row, step.notice);
+    if (step === "read_only") await makeReadOnly(row);
+    if (step === "delete") await deleteAfterCheck(row);
+  }
+
+  async function makeReadOnly(row: Claimed) {
+    // A payment whose webhook never came keeps the workspace, even after a cancellation: the
+    // owner may have paid again through a new Checkout. After 7 days of failed payments, Dinghy
+    // ends the subscription itself, so a late retry never charges for a read-only workspace and
+    // paying again is always a new Checkout.
+    if (await keptByPayment(row)) return;
+    if (row.status !== null && !ENDED.has(row.status)) await billing.cancelAll(row.customerId);
+    const written = await withWorkspace(db, row.workspaceId, async (tx) => {
+      // The guards name the fields that decide the step, not the revision, because the webhook of
+      // the worker's own cancel moves it. A payment since the claim clears the failure or makes the
+      // status paid, and stops this.
+      const rows = await tx
+        .update(subscription)
+        .set({ readOnlyAt: now, claimedUntil: null })
+        .where(
+          and(
+            eq(subscription.workspaceId, row.workspaceId),
+            isNull(subscription.readOnlyAt),
+            sameTime(subscription.paidAt, row.paidAt),
+            sameTime(subscription.paymentFailedAt, row.paymentFailedAt),
+            or(isNull(subscription.status), notInArray(subscription.status, [...PAID])),
+          ),
+        )
+        .returning({ id: subscription.workspaceId });
+      if (rows.length === 0) return false;
+      // In the same commit, so an inbox that misses the signal still finds it from its cursor.
+      await recordBillingChange(tx, row.workspaceId);
+      await queueEmails(tx, row.workspaceId, readOnlyEmails(now));
+      return true;
+    });
+    if (!written) return;
+    billing.changed(row.workspaceId);
+    logger.info({ workspaceId: row.workspaceId }, "a workspace became read-only");
   }
 
   /** Stripe is the record: a payment whose webhook never came, or a new subscription, keeps it. */
@@ -366,15 +366,21 @@ export async function runLifecycle({
           and(
             eq(subscription.workspaceId, row.workspaceId),
             // A payment clears the read-only time. The cancel above moves only the revision.
-            still(subscription.readOnlyAt, row.readOnlyAt),
+            sameTime(subscription.readOnlyAt, row.readOnlyAt),
           ),
         )
         .for("update");
-      if (unchanged === undefined) return false;
-      await tx
+      if (unchanged === undefined || row.readOnlyAt === null) return false;
+      const marked = await tx
         .update(workspace)
         .set({ deletedAt: now })
-        .where(and(eq(workspace.id, row.workspaceId), isNull(workspace.deletedAt)));
+        .where(and(eq(workspace.id, row.workspaceId), isNull(workspace.deletedAt)))
+        .returning({ id: workspace.id });
+      if (marked.length === 0) return false;
+      // The owners stay members until the purge, so the email still reaches them after this.
+      await queueEmails(tx, row.workspaceId, [
+        { kind: "deleted", occurrenceAt: row.readOnlyAt, dueAt: now },
+      ]);
       return true;
     });
     if (deleted) {
@@ -384,49 +390,226 @@ export async function runLifecycle({
       );
     }
   }
+}
 
-  async function sendNotice(row: Claimed, notice: Notice) {
-    const found = await withWorkspace(db, row.workspaceId, async (tx) => {
-      const [named] = await tx
-        .select({ name: workspace.name })
-        .from(workspace)
-        .where(eq(workspace.id, row.workspaceId));
-      const owners = await tx
-        .select({ email: operator.email, name: operator.name })
-        .from(workspaceMember)
-        .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-        .where(
-          and(
-            eq(workspaceMember.workspaceId, row.workspaceId),
-            eq(workspaceMember.role, "owner"),
-            isNull(workspaceMember.removedAt),
-          ),
-        );
-      return { name: named?.name ?? "", owners };
-    });
-    if (mailer === undefined) {
-      logger.info(
-        { workspaceId: row.workspaceId, notice },
-        "this server has no SMTP, so a billing email was not sent",
+type ClaimedEmail = typeof lifecycleEmail.$inferSelect;
+
+const isEmail = (email: ClaimedEmail) =>
+  and(
+    eq(lifecycleEmail.workspaceId, email.workspaceId),
+    eq(lifecycleEmail.kind, email.kind),
+    sameTime(lifecycleEmail.occurrenceAt, email.occurrenceAt),
+  );
+
+/** What decides whether a queued email still holds, read when it is due. */
+interface EmailState extends LifecycleRow {
+  isDeleted: boolean;
+  hasWidgetVisitor: boolean;
+}
+
+const same = (a: Date | null, b: Date) => a?.getTime() === b.getTime();
+
+/** Whether the reason for the email still holds. A payment, for one, stops a reminder. */
+function stillHolds(email: ClaimedEmail, state: EmailState): boolean {
+  const paid = state.status !== null && PAID.has(state.status);
+  const live = !state.isDeleted && state.readOnlyAt === null;
+  // Onboarding goes only to a workspace that pays and is neither failing nor ending.
+  const settled = paid && live && state.paymentFailedAt === null && !state.cancelAtPeriodEnd;
+  const failing = state.status !== null && FAILING.has(state.status);
+  switch (email.kind) {
+    case "ready":
+    case "welcome_back":
+      return paid && live;
+    case "install":
+      return settled && !state.hasWidgetVisitor;
+    case "team":
+    case "check_in":
+    case "review":
+      return settled;
+    case "cancellation":
+      return paid && live && state.cancelAtPeriodEnd;
+    case "ending_soon":
+      return (
+        paid && live && state.cancelAtPeriodEnd && same(state.currentPeriodEnd, email.occurrenceAt)
       );
-    } else {
-      const url = `${publicUrl.replace(/\/$/, "")}/?workspace=${row.workspaceId}`;
-      const mail = noticeMail(notice, found.name, row, url);
-      // A failure leaves the notice unsent, and the claim's end retries it: at least once.
-      for (const to of found.owners) {
-        // Each owner signed in with a link to this address, so their own name is safe here.
-        await mailer.send(to.email, mail.subject, letter(mail.body, to.name));
-      }
-    }
-    await finish(
-      row,
-      { notice },
+    case "payment_failed":
+    case "payment_reminder":
+    case "payment_last_day":
+      return failing && live && same(state.paymentFailedAt, email.occurrenceAt);
+    case "payment_recovered":
+      return paid && live && state.paymentFailedAt === null;
+    case "read_only":
+    case "deletion_30":
+    case "deletion_7":
+      return !state.isDeleted && same(state.readOnlyAt, email.occurrenceAt);
+    case "deleted":
+      return state.isDeleted && same(state.readOnlyAt, email.occurrenceAt);
+  }
+}
+
+/** The workspace's name, state and owners, for one due email. */
+async function loadEmailState(tx: Transaction, email: ClaimedEmail) {
+  const { workspaceId } = email;
+  const [found] = await tx
+    .select({
+      name: workspace.name,
+      deletedAt: workspace.deletedAt,
+      status: subscription.status,
+      paidAt: subscription.paidAt,
+      paymentFailedAt: subscription.paymentFailedAt,
+      readOnlyAt: subscription.readOnlyAt,
+      currentPeriodEnd: subscription.currentPeriodEnd,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+    })
+    .from(workspace)
+    .innerJoin(subscription, eq(subscription.workspaceId, workspace.id))
+    .where(eq(workspace.id, workspaceId));
+  if (found === undefined) return undefined;
+  const owners = await tx
+    .select({
+      operatorId: operator.id,
+      email: operator.email,
+      name: operator.name,
+      onboardingStoppedAt: workspaceMember.onboardingStoppedAt,
+    })
+    .from(workspaceMember)
+    .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
+    .where(
       and(
-        still(subscription.readOnlyAt, row.readOnlyAt),
-        still(subscription.paymentFailedAt, row.paymentFailedAt),
+        eq(workspaceMember.workspaceId, workspaceId),
+        eq(workspaceMember.role, "owner"),
+        isNull(workspaceMember.removedAt),
       ),
     );
+  // Nothing records a widget load itself. A visitor gets a browser token on their first message,
+  // and a last-seen time when a widget stream ends, so either one means the widget ran on a site.
+  // An early signup's sample visitor has neither.
+  const widgetVisitors =
+    email.kind === "install"
+      ? await tx
+          .select({ id: visitor.id })
+          .from(visitor)
+          .where(
+            and(
+              eq(visitor.workspaceId, workspaceId),
+              or(isNotNull(visitor.tokenHash), isNotNull(visitor.lastSeenAt)),
+            ),
+          )
+          .limit(1)
+      : [];
+  const state: EmailState = {
+    ...found,
+    isDeleted: found.deletedAt !== null,
+    hasWidgetVisitor: widgetVisitors.length > 0,
+  };
+  return { name: found.name, state, owners };
+}
+
+/**
+ * Sends the queued emails that are due. It claims them with SKIP LOCKED and a claim time, as the
+ * lifecycle claims its rows, so two workers never send the same one. A failed send keeps it
+ * queued, and the claim's end retries it: delivery is at least once.
+ */
+async function sendLifecycleEmails({
+  db,
+  logger,
+  mailer,
+  publicUrl,
+  secret,
+  reviewUrl,
+  batch = 20,
+  now,
+}: LifecycleOptions & { now: Date }): Promise<void> {
+  const claimed = await db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(lifecycleEmail)
+      .where(
+        and(
+          isNull(lifecycleEmail.sentAt),
+          lte(lifecycleEmail.dueAt, now),
+          or(isNull(lifecycleEmail.claimedUntil), lt(lifecycleEmail.claimedUntil, now)),
+        ),
+      )
+      .orderBy(lifecycleEmail.dueAt)
+      .limit(batch)
+      .for("update", { skipLocked: true });
+    for (const row of rows) {
+      await tx
+        .update(lifecycleEmail)
+        .set({ claimedUntil: new Date(now.getTime() + CLAIM_MS) })
+        .where(isEmail(row));
+    }
+    return rows;
+  });
+  for (const email of claimed) {
+    try {
+      await sendOne(email);
+    } catch (err) {
+      logger.warn(
+        { err, workspaceId: email.workspaceId, kind: email.kind },
+        "a billing email failed and will retry",
+      );
+    }
   }
+
+  async function sendOne(email: ClaimedEmail) {
+    const found = await withWorkspace(db, email.workspaceId, (tx) => loadEmailState(tx, email));
+    if (found === undefined || !stillHolds(email, found.state)) return drop(email);
+    const isOnboarding = email.kind in ONBOARDING_DAYS;
+    const recipients = found.owners.filter(
+      (owner) => !isOnboarding || owner.onboardingStoppedAt === null,
+    );
+    if (recipients.length === 0) return drop(email);
+    if (mailer === undefined) {
+      logger.info(
+        { workspaceId: email.workspaceId, kind: email.kind },
+        "this server has no SMTP, so a billing email was not sent",
+      );
+    }
+    for (const owner of mailer === undefined ? [] : recipients) {
+      const mail = lifecycleMail(email.kind, {
+        name: found.name,
+        settingsUrl: `${publicUrl.replace(/\/$/, "")}/?workspace=${email.workspaceId}`,
+        signInUrl: publicUrl,
+        reviewUrl,
+        stopUrl: isOnboarding
+          ? onboardingStopUrl(publicUrl, secret, email.workspaceId, owner.operatorId)
+          : undefined,
+        days: MAIL_DAYS,
+        ...emailDates(email, found.state),
+      });
+      // Each owner signed in with a link to this address, so their own name is safe here.
+      await mailer?.send(owner.email, mail.subject, letter(mail.body, owner.name), mail.headers);
+    }
+    await withWorkspace(db, email.workspaceId, (tx) =>
+      tx.update(lifecycleEmail).set({ sentAt: now, claimedUntil: null }).where(isEmail(email)),
+    );
+  }
+
+  /** The reason passed before the email was due, so it never goes. */
+  async function drop(email: ClaimedEmail) {
+    await withWorkspace(db, email.workspaceId, (tx) =>
+      tx.delete(lifecycleEmail).where(isEmail(email)),
+    );
+  }
+}
+
+/** The numbers of days that the emails name. */
+const MAIL_DAYS = {
+  paymentLeft: GRACE_DAYS - PAYMENT_REMINDER_DAYS,
+  readOnly: READ_ONLY_DAYS,
+  firstWarning: FIRST_DELETION_WARNING_DAYS,
+  endingSoon: ENDING_SOON_DAYS,
+};
+
+/** The dates an email names, from its occurrence and the workspace's state. */
+function emailDates(email: ClaimedEmail, state: EmailState) {
+  return {
+    payUntil: addDays(email.occurrenceAt, GRACE_DAYS),
+    deleteOn: addDays(email.occurrenceAt, READ_ONLY_DAYS),
+    endsOn: email.kind === "ending_soon" ? email.occurrenceAt : state.currentPeriodEnd,
+  };
 }
 
 /**
