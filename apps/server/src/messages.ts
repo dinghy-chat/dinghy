@@ -172,7 +172,14 @@ export async function appendMessage(
   tx: Transaction,
   workspaceId: string,
   author: Author,
-  input: { clientId: string; body?: string; image?: NewImage; page?: string | null },
+  input: {
+    clientId: string;
+    body?: string;
+    image?: NewImage;
+    page?: string | null;
+    /** False for a message that nobody needs to hear about, such as the cloud's welcome. */
+    alert?: boolean;
+  },
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
   const seq = await nextSeq(tx, workspaceId);
@@ -283,7 +290,7 @@ export async function appendMessage(
       fromVisitor: author.kind === "visitor",
       ...(target.created ? { conversationCreated: true } : {}),
     } satisfies MessageCreatedPayload,
-    needsAlert: true,
+    needsAlert: input.alert ?? true,
     needsWebhook: wantsWebhook(workspaceId),
   });
   await tx
@@ -431,6 +438,7 @@ export interface ConversationRow {
   updatedAt: Date;
   assigneeOperatorId: string | null;
   startedPage: string | null;
+  welcome: boolean;
   visitorId: string;
   visitorBlockedAt: Date | null;
   visitorEmail: string | null;
@@ -449,6 +457,7 @@ const conversationColumns = {
   updatedAt: conversation.updatedAt,
   assigneeOperatorId: conversation.assigneeOperatorId,
   startedPage: conversation.startedPage,
+  welcome: conversation.welcome,
   visitorId: conversation.visitorId,
   visitorBlockedAt: visitor.blockedAt,
   visitorEmail: visitor.email,

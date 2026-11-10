@@ -308,7 +308,16 @@ export function createApp({
   const cloud =
     auth === undefined
       ? undefined
-      : createCloud(cloudSettings, { auth, db, live, logger, mailer, rateLimit, valkey });
+      : createCloud(cloudSettings, {
+          auth,
+          db,
+          live,
+          logger,
+          mailer,
+          rateLimit,
+          store: images?.store,
+          valkey,
+        });
   app.openapi(metaRoute, (c) =>
     c.json({
       name: "dinghy",
@@ -366,6 +375,7 @@ export function createApp({
       rateLimit,
     });
     registerInboxRoutes(app, {
+      copyReply: cloud?.copyReply,
       db,
       images,
       limits,
@@ -381,7 +391,7 @@ export function createApp({
       db,
       live,
       rateLimit,
-      inbox: createInbox({ db, images, live, visitorPresence }),
+      inbox: createInbox({ copyReply: cloud?.copyReply, db, images, live, visitorPresence }),
       publicOrigin: new URL(String(auth.options.baseURL)).origin,
       version,
     });

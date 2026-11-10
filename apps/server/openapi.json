@@ -563,6 +563,57 @@
         },
         "required": ["path", "title", "viewedAt"]
       },
+      "WelcomeChat": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "with": {
+                "type": "string",
+                "enum": ["founder"]
+              }
+            },
+            "required": ["with"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "with": {
+                "type": "string",
+                "enum": ["workspace"]
+              },
+              "name": {
+                "type": "string"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "waiting_cloud",
+                  "read_only",
+                  "suspended",
+                  "waiting_payment",
+                  "deleted"
+                ]
+              }
+            },
+            "required": ["with", "name", "access"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "with": {
+                "type": "string",
+                "enum": ["deleted"]
+              }
+            },
+            "required": ["with"]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "ApiKey": {
         "type": "object",
         "properties": {
@@ -2894,6 +2945,9 @@
                       "items": {
                         "$ref": "#/components/schemas/PageView"
                       }
+                    },
+                    "welcome": {
+                      "$ref": "#/components/schemas/WelcomeChat"
                     }
                   },
                   "required": [
@@ -2901,7 +2955,8 @@
                     "messages",
                     "hasMore",
                     "visitorOnline",
-                    "visitorPages"
+                    "visitorPages",
+                    "welcome"
                   ]
                 }
               }
@@ -5064,7 +5119,7 @@
           }
         ],
         "summary": "Support numbers for the last 7, 30 or 90 days",
-        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply.",
+        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply. A welcome chat on Dinghy Cloud counts nowhere.",
         "parameters": [
           {
             "schema": {

@@ -217,6 +217,45 @@ const listRoute = createRoute({
   },
 });
 
+/** The other side of a welcome chat, which the visitor panel names instead of the visit. */
+const WelcomeChat = z
+  .discriminatedUnion("with", [
+    // A new workspace's chat with Dinghy's founder.
+    z.object({ with: z.literal("founder") }),
+    // The founder's side: the workspace, and whether it takes the replies copied to it.
+    z.object({
+      with: z.literal("workspace"),
+      name: z.string(),
+      access: z.enum([
+        "active",
+        "waiting_cloud",
+        "read_only",
+        "suspended",
+        "waiting_payment",
+        "deleted",
+      ]),
+    }),
+    // The other side deleted its conversation, or its whole workspace, and with it the link.
+    z.object({ with: z.literal("deleted") }),
+  ])
+  .openapi("WelcomeChat");
+
+/** What a welcome conversation is linked to. The function reads the other workspace for its name. */
+async function welcomeChat(
+  tx: Transaction,
+  conversationId: string,
+): Promise<z.infer<typeof WelcomeChat>> {
+  const result = await tx.execute<{
+    founder_side: boolean;
+    workspace_name: string | null;
+    access: WorkspaceAccess | null;
+  }>(sql`select founder_side, workspace_name, access from welcome_chat(${conversationId})`);
+  const row = result.rows[0];
+  if (row === undefined) return { with: "deleted" };
+  if (!row.founder_side) return { with: "founder" };
+  return { with: "workspace", name: row.workspace_name ?? "", access: row.access ?? "deleted" };
+}
+
 const conversationRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages`,
@@ -255,6 +294,8 @@ const conversationRoute = createRoute({
                 })
                 .openapi("PageView"),
             ),
+            // Cloud only: this is a welcome chat, which has no visit or pages. Null otherwise.
+            welcome: WelcomeChat.nullable(),
           }),
         },
       },
@@ -483,6 +524,25 @@ const replyAuthor = (actor: Actor, conversationId: string): Author =>
 
 const actorId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : actor.apiKeyId);
 
+type Appended = Awaited<ReturnType<typeof appendMessage>>;
+
+/**
+ * Cloud only: copies a reply into another workspace, in the reply's own transaction. It runs before
+ * that transaction, where it can copy an image's file, and returns what runs in it, or null.
+ */
+export type CopyReply = (
+  workspaceId: string,
+  conversationId: string,
+  image: NewImage | undefined,
+) => Promise<ReplyCopy | null>;
+
+interface ReplyCopy {
+  /** In the reply's transaction: runs the reply's write, and may add to the transaction. */
+  write(tx: Transaction, append: () => Promise<Appended>): Promise<Appended>;
+  /** After the transaction, with whether the reply committed. It must not throw. */
+  finish(committed: boolean): Promise<void>;
+}
+
 /** What a reply came to. The routes and the MCP tools answer each the same way. */
 export type ReplyOutcome =
   | { kind: "sent"; created: boolean; message: MessageView }
@@ -498,6 +558,7 @@ interface InboxOptions {
   logger: Logger;
   stream: StreamOptions;
   visitorPresence: VisitorPresence;
+  copyReply?: CopyReply | undefined;
 }
 
 /**
@@ -509,25 +570,35 @@ export function createInbox({
   images,
   live,
   visitorPresence,
-}: Pick<InboxOptions, "db" | "images" | "live" | "visitorPresence">) {
+  copyReply,
+}: Pick<InboxOptions, "db" | "images" | "live" | "visitorPresence" | "copyReply">) {
   /** Writes a reply in the caller's transaction, and wakes the clients after the commit. */
   const reply = async (
     workspaceId: string,
     actor: Actor,
     conversationId: string,
-    write: (tx: Transaction, author: Author) => ReturnType<typeof appendMessage>,
+    image: NewImage | undefined,
+    write: (tx: Transaction, author: Author) => Promise<Appended>,
   ): Promise<ReplyOutcome> => {
+    const copy = (await copyReply?.(workspaceId, conversationId, image)) ?? null;
+    let committed = false;
     const result = await catchClosed(
       withWorkspace(db, workspaceId, async (tx) => {
         const found = await findConversation(tx, workspaceId, conversationId);
         if (found === null) return "missing" as const;
-        const appended = await write(tx, replyAuthor(actor, conversationId));
+        const append = () => write(tx, replyAuthor(actor, conversationId));
+        const appended = copy === null ? await append() : await copy.write(tx, append);
         return { ...appended, visitorId: found.visitorId };
-      }).catch((error: unknown) => {
-        if (error instanceof ConversationClosedError) return "closed" as const;
-        throw error;
-      }),
-    );
+      })
+        .then((done) => {
+          committed = done !== "missing";
+          return done;
+        })
+        .catch((error: unknown) => {
+          if (error instanceof ConversationClosedError) return "closed" as const;
+          throw error;
+        }),
+    ).finally(() => copy?.finish(committed));
     if (result === "missing" || result === "closed") return { kind: result };
     if (result instanceof WorkspaceClosedError) return { kind: "refused", access: result.access };
     // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.
@@ -566,7 +637,8 @@ export function createInbox({
         const page = await listConversationMessages(tx, workspaceId, conversationId, after, limit);
         const names = await authorNames(tx, workspaceId, page.messages);
         const pages = await visitorPages(tx, workspaceId, found.visitorId);
-        return { found, page, names, pages };
+        const welcome = found.welcome ? await welcomeChat(tx, conversationId) : null;
+        return { found, page, names, pages, welcome };
       });
       if (result === null) return null;
       return {
@@ -580,6 +652,7 @@ export function createInbox({
           ...row,
           viewedAt: row.viewedAt.toISOString(),
         })),
+        welcome: result.welcome,
       };
     },
 
@@ -596,7 +669,7 @@ export function createInbox({
       conversationId: string,
       input: { clientId: string; body: string },
     ) {
-      return reply(workspaceId, actor, conversationId, (tx, author) =>
+      return reply(workspaceId, actor, conversationId, undefined, (tx, author) =>
         appendMessage(tx, workspaceId, author, input),
       );
     },
@@ -613,10 +686,16 @@ export function createInbox({
       limits: Limits,
       check: (tx: Transaction) => Promise<void>,
     ): Promise<ReplyOutcome & { created: boolean }> {
-      const outcome = await reply(workspaceId, actor, conversationId, async (tx, author) => {
-        await check(tx);
-        return appendMessage(tx, workspaceId, author, input, limits);
-      });
+      const outcome = await reply(
+        workspaceId,
+        actor,
+        conversationId,
+        input.image,
+        async (tx, author) => {
+          await check(tx);
+          return appendMessage(tx, workspaceId, author, input, limits);
+        },
+      );
       return { ...outcome, created: outcome.kind === "sent" && outcome.created };
     },
 

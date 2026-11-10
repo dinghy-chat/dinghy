@@ -152,7 +152,7 @@ test.describe("with early signup and no Stripe keys", () => {
   let server: Server;
 
   test.beforeAll(async () => {
-    server = await startCloudE2EServer({ early: true });
+    server = await startCloudE2EServer({ early: true, welcome: true });
   });
 
   test.afterAll(async () => {
@@ -171,7 +171,7 @@ test.describe("with early signup and no Stripe keys", () => {
     }
   });
 
-  test("sign up, land in the inbox with the sample conversation, reply, and see no install code yet @smoke", async ({
+  test("sign up, land in the inbox with the founder's welcome, reply, and see no install code yet @smoke", async ({
     page,
   }) => {
     const email = `nora-${Date.now()}@example.com`;
@@ -190,9 +190,10 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.getByRole("status").locator(".banner-long")).toHaveText(
       `Dinghy Cloud opens soon. We will email ${email} when you can turn it on.`,
     );
-    await page.locator(".row", { hasText: "Sample visitor" }).click();
+    await page.locator(".row", { hasText: "Julien from Dinghy" }).click();
+    await expect(page.getByText("Welcome chat with the founder")).toBeVisible();
     await expect(
-      page.getByText("Hi! This is a sample conversation.", { exact: false }),
+      page.getByText("Hi, I'm Julien, the founder of Dinghy.", { exact: false }),
     ).toHaveCount(2);
     const reply = page.getByRole("textbox", { name: "Your reply" });
     await reply.fill("Thanks, got it!");
@@ -220,7 +221,7 @@ test.describe("with early signup and no Stripe keys", () => {
     await signIn(page, server, email);
     await onboard(page, "Late Shop");
     await expect(page.getByRole("heading", { name: "Late Shop" })).toBeVisible();
-    await expect(page.locator(".row", { hasText: "Sample visitor" })).toBeVisible();
+    await expect(page.locator(".row", { hasText: "Julien from Dinghy" })).toBeVisible();
   });
 
   test("an existing account that signs up again gets a sign-in link, then adds a workspace", async ({

@@ -29,6 +29,22 @@ export interface PageView {
   viewedAt: string;
 }
 
+/** On Dinghy Cloud: what a welcome chat is linked to. */
+export type WelcomeChat =
+  | { with: "founder" }
+  | {
+      with: "workspace";
+      name: string;
+      access:
+        | "active"
+        | "waiting_cloud"
+        | "read_only"
+        | "suspended"
+        | "waiting_payment"
+        | "deleted";
+    }
+  | { with: "deleted" };
+
 export type AnalyticsDays = 7 | 30 | 90;
 
 /** Support numbers about the conversations that started in the period. */
@@ -466,6 +482,8 @@ export function workspaceApi(workspaceId: string) {
         visitorOnline: boolean | null;
         /** The visitor's newest pages, newest first, at most 20. */
         visitorPages: PageView[];
+        /** A welcome chat on Dinghy Cloud, which has no visit or pages. Null otherwise. */
+        welcome: WelcomeChat | null;
       }>(`${conversation(id)}/messages?after=${after}`),
     /** Open and closed conversations by visitor or message text. A newer search aborts this one. */
     search: (query: string, signal: AbortSignal) =>

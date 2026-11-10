@@ -25,6 +25,7 @@
   <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/site.css">
   <script type="module" src="/js/docs.js"></script>
+  <script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to the content</a>
@@ -168,7 +169,13 @@
 <p>A webhook checks every address its host resolves to when it connects, so a name that later points at a private address cannot reach this server&#39;s network.</p>
 <p>Delivery is at least once. A claim counts as an attempt, and a worker that stops after a send but before its commit sends that alert again. A push carries the event&#39;s ID as its tag, so the phone replaces the first notification.</p>
 <h2 id="core-and-ee"><a class="heading-link" href="#core-and-ee">Core and <code>ee/</code></a></h2>
-<p>Everything a self-hosted install uses is outside <code>ee/</code>. <code>ee/</code> holds what only Dinghy Cloud runs: Stripe billing, signup, the plan&#39;s limits and image retention. Core reaches it only through <code>ee/server/index.ts</code> and the screens in <code>ee/operator/</code>, and only when a cloud setting is set (<code>STRIPE_*</code> or <code>CLOUD_SIGNUP</code>). <a href="https://github.com/dinghy-chat/dinghy/blob/main/LICENSE-NOTICE.md"><code>LICENSE-NOTICE.md</code></a> has the licenses.</p>
+<p>Everything a self-hosted install uses is outside <code>ee/</code>. <code>ee/</code> holds what only Dinghy Cloud runs: Stripe billing, signup, the welcome chat, the plan&#39;s limits and image retention. Core reaches it only through <code>ee/server/index.ts</code> and the screens in <code>ee/operator/</code>, and only when a cloud setting is set (<code>STRIPE_*</code> or <code>CLOUD_SIGNUP</code>). <a href="https://github.com/dinghy-chat/dinghy/blob/main/LICENSE-NOTICE.md"><code>LICENSE-NOTICE.md</code></a> has the licenses.</p>
+<p>The welcome chat needs two more cloud settings, and is off unless both are set:</p>
+<ul>
+<li><code>CLOUD_WELCOME_WORKSPACE_ID</code>: Dinghy&#39;s own workspace on the same server.</li>
+<li><code>CLOUD_WELCOME_OPERATOR_EMAIL</code>: the operator there who sends the welcome. The web role refuses to start when this operator is not an active member of that workspace.</li>
+</ul>
+<p>Each new cloud workspace then starts with one open conversation from that operator, and Dinghy&#39;s workspace gets the other side, assigned to them. The two conversations are linked in <code>welcome_link</code>, which both workspaces&#39; row-level security lets them read. An operator&#39;s or an API key&#39;s reply on one side is copied, in the reply&#39;s own transaction, as a visitor message on the other side. Visitor messages are never copied, so a copy never makes another. A reply takes both workspace row locks in one order, so two replies that cross cannot deadlock. Nothing is copied when either side blocked its visitor or the other workspace takes no messages, and the reply still goes. An image is copied as a file of the receiving workspace, within its image limit. Analytics leave welcome chats out, an export leaves the link out, and a deleted workspace&#39;s links go with its conversations.</p>
 <h2 id="scaling"><a class="heading-link" href="#scaling">Scaling</a></h2>
 <p>Add <code>web</code> instances behind a load balancer, and one or more <code>worker</code> instances. They share Postgres and Valkey, and no instance holds state another needs. <a href="/docs/self-hosting#running-more-than-one-instance">Self-hosting</a> has the settings.</p>
       </article>

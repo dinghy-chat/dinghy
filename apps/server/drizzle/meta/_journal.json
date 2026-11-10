@@ -435,6 +435,20 @@
       "when": 1794345932929,
       "tag": "0061_account_delete_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794346957163,
+      "tag": "0062_welcome_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1794346957614,
+      "tag": "0063_welcome_chat_grants",
+      "breakpoints": true
     }
   ]
 }

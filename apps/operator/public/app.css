@@ -1637,6 +1637,10 @@ img.ws-tile {
   display: block;
   width: fit-content;
 }
+.who-text .welcome-off {
+  display: block;
+  color: var(--warn-ink);
+}
 .online {
   color: var(--green);
   font-weight: 600;

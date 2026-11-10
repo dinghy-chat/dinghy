@@ -71,7 +71,14 @@ Delivery is at least once. A claim counts as an attempt, and a worker that stops
 
 ## Core and `ee/`
 
-Everything a self-hosted install uses is outside `ee/`. `ee/` holds what only Dinghy Cloud runs: Stripe billing, signup, the plan's limits and image retention. Core reaches it only through `ee/server/index.ts` and the screens in `ee/operator/`, and only when a cloud setting is set (`STRIPE_*` or `CLOUD_SIGNUP`). [`LICENSE-NOTICE.md`](../LICENSE-NOTICE.md) has the licenses.
+Everything a self-hosted install uses is outside `ee/`. `ee/` holds what only Dinghy Cloud runs: Stripe billing, signup, the welcome chat, the plan's limits and image retention. Core reaches it only through `ee/server/index.ts` and the screens in `ee/operator/`, and only when a cloud setting is set (`STRIPE_*` or `CLOUD_SIGNUP`). [`LICENSE-NOTICE.md`](../LICENSE-NOTICE.md) has the licenses.
+
+The welcome chat needs two more cloud settings, and is off unless both are set:
+
+- `CLOUD_WELCOME_WORKSPACE_ID`: Dinghy's own workspace on the same server.
+- `CLOUD_WELCOME_OPERATOR_EMAIL`: the operator there who sends the welcome. The web role refuses to start when this operator is not an active member of that workspace.
+
+Each new cloud workspace then starts with one open conversation from that operator, and Dinghy's workspace gets the other side, assigned to them. The two conversations are linked in `welcome_link`, which both workspaces' row-level security lets them read. An operator's or an API key's reply on one side is copied, in the reply's own transaction, as a visitor message on the other side. Visitor messages are never copied, so a copy never makes another. A reply takes both workspace row locks in one order, so two replies that cross cannot deadlock. Nothing is copied when either side blocked its visitor or the other workspace takes no messages, and the reply still goes. An image is copied as a file of the receiving workspace, within its image limit. Analytics leave welcome chats out, an export leaves the link out, and a deleted workspace's links go with its conversations.
 
 ## Scaling
 

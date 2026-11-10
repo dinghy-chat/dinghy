@@ -1,5 +1,4 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
-import { randomUUID } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, isNull } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
@@ -8,7 +7,7 @@ import type pg from "pg";
 import type { Logger } from "pino";
 import type { App } from "../../apps/server/src/app.ts";
 import { type Auth, signInLink } from "../../apps/server/src/auth.ts";
-import { operator, visitor, workspace, workspaceMember } from "../../apps/server/src/db/schema.ts";
+import { operator, workspace, workspaceMember } from "../../apps/server/src/db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import {
   errorAnswer,
@@ -17,11 +16,12 @@ import {
   WRONG_ORIGIN,
 } from "../../apps/server/src/errors.ts";
 import { LINK_LASTS, letter } from "../../apps/server/src/letter.ts";
+import { type Live, OPERATORS } from "../../apps/server/src/live.ts";
 import { createLinkLimit, tooManyAttempts } from "../../apps/server/src/login-limit.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
-import { appendMessage } from "../../apps/server/src/messages.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "../../apps/server/src/rate-limit.ts";
 import { type NewWorkspace, workspaceKeys } from "../../apps/server/src/workspaces.ts";
+import { startWelcomeChat, type WelcomeSettings } from "./welcome.ts";
 
 /**
  * How cloud signup works. With `payment`, the workspace waits for its first payment.
@@ -35,10 +35,6 @@ export const CLOUD_CONTACT = "hello@dinghy.chat";
 
 // Plain text. Every string has a key here, so a locale can be added later.
 const text = {
-  sampleVisitor: "Sample visitor",
-  sampleMessage:
-    "Hi! This is a sample conversation. When the cloud opens, your visitors' messages will " +
-    "appear here, and you answer them from this inbox.",
   signupSubject: "Finish signing up for Dinghy",
   // Fixed text only: nobody has proved this address yet.
   signupBody: (url: string) => [
@@ -125,45 +121,46 @@ const createWorkspaceRoute = createRoute({
 const WORKSPACES_PER_DAY = 5;
 
 /**
- * A new cloud workspace and its owner, in the caller's transaction. An early one waits for the
- * cloud and gets a sample conversation, through the same message path as a visitor's.
+ * A new cloud workspace and its owner, in the caller's transaction, with its welcome chat when the
+ * settings name one. True when the welcome chat started.
+ *
+ * The workspace starts active, because a message only goes in a workspace that takes messages, and
+ * turns inactive before the commit: early, it waits for the cloud, and otherwise for its payment.
  */
 async function insertSignupWorkspace(
   tx: Transaction,
   keys: NewWorkspace,
-  name: string,
+  names: { workspace: string; owner: string },
   operatorId: string,
   mode: SignupMode,
-): Promise<void> {
-  await tx.insert(workspace).values({
-    ...keys,
-    name,
-    active: false,
-    ...(mode === "early" && { waitingSince: new Date() }),
-  });
+  welcome: WelcomeSettings | undefined,
+): Promise<boolean> {
+  await tx.insert(workspace).values({ ...keys, name: names.workspace });
   await tx.insert(workspaceMember).values({ workspaceId: keys.id, operatorId, role: "owner" });
-  if (mode !== "early") return;
-  const [sample] = await tx
-    .insert(visitor)
-    .values({ workspaceId: keys.id, externalId: text.sampleVisitor })
-    .returning({ id: visitor.id });
-  if (sample === undefined) throw new Error("The sample visitor insert returned no row");
-  await appendMessage(
-    tx,
-    keys.id,
-    { kind: "visitor", visitorId: sample.id },
-    { clientId: randomUUID(), body: text.sampleMessage },
-  );
+  const started =
+    welcome !== undefined &&
+    (await startWelcomeChat(tx, welcome, {
+      workspaceId: keys.id,
+      workspaceName: names.workspace,
+      ownerName: names.owner,
+    }));
+  await tx
+    .update(workspace)
+    .set({ active: false, ...(mode === "early" && { waitingSince: new Date() }) })
+    .where(eq(workspace.id, keys.id));
+  return started;
 }
 
 interface SignupOptions {
   auth: Auth;
   db: Database;
+  live: Live;
   logger: Logger;
   mailer: Mailer | undefined;
   mode: SignupMode;
   rateLimit: RateLimit;
   valkey: Redis | null;
+  welcome: WelcomeSettings | undefined;
 }
 
 /**
@@ -172,7 +169,7 @@ interface SignupOptions {
  */
 export function registerSignup(
   app: App,
-  { auth, db, logger, mailer, mode, rateLimit, valkey }: SignupOptions,
+  { auth, db, live, logger, mailer, mode, rateLimit, valkey, welcome: welcomeChat }: SignupOptions,
 ) {
   const publicUrl = String(auth.options.baseURL);
   const publicOrigin = new URL(publicUrl).origin;
@@ -236,10 +233,11 @@ export function registerSignup(
     );
     if (wait !== null) return tooManyRequests(c, wait);
     const keys = workspaceKeys();
-    const welcomed = await withWorkspace(db, keys.id, async (tx) => {
+    const { welcomed, chatStarted } = await withWorkspace(db, keys.id, async (tx) => {
       await tx.update(operator).set({ name: body.name }).where(eq(operator.id, operatorId));
-      await insertSignupWorkspace(tx, keys, body.workspaceName, operatorId, mode);
-      if (mode !== "early") return false;
+      const names = { workspace: body.workspaceName, owner: body.name };
+      const started = await insertSignupWorkspace(tx, keys, names, operatorId, mode, welcomeChat);
+      if (mode !== "early") return { welcomed: false, chatStarted: started };
       // An account gets the welcome once: deleting a workspace, or two requests at once, cannot
       // send it again, because only one update finds the column still empty.
       const marked = await tx
@@ -247,9 +245,13 @@ export function registerSignup(
         .set({ welcomedAt: new Date() })
         .where(and(eq(operator.id, operatorId), isNull(operator.welcomedAt)))
         .returning({ id: operator.id });
-      return marked.length > 0;
+      return { welcomed: marked.length > 0, chatStarted: started };
     });
     if (welcomed) welcome(c.get("operatorEmail"), body.name, body.workspaceName);
+    if (chatStarted && welcomeChat !== undefined) live.wake(welcomeChat.workspaceId, OPERATORS);
+    if (!chatStarted && welcomeChat !== undefined) {
+      logger.warn("no welcome chat: its operator left Dinghy's workspace, or it takes no messages");
+    }
     return c.json({ workspaceId: keys.id }, 200);
   });
 }

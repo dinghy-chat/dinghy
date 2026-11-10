@@ -15,6 +15,7 @@ import {
   type Member,
   type Message,
   type PageView,
+  type WelcomeChat,
   type WorkspaceApi,
 } from "./api.ts";
 import { useLatestLoad } from "./load.ts";
@@ -145,6 +146,35 @@ function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: 
   );
 }
 
+/** Why replies in a welcome chat do not reach the other workspace, or null when they do. */
+const WELCOME_OFF: Partial<Record<Extract<WelcomeChat, { with: "workspace" }>["access"], TextId>> =
+  {
+    suspended: "welcomeSuspended",
+    read_only: "welcomeReadOnly",
+    deleted: "welcomeDeleted",
+    waiting_payment: "welcomeUnpaid",
+  };
+
+/** Who a welcome chat is with, and why replies do not reach them, if they do not. */
+function welcomeLines(welcome: WelcomeChat): [string, string | null] {
+  if (welcome.with === "founder") return [t("welcomeWithFounder"), null];
+  if (welcome.with === "deleted") return [t("welcomeChat"), t("welcomeGone")];
+  const values = { workspace: welcome.name };
+  const off = WELCOME_OFF[welcome.access];
+  return [t("welcomeWith", values), off === undefined ? null : t(off, values)];
+}
+
+/** A welcome chat on Dinghy Cloud: who it is with, in place of a visit it never has. */
+function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
+  const [label, off] = welcomeLines(welcome);
+  return (
+    <p className="visit">
+      {label}
+      {off !== null && <span className="welcome-off">{off}</span>}
+    </p>
+  );
+}
+
 const PAGES_FIRST = 5;
 
 /**
@@ -196,6 +226,7 @@ function PageJourney({ pages }: { pages: PageView[] }) {
 /** What the operator can do with this conversation. */
 function ThreadHead({
   conversation,
+  welcome,
   online,
   members,
   canDelete,
@@ -206,6 +237,7 @@ function ThreadHead({
   onDelete,
 }: {
   conversation: Conversation;
+  welcome: WelcomeChat | null;
   /** A widget stream of the visitor's is open, or null when unknown. */
   online: boolean | null;
   members: Member[];
@@ -247,7 +279,11 @@ function ThreadHead({
         <div className="who-text">
           <h2>{title(conversation)}</h2>
           {from !== null && <p title={from}>{from}</p>}
-          <Visit visitor={conversation.visitor} online={online} />
+          {welcome === null ? (
+            <Visit visitor={conversation.visitor} online={online} />
+          ) : (
+            <WelcomeNote welcome={welcome} />
+          )}
         </div>
       </div>
       <div className="actions">
@@ -575,6 +611,7 @@ export function Thread({
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
   const [pages, setPages] = useState<PageView[]>([]);
+  const [welcome, setWelcome] = useState<WelcomeChat | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   // Here and not in the composer, which unmounts while the conversation is closed.
   const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
@@ -605,6 +642,7 @@ export function Thread({
       setConversation(page.conversation);
       setOnline(page.visitorOnline);
       setPages(page.visitorPages);
+      setWelcome(page.welcome);
       setLines((current) => page.messages.reduce(merge, current));
       const last = page.messages.at(-1);
       if (last !== undefined) position.current = last.seq;
@@ -781,6 +819,7 @@ export function Thread({
     >
       <ThreadHead
         conversation={conversation}
+        welcome={welcome}
         online={online}
         members={members}
         canDelete={canDelete}
@@ -809,7 +848,7 @@ export function Thread({
           {replying}
         </p>
       )}
-      <AboutVisitor conversation={conversation} pages={pages} />
+      {welcome === null && <AboutVisitor conversation={conversation} pages={pages} />}
       <div className="log" role="log" aria-live="polite" ref={log}>
         {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
         {lines.map((line, index) => {

@@ -18,11 +18,13 @@ import {
   message,
   operator,
   subscription,
+  visitor,
   workspace,
 } from "../../apps/server/src/db/schema.ts";
-import type { Database } from "../../apps/server/src/db/tenant.ts";
+import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { createImages } from "../../apps/server/src/images.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
+import { appendMessage } from "../../apps/server/src/messages.ts";
 import { localStore } from "../../apps/server/src/storage.ts";
 import { widgetWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
@@ -144,6 +146,23 @@ const visitorsFrom = (server: App, publicKey: string) =>
     headers: { origin: SITE, "x-forwarded-for": IP },
   });
 
+/** A visitor's conversation in a workspace, as the widget would start one. */
+async function visitorConversation(workspaceId: string): Promise<string> {
+  const [guest] = await owner
+    .insert(visitor)
+    .values({ workspaceId, tokenHash: randomUUID() })
+    .returning({ id: visitor.id });
+  const sent = await withWorkspace(db, workspaceId, (tx) =>
+    appendMessage(
+      tx,
+      workspaceId,
+      { kind: "visitor", visitorId: guest?.id ?? "" },
+      { clientId: randomUUID(), body: "Hello" },
+    ),
+  );
+  return sent.message.conversationId;
+}
+
 beforeAll(async () => {
   database = await createTestDatabase();
   await database.migrate();
@@ -207,7 +226,7 @@ describe("early signup", () => {
     expect(() => loadConfig({ ...base, CLOUD_SIGNUP: "open" })).toThrow();
   });
 
-  test("creates the account, a workspace that waits for the cloud, a sample conversation and a welcome email", async () => {
+  test("creates the account, a workspace that waits for the cloud, an empty inbox and a welcome email", async () => {
     const created = await signup(early, "Harbor");
     expect(created.response.status).toBe(200);
     expect(created.cookie).toContain("better-auth.session_token=");
@@ -235,7 +254,7 @@ describe("early signup", () => {
     expect(row.active).toBe(false);
     expect(row.waitingSince).toBeInstanceOf(Date);
 
-    // One conversation from the sample visitor, with its message's event row.
+    // No welcome chat, because this server does not name one.
     const list = await request(
       early,
       "GET",
@@ -243,24 +262,10 @@ describe("early signup", () => {
       { cookie: created.cookie },
     );
     expect(list.status).toBe(200);
-    const { conversations } = (await list.json()) as {
-      conversations: {
-        id: string;
-        visitor: { externalId: string };
-        lastMessage: { body: string; fromVisitor: boolean };
-      }[];
-    };
-    expect(conversations).toHaveLength(1);
-    expect(conversations[0]?.visitor.externalId).toBe("Sample visitor");
-    expect(conversations[0]?.lastMessage).toMatchObject({
-      fromVisitor: true,
-      body: "Hi! This is a sample conversation. When the cloud opens, your visitors' messages will appear here, and you answer them from this inbox.",
-    });
-    const events = await owner
-      .select()
-      .from(event)
-      .where(eq(event.workspaceId, created.workspaceId));
-    expect(events.map((one) => one.kind)).toEqual(["message.created"]);
+    expect(await list.json()).toMatchObject({ conversations: [] });
+    expect(
+      await owner.select().from(event).where(eq(event.workspaceId, created.workspaceId)),
+    ).toEqual([]);
 
     expect(welcomes()).toEqual([
       { to: created.email, subject: "Harbor is ready", text: expect.any(String) },
@@ -527,21 +532,18 @@ describe("a workspace that waits for the cloud", () => {
         cookie: created.cookie,
         ...(body === undefined ? {} : { body }),
       });
-    const list = (await (await as("GET", "/conversations?status=open")).json()) as {
-      conversations: { id: string }[];
-    };
-    const sampleId = list.conversations[0]?.id ?? "";
+    const conversationId = await visitorConversation(created.workspaceId);
 
     expect((await as("GET", "")).status).toBe(200);
-    expect((await as("GET", `/conversations/${sampleId}/messages`)).status).toBe(200);
-    const reply = await as("POST", `/conversations/${sampleId}/messages`, {
+    expect((await as("GET", `/conversations/${conversationId}/messages`)).status).toBe(200);
+    const reply = await as("POST", `/conversations/${conversationId}/messages`, {
       clientId: "reply-1",
       body: "Thanks!",
     });
     expect(reply.status).toBe(201);
-    expect((await as("PATCH", `/conversations/${sampleId}`, { status: "closed" })).status).toBe(
-      200,
-    );
+    expect(
+      (await as("PATCH", `/conversations/${conversationId}`, { status: "closed" })).status,
+    ).toBe(200);
     expect((await as("GET", "/settings")).status).toBe(200);
     expect((await as("PATCH", "/settings", { allowedOrigins: [SITE] })).status).toBe(200);
     expect((await as("GET", "/members")).status).toBe(200);
@@ -550,7 +552,7 @@ describe("a workspace that waits for the cloud", () => {
     expect((await as("GET", "/alerts")).status).toBe(200);
     expect((await as("PATCH", "/alerts", { email: true })).status).toBe(200);
     expect((await as("GET", "/export")).status).toBe(200);
-    expect((await as("DELETE", `/conversations/${sampleId}`)).status).toBe(200);
+    expect((await as("DELETE", `/conversations/${conversationId}`)).status).toBe(200);
     expect(
       await owner.select().from(message).where(eq(message.workspaceId, created.workspaceId)),
     ).toEqual([]);
