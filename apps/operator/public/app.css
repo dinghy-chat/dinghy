@@ -17,23 +17,23 @@
    the strong fill, so it turns light, and --on-navy is the text on that fill. */
 :root {
   color-scheme: light dark;
-  --navy: light-dark(#0b2239, #f2ead3);
+  --navy: light-dark(#0b2239, #eef2f6);
   --navy-light: light-dark(#17335c, #ffffff);
   --on-navy: light-dark(#fff, #0b2239);
-  /* The main buttons: navy by day, the brand's yellow at night. */
-  --fill: light-dark(#0b2239, #ffc917);
-  --fill-hover: light-dark(#17335c, #ffd640);
+  /* The main buttons: navy by day, off-white at night. */
+  --fill: light-dark(#0b2239, #e9eef4);
+  --fill-hover: light-dark(#17335c, #ffffff);
   --on-fill: light-dark(#fff, #0b2239);
   --blue: #1f6bff;
   --blue-deep: light-dark(#1457d6, #8ab8ff);
   --red: #e5352b;
   --red-deep: #bf241b;
   --yellow: #ffc917;
-  --yellow-pale: light-dark(#fff6d6, #243c56);
+  --yellow-pale: light-dark(#f1f0ec, #1a2633);
   --cream: #fff8df;
-  --fog: light-dark(#f3f6f8, #1c3249);
-  --line: light-dark(#e7e2d2, #2a4058);
-  --line-cool: light-dark(#dfe5ea, #2f4660);
+  --fog: light-dark(#f3f2ee, #1c2937);
+  --line: light-dark(#e6e4dd, #263443);
+  --line-cool: light-dark(#e6e4dd, #263443);
   --text: light-dark(#44546a, #b9c5d2);
   --mute: light-dark(#5f6e80, #8e9cad);
   /* Labels and secondary text that must read stronger than --text. */
@@ -42,45 +42,47 @@
   --bad: light-dark(#c62a21, #ff8077);
   --bad-soft: light-dark(#fdeceb, #3b2028);
   --bad-line: light-dark(#f2c4c0, #6e3036);
-  --tile-blue: light-dark(#e4f0ff, #1d3a60);
-  --tile-peach: light-dark(#ffe9e2, #4a2f2e);
-  --tile-yellow: light-dark(#fff3cc, #463c1d);
-  --tile-mint: light-dark(#d9f7ef, #173f3a);
+  --tile-blue: light-dark(#e6ecf3, #1f3147);
+  --tile-peach: light-dark(#f3e8e4, #3a2a2b);
+  --tile-yellow: light-dark(#f1ecdb, #383220);
+  --tile-mint: light-dark(#e3eee9, #1b3833);
   --display: "Gabarito", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --rail: 232px;
-  /* Around the panel: the yellow sky, or the night. */
-  --sky: light-dark(#ffc917, #081522);
+  /* Around the panel: warm paper grey, or the night. */
+  --sky: light-dark(#f3f2ee, #0b141d);
   /* The panel, cards, menus and fields. */
-  --surface: light-dark(#fff, #12253a);
+  --surface: light-dark(#fff, #131e2a);
   /* Behind the messages of a conversation. */
-  --surface-dim: light-dark(#fcfbf8, #0e1f32);
-  --soft: light-dark(#fbf5e3, #1b3047);
+  --surface-dim: light-dark(#fafaf8, #0f1924);
+  --soft: light-dark(#f1f0ec, #1c2937);
   /* --soft under the pointer, and an open menu's button. */
-  --soft-hover: light-dark(#f5ecd0, #243c56);
-  --soft-edge: light-dark(#eadcae, #34506e);
+  --soft-hover: light-dark(#e8e6e0, #243344);
+  --soft-edge: light-dark(#dcd9d0, #2e3e51);
   /* A row or a tab under the pointer. */
-  --row-hover: light-dark(#fdfaf1, #172b41);
-  --warm-line: light-dark(#efe9da, #22374e);
-  --field-line: light-dark(#978a63, #3f5671);
-  --field-line-hover: light-dark(#7d714f, #58708d);
-  --field-readonly: light-dark(#fdfaf2, #0f2135);
+  --row-hover: light-dark(#f8f7f4, #172230);
+  --warm-line: light-dark(#e6e4dd, #263443);
+  --field-line: light-dark(#c4c1b6, #3a4a5c);
+  --field-line-hover: light-dark(#a9a59a, #52657a);
+  --field-readonly: light-dark(#fafaf8, #101a25);
   /* The sidebar's buttons sit straight on the sky. */
-  --side-tint: light-dark(rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.06));
-  --side-tint-hover: light-dark(rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.11));
-  --side-mute: light-dark(#5c4a10, #8e9cad);
-  --warn-soft: light-dark(#fff1c2, #3f3415);
-  --warn-ink: light-dark(#6e5100, #ffd66b);
-  --switch-off: light-dark(#cfc6ad, #3a506a);
-  --switch-on: light-dark(#0b2239, #1f6bff);
-  --nobody-line: light-dark(#b8ae94, #4a607a);
-  --code: light-dark(#0b2239, #06111d);
+  --side-tint: light-dark(rgb(11 34 57 / 0.05), rgb(255 255 255 / 0.05));
+  --side-tint-hover: light-dark(rgb(11 34 57 / 0.09), rgb(255 255 255 / 0.09));
+  --side-mute: light-dark(#6f6c63, #8693a2);
+  --warn-soft: light-dark(#fdf3d7, #3a3115);
+  --warn-ink: light-dark(#7a5600, #ffd66b);
+  --switch-off: light-dark(#d3d0c7, #33445a);
+  --switch-on: light-dark(#0b2239, #e9eef4);
+  --nobody-line: light-dark(#bdb9ae, #4a5b70);
+  --code: light-dark(#0b2239, #070e15);
   --scroll: light-dark(rgb(11 34 57 / 0.18), rgb(255 255 255 / 0.16));
   --scroll-hover: light-dark(rgb(11 34 57 / 0.35), rgb(255 255 255 / 0.3));
   /* The patch of sky behind the empty states' boat. */
-  --pond: light-dark(#ffc917, #1b3047);
+  --pond: light-dark(#eceae4, #1c2937);
   --d-hull: var(--navy);
+  /* The operator's own messages. */
+  --bubble: light-dark(#0b2239, #2b3f57);
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -100,7 +102,7 @@ body,
 #root {
   height: 100%;
 }
-/* The sky's yellow, so a page that is still loading already looks like the next screen. */
+/* The sky's grey, so a page that is still loading already looks like the next screen. */
 body {
   margin: 0;
   background: var(--sky);
@@ -461,10 +463,11 @@ textarea {
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background-color: var(--sky);
+  background-color: light-dark(#ffc917, #081522);
   transition: background-color 0.5s ease;
 }
-/* The account screens follow one day, in the brand's yellows: pale at dawn, warm after noon. */
+/* The account screens follow one day, in the brand's yellows: pale at dawn, warm after noon. The
+   app itself stays on the calm --sky. */
 .scene.morning {
   background-color: light-dark(#ffe27a, #0d2036);
 }
@@ -472,7 +475,7 @@ textarea {
   background-color: light-dark(#ffd640, #0a1b2e);
 }
 .scene.noon {
-  background-color: var(--sky);
+  background-color: light-dark(#ffc917, #081522);
 }
 .scene.afternoon {
   background-color: light-dark(#ffbb1f, #071320);
@@ -602,7 +605,7 @@ textarea {
   height: 230px;
 }
 
-/* The app: a labeled sidebar on the flat yellow, and one white panel that floats beside it. */
+/* The app: a labeled sidebar on the paper grey, and one white panel that floats beside it. */
 .shell {
   display: flex;
   flex-direction: column;
@@ -656,7 +659,7 @@ textarea {
   white-space: nowrap;
 }
 
-/* Sidebar, straight on the yellow: navy labels and navy duotone icons. */
+/* Sidebar, straight on the grey: navy labels and navy duotone icons. */
 .side {
   --duo: var(--navy);
   --duo-opacity: 0.25;
@@ -670,7 +673,7 @@ textarea {
 .brand {
   padding: 2px 8px 18px;
 }
-/* On the yellow, a focus ring in navy: blue would be too faint. */
+/* In the sidebar, a focus ring in navy, like its labels. */
 .side :focus-visible {
   outline-color: var(--navy);
 }
@@ -755,7 +758,7 @@ button.workspace[aria-expanded="true"],
 .nav button[aria-current="page"],
 .me.current {
   background: var(--surface);
-  box-shadow: 0 2px 10px rgb(120 80 0 / 0.12);
+  box-shadow: 0 1px 2px rgb(11 34 57 / 0.06);
 }
 .nav svg {
   flex: none;
@@ -823,8 +826,8 @@ button.workspace[aria-expanded="true"],
   border-radius: 20px;
   background: var(--surface);
   box-shadow:
-    0 0 0 1px rgb(120 80 0 / 0.06),
-    0 14px 40px rgb(120 80 0 / 0.18);
+    0 0 0 1px light-dark(rgb(11 34 57 / 0.06), rgb(255 255 255 / 0.04)),
+    0 1px 3px rgb(11 34 57 / 0.04);
 }
 /* The banners and the panel share the column beside the sidebar, so the sidebar starts at the top. */
 .stage {
@@ -992,9 +995,9 @@ button.workspace[aria-expanded="true"],
   border-radius: 16px;
   background: var(--surface);
   box-shadow:
-    0 0 0 1px rgb(120 80 0 / 0.08),
+    0 0 0 1px rgb(11 34 57 / 0.08),
     0 4px 8px rgb(11 34 57 / 0.05),
-    0 16px 40px rgb(120 80 0 / 0.18);
+    0 12px 32px rgb(11 34 57 / 0.1);
   color: var(--navy);
   font-size: 14.5px;
   text-align: left;
@@ -1551,7 +1554,7 @@ button.workspace[aria-expanded="true"],
   max-width: min(60%, 560px);
   padding: 10px 14px;
   border-radius: 18px;
-  background: var(--blue);
+  background: var(--bubble);
   color: #fff;
   font-size: 15px;
   line-height: 1.4;
@@ -2409,7 +2412,7 @@ button.workspace[aria-expanded="true"],
   }
 }
 
-/* Tablet: the sidebar becomes a top bar on the yellow. */
+/* Tablet: the sidebar becomes a top bar on the grey. */
 @media (max-width: 1000px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
