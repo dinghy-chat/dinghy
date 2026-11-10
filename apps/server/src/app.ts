@@ -16,8 +16,8 @@ import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
 import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
-import type { Database } from "./db/tenant.ts";
-import { safeErrorFields } from "./errors.ts";
+import { AccountDeletedError, type Database } from "./db/tenant.ts";
+import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { NO_LIMITS } from "./limits.ts";
@@ -478,6 +478,7 @@ export function createApp({
       if (refusal === undefined) return c.newResponse(response.body, response);
       return c.json({ error: { ...refusal, requestId: c.get("requestId") } }, error.status);
     }
+    if (error instanceof AccountDeletedError) return c.json(UNAUTHORIZED, 401);
     // One stuck workspace row or a full pool: the client-generated ID makes the retry safe.
     if (isBusy(error)) {
       c.header("retry-after", "1");
