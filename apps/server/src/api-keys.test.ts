@@ -103,12 +103,12 @@ beforeAll(async () => {
   });
   a = await createWorkspace(db, "Acme", [SITE]);
   b = await createWorkspace(db, "Beta", [SITE]);
-  const person = async (workspaceId: string, name: string, role: "owner" | "agent") => {
+  const person = async (workspaceId: string, name: string, role: "owner" | "member") => {
     const made = await signedInOperator({ app, auth, owner, name, workspaceId, role });
     return { id: made.id, cookie: made.cookie };
   };
   ownerA = await person(a.id, "Olivia", "owner");
-  agentA = await person(a.id, "Abel", "agent");
+  agentA = await person(a.id, "Abel", "member");
   ownerB = await person(b.id, "Bruno", "owner");
 }, 30_000);
 
@@ -136,7 +136,7 @@ describe("managing keys", () => {
     expect(after).not.toContain(made.id);
   });
 
-  test("an agent can neither see nor make keys", async () => {
+  test("a member can neither see nor make keys", async () => {
     expect((await asOperator(agentA.cookie, "GET", inA("/api-keys"))).status).toBe(403);
     expect(
       (await asOperator(agentA.cookie, "POST", inA("/api-keys"), { name: "Mine" })).status,
@@ -240,7 +240,7 @@ describe("what a key can do", () => {
       ["PATCH", inA("/settings"), { allowedOrigins: [] }],
       ["POST", inA("/settings/rotate-secret"), {}],
       ["GET", inA("/members"), undefined],
-      ["POST", inA("/invites"), { role: "agent" }],
+      ["POST", inA("/invites"), { email: "invited@example.com", role: "member" }],
       ["GET", inA("/api-keys"), undefined],
       ["POST", inA("/api-keys"), { name: "More" }],
       ["DELETE", inA(`/api-keys/${key.id}`), undefined],

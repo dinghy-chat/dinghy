@@ -58,7 +58,7 @@ const ExportFile = z.strictObject({
       id,
       name: z.string().min(1).max(200),
       email: z.email().max(320),
-      role: z.enum(["owner", "admin", "agent"]),
+      role: z.enum(["owner", "admin", "member"]),
       removedAt: nullableDate,
       alertEmail: z.boolean(),
       createdAt: date,

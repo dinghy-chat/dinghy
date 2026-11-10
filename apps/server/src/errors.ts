@@ -76,6 +76,7 @@ export const ERROR_CODES = [
   "invalid_name",
   "invalid_request",
   "invite_invalid",
+  "invite_other_email",
   "last_owner",
   "link_invalid",
   "name_mismatch",

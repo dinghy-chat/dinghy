@@ -78,7 +78,7 @@ async function freshInstall(): Promise<Install> {
 const addPerson = (
   install: Install,
   workspaceId: string,
-  role: "owner" | "admin" | "agent",
+  role: "owner" | "admin" | "member",
   email = `${role}-${randomUUID()}@example.com`,
 ) =>
   addOperator({
@@ -136,8 +136,8 @@ async function makeSource(): Promise<Source> {
   const space = await createWorkspace(db, "Acme", [SITE]);
   const other = await createWorkspace(db, "Other company", [SITE]);
   const boss = await addPerson(install, space.id, "owner");
-  const agent = await addPerson(install, space.id, "agent");
-  const gone = await addPerson(install, space.id, "agent");
+  const agent = await addPerson(install, space.id, "member");
+  const gone = await addPerson(install, space.id, "member");
   const cookie = await signIn(install, boss.email);
   const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
     method: "POST",

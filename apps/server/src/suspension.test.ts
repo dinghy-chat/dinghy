@@ -519,13 +519,15 @@ describe("a suspension that lands while a message is on its way", () => {
         owner,
         name: "Gone",
         workspaceId: created.id,
-        role: "agent",
+        role: "member",
       });
       const [pending] = await owner
         .insert(invite)
         .values({
           workspaceId: created.id,
-          role: "agent",
+          role: "member",
+          email: "invited@example.com",
+          mailed: false,
           tokenHash: randomUUID(),
           createdBy: operatorId,
           expiresAt: new Date(Date.now() + 60_000),
@@ -549,7 +551,7 @@ describe("a suspension that lands while a message is on its way", () => {
         });
       const refused = state === "suspended" ? 403 : 402;
       expect((await call("PATCH", `/members/${agentId}`, { role: "admin" })).status).toBe(refused);
-      expect((await call("POST", "/invites", { role: "agent" })).status).toBe(refused);
+      expect((await call("POST", "/invites", { role: "member" })).status).toBe(refused);
       expect((await call("DELETE", `/invites/${pending?.id}`)).status).toBe(200);
       expect((await call("DELETE", `/members/${agentId}`)).status).toBe(200);
       const [left] = await owner

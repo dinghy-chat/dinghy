@@ -2243,22 +2243,11 @@ button.workspace[aria-expanded="true"],
   color: var(--navy);
   font-size: 14.5px;
 }
-/* Revoke ends where the trash icons end. */
-.end-cell > .text-button {
-  margin-right: 9px;
-}
 .members .role .select-button {
   width: max-content;
 }
 .members .role .select-value {
   overflow: visible;
-}
-.members .pending .who-lines > span:not(.chip) {
-  font-size: 15px;
-}
-.members .avatar.nobody {
-  border: 0;
-  background: var(--soft);
 }
 .lock-note {
   display: flex;
@@ -2774,9 +2763,6 @@ button.workspace[aria-expanded="true"],
   }
   .who-lines strong {
     flex-wrap: wrap;
-  }
-  .members .pending .who-lines > span:not(.chip) {
-    font-size: 14px;
   }
   .lock-note {
     align-items: flex-start;

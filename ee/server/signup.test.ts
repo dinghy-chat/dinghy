@@ -545,7 +545,8 @@ describe("a workspace that waits for the cloud", () => {
     expect((await as("GET", "/settings")).status).toBe(200);
     expect((await as("PATCH", "/settings", { allowedOrigins: [SITE] })).status).toBe(200);
     expect((await as("GET", "/members")).status).toBe(200);
-    expect((await as("POST", "/invites", { role: "agent" })).status).toBe(201);
+    const invited = { email: "invited@example.com", role: "member" };
+    expect((await as("POST", "/invites", invited)).status).toBe(201);
     expect((await as("GET", "/alerts")).status).toBe(200);
     expect((await as("PATCH", "/alerts", { email: true })).status).toBe(200);
     expect((await as("GET", "/export")).status).toBe(200);

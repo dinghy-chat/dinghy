@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { BillingRow } from "../../../ee/operator/billing.tsx";
 import type {
   BillingState,
@@ -17,6 +17,7 @@ import {
   Avatar,
   CopyButton,
   ErrorNote,
+  Field,
   failureText,
   Icon,
   PageRow,
@@ -58,7 +59,7 @@ export function useTeam(api: WorkspaceApi, role: Role) {
       }),
       failed,
     );
-    if (role !== "agent") {
+    if (role !== "member") {
       api.invites().then(
         apply((page) => setInvites(page.invites)),
         failed,
@@ -108,7 +109,7 @@ export function useTeam(api: WorkspaceApi, role: Role) {
 
 type Team = ReturnType<typeof useTeam>;
 
-const ROLES = ["owner", "admin", "agent"] as const;
+const ROLES = ["owner", "admin", "member"] as const;
 
 /** Who is about to leave or be removed, for the dialog that asks first. */
 type Leaving = { member: Member; self: boolean };
@@ -130,7 +131,7 @@ function MemberRow({
   onRemove(self: boolean): void;
 }) {
   const self = member.id === me.id;
-  const canRemove = self || role === "owner" || (role === "admin" && member.role === "agent");
+  const canRemove = self || role === "owner" || (role === "admin" && member.role === "member");
   const removeText = self ? t("leaveWorkspace") : t("removeMember", { name: member.name });
   return (
     <tr>
@@ -188,67 +189,110 @@ function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): 
   const pendingText = t(days === 1 ? "invitePendingOne" : "invitePendingMany", {
     days: String(days),
   });
+  const revokeText = t("inviteRevokeLabel", { email: pending.email });
   return (
-    <tr className="pending">
+    <tr>
       <td>
         <div className="who-cell">
-          <span className="avatar nobody" aria-hidden="true">
-            <Icon name="link" size={16} />
-          </span>
+          <Avatar name={pending.email} letters={pending.email.slice(0, 1).toUpperCase()} />
           <span className="who-lines">
-            <span className="quiet">{t("inviteLinkLabel")}</span>
-            {/* Under the name, since an invite link has no email. */}
+            {/* No name until they join. The email column shows the email, except on a phone. */}
             <span className="chip warn">{pendingText}</span>
+            <span className="phone-only">{pending.email}</span>
           </span>
         </div>
       </td>
-      <td className="email-cell" />
+      <td className="email-cell">{pending.email}</td>
       <td>
         <span className="chip">{t(ROLE_TEXT[pending.role])}</span>
       </td>
       <td className="end-cell">
         <button
           type="button"
-          className="text-button"
-          aria-label={t("inviteRevokeLabel", {
-            role: t(ROLE_TEXT[pending.role]),
-            date: shortDate(pending.expiresAt),
-          })}
+          className="icon-button quiet-danger"
+          aria-label={revokeText}
+          title={revokeText}
           onClick={onRevoke}
         >
-          {t("inviteRevoke")}
+          <Icon name="trash" size={18} />
         </button>
       </td>
     </tr>
   );
 }
 
-/** "Invite someone": a role, then a link to copy, in a small dialog. */
+const INVITED_ROLES = [
+  { value: "member", label: "roleMember", help: "inviteMemberHelp" },
+  { value: "admin", label: "roleAdmin", help: "inviteAdminHelp" },
+] as const;
+
+/** The role for an invite, as two pills, with a line on what the picked one can do. */
+function RolePicker({
+  value,
+  onChange,
+}: {
+  value: "admin" | "member";
+  onChange(role: "admin" | "member"): void;
+}) {
+  const picked = INVITED_ROLES.find((one) => one.value === value) ?? INVITED_ROLES[0];
+  return (
+    <>
+      <fieldset className="choices" aria-label={t("inviteRole")}>
+        {INVITED_ROLES.map((choice) => (
+          <label key={choice.value}>
+            <input
+              type="radio"
+              name="invite-role"
+              checked={value === choice.value}
+              onChange={() => onChange(choice.value)}
+            />
+            {t(choice.label)}
+          </label>
+        ))}
+      </fieldset>
+      <p className="hint">{t(picked.help)}</p>
+    </>
+  );
+}
+
+/**
+ * "Invite someone": an email and a role. With a mail server the invite goes by email. Without one,
+ * the dialog shows a link to copy.
+ */
 export function InviteDialog({
   api,
   role,
+  emailAvailable,
   onClose,
 }: {
   api: WorkspaceApi;
   role: Role;
+  /** The server sends email, so the invite goes by email. */
+  emailAvailable: boolean;
   onClose(): void;
 }) {
   const dialog = useModal();
   const titleId = useId();
-  const [inviteRole, setInviteRole] = useState<"admin" | "agent">("agent");
-  const [link, setLink] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
+  const [link, setLink] = useState<{ url: string; email: string } | null>(null);
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const createLink = async () => {
+  const send = async (event: FormEvent) => {
+    event.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      const created = await api.createInvite(inviteRole);
-      setLink(new URL(`/invite?token=${encodeURIComponent(created.token)}`, location.origin).href);
+      const created = await api.createInvite(email.trim(), inviteRole);
+      if (created.token === null) {
+        dialog.current?.close();
+        return;
+      }
+      const url = new URL(`/invite?token=${encodeURIComponent(created.token)}`, location.origin);
+      setLink({ url: url.href, email: created.email });
     } catch (failure) {
-      setLink(null);
-      setError(failureText(failure, {}));
+      setError(failureText(failure, { 409: "inviteeIsMember" }));
     } finally {
       setBusy(false);
     }
@@ -265,56 +309,54 @@ export function InviteDialog({
         if (event.target === event.currentTarget) dialog.current?.close();
       }}
     >
-      <div className="dialog-body">
+      <form className="dialog-body" onSubmit={(event) => void send(event)}>
         <h2 id={titleId}>{t("invitesTitle")}</h2>
-        <p className="dialog-text">{t("inviteHelp")}</p>
-        {role === "owner" && (
-          <Select<"admin" | "agent">
-            label={t("inviteRole")}
-            hideLabel={false}
-            value={inviteRole}
-            choices={[
-              { value: "agent", label: t("roleAgent") },
-              { value: "admin", label: t("roleAdmin") },
-            ]}
-            onChange={(next) => {
-              setInviteRole(next);
-              setLink(null);
-            }}
-          />
-        )}
-        <ErrorNote text={error} />
-        {link !== null && (
+        <p className="dialog-text">{t(emailAvailable ? "inviteHelpMail" : "inviteHelpLink")}</p>
+        {link === null ? (
+          <>
+            <Field
+              label={t("email")}
+              type="email"
+              required
+              maxLength={254}
+              autoComplete="off"
+              autoFocus
+              value={email}
+              onChange={setEmail}
+            />
+            {role === "owner" ? (
+              <RolePicker value={inviteRole} onChange={setInviteRole} />
+            ) : (
+              <p className="hint">{t("inviteMemberHelp")}</p>
+            )}
+          </>
+        ) : (
           <div className="created">
-            <p className="hint">{t("inviteLink")}</p>
+            <p className="hint">{t("inviteLink", { email: link.email })}</p>
             <div className="copy-field">
               <input
                 className="mono"
                 readOnly
                 aria-label={t("inviteLinkLabel")}
-                value={link}
+                value={link.url}
                 onFocus={(event) => event.target.select()}
               />
-              <CopyButton value={link} label={t("inviteLinkCopy")} />
+              <CopyButton value={link.url} label={t("inviteLinkCopy")} />
             </div>
           </div>
         )}
+        <ErrorNote text={error} />
         <div className="dialog-actions">
           <button type="button" className="pill" onClick={() => dialog.current?.close()}>
             {link === null ? t("cancel") : t("done")}
           </button>
           {link === null && (
-            <button
-              type="button"
-              className="pill dark"
-              disabled={busy}
-              onClick={() => void createLink()}
-            >
-              {t("inviteCreate")}
+            <button type="submit" className="pill dark" disabled={busy}>
+              {t(emailAvailable ? "inviteSend" : "inviteCreate")}
             </button>
           )}
         </div>
-      </div>
+      </form>
     </dialog>
   );
 }
@@ -341,6 +383,7 @@ export function TeamTab({
   onLeft(): void;
 }) {
   const [leaving, setLeaving] = useState<Leaving | null>(null);
+  const [revoking, setRevoking] = useState<PendingInvite | null>(null);
   const owners = team.members.filter((member) => member.role === "owner").length;
   const lastOwner =
     owners === 1 && team.members.some((one) => one.id === me.id && one.role === "owner");
@@ -356,7 +399,7 @@ export function TeamTab({
       await team.act(api.removeMember(member.id));
     }
   };
-  const manages = role !== "agent";
+  const manages = role !== "member";
   return (
     <>
       <table className="members">
@@ -386,11 +429,7 @@ export function TeamTab({
           ))}
           {manages &&
             team.invites.map((pending) => (
-              <InviteRow
-                key={pending.id}
-                pending={pending}
-                onRevoke={() => void team.act(api.revokeInvite(pending.id))}
-              />
+              <InviteRow key={pending.id} pending={pending} onRevoke={() => setRevoking(pending)} />
             ))}
         </tbody>
       </table>
@@ -403,6 +442,18 @@ export function TeamTab({
       <ErrorNote text={team.note} />
       {usage !== null && <PlanCards usage={usage} />}
       {role === "owner" && <BillingRow api={api} workspaceId={workspaceId} billing={billing} />}
+      {revoking !== null && (
+        <Confirm
+          title={t("inviteRevokeTitle", { email: revoking.email })}
+          text={t("inviteRevokeText")}
+          confirm={t("inviteRevokeYes")}
+          onConfirm={() => {
+            setRevoking(null);
+            void team.act(api.revokeInvite(revoking.id));
+          }}
+          onCancel={() => setRevoking(null)}
+        />
+      )}
       {leaving !== null && (
         <Confirm
           title={

@@ -27,6 +27,7 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { sha256Hex } from "./identity.ts";
 import type { Live } from "./live.ts";
 import { appendMessage } from "./messages.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
@@ -75,7 +76,7 @@ interface Person {
 }
 
 const person = (
-  role: "owner" | "admin" | "agent" | null,
+  role: "owner" | "admin" | "member" | null,
   workspaceId = space.id,
 ): Promise<Person> =>
   signedInOperator({
@@ -98,10 +99,52 @@ const call = (method: string, path: string, as: Person | null, body?: unknown, o
   });
 const inSpace = (path: string, id = space.id) => `/v1/operator/workspaces/${id}${path}`;
 
-async function newInvite(by: Person, role: "admin" | "agent" = "agent", workspaceId = space.id) {
-  const response = await call("POST", inSpace("/invites", workspaceId), by, { role });
+const newEmail = () => `invitee-${randomUUID()}@example.com`;
+
+/** Invites `email` as `by`, and returns the answer's body. */
+async function createInvite(
+  by: Person,
+  role: "admin" | "member" = "member",
+  email = newEmail(),
+  server = app,
+) {
+  const response = await server.request(inSpace("/invites"), {
+    method: "POST",
+    headers: { cookie: by.cookie, origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify({ email, role }),
+  });
   expect(response.status).toBe(201);
-  return ((await response.json()) as { id: string; token: string }).token;
+  return (await response.json()) as { id: string; email: string; token: string | null };
+}
+
+/** Invites `email` on the server with no mail server, and returns the token it shows. */
+async function newInvite(by: Person, role: "admin" | "member" = "member", email = newEmail()) {
+  const { token } = await createInvite(by, role, email);
+  if (token === null) throw new Error("A server with no mail server showed no token");
+  return token;
+}
+
+/** Invites `email` on the server with a mail server, and returns the token from the email. */
+async function mailInvite(by: Person, email: string, role: "admin" | "member" = "member") {
+  const before = mail.countTo(email);
+  expect((await createInvite(by, role, email, mailApp)).token).toBeNull();
+  const link = new URL(await mail.linkTo(email, before));
+  return link.searchParams.get("token") ?? "";
+}
+
+/** A second usable invite for the same email, which the API would replace. Returns its token. */
+async function plantInvite(by: Person, email: string, role: "admin" | "member") {
+  const token = `${space.id}.${randomUUID()}`;
+  await owner.insert(invite).values({
+    workspaceId: space.id,
+    tokenHash: sha256Hex(token),
+    role,
+    email,
+    mailed: false,
+    createdBy: by.id,
+    expiresAt: new Date(Date.now() + 3_600_000),
+  });
+  return token;
 }
 
 const memberRow = async (operatorId: string, workspaceId = space.id) => {
@@ -114,13 +157,25 @@ const memberRow = async (operatorId: string, workspaceId = space.id) => {
   return row;
 };
 
-/** Asks for a join link. With no mail server, `app` answers with the link itself. */
-const join = (token: string, email: string, origin = ORIGIN, server = app) =>
+/** Joins with an invite, as a person with no session does. */
+const join = (
+  token: string,
+  // Null sends no name, as for an existing account.
+  { server = app, origin = ORIGIN, name = "New Person" as string | null } = {},
+) =>
   server.request("/v1/invites/join", {
     method: "POST",
     headers: { origin, "content-type": "application/json" },
-    body: JSON.stringify({ token, name: "New Person", email }),
+    body: JSON.stringify({ token, ...(name === null ? {} : { name }) }),
   });
+
+/** Joins as a new account, and returns the session cookie. */
+async function joinNew(token: string, server = app) {
+  const response = await join(token, { server });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ workspaceId: space.id });
+  return cookieOf(response);
+}
 
 /** Opens a join link and selects the page's button, as a person does. */
 async function openJoin(url: string, server = app) {
@@ -132,14 +187,6 @@ async function openJoin(url: string, server = app) {
     workspaceId: body.workspaceId ?? null,
     error: body.error?.code ?? null,
   };
-}
-
-/** Joins on the server with no mail server: asks for the link, then opens it. */
-async function joinAndOpen(token: string, email: string) {
-  const response = await join(token, email);
-  expect(response.status).toBe(200);
-  const { signInUrl } = (await response.json()) as { signInUrl: string };
-  return openJoin(signInUrl);
 }
 
 const operatorRow = async (email: string) =>
@@ -177,41 +224,71 @@ beforeEach(async () => {
   space = await createWorkspace(db, "Acme", [SITE]);
 });
 
-describe("joining by link", () => {
-  test("a new and an existing email get the same answer, and an email that says nothing typed", async () => {
+describe("inviting by email", () => {
+  test("with a mail server, the invite goes by email, and the answer shows no token", async () => {
     const boss = await person("owner");
-    const token = await newInvite(boss);
-    const fresh = `joiner-${randomUUID()}@example.com`;
-    const known = await join(token, fresh, ORIGIN, mailApp);
-    const existing = await join(token, boss.email, ORIGIN, mailApp);
-    expect(known.status).toBe(200);
-    expect(await known.json()).toEqual({ ok: true, signInUrl: null });
-    expect(await existing.json()).toEqual({ ok: true, signInUrl: null });
-    await mail.linkTo(fresh);
-    const sent = mail.sent.find((one) => one.to === fresh);
-    expect(sent?.subject).toBe("Your link to join your team on Dinghy");
+    const email = newEmail();
+    const created = await createInvite(boss, "admin", email.toUpperCase(), mailApp);
+    expect(created).toMatchObject({ email, role: "admin", token: null });
+    const link = await mail.linkTo(email);
+    expect(link.startsWith(`${ORIGIN}/invite?token=${space.id}.`)).toBe(true);
+    const sent = mail.sent.find((one) => one.to === email);
+    expect(sent?.subject).toBe("Join Acme on Dinghy");
     expect(sent?.text.startsWith("Hi,\n\n")).toBe(true);
+    expect(sent?.text).toContain("Acme on Dinghy as an admin");
+    expect(sent?.text).toContain("7 days");
     expect(sent?.text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
-    expect(sent?.text).toContain("15 minutes");
-    // Nobody has proved this address, so neither the workspace nor the typed name reach it.
-    expect(sent?.text).not.toContain("Acme");
-    expect(sent?.text).not.toContain("New Person");
-    // Nothing exists before the link opens.
-    expect(await operatorRow(fresh)).toBeUndefined();
+    const listed = await call("GET", inSpace("/invites"), boss);
+    expect(await listed.json()).toMatchObject({ invites: [{ id: created.id, email }] });
   });
 
-  test("opening the link creates the account, joins with the role, signs in, and works once", async () => {
+  test("with no mail server, the answer shows the token and nothing is sent", async () => {
     const boss = await person("owner");
-    const token = await newInvite(boss, "admin");
-    const email = `joiner-${randomUUID()}@example.com`;
-    await join(token, email.toUpperCase(), ORIGIN, mailApp);
-    const link = await mail.linkTo(email);
-    expect(link.startsWith(`${ORIGIN}/link?for=join&token=`)).toBe(true);
-    // Opening the link, as a mail scanner does, uses nothing.
-    await openLink(mailApp, link);
-    expect(await operatorRow(email)).toBeUndefined();
-    const { cookie, workspaceId } = await openJoin(link, mailApp);
-    expect(workspaceId).toBe(space.id);
+    const email = newEmail();
+    const created = await createInvite(boss, "member", email);
+    expect(created.token?.startsWith(`${space.id}.`)).toBe(true);
+    expect(mail.countTo(email)).toBe(0);
+  });
+
+  test("inviting the same email again replaces the old invite", async () => {
+    const boss = await person("owner");
+    const email = newEmail();
+    const first = await newInvite(boss, "member", email);
+    const second = await newInvite(boss, "admin", email);
+    expect((await call("POST", "/v1/invites/preview", null, { token: first })).status).toBe(404);
+    const offer = await call("POST", "/v1/invites/preview", null, { token: second });
+    expect(await offer.json()).toMatchObject({ role: "admin" });
+    const listed = (await (await call("GET", inSpace("/invites"), boss)).json()) as {
+      invites: unknown[];
+    };
+    expect(listed.invites).toHaveLength(1);
+  });
+
+  test("a member's email cannot be invited", async () => {
+    const boss = await person("owner");
+    const member = await person("member");
+    const response = await call("POST", inSpace("/invites"), boss, {
+      email: member.email.toUpperCase(),
+      role: "admin",
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "already_member" } });
+    expect(await owner.select().from(invite).where(eq(invite.workspaceId, space.id))).toEqual([]);
+  });
+
+  test("a mailed invite and a new email join with one request, and prove the email", async () => {
+    const boss = await person("owner");
+    const email = newEmail();
+    const token = await mailInvite(boss, email, "admin");
+    const offer = await call("POST", "/v1/invites/preview", null, { token });
+    expect(await offer.json()).toEqual({
+      workspaceName: "Acme",
+      role: "admin",
+      email,
+      hasAccount: false,
+      needsName: true,
+    });
+    const cookie = await joinNew(token, mailApp);
     const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
     expect(await me.json()).toMatchObject({
       name: "New Person",
@@ -219,92 +296,107 @@ describe("joining by link", () => {
       workspaces: [{ workspaceId: space.id, role: "admin" }],
     });
     expect((await operatorRow(email))?.emailProven).toBe(true);
+    // The invite was the only email.
+    expect(mail.countTo(email)).toBe(1);
+    expect((await join(token, { server: mailApp })).status).toBe(404);
+  });
+
+  test("a new account needs a name", async () => {
+    const boss = await person("owner");
+    const email = newEmail();
+    const token = await mailInvite(boss, email);
+    expect((await join(token, { server: mailApp, name: null })).status).toBe(400);
+    expect(await operatorRow(email)).toBeUndefined();
+  });
+
+  test("a mailed invite and an existing account: a link goes to the email, and it joins and signs in", async () => {
+    const other = await createWorkspace(db, "Other", [SITE]);
+    const existing = await person("owner", other.id);
+    const boss = await person("owner");
+    const token = await mailInvite(boss, existing.email);
+    const offer = await call("POST", "/v1/invites/preview", null, { token });
+    expect(await offer.json()).toMatchObject({ email: existing.email, hasAccount: true });
+    const response = await join(token, { server: mailApp, name: null });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ workspaceId: null });
+    expect(response.headers.getSetCookie()).toEqual([]);
+    const link = await mail.linkTo(existing.email, 1);
+    expect(link.startsWith(`${ORIGIN}/link?for=join&token=`)).toBe(true);
+    expect(mail.sent.at(-1)?.subject).toBe("Your link to join your team on Dinghy");
+    // Opening the link, as a mail scanner does, uses nothing.
+    await openLink(mailApp, link);
+    expect(await memberRow(existing.id)).toBeUndefined();
+    const { cookie, workspaceId } = await openJoin(link, mailApp);
+    expect(workspaceId).toBe(space.id);
+    expect((await memberRow(existing.id))?.role).toBe("member");
+    // Its own name stays.
+    const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
+    expect(await me.json()).toMatchObject({ id: existing.id, name: existing.email });
     const again = await pressLinkButton(mailApp, link);
     expect(again.status).toBe(400);
     expect(await again.json()).toMatchObject({ error: { code: "link_invalid" } });
     expect(again.headers.getSetCookie()).toEqual([]);
   });
 
-  test("an expired link changes nothing", async () => {
+  test("an expired join link changes nothing", async () => {
+    const existing = await person(null);
     const boss = await person("owner");
-    const token = await newInvite(boss);
-    const email = `late-${randomUUID()}@example.com`;
-    await join(token, email, ORIGIN, mailApp);
-    const link = await mail.linkTo(email);
+    const token = await mailInvite(boss, existing.email);
+    await join(token, { server: mailApp });
+    const link = await mail.linkTo(existing.email, 1);
     await owner
       .update(verification)
       .set({ expiresAt: new Date(Date.now() - 1000) })
       .where(sql`${verification.identifier} like 'invite-join:%'`);
     expect((await openJoin(link, mailApp)).error).toBe("link_invalid");
-    expect(await operatorRow(email)).toBeUndefined();
+    expect(await memberRow(existing.id)).toBeUndefined();
     expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
-  });
-
-  test("an existing account joins and signs in with its own login", async () => {
-    const other = await createWorkspace(db, "Other", [SITE]);
-    const existing = await person("owner", other.id);
-    const boss = await person("owner");
-    const token = await newInvite(boss);
-    await join(token, existing.email, ORIGIN, mailApp);
-    const { cookie, workspaceId } = await openJoin(await mail.linkTo(existing.email), mailApp);
-    expect(workspaceId).toBe(space.id);
-    expect(
-      await owner.select().from(operator).where(eq(operator.email, existing.email)),
-    ).toHaveLength(1);
-    expect((await memberRow(existing.id))?.role).toBe("agent");
-    // Its own name stays: the typed one only names a new account.
-    const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
-    expect(await me.json()).toMatchObject({ id: existing.id, name: existing.email });
   });
 
   test("an existing account with no name takes the typed one", async () => {
     const [unnamed] = await owner
       .insert(operator)
-      .values({ name: "", email: `unnamed-${randomUUID()}@example.com`, emailVerified: true })
+      .values({ name: "", email: newEmail(), emailVerified: true })
       .returning({ id: operator.id, email: operator.email });
     if (unnamed === undefined) throw new Error("No operator");
     const boss = await person("owner");
-    await join(await newInvite(boss), unnamed.email, ORIGIN, mailApp);
-    const { cookie } = await openJoin(await mail.linkTo(unnamed.email), mailApp);
+    const token = await mailInvite(boss, unnamed.email);
+    const offer = await call("POST", "/v1/invites/preview", null, { token });
+    expect(await offer.json()).toMatchObject({ hasAccount: true, needsName: true });
+    expect((await join(token, { server: mailApp, name: null })).status).toBe(400);
+    await join(token, { server: mailApp });
+    const { cookie } = await openJoin(await mail.linkTo(unnamed.email, 1), mailApp);
     const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
     expect(await me.json()).toMatchObject({ id: unnamed.id, name: "New Person" });
   });
 
-  test("an invite used or revoked before the link opens makes nothing", async () => {
+  test("an invite used or revoked before the join link opens makes nothing", async () => {
     const boss = await person("owner");
-    const used = await newInvite(boss);
-    const usedEmail = `used-${randomUUID()}@example.com`;
-    await join(used, usedEmail, ORIGIN, mailApp);
-    const someone = await person(null);
+    const used = await person(null);
+    const usedToken = await mailInvite(boss, used.email);
+    await join(usedToken, { server: mailApp });
     expect(
-      (await call("POST", "/v1/operator/invites/accept", someone, { token: used })).status,
+      (await call("POST", "/v1/operator/invites/accept", used, { token: usedToken })).status,
     ).toBe(200);
-    const response = await call("POST", inSpace("/invites"), boss, { role: "agent" });
-    const revoked = (await response.json()) as { id: string; token: string };
-    const revokedEmail = `revoked-${randomUUID()}@example.com`;
-    await join(revoked.token, revokedEmail, ORIGIN, mailApp);
-    await call("DELETE", inSpace(`/invites/${revoked.id}`), boss);
-    for (const email of [usedEmail, revokedEmail]) {
-      const opened = await openJoin(await mail.linkTo(email), mailApp);
+    const revoked = await person(null);
+    await join(await mailInvite(boss, revoked.email), { server: mailApp });
+    const [pending] = (await (await call("GET", inSpace("/invites"), boss)).json()).invites as {
+      id: string;
+    }[];
+    await call("DELETE", inSpace(`/invites/${pending?.id}`), boss);
+    for (const { email } of [used, revoked]) {
+      const opened = await openJoin(await mail.linkTo(email, 1), mailApp);
       expect(opened).toEqual({ cookie: "", workspaceId: null, error: "invite_invalid" });
-      expect(await operatorRow(email)).toBeUndefined();
     }
+    expect(await memberRow(revoked.id)).toBeUndefined();
   });
 
-  test("with no mail server, a new email gets the link in the answer, and it works the same", async () => {
+  test("with no mail server, a new email joins at once and proves nothing", async () => {
     const boss = await person("owner");
-    const token = await newInvite(boss);
-    const email = `plain-${randomUUID()}@example.com`;
-    const { cookie, workspaceId } = await joinAndOpen(token, email);
-    expect(workspaceId).toBe(space.id);
+    const email = newEmail();
+    const cookie = await joinNew(await newInvite(boss, "member", email));
     const me = await app.request("/v1/operator/me", { headers: { cookie } });
     expect(await me.json()).toMatchObject({ email, workspaces: [{ workspaceId: space.id }] });
-  });
-
-  test("with no mail server, a join proves nothing until an emailed link is used", async () => {
-    const boss = await person("owner");
-    const email = `unproven-${randomUUID()}@example.com`;
-    const { cookie } = await joinAndOpen(await newInvite(boss), email);
     expect((await operatorRow(email))?.emailProven).toBe(false);
     // A link from `chat sign-in-link` signs in, and proves nothing either.
     const shown = await signIn(app, auth, email);
@@ -326,19 +418,38 @@ describe("joining by link", () => {
     );
   });
 
+  test("with no mail server, an existing account cannot join without signing in", async () => {
+    const existing = await person(null);
+    const boss = await person("owner");
+    const token = await newInvite(boss, "member", existing.email);
+    const response = await join(token, { name: null });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "email_taken" } });
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
+  });
+
+  test("a signed-in account with another email cannot accept the invite", async () => {
+    const boss = await person("owner");
+    const someone = await person(null);
+    const token = await newInvite(boss);
+    const response = await call("POST", "/v1/operator/invites/accept", someone, { token });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "invite_other_email" } });
+    expect(await memberRow(someone.id)).toBeUndefined();
+    expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
+  });
+
   test("a password in the body is ignored, and nothing stores one", async () => {
     const boss = await person("owner");
-    const token = await newInvite(boss);
-    const email = `pw-${randomUUID()}@example.com`;
+    const email = newEmail();
+    const token = await newInvite(boss, "member", email);
     const response = await call("POST", "/v1/invites/join", null, {
       token,
       name: "New",
-      email,
       password: "a-long-password-value",
     });
     expect(response.status).toBe(200);
-    const { signInUrl } = (await response.json()) as { signInUrl: string };
-    await openJoin(signInUrl);
     const created = await operatorRow(email);
     expect(created).toBeDefined();
     expect(
@@ -353,17 +464,17 @@ describe("joining by link", () => {
 describe("the audit log", () => {
   test("each security change writes one line, with IDs and no email or secret", async () => {
     const boss = await person("owner");
-    const target = await person("agent");
-    const leaving = await person("agent");
+    const target = await person("member");
+    const leaving = await person("member");
     lines.length = 0;
     await call("PATCH", inSpace(`/members/${target.id}`), boss, { role: "admin" });
     await call("DELETE", inSpace(`/members/${leaving.id}`), boss);
     await call("PATCH", inSpace("/settings"), boss, { allowedOrigins: [SITE] });
     const rotated = await call("POST", inSpace("/settings/rotate-secret"), boss, {});
     const { signingSecret } = (await rotated.json()) as { signingSecret: string };
-    const token = await newInvite(boss);
-    const joiner = `joiner-${randomUUID()}@example.com`;
-    expect((await joinAndOpen(token, joiner)).cookie).not.toBe("");
+    const joiner = newEmail();
+    const token = await newInvite(boss, "member", joiner);
+    expect(await joinNew(token)).not.toBe("");
 
     const by = { workspaceId: space.id, operatorId: boss.id };
     expect(audits("member.role_changed")).toEqual([
@@ -385,9 +496,9 @@ describe("the audit log", () => {
   });
 
   test("a refused change writes no line", async () => {
-    const agent = await person("agent");
+    const member = await person("member");
     lines.length = 0;
-    expect((await call("POST", inSpace("/settings/rotate-secret"), agent, {})).status).toBe(403);
+    expect((await call("POST", inSpace("/settings/rotate-secret"), member, {})).status).toBe(403);
     expect(lines).toEqual([]);
   });
 });
@@ -399,59 +510,63 @@ describe("each role can do only what it should", () => {
     [
       "read settings",
       (as) => call("GET", inSpace("/settings"), as),
-      { owner: 200, admin: 200, agent: 403 },
+      { owner: 200, admin: 200, member: 403 },
     ],
     [
       "change origins",
       (as) => call("PATCH", inSpace("/settings"), as, { allowedOrigins: [SITE] }),
-      { owner: 200, admin: 200, agent: 403 },
+      { owner: 200, admin: 200, member: 403 },
     ],
     [
       "rotate the secret",
       (as) => call("POST", inSpace("/settings/rotate-secret"), as, {}),
-      { owner: 200, admin: 200, agent: 403 },
+      { owner: 200, admin: 200, member: 403 },
     ],
     [
       "list invites",
       (as) => call("GET", inSpace("/invites"), as),
-      { owner: 200, admin: 200, agent: 403 },
+      { owner: 200, admin: 200, member: 403 },
     ],
     [
-      "invite an agent",
-      (as) => call("POST", inSpace("/invites"), as, { role: "agent" }),
-      { owner: 201, admin: 201, agent: 403 },
+      "invite a member",
+      (as) => call("POST", inSpace("/invites"), as, { email: newEmail(), role: "member" }),
+      { owner: 201, admin: 201, member: 403 },
     ],
     [
       "invite an admin",
-      (as) => call("POST", inSpace("/invites"), as, { role: "admin" }),
-      { owner: 201, admin: 403, agent: 403 },
+      (as) => call("POST", inSpace("/invites"), as, { email: newEmail(), role: "admin" }),
+      { owner: 201, admin: 403, member: 403 },
     ],
     [
       "list members",
       (as) => call("GET", inSpace("/members"), as),
-      { owner: 200, admin: 200, agent: 200 },
+      { owner: 200, admin: 200, member: 200 },
     ],
     [
       "revoke an invite",
       (as) => call("DELETE", inSpace(`/invites/${AGENT_ID}`), as),
-      { owner: 200, admin: 200, agent: 403 },
+      { owner: 200, admin: 200, member: 403 },
     ],
   ];
 
   test.each(checks)("%s", async (_name, run, expected) => {
-    for (const role of ["owner", "admin", "agent"] as const) {
+    for (const role of ["owner", "admin", "member"] as const) {
       expect([role, (await run(await person(role))).status]).toEqual([role, expected[role]]);
     }
   });
 
   test("an owner cannot be invited, by anyone", async () => {
     const boss = await person("owner");
-    expect((await call("POST", inSpace("/invites"), boss, { role: "owner" })).status).toBe(400);
+    const response = await call("POST", inSpace("/invites"), boss, {
+      email: newEmail(),
+      role: "owner",
+    });
+    expect(response.status).toBe(400);
   });
 
   test("only an owner changes a role", async () => {
-    const target = await person("agent");
-    for (const role of ["admin", "agent"] as const) {
+    const target = await person("member");
+    for (const role of ["admin", "member"] as const) {
       const as = await person(role);
       const response = await call("PATCH", inSpace(`/members/${target.id}`), as, { role: "admin" });
       expect(response.status).toBe(403);
@@ -459,7 +574,7 @@ describe("each role can do only what it should", () => {
       const self = await call("PATCH", inSpace(`/members/${as.id}`), as, { role: "owner" });
       expect(self.status).toBe(403);
     }
-    expect((await memberRow(target.id))?.role).toBe("agent");
+    expect((await memberRow(target.id))?.role).toBe("member");
     const boss = await person("owner");
     expect(
       (await call("PATCH", inSpace(`/members/${target.id}`), boss, { role: "admin" })).status,
@@ -467,27 +582,27 @@ describe("each role can do only what it should", () => {
     expect((await memberRow(target.id))?.role).toBe("admin");
   });
 
-  test("an admin removes only agents, an agent removes only itself", async () => {
+  test("an admin removes only members, a member removes only itself", async () => {
     const admin = await person("admin");
-    const agent = await person("agent");
-    const otherAgent = await person("agent");
+    const member = await person("member");
+    const otherMember = await person("member");
     const otherAdmin = await person("admin");
     const boss = await person("owner");
     const remove = (as: Person, target: Person) =>
       call("DELETE", inSpace(`/members/${target.id}`), as);
-    expect((await remove(agent, otherAgent)).status).toBe(403);
+    expect((await remove(member, otherMember)).status).toBe(403);
     expect((await remove(admin, otherAdmin)).status).toBe(403);
     expect((await remove(admin, boss)).status).toBe(403);
-    expect((await remove(admin, otherAgent)).status).toBe(200);
-    expect((await remove(agent, agent)).status).toBe(200);
-    expect((await memberRow(otherAgent.id))?.removedAt).toBeInstanceOf(Date);
+    expect((await remove(admin, otherMember)).status).toBe(200);
+    expect((await remove(member, member)).status).toBe(200);
+    expect((await memberRow(otherMember.id))?.removedAt).toBeInstanceOf(Date);
   });
 
   test("a role change takes effect on the next request", async () => {
     const boss = await person("owner");
     const admin = await person("admin");
     expect((await call("GET", inSpace("/settings"), admin)).status).toBe(200);
-    await call("PATCH", inSpace(`/members/${admin.id}`), boss, { role: "agent" });
+    await call("PATCH", inSpace(`/members/${admin.id}`), boss, { role: "member" });
     expect((await call("GET", inSpace("/settings"), admin)).status).toBe(403);
   });
 
@@ -541,7 +656,7 @@ describe("each role can do only what it should", () => {
     for (const path of ["/settings", "/members", "/invites"]) {
       expect((await call("GET", inSpace(path), outsider)).status).toBe(404);
     }
-    const target = await person("agent");
+    const target = await person("member");
     expect((await call("DELETE", inSpace(`/members/${target.id}`), outsider)).status).toBe(404);
   });
 });
@@ -561,7 +676,7 @@ describe("the last owner", () => {
       expect(answer.status).toBe(409);
       expect(await answer.json()).toEqual({ error: refused });
     }
-    const second = await person("agent");
+    const second = await person("member");
     await call("PATCH", inSpace(`/members/${second.id}`), boss, { role: "owner" });
     expect((await call("PATCH", path, boss, { role: "admin" })).status).toBe(200);
   });
@@ -578,8 +693,8 @@ describe("the last owner", () => {
         .where(eq(workspaceMember.workspaceId, space.id))
         .for("update");
       both = Promise.all([
-        Promise.resolve(call("PATCH", inSpace(`/members/${two.id}`), one, { role: "agent" })),
-        Promise.resolve(call("PATCH", inSpace(`/members/${one.id}`), two, { role: "agent" })),
+        Promise.resolve(call("PATCH", inSpace(`/members/${two.id}`), one, { role: "member" })),
+        Promise.resolve(call("PATCH", inSpace(`/members/${one.id}`), two, { role: "member" })),
       ]);
       await untilWaiting(owner, 2);
     });
@@ -597,8 +712,8 @@ describe("the last owner", () => {
 describe("team changes and other writes at once", () => {
   test("a team change waiting for the workspace does not deadlock with a reply", async () => {
     const boss = await person("owner");
-    const replier = await person("agent");
-    const target = await person("agent");
+    const replier = await person("member");
+    const target = await person("member");
     const visitorId = randomUUID();
     await owner.execute(
       sql`insert into visitor (workspace_id, id, token_hash) values (${space.id}, ${visitorId}, ${randomUUID()})`,
@@ -643,7 +758,9 @@ describe("team changes and other writes at once", () => {
         .set({ removedAt: new Date() })
         .where(eq(workspaceMember.operatorId, admin.id));
       // The request passes its first check, because the removal has not committed.
-      attempt = Promise.resolve(call("POST", inSpace("/invites"), admin, { role: "agent" }));
+      attempt = Promise.resolve(
+        call("POST", inSpace("/invites"), admin, { email: newEmail(), role: "member" }),
+      );
       await untilWaiting(owner);
     });
     expect((await attempt)?.status).toBe(403);
@@ -672,15 +789,22 @@ describe("team changes and other writes at once", () => {
 describe("invites", () => {
   test("a link makes an account, joins with its role, and works once", async () => {
     const boss = await person("owner");
-    const token = await newInvite(boss, "admin");
+    const email = newEmail();
+    const token = await newInvite(boss, "admin", email.toUpperCase());
     const stored = await owner.select().from(invite).where(eq(invite.workspaceId, space.id));
     expect(JSON.stringify(stored)).not.toContain(token);
+    expect(stored).toMatchObject([{ email, mailed: false }]);
 
     const offer = await call("POST", "/v1/invites/preview", null, { token });
-    expect(await offer.json()).toEqual({ workspaceName: "Acme", role: "admin" });
+    expect(await offer.json()).toEqual({
+      workspaceName: "Acme",
+      role: "admin",
+      email,
+      hasAccount: false,
+      needsName: true,
+    });
 
-    const email = `new-${randomUUID()}@example.com`;
-    const { cookie } = await joinAndOpen(token, email.toUpperCase());
+    const cookie = await joinNew(token);
     expect(cookie).toContain("session");
     const me = await app.request("/v1/operator/me", { headers: { cookie } });
     expect(((await me.json()) as { workspaces: unknown[] }).workspaces).toEqual([
@@ -695,24 +819,21 @@ describe("invites", () => {
       },
     ]);
 
-    expect((await join(token, `again-${randomUUID()}@example.com`)).status).toBe(404);
+    expect((await join(token)).status).toBe(404);
     expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(404);
-    const late = await person(null);
-    expect((await call("POST", "/v1/operator/invites/accept", late, { token })).status).toBe(404);
   });
 
   test("an expired link and a revoked link do nothing", async () => {
     const boss = await person("owner");
-    const expired = await newInvite(boss);
-    await owner.update(invite).set({ expiresAt: new Date(Date.now() - 1000) });
     const someone = await person(null);
+    const expired = await newInvite(boss, "member", someone.email);
+    await owner.update(invite).set({ expiresAt: new Date(Date.now() - 1000) });
     expect(
       (await call("POST", "/v1/operator/invites/accept", someone, { token: expired })).status,
     ).toBe(404);
-    expect((await join(expired, `x-${randomUUID()}@example.com`)).status).toBe(404);
+    expect((await join(expired)).status).toBe(404);
 
-    const response = await call("POST", inSpace("/invites"), boss, { role: "agent" });
-    const revoked = (await response.json()) as { id: string; token: string };
+    const revoked = await createInvite(boss, "member", someone.email);
     await call("DELETE", inSpace(`/invites/${revoked.id}`), boss);
     expect(
       (await call("POST", "/v1/operator/invites/accept", someone, { token: revoked.token })).status,
@@ -726,10 +847,10 @@ describe("invites", () => {
       expect((await call("POST", "/v1/operator/invites/accept", someone, { token })).status).toBe(
         404,
       );
-      expect((await join(token, `x-${randomUUID()}@example.com`)).status).toBe(404);
+      expect((await join(token)).status).toBe(404);
     }
     const boss = await person("owner");
-    const real = await newInvite(boss);
+    const real = await newInvite(boss, "member", someone.email);
     const other = await createWorkspace(db, "Other", [SITE]);
     const moved = real.replace(space.id, other.id);
     expect(
@@ -741,7 +862,7 @@ describe("invites", () => {
     const other = await createWorkspace(db, "Other", [SITE]);
     const existing = await person("owner", other.id);
     const boss = await person("owner");
-    const token = await newInvite(boss);
+    const token = await newInvite(boss, "member", existing.email);
     const accepted = await call("POST", "/v1/operator/invites/accept", existing, { token });
     expect(await accepted.json()).toEqual({ workspaceId: space.id });
     const operators = await owner.select().from(operator).where(eq(operator.email, existing.email));
@@ -753,51 +874,75 @@ describe("invites", () => {
     expect(workspaces.map((one) => [one.workspaceId, one.role]).sort()).toEqual(
       [
         [other.id, "owner"],
-        [space.id, "agent"],
+        [space.id, "member"],
       ].sort(),
     );
     expect((await call("GET", inSpace("/members"), existing)).status).toBe(200);
   });
 
-  test("with no mail server, joining with a taken email makes nothing and leaves the link usable", async () => {
+  test("two joins racing for one link: one makes the account, and the other makes nothing", async () => {
     const boss = await person("owner");
-    const token = await newInvite(boss);
-    const response = await join(token, boss.email);
-    expect(response.status).toBe(409);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe("email_taken");
-    expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
-  });
-
-  test("two people racing for one link: one joins, and the other leaves no account", async () => {
-    const boss = await person("owner");
-    const token = await newInvite(boss);
-    const emails = [`a-${randomUUID()}@example.com`, `b-${randomUUID()}@example.com`];
-    const links = await Promise.all(
-      emails.map(async (email) => {
-        const response = await join(token, email);
-        return ((await response.json()) as { signInUrl: string }).signInUrl;
-      }),
-    );
-    const results = await Promise.all(links.map((link) => openJoin(link)));
-    expect(results.map((result) => result.error !== null).sort()).toEqual([false, true]);
-    const lost = emails[results.findIndex((result) => result.error !== null)] ?? "";
-    expect(results.find((result) => result.cookie === "")?.error).toBe("invite_invalid");
-    expect(await operatorRow(lost)).toBeUndefined();
+    const email = newEmail();
+    const token = await newInvite(boss, "member", email);
+    const results = await Promise.all([join(token), join(token)]);
+    const statuses = results.map((result) => result.status).sort();
+    // The second waits for the first account, then finds the invite used or the email taken.
+    expect([
+      [200, 404],
+      [200, 409],
+    ]).toContainEqual(statuses);
+    expect(results.filter((result) => cookieOf(result) !== "")).toHaveLength(1);
+    expect(await owner.select().from(operator).where(eq(operator.email, email))).toHaveLength(1);
   });
 
   test("an existing member keeps their role and does not use up the link", async () => {
     const boss = await person("owner");
-    const token = await newInvite(boss);
-    const accepted = await call("POST", "/v1/operator/invites/accept", boss, { token });
+    const someone = await person(null);
+    const token = await newInvite(boss, "admin", someone.email);
+    // They joined another way after the invite was made.
+    await owner
+      .insert(workspaceMember)
+      .values({ workspaceId: space.id, operatorId: someone.id, role: "member" });
+    const accepted = await call("POST", "/v1/operator/invites/accept", someone, { token });
     expect(accepted.status).toBe(409);
-    expect((await memberRow(boss.id))?.role).toBe("owner");
+    expect((await memberRow(someone.id))?.role).toBe("member");
     expect((await call("POST", "/v1/invites/preview", null, { token })).status).toBe(200);
+  });
+
+  test("two inviters inviting one email at once leave one usable invite", async () => {
+    const boss = await person("owner");
+    const admin = await person("admin");
+    const email = newEmail();
+    // Holding the address lock makes both requests wait at the same point, then go one by one.
+    let both: Promise<Response[]> | undefined;
+    await owner.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`invite:${space.id}:${email}`}, 0))`,
+      );
+      both = Promise.all(
+        [boss, admin].map((who) =>
+          Promise.resolve(call("POST", inSpace("/invites"), who, { email, role: "member" })),
+        ),
+      );
+      await untilWaiting(owner, 2);
+    });
+    const results = (await both) ?? [];
+    expect(results.map((result) => result.status)).toEqual([201, 201]);
+    const rows = await owner
+      .select()
+      .from(invite)
+      .where(and(eq(invite.workspaceId, space.id), eq(invite.email, email)));
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((row) => row.revokedAt === null)).toHaveLength(1);
   });
 
   test("two invites accepted at once leave one role, and the other invite usable", async () => {
     const boss = await person("owner");
     const someone = await person(null);
-    const tokens = [await newInvite(boss, "admin"), await newInvite(boss, "agent")];
+    const tokens = [
+      await newInvite(boss, "admin", someone.email),
+      await plantInvite(boss, someone.email, "member"),
+    ];
     // A held lock makes both requests pass the membership check before either can write.
     let both: Promise<Response[]> | undefined;
     await owner.transaction(async (tx) => {
@@ -831,19 +976,19 @@ describe("invites", () => {
 
     const demoted = await person("owner");
     const own = await newInvite(demoted, "admin");
-    await call("PATCH", inSpace(`/members/${demoted.id}`), boss, { role: "agent" });
+    await call("PATCH", inSpace(`/members/${demoted.id}`), boss, { role: "member" });
     expect((await call("POST", "/v1/invites/preview", null, { token: own })).status).toBe(404);
 
     // Another person's link is not affected.
     const others = await newInvite(boss);
-    const third = await person("agent");
+    const third = await person("member");
     await call("DELETE", inSpace(`/members/${third.id}`), boss);
     expect((await call("POST", "/v1/invites/preview", null, { token: others })).status).toBe(200);
   });
 
   test("a team change reaches the operators' feed, with no names in it", async () => {
     const boss = await person("owner");
-    const target = await person("agent");
+    const target = await person("member");
     await call("PATCH", inSpace(`/members/${target.id}`), boss, { role: "admin" });
     const rows = await owner
       .select()
@@ -859,11 +1004,11 @@ describe("invites", () => {
     const admin = await person("admin");
     await call("DELETE", inSpace(`/members/${admin.id}`), boss);
     expect((await call("GET", inSpace("/members"), admin)).status).toBe(404);
-    const token = await newInvite(boss, "agent");
+    const token = await newInvite(boss, "member", admin.email);
     expect((await call("POST", "/v1/operator/invites/accept", admin, { token })).status).toBe(200);
     const row = await memberRow(admin.id);
     expect(row?.removedAt).toBeNull();
-    expect(row?.role).toBe("agent");
+    expect(row?.role).toBe("member");
   });
 
   test("another site cannot read or use a link", async () => {
@@ -871,7 +1016,7 @@ describe("invites", () => {
     const token = await newInvite(boss);
     const evil = "https://evil.example";
     expect((await call("POST", "/v1/invites/preview", null, { token }, evil)).status).toBe(403);
-    expect((await join(token, `x-${randomUUID()}@example.com`, evil)).status).toBe(403);
+    expect((await join(token, { origin: evil })).status).toBe(403);
     expect((await call("POST", "/v1/operator/invites/accept", boss, { token }, evil)).status).toBe(
       403,
     );
@@ -996,13 +1141,13 @@ describe("assignment", () => {
   const path = (conversationId: string) => inSpace(`/conversations/${conversationId}/assignee`);
 
   test("any member assigns to any member, and clears it", async () => {
-    const agent = await person("agent");
-    const other = await person("agent");
+    const member = await person("member");
+    const other = await person("member");
     const id = await aConversation();
     wakes.length = 0;
-    expect((await call("PUT", path(id), agent, { operatorId: other.id })).status).toBe(200);
+    expect((await call("PUT", path(id), member, { operatorId: other.id })).status).toBe(200);
     expect(wakes).toContain("operators");
-    const list = await call("GET", inSpace("/conversations"), agent);
+    const list = await call("GET", inSpace("/conversations"), member);
     const { conversations } = (await list.json()) as {
       conversations: { assigneeOperatorId: string | null }[];
     };
@@ -1013,14 +1158,14 @@ describe("assignment", () => {
       .where(and(eq(event.workspaceId, space.id), eq(event.kind, "conversation.assigned")));
     expect(events).toHaveLength(1);
     expect(events[0]?.needsAlert).toBe(false);
-    expect((await call("PUT", path(id), agent, { operatorId: null })).status).toBe(200);
+    expect((await call("PUT", path(id), member, { operatorId: null })).status).toBe(200);
     const [row] = await owner.select().from(conversation).where(eq(conversation.id, id));
     expect(row?.assigneeOperatorId).toBeNull();
   });
 
   test("a removed member or an outsider cannot be assigned", async () => {
     const boss = await person("owner");
-    const removed = await person("agent");
+    const removed = await person("member");
     await call("DELETE", inSpace(`/members/${removed.id}`), boss);
     const other = await createWorkspace(db, "Other", [SITE]);
     const outsider = await person("owner", other.id);
@@ -1047,18 +1192,18 @@ describe("presence routes", () => {
     const outsider = await person("owner", other.id);
     expect((await beat(outsider)).status).toBe(404);
     expect((await beat(null)).status).toBe(401);
-    const removed = await person("agent");
+    const removed = await person("member");
     const boss = await person("owner");
     await call("DELETE", inSpace(`/members/${removed.id}`), boss);
     expect((await beat(removed)).status).toBe(404);
   });
 
   test("with no Valkey, an operator's app and the widget keep working", async () => {
-    const agent = await person("agent");
-    const response = await beat(agent);
+    const member = await person("member");
+    const response = await beat(member);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ viewers: {} });
-    const leave = await call("POST", inSpace("/presence/leave"), agent, { conversationId: null });
+    const leave = await call("POST", inSpace("/presence/leave"), member, { conversationId: null });
     expect(leave.status).toBe(200);
     const widget = await app.request(`/v1/widget/${space.publicKey}/presence`, {
       headers: { origin: SITE },
@@ -1081,7 +1226,7 @@ describe("presence routes", () => {
 describe("a removed operator", () => {
   test("gets no data on an open stream, even if the removal's signal was lost", async () => {
     const boss = await person("owner");
-    const removed = await person("agent");
+    const removed = await person("member");
     let wake = () => {};
     // A removal here wakes nothing, as when the Valkey subscriber was disconnected.
     const server = createApp({
@@ -1145,7 +1290,7 @@ describe("a removed operator", () => {
 
   test("loses every route in that workspace at once", async () => {
     const boss = await person("owner");
-    const removed = await person("agent");
+    const removed = await person("member");
     await call("DELETE", inSpace(`/members/${removed.id}`), boss);
     for (const path of ["", "/conversations", "/stream", "/members", "/alerts"]) {
       expect((await call("GET", inSpace(path), removed)).status).toBe(404);

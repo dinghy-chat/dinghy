@@ -1,5 +1,5 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,7 @@ import { type App, createApp } from "../../apps/server/src/app.ts";
 import { createAuth } from "../../apps/server/src/auth.ts";
 import {
   attachment,
+  invite as inviteTable,
   message,
   operator,
   storageDeletion,
@@ -26,7 +27,7 @@ import { startWorker } from "../../apps/server/src/worker.ts";
 import { createWorkspace, type NewWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
-import { pressLinkButton, signedInOperator } from "../../apps/server/test/operators.ts";
+import { signedInOperator } from "../../apps/server/test/operators.ts";
 import { type CloudSettings, cloudWorkerStep } from "./index.ts";
 import { createLimits, MAX_OPERATORS } from "./limits.ts";
 import { imageCutoff, removeOldImages } from "./retention.ts";
@@ -110,7 +111,7 @@ interface Person {
 const person = (
   server: App,
   space: NewWorkspace | null,
-  role: "owner" | "admin" | "agent" = "owner",
+  role: "owner" | "admin" | "member" = "owner",
 ): Promise<Person> =>
   signedInOperator({
     app: server,
@@ -131,12 +132,19 @@ const call = (server: App, method: string, path: string, as: Person | null, body
   });
 const inSpace = (space: NewWorkspace, path: string) => `/v1/operator/workspaces/${space.id}${path}`;
 
-async function invite(server: App, space: NewWorkspace, by: Person) {
-  return call(server, "POST", inSpace(space, "/invites"), by, { role: "agent" });
+const newEmail = () => `invitee-${randomUUID()}@example.com`;
+
+async function invite(server: App, space: NewWorkspace, by: Person, email = newEmail()) {
+  return call(server, "POST", inSpace(space, "/invites"), by, { email, role: "member" });
 }
 
-async function token(server: App, space: NewWorkspace, by: Person): Promise<string> {
-  const response = await invite(server, space, by);
+async function token(
+  server: App,
+  space: NewWorkspace,
+  by: Person,
+  email = newEmail(),
+): Promise<string> {
+  const response = await invite(server, space, by, email);
   expect(response.status).toBe(201);
   return ((await response.json()) as { token: string }).token;
 }
@@ -188,11 +196,12 @@ describe("operators: 5 per workspace on the cloud", () => {
   test("two simultaneous acceptances at the limit admit one", async () => {
     const space = await createWorkspace(db, "Full", [SITE]);
     const boss = await person(cloud, space);
-    await person(cloud, space, "agent");
-    await person(cloud, space, "agent");
+    await person(cloud, space, "member");
+    await person(cloud, space, "member");
+    const [ann, bob] = await Promise.all([person(cloud, null), person(cloud, null)]);
     // Three members and two open invites fill the five places, so both links were handed out.
-    const first = await token(cloud, space, boss);
-    const second = await token(cloud, space, boss);
+    const first = await token(cloud, space, boss, ann.email);
+    const second = await token(cloud, space, boss, bob.email);
     const refused = await invite(cloud, space, boss);
     expect(refused.status).toBe(409);
     expect(await refused.json()).toMatchObject({
@@ -202,8 +211,7 @@ describe("operators: 5 per workspace on the cloud", () => {
       },
     });
     // A fourth member joins another way, so only one place is left for the two links.
-    await person(cloud, space, "agent");
-    const [ann, bob] = await Promise.all([person(cloud, null), person(cloud, null)]);
+    await person(cloud, space, "member");
     const answers = await Promise.all([
       call(cloud, "POST", "/v1/operator/invites/accept", ann, { token: first }),
       call(cloud, "POST", "/v1/operator/invites/accept", bob, { token: second }),
@@ -213,19 +221,26 @@ describe("operators: 5 per workspace on the cloud", () => {
     expect(await loser?.json()).toMatchObject({ error: { code: "operator_limit" } });
     expect(await members(space)).toBe(MAX_OPERATORS);
 
-    // A new account through the other link is refused too, and its rollback leaves no account.
-    const unused = answers[0]?.status === 409 ? first : second;
-    const email = `new-${randomUUID()}@example.com`;
+    // A new account through an invite made before the plan filled is refused too, and its
+    // rollback leaves no account.
+    const email = newEmail();
+    const unused = `${space.id}.${randomUUID()}`;
+    await owner.insert(inviteTable).values({
+      workspaceId: space.id,
+      tokenHash: createHash("sha256").update(unused).digest("hex"),
+      role: "member",
+      email,
+      mailed: false,
+      createdBy: boss.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
     const joined = await call(cloud, "POST", "/v1/invites/join", null, {
       token: unused,
       name: "New",
-      email,
     });
-    expect(joined.status).toBe(200);
-    const { signInUrl } = (await joined.json()) as { signInUrl: string };
-    const opened = await pressLinkButton(cloud, signInUrl);
-    expect(opened.status).toBe(409);
-    expect(await opened.json()).toMatchObject({ error: { code: "operator_limit" } });
+    expect(joined.status).toBe(409);
+    expect(await joined.json()).toMatchObject({ error: { code: "operator_limit" } });
+    expect(joined.headers.getSetCookie()).toEqual([]);
     expect(await owner.select().from(operator).where(eq(operator.email, email))).toEqual([]);
     expect(await members(space)).toBe(MAX_OPERATORS);
   });
@@ -480,10 +495,10 @@ describe("a self-hosted install", () => {
   test("has no limits", async () => {
     const space = await createWorkspace(db, "Self", [SITE]);
     const boss = await person(selfHosted, space);
-    for (let i = 0; i < 5; i++) await person(selfHosted, space, "agent");
+    for (let i = 0; i < 5; i++) await person(selfHosted, space, "member");
     expect(await members(space)).toBe(6);
-    const link = await token(selfHosted, space, boss);
     const joiner = await person(selfHosted, null);
+    const link = await token(selfHosted, space, boss, joiner.email);
     const accepted = await call(selfHosted, "POST", "/v1/operator/invites/accept", joiner, {
       token: link,
     });

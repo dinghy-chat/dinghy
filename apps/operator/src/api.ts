@@ -115,7 +115,7 @@ export interface Me {
   contact: string | null;
 }
 
-export type Role = "owner" | "admin" | "agent";
+export type Role = "owner" | "admin" | "member";
 
 export interface Member {
   id: string;
@@ -126,7 +126,8 @@ export interface Member {
 
 export interface PendingInvite {
   id: string;
-  role: "admin" | "agent";
+  email: string;
+  role: "admin" | "member";
   expiresAt: string;
 }
 
@@ -301,11 +302,22 @@ export const deleteDevice = (endpoint: string) =>
     method: "DELETE",
     body: JSON.stringify({ endpoint }),
   });
-export const previewInvite = (token: string) =>
-  post<{ workspaceName: string; role: "admin" | "agent" }>("/v1/invites/preview", { token });
-/** The link goes by email. With no mail server, `signInUrl` is the link, for a new account only. */
-export const joinWithInvite = (token: string, name: string, email: string) =>
-  post<{ ok: true; signInUrl: string | null }>("/v1/invites/join", { token, name, email });
+export interface InviteOffer {
+  workspaceName: string;
+  role: "admin" | "member";
+  /** Only this email can use the invite. */
+  email: string;
+  hasAccount: boolean;
+  /** No account, or one left with no name: joining asks for a name. */
+  needsName: boolean;
+}
+export const previewInvite = (token: string) => post<InviteOffer>("/v1/invites/preview", { token });
+/**
+ * Joins as the invite's email. A new account is made and signed in at once. For an existing one,
+ * `workspaceId` is null: a link to join went to its email. Send `name` when the preview says `needsName`.
+ */
+export const joinWithInvite = (token: string, name?: string) =>
+  post<{ workspaceId: string | null }>("/v1/invites/join", { token, name });
 export const acceptInvite = (token: string) =>
   post<{ workspaceId: string }>("/v1/operator/invites/accept", { token });
 export const testPush = () => post<{ sent: number; failed: number }>("/v1/operator/push-test", {});
@@ -323,8 +335,9 @@ export function workspaceApi(workspaceId: string) {
       }),
     removeMember: (id: string) => call<{ ok: true }>(`${base}/members/${id}`, { method: "DELETE" }),
     invites: () => call<{ invites: PendingInvite[] }>(`${base}/invites`),
-    createInvite: (role: "admin" | "agent") =>
-      post<PendingInvite & { token: string }>(`${base}/invites`, { role }),
+    /** `token` is null when the server emailed the invite. */
+    createInvite: (email: string, role: "admin" | "member") =>
+      post<PendingInvite & { token: string | null }>(`${base}/invites`, { email, role }),
     revokeInvite: (id: string) => call<{ ok: true }>(`${base}/invites/${id}`, { method: "DELETE" }),
     settings: () => call<WorkspaceSettings>(`${base}/settings`),
     setOrigins: (allowedOrigins: string[]) =>

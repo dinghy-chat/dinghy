@@ -26,7 +26,7 @@ const workspaceId = () =>
     .notNull()
     .references(() => workspace.id);
 
-export const memberRole = pgEnum("member_role", ["owner", "admin", "agent"]);
+export const memberRole = pgEnum("member_role", ["owner", "admin", "member"]);
 export const conversationStatus = pgEnum("conversation_status", ["open", "closed"]);
 export const messageKind = pgEnum("message_kind", ["text", "image"]);
 export const alertChannel = pgEnum("alert_channel", ["push", "email"]);
@@ -531,7 +531,7 @@ export const pageView = pgTable(
   ],
 );
 
-/** An invite link. Only the token's hash is stored, and it works once. */
+/** An invite to one email address. Only the token's hash is stored, and it works once. */
 export const invite = pgTable(
   "invite",
   {
@@ -539,6 +539,10 @@ export const invite = pgTable(
     id: id(),
     tokenHash: text("token_hash").notNull().unique(),
     role: memberRole("role").notNull(),
+    // Lowercase. Only an operator with this email can use the invite.
+    email: text("email").notNull(),
+    // The server emailed the token, so nobody else saw it, and opening it proves the mailbox.
+    mailed: boolean("mailed").notNull(),
     createdBy: uuid("created_by").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),

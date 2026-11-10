@@ -150,7 +150,7 @@ export function registerOperatorRoutes(
     };
   }>(async (c, next) => {
     // A key in a bearer header, which a browser never sends on its own, so it needs no Origin. It
-    // reaches only its own workspace's routes, and the member check limits it to an agent's.
+    // reaches only its own workspace's routes, and the member check limits it to a member's.
     const token = apiKeyToken(c.req.header("authorization"));
     if (token !== null) {
       const actor = await authenticateApiKey(db, token);

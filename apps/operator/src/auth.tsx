@@ -113,7 +113,7 @@ const PURPOSES = {
 } satisfies Record<string, { title: TextId; button: TextId; again: string | null }>;
 type Purpose = keyof typeof PURPOSES;
 /** The answers that use up a join link, unlike a lost connection, which leaves it to try again. */
-const SPENT = new Set<TextId>(["inviteInvalid", "emailTaken", "operatorLimit"]);
+const SPENT = new Set<TextId>(["inviteInvalid", "operatorLimit"]);
 const isPurpose = (value: string): value is Purpose => Object.hasOwn(PURPOSES, value);
 
 /**
@@ -139,9 +139,7 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
       navigate(kind === "add-workspace" ? "/signup" : "/");
     } catch (failure) {
       setBusy(false);
-      setError(
-        failureText(failure, { 400: "linkInvalid", 404: "inviteInvalid", 409: "emailTaken" }),
-      );
+      setError(failureText(failure, { 400: "linkInvalid", 404: "inviteInvalid" }));
     }
   };
 

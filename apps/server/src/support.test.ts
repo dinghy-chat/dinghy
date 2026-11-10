@@ -143,7 +143,7 @@ beforeAll(async () => {
   a = await createWorkspace(db, "Acme", [SITE]);
   b = await createWorkspace(db, "Beta", [SITE]);
   ownerCookie = (await signedInOperator({ app, auth, owner, workspaceId: a.id })).cookie;
-  agentCookie = (await signedInOperator({ app, auth, owner, workspaceId: a.id, role: "agent" }))
+  agentCookie = (await signedInOperator({ app, auth, owner, workspaceId: a.id, role: "member" }))
     .cookie;
 }, 30_000);
 

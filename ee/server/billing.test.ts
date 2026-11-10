@@ -87,14 +87,14 @@ async function signup(email = `owner-${randomUUID()}@example.com`) {
   return { response, email, workspaceId: body.workspaceId, cookie };
 }
 
-/** Signs in a new agent of this workspace, who is a member but not its owner. */
+/** Signs in a new member of this workspace, who is a member but not its owner. */
 async function agentCookie(workspaceId: string) {
   const { email } = await addOperator({
     auth,
     owner,
     email: `agent-${randomUUID()}@example.com`,
     workspaceId,
-    role: "agent",
+    role: "member",
   });
   return signIn(app, auth, email);
 }
@@ -809,8 +809,8 @@ const routesOf = (server: App) =>
   );
 
 /**
- * A workspace route that only its owner may use: another workspace's owner and an agent are refused.
- * Billing and the portal run on a paid workspace, because an unpaid one stops an agent earlier, with 402.
+ * A workspace route that only its owner may use: another workspace's owner and a member are refused.
+ * Billing and the portal run on a paid workspace, because an unpaid one stops a member earlier, with 402.
  */
 const ownerOnly =
   (method: string, path: string, { paid = true } = {}) =>

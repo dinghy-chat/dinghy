@@ -76,7 +76,7 @@ export function accessFlags(access: WorkspaceAccess) {
 
 interface Membership {
   workspaceId: string;
-  role: "owner" | "admin" | "agent";
+  role: "owner" | "admin" | "member";
   access: WorkspaceAccess;
 }
 

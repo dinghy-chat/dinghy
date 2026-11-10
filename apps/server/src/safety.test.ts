@@ -94,7 +94,7 @@ const send = (server: Server, token: string, socket: string, body = "Hello") =>
     fromSocket(socket),
   );
 
-const makeOperator = (role: "owner" | "admin" | "agent") =>
+const makeOperator = (role: "owner" | "admin" | "member") =>
   addOperator({
     auth: auth(),
     owner,
@@ -249,7 +249,7 @@ describe("the link request limits", () => {
 
   test("an attacker's requests do not stop the operator's own link from elsewhere", async () => {
     const server = linkApp();
-    const { email } = await makeOperator("agent");
+    const { email } = await makeOperator("member");
     const attacker = randomAddress();
     for (let index = 0; index < 5; index++) {
       expect((await askLink(server, email, attacker)).status).toBe(200);
@@ -260,7 +260,7 @@ describe("the link request limits", () => {
 
   test("a forged X-Forwarded-For gives an attacker no new requests", async () => {
     const server = linkApp({ trustedProxyHops: 1 });
-    const { email } = await makeOperator("agent");
+    const { email } = await makeOperator("member");
     const client = randomAddress();
     const attempt = (fake: string) =>
       askLink(server, email, "10.0.0.1", { "x-forwarded-for": `${fake}, ${client}` });
@@ -280,7 +280,7 @@ describe("the link request limits", () => {
 
   test("many addresses still cannot flood one mailbox", async () => {
     const server = linkApp();
-    const { email } = await makeOperator("agent");
+    const { email } = await makeOperator("member");
     let last = 0;
     for (let index = 0; index < 21; index++) {
       last = (await askLink(server, email, randomAddress())).status;
@@ -292,7 +292,7 @@ describe("the link request limits", () => {
 describe("blocking a visitor", () => {
   async function blockedWorld() {
     const server = makeApp();
-    const { email } = await makeOperator("agent");
+    const { email } = await makeOperator("member");
     const cookie = await signIn(server, email);
     const address = "198.51.100.80";
     const { visitorId, token } = await visitorToken(server, address);
@@ -355,7 +355,7 @@ describe("blocking a visitor", () => {
 
   test("a signed-in visitor can be blocked, by identity and with no address block", async () => {
     const server = makeApp();
-    const { email } = await makeOperator("agent");
+    const { email } = await makeOperator("member");
     const cookie = await signIn(server, email);
     const now = Math.floor(Date.now() / 1000);
     const tokenFor = () =>
@@ -448,7 +448,7 @@ describe("blocking a visitor", () => {
 
   test("every blocked visitor can be reached, past the first page", async () => {
     const server = makeApp();
-    const { email } = await makeOperator("agent");
+    const { email } = await makeOperator("member");
     const cookie = await signIn(server, email);
     const ids = Array.from({ length: 55 }, () => randomUUID());
     await owner.insert(visitor).values(
@@ -496,7 +496,7 @@ describe("blocking a visitor", () => {
       publicUrl: PUBLIC_URL,
     });
     const server = makeApp({ images });
-    const { email } = await makeOperator("agent");
+    const { email } = await makeOperator("member");
     const cookie = await signIn(server, email);
     const address = "198.51.100.83";
     const { token } = await visitorToken(server, address);
@@ -734,9 +734,9 @@ describe("deleting a conversation", () => {
     expect((await server.request(local)).status).toBe(404);
   });
 
-  test("an agent cannot delete, and a second delete finds nothing", async () => {
+  test("a member cannot delete, and a second delete finds nothing", async () => {
     const { server, cookie, path } = await world();
-    const agent = await makeOperator("agent");
+    const agent = await makeOperator("member");
     const agentCookie = await signIn(server, agent.email);
     expect((await asOperator(server, agentCookie, "DELETE", path)).status).toBe(403);
     expect((await asOperator(server, cookie, "DELETE", path)).status).toBe(200);

@@ -159,6 +159,7 @@ function App() {
       me={me}
       workspaceId={first.workspaceId}
       canCreate={meta.signup !== null}
+      emailAvailable={meta.email}
       onSignedOut={load}
       onSwitch={switchTo}
       onAccountChanged={load}
