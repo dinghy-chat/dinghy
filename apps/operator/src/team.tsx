@@ -196,8 +196,9 @@ function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): 
         <div className="who-cell">
           <Avatar name={pending.email} letters={pending.email.slice(0, 1).toUpperCase()} />
           <span className="who-lines">
-            <strong>{pending.email}</strong>
+            {/* No name until they join. The email column shows the email, except on a phone. */}
             <span className="chip warn">{pendingText}</span>
+            <span className="phone-only">{pending.email}</span>
           </span>
         </div>
       </td>
