@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-10
+
 ### Changed
 
 - Sending an invite waits for the mail server. The dialog then says who it went to, with **Invite someone else** and **Done**. If the address doesn't exist or the email can't be sent, the dialog says so, and the invite is revoked.
@@ -240,7 +242,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/dinghy-chat/dinghy/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/dinghy-chat/dinghy/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/dinghy-chat/dinghy/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/dinghy-chat/dinghy/compare/v0.10.0...v0.11.0
