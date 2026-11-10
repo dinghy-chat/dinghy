@@ -359,12 +359,11 @@ function UserMenu({
       className="me-menu"
       items={[
         { label: t("profile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
-        ...THEMES.map((choice, index) => ({
+        THEMES.map((choice, index) => ({
           label: t(choice.label),
           lead: <Icon name={choice.icon} size={18} />,
           checked: theme === choice.value,
           divider: index === 0,
-          row: true,
           onSelect: () => {
             setTheme(choice.value);
             setThemeState(choice.value);

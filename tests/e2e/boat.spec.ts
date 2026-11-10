@@ -113,9 +113,11 @@ test.describe("each state shows its boat and its text", () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await openLink(page, await server.signInLink("anna@example.com"));
-    const empty = page.locator(".empty-boat");
+    const empty = page.locator(".list-empty");
     await expect(empty).toContainText("No open conversations.");
-    await expect(empty.locator(".ship svg")).toBeVisible();
+    await expect(empty.locator("svg.empty-art")).toBeVisible();
+    // The pane beside the list keeps the moving boat.
+    await expect(page.locator(".harbor .ship svg")).toBeVisible();
     await context.close();
   });
 });
@@ -205,8 +207,8 @@ test.describe("reduced motion", () => {
     const context = await browser.newContext({ reducedMotion: "reduce" });
     const page = await context.newPage();
     await openLink(page, await server.signInLink("anna@example.com"));
-    await expect(page.locator(".empty-boat .ship")).toBeVisible();
-    expect(await animations(page, ".empty-boat .ship")).toBe(0);
+    await expect(page.locator(".harbor .ship")).toBeVisible();
+    expect(await animations(page, ".harbor .ship")).toBe(0);
     await context.close();
   });
 });
