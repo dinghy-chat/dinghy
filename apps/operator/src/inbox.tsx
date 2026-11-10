@@ -616,6 +616,8 @@ export function Inbox({
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("open");
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  // The first page has arrived, so an empty list means an empty inbox and not one still loading.
+  const [listed, setListed] = useState(false);
   const [waiting, setWaiting] = useState(0);
   // In memory only, so a reload or a sign-out clears them.
   const drafts = useRef(new Map<string, string>()).current;
@@ -693,6 +695,7 @@ export function Inbox({
       // The operator may have switched tabs while this was on its way.
       if (wanted.status !== shown.current.status) return;
       setConversations(page.conversations);
+      setListed(true);
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
     } catch (failure) {
@@ -836,8 +839,9 @@ export function Inbox({
                     />
                   ))}
                 </ul>
-                {status === "open" && found === null && role !== "agent" && (
+                {status === "open" && listed && found === null && role !== "agent" && (
                   <StartHint
+                    api={api}
                     workspaceId={workspaceId}
                     hasConversations={conversations.length > 0}
                     onOpen={(tab) => showView("settings", tab)}

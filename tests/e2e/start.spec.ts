@@ -73,3 +73,16 @@ test("a logo uploaded in Settings shows there, in the sidebar and in the chat's 
   await expect(preview).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Upload logo" })).toBeVisible();
 });
+
+test("a workspace whose conversations are all closed shows no first steps", async ({ page }) => {
+  await server.seedConversations(1, "Earlier");
+  await server.closeConversations();
+  await server.createOperator("closed@example.com");
+  await openLink(page, await server.signInLink("closed@example.com"));
+  await expect(page.getByText("No open conversations.")).toBeVisible();
+  await page.getByRole("button", { name: "Closed" }).click();
+  await expect(page.getByText("Earlier", { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Inbox" }).click();
+  await expect(page.getByText("No open conversations.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Get started" })).toHaveCount(0);
+});

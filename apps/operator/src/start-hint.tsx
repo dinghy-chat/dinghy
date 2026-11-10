@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { useEffect, useState } from "react";
+import type { WorkspaceApi } from "./api.ts";
 import type { SettingsTab } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 import { Icon } from "./ui.tsx";
@@ -31,26 +32,50 @@ function hide(workspaceId: string) {
 }
 
 /**
- * The first steps, in an empty inbox, until the operator hides them or the first conversation
- * arrives. Nothing is required: each step opens its settings tab. It is per device.
+ * The first steps, in an empty inbox of a workspace that never had a conversation, until the
+ * operator hides them. Nothing is required: each step opens its settings tab. It is per device.
  */
 export function StartHint({
+  api,
   workspaceId,
   hasConversations,
   onOpen,
 }: {
+  api: WorkspaceApi;
   workspaceId: string;
   /** The open list has a conversation, so the workspace is in use and the hint goes for good. */
   hasConversations: boolean;
   onOpen(tab: SettingsTab): void;
 }) {
   const [hidden, setHidden] = useState(() => wasHidden(workspaceId));
+  // Null until the closed list answers: a workspace whose conversations are all closed is in use.
+  const [closedNone, setClosedNone] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!hasConversations) return;
-    hide(workspaceId);
-    setHidden(true);
-  }, [hasConversations, workspaceId]);
-  if (hidden || hasConversations) return null;
+    if (hidden) return;
+    if (hasConversations) {
+      hide(workspaceId);
+      setHidden(true);
+      return;
+    }
+    let current = true;
+    api
+      .list("closed", 1, () => !current)
+      .then(
+        (page) => {
+          if (!current) return;
+          if (page.conversations.length === 0) setClosedNone(true);
+          else {
+            hide(workspaceId);
+            setHidden(true);
+          }
+        },
+        () => {},
+      );
+    return () => {
+      current = false;
+    };
+  }, [api, hidden, hasConversations, workspaceId]);
+  if (hidden || hasConversations || closedNone !== true) return null;
   return (
     <section className="start" aria-labelledby="start-title">
       <h3 id="start-title">{t("startTitle")}</h3>
