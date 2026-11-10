@@ -22,17 +22,7 @@ import { chime, prepareSound } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
 import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import { Thread } from "./thread.tsx";
-import {
-  Avatar,
-  Harbor,
-  Icon,
-  type IconName,
-  initials,
-  Logo,
-  PageHead,
-  Pond,
-  ROLE_TEXT,
-} from "./ui.tsx";
+import { Avatar, Harbor, Icon, type IconName, initials, Logo, PageHead, ROLE_TEXT } from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
 
 const RETRY_LIMIT_MS = 30_000;
@@ -43,9 +33,12 @@ const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
 
-const STATUS_LOOK: Record<Status, { label: TextId; empty: TextId; icon: "inbox" | "done" }> = {
-  open: { label: "inbox", empty: "noOpen", icon: "inbox" },
-  closed: { label: "closed", empty: "noClosed", icon: "done" },
+const STATUS_LOOK: Record<
+  Status,
+  { label: TextId; empty: TextId; hint: TextId; icon: "inbox" | "done" }
+> = {
+  open: { label: "inbox", empty: "noOpen", hint: "emptyHint", icon: "inbox" },
+  closed: { label: "closed", empty: "noClosed", hint: "closedHint", icon: "done" },
 };
 
 /** The time today, and the date before today. */
@@ -804,10 +797,12 @@ export function Inbox({
                 <SearchField value={query} searching={searching} onChange={setQuery} />
                 <ul className="rows" aria-busy={searching}>
                   {found === null && conversations.length === 0 && (
-                    <li className="nothing empty-boat">
-                      <Pond />
+                    <li className="list-empty">
+                      <span className="list-empty-icon">
+                        <Icon name={STATUS_LOOK[status].icon} size={20} />
+                      </span>
                       <b>{t(STATUS_LOOK[status].empty)}</b>
-                      {t("emptyHint")}
+                      {t(STATUS_LOOK[status].hint)}
                     </li>
                   )}
                   {found !== null && found.length === 0 && !searching && (

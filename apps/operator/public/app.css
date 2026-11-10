@@ -1332,6 +1332,32 @@ button.workspace[aria-expanded="true"],
 .empty-boat {
   padding-top: 48px;
 }
+/* An empty list: a quiet note at the top, so the boat in the pane beside it stays the one picture. */
+.list-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 40px 16px;
+  color: var(--mute);
+  font-size: 14px;
+  text-align: center;
+}
+.list-empty b {
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 600;
+}
+.list-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--mute);
+  --duo: var(--mute);
+}
 
 /* A conversation. */
 .thread {

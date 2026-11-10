@@ -81,6 +81,7 @@ const en = {
   noClosed: "No closed conversations.",
   pickOne: "Select a conversation.",
   emptyHint: "New conversations appear here.",
+  closedHint: "Conversations you close appear here.",
   visitorLabel: "Visitor {code}",
   you: "You",
   aTeammate: "A teammate",

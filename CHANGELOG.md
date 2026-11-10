@@ -7,6 +7,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Changed
 
 - The dashboard has calmer colours: a warm grey frame instead of the yellow, navy for your own messages instead of the bright blue, lighter shadows, and off-white buttons at night instead of yellow. The sign-in screens keep the yellow sky.
+- An empty Inbox or Closed list shows a small icon and a note instead of a second boat picture, and Closed says that closed conversations appear there.
 
 ## [0.11.0] - 2026-11-10
 
