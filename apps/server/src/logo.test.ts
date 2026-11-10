@@ -33,7 +33,7 @@ interface Person {
   cookie: string;
 }
 
-const person = (role: "owner" | "admin" | "agent"): Promise<Person> =>
+const person = (role: "owner" | "admin" | "member"): Promise<Person> =>
   signedInOperator({
     app,
     auth,
@@ -159,11 +159,11 @@ describe("uploading a logo", () => {
     expect((await settingsOf(boss)).logoUrl).toBe(kept.logoUrl);
   });
 
-  test("an agent can neither set nor remove the logo", async () => {
-    const agent = await person("agent");
-    const response = await upload(agent, await png(10, 10));
+  test("a member can neither set nor remove the logo", async () => {
+    const member = await person("member");
+    const response = await upload(member, await png(10, 10));
     expect(response.status).toBe(403);
-    expect((await removeLogo(agent)).status).toBe(403);
+    expect((await removeLogo(member)).status).toBe(403);
     expect(await owner.select().from(workspaceLogo)).not.toContainEqual(
       expect.objectContaining({ workspaceId: space.id }),
     );

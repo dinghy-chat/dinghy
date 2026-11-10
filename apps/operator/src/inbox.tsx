@@ -839,7 +839,7 @@ export function Inbox({
                     />
                   ))}
                 </ul>
-                {status === "open" && listed && found === null && role !== "agent" && (
+                {status === "open" && listed && found === null && role !== "member" && (
                   <StartHint
                     api={api}
                     workspaceId={workspaceId}
