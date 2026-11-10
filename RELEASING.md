@@ -34,7 +34,7 @@ The pull request skips the CI job: each change in it already passed CI, and the 
 
 The Release workflow sees that `package.json` names a version with no tag, and tags the merge commit. The tag starts the Image workflow. It publishes the image only after the tests, the image checks, the vulnerability scan, the install check and the upgrade check pass on both architectures. Then it creates the GitHub Release and starts the Dinghy Cloud deploy.
 
-If the Image workflow fails, the tag stays without an image, and self-hosted installs never see it. Fix the problem on `main`, and merge the next release pull request.
+If the Image workflow fails, the tag has no image, and nothing deploys. `main` already names the new version in `README.md`, `compose.yaml` and the docs, so an install that follows them fails until the next release. Fix the problem on `main` at once, and merge the next release pull request.
 
 ## Self-hosted installs
 
