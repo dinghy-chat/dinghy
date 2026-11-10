@@ -262,7 +262,7 @@ export function lifecycleHtml(signed: string, stopUrl: string | undefined): stri
   const footer =
     stopUrl === undefined
       ? ""
-      : `<p style="margin:28px 0 0;font-size:12px;color:#8a8f98"><a href="${escapeHtml(stopUrl)}" ` +
+      : `<p style="margin:28px 0 0;font-size:11px;color:#8a8f98"><a href="${escapeHtml(stopUrl)}" ` +
         `style="color:#8a8f98">${text.stopLink}</a></p>`;
   return (
     '<!doctype html><html><body style="margin:0;padding:16px;font-family:-apple-system,' +
