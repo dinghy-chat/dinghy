@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- `SENTRY_DSN` sends the server's errors to your own Sentry project. Without it, Dinghy sends nothing anywhere.
+
 ## [0.9.0] - 2026-11-10
 
 ### Changed
