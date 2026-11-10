@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import {
   apiKey,
   attachment,
@@ -191,7 +191,22 @@ export async function appendMessage(
     .from(message)
     .where(and(eq(message.workspaceId, workspaceId), sender, eq(message.clientId, input.clientId)));
   if (existing !== undefined) {
-    return { message: stored(existing), created: false, conversationStarted: false };
+    // A retry after a lost answer must still tell the widget, so this asks whether the original
+    // was its conversation's first message. Only a visitor's message starts one.
+    const original = { message: stored(existing), created: false };
+    if (author.kind !== "visitor") return { ...original, conversationStarted: false };
+    const [earlier] = await tx
+      .select({ id: message.id })
+      .from(message)
+      .where(
+        and(
+          eq(message.workspaceId, workspaceId),
+          eq(message.conversationId, existing.conversationId),
+          lt(message.seq, existing.seq),
+        ),
+      )
+      .limit(1);
+    return { ...original, conversationStarted: earlier === undefined };
   }
 
   // After the retry lookup, and under the lock, so a close cannot slip in before this reply and a

@@ -19,7 +19,6 @@ import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
 import {
   type DinghyEvent,
   type DinghyEvents,
-  RESET_PREFIX,
   readToken,
   rememberOpen,
   type WidgetContext,
@@ -437,6 +436,9 @@ function Chat({ context, open, setOpen, quiet, prefill, clearPrefill, contextVer
   const [tokenEpoch, setTokenEpoch] = useState(0);
   const renewDelay = useRef(0);
   const sends = useRef(0);
+  // The newest message this chat sent. A reply after it is new even inside a stream's first replay,
+  // which can hold an answer to the message that started the conversation.
+  const lastSent = useRef<bigint | null>(null);
   const alive = useRef(true);
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
@@ -650,7 +652,10 @@ function Chat({ context, open, setOpen, quiet, prefill, clearPrefill, contextVer
               if (controller.signal.aborted) return;
               cursor.current = next;
               setDelivered((current) => larger(current, BigInt(message.seq)));
-              if (replayed.current && !message.fromVisitor) {
+              const fresh =
+                replayed.current ||
+                (lastSent.current !== null && BigInt(message.seq) > lastSent.current);
+              if (fresh && !message.fromVisitor) {
                 setNewReply(true);
                 emit(context, "message:received", { body: message.body });
               }
@@ -765,6 +770,8 @@ function Chat({ context, open, setOpen, quiet, prefill, clearPrefill, contextVer
         return post(renewed);
       });
       sends.current += 1;
+      const seq = BigInt(sent.seq);
+      lastSent.current = lastSent.current === null ? seq : larger(lastSent.current, seq);
       emit(context, "message:sent", { body: file === undefined ? body : null });
       // The server's answer, because a stream copy or a close from the inbox can race the send.
       if (sent.conversationStarted) emit(context, "conversation:started", undefined);
@@ -1043,18 +1050,7 @@ function Root({ context }: { context: WidgetContext }) {
     const { wanted } = context;
     context.wanted = undefined;
     if (wanted !== undefined) handlers.open(wanted[0]);
-    // Another tab called reset(), so this one ends its session too.
-    const onStorage = (event: StorageEvent) => {
-      // The removal right after the signal fires an event too, with no new value.
-      if (event.newValue && event.key === RESET_PREFIX + publicKey) {
-        context.identity = null;
-        context.pageContext = null;
-        handlers.session();
-      }
-    };
-    addEventListener("storage", onStorage);
-    return () => removeEventListener("storage", onStorage);
-  }, [context, publicKey]);
+  }, [context]);
   const shown = useRef(false);
   useEffect(() => {
     if (open === shown.current) return;

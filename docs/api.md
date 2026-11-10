@@ -41,7 +41,7 @@ In a read-only or suspended workspace, operators can read and export, and a writ
 
 A message or an image carries a `clientId` that the client makes, such as `m_4f9a2c`. A retry with the same `clientId` returns the first message and creates nothing, so a client can retry a send after any network error.
 
-A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry answers false.
+A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry of that message answers true too.
 
 ## Visitors
 

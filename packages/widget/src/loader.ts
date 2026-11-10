@@ -6,6 +6,7 @@ import {
   type DinghyEvents,
   type Listeners,
   type QueuedCall,
+  RESET_PREFIX,
   readToken,
   type WidgetContext,
   writeToken,
@@ -114,6 +115,20 @@ if (script && publicKey) {
     document.head.append(bundle);
   };
 
+  /**
+   * reset() here or in another tab. The loader handles it, because the chat bundle may not be
+   * loaded yet, and the next visitor in this browser must not inherit this one's data.
+   */
+  const endSession = () => {
+    context.identity = context.pageContext = null;
+    context.wanted = undefined;
+    context.chat?.session();
+  };
+  // The removal right after the signal fires an event too, with no new value.
+  addEventListener("storage", (event) => {
+    if (event.newValue && event.key === RESET_PREFIX + publicKey) endSession();
+  });
+
   const api: DinghyApi = {
     open(options) {
       if (context.chat) return context.chat.open(options?.message);
@@ -144,9 +159,7 @@ if (script && publicKey) {
       // Only the tab that called reset() clears the token. Another tab can handle this event late,
       // after a new chat has started, and it must not delete that chat's token.
       writeToken(publicKey, null);
-      // The next visitor in this browser must not inherit the last one's page data.
-      context.identity = context.pageContext = null;
-      context.chat?.session();
+      endSession();
       broadcastReset(publicKey);
     },
     setContext(data) {

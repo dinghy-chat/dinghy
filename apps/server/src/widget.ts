@@ -262,7 +262,7 @@ const MessageSchema = z
     },
   });
 
-// Only a send answers this: true when this message started a new conversation. A retry answers false.
+// Only a send answers this: true when this message started a new conversation. A retry answers the same.
 const SentSchema = MessageSchema.extend({ conversationStarted: z.boolean() });
 
 /** A send's 403: the access check, or a block on this visitor. */
