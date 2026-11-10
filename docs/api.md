@@ -81,7 +81,7 @@ curl https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/conversations 
   -H "Authorization: Bearer dk_..."
 ```
 
-A key has an agent's permissions, in its own workspace only. It can:
+A key has a member's permissions, in its own workspace only. It can:
 
 - list, search and read conversations, with the visitor and the page journey,
 - reply with text or an image,

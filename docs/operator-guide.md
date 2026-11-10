@@ -73,14 +73,16 @@ Select your name at the bottom of the sidebar, then **Profile**, to change the n
 
 ![The settings page](media/settings.png)
 
-Everyone can open **Settings**. Its tabs are **Team**, **Install**, **Allowed sites**, **Signing secret**, **API** and **Data**. An agent sees the team, and the blocked visitors under **Data** once someone is blocked. The other tabs are for owners and admins.
+Everyone can open **Settings**. Its tabs are **Team**, **Install**, **Allowed sites**, **Signing secret**, **API** and **Data**. A member sees the team, and the blocked visitors under **Data** once someone is blocked. The other tabs are for owners and admins.
 
-To invite someone, select **Invite someone** at the top of Settings, pick a role, select **Create invite link**, and send the link to that one person. Pending invites show in the team list until they are used, with the days they have left and **Revoke**. A link works once and lasts 7 days. The person opens it, and enters a name and an email. Dinghy emails them a link, and selecting **Join your team** on the page it opens creates their account, or uses the one that email already has, joins the workspace and signs them in. Someone who is already signed in selects **Join**. Without a mail server, a new person signs in at once, and nothing checks the email, so send the link only to the person it is for. Someone who already has an account there signs in first, then opens the invite.
+To invite someone, select **Invite someone** at the top of Settings, enter their email, pick a role, and select **Send invite**. Dinghy emails them a link to join. Without a mail server, select **Create invite link** instead, and send the link to that one person. Pending invites show in the team list with their email and the days they have left. Select the trash icon and confirm to revoke one. To send an invite again, invite the same email again: the old link stops working. A link works once and lasts 7 days, and only that email can use it.
+
+Someone new opens the link, enters a name and selects **Join**. That creates their account, joins the workspace and signs them in. Someone who already has an account with that email selects **Join**, and Dinghy emails them a link that joins the workspace and signs them in. Someone already signed in with that email selects **Join** at once. Without a mail server, nothing checks the email, so send the link only to the person it is for. Someone who already has an account there signs in first, then opens the invite.
 
 | Role | Can do |
 |---|---|
-| **Agent** | Answer, assign, close and block |
-| **Admin** | The above, and delete conversations, change settings, and invite or remove agents |
+| **Member** | Answer, assign, close and block |
+| **Admin** | The above, and delete conversations, change settings, and invite or remove members |
 | **Owner** | The above, and invite admins, change roles, and download exports |
 
 A workspace always keeps an owner. While you are the only one, your role stays **Owner** and you cannot leave: make someone else an owner first.
