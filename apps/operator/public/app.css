@@ -1324,7 +1324,7 @@ button.workspace[aria-expanded="true"],
   margin: 0 16px 20px;
   padding: 14px 16px 10px;
   border-radius: 14px;
-  background: var(--soft);
+  background: var(--tile-blue);
 }
 .start h3 {
   margin: 0 0 4px;
