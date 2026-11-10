@@ -1,7 +1,14 @@
 import nodemailer from "nodemailer";
 
 export interface Mailer {
-  send(to: string, subject: string, text: string, headers?: Record<string, string>): Promise<void>;
+  /** `html` is an optional second version of the same email, for mail apps that show HTML. */
+  send(
+    to: string,
+    subject: string,
+    text: string,
+    headers?: Record<string, string>,
+    html?: string,
+  ): Promise<void>;
 }
 
 /** The mail server refused the address itself, such as a mailbox that does not exist. */
@@ -33,8 +40,15 @@ export function createMailer(smtpUrl: string, from: string): Mailer {
     socketTimeout: 15_000,
   });
   return {
-    async send(to, subject, text, headers) {
-      await transport.sendMail({ from, to, subject, text, ...(headers && { headers }) });
+    async send(to, subject, text, headers, html) {
+      await transport.sendMail({
+        from,
+        to,
+        subject,
+        text,
+        ...(html !== undefined && { html }),
+        ...(headers && { headers }),
+      });
     },
   };
 }

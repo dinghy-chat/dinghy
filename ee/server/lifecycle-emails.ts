@@ -80,6 +80,7 @@ const text = {
     "Just reply. I read every answer myself. And if you'd rather skip it, that's fine.",
   ],
   stopLine: (url: string) => `Unsubscribe: ${url}`,
+  stopLink: "Unsubscribe",
   cancellationSubject: (name: string, endsOn: Date | null) =>
     `${name} stays on until ${date(endsOn)}`,
   cancellationBody: (c: MailContext) => [
@@ -225,6 +226,7 @@ export function lifecycleMail(kind: Kind, context: MailContext) {
     subject,
     body,
     footer: stopUrl === undefined ? undefined : text.stopLine(stopUrl),
+    stopUrl,
     headers: {
       // Several emails invite a reply, and an answer to any of them should reach a person.
       "reply-to": SUPPORT_ADDRESS,
@@ -235,6 +237,38 @@ export function lifecycleMail(kind: Kind, context: MailContext) {
       }),
     },
   };
+}
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+
+/**
+ * The HTML version of a signed lifecycle email. It looks like the plain text, with links that
+ * open, and an onboarding email ends with a small Unsubscribe link instead of the bare address.
+ * Every word is escaped, so a workspace name cannot add markup.
+ */
+export function lifecycleHtml(signed: string, stopUrl: string | undefined): string {
+  const paragraphs = signed.split("\n\n").map((paragraph) => {
+    const escaped = escapeHtml(paragraph).replace(
+      /https?:\/\/[^\s<]+/g,
+      (url) => `<a href="${url}" style="color:#1d4ed8">${url}</a>`,
+    );
+    return `<p style="margin:0 0 14px">${escaped.replaceAll("\n", "<br>")}</p>`;
+  });
+  const footer =
+    stopUrl === undefined
+      ? ""
+      : `<p style="margin:28px 0 0;font-size:12px;color:#8a8f98"><a href="${escapeHtml(stopUrl)}" ` +
+        `style="color:#8a8f98">${text.stopLink}</a></p>`;
+  return (
+    '<!doctype html><html><body style="margin:0;padding:16px;font-family:-apple-system,' +
+    "BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;" +
+    `color:#1d2433">${paragraphs.join("")}${footer}</body></html>`
+  );
 }
 
 /** Signs the stop link, so nobody can stop the emails of another owner. */

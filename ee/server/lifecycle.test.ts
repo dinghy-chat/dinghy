@@ -46,6 +46,7 @@ import {
   READ_ONLY_DAYS,
   runLifecycle,
 } from "./lifecycle.ts";
+import { lifecycleHtml } from "./lifecycle-emails.ts";
 import {
   type FakeStripe,
   STRIPE_PRICE_ID,
@@ -83,10 +84,16 @@ const keys = (): BillingOptions => ({
   now: () => clock,
 });
 
-const mails: { to: string; subject: string; text: string; headers?: Record<string, string> }[] = [];
+const mails: {
+  to: string;
+  subject: string;
+  text: string;
+  headers?: Record<string, string>;
+  html?: string;
+}[] = [];
 const mailer: Mailer = {
-  async send(to, subject, text, headers) {
-    mails.push({ to, subject, text, ...(headers && { headers }) });
+  async send(to, subject, text, headers, html) {
+    mails.push({ to, subject, text, ...(headers && { headers }), ...(html && { html }) });
   },
 };
 const mailsAbout = (name: string) => mails.filter((mail) => mail.subject.includes(name));
@@ -487,6 +494,23 @@ describe("the rules", () => {
     expect(
       billingEmails(cancelled, { ...paid, cancelAtPeriodEnd: true, currentPeriodEnd: end }, now),
     ).toEqual([]);
+  });
+});
+
+describe("the HTML version of a lifecycle email", () => {
+  test("escapes every word, opens links, and ends with an Unsubscribe link", () => {
+    const html = lifecycleHtml(
+      'Hi <b>Bob</b>,\n\nOpen "Settings": https://app.dinghy.chat/?workspace=1&x=2\n\nCheers,\nJulien',
+      "https://app.dinghy.chat/v1/onboarding-stop/a/b?signature=s",
+    );
+    expect(html).toContain("Hi &lt;b&gt;Bob&lt;/b&gt;,");
+    expect(html).toContain("Open &quot;Settings&quot;:");
+    expect(html).toContain(
+      '<a href="https://app.dinghy.chat/?workspace=1&amp;x=2" style="color:#1d4ed8">',
+    );
+    expect(html).toContain("Cheers,<br>Julien");
+    expect(html).toContain(">Unsubscribe</a></p></body></html>");
+    expect(lifecycleHtml("Hi,\n\nCheers", undefined)).not.toContain("Unsubscribe");
   });
 });
 
@@ -1089,6 +1113,10 @@ describe("the lifecycle emails", () => {
       expect(mail.text).toContain(`${PUBLIC_URL}/v1/onboarding-stop/${paid.workspaceId}/`);
       // One short line under the signature, and the last line of the email.
       expect(mail.text).toMatch(/Julien from Dinghy\n\nUnsubscribe: \S+$/);
+      // In HTML, the word is the link, and the address is not shown.
+      const stop = `${PUBLIC_URL}${stopLink(mail.text)}`.replaceAll("&", "&amp;");
+      expect(mail.html).toContain(`<a href="${stop}" style="color:#8a8f98">Unsubscribe</a>`);
+      expect(mail.html).not.toContain("Unsubscribe:");
       expect(mail.headers?.["list-unsubscribe"]).toBe(`<${PUBLIC_URL}${stopLink(mail.text)}>`);
       expect(mail.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
     }

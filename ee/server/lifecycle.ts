@@ -27,7 +27,12 @@ import { letter } from "../../apps/server/src/letter.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import type { Billing } from "./billing.ts";
-import { LIFECYCLE_SIGN_OFF, lifecycleMail, onboardingStopUrl } from "./lifecycle-emails.ts";
+import {
+  LIFECYCLE_SIGN_OFF,
+  lifecycleHtml,
+  lifecycleMail,
+  onboardingStopUrl,
+} from "./lifecycle-emails.ts";
 
 /**
  * Stripe's subscription statuses that pay for service. This set and the two below live in this
@@ -604,7 +609,8 @@ async function sendLifecycleEmails({
         // The unsubscribe line sits under the signature, out of the way of the message.
         const signed = letter(mail.body, owner.name, undefined, LIFECYCLE_SIGN_OFF);
         const body = mail.footer === undefined ? signed : `${signed}\n\n${mail.footer}`;
-        await mailer?.send(owner.email, mail.subject, body, mail.headers);
+        const html = lifecycleHtml(signed, mail.stopUrl);
+        await mailer?.send(owner.email, mail.subject, body, mail.headers, html);
         delivered += 1;
       } catch (err) {
         lastError = err;
