@@ -73,7 +73,7 @@ Delivery is at least once. A claim counts as an attempt, and a worker that stops
 
 Everything a self-hosted install uses is outside `ee/`. `ee/` holds what only Dinghy Cloud runs: Stripe billing, signup, the welcome chat, the plan's limits and image retention. Core reaches it only through `ee/server/index.ts` and the screens in `ee/operator/`, and only when a cloud setting is set (`STRIPE_*` or `CLOUD_SIGNUP`). [`LICENSE-NOTICE.md`](../LICENSE-NOTICE.md) has the licenses.
 
-The welcome chat needs two more cloud settings, and is off unless both are set:
+The welcome chat needs two more cloud settings, and is off unless both are set. A self-hosted install leaves them unset.
 
 - `CLOUD_WELCOME_WORKSPACE_ID`: Dinghy's own workspace on the same server.
 - `CLOUD_WELCOME_OPERATOR_EMAIL`: the operator there who sends the welcome. The web role refuses to start when this operator is not an active member of that workspace.

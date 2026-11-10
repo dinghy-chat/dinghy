@@ -4,9 +4,9 @@
 
 export type CodeLanguage = "html" | "css" | "js" | "ts" | "json" | "sh" | "nginx" | "text";
 
-export type TokenKind = "tag" | "attr" | "string" | "keyword" | "comment" | "number" | "key";
+type TokenKind = "tag" | "attr" | "string" | "keyword" | "comment" | "number" | "key";
 
-export interface Token {
+interface Token {
   /** Null for text that keeps the block's own color. */
   kind: TokenKind | null;
   text: string;
