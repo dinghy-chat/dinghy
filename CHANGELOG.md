@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-10
+
 ### Changed
 
 - On Dinghy Cloud, the sign-in page emails an address with no account a link to signup, instead of sending nothing. A self-hosted server still writes only to its operators.
@@ -265,7 +267,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/dinghy-chat/dinghy/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/dinghy-chat/dinghy/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/dinghy-chat/dinghy/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/dinghy-chat/dinghy/compare/v0.12.0...v0.13.0
