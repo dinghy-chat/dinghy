@@ -666,20 +666,19 @@ textarea {
   justify-content: center;
   gap: 8px 14px;
 }
-/* News, not a warning: the workspace waits for the cloud to open. */
-.waiting-banner {
+/* News, not a warning: the workspace waits for the cloud to open, or the owner deleted one. */
+.waiting-banner,
+.deleted-banner {
   background: var(--surface);
   color: var(--navy);
 }
-/* News after the owner's delete, which the operator closes. */
+/* The operator closes it. */
 .deleted-banner {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   padding-block: 4px;
-  background: var(--surface);
-  color: var(--navy);
 }
 .deleted-banner .icon-button {
   width: 32px;
@@ -1656,12 +1655,12 @@ img.ws-tile {
   display: block;
   width: fit-content;
 }
+.who-text .welcome-state,
 .who-text .welcome-off {
   display: block;
-  color: var(--warn-ink);
 }
-.who-text .welcome-state {
-  display: block;
+.who-text .welcome-off {
+  color: var(--warn-ink);
 }
 .online {
   color: var(--green);
