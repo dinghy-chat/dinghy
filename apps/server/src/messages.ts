@@ -12,7 +12,13 @@ import {
   webhook,
   workspace,
 } from "./db/schema.ts";
-import { type Transaction, type WorkspaceAccess, workspaceAccess, writable } from "./db/tenant.ts";
+import {
+  type Transaction,
+  type WorkspaceAccess,
+  workspaceAccess,
+  writable,
+  writableFor,
+} from "./db/tenant.ts";
 import { type Limits, NO_LIMITS, StorageFullError } from "./limits.ts";
 
 export type Author =
@@ -155,6 +161,23 @@ async function nextSeq(tx: Transaction, workspaceId: string): Promise<bigint> {
 }
 
 /**
+ * Whether the message goes to a welcome chat. A welcome chat's visitor has no other conversation,
+ * so a visitor's message, which is a copy from the other side, is checked by its visitor.
+ */
+async function inWelcomeChat(tx: Transaction, workspaceId: string, author: Author) {
+  const target =
+    author.kind === "visitor"
+      ? eq(conversation.visitorId, author.visitorId)
+      : eq(conversation.id, author.conversationId);
+  const [row] = await tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), target, eq(conversation.welcome, true)))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
  * Writes a message and its event in the caller's transaction. A retry returns the original.
  *
  * The first statement takes the workspace row lock, and the lock lasts until commit. So the order
@@ -185,7 +208,8 @@ export async function appendMessage(
   const seq = await nextSeq(tx, workspaceId);
   // A statement of its own, after the lock: it sees every change committed before the lock.
   const access = await workspaceAccess(tx, workspaceId);
-  if (!writable(access)) throw new WorkspaceClosedError(access);
+  const welcome = !writable(access) && (await inWelcomeChat(tx, workspaceId, author));
+  if (!writableFor(access, { welcome })) throw new WorkspaceClosedError(access);
 
   const sender =
     author.kind === "visitor"

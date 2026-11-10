@@ -918,7 +918,8 @@ export function Inbox({
                   members={members}
                   replying={replying(selected)}
                   canDelete={role !== "member" && !readOnly && !suspended}
-                  repliesOffReason={suspended ? "suspendedHelp" : readOnly ? "readOnlyHelp" : null}
+                  readOnly={readOnly}
+                  suspended={suspended}
                   conversationId={selected}
                   version={threadVersion(selected)}
                   onBack={() => setSelected(null)}

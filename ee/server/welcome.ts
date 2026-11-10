@@ -16,6 +16,7 @@ import {
   withWorkspace,
   workspaceAccess,
   writable,
+  writableFor,
 } from "../../apps/server/src/db/tenant.ts";
 import { safeErrorFields } from "../../apps/server/src/errors.ts";
 import type { CopyReply } from "../../apps/server/src/inbox.ts";
@@ -211,7 +212,7 @@ async function chatVisitor(tx: Transaction, side: Side) {
 
 /**
  * Copies a reply as a visitor message on the other side, under both locks. Nothing goes when either
- * side blocked its visitor or the other workspace takes no messages. An image goes only within the
+ * side blocked its visitor or the other workspace is suspended or deleted. An image goes only within the
  * other workspace's storage, and a message with nothing left to copy goes nowhere.
  */
 async function copyInto(
@@ -221,7 +222,8 @@ async function copyInto(
   file: NewImage | undefined,
   limits: Limits,
 ): Promise<{ visitorId: string; usedFile: boolean } | null> {
-  if (!writable(await workspaceAccess(tx, other.workspaceId))) return null;
+  const access = await workspaceAccess(tx, other.workspaceId);
+  if (!writableFor(access, { welcome: true })) return null;
   const theirs = await chatVisitor(tx, other);
   if (theirs === null || theirs.blockedAt !== null) return null;
   const image =

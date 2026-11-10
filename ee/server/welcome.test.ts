@@ -16,6 +16,7 @@ import {
   conversation,
   event,
   message,
+  subscription,
   visitor,
   welcomeLink,
   workspace,
@@ -554,6 +555,85 @@ describe("alerts and analytics", () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ started: 0, answered: 0, operators: [] });
     }
+  });
+});
+
+/** The subscription ended: the workspace is read-only. */
+const endSubscription = (workspaceId: string) =>
+  owner
+    .insert(subscription)
+    .values({ workspaceId, stripeCustomerId: "cus_test", readOnlyAt: new Date() });
+
+describe("while the new workspace has not paid, or its subscription ended", () => {
+  test.each([
+    ["waiting_payment", () => paying, async () => {}],
+    ["read_only", () => early, endSubscription],
+  ] as const)("Julien's reply is copied into it while it is %s", async (access, server, change) => {
+    const acme = await signUp(server(), "Acme");
+    const link = await linkOf(acme.workspaceId);
+    await change(acme.workspaceId);
+    expect(
+      (await reply(server(), julien.cookie, dinghy.id, link.founderConversationId, "Still there?"))
+        .status,
+    ).toBe(201);
+    const copies = await messagesIn(acme.workspaceId, link.customerConversationId);
+    expect(copies.at(-1)).toMatchObject({ body: "Still there?", authorOperatorId: null });
+    expect(copies.at(-1)?.authorVisitorId).not.toBeNull();
+    expect(
+      (await readChat(server(), julien.cookie, dinghy.id, link.founderConversationId)).welcome,
+    ).toEqual({ with: "workspace", name: "Acme", access });
+  });
+
+  test("its operator still replies in the welcome chat in text, and only there", async () => {
+    const acme = await signUp(early);
+    const link = await linkOf(acme.workspaceId);
+    const [guest] = await owner
+      .insert(visitor)
+      .values({ workspaceId: acme.workspaceId, externalId: "bea", name: "Bea" })
+      .returning({ id: visitor.id });
+    const [other] = await owner
+      .insert(conversation)
+      .values({ workspaceId: acme.workspaceId, visitorId: guest?.id ?? "" })
+      .returning({ id: conversation.id });
+    await endSubscription(acme.workspaceId);
+
+    const answer = await reply(
+      early,
+      acme.cookie,
+      acme.workspaceId,
+      link.customerConversationId,
+      "Paying soon",
+    );
+    expect(answer.status).toBe(201);
+    expect((await messagesIn(dinghy.id, link.founderConversationId)).at(-1)).toMatchObject({
+      body: "Paying soon",
+      authorOperatorId: null,
+    });
+
+    const elsewhere = await reply(early, acme.cookie, acme.workspaceId, other?.id ?? "", "Hi Bea");
+    expect(elsewhere.status).toBe(402);
+    expect(await elsewhere.json()).toMatchObject({ error: { code: "read_only" } });
+    // Text only: an upload stays refused before it is read.
+    const image = await replyImage(
+      early,
+      acme.cookie,
+      acme.workspaceId,
+      link.customerConversationId,
+    );
+    expect(image.status).toBe(402);
+
+    await owner
+      .update(workspace)
+      .set({ suspendedAt: new Date() })
+      .where(eq(workspace.id, acme.workspaceId));
+    const suspended = await reply(
+      early,
+      acme.cookie,
+      acme.workspaceId,
+      link.customerConversationId,
+      "Hello?",
+    );
+    expect(suspended.status).toBe(403);
   });
 });
 

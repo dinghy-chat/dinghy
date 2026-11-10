@@ -53,6 +53,14 @@ export type WorkspaceAccess =
 export const writable = (access: WorkspaceAccess) =>
   access === "active" || access === "waiting_cloud";
 
+/**
+ * Whether a message goes in. A welcome chat with Dinghy's founder is the one exception to the
+ * payment states: it takes messages while the workspace waits for payment or is read-only, so the
+ * founder's reply waits in the inbox and the owner can still answer. Suspended and deleted refuse.
+ */
+export const writableFor = (access: WorkspaceAccess, { welcome }: { welcome: boolean }) =>
+  writable(access) || (welcome && (access === "waiting_payment" || access === "read_only"));
+
 /** Reads the access again. Under the workspace row lock, nothing can change it until commit. */
 export async function workspaceAccess(
   tx: Transaction,

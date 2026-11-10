@@ -1651,6 +1651,9 @@ img.ws-tile {
   display: block;
   color: var(--warn-ink);
 }
+.who-text .welcome-state {
+  display: block;
+}
 .online {
   color: var(--green);
   font-weight: 600;

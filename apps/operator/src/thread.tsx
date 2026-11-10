@@ -146,31 +146,38 @@ function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: 
   );
 }
 
-/** Why replies in a welcome chat do not reach the other workspace, or null when they do. */
-const WELCOME_OFF: Partial<Record<Extract<WelcomeChat, { with: "workspace" }>["access"], TextId>> =
-  {
-    suspended: "welcomeSuspended",
-    read_only: "welcomeReadOnly",
-    deleted: "welcomeDeleted",
-    waiting_payment: "welcomeUnpaid",
-  };
+type WelcomeAccess = Extract<WelcomeChat, { with: "workspace" }>["access"];
 
-/** Who a welcome chat is with, and why replies do not reach them, if they do not. */
-function welcomeLines(welcome: WelcomeChat): [string, string | null] {
+/** The other side's state when it is not open, and whether replies still reach it. */
+const WELCOME_STATE: Partial<Record<WelcomeAccess, { text: TextId; delivered: boolean }>> = {
+  // Replies wait in its inbox until the workspace opens.
+  waiting_payment: { text: "welcomeUnpaid", delivered: true },
+  read_only: { text: "welcomeReadOnly", delivered: true },
+  suspended: { text: "welcomeSuspended", delivered: false },
+  deleted: { text: "welcomeDeleted", delivered: false },
+};
+
+/** Who a welcome chat is with, and the other side's state, if it is not open. */
+function welcomeLines(welcome: WelcomeChat): [string, { text: string; delivered: boolean } | null] {
   if (welcome.with === "founder") return [t("welcomeWithFounder"), null];
-  if (welcome.with === "deleted") return [t("welcomeChat"), t("welcomeGone")];
+  if (welcome.with === "deleted") {
+    return [t("welcomeChat"), { text: t("welcomeGone"), delivered: false }];
+  }
   const values = { workspace: welcome.name };
-  const off = WELCOME_OFF[welcome.access];
-  return [t("welcomeWith", values), off === undefined ? null : t(off, values)];
+  const state = WELCOME_STATE[welcome.access];
+  const note = state === undefined ? null : { ...state, text: t(state.text, values) };
+  return [t("welcomeWith", values), note];
 }
 
 /** A welcome chat on Dinghy Cloud: who it is with, in place of a visit it never has. */
 function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
-  const [label, off] = welcomeLines(welcome);
+  const [label, note] = welcomeLines(welcome);
   return (
     <p className="visit">
       {label}
-      {off !== null && <span className="welcome-off">{off}</span>}
+      {note !== null && (
+        <span className={note.delivered ? "welcome-state" : "welcome-off"}>{note.text}</span>
+      )}
     </p>
   );
 }
@@ -421,7 +428,8 @@ function Composer({
   draft: string;
   setDraft(draft: string): void;
   onSend(body: string): void;
-  onFiles(files: Iterable<File>): void;
+  /** Undefined when only text can go, as in a read-only workspace's welcome chat. */
+  onFiles: ((files: Iterable<File>) => void) | undefined;
 }) {
   const picker = useRef<HTMLInputElement>(null);
 
@@ -436,33 +444,38 @@ function Composer({
   return (
     <form className="compose" onSubmit={submit}>
       <div className="box">
-        <input
-          ref={picker}
-          className="file"
-          type="file"
-          multiple
-          accept={IMAGE_TYPES.join(",")}
-          aria-label={t("attach")}
-          tabIndex={-1}
-          onChange={(event) => {
-            onFiles(event.target.files ?? []);
-            event.target.value = "";
-          }}
-        />
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={t("attach")}
-          onClick={() => picker.current?.click()}
-        >
-          <Icon name="clip" />
-        </button>
+        {onFiles !== undefined && (
+          <>
+            <input
+              ref={picker}
+              className="file"
+              type="file"
+              multiple
+              accept={IMAGE_TYPES.join(",")}
+              aria-label={t("attach")}
+              tabIndex={-1}
+              onChange={(event) => {
+                onFiles(event.target.files ?? []);
+                event.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t("attach")}
+              onClick={() => picker.current?.click()}
+            >
+              <Icon name="clip" />
+            </button>
+          </>
+        )}
         <textarea
           rows={1}
           onPaste={(event) => {
             // A copy from Word or Excel holds its text and a picture of it. The text is what is meant.
             const { clipboardData: data } = event;
-            if (data.files.length === 0 || data.getData("text/plain") !== "") return;
+            if (onFiles === undefined || data.files.length === 0) return;
+            if (data.getData("text/plain") !== "") return;
             event.preventDefault();
             onFiles(data.files);
           }}
@@ -588,7 +601,8 @@ export function Thread({
   members,
   replying,
   canDelete,
-  repliesOffReason,
+  readOnly,
+  suspended,
   drafts,
   onBack,
   onChanged,
@@ -600,8 +614,9 @@ export function Thread({
   members: Member[];
   replying: string | null;
   canDelete: boolean;
-  /** Why replies are off: the subscription ended or the workspace is suspended. Null when on. */
-  repliesOffReason: TextId | null;
+  /** The subscription ended: replies are off, except text in the welcome chat. */
+  readOnly: boolean;
+  suspended: boolean;
   conversationId: string;
   /** Goes up on every change, so this loads what it has not seen, in order, with no gaps. */
   version: number;
@@ -612,6 +627,13 @@ export function Thread({
   const [online, setOnline] = useState<boolean | null>(null);
   const [pages, setPages] = useState<PageView[]>([]);
   const [welcome, setWelcome] = useState<WelcomeChat | null>(null);
+  // A read-only workspace can still answer in its welcome chat, in text: the server takes it there.
+  const repliesOffReason: TextId | null = suspended
+    ? "suspendedHelp"
+    : readOnly && welcome === null
+      ? "readOnlyHelp"
+      : null;
+  const imagesOn = !readOnly && !suspended;
   const [lines, setLines] = useState<Line[]>([]);
   // Here and not in the composer, which unmounts while the conversation is closed.
   const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
@@ -814,7 +836,7 @@ export function Thread({
         setDropping(false);
         if (!event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
-        if (!closed) sendFiles(event.dataTransfer.files);
+        if (!closed && imagesOn) sendFiles(event.dataTransfer.files);
       }}
     >
       <ThreadHead
@@ -888,7 +910,12 @@ export function Thread({
           {t("closedHelp")}
         </p>
       ) : (
-        <Composer draft={draft} setDraft={setDraft} onSend={sendText} onFiles={sendFiles} />
+        <Composer
+          draft={draft}
+          setDraft={setDraft}
+          onSend={sendText}
+          onFiles={imagesOn ? sendFiles : undefined}
+        />
       )}
     </section>
   );

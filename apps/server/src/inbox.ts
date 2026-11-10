@@ -27,7 +27,7 @@ import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import type { LogoUrl } from "./logo.ts";
-import { closedFailure, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import { closedFailure, OPEN_TO_WELCOME, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import {
   type Author,
   appendMessage,
@@ -307,6 +307,7 @@ const conversationRoute = createRoute({
 
 const replyRoute = createRoute({
   method: "post",
+  ...OPEN_TO_WELCOME,
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages`,
   security: SESSION_OR_KEY,
   summary: "Reply. A retry with the same clientId returns the original",

@@ -3015,6 +3015,7 @@
         }
       },
       "post": {
+        "x-workspace-access": "welcome",
         "security": [
           {
             "sessionCookie": []
