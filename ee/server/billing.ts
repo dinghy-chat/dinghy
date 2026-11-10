@@ -14,7 +14,7 @@ import { noLive, OPERATORS, type Signals } from "../../apps/server/src/live.ts";
 import { OPEN_WHILE_CLOSED, OPEN_WHILE_UNPAID } from "../../apps/server/src/member.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import { type RateLimit, tooManyRequests } from "../../apps/server/src/rate-limit.ts";
-import { billingState, ENDED, FAILING, PAID } from "./lifecycle.ts";
+import { billingEmails, billingState, ENDED, FAILING, PAID, queueEmails } from "./lifecycle.ts";
 
 interface BillingKeys {
   secretKey: string;
@@ -374,7 +374,6 @@ export function createBilling(
               paidAt: sql`coalesce(${subscription.paidAt}, ${at.toISOString()}::timestamptz)`,
               paymentFailedAt: null,
               readOnlyAt: null,
-              notice: null,
             }
           : FAILING.has(current.status)
             ? {
@@ -393,6 +392,19 @@ export function createBilling(
           if (fresh === undefined) return "skipped";
         }
         if (stale) return "skipped";
+        // Under the row's lock, so the emails below compare with the state this write replaces,
+        // including a read-only time the worker set without moving the revision.
+        const [before] = await tx
+          .select({
+            paidAt: subscription.paidAt,
+            paymentFailedAt: subscription.paymentFailedAt,
+            readOnlyAt: subscription.readOnlyAt,
+            cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+            currentPeriodEnd: subscription.currentPeriodEnd,
+          })
+          .from(subscription)
+          .where(eq(subscription.workspaceId, workspaceId))
+          .for("update");
         const written =
           seen.revision === null
             ? await tx
@@ -403,7 +415,6 @@ export function createBilling(
                   paidAt: PAID.has(current.status) ? at : null,
                   paymentFailedAt: FAILING.has(current.status) ? at : null,
                   readOnlyAt: null,
-                  notice: null,
                   revision: 1,
                 })
                 .onConflictDoNothing()
@@ -419,6 +430,11 @@ export function createBilling(
                 )
                 .returning({ revision: subscription.revision });
         if (written.length === 0) tx.rollback();
+        await queueEmails(
+          tx,
+          workspaceId,
+          billingEmails(before, { ...state, status: current.status }, at),
+        );
         if (PAID.has(current.status)) {
           await tx
             .update(workspace)

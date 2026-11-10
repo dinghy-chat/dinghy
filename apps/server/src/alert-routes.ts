@@ -248,6 +248,18 @@ export function registerAlertRoutes(
   });
 }
 
+/** The headers of a stop link's page: nothing loads, and the form posts only to itself. */
+export const STOP_PAGE_SECURITY = {
+  "content-security-policy":
+    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  "referrer-policy": "no-referrer",
+  "x-content-type-options": "nosniff",
+};
+
+/** A stop link's page. `body` is fixed text and a form, never anything a person typed. */
+export const stopPage = (title: string, body: string) =>
+  `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:#0b2239;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:440px;padding:28px;border-radius:14px;background:#fff;color:#0b2239}button{margin-top:16px;min-height:44px;padding:0 18px;border:0;border-radius:10px;background:#ffc917;color:#0b2239;font:600 16px system-ui,sans-serif;cursor:pointer}button:hover{background:#ffd84d}button:focus-visible{outline:2px solid #1f6bff;outline-offset:2px}</style><main>${body}</main></html>`;
+
 /** The stop link. GET only asks, because mail scanners open links. POST stops the emails. */
 export function registerEmailStop(
   app: App,
@@ -256,14 +268,7 @@ export function registerEmailStop(
   rateLimit: RateLimit,
 ): void {
   app.use("/v1/email-stop/*", limitByIp(rateLimit, "email-stop", 20, 60));
-  const SECURITY = {
-    "content-security-policy":
-      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-    "referrer-policy": "no-referrer",
-    "x-content-type-options": "nosniff",
-  };
-  const page = (body: string) =>
-    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${STOP_TEXT.title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:#0b2239;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:440px;padding:28px;border-radius:14px;background:#fff;color:#0b2239}button{margin-top:16px;min-height:44px;padding:0 18px;border:0;border-radius:10px;background:#ffc917;color:#0b2239;font:600 16px system-ui,sans-serif;cursor:pointer}button:hover{background:#ffd84d}button:focus-visible{outline:2px solid #1f6bff;outline-offset:2px}</style><main>${body}</main></html>`;
+  const page = (body: string) => stopPage(STOP_TEXT.title, body);
   const valid = (workspaceId: string, addressHash: string, signature: string) =>
     z.uuid().safeParse(workspaceId).success &&
     /^[0-9a-f]{64}$/.test(addressHash) &&
@@ -273,25 +278,25 @@ export function registerEmailStop(
     const { workspaceId, addressHash } = c.req.param();
     const signature = c.req.query("signature") ?? "";
     if (!valid(workspaceId, addressHash, signature)) {
-      return c.html(page(`<p>${STOP_TEXT.invalid}</p>`), 404, SECURITY);
+      return c.html(page(`<p>${STOP_TEXT.invalid}</p>`), 404, STOP_PAGE_SECURITY);
     }
     return c.html(
       page(
         `<p>${STOP_TEXT.question}</p><form method="post" action="?signature=${signature}"><button>${STOP_TEXT.button}</button></form>`,
       ),
       200,
-      SECURITY,
+      STOP_PAGE_SECURITY,
     );
   });
 
   app.post("/v1/email-stop/:workspaceId/:addressHash", async (c) => {
     const { workspaceId, addressHash } = c.req.param();
     if (!valid(workspaceId, addressHash, c.req.query("signature") ?? "")) {
-      return c.html(page(`<p>${STOP_TEXT.invalid}</p>`), 404, SECURITY);
+      return c.html(page(`<p>${STOP_TEXT.invalid}</p>`), 404, STOP_PAGE_SECURITY);
     }
     await withWorkspace(db, workspaceId, (tx) =>
       tx.insert(emailStop).values({ workspaceId, addressHash }).onConflictDoNothing(),
     );
-    return c.html(page(`<p>${STOP_TEXT.done}</p>`), 200, SECURITY);
+    return c.html(page(`<p>${STOP_TEXT.done}</p>`), 200, STOP_PAGE_SECURITY);
   });
 }

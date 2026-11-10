@@ -527,6 +527,7 @@ describe("a self-hosted install", () => {
         db: workerDb,
         logger,
         publicUrl: PUBLIC_URL,
+        secret: AUTH_SECRET,
         signals: { wake() {}, revoke() {} },
       }),
     ).toBeUndefined();

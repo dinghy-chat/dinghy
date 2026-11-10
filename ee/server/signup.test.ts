@@ -625,7 +625,14 @@ describe("a workspace that waits for the cloud", () => {
       workerDb,
       logger,
     );
-    await runLifecycle({ db: workerDb, billing, logger, mailer, publicUrl: PUBLIC_URL });
+    await runLifecycle({
+      db: workerDb,
+      billing,
+      logger,
+      mailer,
+      publicUrl: PUBLIC_URL,
+      secret: AUTH_SECRET,
+    });
     expect(await workspaceRow(created.workspaceId)).toEqual(before);
     expect(mails).toEqual([]);
   });

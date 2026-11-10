@@ -4,6 +4,7 @@ import { pino } from "pino";
 import { operator, subscription, workspaceMember } from "../../../apps/server/src/db/schema.ts";
 import { createWorkspace } from "../../../apps/server/src/workspaces.ts";
 import { startE2EServer } from "../../../apps/server/test/e2e-server.ts";
+import { AUTH_SECRET } from "../../../apps/server/test/env.ts";
 import { createBilling } from "../billing.ts";
 import { runLifecycle } from "../lifecycle.ts";
 import {
@@ -100,6 +101,7 @@ export async function startCloudE2EServer({
         billing: createBilling(keys, workerDb, logger, signals),
         logger,
         publicUrl: apiOrigin,
+        secret: AUTH_SECRET,
       });
     },
     /** Makes a workspace read-only in the database alone, as if this page missed the change. */

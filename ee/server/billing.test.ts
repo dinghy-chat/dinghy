@@ -24,6 +24,7 @@ import {
   signIn,
 } from "../../apps/server/test/operators.ts";
 import { billingFromConfig, verifyStripeSignature } from "./billing.ts";
+import { onboardingStopUrl } from "./lifecycle-emails.ts";
 import {
   type FakeStripe,
   STRIPE_PRICE_ID,
@@ -833,6 +834,19 @@ async function activeSignup() {
   return created;
 }
 
+/** A stop link signed for one owner does not work for another, and a made-up one never does. */
+async function strangerStop(method: string) {
+  const [workspaceId, operatorId, other] = [randomUUID(), randomUUID(), randomUUID()];
+  const signed = onboardingStopUrl(PUBLIC_URL, AUTH_SECRET, workspaceId, operatorId);
+  for (const url of [
+    signed.replace(operatorId, other),
+    signed.replace(/signature=.+$/, "signature=x"),
+  ]) {
+    const response = await app.request(url, { method, headers: { "x-forwarded-for": IP } });
+    expect(response.status).toBe(404);
+  }
+}
+
 /**
  * The cloud's routes, which the core isolation suite does not build, each with what keeps a stranger
  * out. A new route in ee/ fails the list test until it has an entry here.
@@ -857,6 +871,8 @@ const CLOUD_ATTACKS: Record<string, () => Promise<void>> = {
     });
     expect(response.status).toBe(403);
   },
+  "GET /v1/onboarding-stop/:workspaceId/:operatorId": () => strangerStop("GET"),
+  "POST /v1/onboarding-stop/:workspaceId/:operatorId": () => strangerStop("POST"),
   "POST /v1/stripe/webhook": async () => {
     const event = stripe.event("checkout.session.completed", {});
     const response = await app.request("/v1/stripe/webhook", {

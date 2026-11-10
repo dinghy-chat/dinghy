@@ -20,6 +20,7 @@ import {
   registerBillingRoutes,
 } from "./billing.ts";
 import { runLifecycle } from "./lifecycle.ts";
+import { registerOnboardingStop } from "./lifecycle-emails.ts";
 import { createLimits, type LimitOptions } from "./limits.ts";
 import { removeOldImages } from "./retention.ts";
 import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
@@ -129,6 +130,7 @@ export function createCloud(
     registerRoutes(app) {
       if (billing !== undefined && client !== undefined) {
         registerBillingRoutes(app, { auth, billing, client, db, rateLimit });
+        registerOnboardingStop(app, { db, secret: auth.options.secret, rateLimit });
       }
       registerSignup(app, {
         auth,
@@ -149,6 +151,8 @@ export interface CloudWorkerDeps {
   db: Database;
   logger: Logger;
   publicUrl: string;
+  /** Signs the stop link in onboarding emails. */
+  secret: string;
   signals: Signals;
 }
 
@@ -161,7 +165,7 @@ export type CloudWorkerStep = (pass: { mailer: Mailer | undefined }) => Promise<
  */
 export function cloudWorkerStep(
   settings: CloudSettings | undefined,
-  { db, logger, publicUrl, signals }: CloudWorkerDeps,
+  { db, logger, publicUrl, secret, signals }: CloudWorkerDeps,
 ): CloudWorkerStep | undefined {
   if (settings === undefined) return undefined;
   const billing =
@@ -172,7 +176,14 @@ export function cloudWorkerStep(
     const removed = await removeOldImages(db);
     if (removed > 0) logger.info({ removed }, "removed images older than 12 months");
     if (billing !== undefined) {
-      await runLifecycle({ db, billing, logger, mailer, publicUrl });
+      await runLifecycle({
+        db,
+        billing,
+        logger,
+        mailer,
+        publicUrl,
+        secret,
+      });
     }
   };
 }

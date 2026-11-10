@@ -48,12 +48,18 @@ const oneLine = (words: string | undefined) => words?.replace(/\s+/g, " ").trim(
 /**
  * An email's text. Pass a name only when the person it goes to typed it and proved this address,
  * so a stranger cannot put their own words in someone else's inbox. `team` signs it, and defaults
- * to Dinghy: a workspace signs the emails that its own visitors get.
+ * to Dinghy: a workspace signs the emails that its own visitors get. `signOff` replaces the whole
+ * sign-off, for emails that a person signs.
  */
-export function letter(paragraphs: string[], name?: string, team = "Dinghy"): string {
+export function letter(
+  paragraphs: string[],
+  name?: string,
+  team = "Dinghy",
+  signOff?: string,
+): string {
   const shown = oneLine(name);
   const greeting = shown ? text.hiName(shown) : text.hi;
-  return [greeting, ...paragraphs, text.signOff(oneLine(team) || "Dinghy")].join("\n\n");
+  return [greeting, ...paragraphs, signOff ?? text.signOff(oneLine(team) || "Dinghy")].join("\n\n");
 }
 
 /** The sign-in link that an operator asked for on the sign-in page. */

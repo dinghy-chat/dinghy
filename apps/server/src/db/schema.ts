@@ -178,6 +178,8 @@ export const workspaceMember = pgTable(
     // A removed member keeps this row, so history keeps its author.
     removedAt: timestamp("removed_at", { withTimezone: true }),
     alertEmail: boolean("alert_email").notNull().default(false),
+    // Cloud only. The member followed the stop link in an onboarding email. Billing emails still go.
+    onboardingStoppedAt: timestamp("onboarding_stopped_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -781,9 +783,10 @@ export const subscription = pgTable("subscription", {
   paidAt: timestamp("paid_at", { withTimezone: true }),
   // The first failed payment of a run of failures. A repeat keeps it, and a payment clears it.
   paymentFailedAt: timestamp("payment_failed_at", { withTimezone: true }),
-  // The widget is off and operators cannot write from here on. Deletion follows after 30 days.
+  // The widget is off and operators cannot write from here on. Deletion follows after 90 days.
   readOnlyAt: timestamp("read_only_at", { withTimezone: true }),
-  // The latest lifecycle email sent to the owners, so a later pass does not send it again.
+  // Unused since lifecycle_email replaced it. The column stays one release, so an instance of the
+  // previous release that still runs during a deploy can read it. Drop it in the next release.
   notice: text("notice"),
   // A worker holds this row until then, so two workers do not act on it at once.
   claimedUntil: timestamp("claimed_until", { withTimezone: true }),
@@ -804,6 +807,49 @@ export const subscription = pgTable("subscription", {
     .defaultNow()
     .$onUpdate(() => new Date()),
 });
+
+export const lifecycleEmailKind = pgEnum("lifecycle_email_kind", [
+  "ready",
+  "install",
+  "team",
+  "check_in",
+  "review",
+  "cancellation",
+  "ending_soon",
+  "payment_failed",
+  "payment_reminder",
+  "payment_last_day",
+  "payment_recovered",
+  "read_only",
+  "welcome_back",
+  "deletion_30",
+  "deletion_7",
+  "deleted",
+]);
+
+/**
+ * Cloud only. An email to a workspace's owners about its plan, queued when the change that causes
+ * it commits and sent by the worker once it is due. The key is the workspace, the kind and the time
+ * that starts the occurrence, such as the first failed payment, so each goes once per occurrence.
+ */
+export const lifecycleEmail = pgTable(
+  "lifecycle_email",
+  {
+    workspaceId: workspaceId(),
+    kind: lifecycleEmailKind("kind").notNull(),
+    occurrenceAt: timestamp("occurrence_at", { withTimezone: true }).notNull(),
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    // A worker holds this row until then, so two workers do not send it at once.
+    claimedUntil: timestamp("claimed_until", { withTimezone: true }),
+    // Null while it waits. An email whose reason passed before it was due is deleted instead.
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.kind, table.occurrenceAt] }),
+    index("lifecycle_email_due_idx").on(table.dueAt).where(sql`${table.sentAt} is null`),
+  ],
+);
 
 /** Cloud only. A Stripe event that was applied. A repeated delivery does nothing. */
 export const stripeEvent = pgTable(
