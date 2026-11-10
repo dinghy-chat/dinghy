@@ -12,5 +12,15 @@
     ]
   },
   "formatter": { "indentStyle": "space", "lineWidth": 100 },
-  "linter": { "domains": { "react": "recommended" }, "rules": { "preset": "recommended" } }
+  "linter": {
+    "domains": { "react": "recommended" },
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "error"
+      }
+    }
+  }
 }

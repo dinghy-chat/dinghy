@@ -49,7 +49,7 @@ export const cookieOf = (response: Response): string =>
     .join("; ");
 
 /** The path and query of a link, which `app.request` takes. */
-export const pathOf = (url: string): string => {
+const pathOf = (url: string): string => {
   const parsed = new URL(url);
   return `${parsed.pathname}${parsed.search}`;
 };

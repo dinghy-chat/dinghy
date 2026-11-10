@@ -35,7 +35,7 @@ import { retryDelayMs } from "./retry.ts";
 import { allowed } from "./team.ts";
 
 /** At most this many webhooks per workspace. */
-export const WEBHOOK_LIMIT = 5;
+const WEBHOOK_LIMIT = 5;
 /** One request may take this long, from the connection to the answer's status. */
 const REQUEST_TIMEOUT_MS = 10_000;
 /** The first retry waits 30 seconds, doubling to an hour: 30 attempts last about a day. */
@@ -130,7 +130,7 @@ function guardedLookup(policy: WebhookPolicy): LookupFunction {
  * Why a new address cannot take webhooks, or null. It also resolves the name now, so a typo shows
  * at once. Each send checks again, because a name can point elsewhere later.
  */
-export async function checkEndpoint(url: string, policy: WebhookPolicy): Promise<string | null> {
+async function checkEndpoint(url: string, policy: WebhookPolicy): Promise<string | null> {
   if (!URL.canParse(url)) return WRONG_SCHEME;
   const parsed = new URL(url);
   const problem = endpointProblem(parsed, policy);
@@ -155,7 +155,7 @@ export function signature(secret: string, timestamp: number, body: string): stri
   return `t=${timestamp},v1=${digest}`;
 }
 
-export interface SendResult {
+interface SendResult {
   /** The answer's HTTP status, or null when none came. */
   status: number | null;
   /** Why it did not reach a 2xx answer, or null when it did. */
@@ -166,7 +166,7 @@ export interface SendResult {
  * Sends one signed event. It follows no redirect, and it gives up after 10 seconds. Only the answer's
  * status is read.
  */
-export function sendWebhook(
+function sendWebhook(
   url: string,
   secret: string,
   eventId: string,
@@ -213,7 +213,7 @@ export function sendWebhook(
 }
 
 /** The JSON body of one event, in the same shapes as the operator API. */
-export function webhookBody(
+function webhookBody(
   eventId: string,
   type: string,
   createdAt: Date,

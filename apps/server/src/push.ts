@@ -1,6 +1,6 @@
 import { generateRequestDetails } from "web-push";
 
-export interface PushTarget {
+interface PushTarget {
   endpoint: string;
   p256dh: string;
   auth: string;
@@ -22,7 +22,7 @@ export interface PushKeys {
 }
 
 /** A 404 or 410 means the browser dropped this subscription, so it can go. */
-export type PushResult = "sent" | "gone" | "failed";
+type PushResult = "sent" | "gone" | "failed";
 
 export interface Push {
   publicKey: string;

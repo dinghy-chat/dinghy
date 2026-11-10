@@ -5,7 +5,7 @@
 // host holds two canvases and the boat:
 // <canvas class="sea-back">, <span class="float"> with the boat inside, <canvas class="sea-front">.
 
-export interface Swell {
+interface Swell {
   /** The share of the height where this layer's surface rests. */
   level: number;
   /** The swell's size in pixels. */

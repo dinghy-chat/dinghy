@@ -50,7 +50,7 @@ export async function insertWorkspace(
 }
 
 /** The widget's own words for a workspace. Null means the widget's default text. */
-export interface WidgetTexts {
+interface WidgetTexts {
   title: string | null;
   greeting: string | null;
   away: string | null;
