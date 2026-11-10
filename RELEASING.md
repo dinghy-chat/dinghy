@@ -26,7 +26,7 @@ The version comes from the groups under Unreleased, following [Semantic Versioni
 | `Added`, `Changed` or `Deprecated` | minor      | minor    |
 | Only `Fixed` or `Security`         | patch      | patch    |
 
-To release another version, run `scripts/release-prepare.sh 1.0.0` on a branch and open the pull request by hand.
+To release another version, run `scripts/release-prepare.sh 1.0.0` on a branch and open the pull request by hand. Name the branch anything but `release`, which the bot owns.
 
 The pull request skips the CI job: each change in it already passed CI, and the Image workflow runs CI again on the tag before it publishes anything.
 
