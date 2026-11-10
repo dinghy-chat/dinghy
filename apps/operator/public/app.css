@@ -1355,7 +1355,6 @@ button.workspace[aria-expanded="true"],
   fill: light-dark(#fff, #2e3e51);
 }
 .empty-ink,
-.empty-rope,
 .empty-ripple {
   fill: none;
   stroke-linecap: round;
@@ -1365,16 +1364,14 @@ button.workspace[aria-expanded="true"],
   stroke: currentColor;
   stroke-width: 2.5;
 }
-.empty-rope,
 .empty-ripple {
   stroke: var(--mute);
   stroke-width: 2;
-}
-.empty-ripple {
   opacity: 0.5;
 }
-.empty-rope {
-  opacity: 0.8;
+.empty-star {
+  fill: var(--mute);
+  opacity: 0.6;
 }
 .empty-sail {
   fill: var(--surface);

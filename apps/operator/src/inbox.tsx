@@ -808,7 +808,7 @@ export function Inbox({
                 <ul className="rows" aria-busy={searching}>
                   {found === null && conversations.length === 0 && (
                     <li className="list-empty">
-                      <EmptyArt scene={status === "open" ? "sailing" : "moored"} />
+                      <EmptyArt scene={status === "open" ? "day" : "evening"} />
                       <b>{t(STATUS_LOOK[status].empty)}</b>
                       {t(STATUS_LOOK[status].hint)}
                     </li>

@@ -326,14 +326,14 @@ export function Pond() {
   return <Sea className="pond" options={POND} size={64} />;
 }
 
-// The far shore of a small patch of water, shared by both empty-list pictures.
+// A small patch of water, and the boat under sail on it, shared by both empty-list pictures.
 const WATER = "M0 82c10 0 10-3 20-3s10 3 20 3 10-3 20-3 10 3 20 3 10-3 20-3 10 3 20 3V120H0z";
 
 /**
- * A drawing for an empty list: the boat under sail for an empty inbox, and the boat tied up with
- * its sail furled for an empty list of closed conversations. The text beside it says the same.
+ * A drawing for an empty list: the boat in the day for an empty inbox, and the same boat under the
+ * moon for an empty list of closed conversations. The text beside it says the same.
  */
-export function EmptyArt({ scene }: { scene: "sailing" | "moored" }) {
+export function EmptyArt({ scene }: { scene: "day" | "evening" }) {
   const clip = useId();
   return (
     <svg className="empty-art" viewBox="0 0 120 120" aria-hidden="true">
@@ -342,29 +342,25 @@ export function EmptyArt({ scene }: { scene: "sailing" | "moored" }) {
       </clipPath>
       <g clipPath={`url(#${clip})`}>
         <rect className="empty-sky" width="120" height="120" />
-        {scene === "sailing" ? (
-          <>
-            <circle className="empty-sun" cx="30" cy="38" r="10" />
-            <path className="empty-water" d={WATER} />
-            <path className="empty-ink" d="M58 26v52" />
-            <path className="empty-flag" d="M60 26l11 4-11 4z" />
-            <path className="empty-sail" d="M61 38c10 8 16 20 18 34H61z" />
-            <path className="empty-sail" d="M55 44c-7 9-12 18-15 28h15z" />
-            <path className="empty-hull" d="M33 76h52c-2 7-8 11-15 11H48c-7 0-13-4-15-11z" />
-            <path className="empty-ripple" d="M24 98h14M50 98h20M82 98h14M38 108h44" />
-          </>
+        {scene === "day" ? (
+          <circle className="empty-sun" cx="30" cy="38" r="10" />
         ) : (
           <>
-            <path className="empty-water" d={WATER} />
-            <path className="empty-ink" d="M24 46v52M19 46h10" />
-            <path className="empty-rope" d="M24 58c8 10 14 16 22 18" />
-            <path className="empty-ink" d="M70 28v48M70 68h20" />
-            <path className="empty-flag" d="M72 28l11 4-11 4z" />
-            <path className="empty-sail" d="M71 61c7-1.5 13-1.5 19 0v7H71z" />
-            <path className="empty-hull" d="M45 76h52c-2 7-8 11-15 11H60c-7 0-13-4-15-11z" />
-            <path className="empty-ripple" d="M14 108h24M50 98h20M84 98h14M56 108h36" />
+            <circle className="empty-sun" cx="30" cy="38" r="10" />
+            <circle className="empty-sky" cx="35" cy="34" r="9" />
+            <path
+              className="empty-star"
+              d="M88 30l1.2 3.3 3.3 1.2-3.3 1.2L88 39l-1.2-3.3-3.3-1.2 3.3-1.2zM98 46l.8 2.2 2.2.8-2.2.8L98 52l-.8-2.2-2.2-.8 2.2-.8z"
+            />
           </>
         )}
+        <path className="empty-water" d={WATER} />
+        <path className="empty-ink" d="M58 26v52" />
+        <path className="empty-flag" d="M60 26l11 4-11 4z" />
+        <path className="empty-sail" d="M61 38c10 8 16 20 18 34H61z" />
+        <path className="empty-sail" d="M55 44c-7 9-12 18-15 28h15z" />
+        <path className="empty-hull" d="M33 76h52c-2 7-8 11-15 11H48c-7 0-13-4-15-11z" />
+        <path className="empty-ripple" d="M24 98h14M50 98h20M82 98h14M38 108h44" />
       </g>
     </svg>
   );
