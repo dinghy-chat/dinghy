@@ -59,7 +59,7 @@ const EMAIL_TAKEN = failure(
 );
 const ALREADY_MEMBER = failure("already_member", "You are already in this workspace.");
 const INVITEE_IS_MEMBER = failure("already_member", "This person is already in the workspace.");
-const NAME_NEEDED = failure("invalid_request", "Send a name for the new account.");
+const NAME_NEEDED = failure("invalid_request", "Send a name: this account has none yet.");
 const OTHER_EMAIL = failure("invite_other_email", "This invite is for another email address.");
 
 const RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 };
@@ -305,6 +305,9 @@ const previewRoute = createRoute({
         role: invitedRole,
         email: z.string(),
         hasAccount: z.boolean(),
+        needsName: z.boolean().openapi({
+          description: "Join must send a name: the email has no account, or one with no name yet",
+        }),
       }),
     ),
     ...inviteErrors,
@@ -331,7 +334,7 @@ const joinRoute = createRoute({
     ),
     ...inviteErrors,
     400: errorAnswer(
-      "invalid_request: the request is not valid, or it has no name and the email has no account",
+      "invalid_request: the request is not valid, or it has no name and the account has none yet",
     ),
     409: errorAnswer(
       "email_taken: the invite was not emailed and the email has an account. Sign in, then accept the invite. operator_limit: the workspace has as many operators as its plan allows",
@@ -730,7 +733,12 @@ export function registerTeamRoutes(
           ),
         );
       if (member !== undefined) return "member" as const;
-      // Inviting someone again replaces their invite, so only the newest link works.
+      // Inviting someone again replaces their invite, so only the newest link works. Two inviters
+      // lock different creator rows, so this lock on the address makes the second one wait and
+      // revoke the first one's invite.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`invite:${id}:${email}`}, 0))`,
+      );
       await tx
         .update(invite)
         .set({ revokedAt: new Date() })
@@ -871,6 +879,7 @@ export function registerTeamRoutes(
           email: invite.email,
           mailed: invite.mailed,
           hasAccount: sql<boolean>`exists (select 1 from ${operator} where ${operator.email} = ${invite.email})`,
+          needsName: sql<boolean>`not exists (select 1 from ${operator} where ${operator.email} = ${invite.email} and ${operator.name} <> '')`,
         })
         .from(invite)
         .innerJoin(workspace, eq(workspace.id, invite.workspaceId))
@@ -905,6 +914,7 @@ export function registerTeamRoutes(
         role: row.role as "admin" | "member",
         email: row.email,
         hasAccount: row.hasAccount,
+        needsName: row.needsName,
       },
       200,
     );
@@ -919,8 +929,9 @@ export function registerTeamRoutes(
     const offer = await readInvite(workspaceId, tokenHash);
     if (offer === undefined) return c.json(BAD_INVITE, 404);
     const { email, mailed } = offer;
-    if (!offer.hasAccount) {
-      if (name === undefined) return c.json(NAME_NEEDED, 400);
+    // A new account, or one an unfinished signup left unnamed, takes the name sent here.
+    if (offer.needsName && name === undefined) return c.json(NAME_NEEDED, 400);
+    if (!offer.hasAccount && name !== undefined) {
       const result = await withWorkspace(db, workspaceId, async (tx) => {
         const [created] = await tx
           .insert(operator)

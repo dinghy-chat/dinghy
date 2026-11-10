@@ -56,7 +56,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     if (offer === null) return;
     setError(null);
     try {
-      const joined = await joinWithInvite(token, offer.hasAccount ? undefined : name.trim());
+      const joined = await joinWithInvite(token, offer.needsName ? name.trim() : undefined);
       if (joined.workspaceId !== null) {
         navigate(`/?workspace=${joined.workspaceId}`);
         return;
@@ -135,7 +135,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     <AuthPage time="morning" onSubmit={join}>
       {heading}
       <p className="note">{t("inviteJoiningAs", { email: offer.email })}</p>
-      {!offer.hasAccount && (
+      {offer.needsName && (
         <Field
           label={t("yourName")}
           autoComplete="name"

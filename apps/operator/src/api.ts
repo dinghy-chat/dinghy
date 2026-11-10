@@ -308,12 +308,13 @@ export interface InviteOffer {
   /** Only this email can use the invite. */
   email: string;
   hasAccount: boolean;
+  /** No account, or one left with no name: joining asks for a name. */
+  needsName: boolean;
 }
 export const previewInvite = (token: string) => post<InviteOffer>("/v1/invites/preview", { token });
-/** The link goes by email. With no mail server, `signInUrl` is the link, for a new account only. */
 /**
  * Joins as the invite's email. A new account is made and signed in at once. For an existing one,
- * `workspaceId` is null: a link to join went to its email. Leave out `name` for an existing one.
+ * `workspaceId` is null: a link to join went to its email. Send `name` when the preview says `needsName`.
  */
 export const joinWithInvite = (token: string, name?: string) =>
   post<{ workspaceId: string | null }>("/v1/invites/join", { token, name });

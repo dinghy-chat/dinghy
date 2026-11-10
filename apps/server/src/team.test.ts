@@ -286,6 +286,7 @@ describe("inviting by email", () => {
       role: "admin",
       email,
       hasAccount: false,
+      needsName: true,
     });
     const cookie = await joinNew(token, mailApp);
     const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
@@ -335,6 +336,20 @@ describe("inviting by email", () => {
     expect(again.status).toBe(400);
     expect(await again.json()).toMatchObject({ error: { code: "link_invalid" } });
     expect(again.headers.getSetCookie()).toEqual([]);
+  });
+
+  test("an account an unfinished signup left unnamed must send a name, and takes it", async () => {
+    const email = newEmail();
+    await owner.insert(operator).values({ name: "", email, emailVerified: true });
+    const boss = await person("owner");
+    const token = await mailInvite(boss, email);
+    const offer = await call("POST", "/v1/invites/preview", null, { token });
+    expect(await offer.json()).toMatchObject({ hasAccount: true, needsName: true });
+    expect((await join(token, { server: mailApp, name: null })).status).toBe(400);
+    expect((await join(token, { server: mailApp, name: "Nina" })).status).toBe(200);
+    const { cookie } = await openJoin(await mail.linkTo(email, 1), mailApp);
+    const me = await mailApp.request("/v1/operator/me", { headers: { cookie } });
+    expect(await me.json()).toMatchObject({ name: "Nina" });
   });
 
   test("an expired join link changes nothing", async () => {
@@ -796,6 +811,7 @@ describe("invites", () => {
       role: "admin",
       email,
       hasAccount: false,
+      needsName: true,
     });
 
     const cookie = await joinNew(token);

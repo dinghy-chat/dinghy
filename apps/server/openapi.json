@@ -6845,9 +6845,13 @@
                     },
                     "hasAccount": {
                       "type": "boolean"
+                    },
+                    "needsName": {
+                      "type": "boolean",
+                      "description": "Join must send a name: the email has no account, or one with no name yet"
                     }
                   },
-                  "required": ["workspaceName", "role", "email", "hasAccount"]
+                  "required": ["workspaceName", "role", "email", "hasAccount", "needsName"]
                 }
               }
             }
@@ -6948,7 +6952,7 @@
             }
           },
           "400": {
-            "description": "invalid_request: the request is not valid, or it has no name and the email has no account",
+            "description": "invalid_request: the request is not valid, or it has no name and the account has none yet",
             "content": {
               "application/json": {
                 "schema": {
