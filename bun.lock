@@ -16,7 +16,7 @@
     },
     "apps/operator": {
       "name": "@dinghy/operator",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "devDependencies": {
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
@@ -27,7 +27,7 @@
     },
     "apps/server": {
       "name": "@dinghy/server",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "dependencies": {
         "@hono/node-server": "^2.1.6",
         "@hono/zod-openapi": "^1.6.3",
@@ -55,7 +55,7 @@
     },
     "ee": {
       "name": "@dinghy/ee",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "dependencies": {
         "@hono/zod-openapi": "^1.6.3",
         "drizzle-orm": "^0.45.4",
@@ -73,7 +73,7 @@
     },
     "packages/widget": {
       "name": "@dinghy-chat/widget",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "devDependencies": {
         "esbuild": "^0.28.2",
         "preact": "^11.2.0",
