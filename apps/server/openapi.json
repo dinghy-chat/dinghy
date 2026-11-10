@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Dinghy API",
-    "version": "0.13.0",
+    "version": "0.14.0",
     "description": "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie, or a workspace API key on the routes whose security lists `apiKey`). MCP lives at `/v1/mcp`, with an API key. Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`, a BetterAuth pass-through that is not part of the versioned API."
   },
   "components": {
@@ -45,6 +45,7 @@
                   "checkout_retry_later",
                   "conversation_closed",
                   "email_mismatch",
+                  "email_rejected",
                   "email_taken",
                   "email_unavailable",
                   "forbidden",
@@ -56,6 +57,7 @@
                   "last_owner",
                   "last_workspace",
                   "link_invalid",
+                  "mail_failed",
                   "name_mismatch",
                   "no_customer",
                   "not_a_member",
@@ -6596,8 +6598,28 @@
               }
             }
           },
+          "422": {
+            "description": "email_rejected: the mail server refused the address, so nothing was sent and the invite is revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "mail_failed: the invite email could not be sent, and the invite is revoked. Try again",
             "content": {
               "application/json": {
                 "schema": {
@@ -7433,12 +7455,23 @@
                     "hasAccount": {
                       "type": "boolean"
                     },
+                    "inviterName": {
+                      "type": "string",
+                      "description": "The name of the person who made the invite. Empty when they have none"
+                    },
                     "needsName": {
                       "type": "boolean",
                       "description": "Join must send a name: the email has no account, or one with no name yet"
                     }
                   },
-                  "required": ["workspaceName", "role", "email", "hasAccount", "needsName"]
+                  "required": [
+                    "workspaceName",
+                    "role",
+                    "email",
+                    "hasAccount",
+                    "inviterName",
+                    "needsName"
+                  ]
                 }
               }
             }

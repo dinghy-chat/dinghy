@@ -44,7 +44,7 @@ import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import type { LogoUrl } from "./logo.ts";
-import type { Mailer } from "./mailer.ts";
+import { type Mailer, recipientRejected } from "./mailer.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { assignConversation, recordTeamChange } from "./messages.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
@@ -73,6 +73,11 @@ const EMAIL_TAKEN = failure(
 const ALREADY_MEMBER = failure("already_member", "You are already in this workspace.");
 const INVITEE_IS_MEMBER = failure("already_member", "This person is already in the workspace.");
 const NAME_NEEDED = failure("invalid_request", "Send a name: this account has none yet.");
+const EMAIL_REJECTED = failure(
+  "email_rejected",
+  "The mail server says this address does not exist. Check it and try again.",
+);
+const MAIL_FAILED = failure("mail_failed", "The invite email could not be sent. Try again soon.");
 const OTHER_EMAIL = failure("invite_other_email", "This invite is for another email address.");
 
 const RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 };
@@ -239,7 +244,13 @@ const createInviteRoute = createRoute({
     409: errorAnswer(
       "already_member: this person is already in the workspace. operator_limit: the workspace has as many operators as its plan allows",
     ),
+    422: errorAnswer(
+      "email_rejected: the mail server refused the address, so nothing was sent and the invite is revoked",
+    ),
     ...RATE_LIMITED,
+    502: errorAnswer(
+      "mail_failed: the invite email could not be sent, and the invite is revoked. Try again",
+    ),
   },
 });
 
@@ -352,6 +363,9 @@ const previewRoute = createRoute({
         role: invitedRole,
         email: z.string(),
         hasAccount: z.boolean(),
+        inviterName: z.string().openapi({
+          description: "The name of the person who made the invite. Empty when they have none",
+        }),
         needsName: z.boolean().openapi({
           description: "Join must send a name: the email has no account, or one with no name yet",
         }),
@@ -869,16 +883,30 @@ export function registerTeamRoutes(
     if (created === "forbidden") return c.json(FORBIDDEN, 403);
     if (created === "member") return c.json(INVITEE_IS_MEMBER, 409);
     if (created === "full") return c.json(OPERATOR_LIMIT, 409);
-    auditChange("invite.created", id, operatorId, { inviteId: created.id, role });
     const answer = { id: created.id, email, role, expiresAt: expiresAt.toISOString() };
     // With no mail server, the admin hands the link out, so the answer is the only place it shows.
-    if (mailer === undefined) return c.json({ ...answer, token }, 201);
+    if (mailer === undefined) {
+      auditChange("invite.created", id, operatorId, { inviteId: created.id, role });
+      return c.json({ ...answer, token }, 201);
+    }
     const url = new URL("/invite", publicUrl);
     url.searchParams.set("token", token);
     const mail = inviteMail(url.href, created.workspaceName, role);
-    mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {
+    // The answer waits for the mail server, so the admin learns when the email did not go out.
+    try {
+      await mailer.send(email, mail.subject, mail.body);
+    } catch (err) {
       logger.error(safeErrorFields(err), "could not send an invite");
-    });
+      // Nobody got the link, so the invite would only hold a seat.
+      await withWorkspace(db, id, (tx) =>
+        tx
+          .update(invite)
+          .set({ revokedAt: new Date() })
+          .where(and(eq(invite.workspaceId, id), eq(invite.id, created.id))),
+      );
+      return recipientRejected(err) ? c.json(EMAIL_REJECTED, 422) : c.json(MAIL_FAILED, 502);
+    }
+    auditChange("invite.created", id, operatorId, { inviteId: created.id, role });
     return c.json({ ...answer, token: null }, 201);
   });
 
@@ -997,6 +1025,7 @@ export function registerTeamRoutes(
       tx
         .select({
           workspaceName: workspace.name,
+          inviterName: sql<string>`coalesce((select ${operator.name} from ${operator} where ${operator.id} = ${invite.createdBy}), '')`,
           role: invite.role,
           email: invite.email,
           mailed: invite.mailed,
@@ -1033,6 +1062,7 @@ export function registerTeamRoutes(
     return c.json(
       {
         workspaceName: row.workspaceName,
+        inviterName: row.inviterName,
         role: row.role as "admin" | "member",
         email: row.email,
         hasAccount: row.hasAccount,

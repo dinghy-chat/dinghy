@@ -2437,6 +2437,18 @@ img.ws-tile {
 .created .hint {
   margin: 0;
 }
+.invite-sent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.invite-sent svg {
+  flex: none;
+  color: var(--green);
+}
 .meters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

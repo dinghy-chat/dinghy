@@ -30,7 +30,7 @@ async function openWidget(page: Page, path = "/plain") {
 
 async function openInbox(page: Page) {
   await openLink(page, await server.signInLink("anna@example.com"));
-  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
 }
 
 /** The image really loaded, with its bytes decoded, and not only an img tag on the page. */

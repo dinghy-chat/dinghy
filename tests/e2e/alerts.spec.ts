@@ -41,7 +41,7 @@ const FAKE_PUSH = () => {
 
 async function signedIn(page: Page) {
   await openLink(page, await server.signInLink("anna@example.com"));
-  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
 }
 
 test("an operator turns on notifications and receives a test, and sign-out ends them @smoke", async ({

@@ -225,6 +225,40 @@ beforeEach(async () => {
 });
 
 describe("inviting by email", () => {
+  test.each([
+    [
+      "a refused address",
+      Object.assign(new Error("550"), { code: "EENVELOPE", responseCode: 550 }),
+      422,
+      "email_rejected",
+    ],
+    ["a mail server that is down", new Error("connect ECONNREFUSED"), 502, "mail_failed"],
+  ])(
+    "an invite email that fails for %s says so, and revokes the invite",
+    async (_, error, status, code) => {
+      const boss = await person("owner");
+      const email = newEmail();
+      const send = mail.send;
+      mail.send = async () => {
+        throw error;
+      };
+      try {
+        const response = await mailApp.request(inSpace("/invites"), {
+          method: "POST",
+          headers: { cookie: boss.cookie, origin: ORIGIN, "content-type": "application/json" },
+          body: JSON.stringify({ email, role: "member" }),
+        });
+        expect(response.status).toBe(status);
+        expect(await response.json()).toMatchObject({ error: { code } });
+      } finally {
+        mail.send = send;
+      }
+      const rows = await owner.select().from(invite).where(eq(invite.email, email));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.revokedAt).toBeInstanceOf(Date);
+    },
+  );
+
   test("with a mail server, the invite goes by email, and the answer shows no token", async () => {
     const boss = await person("owner");
     const email = newEmail();
@@ -283,6 +317,7 @@ describe("inviting by email", () => {
     const offer = await call("POST", "/v1/invites/preview", null, { token });
     expect(await offer.json()).toEqual({
       workspaceName: "Acme",
+      inviterName: boss.email,
       role: "admin",
       email,
       hasAccount: false,
@@ -798,6 +833,7 @@ describe("invites", () => {
     const offer = await call("POST", "/v1/invites/preview", null, { token });
     expect(await offer.json()).toEqual({
       workspaceName: "Acme",
+      inviterName: boss.email,
       role: "admin",
       email,
       hasAccount: false,

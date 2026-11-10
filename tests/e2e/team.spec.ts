@@ -51,6 +51,10 @@ async function invite(page: Page, email: string, role: "Member" | "Admin" = "Mem
   await dialog.getByLabel("Email").fill(email);
   await dialog.getByRole("radio", { name: role }).check();
   await dialog.getByRole("button", { name: "Send invite" }).click();
+  await expect(dialog.getByRole("status")).toHaveText(
+    `Invite sent to ${email}. They have 7 days to join.`,
+  );
+  await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".members .email-cell").getByText(email)).toBeVisible();
   await page.getByRole("button", { name: "Inbox", exact: true }).click();
@@ -62,14 +66,14 @@ async function joinAsNew(browser: Browser, url: string, name: string): Promise<P
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(url);
-  await expect(page.getByRole("heading", { name: "Join a workspace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Join / })).toBeVisible();
   await expect(
-    page.getByText(`You're joining as ${name.toLowerCase()}@example.com.`),
+    page.getByText(`invited ${name.toLowerCase()}@example.com to join as`, { exact: false }),
   ).toBeVisible();
   await expect(page.getByLabel("Email")).toHaveCount(0);
   await expect(page.getByLabel(/password/i)).toHaveCount(0);
   await page.getByLabel("Your name").fill(name);
-  await page.getByRole("button", { name: "Join", exact: true }).click();
+  await page.getByRole("button", { name: /^Join / }).click();
   await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
   return page;
 }
@@ -183,7 +187,7 @@ test("an existing account joins by an emailed link, which works once", async ({ 
   const page = await (await browser.newContext()).newPage();
   await page.goto(url);
   await expect(page.getByLabel("Your name")).toHaveCount(0);
-  await page.getByRole("button", { name: "Join", exact: true }).click();
+  await page.getByRole("button", { name: /^Join / }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   const link = await server.linkTo("eve@example.com", 1);
   await openLink(page, link, "Join the team");
@@ -209,7 +213,7 @@ test("revoking an invite asks first, and someone signed in as another email cann
   await expect(
     other.getByText("This invite is for rex@example.com. You're signed in as owner@example.com."),
   ).toBeVisible();
-  await expect(other.getByRole("button", { name: "Join", exact: true })).toHaveCount(0);
+  await expect(other.getByRole("button", { name: /^Join / })).toHaveCount(0);
 
   await boss.getByRole("button", { name: "Settings" }).click();
   const revoke = boss.getByRole("button", { name: "Revoke the invite for rex@example.com" });
@@ -235,8 +239,10 @@ test("someone with an account joins a second workspace and switches between them
   const other = await server.createSecondWorkspace("Other", "multi@example.com");
   const page = await signedIn(browser, "multi@example.com");
   await page.goto(url);
-  await expect(page.getByText("You are signed in as multi@example.com")).toBeVisible();
-  await page.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(
+    page.getByText("invited multi@example.com to join as", { exact: false }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /^Join / }).click();
 
   // The workspace pill opens a menu of both, with a check on the current one.
   const switcher = page.getByRole("button", { name: /^Workspace:/ });
@@ -270,10 +276,10 @@ test("an open app sees team changes, and a removal opens the other workspace", a
   await server.createSecondWorkspace("Elsewhere", "two@example.com");
   const person = await signedIn(browser, "two@example.com");
   await person.goto(url);
-  await person.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(person.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await person.getByRole("button", { name: /^Join / }).click();
+  await expect(person.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
   await person.reload();
-  await expect(person.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(person.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
 
   await server.seedConversations(1, "live roster");
   await boss.reload();

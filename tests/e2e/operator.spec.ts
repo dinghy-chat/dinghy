@@ -21,7 +21,7 @@ async function signedIn(browser: Browser): Promise<Page> {
   const context = await browser.newContext();
   const page = await context.newPage();
   await openLink(page, await server.signInLink("anna@example.com"));
-  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
   return page;
 }
 
@@ -300,7 +300,7 @@ test("the sign-in page sends a link, and the answer is the same for an unknown e
 
   const page = await (await browser.newContext()).newPage();
   await openLink(page, await server.linkTo(known));
-  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
   expect(server.mail.filter((one) => one.to === unknown)).toEqual([]);
   await page.context().close();
 });
@@ -315,7 +315,7 @@ test("opening a link uses nothing: only its page's button signs in", async ({ br
   await expect(scanner.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   const page = await (await browser.newContext()).newPage();
   await openLink(page, link);
-  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
   for (const one of [scanner, page]) await one.context().close();
 });
 
@@ -323,7 +323,7 @@ test("a used link says so, with a way to ask for a new one", async ({ browser })
   const link = await server.signInLink("anna@example.com");
   const first = await (await browser.newContext()).newPage();
   await openLink(first, link);
-  await expect(first.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(first.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
   const page = await (await browser.newContext()).newPage();
   await openLink(page, link);
   await expect(page.getByRole("alert")).toHaveText(
@@ -527,7 +527,7 @@ test("a sign-in link opens the inbox in place, with no page load", async ({ brow
     Object.assign(window, { stayed: true });
   });
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "E2E" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
   expect(await page.evaluate(() => "stayed" in window)).toBe(true);
   expect(new URL(page.url()).pathname).toBe("/");
   await page.context().close();
