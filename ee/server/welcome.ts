@@ -297,10 +297,14 @@ export function createCopyReply({ db, limits, live, logger, store }: CopyDeps): 
         await enterWorkspace(tx, workspaceId);
         return appended;
       },
-      async finish(committed) {
+      async finish(outcome) {
+        const committed = outcome === "committed";
         if (committed && copied !== null)
           wakeConversation(live, other.workspaceId, copied.visitorId);
-        if (file !== undefined && !(committed && copied?.usedFile === true)) {
+        // A lost commit may have landed, and a retry then skips the copy, so its file stays, as
+        // `images.receive` keeps the reply's own.
+        const unused = outcome === "rolled_back" || (committed && copied?.usedFile !== true);
+        if (file !== undefined && unused) {
           await store?.delete(file.storageKey).catch(() => undefined);
         }
       },

@@ -22,7 +22,7 @@ import {
   NOT_FOUND,
   okContent,
 } from "./errors.ts";
-import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
+import { ImageSchema, type Images, imageView, lostConnection, refuseImage } from "./images.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
@@ -540,9 +540,15 @@ export type CopyReply = (
 interface ReplyCopy {
   /** In the reply's transaction: runs the reply's write, and may add to the transaction. */
   write(tx: Transaction, append: () => Promise<Appended>): Promise<Appended>;
-  /** After the transaction, with whether the reply committed. It must not throw. */
-  finish(committed: boolean): Promise<void>;
+  /** After the transaction, with what came of it. It must not throw. */
+  finish(outcome: CommitOutcome): Promise<void>;
 }
+
+/**
+ * What came of a transaction. `unknown` is a connection lost during it, maybe after Postgres
+ * committed, so whatever the transaction may point to must stay.
+ */
+export type CommitOutcome = "committed" | "rolled_back" | "unknown";
 
 /** What a reply came to. The routes and the MCP tools answer each the same way. */
 export type ReplyOutcome =
@@ -582,7 +588,7 @@ export function createInbox({
     write: (tx: Transaction, author: Author) => Promise<Appended>,
   ): Promise<ReplyOutcome> => {
     const copy = (await copyReply?.(workspaceId, conversationId, image)) ?? null;
-    let committed = false;
+    let outcome: CommitOutcome = "rolled_back";
     const result = await catchClosed(
       withWorkspace(db, workspaceId, async (tx) => {
         const found = await findConversation(tx, workspaceId, conversationId);
@@ -592,14 +598,15 @@ export function createInbox({
         return { ...appended, visitorId: found.visitorId };
       })
         .then((done) => {
-          committed = done !== "missing";
+          if (done !== "missing") outcome = "committed";
           return done;
         })
         .catch((error: unknown) => {
           if (error instanceof ConversationClosedError) return "closed" as const;
+          if (lostConnection(error)) outcome = "unknown";
           throw error;
         }),
-    ).finally(() => copy?.finish(committed));
+    ).finally(() => copy?.finish(outcome));
     if (result === "missing" || result === "closed") return { kind: result };
     if (result instanceof WorkspaceClosedError) return { kind: "refused", access: result.access };
     // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.

@@ -65,6 +65,7 @@ let julien: { id: string; email: string; cookie: string };
 let settings: WelcomeSettings;
 let early: App;
 let paying: App;
+let shared: Parameters<typeof createApp>[0];
 
 const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(256)}`;
 
@@ -168,7 +169,7 @@ beforeAll(async () => {
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
   store = localStore(join(directory, "images"));
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
-  const shared = {
+  shared = {
     auth,
     db,
     logger,
@@ -426,6 +427,51 @@ describe("copies between the two sides", () => {
       expect(file?.storageKey.startsWith(`${workspaceId}/`)).toBe(true);
       expect(await store.get(file?.storageKey ?? "")).not.toBeNull();
     }
+  });
+
+  test("an image stays when the reply's commit is lost, since the reply may have committed", async () => {
+    let loseCommit = false;
+    // Postgres commits the reply, and the connection drops before its answer arrives.
+    const lossy = new Proxy(db, {
+      get(target, key) {
+        if (key !== "transaction") return Reflect.get(target, key);
+        return async (...args: Parameters<Database["transaction"]>) => {
+          const result: unknown = await target.transaction(...args);
+          if (
+            loseCommit &&
+            typeof result === "object" &&
+            result !== null &&
+            "visitorId" in result
+          ) {
+            loseCommit = false;
+            throw Object.assign(new Error("Connection terminated unexpectedly"), { code: "08006" });
+          }
+          return result;
+        };
+      },
+    });
+    const server = createApp({
+      ...shared,
+      db: lossy,
+      cloud: { signup: "early", welcome: settings, limits: { maxImageBytes: MAX_IMAGE_BYTES } },
+    });
+    const acme = await signUp(early);
+    const link = await linkOf(acme.workspaceId);
+    loseCommit = true;
+    expect(
+      (await replyImage(server, julien.cookie, dinghy.id, link.founderConversationId)).status,
+    ).toBe(500);
+    const copy = (await messagesIn(acme.workspaceId, link.customerConversationId)).find(
+      (one) => one.kind === "image",
+    );
+    const [file] = await owner
+      .select()
+      .from(attachment)
+      .where(
+        and(eq(attachment.workspaceId, acme.workspaceId), eq(attachment.messageId, copy?.id ?? "")),
+      );
+    expect(file).toBeDefined();
+    expect(await store.get(file?.storageKey ?? "")).not.toBeNull();
   });
 
   test("an image over the receiving workspace's limit is skipped, and the reply still goes", async () => {
