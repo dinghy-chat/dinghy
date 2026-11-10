@@ -80,13 +80,15 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     );
   }
   if (offer === null) return <SceneLoading />;
+  const admin = offer.role === "admin";
+  const words = { workspace: offer.workspaceName, inviter: offer.inviterName, email: offer.email };
   const heading = (
     <>
-      <h1>{t("inviteTitle")}</h1>
+      <h1>{t("inviteTitle", words)}</h1>
       <p className="note">
-        {t(offer.role === "admin" ? "inviteAsAdmin" : "inviteAsMember", {
-          workspace: offer.workspaceName,
-        })}
+        {offer.inviterName === ""
+          ? t(admin ? "inviteForAdmin" : "inviteForMember", words)
+          : t(admin ? "inviteByAdmin" : "inviteByMember", words)}
       </p>
     </>
   );
@@ -110,9 +112,6 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     return (
       <AuthPage time="morning" onSubmit={(event) => void accept(event)}>
         {heading}
-        <p className="note">
-          {t("inviteSignedInAs")} {me.email}
-        </p>
         {me.name === "" && (
           <Field
             label={t("yourName")}
@@ -126,7 +125,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
         )}
         <ErrorNote text={error} />
         <button type="submit" className="btn primary large">
-          {t("inviteJoin")}
+          {t("inviteJoin", words)}
         </button>
       </AuthPage>
     );
@@ -134,11 +133,11 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   return (
     <AuthPage time="morning" onSubmit={join}>
       {heading}
-      <p className="note">{t("inviteJoiningAs", { email: offer.email })}</p>
       {offer.needsName && (
         <Field
           label={t("yourName")}
           autoComplete="name"
+          autoFocus
           required
           maxLength={100}
           pattern=".*\S.*"
@@ -148,7 +147,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
       )}
       <ErrorNote text={error} />
       <button type="submit" className="btn primary large">
-        {t("inviteJoin")}
+        {t("inviteJoin", words)}
       </button>
     </AuthPage>
   );

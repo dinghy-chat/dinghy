@@ -44,6 +44,7 @@
                   "busy",
                   "checkout_retry_later",
                   "conversation_closed",
+                  "email_rejected",
                   "email_taken",
                   "email_unavailable",
                   "forbidden",
@@ -54,6 +55,7 @@
                   "invite_other_email",
                   "last_owner",
                   "link_invalid",
+                  "mail_failed",
                   "name_mismatch",
                   "no_customer",
                   "not_a_member",
@@ -6275,8 +6277,28 @@
               }
             }
           },
+          "422": {
+            "description": "email_rejected: the mail server refused the address, so nothing was sent and the invite is revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "mail_failed: the invite email could not be sent, and the invite is revoked. Try again",
             "content": {
               "application/json": {
                 "schema": {
@@ -7112,12 +7134,23 @@
                     "hasAccount": {
                       "type": "boolean"
                     },
+                    "inviterName": {
+                      "type": "string",
+                      "description": "The name of the person who made the invite. Empty when they have none"
+                    },
                     "needsName": {
                       "type": "boolean",
                       "description": "Join must send a name: the email has no account, or one with no name yet"
                     }
                   },
-                  "required": ["workspaceName", "role", "email", "hasAccount", "needsName"]
+                  "required": [
+                    "workspaceName",
+                    "role",
+                    "email",
+                    "hasAccount",
+                    "inviterName",
+                    "needsName"
+                  ]
                 }
               }
             }

@@ -4,6 +4,19 @@ export interface Mailer {
   send(to: string, subject: string, text: string, headers?: Record<string, string>): Promise<void>;
 }
 
+/** The mail server refused the address itself, such as a mailbox that does not exist. */
+export function recipientRejected(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    err.code === "EENVELOPE" &&
+    "responseCode" in err &&
+    typeof err.responseCode === "number" &&
+    err.responseCode >= 500
+  );
+}
+
 /** SMTP connections open at once. The worker sends no more emails than this at a time. */
 export const MAIL_CONNECTIONS = 3;
 
