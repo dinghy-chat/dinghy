@@ -1441,6 +1441,20 @@ button.workspace[aria-expanded="true"],
   overflow-wrap: anywhere;
   color: var(--navy);
 }
+/* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
+.page-context {
+  padding: 10px 28px;
+  border-bottom: 1px solid var(--warm-line);
+  font-size: 13.5px;
+}
+.page-context h3 {
+  color: var(--mute);
+  font: 600 13.5px / 1.4 var(--body);
+}
+.page-context .context {
+  padding: 6px 0 0;
+  border-bottom: 0;
+}
 /* The visitor's pages, newest first: a title as a link, and how long ago on the right. */
 .journey {
   padding: 10px 28px;
@@ -2250,20 +2264,76 @@ button.workspace[aria-expanded="true"],
 .tab-panel > .page-row:not(:first-child) {
   margin-top: 8px;
 }
-.blocked {
+.blocked,
+.item-list {
   display: grid;
 }
-.blocked > li {
+.blocked > li,
+.item-list > li {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 0;
 }
-.blocked > li + li {
+.blocked > li + li,
+.item-list > li + li {
   border-top: 1px solid var(--warm-line);
 }
 .blocked .who-lines {
   min-width: 0;
+}
+/* API keys and webhooks: one item a row, with a line between rows. */
+.item-list .who-lines {
+  flex: 1;
+}
+.item-list .who-lines strong {
+  overflow-wrap: anywhere;
+}
+.item-list > .hook {
+  display: grid;
+  gap: 8px;
+}
+.hook-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hook-switch {
+  width: auto;
+}
+.hook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.events {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.events legend {
+  margin-bottom: 4px;
+  color: var(--navy);
+  font-weight: 600;
+}
+.events code,
+.deliveries code {
+  color: var(--mute);
+  font: 12.5px / 1.4 var(--mono);
+}
+.deliveries {
+  display: grid;
+  gap: 6px;
+  font-size: 13.5px;
+}
+.delivery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  overflow-wrap: anywhere;
 }
 .page-controls > .text-button {
   justify-self: start;
@@ -2333,7 +2403,7 @@ button.workspace[aria-expanded="true"],
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   }
-  .about-body > .context {
+  .about-body:has(> .context + .journey) > .context {
     align-content: start;
     border-bottom: 0;
   }

@@ -7,6 +7,7 @@ import { defineConfig } from "@playwright/test";
  */
 const WIDGET_FACING = [
   "tests/e2e/widget.spec.ts",
+  "tests/e2e/widget-api.spec.ts",
   "tests/e2e/images.spec.ts",
   "tests/e2e/boat.spec.ts",
   "tests/e2e/isolation.spec.ts",

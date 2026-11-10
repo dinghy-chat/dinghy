@@ -110,7 +110,8 @@ test("a visitor chats on a hostile page, and a refresh keeps the history @smoke"
 
   await read;
   await page.reload();
-  await launcher(page).click();
+  // The chat was open, so it opens again after the reload.
+  await expect(input(page)).toBeVisible();
   await expect(page.locator(".msg")).toHaveText([
     "The import stops at 40%.",
     "Thanks, we are looking.",
@@ -170,6 +171,8 @@ test("a visitor with only a closed conversation holds no stream", async ({ brows
   await page.goto(`${server.hostOrigin}/plain`);
   await sendMessage(page, "Closed soon");
   await server.closeConversations();
+  // A closed chat stays closed after the reload, and only an open one holds a stream.
+  await page.keyboard.press("Escape");
 
   const requests: string[] = [];
   page.on("request", (request) => requests.push(request.url()));
@@ -276,7 +279,7 @@ test.describe("the host page API", () => {
       close(): void;
       identify(token: unknown): void;
       reset(): void;
-      onUnreadChange(callback: (count: number) => void): () => void;
+      on(event: "unread", callback: (count: number) => void): () => void;
     };
     counts: number[];
     renewals: number;
@@ -364,7 +367,7 @@ test.describe("the host page API", () => {
       await route.continue().catch(() => {});
     });
     await identify(page, await server.hostToken("switch-a"));
-    await launcher(page).click();
+    await page.evaluate(() => (window as unknown as Win).Dinghy.open());
     await page.evaluate(() => (window as unknown as Win).Dinghy.reset());
     await identify(page, tokenB);
     await page.waitForTimeout(1200);
@@ -604,7 +607,7 @@ test.describe("the host page API", () => {
     await context.close();
   });
 
-  test("onUnreadChange fires while the chat is closed, and reading clears it", async ({
+  test('on("unread") fires while the chat is closed, and reading clears it', async ({
     browser,
   }) => {
     const context = await browser.newContext();
@@ -615,7 +618,7 @@ test.describe("the host page API", () => {
     await page.evaluate(() => {
       const win = window as unknown as Win;
       win.counts = [];
-      win.Dinghy.onUnreadChange((count) => win.counts.push(count));
+      win.Dinghy.on("unread", (count) => win.counts.push(count));
     });
 
     await server.reply("One reply");
@@ -754,7 +757,7 @@ test("two quick first sends share one visitor", async ({ browser }) => {
   await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
   expect(await server.visitorCount()).toBe(before + 1);
   await page.reload();
-  await launcher(page).click();
+  await expect(input(page)).toBeVisible();
   await expect(page.locator(".msg")).toHaveCount(2);
   await context.close();
 });
@@ -788,7 +791,6 @@ test("a message sent while history loads stays in commit order", async ({ browse
     await route.continue();
   });
   await page.reload();
-  await launcher(page).click();
   await input(page).fill("Newer");
   await input(page).press("Enter");
   await expect(page.locator(".msg")).toHaveText(["Older", "Newer"]);

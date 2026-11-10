@@ -1,6 +1,14 @@
 import { describe, expect, test } from "vitest";
 import type { Conversation } from "./api.ts";
-import { isWaiting, otherIdentity, visitorLabel, visitorName, webLink } from "./visitor.ts";
+import {
+  detailRows,
+  isWaiting,
+  otherIdentity,
+  replyAuthor,
+  visitorLabel,
+  visitorName,
+  webLink,
+} from "./visitor.ts";
 
 describe("visitor labels", () => {
   test("a signed-out visitor gets a short code from its ID, the same every time", () => {
@@ -35,6 +43,7 @@ describe("waiting", () => {
     updatedAt: "2026-11-07T10:00:00.000Z",
     assigneeOperatorId: null,
     startedPage: null,
+    pageContext: null,
     visitor: {
       id: "v",
       email: null,
@@ -102,5 +111,31 @@ describe("the line under the visitor's name", () => {
     expect(otherIdentity({ name: "Ana", email: null, externalId: "u-1" })).toEqual(["u-1"]);
     expect(otherIdentity({ name: null, email: null, externalId: "u-1" })).toEqual([]);
     expect(otherIdentity({ name: null, email: null, externalId: null })).toEqual([]);
+  });
+});
+
+describe("details and authors", () => {
+  test("a record's values show as text, and only a web address becomes a link", () => {
+    expect(
+      detailRows({ plan: "pro", seats: 3, trial: false, note: null, site: "https://a.example/x" }),
+    ).toEqual([
+      ["plan", "pro", null],
+      ["seats", "3", null],
+      ["trial", "false", null],
+      ["note", "null", null],
+      ["site", "https://a.example/x", "https://a.example/x"],
+    ]);
+    expect(detailRows(null)).toEqual([]);
+  });
+
+  test("a reply from an API key shows its name, never You", () => {
+    const reply = { authorOperatorId: null, authorApiKeyId: "k", authorName: "Support bot" };
+    expect(replyAuthor(reply, "me")).toBe("Support bot (API)");
+    expect(replyAuthor({ ...reply, authorApiKeyId: null, authorOperatorId: "me" }, "me")).toBe(
+      "You",
+    );
+    expect(
+      replyAuthor({ authorOperatorId: "x", authorApiKeyId: null, authorName: null }, "me"),
+    ).toBe("A teammate");
   });
 });

@@ -1,3 +1,4 @@
+import type { PageContext } from "./shared.ts";
 import { readStream, retryAfterMs } from "./stream.ts";
 
 export interface ChatMessage {
@@ -110,6 +111,9 @@ export function createClient(
         method: "POST",
         body: JSON.stringify({ page: address, title }),
       }),
+    /** The page's setContext() data. It replaces what the server kept before. */
+    reportContext: (token: string, context: PageContext) =>
+      call<{ ok: true }>("context", token, { method: "POST", body: JSON.stringify({ context }) }),
     saveEmail: (token: string, email: string) =>
       call<Me>("me", token, { method: "PATCH", body: JSON.stringify({ email }) }),
     markRead: (token: string, seq: string) =>

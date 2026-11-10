@@ -1,27 +1,36 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { eq, sql } from "drizzle-orm";
 import type { Logger } from "pino";
-import { SESSION } from "./api-security.ts";
+import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
+import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { session, workspace } from "./db/schema.ts";
-import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import {
+  type Database,
+  type Transaction,
+  type WorkspaceAccess,
+  withWorkspace,
+} from "./db/tenant.ts";
 import {
   errorAnswer,
   failure,
   IMAGE_UPLOAD_ERRORS,
   INVALID,
+  KEY_LIMITED,
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
   okContent,
 } from "./errors.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
-import { visitorPages } from "./journey.ts";
+import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import { closedFailure, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import {
+  type Author,
   appendMessage,
+  authorNames,
   ConversationClosedError,
   type ConversationRow,
   CURSOR_PATTERN,
@@ -31,7 +40,7 @@ import {
   listConversationMessages,
   listConversations,
   listWorkspaceEvents,
-  operatorNames,
+  type NewImage,
   parseCursor,
   type StoredMessage,
   searchConversations,
@@ -54,8 +63,11 @@ const InboxMessage = z
     seq: z.string(),
     kind: z.enum(["text", "image"]),
     fromVisitor: z.boolean(),
-    // The operator who sent it, and that operator's current name. Both null for a visitor.
+    // The operator who sent it, or null for a visitor's message or an API key's.
     authorOperatorId: z.string().nullable(),
+    // The API key that sent it, or null.
+    authorApiKeyId: z.string().nullable(),
+    // The operator's current name, or the key's name. Null for a visitor.
     authorName: z.string().nullable(),
     clientId: z.string(),
     body: z.string().nullable(),
@@ -72,6 +84,7 @@ const InboxMessage = z
       kind: "text",
       fromVisitor: false,
       authorOperatorId: "7a3e5b20-9c1d-4f6a-b8e2-4d0f1c9a6b53",
+      authorApiKeyId: null,
       authorName: "Sam",
       clientId: "r_81b3d0",
       body: "Yes, it is two months free.",
@@ -89,6 +102,8 @@ const Conversation = z
     assigneeOperatorId: z.string().nullable(),
     // The page where the visitor started it, as origin and path, if the widget reported one.
     startedPage: z.string().nullable(),
+    // What the host page last sent with `Dinghy.setContext()`. Unsigned, so not verified.
+    pageContext: PageContextSchema.nullable(),
     visitor: z.object({
       id: z.string(),
       email: z.string().nullable(),
@@ -113,10 +128,11 @@ const Conversation = z
 const workspaceRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary: "Get a workspace this operator belongs to",
   request: { params: workspaceParams },
   responses: {
+    ...KEY_LIMITED,
     200: {
       description: "The workspace",
       content: {
@@ -132,7 +148,7 @@ const workspaceRoute = createRoute({
 const listRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/conversations`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary: "List conversations, newest activity first",
   request: {
     params: workspaceParams,
@@ -144,6 +160,7 @@ const listRoute = createRoute({
     }),
   },
   responses: {
+    ...KEY_LIMITED,
     200: {
       description: "A page of conversations",
       content: {
@@ -162,6 +179,7 @@ const listRoute = createRoute({
                 updatedAt: "2026-11-08T09:30:00.000Z",
                 assigneeOperatorId: null,
                 startedPage: "https://www.example.com/pricing",
+                pageContext: { plan: "pro" },
                 visitor: {
                   id: "0b6f1c6e-2f4a-4c1e-9a57-3f1b8f0e6d21",
                   email: "ana@example.com",
@@ -194,7 +212,7 @@ const listRoute = createRoute({
 const conversationRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary: "List one conversation's messages after a position, in commit order",
   request: {
     params: conversationParams,
@@ -207,6 +225,7 @@ const conversationRoute = createRoute({
     }),
   },
   responses: {
+    ...KEY_LIMITED,
     200: {
       description: "The conversation and a page of its messages",
       content: {
@@ -240,7 +259,7 @@ const conversationRoute = createRoute({
 const replyRoute = createRoute({
   method: "post",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary: "Reply. A retry with the same clientId returns the original",
   request: {
     params: conversationParams,
@@ -264,6 +283,7 @@ const replyRoute = createRoute({
     },
   },
   responses: {
+    ...KEY_LIMITED,
     200: {
       description: "A retry. This is the original message",
       content: { "application/json": { schema: InboxMessage } },
@@ -280,7 +300,7 @@ const replyRoute = createRoute({
 const replyImageRoute = createRoute({
   method: "post",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/images`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary:
     "Reply with an image as the raw request body. A retry with the same clientId returns the original",
   request: {
@@ -288,6 +308,7 @@ const replyImageRoute = createRoute({
     query: z.object({ clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }),
   },
   responses: {
+    ...KEY_LIMITED,
     200: {
       description: "A retry. This is the original message",
       content: { "application/json": { schema: InboxMessage } },
@@ -305,7 +326,7 @@ const replyImageRoute = createRoute({
 const searchRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/conversations/search`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary: "Search open and closed conversations, newest activity first",
   description:
     "Matches the visitor's name, email or user ID, or the text of a message, ignoring case. A conversation found by a message shows that message as its `lastMessage`.",
@@ -314,6 +335,7 @@ const searchRoute = createRoute({
     query: z.object({ q: z.string().trim().min(3).max(100) }),
   },
   responses: {
+    ...KEY_LIMITED,
     200: {
       description: "At most 50 conversations",
       content: {
@@ -328,7 +350,7 @@ const searchRoute = createRoute({
 const statusRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary: "Close or reopen a conversation",
   request: {
     params: conversationParams,
@@ -340,6 +362,7 @@ const statusRoute = createRoute({
     },
   },
   responses: {
+    ...KEY_LIMITED,
     200: {
       description: "The status is now as requested",
       content: okContent,
@@ -374,23 +397,26 @@ const streamRoute = createRoute({
   },
 });
 
-function messageView(
+/** A message as the operator API shows it. `names` holds author names by operator or key ID. */
+export function messageView(
   images: Images | undefined,
   workspaceId: string,
   names: Map<string, string>,
   { seq, createdAt, image, ...message }: StoredMessage,
 ) {
+  const author = message.authorOperatorId ?? message.authorApiKeyId;
   return {
     ...message,
-    authorName:
-      message.authorOperatorId === null ? null : (names.get(message.authorOperatorId) ?? null),
+    authorName: author === null ? null : (names.get(author) ?? null),
     seq: seq.toString(),
     createdAt: createdAt.toISOString(),
     image: imageView(images, workspaceId, image),
   };
 }
+export type MessageView = ReturnType<typeof messageView>;
 
-function conversationView(
+/** A conversation as the operator API shows it. */
+export function conversationView(
   row: ConversationRow,
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null,
 ) {
@@ -400,6 +426,7 @@ function conversationView(
     updatedAt: row.updatedAt.toISOString(),
     assigneeOperatorId: row.assigneeOperatorId,
     startedPage: row.startedPage,
+    pageContext: PageContextSchema.nullable().catch(null).parse(row.visitorPageContext),
     visitor: {
       id: row.visitorId,
       blocked: row.visitorBlockedAt !== null,
@@ -417,6 +444,7 @@ function conversationView(
         : { ...lastMessage, createdAt: lastMessage.createdAt.toISOString() },
   };
 }
+export type ConversationView = ReturnType<typeof conversationView>;
 
 /** The session ended or the operator left the workspace during an upload. Its transaction rolls back. */
 class AccessEndedError extends Error {}
@@ -440,6 +468,21 @@ async function mayStillRead(
   return result.rows[0]?.ok === true;
 }
 
+/** The message author for a reply from this actor. */
+const replyAuthor = (actor: Actor, conversationId: string): Author =>
+  actor.kind === "operator"
+    ? { kind: "operator", operatorId: actor.operatorId, conversationId }
+    : { kind: "key", apiKeyId: actor.apiKeyId, conversationId };
+
+const actorId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : actor.apiKeyId);
+
+/** What a reply came to. The routes and the MCP tools answer each the same way. */
+export type ReplyOutcome =
+  | { kind: "sent"; created: boolean; message: MessageView }
+  | { kind: "missing" }
+  | { kind: "closed" }
+  | { kind: "refused"; access: WorkspaceAccess };
+
 interface InboxOptions {
   db: Database;
   images: Images | undefined;
@@ -450,10 +493,157 @@ interface InboxOptions {
   visitorPresence: VisitorPresence;
 }
 
-export function registerInboxRoutes(
-  app: App,
-  { db, images, limits, live, logger, stream, visitorPresence }: InboxOptions,
-) {
+/**
+ * The inbox's reads and writes, which the operator routes and the MCP tools share, so an API key and
+ * a signed-in operator get the same behavior.
+ */
+export function createInbox({
+  db,
+  images,
+  live,
+  visitorPresence,
+}: Pick<InboxOptions, "db" | "images" | "live" | "visitorPresence">) {
+  /** Writes a reply in the caller's transaction, and wakes the clients after the commit. */
+  const reply = async (
+    workspaceId: string,
+    actor: Actor,
+    conversationId: string,
+    write: (tx: Transaction, author: Author) => ReturnType<typeof appendMessage>,
+  ): Promise<ReplyOutcome> => {
+    const result = await catchClosed(
+      withWorkspace(db, workspaceId, async (tx) => {
+        const found = await findConversation(tx, workspaceId, conversationId);
+        if (found === null) return "missing" as const;
+        const appended = await write(tx, replyAuthor(actor, conversationId));
+        return { ...appended, visitorId: found.visitorId };
+      }).catch((error: unknown) => {
+        if (error instanceof ConversationClosedError) return "closed" as const;
+        throw error;
+      }),
+    );
+    if (result === "missing" || result === "closed") return { kind: result };
+    if (result instanceof WorkspaceClosedError) return { kind: "refused", access: result.access };
+    // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.
+    if (result.created) wakeConversation(live, workspaceId, result.visitorId);
+    const names = new Map([[actorId(actor), actor.name]]);
+    return {
+      kind: "sent",
+      created: result.created,
+      message: messageView(images, workspaceId, names, result.message),
+    };
+  };
+
+  return {
+    async list(
+      workspaceId: string,
+      status: "open" | "closed",
+      before: { updatedAt: Date; id: string } | undefined,
+      limit: number,
+    ) {
+      const page = await withWorkspace(db, workspaceId, async (tx) => ({
+        ...(await listConversations(tx, workspaceId, status, before, limit)),
+        waiting: await countWaiting(tx, workspaceId),
+      }));
+      return {
+        conversations: page.conversations.map((row) => conversationView(row, row.lastMessage)),
+        hasMore: page.hasMore,
+        waiting: page.waiting,
+      };
+    },
+
+    /** One conversation with a page of its messages, or null when it does not exist. */
+    async read(workspaceId: string, conversationId: string, after: bigint, limit: number) {
+      const result = await withWorkspace(db, workspaceId, async (tx) => {
+        const found = await findConversation(tx, workspaceId, conversationId);
+        if (found === null) return null;
+        const page = await listConversationMessages(tx, workspaceId, conversationId, after, limit);
+        const names = await authorNames(tx, workspaceId, page.messages);
+        const pages = await visitorPages(tx, workspaceId, found.visitorId);
+        return { found, page, names, pages };
+      });
+      if (result === null) return null;
+      return {
+        conversation: conversationView(result.found, null),
+        messages: result.page.messages.map((message) =>
+          messageView(images, workspaceId, result.names, message),
+        ),
+        hasMore: result.page.hasMore,
+        visitorOnline: await visitorPresence.online(workspaceId, result.found.visitorId),
+        visitorPages: result.pages.map((row) => ({
+          ...row,
+          viewedAt: row.viewedAt.toISOString(),
+        })),
+      };
+    },
+
+    async search(workspaceId: string, q: string) {
+      const rows = await withWorkspace(db, workspaceId, (tx) =>
+        searchConversations(tx, workspaceId, q, 50),
+      );
+      return { conversations: rows.map((row) => conversationView(row, row.lastMessage)) };
+    },
+
+    reply(
+      workspaceId: string,
+      actor: Actor,
+      conversationId: string,
+      input: { clientId: string; body: string },
+    ) {
+      return reply(workspaceId, actor, conversationId, (tx, author) =>
+        appendMessage(tx, workspaceId, author, input),
+      );
+    },
+
+    /**
+     * An image reply, whose upload has arrived. `check` runs in its transaction first. `created` tells
+     * the upload whether to keep the stored file.
+     */
+    async replyImage(
+      workspaceId: string,
+      actor: Actor,
+      conversationId: string,
+      input: { clientId: string; image: NewImage },
+      limits: Limits,
+      check: (tx: Transaction) => Promise<void>,
+    ): Promise<ReplyOutcome & { created: boolean }> {
+      const outcome = await reply(workspaceId, actor, conversationId, async (tx, author) => {
+        await check(tx);
+        return appendMessage(tx, workspaceId, author, input, limits);
+      });
+      return { ...outcome, created: outcome.kind === "sent" && outcome.created };
+    },
+
+    /** Closes or reopens a conversation. False when it does not exist. */
+    async setStatus(workspaceId: string, conversationId: string, status: "open" | "closed") {
+      const found = await withWorkspace(db, workspaceId, async (tx) => {
+        const row = await findConversation(tx, workspaceId, conversationId);
+        if (row === null) return false;
+        await setConversationStatus(tx, workspaceId, conversationId, status);
+        return true;
+      });
+      if (found) live.wake(workspaceId, OPERATORS);
+      return found;
+    },
+  };
+}
+export type Inbox = ReturnType<typeof createInbox>;
+
+/** The answer for a reply that did not go in. */
+function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" }>) {
+  if (outcome.kind === "missing") return { body: NOT_FOUND, status: 404 as const };
+  if (outcome.kind === "closed") return { body: CLOSED, status: 409 as const };
+  return closedFailure(outcome.access);
+}
+
+/** A key that was revoked during an upload. Its transaction rolls back. */
+async function keyStillHolds(db: Database, actor: KeyActor) {
+  if (!(await keyStillValid(db, actor))) throw new AccessEndedError();
+}
+
+export function registerInboxRoutes(app: App, options: InboxOptions) {
+  const { db, images, limits, live, logger, stream } = options;
+  const inbox = createInbox(options);
+
   app.openapi(workspaceRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const [row] = await withWorkspace(db, id, (tx) =>
@@ -467,102 +657,43 @@ export function registerInboxRoutes(
   });
 
   app.openapi(listRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
     const { status, beforeUpdatedAt, beforeId, limit } = c.req.valid("query");
     const before =
       beforeUpdatedAt === undefined || beforeId === undefined
         ? undefined
         : { updatedAt: new Date(beforeUpdatedAt), id: beforeId };
-    const page = await withWorkspace(db, id, async (tx) => ({
-      ...(await listConversations(tx, id, status, before, limit)),
-      waiting: await countWaiting(tx, id),
-    }));
-    return c.json(
-      {
-        conversations: page.conversations.map((row) => conversationView(row, row.lastMessage)),
-        hasMore: page.hasMore,
-        waiting: page.waiting,
-      },
-      200,
-    );
+    return c.json(await inbox.list(c.get("memberWorkspaceId"), status, before, limit), 200);
   });
 
   app.openapi(conversationRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
     const { after, limit } = c.req.valid("query");
-    const result = await withWorkspace(db, id, async (tx) => {
-      const found = await findConversation(tx, id, conversationId);
-      if (found === null) return null;
-      const page = await listConversationMessages(tx, id, conversationId, BigInt(after), limit);
-      const names = await operatorNames(
-        tx,
-        page.messages.map((message) => message.authorOperatorId),
-      );
-      const pages = await visitorPages(tx, id, found.visitorId);
-      return { found, page, names, pages };
-    });
-    if (result === null) return c.json(NOT_FOUND, 404);
-    return c.json(
-      {
-        conversation: conversationView(result.found, null),
-        messages: result.page.messages.map((message) =>
-          messageView(images, id, result.names, message),
-        ),
-        hasMore: result.page.hasMore,
-        visitorOnline: await visitorPresence.online(id, result.found.visitorId),
-        visitorPages: result.pages.map((row) => ({
-          ...row,
-          viewedAt: row.viewedAt.toISOString(),
-        })),
-      },
-      200,
+    const result = await inbox.read(
+      c.get("memberWorkspaceId"),
+      conversationId,
+      BigInt(after),
+      limit,
     );
+    if (result === null) return c.json(NOT_FOUND, 404);
+    return c.json(result, 200);
   });
 
   app.openapi(searchRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
     const { q } = c.req.valid("query");
-    const rows = await withWorkspace(db, id, (tx) => searchConversations(tx, id, q, 50));
-    return c.json(
-      { conversations: rows.map((row) => conversationView(row, row.lastMessage)) },
-      200,
-    );
+    return c.json(await inbox.search(c.get("memberWorkspaceId"), q), 200);
   });
 
   app.openapi(replyRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
-    const input = c.req.valid("json");
-    const operatorId = c.get("operatorId");
-    const result = await catchClosed(
-      withWorkspace(db, id, async (tx) => {
-        const found = await findConversation(tx, id, conversationId);
-        if (found === null) return "missing" as const;
-        const appended = await appendMessage(
-          tx,
-          id,
-          { kind: "operator", operatorId, conversationId },
-          input,
-        );
-        return { ...appended, visitorId: found.visitorId };
-      }).catch((error: unknown) => {
-        if (error instanceof ConversationClosedError) return "closed" as const;
-        throw error;
-      }),
+    const outcome = await inbox.reply(
+      c.get("memberWorkspaceId"),
+      c.get("actor"),
+      conversationId,
+      c.req.valid("json"),
     );
-    if (result === "missing") return c.json(NOT_FOUND, 404);
-    if (result instanceof WorkspaceClosedError) {
-      const refused = closedFailure(result.access);
-      return c.json(refused.body, refused.status);
-    }
-    if (result === "closed") return c.json(CLOSED, 409);
-    // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.
-    if (result.created) {
-      wakeConversation(live, id, result.visitorId);
-    }
-    const names = new Map([[operatorId, c.get("operatorName")]]);
-    return c.json(messageView(images, id, names, result.message), result.created ? 201 : 200);
+    if (outcome.kind === "sent") return c.json(outcome.message, outcome.created ? 201 : 200);
+    const refused = refusedReply(outcome);
+    return c.json(refused.body, refused.status);
   });
 
   if (images !== undefined) {
@@ -570,74 +701,46 @@ export function registerInboxRoutes(
       const id = c.get("memberWorkspaceId");
       const { conversationId } = c.req.valid("param");
       const { clientId } = c.req.valid("query");
-      const operatorId = c.get("operatorId");
-      const visitorId = await withWorkspace(
+      const actor = c.get("actor");
+      const exists = await withWorkspace(
         db,
         id,
-        async (tx) => (await findConversation(tx, id, conversationId))?.visitorId ?? null,
+        async (tx) => (await findConversation(tx, id, conversationId)) !== null,
       );
-      if (visitorId === null) return c.json(NOT_FOUND, 404);
-      const outcome = await catchClosed(
-        images
-          .receive(
-            c.req.raw,
-            id,
-            // The upload can take minutes, so the session and membership are read again here.
-            (image) =>
-              withWorkspace(db, id, async (tx) => {
-                if (!(await mayStillRead(tx, c.get("sessionId"), operatorId, id))) {
-                  throw new AccessEndedError();
-                }
-                return appendMessage(
-                  tx,
-                  id,
-                  { kind: "operator", operatorId, conversationId },
-                  { clientId, image },
-                  limits,
-                );
-              }),
-            c.get("clientIp"),
-          )
-          .catch((error: unknown) => {
-            if (error instanceof ConversationClosedError) return "closed" as const;
-            if (error instanceof AccessEndedError) return "ended" as const;
-            throw error;
-          }),
-      );
-      if (outcome === "closed") return c.json(CLOSED, 409);
-      if (outcome === "ended") return c.json(NOT_FOUND, 404);
-      if (outcome instanceof WorkspaceClosedError) {
-        const refused = closedFailure(outcome.access);
-        return c.json(refused.body, refused.status);
-      }
-      if ("refused" in outcome) return refuseImage(c, outcome.refused);
-      if (outcome.result.created) {
-        wakeConversation(live, id, visitorId);
-      }
-      return c.json(
-        messageView(
-          images,
+      if (!exists) return c.json(NOT_FOUND, 404);
+      // The upload can take minutes, so the session and membership, or the key, are read again.
+      const check = async (tx: Transaction) => {
+        if (actor.kind === "key") return keyStillHolds(db, actor);
+        if (!(await mayStillRead(tx, c.get("sessionId"), actor.operatorId, id))) {
+          throw new AccessEndedError();
+        }
+      };
+      const outcome = await images
+        .receive(
+          c.req.raw,
           id,
-          new Map([[operatorId, c.get("operatorName")]]),
-          outcome.result.message,
-        ),
-        outcome.result.created ? 201 : 200,
-      );
+          (image) =>
+            inbox.replyImage(id, actor, conversationId, { clientId, image }, limits, check),
+          c.get("clientIp"),
+        )
+        .catch((error: unknown) => {
+          if (error instanceof AccessEndedError) return "ended" as const;
+          throw error;
+        });
+      if (outcome === "ended") return c.json(NOT_FOUND, 404);
+      if ("refused" in outcome) return refuseImage(c, outcome.refused);
+      const result = outcome.result;
+      if (result.kind === "sent") return c.json(result.message, result.created ? 201 : 200);
+      const refused = refusedReply(result);
+      return c.json(refused.body, refused.status);
     });
   }
 
   app.openapi(statusRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
     const { status } = c.req.valid("json");
-    const found = await withWorkspace(db, id, async (tx) => {
-      const row = await findConversation(tx, id, conversationId);
-      if (row === null) return false;
-      await setConversationStatus(tx, id, conversationId, status);
-      return true;
-    });
+    const found = await inbox.setStatus(c.get("memberWorkspaceId"), conversationId, status);
     if (!found) return c.json(NOT_FOUND, 404);
-    live.wake(id, OPERATORS);
     return c.json({ ok: true as const }, 200);
   });
 

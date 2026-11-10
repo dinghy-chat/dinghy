@@ -16,6 +16,7 @@ import { readTar, tarEnd, tarEntry } from "./archive.ts";
 import { createAuth } from "./auth.ts";
 import { newGeneration } from "./db/migrate.ts";
 import {
+  apiKey,
   attachment,
   conversation,
   emailStop,
@@ -125,6 +126,7 @@ interface Source {
   conversationId: string;
   agentId: string;
   agentEmail: string;
+  key: { id: string; token: string };
 }
 
 /** A workspace with text, an image from each side, an assignment and a removed operator. */
@@ -178,6 +180,25 @@ async function makeSource(): Promise<Source> {
     body: await png(),
   });
   await write("PUT", `/conversations/${conversationId}/assignee`, { operatorId: agent.id });
+  // A reply from an API key, and what the page sent.
+  const key = (await (await write("POST", "/api-keys", { name: "Helper bot" })).json()) as {
+    id: string;
+    token: string;
+  };
+  await app.request(`${inSpace}/conversations/${conversationId}/messages`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ clientId: "from-key", body: "Reply from the bot" }),
+  });
+  await app.request(`/v1/widget/${space.publicKey}/context`, {
+    method: "POST",
+    headers: {
+      origin: SITE,
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ context: { plan: "pro", seats: 3 } }),
+  });
   await owner
     .update(workspaceMember)
     .set({ removedAt: new Date() })
@@ -222,6 +243,7 @@ async function makeSource(): Promise<Source> {
     conversationId,
     agentId: agent.id,
     agentEmail: agent.email,
+    key,
   };
 }
 
@@ -317,7 +339,7 @@ describe("a round trip onto a fresh install", () => {
     target = await freshInstall();
     const result = await importArchive(target.db, target.store, once(archive));
     expect(result.conversations).toBe(1);
-    expect(result.messages).toBe(4);
+    expect(result.messages).toBe(5);
     expect(result.images).toBe(2);
     expect(result.newOperators).toHaveLength(3);
     keptInstalls = installs.length;
@@ -348,6 +370,7 @@ describe("a round trip onto a fresh install", () => {
     );
     expect(messages.filter((one) => one.authorVisitorId === source.visitorId)).toHaveLength(2);
     expect(messages.filter((one) => one.authorOperatorId !== null)).toHaveLength(2);
+    expect(messages.filter((one) => one.authorApiKeyId === source.key.id)).toHaveLength(1);
     expect(messages[0]?.createdAt.getTime()).toBe(
       original.find((one) => one.id === messages[0]?.id)?.createdAt.getTime(),
     );
@@ -490,6 +513,32 @@ describe("a round trip onto a fresh install", () => {
     const row = exported?.visitors.find((one) => one.id === source.visitorId);
     expect(row?.lastSeenAt).toMatch(/^\d{4}-/);
     expect(after?.lastSeenAt).toBeInstanceOf(Date);
+  });
+
+  test("an API key comes along revoked, with no token, and its replies keep its name", async () => {
+    const text = archive.toString("latin1");
+    expect(text).not.toContain(source.key.token);
+    const [row] = await target.owner.select().from(apiKey).where(eq(apiKey.id, source.key.id));
+    expect(row?.name).toBe("Helper bot");
+    expect(row?.revokedAt).toBeInstanceOf(Date);
+    const [kept] = await source.install.owner
+      .select()
+      .from(apiKey)
+      .where(eq(apiKey.id, source.key.id));
+    expect(row?.tokenHash).not.toBe(kept?.tokenHash);
+    const read = await target.app.request(
+      `/v1/operator/workspaces/${source.space.id}/conversations`,
+      { headers: { authorization: `Bearer ${source.key.token}` } },
+    );
+    expect(read.status).toBe(401);
+  });
+
+  test("what the page sent comes along", async () => {
+    const [after] = await target.owner
+      .select()
+      .from(visitor)
+      .where(eq(visitor.id, source.visitorId));
+    expect(after?.pageContext).toEqual({ plan: "pro", seats: 3 });
   });
 
   test("the visitor's page journey comes along", async () => {
@@ -720,7 +769,7 @@ describe("a bad file changes nothing", () => {
       importArchive(target.db, target.store, once(archive.subarray(0, 700))),
     ).rejects.toBeInstanceOf(ImportError);
     const result = await importArchive(target.db, target.store, once(archive));
-    expect(result.messages).toBe(4);
+    expect(result.messages).toBe(5);
   });
 });
 
@@ -747,7 +796,7 @@ test("an export skips an image deleted since it started, and still imports", asy
   const result = await importArchive(target.db, target.store, once(partial));
   expect(result.images).toBe(1);
   expect(result.missingImages).toBe(1);
-  expect(result.messages).toBe(4);
+  expect(result.messages).toBe(5);
 });
 
 test("an export fails if a file is missing while its row is still there", async () => {
@@ -833,7 +882,7 @@ test("the commands write and read a real file, and a failure leaves no whole-loo
 
   const imported = run(target.database, target.directory, "import", file);
   expect(imported.status).toBe(0);
-  expect(imported.stdout).toContain("4 messages, 2 images");
+  expect(imported.stdout).toContain("5 messages, 2 images");
   expect(imported.stdout).toContain("chat sign-in-link");
 
   const again = run(target.database, target.directory, "import", file);

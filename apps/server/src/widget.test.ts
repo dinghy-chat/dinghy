@@ -464,6 +464,75 @@ describe("open conversations", () => {
   });
 });
 
+describe("what the page sends with setContext", () => {
+  const post = (token: string, path: string, body: unknown) =>
+    app.request(`/v1/widget/${a.publicKey}/${path}`, {
+      method: "POST",
+      headers: {
+        origin: ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  const contextOf = async (visitorId: string) =>
+    (
+      await withWorkspace(db, a.id, (tx) =>
+        tx.select().from(visitor).where(eq(visitor.id, visitorId)),
+      )
+    )[0]?.pageContext;
+
+  test("is kept only for a visitor who chatted, and each report replaces the last", async () => {
+    const { visitorId, token } = (await (await newVisitor()).json()) as {
+      visitorId: string;
+      token: string;
+    };
+    expect((await post(token, "context", { context: { plan: "pro" } })).status).toBe(200);
+    expect(await contextOf(visitorId)).toBeNull();
+    await post(token, "messages", { clientId: "context-1", body: "hello" });
+    await post(token, "context", {
+      context: { plan: "pro", seats: 3, trial: false, coupon: null },
+    });
+    expect(await contextOf(visitorId)).toEqual({
+      plan: "pro",
+      seats: 3,
+      trial: false,
+      coupon: null,
+    });
+    await post(token, "context", { context: { cart: 42.5 } });
+    expect(await contextOf(visitorId)).toEqual({ cart: 42.5 });
+    await post(token, "context", { context: {} });
+    expect(await contextOf(visitorId)).toBeNull();
+  });
+
+  test("refuses more than 20 keys, a long key or string, and anything but a flat value", async () => {
+    const { token } = (await (await newVisitor()).json()) as { token: string };
+    const many = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`k${index}`, index]));
+    for (const context of [
+      many,
+      { ["k".repeat(41)]: 1 },
+      { "": 1 },
+      { note: "x".repeat(201) },
+      { nested: { deep: true } },
+      { list: [1, 2] },
+      "plan=pro",
+    ]) {
+      expect((await post(token, "context", { context })).status).toBe(400);
+    }
+    const twenty = Object.fromEntries(
+      Array.from({ length: 20 }, (_, index) => [`k${index}`, index]),
+    );
+    expect((await post(token, "context", { context: twenty })).status).toBe(200);
+    expect(
+      (await post(token, "context", { context: { ["k".repeat(40)]: "x".repeat(200) } })).status,
+    ).toBe(200);
+  });
+
+  test("needs the visitor's token", async () => {
+    expect((await post("dbt_wrong", "context", { context: { plan: "pro" } })).status).toBe(401);
+  });
+});
+
 describe("the widget files", () => {
   test("only the listed files are served, and a path cannot leave the directory", async () => {
     const directory = await mkdtemp(join(tmpdir(), "dinghy-files-"));

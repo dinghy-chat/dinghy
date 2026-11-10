@@ -14,7 +14,7 @@ Put it before the closing `</body>` tag, on every page that should have the chat
 
 Then add your website to **Settings > Allowed sites**, with one origin on each line. An origin has the scheme and the host and no path, such as `https://www.example.com`. The chat does not work on a site that is not on this list. This includes `www` and the bare domain, which are two different origins.
 
-The tag is safe to publish. The key in it only names your workspace. The tag loads a small script of under 4 KB, and the full chat loads only when a visitor opens it.
+The tag is safe to publish. The key in it only names your workspace. The tag loads a small script of under 4 KB, and the full chat loads only when a visitor opens it or comes back to a chat.
 
 Put the chat on your own site, not on a page served from the same address as Dinghy. The chat does not work there, because a browser does not send an origin for a request to its own address.
 
@@ -28,36 +28,161 @@ Add these attributes to the tag:
 | `data-accent` | A full hex color | The color of the buttons and the boat's sail |
 | `data-mascot` | `false` | Removes the boat. Each state still shows its text |
 | `data-launcher` | `hidden` | Hides the chat button, so you can open the chat from your own button |
+| `data-position` | `left` or `right` | The corner for the button and the chat. The default is `right` |
+| `data-offset-x` | Pixels, such as `24` | The distance from the side of the window. The default is `16` |
+| `data-offset-y` | Pixels, such as `80` | The distance from the bottom of the window. The default is `16` |
 
-A color in any other form, such as `red` or `#123`, is ignored.
+A color in any other form, such as `red` or `#123`, is ignored. So is an offset that is not a whole number of 0 or more.
+
+To match your fonts and corners, set these CSS variables on the `dinghy-chat` element. Each one falls back to Dinghy's own value:
+
+```css
+dinghy-chat {
+  --dinghy-font: "Inter", system-ui, sans-serif; /* the chat's text */
+  --dinghy-radius: 12px; /* the chat panel's corners, 22px by default */
+  --dinghy-launcher-radius: 16px; /* the chat button's corners, 30px by default */
+}
+```
 
 ## Control it from your page
 
 The tag adds a `Dinghy` object to the page:
 
-```js
-Dinghy.open();
-Dinghy.close();
+| Call | What it does |
+|---|---|
+| `Dinghy.open()` | Opens the chat |
+| `Dinghy.open({ message })` | Opens the chat with `message` in the message box. The visitor still sends it |
+| `Dinghy.close()`, `Dinghy.toggle()` | Closes the chat, or opens it if it is closed |
+| `Dinghy.show()`, `Dinghy.hide()` | Shows or hides the chat button. `data-launcher="hidden"` only sets how it starts |
+| `Dinghy.identify(token)`, `Dinghy.reset()` | Signs a user in and out. See [Show who is chatting](#show-who-is-chatting) |
+| `Dinghy.setContext(data)` | Tells operators about the page, such as a plan or a cart. See below |
+| `Dinghy.configure(options)` | Changes the colors, the side, the offsets and the z-index now |
+| `Dinghy.on(event, callback)` | Calls `callback` on each event, and returns a function that stops it |
+| `Dinghy.state` | `{ ready, open, unread }`, read only |
 
-// Show your own unread count. The function returns a way to stop listening.
-const stop = Dinghy.onUnreadChange((count) => {
-  document.querySelector("#help-badge").textContent = count || "";
-});
-```
+### Use your own button
 
-For example, to use your own chat button with `data-launcher="hidden"`:
+Hide the chat's button with `data-launcher="hidden"`, then open the chat from yours:
 
 ```html
 <button onclick="Dinghy.open()">Chat with us</button>
 ```
 
-The script loads with `async`, so `Dinghy` may not exist yet when your own script runs. To call it early, queue the calls before the tag:
+To start the visitor's message for them, pass it. It waits in the message box, and nothing is sent until the visitor sends it:
+
+```html
+<button onclick="Dinghy.open({ message: 'I have a question about my invoice' })">
+  Ask about billing
+</button>
+```
+
+### Listen to events
+
+```js
+// Show your own unread count. It runs at once with the current count, then on each change.
+const stop = Dinghy.on("unread", (count) => {
+  document.querySelector("#help-badge").textContent = count || "";
+});
+stop(); // Stops listening.
+
+Dinghy.on("open", () => analytics.track("chat opened"));
+Dinghy.on("message:sent", ({ body }) => analytics.track("chat message sent"));
+```
+
+| Event | When | Callback gets |
+|---|---|---|
+| `ready` | The full chat has loaded | Nothing |
+| `open`, `close` | The chat opens or closes | Nothing |
+| `unread` | The unread count changes, and once at once | The count |
+| `message:sent` | The visitor's message reached Dinghy | `{ body }`, with `body` null for an image |
+| `message:received` | A reply arrives while the page is open | `{ body }`, with `body` null for an image |
+| `conversation:started` | The visitor's message started a new conversation | Nothing |
+
+A callback that throws does not stop the chat or the other callbacks. The browser reports its error.
+
+### Tell operators about the page
+
+`setContext` sends facts from your page that help operators answer, such as the visitor's plan or what is in their cart:
+
+```js
+Dinghy.setContext({ plan: "pro", cartTotal: 129.5, trial: false });
+```
+
+It takes up to 20 keys of up to 40 characters. Each value is a string of up to 200 characters, a number, `true`, `false` or `null`. The widget drops anything else, and cuts a longer string. Each call replaces the last one.
+
+The widget sends it only for a visitor who has chatted: after their first message, and again on each later call. Operators see it next to the conversation, marked as sent by the page and not checked. Anyone can change what their own browser sends, so do not trust it for anything that matters. For facts you can vouch for, sign them in the `attributes` of [the identity token](#show-who-is-chatting).
+
+### Change the look while the page runs
+
+```js
+Dinghy.configure({ accent: "#e5352b", position: "left", offsetX: 24, offsetY: 80, zIndex: 1000 });
+```
+
+It takes the same values as the tag's attributes, and ignores one that is not valid. `zIndex` is a whole number of 0 or more, and it is `2147483000` by default.
+
+### Call it before it loads
+
+The script loads with `async`, so `Dinghy` may not exist yet when your own script runs. To call it early, queue the calls before the tag. Every call works this way, `on` too:
 
 ```html
 <script>
-  window.Dinghy = { q: [["open"]] };
+  window.Dinghy = {
+    q: [
+      ["on", "unread", (count) => console.log("unread", count)],
+      ["open", { message: "Hello" }],
+    ],
+  };
 </script>
 <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
+```
+
+### Install it from npm
+
+In an app with a bundler, the `@dinghy/widget` package adds the tag for you and gives typed calls:
+
+```sh
+npm install @dinghy/widget
+```
+
+```ts
+import { init } from "@dinghy/widget";
+
+const dinghy = init({
+  url: "https://chat.example.com",
+  key: "wk_your_public_key",
+  accent: "#e5352b",
+  position: "left",
+  launcher: false, // the same as data-launcher="hidden"
+});
+
+dinghy.on("unread", (count) => setBadge(count));
+dinghy.open({ message: "I need help with my order" });
+```
+
+`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
+
+### Ask a coding agent to install it
+
+Paste this prompt into your coding agent, such as Claude Code, with your own address and key:
+
+```text
+Add the Dinghy live chat to this app. My Dinghy server is https://chat.example.com and my
+public key is wk_your_public_key.
+
+1. Load the widget on every page where visitors may need help. In a plain site, add
+   <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
+   before </body>. In an app with a bundler, install @dinghy/widget and call
+   init({ url, key }) once at startup, in the browser only.
+2. If the app has a Content Security Policy, allow https://chat.example.com in script-src,
+   connect-src and img-src.
+3. If users sign in, add a server route that signs an HS256 JWT with the workspace's signing
+   secret from an environment variable (never in client code), with sub = the user's ID,
+   aud = the public key, iat, exp at most 24 hours later, and the optional name, email and
+   attributes. Call Dinghy.identify(async () => fetch that route's token) after sign-in, and
+   Dinghy.reset() at sign-out.
+4. Where it helps support, call Dinghy.setContext({ ... }) with a few facts such as the plan.
+5. Read https://dinghy.chat/docs/add-to-your-site and https://dinghy.chat/llms.txt for the
+   full API, and do not add anything else.
 ```
 
 ## Show who is chatting
@@ -145,7 +270,7 @@ If your Dinghy serves images from a separate origin (`IMAGES_ORIGIN`), allow tha
 
 Once a visitor has chatted, the widget tells your Dinghy server the page they are on: when it loads, and when the address changes, also in a single-page app. It sends the page's address without its query string or `#` part, so a token or a search in the address never reaches Dinghy, and the page's title. The server also keeps a short line about the browser, such as "Chrome on macOS", and not the browser's full description. Operators see whether the visitor has the chat open now, or when they were last seen, and the pages the visitor went through. Dinghy keeps a visitor's newest 100 pages, for 90 days at most, and deletes them with the visitor's last conversation.
 
-A visitor who never used the chat sends nothing, and the widget stores nothing in their browser: no cookie and nothing in `localStorage`. It stores its own token in `localStorage` only once the visitor sends a message, and a signed-in user's token is never stored. So the chat needs no cookie banner.
+A visitor who never used the chat sends nothing, and the widget stores nothing in their browser: no cookie, nothing in `localStorage` and nothing in `sessionStorage`. It stores its own token in `localStorage` only once the visitor sends a message, and a signed-in user's token is never stored. For a visitor who has a token or is signed in, it also notes in `sessionStorage` that the chat is open, so the chat opens again after a reload in the same tab. That note goes when the chat closes or the tab closes. So the chat needs no cookie banner.
 
 ## Change the chat's words
 

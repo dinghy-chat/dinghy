@@ -118,7 +118,7 @@
       <article class="doc">
 <p><img src="/docs/media/inbox.png" width="2200" height="1440" alt="The operator app with a conversation open" loading="lazy"></p>
 <h2 id="answer-a-chat"><a class="heading-link" href="#answer-a-chat">Answer a chat</a></h2>
-<p>The sidebar has <strong>Inbox</strong>, <strong>Closed</strong>, <strong>Alerts</strong> and <strong>Settings</strong>. New conversations appear in the <strong>Inbox</strong> with no reload, and the red number counts the people who wait for a reply. Select one to read it, write in the reply box, and press Enter or the send button.</p>
+<p>The sidebar has <strong>Inbox</strong>, <strong>Closed</strong>, <strong>Alerts</strong> and <strong>Settings</strong>. New conversations appear in the <strong>Inbox</strong> with no reload, and the red number counts the people who wait for a reply. Select one to read it, write in the reply box, and press Enter or the send button. If your site sends details with <code>setContext()</code>, they show under <strong>From the page</strong>. Your site does not sign them, so treat them as a hint.</p>
 <p>To send an image, paste it, drag it onto the chat, or select the image button. The rules are the same as for visitors: PNG, JPEG or WebP, under 5 MB and under 16 megapixels.</p>
 <p>If a message shows &quot;Not sent&quot;, select it to try again. A retry cannot create a second copy.</p>
 <p>If two of you open the same conversation, each sees &quot;… is replying&quot;, so you do not answer twice.</p>
@@ -169,7 +169,7 @@
 <p>Select your name at the bottom of the sidebar, then <strong>Profile</strong>, to change the name your teammates see. <strong>Sign out</strong> is in the same menu.</p>
 <h2 id="set-up-your-team"><a class="heading-link" href="#set-up-your-team">Set up your team</a></h2>
 <p><img src="/docs/media/settings.png" width="2200" height="1440" alt="The settings page" loading="lazy"></p>
-<p>Everyone can open <strong>Settings</strong>. Its tabs are <strong>Team</strong>, <strong>Install</strong>, <strong>Allowed sites</strong>, <strong>Signing secret</strong> and <strong>Data</strong>. An agent sees the team, and the blocked visitors under <strong>Data</strong> once someone is blocked. The other tabs are for owners and admins.</p>
+<p>Everyone can open <strong>Settings</strong>. Its tabs are <strong>Team</strong>, <strong>Install</strong>, <strong>Allowed sites</strong>, <strong>Signing secret</strong>, <strong>API</strong> and <strong>Data</strong>. An agent sees the team, and the blocked visitors under <strong>Data</strong> once someone is blocked. The other tabs are for owners and admins.</p>
 <p>To invite someone, select <strong>Invite someone</strong> at the top of Settings, pick a role, select <strong>Create invite link</strong>, and send the link to that one person. Pending invites show in the team list until they are used, with the days they have left and <strong>Revoke</strong>. A link works once and lasts 7 days. The person opens it, and enters a name and an email. Dinghy emails them a link, and selecting <strong>Join your team</strong> on the page it opens creates their account, or uses the one that email already has, joins the workspace and signs them in. Someone who is already signed in selects <strong>Join</strong>. Without a mail server, a new person signs in at once, and nothing checks the email, so send the link only to the person it is for. Someone who already has an account there signs in first, then opens the invite.</p>
 <div class="doc-table"><table>
 <thead><tr><th>Role</th><th>Can do</th></tr></thead>
@@ -186,6 +186,7 @@
 <li><strong>Install</strong> has the tag for your site, with a <strong>Copy</strong> button, then the chat&#39;s title, its greeting in an empty chat and its text for when nobody is online. An empty box keeps Dinghy&#39;s own words.</li>
 <li><strong>Allowed sites</strong> lists the sites that can load the chat, one per row. <strong>Add a site</strong> adds a row, and each row says if its address is not a site such as <code>https://example.com</code>.</li>
 <li><strong>Signing secret</strong> is for <a href="/docs/add-to-your-site#show-who-is-chatting">signed-in users</a>. It stays hidden until you select the eye. <strong>Replace the secret</strong> asks first, because the old one stops working at once.</li>
+<li><strong>API</strong> has the workspace&#39;s <a href="/docs/api#api-keys">API keys</a>, for your own scripts and AI agents, and its <a href="/docs/api#webhooks">webhooks</a>, which tell your server about new conversations and messages. A key&#39;s token and a webhook&#39;s secret show once, so copy them then. A key&#39;s replies show its name, and <strong>Revoke</strong> stops it at once.</li>
 <li><strong>Data</strong> has <strong>Download an export</strong>, which saves all conversations and images as one file that imports into a self-hosted Dinghy, and <strong>Delete workspace</strong>.</li>
 <li>On Dinghy Cloud, <strong>Team</strong> also shows how many of the plan&#39;s 5 operators and 1 GB of images are in use.</li>
 </ul>

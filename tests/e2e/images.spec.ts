@@ -217,7 +217,8 @@ test("an image survives a refresh", async ({ browser }) => {
   await page.getByLabel("Attach an image").first().setInputFiles(pngFile());
   await expectLoaded(page.locator(".shot.mine img").first());
   await page.reload();
-  await page.getByRole("button", { name: "Open chat" }).click();
+  // The chat was open, so it opens again after the reload.
+  await expect(page.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expectLoaded(page.locator(".shot.mine img").first());
   await context.close();
 });
@@ -268,7 +269,8 @@ test("an expired image URL is replaced in the widget", async ({ browser }) => {
     return route.continue();
   });
   await page.reload();
-  await page.getByRole("button", { name: "Open chat" }).click();
+  // The chat was open, so it opens again after the reload.
+  await expect(page.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expectLoaded(page.locator(".shot.mine img").first());
   expect(requests).toBeGreaterThan(1);
   await context.close();
@@ -313,7 +315,8 @@ test("an image that is broken for good does not reload the thread in a loop", as
     return route.fulfill({ status: 404 });
   });
   await page.reload();
-  await page.getByRole("button", { name: "Open chat" }).click();
+  // The chat was open, so it opens again after the reload.
+  await expect(page.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expect(page.locator(".shot.mine img").first()).toBeAttached();
   await page.waitForTimeout(5000);
   expect(requests).toBeLessThanOrEqual(2);

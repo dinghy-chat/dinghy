@@ -1,3 +1,4 @@
+import "./globals.ts";
 import type { WidgetContext } from "./shared.ts";
 
 // The full-page chat that a reply email opens, on the Dinghy server's own origin. It sets up what
@@ -27,15 +28,12 @@ if (script !== null && publicKey !== null && publicKey !== undefined) {
     shadow,
     mascot: true,
     page: true,
-    getIdentity: () => token,
-    setSessionHandler() {},
+    identity: token,
+    pageContext: null,
     // There is no launcher: the chat is open from the start.
-    setOpenHandlers(open) {
-      open();
-    },
-    setLauncherHidden() {},
-    focusLauncher() {},
-    setUnread() {},
+    wanted: [undefined],
+    state: { ready: false, open: false, unread: 0 },
+    listeners: {},
   };
   globalThis.__dinghy = context;
   document.body.append(host);

@@ -4,17 +4,32 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
+import {
+  type Actor,
+  apiKeyToken,
+  authenticateApiKey,
+  KEY_INVALID,
+  KEY_REQUESTS_PER_MINUTE,
+} from "./api-keys.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, deliverLinks, redeemSignInToken } from "./auth.ts";
 import { operator, workspace } from "./db/schema.ts";
 import { accessFlags, type Database, operatorWorkspaces, withWorkspace } from "./db/tenant.ts";
-import { failure, LINK_INVALID, OPERATOR_ERRORS, safeErrorFields, WRONG_ORIGIN } from "./errors.ts";
+import {
+  FORBIDDEN,
+  failure,
+  LINK_INVALID,
+  OPERATOR_ERRORS,
+  safeErrorFields,
+  WRONG_ORIGIN,
+} from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
 import { signInMail } from "./letter.ts";
 import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
+import { WORKSPACE_PREFIX } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 
 const UNAUTHORIZED = failure("unauthorized", "Sign in to continue.");
@@ -127,12 +142,25 @@ export function registerOperatorRoutes(
   // A session is read from the database on each request, so a revoked one stops at the next.
   const requireOperator = createMiddleware<{
     Variables: {
+      actor: Actor;
       operatorId: string;
       operatorName: string;
       operatorEmail: string;
       sessionId: string;
     };
   }>(async (c, next) => {
+    // A key in a bearer header, which a browser never sends on its own, so it needs no Origin. It
+    // reaches only its own workspace's routes, and the member check limits it to an agent's.
+    const token = apiKeyToken(c.req.header("authorization"));
+    if (token !== null) {
+      const actor = await authenticateApiKey(db, token);
+      if (actor === null) return c.json(KEY_INVALID, 401);
+      const wait = await rateLimit.hit("api-key", actor.apiKeyId, KEY_REQUESTS_PER_MINUTE, 60);
+      if (wait !== null) return tooManyRequests(c, wait);
+      if (!c.req.path.startsWith(`${WORKSPACE_PREFIX}/`)) return c.json(FORBIDDEN, 403);
+      c.set("actor", actor);
+      return next();
+    }
     // A cookie goes with any same-site request, so a write must come from the server's own origin.
     if (c.req.method !== "GET" && c.req.header("origin") !== publicOrigin) {
       return c.json(WRONG_ORIGIN, 403);
@@ -150,6 +178,7 @@ export function registerOperatorRoutes(
     // A renewed session sends a new cookie, or an active operator would be signed out in a week.
     for (const cookie of headers.getSetCookie()) c.header("set-cookie", cookie, { append: true });
     if (found === null) return c.json(UNAUTHORIZED, 401);
+    c.set("actor", { kind: "operator", operatorId: found.user.id, name: found.user.name });
     c.set("operatorId", found.user.id);
     c.set("operatorName", found.user.name);
     c.set("operatorEmail", found.user.email);

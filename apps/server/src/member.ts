@@ -1,9 +1,10 @@
 import { z } from "@hono/zod-openapi";
 import { createMiddleware } from "hono/factory";
 import { matchedRoutes } from "hono/route";
+import type { Actor } from "./api-keys.ts";
 import type { App } from "./app.ts";
 import { type Database, operatorWorkspaces, type WorkspaceAccess, writable } from "./db/tenant.ts";
-import { failure, NOT_FOUND } from "./errors.ts";
+import { FORBIDDEN, failure, NOT_FOUND } from "./errors.ts";
 import type { Role } from "./team.ts";
 
 export const WORKSPACE_PREFIX = "/v1/operator/workspaces";
@@ -25,15 +26,22 @@ export const OPEN_WHILE_CLOSED = { [ACCESS_EXTENSION]: "closed" } as const;
 export const OPEN_WHILE_UNPAID = { [ACCESS_EXTENSION]: "unpaid" } as const;
 type AccessRule = "closed" | "unpaid";
 
-/** Each route's rule, keyed as Hono matches it: `POST /v1/operator/workspaces/:workspaceId/...`. */
-function accessRules(app: App): Map<string, AccessRule> {
-  const rules = new Map<string, AccessRule>();
+interface RouteRules {
+  /** Each route's rule, keyed as Hono matches it: `POST /v1/operator/workspaces/:workspaceId/...`. */
+  access: Map<string, AccessRule>;
+  /** The routes whose security names `apiKey`, keyed the same way. Every other one refuses a key. */
+  keys: Set<string>;
+}
+
+function routeRules(app: App): RouteRules {
+  const rules: RouteRules = { access: new Map(), keys: new Set() };
   for (const definition of app.openAPIRegistry.definitions) {
     if (definition.type !== "route") continue;
-    const rule: unknown = definition.route[ACCESS_EXTENSION];
-    if (rule !== "closed" && rule !== "unpaid") continue;
     const path = definition.route.path.replaceAll(/\/{(.+?)}/g, "/:$1");
-    rules.set(`${definition.route.method.toUpperCase()} ${path}`, rule);
+    const key = `${definition.route.method.toUpperCase()} ${path}`;
+    if (definition.route.security?.some((scheme) => "apiKey" in scheme)) rules.keys.add(key);
+    const rule: unknown = definition.route[ACCESS_EXTENSION];
+    if (rule === "closed" || rule === "unpaid") rules.access.set(key, rule);
   }
   return rules;
 }
@@ -52,23 +60,37 @@ export function closedFailure(access: WorkspaceAccess) {
  */
 export function registerMemberCheck(app: App, db: Database): void {
   // Read on the first request, after every route is registered.
-  let rules: Map<string, AccessRule> | undefined;
-  const ruleFor = (c: Parameters<typeof matchedRoutes>[0]): AccessRule | undefined => {
-    rules ??= accessRules(app);
+  let rules: RouteRules | undefined;
+  const routeOf = (c: Parameters<typeof matchedRoutes>[0]) => {
+    rules ??= routeRules(app);
     const route = matchedRoutes(c).findLast((one) => one.method === c.req.method);
-    return route === undefined ? undefined : rules.get(`${route.method} ${route.path}`);
+    const key = route === undefined ? "" : `${route.method} ${route.path}`;
+    return { rule: rules.access.get(key), keyAllowed: rules.keys.has(key) };
+  };
+
+  /** The workspace's access and the caller's role in it, or null when it is not theirs. */
+  const membershipOf = async (actor: Actor, workspaceId: string) => {
+    // A key has an agent's role in its own workspace, and does not exist anywhere else.
+    if (actor.kind === "key") {
+      return actor.workspaceId === workspaceId
+        ? { access: actor.access, role: "agent" as const }
+        : null;
+    }
+    const memberships = await operatorWorkspaces(db, actor.operatorId);
+    return memberships.find((row) => row.workspaceId === workspaceId) ?? null;
   };
 
   const requireMember = createMiddleware<{
-    Variables: { operatorId: string; memberWorkspaceId: string; memberRole: Role };
+    Variables: { actor: Actor; memberWorkspaceId: string; memberRole: Role };
   }>(async (c, next) => {
     const workspaceId = c.req.param("workspaceId") ?? "";
     if (!z.uuid().safeParse(workspaceId).success) return c.json(NOT_FOUND, 404);
-    const memberships = await operatorWorkspaces(db, c.get("operatorId"));
-    const membership = memberships.find((row) => row.workspaceId === workspaceId);
-    if (membership === undefined) return c.json(NOT_FOUND, 404);
+    const actor = c.get("actor");
+    const membership = await membershipOf(actor, workspaceId);
+    if (membership === null) return c.json(NOT_FOUND, 404);
     const { access } = membership;
-    const rule = ruleFor(c);
+    const { rule, keyAllowed } = routeOf(c);
+    if (actor.kind === "key" && !keyAllowed) return c.json(FORBIDDEN, 403);
     // A cloud signup that waits for payment: only its owner's Checkout works until then.
     if (access === "waiting_payment" && rule !== "unpaid") return c.json(PAYMENT_REQUIRED, 402);
     const writes = c.req.method !== "GET" && c.req.method !== "HEAD" && rule === undefined;

@@ -80,7 +80,7 @@ test.describe("each state shows its boat and its text", () => {
     // Every new stream fails, so the reloaded page cannot connect.
     await page.route("**/stream*", (route) => route.abort());
     await page.reload();
-    await page.getByRole("button", { name: "Open chat" }).click();
+    // The chat was open, so it opens again after the reload.
     const scene = page.locator(".scene.lost");
     await expect(scene).toContainText("Connection lost.");
     await expect(scene.locator(".ship svg")).toBeVisible();

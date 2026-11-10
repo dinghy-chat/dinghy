@@ -21,7 +21,14 @@ import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
-import { avatarLetters, otherIdentity, title, webLink } from "./visitor.ts";
+import {
+  avatarLetters,
+  detailRows,
+  otherIdentity,
+  replyAuthor,
+  title,
+  webLink,
+} from "./visitor.ts";
 
 interface Line {
   id: string;
@@ -38,6 +45,8 @@ interface Line {
   createdAt?: string;
   /** The operator who sent it. A pending line is this operator's own. */
   authorOperatorId: string | null;
+  /** The API key that sent it, instead of an operator. */
+  authorApiKeyId: string | null;
   authorName: string | null;
   status: "sent" | "sending" | "failed";
 }
@@ -53,6 +62,7 @@ function merge(lines: Line[], message: Message): Line[] {
     fromVisitor: message.fromVisitor,
     createdAt: message.createdAt,
     authorOperatorId: message.authorOperatorId,
+    authorApiKeyId: message.authorApiKeyId,
     authorName: message.authorName,
     status: "sent",
   };
@@ -273,19 +283,11 @@ function ThreadHead({
 }
 
 /**
- * What the host page told the server about this visitor, beyond the header: its custom attributes.
- * A web address opens in a new tab, and every other value stays text.
+ * Named values about the visitor. With `links`, a web address opens in a new tab. Only signed values
+ * get links, because anyone can put an address in what a page sends.
  */
-function contextRows(visitor: Conversation["visitor"]): [string, string, string | null][] {
-  return Object.entries(visitor.attributes ?? {}).map(([name, value]) => [
-    name,
-    typeof value === "string" ? value : JSON.stringify(value),
-    webLink(value),
-  ]);
-}
-
-function VisitorContext({ conversation }: { conversation: Conversation }) {
-  const rows = contextRows(conversation.visitor);
+function DetailList({ values, links }: { values: Record<string, unknown> | null; links: boolean }) {
+  const rows = detailRows(values);
   if (rows.length === 0) return null;
   return (
     <dl className="context">
@@ -293,7 +295,7 @@ function VisitorContext({ conversation }: { conversation: Conversation }) {
         <Fragment key={`${name}=${value}`}>
           <dt>{name}</dt>
           <dd>
-            {link === null ? (
+            {link === null || !links ? (
               value
             ) : (
               <a href={link} target="_blank" rel="noopener noreferrer" title={link}>
@@ -307,13 +309,31 @@ function VisitorContext({ conversation }: { conversation: Conversation }) {
   );
 }
 
+/** What the page sent with setContext(). Anyone can change it in a browser, so it says so. */
+function PageContextList({ conversation }: { conversation: Conversation }) {
+  if (detailRows(conversation.pageContext).length === 0) return null;
+  return (
+    <section className="page-context" aria-label={t("pageContextTitle")}>
+      <h3>{t("pageContextTitle")}</h3>
+      <p className="quiet">{t("pageContextNote")}</p>
+      <DetailList values={conversation.pageContext} links={false} />
+    </section>
+  );
+}
+
 /**
  * The visitor's attributes and pages, in a fold. It starts open on a wide screen and closed on a
  * phone, where it would push the messages below the fold.
  */
 function AboutVisitor({ conversation, pages }: { conversation: Conversation; pages: PageView[] }) {
   const [open, setOpen] = useState(() => matchMedia("(min-width: 761px)").matches);
-  if (contextRows(conversation.visitor).length === 0 && pages.length === 0) return null;
+  if (
+    detailRows(conversation.visitor.attributes).length === 0 &&
+    detailRows(conversation.pageContext).length === 0 &&
+    pages.length === 0
+  ) {
+    return null;
+  }
   return (
     <details
       className="about-visitor"
@@ -325,7 +345,8 @@ function AboutVisitor({ conversation, pages }: { conversation: Conversation; pag
         <Icon name="chevron" size={12} />
       </summary>
       <div className="about-body">
-        <VisitorContext conversation={conversation} />
+        <DetailList values={conversation.visitor.attributes} links />
+        <PageContextList conversation={conversation} />
         <PageJourney pages={pages} />
       </div>
     </details>
@@ -481,7 +502,8 @@ const sameSender = (one: Line | undefined, other: Line | undefined) =>
   one !== undefined &&
   other !== undefined &&
   one.fromVisitor === other.fromVisitor &&
-  one.authorOperatorId === other.authorOperatorId;
+  one.authorOperatorId === other.authorOperatorId &&
+  one.authorApiKeyId === other.authorApiKeyId;
 
 const dayOf = (line: Line | undefined) =>
   line?.createdAt === undefined ? null : new Date(line.createdAt).toDateString();
@@ -518,7 +540,7 @@ function groupMeta(lines: Line[], index: number, meId: string): string | null {
       ? null
       : new Date(line.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   if (line.fromVisitor) return time;
-  const who = line.authorOperatorId === meId ? t("you") : (line.authorName ?? t("aTeammate"));
+  const who = replyAuthor(line, meId);
   return time === null ? who : `${who} · ${time}`;
 }
 
@@ -645,6 +667,7 @@ export function Thread({
         imageRemoved: false,
         fromVisitor: false,
         authorOperatorId: meId,
+        authorApiKeyId: null,
         authorName: null,
         status: "sending",
       },
@@ -673,6 +696,7 @@ export function Thread({
           file,
           fromVisitor: false,
           authorOperatorId: meId,
+          authorApiKeyId: null,
           authorName: null,
           status: "sending",
         },

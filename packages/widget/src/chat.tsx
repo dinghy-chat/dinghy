@@ -11,15 +11,26 @@ import {
   REFRESH_LIMIT_MS,
   REFUSED,
 } from "./compose.ts";
+import { cleanContext } from "./context.ts";
+import "./globals.ts";
 import { usePageReports } from "./page-reports.ts";
 import { usePresence } from "./presence.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
-import { readToken, type WidgetContext, writeToken } from "./shared.ts";
-import { type TextId, t } from "./text.ts";
+import {
+  type DinghyEvent,
+  type DinghyEvents,
+  RESET_PREFIX,
+  readToken,
+  rememberOpen,
+  type WidgetContext,
+  wasOpen,
+  writeToken,
+} from "./shared.ts";
+import { LAUNCHER_LABEL, type TextId, t } from "./text.ts";
 
 const CSS = `
 *{box-sizing:border-box}
-.panel{--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 32px);background:#fff;color:#0b2239;font:14.5px/21px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;border-radius:22px;overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
+.panel{--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:#fff;color:#0b2239;font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);border-radius:var(--dinghy-radius,22px);overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
 .head{display:flex;align-items:center;gap:8px;padding:16px 10px 16px 16px;background:var(--d-primary,#0b2239);color:var(--d-primary-text,#fff)}
 .scene{flex:1;min-width:0;display:flex;align-items:center;gap:12px}
 .scene b{display:block;min-height:21px;font-size:17px;font-weight:700;line-height:21px;letter-spacing:-.01em}
@@ -72,6 +83,9 @@ dialog img{display:block;max-width:none}
 .panel.page{inset:0;margin:auto;width:100%;max-width:720px;height:auto;max-height:none;border-radius:0}
 @media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}.panel:not(.page) .head{padding-top:max(16px,env(safe-area-inset-top))}.panel:not(.page)>form:last-of-type{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
 .panel:focus{outline:none}
+:host([data-side=left]) .panel{right:auto;left:0}
+.opened{display:none!important}
+.badge{position:absolute;top:-3px;right:-3px;min-width:22px;height:22px;padding:0 4px;box-sizing:border-box;border-radius:11px;background:#e5352b;color:#fff;box-shadow:0 0 0 2px #fff;font:700 12px/22px system-ui,sans-serif;text-align:center}
 .panel.drop{outline:3px dashed var(--d-accent,#e5352b);outline-offset:-6px}
 .pick{background:transparent;color:inherit;padding:0}
 .pick:hover{filter:none;background:var(--fog)}
@@ -185,6 +199,38 @@ function Sea(props: {
 }
 
 const RETRY_LIMIT_MS = 30_000;
+/** The composer's limit, which the server shares. */
+const MESSAGE_MAX = 10_000;
+
+/** Calls the page's callbacks. One that throws is reported, and the others still run. */
+function emit<E extends DinghyEvent>(context: WidgetContext, event: E, data: DinghyEvents[E]) {
+  for (const callback of context.listeners[event] ?? []) {
+    try {
+      callback(data);
+    } catch (error) {
+      reportError(error);
+    }
+  }
+}
+
+/** The launcher's count, in its badge and its label, and the page's `unread` event. */
+function showUnread(context: WidgetContext, count: number) {
+  if (count === context.state.unread) return;
+  context.state.unread = count;
+  const launcher = context.shadow.querySelector(".launcher");
+  if (launcher !== null) {
+    let badge = launcher.querySelector<HTMLElement>(".badge");
+    if (badge === null) {
+      badge = document.createElement("span");
+      badge.className = "badge";
+      launcher.append(badge);
+    }
+    badge.hidden = count === 0;
+    badge.textContent = count > 99 ? "99+" : String(count);
+    launcher.setAttribute("aria-label", count ? `${LAUNCHER_LABEL} (${count})` : LAUNCHER_LABEL);
+  }
+  emit(context, "unread", count);
+}
 
 /**
  * Adds a confirmed message in commit order. A pending line with the same client ID becomes this
@@ -354,17 +400,23 @@ interface ChatProps {
   context: WidgetContext;
   open: boolean;
   setOpen(open: boolean): void;
+  /** Opened again after a reload, so it does not take the page's focus. */
+  quiet: boolean;
+  /** A message that open({ message }) puts in the composer. */
+  prefill: { text: string } | null;
+  /** Grows with each setContext(). */
+  contextVersion: number;
 }
 
 /**
  * One visitor's session. identify() and reset() remount this component, so nothing from the old
  * identity survives: its stream closes, and a late response updates a component that is gone.
  */
-function Chat({ context, open, setOpen }: ChatProps) {
+function Chat({ context, open, setOpen, quiet, prefill, contextVersion }: ChatProps) {
   const { publicKey, base } = context;
   const fullPage = context.page === true;
   const [client] = useState(() => createClient(base, publicKey, undefined, !fullPage));
-  const [identity] = useState(() => context.getIdentity());
+  const [identity] = useState(() => context.identity);
   const [token, setToken] = useState(() =>
     identity === null ? readToken(publicKey) : typeof identity === "string" ? identity : null,
   );
@@ -415,6 +467,8 @@ function Chat({ context, open, setOpen }: ChatProps) {
   const panel = useRef<HTMLElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const creatingVisitor = useRef<Promise<string> | null>(null);
+  // Conversations this chat has seen, so a send into a new one tells the page it started.
+  const conversations = useRef(new Set<string>());
 
   useEffect(() => {
     alive.current = true;
@@ -471,12 +525,21 @@ function Chat({ context, open, setOpen }: ChatProps) {
   }, [identity, renewing, renewAttempt, visible]);
 
   useEffect(() => {
-    if (!open) return;
+    if (prefill !== null) setDraft(prefill.text);
+  }, [prefill]);
+
+  // Only a visitor with a token has the flag, so one who never chatted stores nothing.
+  useEffect(() => {
+    if (!fullPage) rememberOpen(publicKey, open && token !== null);
+  }, [fullPage, open, publicKey, token]);
+
+  useEffect(() => {
+    if (!open || quiet) return;
     // On a touch screen the keyboard would cover the panel before the visitor reads it, so focus
     // goes to the panel, and a tap on the field opens the keyboard.
     if (matchMedia("(pointer: fine)").matches) input.current?.focus();
     else panel.current?.focus();
-  }, [open]);
+  }, [open, quiet]);
 
   useEffect(() => {
     if (!newReply) return;
@@ -491,6 +554,18 @@ function Chat({ context, open, setOpen }: ChatProps) {
   );
   const say = sayer(texts);
   usePageReports(client, token, chatted && !fullPage);
+
+  // Like the pages, the page's context goes only for a visitor who has chatted: after the first
+  // message, on each load after that, and on each setContext().
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contextVersion asks for a report.
+  useEffect(() => {
+    if (token === null || !chatted || fullPage) return;
+    const data = cleanContext(context.pageContext);
+    if (data === null) return;
+    client.reportContext(token, data).catch(() => {
+      // Only a detail for operators. The next setContext() or page load tries again.
+    });
+  }, [chatted, client, context, contextVersion, fullPage, token]);
 
   // One request when a visible tab has a token gives the unread count and says whether a stream is
   // needed. A visitor with only closed conversations holds no stream. It runs again when a tab
@@ -537,7 +612,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
       : lastRead > serverRead.position
         ? 0
         : serverRead.unread;
-  useEffect(() => context.setUnread(unread), [context, unread]);
+  useEffect(() => showUnread(context, unread), [context, unread]);
 
   // A message counts as read only when the visitor can see it.
   useEffect(() => {
@@ -575,7 +650,11 @@ function Chat({ context, open, setOpen }: ChatProps) {
               if (controller.signal.aborted) return;
               cursor.current = next;
               setDelivered((current) => larger(current, BigInt(message.seq)));
-              if (replayed.current && !message.fromVisitor) setNewReply(true);
+              conversations.current.add(message.conversationId);
+              if (replayed.current && !message.fromVisitor) {
+                setNewReply(true);
+                emit(context, "message:received", { body: message.body });
+              }
               setLines((current) => merge(current, message));
             },
             ready(next) {
@@ -687,6 +766,11 @@ function Chat({ context, open, setOpen }: ChatProps) {
         return post(renewed);
       });
       sends.current += 1;
+      emit(context, "message:sent", { body: file === undefined ? body : null });
+      if (!openConversation && !conversations.current.has(sent.conversationId)) {
+        emit(context, "conversation:started", undefined);
+      }
+      conversations.current.add(sent.conversationId);
       setOpenConversation(true);
       setChatted(true);
       // A send that worked means a block was lifted, or the site was allowed again. Another warning,
@@ -901,7 +985,7 @@ function Chat({ context, open, setOpen }: ChatProps) {
           ref={input}
           aria-label={t("inputLabel")}
           placeholder={t("inputPlaceholder")}
-          maxLength={10_000}
+          maxLength={MESSAGE_MAX}
           value={draft}
           onInput={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={(event) => {
@@ -917,24 +1001,79 @@ function Chat({ context, open, setOpen }: ChatProps) {
 }
 
 function Root({ context }: { context: WidgetContext }) {
-  const [open, setOpen] = useState(false);
+  const { publicKey } = context;
+  // A visitor with a token who had the chat open in this tab finds it open after a reload.
+  const [remembered] = useState(
+    () =>
+      context.page !== true &&
+      (context.identity !== null || readToken(publicKey) !== null) &&
+      wasOpen(publicKey),
+  );
+  const [open, setOpenState] = useState(remembered);
+  // The state changes at once, so a toggle() right after a close() sees it closed.
+  const setOpen = (next: boolean) => {
+    context.state.open = next;
+    setOpenState(next);
+  };
+  const [quiet, setQuiet] = useState(remembered);
   const [session, setSession] = useState(0);
+  const [prefill, setPrefill] = useState<{ text: string } | null>(null);
+  const [contextVersion, setContextVersion] = useState(0);
   // A layout effect, so identify() or reset() right after the first render still reaches this.
   useLayoutEffect(() => {
-    context.setSessionHandler(() => setSession((current) => current + 1));
-    context.setOpenHandlers(
-      () => setOpen(true),
-      () => setOpen(false),
-    );
-  }, [context]);
-  const wasOpen = useRef(false);
+    const handlers = {
+      open(message: string | undefined) {
+        context.state.open = true;
+        setOpenState(true);
+        setQuiet(false);
+        if (typeof message === "string") setPrefill({ text: message.slice(0, MESSAGE_MAX) });
+      },
+      close: () => {
+        context.state.open = false;
+        setOpenState(false);
+      },
+      session: () => setSession((current) => current + 1),
+      context: () => setContextVersion((current) => current + 1),
+    };
+    context.chat = handlers;
+    context.state.ready = true;
+    emit(context, "ready", undefined);
+    const { wanted } = context;
+    context.wanted = undefined;
+    if (wanted !== undefined) handlers.open(wanted[0]);
+    // Another tab called reset(), so this one ends its session too.
+    const onStorage = (event: StorageEvent) => {
+      // The removal right after the signal fires an event too, with no new value.
+      if (event.newValue && event.key === RESET_PREFIX + publicKey) {
+        context.identity = null;
+        handlers.session();
+      }
+    };
+    addEventListener("storage", onStorage);
+    return () => removeEventListener("storage", onStorage);
+  }, [context, publicKey]);
+  const shown = useRef(false);
   useEffect(() => {
-    context.setLauncherHidden(open);
+    if (open === shown.current) return;
+    shown.current = open;
+    context.state.open = open;
+    const launcher = context.shadow.querySelector<HTMLElement>(".launcher");
+    launcher?.classList.toggle("opened", open);
     // The focused element is gone after a close, so a keyboard user returns to the launcher.
-    if (!open && wasOpen.current) context.focusLauncher();
-    wasOpen.current = open;
+    if (!open) launcher?.focus();
+    emit(context, open ? "open" : "close", undefined);
   }, [context, open]);
-  return <Chat key={session} context={context} open={open} setOpen={setOpen} />;
+  return (
+    <Chat
+      key={session}
+      context={context}
+      open={open}
+      setOpen={setOpen}
+      quiet={quiet}
+      prefill={prefill}
+      contextVersion={contextVersion}
+    />
+  );
 }
 
 const context = globalThis.__dinghy;
@@ -942,6 +1081,11 @@ if (context !== undefined) {
   const sheet = new CSSStyleSheet();
   sheet.replaceSync(CSS);
   context.shadow.adoptedStyleSheets = [...context.shadow.adoptedStyleSheets, sheet];
+  // A modal's focus trap listens on the document, so it must not see focus move inside the chat.
+  // The same goes for a site's keyboard shortcuts, which cannot see that the target is a textarea.
+  for (const type of ["focusin", "focusout", "keydown", "keypress", "keyup"]) {
+    context.shadow.host.addEventListener(type, (event) => event.stopPropagation());
+  }
   const mount = document.createElement("div");
   context.shadow.append(mount);
   render(<Root context={context} />, mount);

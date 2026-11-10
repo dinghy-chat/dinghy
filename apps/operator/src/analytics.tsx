@@ -183,12 +183,16 @@ function ByOperator({ operators }: { operators: Analytics["operators"] }) {
     <Tipped className="by-operator">
       {operators.map((one) => (
         <div
-          key={one.operatorId}
+          key={one.apiKeyId === null ? `operator:${one.operatorId}` : `key:${one.apiKeyId}`}
           className="operator"
           data-value={conversations(one.conversations)}
           data-label={t("byOperatorShare", { share: percent(one.conversations / total) })}
         >
-          <span className="who">{one.name ?? t("formerOperator")}</span>
+          <span className="who">
+            {one.apiKeyId === null
+              ? (one.name ?? t("formerOperator"))
+              : t("apiKeyAuthor", { name: one.name ?? t("apiKeyUnknown") })}
+          </span>
           <span className="track" aria-hidden="true">
             <span className="fill" style={{ width: `${(one.conversations / most) * 100}%` }} />
           </span>

@@ -495,7 +495,7 @@ async function replyEmailPlan(
       and(
         eq(message.workspaceId, workspaceId),
         eq(conversation.visitorId, visitorId),
-        isNotNull(message.authorOperatorId),
+        isNull(message.authorVisitorId),
         gt(message.seq, target.lastReadSeq),
       ),
     )
@@ -622,12 +622,12 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
         SELECT old.workspace_id, old.seq
         FROM (
           SELECT DISTINCT workspace_id FROM event
-          WHERE created_at < ${cutoff} AND NOT needs_alert
+          WHERE created_at < ${cutoff} AND NOT needs_alert AND NOT needs_webhook
         ) AS candidate
         LEFT JOIN LATERAL (
           SELECT kept.seq FROM event AS kept
           WHERE kept.workspace_id = candidate.workspace_id
-            AND (kept.needs_alert OR kept.created_at >= ${cutoff})
+            AND (kept.needs_alert OR kept.needs_webhook OR kept.created_at >= ${cutoff})
           ORDER BY kept.seq
           LIMIT 1
         ) AS first_kept ON true
@@ -641,6 +641,12 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
         SELECT workspace_id, id FROM alert_delivery
         WHERE finished_at < ${cutoff}
         LIMIT ${PRUNE_BATCH})`);
+    const hooks = await db.execute(sql`
+      DELETE FROM webhook_delivery
+      WHERE (workspace_id, id) IN (
+        SELECT workspace_id, id FROM webhook_delivery
+        WHERE finished_at < ${cutoff}
+        LIMIT ${PRUNE_BATCH})`);
     const blocks = await db.execute(sql`
       DELETE FROM ip_block
       WHERE (workspace_id, ip_hash, visitor_id) IN (
@@ -652,6 +658,7 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
     const counts = [
       events.rowCount ?? 0,
       deliveries.rowCount ?? 0,
+      hooks.rowCount ?? 0,
       blocks.rowCount ?? 0,
       links,
       pages,

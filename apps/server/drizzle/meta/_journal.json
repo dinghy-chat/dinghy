@@ -379,6 +379,20 @@
       "when": 1794235378058,
       "tag": "0053_page_address_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794305907261,
+      "tag": "0054_agent_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1794305914669,
+      "tag": "0055_agent_api_grants",
+      "breakpoints": true
     }
   ]
 }

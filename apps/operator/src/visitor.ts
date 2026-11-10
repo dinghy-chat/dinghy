@@ -56,3 +56,33 @@ export function webLink(value: unknown): string | null {
   const { protocol, href } = new URL(value);
   return protocol === "https:" || protocol === "http:" ? href : null;
 }
+
+/**
+ * Name, shown value and safe link of each value in a record, such as the signed attributes or the
+ * page's context. A web address becomes a link, and every other value stays text.
+ */
+export function detailRows(
+  values: Record<string, unknown> | null,
+): [name: string, value: string, link: string | null][] {
+  return Object.entries(values ?? {}).map(([name, value]) => [
+    name,
+    typeof value === "string" ? value : JSON.stringify(value),
+    webLink(value),
+  ]);
+}
+
+/** Who wrote a reply: "You", the API key's name with a note, a teammate's name, or a teammate. */
+export function replyAuthor(
+  message: {
+    authorOperatorId: string | null;
+    authorApiKeyId: string | null;
+    authorName: string | null;
+  },
+  meId: string,
+): string {
+  if (message.authorApiKeyId !== null) {
+    return t("apiKeyAuthor", { name: message.authorName ?? t("apiKeyUnknown") });
+  }
+  if (message.authorOperatorId === meId) return t("you");
+  return message.authorName ?? t("aTeammate");
+}

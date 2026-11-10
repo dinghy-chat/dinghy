@@ -7,7 +7,7 @@ import { addOperator, signIn } from "../test/operators.ts";
 import { type AnalyticsResult, isTimeZone } from "./analytics.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { conversation, message, visitor } from "./db/schema.ts";
+import { apiKey, conversation, message, visitor } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -205,8 +205,8 @@ describe("a workspace with conversations", () => {
   test("counts conversations by who sent the first reply, most first", async () => {
     const { operators } = (await analytics(space.id, sam.cookie, "days=7&tz=UTC")).body;
     expect(operators).toEqual([
-      { operatorId: sam.id, name: "Sam", conversations: 2 },
-      { operatorId: lea.id, name: "Lea", conversations: 1 },
+      { operatorId: sam.id, apiKeyId: null, name: "Sam", conversations: 2 },
+      { operatorId: lea.id, apiKeyId: null, name: "Lea", conversations: 1 },
     ]);
   });
 
@@ -254,6 +254,40 @@ describe("a workspace with conversations", () => {
     expect((await analytics(space.id, stranger.cookie, "days=7&tz=UTC")).status).toBe(404);
     expect((await analytics(other.id, stranger.cookie, "days=90&tz=UTC")).body.started).toBe(0);
   });
+});
+
+test("a first reply sent with an API key counts under the key's name", async () => {
+  const space = await createWorkspace(db, "Keys", []);
+  const owen = await person(space.id, "Owen");
+  const [key] = await owner
+    .insert(apiKey)
+    .values({
+      workspaceId: space.id,
+      name: "Helper bot",
+      tokenHash: randomUUID(),
+      createdBy: owen.id,
+    })
+    .returning({ id: apiKey.id });
+  const keyId = key?.id ?? "";
+  const startedAt = new Date(Date.now() - DAY);
+  const conversationId = await seed(space.id, { startedAt });
+  seq += 1n;
+  await owner.insert(message).values({
+    workspaceId: space.id,
+    conversationId,
+    seq,
+    kind: "text",
+    clientId: randomUUID(),
+    body: "An answer from the bot",
+    createdAt: new Date(startedAt.getTime() + MINUTE),
+    authorApiKeyId: keyId,
+  });
+  const { body } = await analytics(space.id, owen.cookie, "days=7&tz=UTC");
+  expect(body.answered).toBe(1);
+  expect(body.firstReply.medianSeconds).toBe(60);
+  expect(body.operators).toEqual([
+    { operatorId: null, apiKeyId: keyId, name: "Helper bot", conversations: 1 },
+  ]);
 });
 
 test("a time zone is an IANA name that this Node knows", () => {

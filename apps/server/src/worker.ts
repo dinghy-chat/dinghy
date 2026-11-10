@@ -18,6 +18,7 @@ import {
 } from "./alerts.ts";
 import { workerHeartbeat } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
+import type { Images } from "./images.ts";
 import { noLive, type Signals } from "./live.ts";
 import { MAIL_CONNECTIONS, type Mailer } from "./mailer.ts";
 import type { Push } from "./push.ts";
@@ -28,6 +29,15 @@ import {
   type ObjectStore,
   retryDeletion,
 } from "./storage.ts";
+import {
+  abandonWebhook,
+  claimWebhookDeliveries,
+  deliverWebhook,
+  fanOutWebhooksOne,
+  PUBLIC_ONLY,
+  WEBHOOK_MAX_ATTEMPTS,
+  type WebhookPolicy,
+} from "./webhooks.ts";
 import { purgeDeletedWorkspaces } from "./workspace-delete.ts";
 
 /** Records that a pass finished. Every worker instance writes the same row. */
@@ -56,6 +66,10 @@ interface WorkerOptions {
   mailer?: Mailer | undefined;
   /** Where deleted conversations' images are removed from. */
   store?: ObjectStore | undefined;
+  /** Signs the image URLs in a webhook's message. Without it, a webhook's image is null. */
+  images?: Images | undefined;
+  /** Whether webhooks may go over http and to private addresses. */
+  webhooks?: WebhookPolicy;
   /** Dinghy Cloud's settings, read by `ee/`. Without billing, no subscription lifecycle runs. */
   cloud?: CloudSettings | undefined;
   /** Wakes open inboxes after a billing change. */
@@ -139,6 +153,8 @@ export function startWorker({
   push,
   mailer,
   store,
+  images,
+  webhooks = PUBLIC_ONLY,
   cloud,
   signals = noLive,
   publicUrl,
@@ -259,6 +275,42 @@ export function startWorker({
     return busy;
   };
 
+  const fanOutWebhooks = async () => {
+    let busy = false;
+    for (let done = 0; done < FAN_OUT_BATCH && !stopping.signal.aborted; done++) {
+      if (!(await fanOutWebhooksOne(db))) break;
+      busy = true;
+    }
+    return busy;
+  };
+
+  // Webhooks get their own slots, so a slow receiver never holds an alert back.
+  const hooksInFlight = new Set<Promise<void>>();
+  const startWebhooks = async () => {
+    const free = IN_FLIGHT - hooksInFlight.size;
+    if (free <= 0) return false;
+    const rows = await claimWebhookDeliveries(db, free, CLAIM_MS);
+    for (const row of rows) {
+      const work =
+        row.attempts > WEBHOOK_MAX_ATTEMPTS
+          ? abandonWebhook(db, row)
+          : deliverWebhook(db, row, {
+              images,
+              policy: webhooks,
+              retryMs,
+              stopping: stopping.signal,
+            });
+      const job: Promise<void> = work
+        .catch((err) => logger.error({ err, deliveryId: row.id }, "webhook could not finish"))
+        .finally(() => {
+          hooksInFlight.delete(job);
+          wake();
+        });
+      hooksInFlight.add(job);
+    }
+    return rows.length > 0;
+  };
+
   const deleteFiles = async () => {
     if (store === undefined) return false;
     const deletions = await claimDeletions(db, BATCH, CLAIM_MS);
@@ -278,8 +330,10 @@ export function startWorker({
     let lifecycleAt = 0;
     while (!stopping.signal.aborted) {
       let busy = await stage("fan-out", fanOut);
+      busy = (await stage("webhook fan-out", fanOutWebhooks)) || busy;
       if (!stopping.signal.aborted) {
         busy = (await stage("deliveries", startDeliveries)) || busy;
+        busy = (await stage("webhooks", startWebhooks)) || busy;
         busy = (await stage("file deletions", deleteFiles)) || busy;
       }
       if (Date.now() >= pruneAt) {
@@ -315,7 +369,7 @@ export function startWorker({
       stopping.abort(new Error("The worker is stopping"));
       wake();
       await Promise.race([
-        running.then(() => Promise.allSettled(inFlight)),
+        running.then(() => Promise.allSettled([...inFlight, ...hooksInFlight])),
         delay(STOP_WAIT_MS, undefined, { ref: false }),
       ]);
       logger.info("worker stopped");

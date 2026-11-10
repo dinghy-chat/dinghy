@@ -4,9 +4,28 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Upgrading
+
+- `chat import` reads only exports made by this version, because an export now holds API keys and what the page sent with `setContext()`.
+
+### Added
+
+- API keys. Owners and admins create them in **Settings > API**, and the token shows once. A key works only in its own workspace, with an agent's permissions: it reads, searches, replies, closes, reopens and assigns conversations, with `Authorization: Bearer dk_...` and no `Origin`. Its replies show its name. Each key may send 300 requests a minute.
+- Webhooks. Owners and admins add up to 5 in **Settings > API**, for `conversation.created`, `message.created`, `conversation.closed`, `conversation.reopened` and `conversation.assigned`. Each request is signed with `Dinghy-Signature` and carries a `Dinghy-Event-Id` that stays the same on retries. A failed send is tried again for about a day. **Send test** sends one at once, and **Deliveries** shows the last 20.
+- Webhooks go only to `https` addresses on the public internet, checked each time they send. `WEBHOOK_ALLOW_PRIVATE=true` lets a self-hosted install send over `http` and to its own network.
+- An MCP server at `/v1/mcp`, with an API key, so an AI agent such as Claude Code can list, search, read, answer, close, reopen and assign conversations.
+- The widget's browser API has `open({ message })`, `toggle()`, `show()`, `hide()`, `setContext()`, `configure()`, `on(event, callback)` and `state`. The events are `ready`, `open`, `close`, `unread`, `message:sent`, `message:received` and `conversation:started`.
+- `Dinghy.setContext()` sends details from the page, such as a plan, for a visitor who has chatted. Operators see them under **From the page**, marked as not verified, and the API returns them as `pageContext`.
+- The tag takes `data-position`, `data-offset-x` and `data-offset-y`. A page can set the CSS variables `--dinghy-font`, `--dinghy-radius` and `--dinghy-launcher-radius` on the `dinghy-chat` element.
+- A chat that was open opens again after a reload in the same tab, for a visitor who has chatted or is signed in.
+- The `@dinghy/widget` npm package, with `init()` and the API's types.
+- `llms.txt` on dinghy.chat, and a prompt in the docs to ask a coding agent to install Dinghy.
+
 ### Changed
 
 - The theme choice (system, light or dark) is in the menu under your name, not on Profile.
+- `Dinghy.onUnreadChange(callback)` is gone. Use `Dinghy.on("unread", callback)`, which also calls back at once with the count.
+- Analytics' `operators` entries have `apiKeyId`, and `operatorId` is null for a reply sent with an API key.
 
 ## [0.8.0] - 2026-11-09
 

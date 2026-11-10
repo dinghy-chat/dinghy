@@ -49,6 +49,14 @@ const pushKeys = pushKeysFromConfig(config);
 // Unset on a self-hosted install, which then never turns on the code in ee/.
 const cloud = cloudFromConfig(config);
 const push = pushKeys === undefined ? undefined : createPush(pushKeys);
+const webhooks = { allowPrivate: config.WEBHOOK_ALLOW_PRIVATE };
+const imagesFor = () =>
+  createImages({
+    store: storeFromConfig(config),
+    secret: config.AUTH_SECRET,
+    publicUrl: config.PUBLIC_URL,
+    origin: config.IMAGES_ORIGIN,
+  });
 const smtp =
   config.SMTP_URL !== undefined && config.MAIL_FROM !== undefined
     ? { url: config.SMTP_URL, from: config.MAIL_FROM }
@@ -83,12 +91,8 @@ if (role === "web" || role === "all") {
     mailer,
     auth: createAuth({ db, secret: config.AUTH_SECRET, baseURL: config.PUBLIC_URL }),
     db,
-    images: createImages({
-      store: storeFromConfig(config),
-      secret: config.AUTH_SECRET,
-      publicUrl: config.PUBLIC_URL,
-      origin: config.IMAGES_ORIGIN,
-    }),
+    images: imagesFor(),
+    webhooks,
     live,
     valkey,
     logger,
@@ -148,6 +152,8 @@ if (role === "worker" || role === "all") {
     publicUrl: config.PUBLIC_URL,
     secret: config.AUTH_SECRET,
     store: storeFromConfig(config),
+    images: imagesFor(),
+    webhooks,
   });
   stops.push(
     () => worker.stop(),

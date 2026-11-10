@@ -11,7 +11,17 @@ import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { addOperator, signIn } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { pageView, subscription, visitor, workspace } from "./db/schema.ts";
+import {
+  apiKey,
+  conversation,
+  message,
+  pageView,
+  subscription,
+  visitor,
+  webhook,
+  webhookDelivery,
+  workspace,
+} from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createImages } from "./images.ts";
 import { localStore, type ObjectStore } from "./storage.ts";
@@ -131,7 +141,12 @@ afterAll(async () => {
 describe("the owner's delete", () => {
   test("works on a self-hosted install, with no Stripe", async () => {
     const created = await createWorkspace(db, "Home", []);
-    const { email } = await addOperator({ auth, owner, name: "Self", workspaceId: created.id });
+    const { id: selfId, email } = await addOperator({
+      auth,
+      owner,
+      name: "Self",
+      workspaceId: created.id,
+    });
     const cookie = await signIn(app, auth, email);
     // A visitor's page journey, so the check below covers it.
     const [seen] = await owner
@@ -142,6 +157,44 @@ describe("the owner's delete", () => {
       workspaceId: created.id,
       visitorId: seen?.id ?? "",
       path: "https://home.example/pricing",
+    });
+    // A key's reply and a webhook's delivery, whose foreign keys the purge must delete in order.
+    const [key] = await owner
+      .insert(apiKey)
+      .values({ workspaceId: created.id, name: "Bot", tokenHash: "home-key", createdBy: selfId })
+      .returning({ id: apiKey.id });
+    const [talk] = await owner
+      .insert(conversation)
+      .values({ workspaceId: created.id, visitorId: seen?.id ?? "" })
+      .returning({ id: conversation.id });
+    const [said] = await owner
+      .insert(message)
+      .values({
+        workspaceId: created.id,
+        conversationId: talk?.id ?? "",
+        seq: 1n,
+        kind: "text",
+        clientId: "bot-1",
+        body: "Hello",
+        authorApiKeyId: key?.id ?? "",
+      })
+      .returning({ id: message.id });
+    const [hook] = await owner
+      .insert(webhook)
+      .values({
+        workspaceId: created.id,
+        url: "https://hooks.example.com",
+        secret: "whsec_home",
+        events: ["message.created"],
+      })
+      .returning({ id: webhook.id });
+    await owner.insert(webhookDelivery).values({
+      workspaceId: created.id,
+      webhookId: hook?.id ?? "",
+      eventId: crypto.randomUUID(),
+      type: "message.created",
+      conversationId: talk?.id ?? "",
+      messageId: said?.id ?? "",
     });
     const response = await request("DELETE", `/v1/operator/workspaces/${created.id}`, {
       cookie,

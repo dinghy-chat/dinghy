@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../test/database.ts";
 import { ROLES } from "./roles.ts";
 import {
+  apiKey,
   attachment,
   conversation,
   event,
@@ -11,6 +12,8 @@ import {
   stripeEvent,
   subscription,
   visitor,
+  webhook,
+  webhookDelivery,
   workspace,
   workspaceMember,
 } from "./schema.ts";
@@ -32,6 +35,9 @@ const TENANT_TABLES = [
   event,
   subscription,
   stripeEvent,
+  apiKey,
+  webhook,
+  webhookDelivery,
 ];
 
 let database: TestDatabase;
@@ -73,6 +79,28 @@ async function seed(workspaceId: string): Promise<void> {
   await owner.insert(event).values({ workspaceId, seq: 1n, kind: "message.created" });
   await owner.insert(subscription).values({ workspaceId, stripeCustomerId: `cus_${workspaceId}` });
   await owner.insert(stripeEvent).values({ workspaceId, eventId: `evt_${workspaceId}` });
+  await owner.insert(apiKey).values({
+    workspaceId,
+    name: "Helper",
+    tokenHash: `hash-${workspaceId}`,
+    createdBy: OPERATOR,
+  });
+  const webhookId = uuidFor(workspaceId, 4);
+  await owner.insert(webhook).values({
+    workspaceId,
+    id: webhookId,
+    url: "https://hooks.example.com",
+    secret: "whsec_test",
+    events: ["message.created"],
+  });
+  await owner.insert(webhookDelivery).values({
+    workspaceId,
+    webhookId,
+    eventId: uuidFor(workspaceId, 5),
+    type: "message.created",
+    conversationId,
+    messageId,
+  });
 }
 
 beforeAll(async () => {
@@ -130,6 +158,7 @@ describe("migrations", () => {
       conversation_assignee_fk: "a member's removal, at most 5 members per workspace",
       alert_delivery_operator_fk: "a member's removal, at most 5 members per workspace",
       invite_created_by_fk: "a member's removal, a handful of invites per workspace",
+      api_key_created_by_fk: "a member's removal, a handful of keys per workspace",
     };
     const result = await owner.execute<{ name: string }>(sql`
       select c.conname as name from pg_constraint c

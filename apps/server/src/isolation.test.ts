@@ -15,6 +15,7 @@ import { claimDeliveries, emailStopUrl, fanOutOne, planDelivery } from "./alerts
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import {
+  apiKey,
   attachment,
   conversation,
   emailStop,
@@ -26,6 +27,7 @@ import {
   pushSubscription,
   verification,
   visitor,
+  webhook,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
@@ -85,6 +87,10 @@ interface World {
   two: VisitorWorld;
   other: VisitorWorld;
   inviteB: { id: string; token: string };
+  /** An API key in each workspace, and a webhook in the other one. */
+  keyA: { id: string; token: string };
+  keyB: { id: string; token: string };
+  hookB: { id: string; secret: string; url: string };
   /** Strings that belong to someone else, for each kind of caller. */
   secrets: { two: string; b: string };
   widget(
@@ -96,6 +102,8 @@ interface World {
     body?: unknown,
   ): Promise<Response>;
   operator(as: { cookie: string }, method: string, path: string, body?: unknown): Promise<Response>;
+  /** A request with an API key, as a script sends it: a bearer header and no Origin. */
+  withKey(token: string, method: string, path: string, body?: unknown): Promise<Response>;
 }
 
 const inWorkspace = (id: string, path = "") => `/v1/operator/workspaces/${id}${path}`;
@@ -823,6 +831,152 @@ const ATTACKS: Record<string, Attack> = {
     const [row] = await owner.select().from(invite).where(eq(invite.id, inviteB.id));
     expect(row?.usedAt).toBeNull();
   },
+
+  // ---- API keys, webhooks and MCP.
+  "POST /v1/widget/:key/context": async ({ widget, a, b, one, two }) => {
+    const contextOf = async (id: string) =>
+      (await owner.select().from(visitor).where(eq(visitor.id, id)))[0]?.pageContext;
+    const before = await contextOf(two.id);
+    const context = { plan: `isolation-${randomUUID()}` };
+    expect(
+      (await widget(a.publicKey, "POST", "context", one.token, SITE_A, { context })).status,
+    ).toBe(200);
+    expect(await contextOf(one.id)).toEqual(context);
+    expect(await contextOf(two.id)).toEqual(before);
+    expect(
+      (await widget(b.publicKey, "POST", "context", one.token, SITE_B, { context })).status,
+    ).toBe(401);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/api-keys": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/api-keys"))).status).toBe(404);
+    const text = await (await as(anna, "GET", inWorkspace(a.id, "/api-keys"))).text();
+    expect(text).toContain("Helper A");
+    expect(text).not.toContain("Helper B");
+    // A key never manages keys, and never reaches the other workspace.
+    expect((await withKey(keyA.token, "GET", inWorkspace(a.id, "/api-keys"))).status).toBe(403);
+    expect((await withKey(keyA.token, "GET", inWorkspace(b.id, "/conversations"))).status).toBe(
+      404,
+    );
+    expect((await withKey(keyA.token, "GET", "/v1/operator/me")).status).toBe(403);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/api-keys": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA } = world;
+    const body = { name: "Crossing" };
+    expect((await as(anna, "POST", inWorkspace(b.id, "/api-keys"), body)).status).toBe(404);
+    expect((await withKey(keyA.token, "POST", inWorkspace(a.id, "/api-keys"), body)).status).toBe(
+      403,
+    );
+    const rows = await owner.select().from(apiKey).where(eq(apiKey.workspaceId, b.id));
+    expect(rows.map((row) => row.name)).not.toContain("Crossing");
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/api-keys/:keyId": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyB } = world;
+    await as(anna, "DELETE", inWorkspace(a.id, `/api-keys/${keyB.id}`));
+    expect((await as(anna, "DELETE", inWorkspace(b.id, `/api-keys/${keyB.id}`))).status).toBe(404);
+    const [row] = await owner.select().from(apiKey).where(eq(apiKey.id, keyB.id));
+    expect(row?.revokedAt).toBeNull();
+    expect((await withKey(keyB.token, "GET", inWorkspace(b.id, "/conversations"))).status).toBe(
+      200,
+    );
+  },
+  "GET /v1/operator/workspaces/:workspaceId/webhooks": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, hookB } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/webhooks"))).status).toBe(404);
+    const text = await (await as(anna, "GET", inWorkspace(a.id, "/webhooks"))).text();
+    expect(text).not.toContain(hookB.url);
+    expect(text).not.toContain(hookB.secret);
+    expect((await withKey(keyA.token, "GET", inWorkspace(a.id, "/webhooks"))).status).toBe(403);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/webhooks": async ({ operator: as, anna, b }) => {
+    const body = { url: "https://93.184.215.14/crossing", events: ["message.created"] };
+    expect((await as(anna, "POST", inWorkspace(b.id, "/webhooks"), body)).status).toBe(404);
+    const rows = await owner.select().from(webhook).where(eq(webhook.workspaceId, b.id));
+    expect(rows.map((row) => row.url)).not.toContain(body.url);
+  },
+  "PATCH /v1/operator/workspaces/:workspaceId/webhooks/:webhookId": async (world) => {
+    const { operator: as, anna, a, b, hookB } = world;
+    const body = { url: "https://93.184.215.14/stolen" };
+    expect((await as(anna, "PATCH", inWorkspace(a.id, `/webhooks/${hookB.id}`), body)).status).toBe(
+      404,
+    );
+    expect((await as(anna, "PATCH", inWorkspace(b.id, `/webhooks/${hookB.id}`), body)).status).toBe(
+      404,
+    );
+    const [row] = await owner.select().from(webhook).where(eq(webhook.id, hookB.id));
+    expect(row?.url).toBe(hookB.url);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/webhooks/:webhookId": async (world) => {
+    const { operator: as, anna, a, b, hookB } = world;
+    await as(anna, "DELETE", inWorkspace(a.id, `/webhooks/${hookB.id}`));
+    expect((await as(anna, "DELETE", inWorkspace(b.id, `/webhooks/${hookB.id}`))).status).toBe(404);
+    expect(await owner.select().from(webhook).where(eq(webhook.id, hookB.id))).toHaveLength(1);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/rotate-secret": async (world) => {
+    const { operator: as, anna, a, b, hookB } = world;
+    for (const space of [a.id, b.id]) {
+      const path = inWorkspace(space, `/webhooks/${hookB.id}/rotate-secret`);
+      expect((await as(anna, "POST", path, {})).status).toBe(404);
+    }
+    const [row] = await owner.select().from(webhook).where(eq(webhook.id, hookB.id));
+    expect(row?.secret).toBe(hookB.secret);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/test": async (world) => {
+    const { operator: as, anna, a, b, hookB } = world;
+    for (const space of [a.id, b.id]) {
+      const path = inWorkspace(space, `/webhooks/${hookB.id}/test`);
+      expect((await as(anna, "POST", path, {})).status).toBe(404);
+    }
+  },
+  "GET /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/deliveries": async (world) => {
+    const { operator: as, anna, a, b, hookB } = world;
+    const own = await as(anna, "GET", inWorkspace(a.id, `/webhooks/${hookB.id}/deliveries`));
+    expect(await own.json()).toEqual({ deliveries: [] });
+    expect(
+      (await as(anna, "GET", inWorkspace(b.id, `/webhooks/${hookB.id}/deliveries`))).status,
+    ).toBe(404);
+  },
+  "POST /v1/mcp": async ({ withKey, keyA, other, secrets }) => {
+    const call = async (name: string, args: unknown) =>
+      (await (
+        await withKey(keyA.token, "POST", "/v1/mcp", {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
+        })
+      ).json()) as { result: { isError: boolean; content: { text: string }[] } };
+    const crossed = await call("get_conversation", { conversationId: other.conversationId });
+    expect(crossed.result.isError).toBe(true);
+    expect(crossed.result.content[0]?.text).toMatch(/^not_found/);
+    const replied = await call("reply", { conversationId: other.conversationId, body: "crossing" });
+    expect(replied.result.isError).toBe(true);
+    for (const [name, args] of [
+      ["list_conversations", {}],
+      ["list_conversations", { status: "closed" }],
+      ["search_conversations", { q: "written" }],
+    ] as const) {
+      const text = JSON.stringify(await call(name, args));
+      expect(text).not.toContain(other.conversationId);
+      expect(text).not.toContain(secrets.b);
+    }
+    expect(JSON.stringify(await call("search_conversations", { q: "written" }))).toContain(
+      "written by one",
+    );
+    // Without a key, nothing.
+    const bare = await withKey("dk_none", "POST", "/v1/mcp", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "ping",
+    });
+    expect(bare.status).toBe(401);
+  },
+  "GET /v1/mcp": async ({ withKey, keyA }) => {
+    expect((await withKey(keyA.token, "GET", "/v1/mcp")).status).toBe(405);
+  },
+  "DELETE /v1/mcp": async ({ withKey, keyA }) => {
+    expect((await withKey(keyA.token, "DELETE", "/v1/mcp")).status).toBe(405);
+  },
 };
 
 const pushed: string[] = [];
@@ -938,6 +1092,28 @@ async function buildWorld(db: Database): Promise<World> {
   const madeInvite = await operatorCall(bea, "POST", inWorkspace(b.id, "/invites"), {
     role: "agent",
   });
+  const withKey: World["withKey"] = (token, method, path, body) =>
+    Promise.resolve(
+      server.request(path, {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+    );
+  const madeKey = async (as: { cookie: string }, space: NewWorkspace, name: string) =>
+    (await (
+      await operatorCall(as, "POST", inWorkspace(space.id, "/api-keys"), { name })
+    ).json()) as {
+      id: string;
+      token: string;
+    };
+  const madeHook = await operatorCall(bea, "POST", inWorkspace(b.id, "/webhooks"), {
+    url: "https://93.184.215.14/b-hook",
+    events: ["message.created"],
+  });
   return {
     server,
     a,
@@ -950,9 +1126,13 @@ async function buildWorld(db: Database): Promise<World> {
     two: await visitorIn(a, SITE_A, "written by two, in the same workspace"),
     other: await visitorIn(b, SITE_B, "written in the other workspace"),
     inviteB: (await madeInvite.json()) as { id: string; token: string },
+    keyA: await madeKey(anna, a, "Helper A"),
+    keyB: await madeKey(bea, b, "Helper B"),
+    hookB: (await madeHook.json()) as { id: string; secret: string; url: string },
     secrets: { two: "written by two", b: "written in the other workspace" },
     widget,
     operator: operatorCall,
+    withKey,
   };
 }
 

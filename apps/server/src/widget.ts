@@ -29,7 +29,13 @@ import {
   verifyHostToken,
 } from "./identity.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
-import { PAGE_PATH_MAX, pageTitle, recordPage } from "./journey.ts";
+import {
+  PAGE_PATH_MAX,
+  PageContextSchema,
+  pageTitle,
+  recordPage,
+  recordPageContext,
+} from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, wakeConversation } from "./live.ts";
 import {
@@ -180,6 +186,31 @@ const pageRoute = createRoute({
             // The document's title. The server keeps one line of 200 characters at most.
             title: z.string().max(2000).optional(),
           }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Noted", content: okContent },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
+
+const contextRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/context",
+  security: VISITOR_TOKEN,
+  summary: "Send what the host page set with Dinghy.setContext(), for operators",
+  description:
+    "Unsigned values from the host page, such as a plan or a cart total, that operators read next to the visitor. They are not verified. The widget sends them only for a visitor who has a token because they used the chat, and again after the first message. The server keeps them only for a visitor who has a conversation, and never creates a visitor here. Each report replaces the last one: at most 20 keys of 1 to 40 characters, with a string of up to 200 characters, a number, true, false or null as each value.",
+  request: {
+    params,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({ context: PageContextSchema }),
+          example: { context: { plan: "pro", seats: 4, trial: false } },
         },
       },
     },
@@ -368,8 +399,16 @@ const streamRoute = createRoute({
 function messageView(
   images: Images | undefined,
   workspaceId: string,
-  // A visitor never learns which operator sent a reply, or that operator's ID.
-  { seq, createdAt, clientId, image, authorOperatorId: _author, ...message }: StoredMessage,
+  // A visitor never learns which operator or API key sent a reply, or its ID.
+  {
+    seq,
+    createdAt,
+    clientId,
+    image,
+    authorOperatorId: _operator,
+    authorApiKeyId: _key,
+    ...message
+  }: StoredMessage,
 ) {
   return {
     ...message,
@@ -668,6 +707,7 @@ function limitFor(method: string, path: string): [string, number, number] {
   if (path.endsWith("/images")) return ["widget-image", 20, 60];
   // A single-page site reports each change of address, and a page should not need more.
   if (path.endsWith("/page")) return ["widget-page", 30, 60];
+  if (path.endsWith("/context")) return ["widget-context", 30, 60];
   return ["widget-write", 120, 60];
 }
 
@@ -986,6 +1026,19 @@ export function registerWidgetRoutes(
         device: deviceLine(c.req.header("user-agent")),
       }),
     );
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(contextRoute, async (c) => {
+    const found = c.get("workspace");
+    const token = c.get("widgetToken");
+    // The chat page that a reply email opens is not the host site, so it has no context to send.
+    if (token.kind === "link") return c.json({ ok: true as const }, 200);
+    const visitorId = await knownVisitor(db, found, c.req.param("key"), token);
+    if (visitorId === undefined) return c.json(UNAUTHORIZED, 401);
+    if (visitorId === null) return c.json({ ok: true as const }, 200);
+    const { context } = c.req.valid("json");
+    await withWorkspace(db, found.id, (tx) => recordPageContext(tx, found.id, visitorId, context));
     return c.json({ ok: true as const }, 200);
   });
 

@@ -7,6 +7,7 @@ import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
 import { newGeneration } from "./db/migrate.ts";
 import {
+  apiKey,
   attachment,
   conversation,
   emailStop,
@@ -19,8 +20,9 @@ import {
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
+import { sha256Hex } from "./identity.ts";
 import { processImage } from "./images.ts";
-import { PAGE_PATH_MAX, PAGE_TITLE_MAX } from "./journey.ts";
+import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
 
@@ -62,6 +64,18 @@ const ExportFile = z.strictObject({
       createdAt: date,
     }),
   ),
+  // Without their tokens, which never leave the server, so an import has them revoked. They stay
+  // so that the replies they sent keep their author name.
+  apiKeys: z.array(
+    z.strictObject({
+      id,
+      name: z.string().min(1).max(60),
+      createdBy: id,
+      lastUsedAt: nullableDate,
+      revokedAt: nullableDate,
+      createdAt: date,
+    }),
+  ),
   visitors: z.array(
     z.strictObject({
       id,
@@ -70,6 +84,7 @@ const ExportFile = z.strictObject({
       email: z.string().max(320).nullable(),
       name: z.string().max(100).nullable(),
       attributes: z.unknown(),
+      pageContext: PageContextSchema.nullable(),
       identityIssuedAt: seq.nullable(),
       lastReadSeq: seq,
       blockedAt: nullableDate,
@@ -98,6 +113,7 @@ const ExportFile = z.strictObject({
       kind: z.enum(["text", "image"]),
       authorOperatorId: id.nullable(),
       authorVisitorId: id.nullable(),
+      authorApiKeyId: id.nullable(),
       clientId: z.string().max(128),
       body: z.string().max(100_000).nullable(),
       metadata: z.unknown(),
@@ -129,6 +145,7 @@ const messageJson = (row: MessageRow): ExportData["messages"][number] => ({
   kind: row.kind,
   authorOperatorId: row.authorOperatorId,
   authorVisitorId: row.authorVisitorId,
+  authorApiKeyId: row.authorApiKeyId,
   clientId: row.clientId,
   body: row.body,
   metadata: row.metadata,
@@ -212,6 +229,7 @@ async function readWorkspace(
         .from(workspaceMember)
         .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
         .where(eq(workspaceMember.workspaceId, workspaceId));
+      const keys = await tx.select().from(apiKey).where(eq(apiKey.workspaceId, workspaceId));
       const visitors = await tx.select().from(visitor).where(eq(visitor.workspaceId, workspaceId));
       const conversations = await tx
         .select()
@@ -243,6 +261,14 @@ async function readWorkspace(
           removedAt: isoOrNull(row.removedAt),
           createdAt: iso(row.createdAt),
         })),
+        apiKeys: keys.map((row) => ({
+          id: row.id,
+          name: row.name,
+          createdBy: row.createdBy,
+          lastUsedAt: isoOrNull(row.lastUsedAt),
+          revokedAt: isoOrNull(row.revokedAt),
+          createdAt: iso(row.createdAt),
+        })),
         visitors: visitors.map((row) => ({
           id: row.id,
           externalId: row.externalId,
@@ -250,6 +276,7 @@ async function readWorkspace(
           email: row.email,
           name: row.name,
           attributes: row.attributes,
+          pageContext: PageContextSchema.nullable().catch(null).parse(row.pageContext),
           identityIssuedAt: row.identityIssuedAt?.toString() ?? null,
           lastReadSeq: row.lastReadSeq.toString(),
           blockedAt: isoOrNull(row.blockedAt),
@@ -494,6 +521,22 @@ async function insertWorkspace(
     return mapped;
   };
 
+  // A key's token never travels, so each one comes in revoked, with a hash nothing matches.
+  const importedAt = new Date();
+  for (const rows of batches(data.apiKeys)) {
+    await tx.insert(apiKey).values(
+      rows.map((row) => ({
+        workspaceId,
+        id: row.id,
+        name: row.name,
+        tokenHash: sha256Hex(`imported:${randomBytes(32).toString("base64url")}`),
+        createdBy: mapOperator(row.createdBy) ?? "",
+        lastUsedAt: row.lastUsedAt === null ? null : new Date(row.lastUsedAt),
+        revokedAt: row.revokedAt === null ? importedAt : new Date(row.revokedAt),
+        createdAt: new Date(row.createdAt),
+      })),
+    );
+  }
   for (const rows of batches(data.visitors)) {
     await tx.insert(visitor).values(
       rows.map((row) => ({
@@ -504,6 +547,7 @@ async function insertWorkspace(
         email: row.email,
         name: row.name,
         attributes: row.attributes,
+        pageContext: row.pageContext,
         identityIssuedAt: row.identityIssuedAt === null ? null : BigInt(row.identityIssuedAt),
         lastReadSeq: BigInt(row.lastReadSeq),
         blockedAt: row.blockedAt === null ? null : new Date(row.blockedAt),
@@ -538,6 +582,7 @@ async function insertWorkspace(
         kind: row.kind,
         authorOperatorId: mapOperator(row.authorOperatorId),
         authorVisitorId: row.authorVisitorId,
+        authorApiKeyId: row.authorApiKeyId,
         clientId: row.clientId,
         body: row.body,
         metadata: row.metadata ?? {},
