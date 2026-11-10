@@ -42,7 +42,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.changed == 'true'
     runs-on: ${{ vars.RUNNER_NIGHTLY || 'ubuntu-24.04' }}
-    timeout-minutes: 15
+    # Each slow step has its own limit. A slow Ubuntu mirror once took 12 minutes in apt and used up
+    # a 15-minute job limit before the tests ran.
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:18-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
@@ -69,9 +71,12 @@ jobs:
         with:
           node-version: 24
       - run: bun install --frozen-lockfile
+      # Firefox and WebKit need system libraries that the runner lacks, so this one keeps --with-deps.
       - run: bun x playwright install --with-deps chromium firefox webkit
+        timeout-minutes: 20
       # Chromium runs every file. Firefox and WebKit run the widget-facing ones (playwright.config.ts).
       - run: bun x playwright test
+        timeout-minutes: 12
 
   install:
     needs: changes
