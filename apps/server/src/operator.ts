@@ -127,15 +127,18 @@ export function registerOperatorRoutes(
   const publicOrigin = new URL(String(auth.options.baseURL)).origin;
   const links = createLinkLimit(valkey, logger);
 
-  /** Sends a link to an operator, and a note that says how to get an account to any other email. */
+  /** Sends a link to an operator. On the cloud, any other email gets a note that points to signup. */
   const sendLink = async (email: string, ip: string) => {
     if (mailer === undefined) return;
     const [known] = await db
       .select({ id: operator.id })
       .from(operator)
       .where(and(eq(operator.email, email), isNull(operator.deletedAt)));
+    // Only where anyone may sign up, which already mails any address. A self-hosted server mails
+    // only its operators, so nobody can make it write to strangers.
+    if (known === undefined && !signup) return;
     if (known === undefined) {
-      const mail = noAccountMail(signup ? `${publicOrigin}/signup` : null);
+      const mail = noAccountMail(`${publicOrigin}/signup`);
       await mailer.send(email, mail.subject, mail.body);
       audit(logger, "sign_in.no_account", { account: emailAddressHash(email).slice(0, 16), ip });
       return;

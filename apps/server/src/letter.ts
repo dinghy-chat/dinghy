@@ -17,19 +17,12 @@ const text = {
   ],
   noAccountSubject: "You don't have a Dinghy account yet",
   // Fixed text only: anyone can type any email on the sign-in page.
-  noAccountBody: (signupUrl: string | null) =>
-    signupUrl === null
-      ? [
-          "Someone, hopefully you, asked to sign in to this Dinghy server with this email, but it has no account here.",
-          "To join a workspace on this server, ask its owner for an invite.",
-          "Didn't ask? You can ignore this email.",
-        ]
-      : [
-          "Someone, hopefully you, asked to sign in to Dinghy with this email, but it has no account yet.",
-          "To create one, sign up here:",
-          signupUrl,
-          "Didn't ask? You can ignore this email.",
-        ],
+  noAccountBody: (signupUrl: string) => [
+    "Someone, hopefully you, asked to sign in to Dinghy with this email, but it has no account yet.",
+    "To create one, sign up here:",
+    signupUrl,
+    "Didn't ask? You can ignore this email.",
+  ],
   joinSubject: "Your link to join your team on Dinghy",
   joinBody: (url: string) => [
     "Here's your link to finish joining your team on Dinghy:",
@@ -78,7 +71,7 @@ export const signInMail = (url: string) => ({
 });
 
 /** Sent instead of a sign-in link to an email with no account, so nobody waits for nothing. */
-export const noAccountMail = (signupUrl: string | null) => ({
+export const noAccountMail = (signupUrl: string) => ({
   subject: text.noAccountSubject,
   body: letter(text.noAccountBody(signupUrl)),
 });

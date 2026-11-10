@@ -165,9 +165,9 @@ export function Onboarding({
           {t("signOut")}
         </button>
       </form>
-      {/* Right after deleting their last workspace, an operator may want to leave for good, and
-          has no Profile page. A new account setting up sees no delete. */}
-      {deletedName !== null && me.workspaces.length === 0 && (
+      {/* An account that has been in a workspace has a name, and with no workspace it has no
+          Profile page, so its delete is here. A new account, still without a name, sees none. */}
+      {me.name !== "" && me.workspaces.length === 0 && (
         <DeleteAccount
           me={me}
           emailAvailable={emailAvailable}

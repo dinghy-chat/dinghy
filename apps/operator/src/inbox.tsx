@@ -590,6 +590,23 @@ function listContext(status: Status, waiting: number): string {
   return t("waitingMany", { count: waiting });
 }
 
+/** Whether this browser already did something once. Storage can be off, which reads as no. */
+function remembered(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function remember(key: string): void {
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    // Without storage, the welcome chat opens again on the next load, which is harmless.
+  }
+}
+
 export function Inbox({
   me,
   workspaceId,
@@ -702,8 +719,9 @@ export function Inbox({
     shown.current = { status, limit };
   });
 
-  // The first open list of a new workspace holds only the welcome chat, which opens by itself.
+  // A new workspace's first open list holds only the welcome chat, which opens by itself, once.
   const firstList = useRef(true);
+  const welcomeKey = `dinghy.welcome-opened.${workspaceId}`;
   const reload = useLatestLoad(async () => {
     const wanted = shown.current;
     try {
@@ -721,7 +739,10 @@ export function Inbox({
       if (firstList.current && wanted.status === "open") {
         firstList.current = false;
         const [only, ...rest] = page.conversations;
-        if (only?.welcome && rest.length === 0) setSelected((current) => current ?? only.id);
+        if (only?.welcome && rest.length === 0 && !remembered(welcomeKey)) {
+          remember(welcomeKey);
+          setSelected((current) => current ?? only.id);
+        }
       }
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 401) onSignedOut();
