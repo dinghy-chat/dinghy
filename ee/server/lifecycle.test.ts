@@ -94,7 +94,13 @@ const subjectsTo = (email: string) =>
   mails.filter((mail) => mail.to === email).map((mail) => mail.subject);
 const textsTo = (email: string) =>
   mails.filter((mail) => mail.to === email).map((mail) => mail.text);
-const day = (date: Date) => date.toISOString().slice(0, 10);
+const day = (date: Date) =>
+  date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 
 /** The worker's own login and billing client, as main.ts builds them. */
 const workerBilling = () =>
@@ -498,7 +504,7 @@ describe("the subscription lifecycle", () => {
     await lifecycle();
     await expectReadOnly(paid, false);
     const ends = day((await row(paid.workspaceId))?.currentPeriodEnd ?? new Date(0));
-    const cancellation = `Your plan for ${paid.name} ends on ${ends}`;
+    const cancellation = `${paid.name} stays on until ${ends}`;
     expect(mailsAbout(paid.name).map((mail) => mail.subject)).toEqual([cancellation]);
 
     // Stripe ends it at the period's end.
@@ -522,9 +528,7 @@ describe("the subscription lifecycle", () => {
     expect(text.startsWith("Hi Owner,\n\n")).toBe(true);
     expect(text.endsWith("\n\nCheers,\nThe Dinghy team")).toBe(true);
     expect(text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
-    expect(text).toContain(
-      new Date(clock.getTime() + READ_ONLY_DAYS * DAY_MS).toISOString().slice(0, 10),
-    );
+    expect(text).toContain(day(new Date(clock.getTime() + READ_ONLY_DAYS * DAY_MS)));
     // A later pass sends nothing again.
     await lifecycle();
     expect(mailsAbout(paid.name)).toHaveLength(2);
@@ -553,13 +557,14 @@ describe("the subscription lifecycle", () => {
     expect(subjectsTo(paid.email)).toEqual([failed]);
     later(0.1);
     await lifecycle();
-    const reminder = `4 days left to fix the payment for ${paid.name}`;
+    const payUntil = day(new Date(first.getTime() + GRACE_DAYS * DAY_MS));
+    const reminder = `${paid.name} keeps working until ${payUntil}`;
     expect(subjectsTo(paid.email)).toEqual([failed, reminder]);
     await expectReadOnly(paid, false);
 
     later(GRACE_DAYS - 1 - PAYMENT_REMINDER_DAYS);
     await lifecycle();
-    const lastDay = `Last day to fix the payment for ${paid.name}`;
+    const lastDay = `${paid.name} turns read-only on ${payUntil}`;
     expect(subjectsTo(paid.email)).toEqual([failed, reminder, lastDay]);
     later(0.9);
     await lifecycle();
@@ -607,7 +612,7 @@ describe("the subscription lifecycle", () => {
     expect(await row(paid.workspaceId)).toMatchObject({ paymentFailedAt: null });
     await lifecycle();
     const failed = `The payment for ${paid.name} didn't go through`;
-    const recovered = `The payment for ${paid.name} went through`;
+    const recovered = `All good with ${paid.name}`;
     expect(subjectsTo(paid.email)).toEqual([failed, recovered]);
     // The reminders of the failure that was paid never go.
     later(10);
@@ -715,12 +720,12 @@ describe("the subscription lifecycle", () => {
     expect(subjectsTo(paid.email)).toEqual([readOnly]);
     later(0.01);
     await lifecycle();
-    const first = `${paid.name} will be deleted in 30 days`;
+    const first = `${paid.name} will be deleted on ${deleteOn}`;
     expect(subjectsTo(paid.email)).toEqual([readOnly, first]);
     expect(textsTo(paid.email).at(-1)).toContain(deleteOn);
     later(FIRST_DELETION_WARNING_DAYS - DELETION_WARNING_DAYS);
     await lifecycle();
-    const last = `${paid.name} will be deleted on ${deleteOn}`;
+    const last = `Last reminder: ${paid.name} will be deleted on ${deleteOn}`;
     expect(subjectsTo(paid.email)).toEqual([readOnly, first, last]);
     later(DELETION_WARNING_DAYS - 0.01);
     await lifecycle();
@@ -731,7 +736,12 @@ describe("the subscription lifecycle", () => {
     // To the owners, after the deletion, once.
     later(0.01);
     await lifecycle();
-    expect(subjectsTo(paid.email)).toEqual([readOnly, first, last, `We deleted ${paid.name}`]);
+    expect(subjectsTo(paid.email)).toEqual([
+      readOnly,
+      first,
+      last,
+      `${paid.name} has been deleted`,
+    ]);
     // Gone for its operators and its widget at once.
     const me = await (await request(app, "GET", "/v1/operator/me", { cookie: paid.cookie })).json();
     expect(me).toMatchObject({ workspaces: [] });
@@ -912,6 +922,94 @@ describe("the subscription lifecycle", () => {
     expect((await row(id(4)))?.readOnlyAt).toEqual(clock);
   });
 
+  test("an email that reaches one owner is sent, and a bad address never repeats it", async () => {
+    const paid = await paidWorkspace();
+    // A second owner whose address the mail server rejects.
+    const bad = `gone-${randomUUID()}@example.com`;
+    await signIn(app, auth, bad);
+    const [second] = await owner
+      .select({ id: operator.id })
+      .from(operator)
+      .where(eq(operator.email, bad));
+    await owner
+      .insert(workspaceMember)
+      .values({ workspaceId: paid.workspaceId, operatorId: second?.id ?? "", role: "owner" });
+    const tries: string[] = [];
+    const picky: Mailer = {
+      async send(to, subject, text, headers) {
+        tries.push(to);
+        if (to === bad) throw new Error("550 no such mailbox");
+        await mailer.send(to, subject, text, headers);
+      },
+    };
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    await lifecycle({ mailer: picky });
+    expect(await sentKinds(paid.workspaceId)).toEqual(["read_only"]);
+    later(0.01);
+    await lifecycle({ mailer: picky });
+    expect(subjectsTo(paid.email)).toEqual([`${paid.name} is now read-only`]);
+    expect(tries.filter((to) => to === paid.email)).toHaveLength(1);
+  });
+
+  test("an email that reaches nobody retries, then stops after 3 days", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    let tries = 0;
+    const down: Mailer = {
+      send: () => {
+        tries += 1;
+        return Promise.reject(new Error("the mail server is down"));
+      },
+    };
+    await lifecycle({ mailer: down });
+    later(1);
+    await lifecycle({ mailer: down });
+    expect(await sentKinds(paid.workspaceId)).toEqual([]);
+    later(2.01);
+    await lifecycle({ mailer: down });
+    expect(tries).toBe(3);
+    expect(await sentKinds(paid.workspaceId)).toEqual(["read_only"]);
+    later(0.01);
+    await lifecycle({ mailer: down });
+    expect(tries).toBe(3);
+  });
+
+  test("the purge waits for the deletion email while the mail server is down", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
+    await lifecycle();
+    const down: Mailer = { send: () => Promise.reject(new Error("the mail server is down")) };
+    later(READ_ONLY_DAYS);
+    await lifecycle({ mailer: down });
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).not.toBeNull();
+    clock = new Date(clock.getTime() + BILLING_CLEAR_DELAY_MS);
+    await lifecycle({ mailer: down });
+    expect((await row(paid.workspaceId))?.billingClearedAt).not.toBeNull();
+    await purgeDeletedWorkspaces(workerDb);
+    // The owners are still members, so the email can still reach them.
+    expect(await leftovers(paid.workspaceId)).toContain("workspace_member");
+    later(0.01);
+    await lifecycle();
+    expect(subjectsTo(paid.email).at(-1)).toBe(`${paid.name} has been deleted`);
+    await purgeUntilGone(paid.workspaceId);
+    expect(await leftovers(paid.workspaceId)).toEqual([]);
+  });
+
+  test("a cancellation while a payment fails still sends the cancellation email", async () => {
+    const paid = await paidWorkspace();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    await lifecycle();
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due", {
+      cancel_at_period_end: true,
+    });
+    await lifecycle();
+    const end = (await row(paid.workspaceId))?.currentPeriodEnd ?? new Date(0);
+    expect(subjectsTo(paid.email)).toEqual([
+      `The payment for ${paid.name} didn't go through`,
+      `${paid.name} stays on until ${day(end)}`,
+    ]);
+  });
+
   test("a failed email is sent again by a later pass, and a server with no SMTP carries on", async () => {
     const first = await paidWorkspace();
     await stripeSays(first.workspaceId, first.subscriptionId, "canceled");
@@ -935,7 +1033,7 @@ describe("the subscription lifecycle", () => {
 });
 
 describe("the lifecycle emails", () => {
-  const ready = (paid: Paid) => `Your workspace ${paid.name} is ready`;
+  const ready = (paid: Paid) => `${paid.name} is ready`;
   const stopLink = (text: string) => text.match(/\/v1\/onboarding-stop\/[^\s]+/)?.[0] ?? "";
 
   test("a paid signup gets the ready email once, then the onboarding emails on days 1, 3, 7 and 30", async () => {
@@ -947,7 +1045,7 @@ describe("the lifecycle emails", () => {
     expect(readyMail?.text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
     expect(readyMail?.text).toContain("https://dinghy.chat/docs/add-to-your-site");
     // Billing emails have no stop link.
-    expect(readyMail?.headers).toEqual({});
+    expect(readyMail?.headers).toEqual({ "reply-to": "support@dinghy.chat" });
 
     later(ONBOARDING_DAYS.install - 0.01);
     await lifecycle();
@@ -964,10 +1062,10 @@ describe("the lifecycle emails", () => {
     await lifecycle();
     expect(subjectsTo(paid.email)).toEqual([
       ready(paid),
-      "Add the chat to your site",
-      "Invite your team and turn on alerts",
-      "How is Dinghy going?",
-      "What do you think of Dinghy?",
+      "Need a hand adding the chat?",
+      "Working with someone?",
+      "How's it going?",
+      "What would you change?",
     ]);
     const sent = mails.filter((mail) => mail.to === paid.email).slice(1);
     for (const mail of sent) {
@@ -975,21 +1073,19 @@ describe("the lifecycle emails", () => {
       expect(mail.headers?.["list-unsubscribe"]).toBe(`<${PUBLIC_URL}${stopLink(mail.text)}>`);
       expect(mail.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
     }
-    expect(sent.map((mail) => mail.headers?.["reply-to"])).toEqual([
-      undefined,
-      undefined,
-      "support@dinghy.chat",
-      "support@dinghy.chat",
-    ]);
+    // Every lifecycle email takes replies, so an answer always reaches a person.
+    for (const mail of sent) expect(mail.headers?.["reply-to"]).toBe("support@dinghy.chat");
     expect(sent[1]?.text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
-    expect(sent[3]?.text).toContain("Reply to this email");
+    expect(sent[3]?.text).toContain("Just reply");
   });
 
   test("the 30-day email asks for a review when the review page is set", async () => {
     const paid = await paidWorkspace({ onboarding: true });
     later(ONBOARDING_DAYS.review);
     await lifecycle({ reviewUrl: "https://reviews.example.com/dinghy" });
-    const review = mails.find((mail) => mail.subject === "Would you review Dinghy?");
+    const review = mails.find(
+      (mail) => mail.to === paid.email && mail.subject === "Would you leave a short review?",
+    );
     expect(review?.to).toBe(paid.email);
     expect(review?.text).toContain("https://reviews.example.com/dinghy");
     expect(review?.headers?.["reply-to"]).toBe("support@dinghy.chat");
@@ -1005,7 +1101,7 @@ describe("the lifecycle emails", () => {
     await lifecycle();
     later(ONBOARDING_DAYS.team - ONBOARDING_DAYS.install);
     await lifecycle();
-    expect(subjectsTo(paid.email)).toEqual([ready(paid), "Invite your team and turn on alerts"]);
+    expect(subjectsTo(paid.email)).toEqual([ready(paid), "Working with someone?"]);
     expect(await sentKinds(paid.workspaceId)).toEqual(["ready", "team"]);
   });
 
@@ -1040,7 +1136,7 @@ describe("the lifecycle emails", () => {
     await lifecycle();
     expect(subjectsTo(paid.email)).toEqual([
       ready(paid),
-      "Add the chat to your site",
+      "Need a hand adding the chat?",
       `The payment for ${paid.name} didn't go through`,
     ]);
   });
@@ -1080,7 +1176,7 @@ describe("the lifecycle emails", () => {
     await lifecycle();
     await cancel();
     await lifecycle();
-    const cancellation = `Your plan for ${paid.name} ends on ${day(end)}`;
+    const cancellation = `${paid.name} stays on until ${day(end)}`;
     expect(subjectsTo(paid.email)).toEqual([cancellation]);
     expect(textsTo(paid.email)[0]).toContain("read-only for 90 days");
 
@@ -1105,7 +1201,7 @@ describe("the lifecycle emails", () => {
     expect(subjectsTo(paid.email)).toEqual([
       cancellation,
       cancellation,
-      `${paid.name} turns read-only in 3 days`,
+      `${paid.name} ends on ${day(end)}`,
     ]);
   });
 
@@ -1122,7 +1218,7 @@ describe("the lifecycle emails", () => {
     });
     later(20 - ENDING_SOON_DAYS);
     await lifecycle();
-    expect(subjectsTo(paid.email)).toEqual([`Your plan for ${paid.name} ends on ${day(end)}`]);
+    expect(subjectsTo(paid.email)).toEqual([`${paid.name} stays on until ${day(end)}`]);
   });
 
   test("paying again after read-only sends one welcome back", async () => {
@@ -1135,13 +1231,13 @@ describe("the lifecycle emails", () => {
     await lifecycle();
     expect(subjectsTo(paid.email)).toEqual([
       `${paid.name} is now read-only`,
-      `${paid.name} is active again`,
+      `Welcome back to ${paid.name}`,
     ]);
     // The warnings of the read-only time that ended never go.
     later(READ_ONLY_DAYS);
     await lifecycle();
     expect(subjectsTo(paid.email)).toHaveLength(2);
-    expect(textsTo(paid.email)[0]).toContain("Settings, under Export");
+    expect(textsTo(paid.email)[0]).toContain("Settings under Export");
   });
 
   test("two workers that send at once send each email once", async () => {
@@ -1149,15 +1245,17 @@ describe("the lifecycle emails", () => {
     await Promise.all([lifecycle(), lifecycle(), lifecycle()]);
     later(ONBOARDING_DAYS.install);
     await Promise.all([lifecycle(), lifecycle(), lifecycle()]);
+    const failedAt = new Date(clock);
     await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
     await Promise.all([lifecycle(), lifecycle(), lifecycle()]);
     later(PAYMENT_REMINDER_DAYS);
     await Promise.all([lifecycle(), lifecycle(), lifecycle()]);
+    const payUntil = day(new Date(failedAt.getTime() + GRACE_DAYS * DAY_MS));
     expect(subjectsTo(paid.email)).toEqual([
       ready(paid),
-      "Add the chat to your site",
+      "Need a hand adding the chat?",
       `The payment for ${paid.name} didn't go through`,
-      `4 days left to fix the payment for ${paid.name}`,
+      `${paid.name} keeps working until ${payUntil}`,
     ]);
   });
 });

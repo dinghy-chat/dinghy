@@ -152,12 +152,16 @@ export function billingEmails(
 ): QueuedEmail[] {
   if (FAILING.has(after.status)) {
     // A repeated failure keeps the first time, and so its emails.
-    if (before?.paymentFailedAt != null || before?.readOnlyAt != null) return [];
-    return [
-      on("payment_failed", at),
-      on("payment_reminder", at, PAYMENT_REMINDER_DAYS),
-      on("payment_last_day", at, GRACE_DAYS - 1),
-    ];
+    const failed =
+      before?.paymentFailedAt != null || before?.readOnlyAt != null
+        ? []
+        : [
+            on("payment_failed", at),
+            on("payment_reminder", at, PAYMENT_REMINDER_DAYS),
+            on("payment_last_day", at, GRACE_DAYS - 1),
+          ];
+    // An owner can still cancel while a payment fails, and the workspace still works then.
+    return [...failed, ...cancellationEmails(before, after, at)];
   }
   if (!PAID.has(after.status)) return [];
   const emails: QueuedEmail[] = [];
@@ -171,13 +175,21 @@ export function billingEmails(
   } else if (before.paymentFailedAt !== null) {
     emails.push({ kind: "payment_recovered", occurrenceAt: before.paymentFailedAt, dueAt: at });
   }
-  if (after.cancelAtPeriodEnd && before?.cancelAtPeriodEnd !== true) {
-    emails.push(on("cancellation", at));
-    const end = after.currentPeriodEnd;
-    // A cancellation in the last days already says when the plan ends.
-    if (end !== null && addDays(end, -ENDING_SOON_DAYS) > at) {
-      emails.push(on("ending_soon", end, -ENDING_SOON_DAYS));
-    }
+  return [...emails, ...cancellationEmails(before, after, at)];
+}
+
+/** A new cancellation's emails: now, and a reminder before the end unless the end is close. */
+function cancellationEmails(
+  before: BillingBefore | undefined,
+  after: { cancelAtPeriodEnd: boolean; currentPeriodEnd: Date | null },
+  at: Date,
+): QueuedEmail[] {
+  if (!after.cancelAtPeriodEnd || before?.cancelAtPeriodEnd === true) return [];
+  const emails = [on("cancellation", at)];
+  const end = after.currentPeriodEnd;
+  // A cancellation in the last days already says when the plan ends.
+  if (end !== null && addDays(end, -ENDING_SOON_DAYS) > at) {
+    emails.push(on("ending_soon", end, -ENDING_SOON_DAYS));
   }
   return emails;
 }
@@ -232,6 +244,8 @@ interface LifecycleOptions {
 
 /** How long a worker holds a row it acts on, so a crashed worker's rows come back. */
 const CLAIM_MS = 10 * 60_000;
+/** An email that reached no owner stops retrying after this. The purge waits as long for one. */
+const GIVE_UP_MS = 3 * DAY_MS;
 
 const columns = {
   workspaceId: subscription.workspaceId,
@@ -427,10 +441,13 @@ function stillHolds(email: ClaimedEmail, state: EmailState): boolean {
     case "review":
       return settled;
     case "cancellation":
-      return paid && live && state.cancelAtPeriodEnd;
+      return (paid || failing) && live && state.cancelAtPeriodEnd;
     case "ending_soon":
       return (
-        paid && live && state.cancelAtPeriodEnd && same(state.currentPeriodEnd, email.occurrenceAt)
+        (paid || failing) &&
+        live &&
+        state.cancelAtPeriodEnd &&
+        same(state.currentPeriodEnd, email.occurrenceAt)
       );
     case "payment_failed":
     case "payment_reminder":
@@ -567,6 +584,8 @@ async function sendLifecycleEmails({
         "this server has no SMTP, so a billing email was not sent",
       );
     }
+    let delivered = 0;
+    let lastError: unknown;
     for (const owner of mailer === undefined ? [] : recipients) {
       const mail = lifecycleMail(email.kind, {
         name: found.name,
@@ -580,7 +599,25 @@ async function sendLifecycleEmails({
         ...emailDates(email, found.state),
       });
       // Each owner signed in with a link to this address, so their own name is safe here.
-      await mailer?.send(owner.email, mail.subject, letter(mail.body, owner.name), mail.headers);
+      try {
+        await mailer?.send(owner.email, mail.subject, letter(mail.body, owner.name), mail.headers);
+        delivered += 1;
+      } catch (err) {
+        lastError = err;
+        logger.warn(
+          { err, workspaceId: email.workspaceId, kind: email.kind },
+          "a billing email did not reach one owner",
+        );
+      }
+    }
+    // One owner who got it is enough, so a bad address never repeats it for the others. When
+    // nobody got it, it retries after the claim, but not past a few days of a broken mail server.
+    if (mailer !== undefined && delivered === 0) {
+      if (now.getTime() - email.dueAt.getTime() < GIVE_UP_MS) throw lastError;
+      logger.error(
+        { workspaceId: email.workspaceId, kind: email.kind },
+        "a billing email reached no owner for days, so it stops retrying",
+      );
     }
     await withWorkspace(db, email.workspaceId, (tx) =>
       tx.update(lifecycleEmail).set({ sentAt: now, claimedUntil: null }).where(isEmail(email)),
@@ -596,12 +633,7 @@ async function sendLifecycleEmails({
 }
 
 /** The numbers of days that the emails name. */
-const MAIL_DAYS = {
-  paymentLeft: GRACE_DAYS - PAYMENT_REMINDER_DAYS,
-  readOnly: READ_ONLY_DAYS,
-  firstWarning: FIRST_DELETION_WARNING_DAYS,
-  endingSoon: ENDING_SOON_DAYS,
-};
+const MAIL_DAYS = { readOnly: READ_ONLY_DAYS };
 
 /** The dates an email names, from its occurrence and the workspace's state. */
 function emailDates(email: ClaimedEmail, state: EmailState) {

@@ -9,7 +9,7 @@ import { workspaceMember } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { limitByIp, type RateLimit } from "../../apps/server/src/rate-limit.ts";
 
-/** Where replies to the check-in and review emails go. */
+/** Where replies to every lifecycle email go. */
 const SUPPORT_ADDRESS = "support@dinghy.chat";
 const INSTALL_DOCS_URL = "https://dinghy.chat/docs/add-to-your-site";
 
@@ -24,137 +24,149 @@ export interface MailContext {
   reviewUrl: string | undefined;
   /** The owner's own stop link, in onboarding emails only. */
   stopUrl: string | undefined;
-  days: { paymentLeft: number; readOnly: number; firstWarning: number; endingSoon: number };
+  days: { readOnly: number };
   payUntil: Date;
   deleteOn: Date;
   endsOn: Date | null;
 }
 
-const date = (value: Date | null) => value?.toISOString().slice(0, 10) ?? "";
+/** A date as people write it, such as "December 10, 2026". */
+const date = (value: Date | null) =>
+  value?.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }) ?? "";
 
-// Plain text. Every string has a key here, so a locale can be added later.
+// Plain text. Every string has a key here, so a locale can be added later. The voice is a small
+// team writing to one person: short, warm, exact about dates, and never pushy.
 const text = {
-  readySubject: (name: string) => `Your workspace ${name} is ready`,
+  readySubject: (name: string) => `${name} is ready`,
   readyBody: (c: MailContext) => [
-    `Thanks for subscribing to Dinghy. Your workspace ${c.name} is ready.`,
-    "To put the chat on your site, open Settings. Add your site under Allowed sites, then copy " +
-      `the code under Install the chat into your pages: ${c.settingsUrl}`,
-    `The full steps are here: ${INSTALL_DOCS_URL}`,
+    `Thanks for subscribing. ${c.name} is all set.`,
+    "To put the chat on your site, open Settings, add your site under Allowed sites, then paste " +
+      `the code from Install the chat into your pages: ${c.settingsUrl}`,
+    `If you get stuck, the steps are here: ${INSTALL_DOCS_URL}`,
   ],
-  installSubject: "Add the chat to your site",
+  installSubject: "Need a hand adding the chat?",
   installBody: (c: MailContext) => [
-    `Your Dinghy workspace ${c.name} is ready, but the chat hasn't run on a site yet.`,
-    "It takes two steps in Settings. Add your site under Allowed sites, then paste the code " +
-      `under Install the chat into your pages: ${c.settingsUrl}`,
-    `The full steps are here: ${INSTALL_DOCS_URL}`,
+    `In case you haven't added the chat for ${c.name} yet, it only takes a minute.`,
+    "Add your site in Settings under Allowed sites, then paste the code from Install the chat " +
+      `into your pages: ${c.settingsUrl}`,
+    `The steps are here too: ${INSTALL_DOCS_URL}`,
+    "If something doesn't work, just reply and we'll help.",
   ],
-  teamSubject: "Invite your team and turn on alerts",
+  teamSubject: "Working with someone?",
   teamBody: (c: MailContext) => [
-    `Two things help you answer faster in ${c.name}:`,
-    "- Invite your team from Settings, under Team.\n" +
-      "- Turn on alerts there too, so you hear about new messages when the inbox is closed.",
-    `Open Settings here: ${c.settingsUrl}`,
+    `If someone helps you answer messages in ${c.name}, you can invite them in Settings under ` +
+      `Team: ${c.settingsUrl}`,
+    "You can also turn on alerts there, so you hear about new messages when the inbox is closed.",
+    "Working alone? Then you can skip this one.",
   ],
-  checkInSubject: "How is Dinghy going?",
+  checkInSubject: "How's it going?",
   checkInBody: (c: MailContext) => [
-    `You've had ${c.name} for a week now. How is it going?`,
-    "Just reply to this email. We read every reply, and we'd like to hear what works and what " +
-      "doesn't.",
+    `It's been a week with ${c.name}, so we wanted to check in.`,
+    "Is anything confusing, missing or just annoying? We'd really like to know, and good news " +
+      "is welcome too.",
+    "Just hit reply. A real person reads every answer. And if you're busy, no need to write.",
   ],
-  reviewSubject: "Would you review Dinghy?",
+  reviewSubject: "Would you leave a short review?",
   reviewBody: (c: MailContext, url: string) => [
-    `You've used ${c.name} for a month now. If Dinghy helps you, a short review helps other ` +
-      `small teams find it: ${url}`,
-    "Something missing or annoying? Reply to this email and tell us.",
+    `If Dinghy has been useful for ${c.name}, would you leave a short review? It helps other ` +
+      `small teams find us: ${url}`,
+    "If it hasn't been great, we'd rather hear why. Just reply. Either way is fine.",
   ],
-  feedbackSubject: "What do you think of Dinghy?",
+  feedbackSubject: "What would you change?",
   feedbackBody: (c: MailContext) => [
-    `You've used ${c.name} for a month now. What works for you, and what doesn't?`,
-    "Reply to this email and tell us. We read every reply.",
+    `It's been a month with ${c.name}. If you could change one thing about Dinghy, what would ` +
+      "it be?",
+    "Just reply. A real person reads every answer. And if you'd rather skip it, that's fine.",
   ],
-  stopLine: (url: string) =>
-    `Don't want emails like this one? Stop them here: ${url}\nYou still get emails about billing.`,
+  stopLine: (url: string) => `Rather not get tips and check-ins? Stop them here: ${url}`,
   cancellationSubject: (name: string, endsOn: Date | null) =>
-    `Your plan for ${name} ends on ${date(endsOn)}`,
+    `${name} stays on until ${date(endsOn)}`,
   cancellationBody: (c: MailContext) => [
-    `We got your cancellation for the Dinghy workspace ${c.name}. Everything keeps working ` +
-      `until ${date(c.endsOn)}.`,
-    `After that, the workspace turns read-only for ${c.days.readOnly} days. The chat widget goes ` +
-      "off, and your team can still read conversations and download an export. Then we delete it.",
-    `Changed your mind? Renew in Settings, under Billing: ${c.settingsUrl}`,
+    `We got your cancellation for ${c.name}. Everything keeps working until ${date(c.endsOn)}.`,
+    `After that, the chat goes off and the workspace stays read-only for ${c.days.readOnly} days, ` +
+      "so your team can still read conversations and download an export. Then we delete it.",
+    `Changed your mind? You can renew any time in Settings under Billing: ${c.settingsUrl}`,
+    "And if you have a minute, we'd love to know why you're leaving. Just reply.",
   ],
-  endingSoonSubject: (name: string, days: number) => `${name} turns read-only in ${days} days`,
+  endingSoonSubject: (name: string, endsOn: Date | null) => `${name} ends on ${date(endsOn)}`,
   endingSoonBody: (c: MailContext) => [
-    `Your Dinghy plan for ${c.name} ends on ${date(c.endsOn)}. After that, the chat widget goes ` +
-      "off and nobody can reply.",
-    `To keep it, renew in Settings, under Billing: ${c.settingsUrl}`,
-    `If you're done with it, you can still download an export for ${c.days.readOnly} days after ` +
-      "the end.",
+    `A quick reminder that your plan for ${c.name} ends on ${date(c.endsOn)}. The chat goes ` +
+      "off then, and nobody can reply.",
+    `To keep it running, renew in Settings under Billing: ${c.settingsUrl}`,
+    `If you're done with it, no problem. You can still download an export for ${c.days.readOnly} ` +
+      "days after that.",
   ],
   paymentFailedSubject: (name: string) => `The payment for ${name} didn't go through`,
   paymentFailedBody: (c: MailContext) => [
-    `The payment for your Dinghy workspace ${c.name} didn't go through. Stripe will try again ` +
-      "on its own.",
-    `Everything keeps working until ${date(c.payUntil)}. If no payment clears by then, the ` +
-      "workspace turns read-only: the chat widget goes off and nobody can reply.",
-    `You can update the card in Settings, under Billing: ${c.settingsUrl}`,
+    `The last payment for ${c.name} didn't go through. It happens, often because a card expired.`,
+    `Everything keeps working until ${date(c.payUntil)}, and Stripe tries again on its own. ` +
+      "If no payment clears by then, the chat goes off and the workspace turns read-only.",
+    `You can update the card in Settings under Billing: ${c.settingsUrl}`,
   ],
-  paymentReminderSubject: (name: string, days: number) =>
-    `${days} days left to fix the payment for ${name}`,
+  paymentReminderSubject: (name: string, payUntil: Date) =>
+    `${name} keeps working until ${date(payUntil)}`,
   paymentReminderBody: (c: MailContext) => [
-    `The payment for your Dinghy workspace ${c.name} still hasn't gone through.`,
-    `Everything keeps working until ${date(c.payUntil)}. After that, the workspace turns ` +
-      "read-only: the chat widget goes off and nobody can reply.",
-    `Update the card in Settings, under Billing: ${c.settingsUrl}`,
+    `The payment for ${c.name} still hasn't gone through.`,
+    `Everything keeps working until ${date(c.payUntil)}. After that, the chat goes off and the ` +
+      "workspace turns read-only.",
+    `Updating the card in Settings under Billing fixes it: ${c.settingsUrl}`,
   ],
-  paymentLastDaySubject: (name: string) => `Last day to fix the payment for ${name}`,
+  paymentLastDaySubject: (name: string, payUntil: Date) =>
+    `${name} turns read-only on ${date(payUntil)}`,
   paymentLastDayBody: (c: MailContext) => [
-    `The payment for your Dinghy workspace ${c.name} still hasn't gone through. On ` +
-      `${date(c.payUntil)}, the workspace turns read-only: the chat widget goes off and nobody ` +
-      "can reply.",
-    `Update the card today in Settings, under Billing: ${c.settingsUrl}`,
+    `The payment for ${c.name} still hasn't gone through, so on ${date(c.payUntil)} the chat ` +
+      "goes off and the workspace turns read-only.",
+    `Updating the card in Settings under Billing keeps it running: ${c.settingsUrl}`,
+    "If something's wrong on our side, just reply and we'll sort it out.",
   ],
-  paymentRecoveredSubject: (name: string) => `The payment for ${name} went through`,
+  paymentRecoveredSubject: (name: string) => `All good with ${name}`,
   paymentRecoveredBody: (c: MailContext) => [
-    `Thanks. The payment for your Dinghy workspace ${c.name} went through, and everything is ` +
-      "back to normal.",
-    `Your invoices are in Settings, under Billing: ${c.settingsUrl}`,
+    `Thanks, the payment for ${c.name} went through, and everything is back to normal.`,
+    `Your invoices are in Settings under Billing: ${c.settingsUrl}`,
   ],
   readOnlySubject: (name: string) => `${name} is now read-only`,
   readOnlyBody: (c: MailContext) => [
-    `Your Dinghy workspace ${c.name} no longer has a paid subscription, so it's read-only now. ` +
-      "The chat widget is off, and nobody can reply.",
-    "Your team can still sign in and read conversations. To keep a copy, download an export in " +
-      `Settings, under Export: ${c.settingsUrl}`,
-    "Subscribe again in Settings, under Billing, and you get everything back with all its data.",
-    `If nobody subscribes by ${date(c.deleteOn)}, we delete the workspace and all its data.`,
+    `${c.name} no longer has a paid plan, so it's read-only now. The chat is off, and nobody ` +
+      "can reply.",
+    "Your team can still sign in, read every conversation and download an export in Settings " +
+      `under Export: ${c.settingsUrl}`,
+    "Subscribe again in Settings under Billing and everything comes back, with all its data. " +
+      `If not, we delete the workspace on ${date(c.deleteOn)}.`,
   ],
-  welcomeBackSubject: (name: string) => `${name} is active again`,
+  welcomeBackSubject: (name: string) => `Welcome back to ${name}`,
   welcomeBackBody: (c: MailContext) => [
-    `Thanks for subscribing again. Your Dinghy workspace ${c.name} is active again, with all its ` +
-      "conversations and settings, and the chat widget is back on your site.",
-    `You can manage billing in Settings, under Billing: ${c.settingsUrl}`,
+    `Thanks for subscribing again. ${c.name} is active, with all its conversations and settings.`,
+    "Your team can reply again, and the chat works on your site again.",
+    `Your billing is in Settings under Billing: ${c.settingsUrl}`,
   ],
-  deletionLaterSubject: (name: string, days: number) => `${name} will be deleted in ${days} days`,
-  deletionSubject: (name: string, deleteOn: Date) => `${name} will be deleted on ${date(deleteOn)}`,
+  deletionLaterSubject: (name: string, deleteOn: Date) =>
+    `${name} will be deleted on ${date(deleteOn)}`,
+  deletionSubject: (name: string, deleteOn: Date) =>
+    `Last reminder: ${name} will be deleted on ${date(deleteOn)}`,
   deletionBody: (c: MailContext) => [
-    `Your Dinghy workspace ${c.name} has been read-only since its subscription ended. On ` +
-      `${date(c.deleteOn)}, we delete the workspace and all its data, images included, for good.`,
-    `To keep it, subscribe again in Settings, under Billing: ${c.settingsUrl}`,
-    "If you'd rather keep a copy, download an export in Settings, under Export, before then.",
+    `${c.name} is still read-only. On ${date(c.deleteOn)}, we delete it with all its ` +
+      "conversations and images.",
+    `To keep it, subscribe again in Settings under Billing: ${c.settingsUrl}`,
+    "Or, to keep a copy, download an export in Settings under Export before then.",
   ],
-  deletedSubject: (name: string) => `We deleted ${name}`,
+  deletedSubject: (name: string) => `${name} has been deleted`,
   deletedBody: (c: MailContext) => [
-    `We deleted your Dinghy workspace ${c.name} today, with all its conversations and images. It ` +
-      `was read-only for ${c.days.readOnly} days after its subscription ended.`,
-    "Backup copies disappear within the next 30 days.",
-    `Your Dinghy account stays. To start again, sign in and add a workspace: ${c.signInUrl}`,
+    `${c.name} was read-only for ${c.days.readOnly} days, so we've now closed it. Its ` +
+      "conversations and images are being removed, and backup copies expire within 30 days.",
+    `Your Dinghy account stays. If you ever want to start again, sign in and add a workspace: ` +
+      `${c.signInUrl}`,
+    "Thanks for giving Dinghy a try.",
   ],
   stopTitle: "Stop these emails",
   stopQuestion: "Stop Dinghy's tips and check-ins for this workspace? Billing emails still come.",
   stopButton: "Stop the emails",
-  stopDone: "You will not receive these emails again.",
-  stopInvalid: "This link does not work.",
+  stopDone: "Done. You won't get these emails again.",
+  stopInvalid: "This link doesn't work.",
 };
 
 interface Mail {
@@ -176,7 +188,7 @@ const MAILS: Record<Kind, (c: MailContext) => Mail> = {
     body: text.cancellationBody(c),
   }),
   ending_soon: (c) => ({
-    subject: text.endingSoonSubject(c.name, c.days.endingSoon),
+    subject: text.endingSoonSubject(c.name, c.endsOn),
     body: text.endingSoonBody(c),
   }),
   payment_failed: (c) => ({
@@ -184,11 +196,11 @@ const MAILS: Record<Kind, (c: MailContext) => Mail> = {
     body: text.paymentFailedBody(c),
   }),
   payment_reminder: (c) => ({
-    subject: text.paymentReminderSubject(c.name, c.days.paymentLeft),
+    subject: text.paymentReminderSubject(c.name, c.payUntil),
     body: text.paymentReminderBody(c),
   }),
   payment_last_day: (c) => ({
-    subject: text.paymentLastDaySubject(c.name),
+    subject: text.paymentLastDaySubject(c.name, c.payUntil),
     body: text.paymentLastDayBody(c),
   }),
   payment_recovered: (c) => ({
@@ -201,7 +213,7 @@ const MAILS: Record<Kind, (c: MailContext) => Mail> = {
     body: text.welcomeBackBody(c),
   }),
   deletion_30: (c) => ({
-    subject: text.deletionLaterSubject(c.name, c.days.firstWarning),
+    subject: text.deletionLaterSubject(c.name, c.deleteOn),
     body: text.deletionBody(c),
   }),
   deletion_7: (c) => ({
@@ -211,9 +223,6 @@ const MAILS: Record<Kind, (c: MailContext) => Mail> = {
   deleted: (c) => ({ subject: text.deletedSubject(c.name), body: text.deletedBody(c) }),
 };
 
-/** The emails that ask for an answer, which goes to support. */
-const REPLY_TO_SUPPORT = new Set<Kind>(["check_in", "review"]);
-
 /** One email's subject, paragraphs and headers. An onboarding email ends with its stop link. */
 export function lifecycleMail(kind: Kind, context: MailContext) {
   const { subject, body } = MAILS[kind](context);
@@ -222,7 +231,8 @@ export function lifecycleMail(kind: Kind, context: MailContext) {
     subject,
     body: stopUrl === undefined ? body : [...body, text.stopLine(stopUrl)],
     headers: {
-      ...(REPLY_TO_SUPPORT.has(kind) && { "reply-to": SUPPORT_ADDRESS }),
+      // Several emails invite a reply, and an answer to any of them should reach a person.
+      "reply-to": SUPPORT_ADDRESS,
       // One click in the mail app stops them, as with alert emails.
       ...(stopUrl !== undefined && {
         "list-unsubscribe": `<${stopUrl}>`,
