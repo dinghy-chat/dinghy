@@ -14,7 +14,7 @@ import {
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { OPEN_ALWAYS } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 
 /** Whether `workspaceId` is the only workspace on the server that is not deleted. */
@@ -40,7 +40,7 @@ export async function purgeDeletedWorkspaces(db: Database): Promise<number> {
 
 const deleteRoute = createRoute({
   method: "delete",
-  ...OPEN_WHILE_CLOSED,
+  ...OPEN_ALWAYS,
   path: "/v1/operator/workspaces/{workspaceId}",
   security: SESSION,
   summary: "Delete a workspace and all its data, now",

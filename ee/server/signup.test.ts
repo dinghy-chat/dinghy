@@ -30,7 +30,12 @@ import { localStore } from "../../apps/server/src/storage.ts";
 import { widgetWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
-import { deletedDuring, openSignInLink, signIn } from "../../apps/server/test/operators.ts";
+import {
+  deletedDuring,
+  openSignInLink,
+  pressLinkButton,
+  signIn,
+} from "../../apps/server/test/operators.ts";
 import { createBilling } from "./billing.ts";
 import { runLifecycle } from "./lifecycle.ts";
 import { signupsCsv } from "./signup.ts";
@@ -698,6 +703,33 @@ describe("once Stripe keys are set", () => {
       { cookie: created.cookie },
     );
     expect(inbox.status).toBe(402);
+  });
+
+  test("an owner who never paid deletes the workspace, then the account", async () => {
+    const created = await signup(paying);
+    const deleteAccount = () =>
+      request(paying, "POST", "/v1/operator/account/delete", { cookie: created.cookie, body: {} });
+    expect((await deleteAccount()).status).toBe(409);
+    const deleted = await request(
+      paying,
+      "DELETE",
+      `/v1/operator/workspaces/${created.workspaceId}`,
+      {
+        cookie: created.cookie,
+        body: { name: "Acme" },
+      },
+    );
+    expect(deleted.status).toBe(200);
+    expect((await workspaceRow(created.workspaceId)).deletedAt).not.toBeNull();
+
+    expect((await deleteAccount()).status).toBe(200);
+    const link = await linkFor(
+      created.email,
+      "Confirm that you want to delete your Dinghy account",
+    );
+    expect((await pressLinkButton(paying, link)).status).toBe(200);
+    const [row] = await owner.select().from(operator).where(eq(operator.email, created.email));
+    expect(row).toBeUndefined();
   });
 
   test("a waiting workspace keeps its dashboard, pays through Checkout, and its widget goes live", async () => {

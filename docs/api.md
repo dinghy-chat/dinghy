@@ -35,7 +35,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
 | 503 | `busy` | The server is overloaded for a moment. Try again |
 
-In a read-only or suspended workspace, operators can read and export, and a write answers 402 `read_only` or 403 `suspended`. A route whose OpenAPI entry has `x-workspace-access: closed` still works then: presence, removing a member, revoking an invite and deleting the workspace. On Dinghy Cloud, an operator of a read-only workspace can still send a text reply in its welcome chat, which is the route with `x-workspace-access: welcome`; anywhere else it answers 402 `read_only`.
+In a read-only or suspended workspace, operators can read and export, and a write answers 402 `read_only` or 403 `suspended`. A route whose OpenAPI entry has `x-workspace-access: closed` still works then: presence, removing a member and revoking an invite. Deleting the workspace, with `x-workspace-access: always`, works in every state, also while a cloud workspace waits for its first payment. On Dinghy Cloud, an operator of a read-only workspace can still send a text reply in its welcome chat, which is the route with `x-workspace-access: welcome`; anywhere else it answers 402 `read_only`.
 
 ## Sending without duplicates
 

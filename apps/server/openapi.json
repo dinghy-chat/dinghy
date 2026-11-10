@@ -2545,7 +2545,7 @@
         }
       },
       "delete": {
-        "x-workspace-access": "closed",
+        "x-workspace-access": "always",
         "security": [
           {
             "sessionCookie": []
