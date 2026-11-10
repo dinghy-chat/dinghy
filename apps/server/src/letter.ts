@@ -22,6 +22,14 @@ const text = {
     text.linkLasts,
     "Didn't ask to join? You can ignore this email, and nothing happens.",
   ],
+  deleteAccountSubject: "Confirm that you want to delete your Dinghy account",
+  deleteAccountBody: (url: string) => [
+    "Here's your link to delete your Dinghy account:",
+    url,
+    text.linkLasts,
+    "Deleting it takes you out of every workspace, and can't be undone. Your old replies stay, from a former team member.",
+    "Didn't ask for it? Ignore this email, and nothing happens.",
+  ],
   inviteSubject: (workspace: string) => `Join ${workspace} on Dinghy`,
   inviteBody: (url: string, workspace: string, role: "admin" | "member") => [
     `You're invited to join ${workspace} on Dinghy as ${role === "admin" ? "an admin" : "a member"}:`,
@@ -64,6 +72,12 @@ export const signInMail = (url: string) => ({
 export const joinMail = (url: string) => ({
   subject: text.joinSubject,
   body: letter(text.joinBody(url)),
+});
+
+/** The link that deletes the account, which its operator asked for in the app. */
+export const deleteAccountMail = (url: string) => ({
+  subject: text.deleteAccountSubject,
+  body: letter(text.deleteAccountBody(url)),
 });
 
 /** An invite to a workspace. Its admin picked this address and the workspace's name. */

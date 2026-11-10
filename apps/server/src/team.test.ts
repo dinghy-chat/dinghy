@@ -852,6 +852,7 @@ describe("invites", () => {
         readOnly: false,
         waiting: false,
         suspended: false,
+        soleOwner: false,
       },
     ]);
 
@@ -1152,6 +1153,8 @@ describe("settings", () => {
       logoUrl: null,
       // A self-hosted install has no limits.
       usage: null,
+      // workspace-delete.test.ts checks these numbers.
+      deletion: expect.any(Object),
     });
   });
 });

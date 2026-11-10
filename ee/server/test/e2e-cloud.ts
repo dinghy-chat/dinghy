@@ -1,7 +1,8 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { eq } from "drizzle-orm";
 import { pino } from "pino";
-import { subscription } from "../../../apps/server/src/db/schema.ts";
+import { operator, subscription, workspaceMember } from "../../../apps/server/src/db/schema.ts";
+import { createWorkspace } from "../../../apps/server/src/workspaces.ts";
 import { startE2EServer } from "../../../apps/server/test/e2e-server.ts";
 import { AUTH_SECRET } from "../../../apps/server/test/env.ts";
 import { createBilling } from "../billing.ts";
@@ -13,11 +14,19 @@ import {
   startFakeStripe,
 } from "./fake-stripe.ts";
 
+/** Dinghy's own workspace and its founder, as the welcome chat's settings name them. */
+const FOUNDER_EMAIL = "julien@dinghy.example";
+
 /**
  * The real server as Dinghy Cloud runs it, for browser tests. With `billing`, a fake of Stripe's
- * API and Checkout page stands in for Stripe. Postgres and Valkey stay real.
+ * API and Checkout page stands in for Stripe. With `welcome`, each new workspace starts with a chat
+ * with the founder. Postgres and Valkey stay real.
  */
-export async function startCloudE2EServer({ billing = false, early = false } = {}) {
+export async function startCloudE2EServer({
+  billing = false,
+  early = false,
+  welcome = false,
+} = {}) {
   const stripe = billing ? await startFakeStripe() : null;
   const keys =
     stripe === null
@@ -30,7 +39,21 @@ export async function startCloudE2EServer({ billing = false, early = false } = {
         };
   const server = await startE2EServer(
     {},
-    { cloud: { billing: keys, ...(early && { signup: "early" as const }) } },
+    {
+      cloud: async ({ db, owner }) => {
+        const settings = { billing: keys, ...(early && { signup: "early" as const }) };
+        if (!welcome) return settings;
+        const dinghy = await createWorkspace(db, "Dinghy", []);
+        const [julien] = await owner
+          .insert(operator)
+          .values({ name: "Julien", email: FOUNDER_EMAIL })
+          .returning({ id: operator.id });
+        await owner
+          .insert(workspaceMember)
+          .values({ workspaceId: dinghy.id, operatorId: julien?.id ?? "", role: "owner" });
+        return { ...settings, welcome: { workspaceId: dinghy.id, operatorEmail: FOUNDER_EMAIL } };
+      },
+    },
   );
   const { apiOrigin, owner, workerDb, signals } = server;
 

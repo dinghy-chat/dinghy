@@ -93,6 +93,9 @@ export const operator = pgTable("operator", {
   // sessions. Nothing ever sets it back.
   emailProven: boolean("email_proven").notNull().default(true),
   image: text("image"),
+  // Set when the operator deletes their account. The row stays, with its personal data erased, so
+  // the messages and member rows that point to it keep working.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   // Cloud only. When the cloud's welcome email went out, so an account gets it once, whatever it does after.
   welcomedAt: timestamp("welcomed_at", { withTimezone: true }),
   createdAt: createdAt(),
@@ -238,6 +241,9 @@ export const conversation = pgTable(
     assigneeOperatorId: uuid("assignee_operator_id"),
     // The page where the visitor started it, as origin and path. Never a query string or hash.
     startedPage: text("started_page"),
+    // Cloud only. One side of a welcome chat between a new workspace and Dinghy's own, which
+    // analytics leave out. The link below joins the two sides.
+    welcome: boolean("welcome").notNull().default(false),
     createdAt: createdAt(),
     // Milliseconds, the precision of a JSON date, so a paging cursor can name a row exactly.
     updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
@@ -874,3 +880,33 @@ export const workspaceLogo = pgTable("workspace_logo", {
   // Part of the logo's address, so a new upload gets a new address past every cache.
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Cloud only. A welcome chat: a new workspace's conversation with Dinghy's founder, and its other
+ * side in Dinghy's own workspace. A reply on one side becomes a visitor message on the other. Each
+ * workspace sees the row, so either side can find the other. It goes with either conversation.
+ */
+export const welcomeLink = pgTable(
+  "welcome_link",
+  {
+    customerWorkspaceId: uuid("customer_workspace_id").notNull(),
+    customerConversationId: uuid("customer_conversation_id").notNull(),
+    founderWorkspaceId: uuid("founder_workspace_id").notNull(),
+    founderConversationId: uuid("founder_conversation_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.customerWorkspaceId, table.customerConversationId] }),
+    unique("welcome_link_founder_key").on(table.founderWorkspaceId, table.founderConversationId),
+    foreignKey({
+      name: "welcome_link_customer_fk",
+      columns: [table.customerWorkspaceId, table.customerConversationId],
+      foreignColumns: [conversation.workspaceId, conversation.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "welcome_link_founder_fk",
+      columns: [table.founderWorkspaceId, table.founderConversationId],
+      foreignColumns: [conversation.workspaceId, conversation.id],
+    }).onDelete("cascade"),
+  ],
+);

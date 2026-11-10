@@ -425,15 +425,43 @@
     {
       "idx": 60,
       "version": "7",
-      "when": 1794348972520,
-      "tag": "0060_lifecycle_email",
+      "when": 1794345932480,
+      "tag": "0060_account_delete",
       "breakpoints": true
     },
     {
       "idx": 61,
       "version": "7",
-      "when": 1794348977237,
-      "tag": "0061_lifecycle_email_grants",
+      "when": 1794345932929,
+      "tag": "0061_account_delete_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794346957163,
+      "tag": "0062_welcome_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1794346957614,
+      "tag": "0063_welcome_chat_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794352064705,
+      "tag": "0064_lifecycle_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1794352079446,
+      "tag": "0065_lifecycle_email_grants",
       "breakpoints": true
     }
   ]

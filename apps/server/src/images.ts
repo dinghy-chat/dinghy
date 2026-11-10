@@ -13,7 +13,7 @@ import type { NewImage, StoredMessage } from "./messages.ts";
 import type { ObjectStore } from "./storage.ts";
 
 /** Whether a database call failed with its outcome unknown, because the connection went away. */
-function lostConnection(error: unknown): boolean {
+export function lostConnection(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   // Drizzle wraps the driver's error in its own, with the original as the cause.
   if (error.cause !== undefined && lostConnection(error.cause)) return true;

@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Redis } from "iovalkey";
 import pg from "pg";
 import { pino } from "pino";
-import { cloudFromConfig } from "../../../ee/server/index.ts";
+import { cloudFromConfig, cloudProblem } from "../../../ee/server/index.ts";
 import serverPackage from "../package.json" with { type: "json" };
 import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -86,6 +86,11 @@ if (role === "web" || role === "all") {
 
   const live = createLive(valkey, config.VALKEY_URL, logger);
   const db = drizzle(pool, { schema });
+  const problem = await cloudProblem(cloud, db);
+  if (problem !== null) {
+    logger.error(problem);
+    process.exit(2);
+  }
   const app = createApp({
     trustedProxyHops: config.TRUSTED_PROXY_HOPS,
     limitScale: config.RATE_LIMIT_SCALE,

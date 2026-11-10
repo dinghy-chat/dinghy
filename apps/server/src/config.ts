@@ -60,6 +60,14 @@ const schema = z.object({
   // can sign up and use the dashboard, and the widget stays off until the cloud opens. With Stripe
   // keys set, signup asks for payment first, whatever this says.
   CLOUD_SIGNUP: z.enum(["early"]).optional(),
+  // Cloud only. Each new cloud workspace starts with a chat with Dinghy's founder: this operator,
+  // in this workspace, whose inbox gets the replies. With either unset, there is none. The server refuses to start
+  // when the operator is not an active member of the workspace.
+  CLOUD_WELCOME_WORKSPACE_ID: z.uuid().optional(),
+  CLOUD_WELCOME_OPERATOR_EMAIL: z
+    .email()
+    .transform((email) => email.toLowerCase())
+    .optional(),
   // Optional. Errors go to this Sentry project, which the owner of the install chooses. Unset, the
   // Sentry SDK is never loaded.
   SENTRY_DSN: z.url().optional(),

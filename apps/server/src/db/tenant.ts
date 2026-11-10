@@ -53,6 +53,14 @@ export type WorkspaceAccess =
 export const writable = (access: WorkspaceAccess) =>
   access === "active" || access === "waiting_cloud";
 
+/**
+ * Whether a message goes in. A welcome chat with Dinghy's founder is the one exception to the
+ * payment states: it takes messages while the workspace waits for payment or is read-only, so the
+ * founder's reply waits in the inbox and the owner can still answer. Suspended and deleted refuse.
+ */
+export const writableFor = (access: WorkspaceAccess, { welcome }: { welcome: boolean }) =>
+  writable(access) || (welcome && (access === "waiting_payment" || access === "read_only"));
+
 /** Reads the access again. Under the workspace row lock, nothing can change it until commit. */
 export async function workspaceAccess(
   tx: Transaction,
@@ -62,6 +70,23 @@ export async function workspaceAccess(
     sql`select workspace_access(${workspaceId}) as access`,
   );
   return result.rows[0]?.access ?? "deleted";
+}
+
+/**
+ * The access a welcome chat's message goes in by. `workspace_access` reports waiting for payment
+ * before suspension, which the payment screen and the member check rely on, so the welcome
+ * exception reads the suspension itself: a suspended workspace takes no message whatever it paid.
+ */
+export async function welcomeAccess(
+  tx: Transaction,
+  workspaceId: string,
+  access: WorkspaceAccess,
+): Promise<WorkspaceAccess> {
+  if (access !== "waiting_payment") return access;
+  const result = await tx.execute<{ suspended: boolean }>(
+    sql`select suspended_at is not null as suspended from workspace where id = ${workspaceId}`,
+  );
+  return result.rows[0]?.suspended === true ? "suspended" : access;
 }
 
 /** The access as the operator app reads it: whether the workspace is paid for, and what is off. */
@@ -74,6 +99,20 @@ export function accessFlags(access: WorkspaceAccess) {
   };
 }
 
+/**
+ * Holds an operator's row until commit, and says whether the account still exists. A write that
+ * names or adds the operator calls it first: the account's delete locks the same row, so a request
+ * that passed the session check before the delete committed waits for it, then finds it deleted.
+ * It is the lock an UPDATE of the row takes, so a write that then updates the row, such as the
+ * onboarding naming the account, waits its turn instead of deadlocking with a second one.
+ */
+export async function lockLiveOperator(tx: Transaction, operatorId: string): Promise<boolean> {
+  const result = await tx.execute(
+    sql`select 1 from operator where id = ${operatorId} and deleted_at is null for no key update`,
+  );
+  return result.rows.length > 0;
+}
+
 interface Membership {
   workspaceId: string;
   role: "owner" | "admin" | "member";
@@ -81,7 +120,10 @@ interface Membership {
 }
 
 /** Lists an operator's workspaces. Sign-in has no workspace yet, so this is a named lookup. */
-export async function operatorWorkspaces(db: Database, operatorId: string): Promise<Membership[]> {
+export async function operatorWorkspaces(
+  db: Database | Transaction,
+  operatorId: string,
+): Promise<Membership[]> {
   const result = await db.execute<{
     workspace_id: string;
     role: Membership["role"];

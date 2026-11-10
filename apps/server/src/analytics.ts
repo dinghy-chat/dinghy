@@ -73,7 +73,7 @@ const analyticsRoute = createRoute({
   security: SESSION,
   summary: "Support numbers for the last 7, 30 or 90 days",
   description:
-    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply.",
+    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply. A welcome chat on Dinghy Cloud counts nowhere.",
   request: {
     params: z.object({ workspaceId: z.uuid() }),
     query: z.object({
@@ -151,6 +151,7 @@ async function readAnalytics(
              reply.author_api_key_id AS api_key_id
       FROM bounds
       JOIN conversation AS c ON c.workspace_id = ${workspaceId} AND c.created_at >= bounds.since
+        AND NOT c.welcome
       LEFT JOIN LATERAL (
         SELECT m.created_at, m.author_operator_id, m.author_api_key_id FROM message AS m
         WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id

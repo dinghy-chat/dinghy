@@ -55,7 +55,6 @@ for file in README.md docs/self-hosting.md docs/deploy-coolify-dokploy.md; do
   perl -pi -e "s/\bv\Q$old\E\b/v$version/g" "$file"
 done
 bun install --silent
-bun run --silent docs:build >/dev/null
 
 left="$(git grep -n -F "$old" -- ':!CHANGELOG.md' ':!bun.lock' ':!**/node_modules/**' || true)"
 if [ -n "$left" ]; then

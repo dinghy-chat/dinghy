@@ -17,7 +17,7 @@ pull requests ──merge──► main
 
 ## The release pull request
 
-The Release workflow (`.github/workflows/release.yml`) runs `scripts/release-prepare.sh` on every push to `main`. The script dates the `## [Unreleased]` section of `CHANGELOG.md`, moves the version in every file that names it, and rebuilds the lock file and the docs pages. The workflow pushes the result to the `release` branch and opens or updates the "Release X.Y.Z" pull request. When the Unreleased section is empty, it closes that pull request.
+The Release workflow (`.github/workflows/release.yml`) runs `scripts/release-prepare.sh` on every push to `main`. The script dates the `## [Unreleased]` section of `CHANGELOG.md`, moves the version in every file that names it, and rebuilds the lock file. The workflow pushes the result to the `release` branch and opens or updates the "Release X.Y.Z" pull request. When the Unreleased section is empty, it closes that pull request.
 
 The version comes from the groups under Unreleased, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 

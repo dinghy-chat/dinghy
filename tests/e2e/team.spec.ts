@@ -117,7 +117,7 @@ test("an owner invites a member, assigns a chat to them, then removes them @smok
   await expect(boss.locator(".row", { hasText: "assign me" })).not.toContainText("Ben");
 
   await member.reload();
-  await expect(member.getByText("You are not in a workspace yet.")).toBeVisible();
+  await expect(member.getByText("You are not in a workspace on this server.")).toBeVisible();
   await server.closeConversations();
 });
 

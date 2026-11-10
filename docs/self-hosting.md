@@ -7,7 +7,7 @@ Dinghy runs on one small server with Docker. It needs no third-party account and
 On a new Linux server, run:
 
 ```sh
-git clone -b v0.14.0 https://github.com/dinghy-chat/dinghy.git
+git clone -b v0.15.0 https://github.com/dinghy-chat/dinghy.git
 cd dinghy
 sudo ./install.sh
 ```
@@ -31,7 +31,7 @@ If you ran it with `sudo`, and your user is not in the `docker` group, use `sudo
 This one line does the same on a new server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dinghy-chat/dinghy/v0.14.0/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/dinghy-chat/dinghy/v0.15.0/install.sh | sudo bash
 ```
 
 ## What you need
@@ -202,7 +202,7 @@ An export holds a workspace's conversations, visitors, team, settings and images
 
 ## Deleting a workspace
 
-An owner deletes a workspace in Settings, under "Delete this workspace", by typing its name. It is gone for its team and its widget at once. Within a few minutes, the worker deletes its conversations, visitors, settings and images, then the workspace itself. Operator accounts stay, because one login can belong to other workspaces. Download an export first to keep a copy. The nightly backups on this disk still hold the workspace until the newest 7 have replaced them, and a backup bucket keeps it until its own lifecycle rule expires it.
+An owner deletes a workspace in Settings, under **Data**, with **Delete workspace**. The dialog lists what goes: the workspace's conversations, images and team members, with their numbers. It offers **Download an export first**, then asks for the workspace's name. A self-hosted server keeps its last workspace, so the delete is refused when only one is left, and the dialog says why. The workspace is gone for its team and its widget at once. Within a few minutes, the worker deletes its conversations, visitors, settings and images, then the workspace itself. Operator accounts stay, because one login can belong to other workspaces. The nightly backups on this disk still hold the workspace until the newest 7 have replaced them, and a backup bucket keeps it until its own lifecycle rule expires it.
 
 ## Backups
 
@@ -261,7 +261,7 @@ Read [the changelog](../CHANGELOG.md) first. Then get the new release, and start
 
 ```sh
 git fetch --tags
-git switch --detach v0.14.0   # the release you want
+git switch --detach v0.15.0   # the release you want
 docker compose up -d --wait
 ```
 
@@ -296,7 +296,7 @@ Messages, conversations and settings changed since that backup are lost, so do i
 Most releases do not change the Postgres major version. If one does, the release notes say so, and Postgres refuses to start on the old data until you run this, so the app cannot come up on an empty database.
 
 ```sh
-git switch --detach v0.14.0   # the release that moved Postgres
+git switch --detach v0.15.0   # the release that moved Postgres
 scripts/upgrade-postgres.sh
 ```
 

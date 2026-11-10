@@ -5,7 +5,7 @@ import { sendToOperator, testPayload, verifyEmailStop } from "./alerts.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { emailStop, pushSubscription, workspaceMember } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import { type Database, lockLiveOperator, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
   failure,
@@ -15,6 +15,7 @@ import {
   OPERATOR_POST_ERRORS,
   OPERATOR_WRITE_ERRORS,
   okContent,
+  UNAUTHORIZED,
 } from "./errors.ts";
 import { isPushEndpoint, isPushKeys, type Push } from "./push.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
@@ -195,7 +196,8 @@ export function registerAlertRoutes(
       return c.json(BAD_ENDPOINT, 400);
     }
     const operatorId = c.get("operatorId");
-    await db.transaction(async (tx) => {
+    const saved = await db.transaction(async (tx) => {
+      if (!(await lockLiveOperator(tx, operatorId))) return false;
       // A browser that another operator used last now belongs to this one.
       await tx
         .insert(pushSubscription)
@@ -215,7 +217,9 @@ export function registerAlertRoutes(
         .where(
           and(eq(pushSubscription.operatorId, operatorId), notInArray(pushSubscription.id, newest)),
         );
+      return true;
     });
+    if (!saved) return c.json(UNAUTHORIZED, 401);
     return c.json({ ok: true as const }, 200);
   });
 

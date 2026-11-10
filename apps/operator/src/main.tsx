@@ -3,10 +3,11 @@ import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
-import { LinkPage, SignIn } from "./auth.tsx";
+import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate } from "./nav.ts";
+import { DeleteAccount, openOwnerStep } from "./settings.tsx";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
 import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./ui.tsx";
@@ -52,6 +53,7 @@ function App() {
         // A later move has its own answer coming. This one must not overwrite it.
         if (here() !== next) return;
         setMe(account);
+        setAccountDeleted(false);
         // A new address can name a workspace, which wins over the last one picked.
         setPicked(null);
         setAt(next);
@@ -66,6 +68,14 @@ function App() {
     };
   }, []);
   const signedOut = useCallback(() => setMe(null), []);
+  // The workspace this operator just deleted, for a note in the next one.
+  const [deletedName, setDeletedName] = useState<string | null>(null);
+  const [accountDeleted, setAccountDeleted] = useState(false);
+  const accountGone = useCallback(() => setAccountDeleted(true), []);
+  const workspaceDeleted = useCallback((name: string) => {
+    setDeletedName(name);
+    navigate("/");
+  }, []);
   // Signup is open only on the cloud plan. A self-hosted server shows none.
   const [meta, setMeta] = useState<Meta | "loading">("loading");
   useEffect(() => {
@@ -83,6 +93,7 @@ function App() {
   if (path === "/link") {
     return <LinkPage purpose={query.get("for") ?? ""} token={query.get("token") ?? ""} />;
   }
+  if (accountDeleted) return <AccountDeleted />;
   if (me === "loading" || meta === "loading") {
     // An operator who used the app on this device most likely has it open again.
     return rememberedWorkspace() === null ? <SceneLoading /> : <ShellLoading />;
@@ -101,8 +112,10 @@ function App() {
     return (
       <Onboarding
         early={meta.signup === "early"}
-        initialName={me.name}
+        me={me}
+        emailAvailable={meta.email}
         onSignedOut={() => navigate("/")}
+        onAccountDeleted={accountGone}
       />
     );
   }
@@ -116,6 +129,7 @@ function App() {
     me.workspaces.find(opens) ??
     me.workspaces[0];
   const switchTo = (id: string) => {
+    setDeletedName(null);
     rememberWorkspace(id);
     // The conversation in the address belongs to the old workspace.
     history.replaceState(null, "", "/");
@@ -125,7 +139,13 @@ function App() {
   // On the cloud, an account with no workspace finishes its signup, even after closing the tab.
   if (first === undefined && meta.signup !== null) {
     return (
-      <Onboarding early={meta.signup === "early"} initialName={me.name} onSignedOut={signedOut} />
+      <Onboarding
+        early={meta.signup === "early"}
+        me={me}
+        emailAvailable={meta.email}
+        onSignedOut={signedOut}
+        onAccountDeleted={accountGone}
+      />
     );
   }
   if (first === undefined) {
@@ -139,6 +159,14 @@ function App() {
         >
           {t("signOut")}
         </button>
+        {/* With no workspace there is no Profile page, so the account's delete is here. */}
+        <DeleteAccount
+          me={me}
+          emailAvailable={meta.email}
+          keepsLastWorkspace
+          onOpen={openOwnerStep}
+          onDeleted={accountGone}
+        />
       </AuthPage>
     );
   }
@@ -146,10 +174,15 @@ function App() {
   if (!opens(first)) {
     return (
       <FinishPayment
+        key={first.workspaceId}
+        me={me}
         workspace={first}
         others={me.workspaces.filter(opens)}
+        emailAvailable={meta.email}
         onSwitch={switchTo}
         onSignedOut={signedOut}
+        onWorkspaceDeleted={workspaceDeleted}
+        onAccountDeleted={accountGone}
       />
     );
   }
@@ -163,6 +196,10 @@ function App() {
       onSignedOut={load}
       onSwitch={switchTo}
       onAccountChanged={load}
+      deletedName={deletedName}
+      onWorkspaceDeleted={workspaceDeleted}
+      onCloseDeleted={() => setDeletedName(null)}
+      onAccountDeleted={accountGone}
     />
   );
 }

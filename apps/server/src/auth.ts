@@ -23,8 +23,9 @@ export { LINK_MINUTES };
 /**
  * What a link is for. It picks the confirm page's button and where the browser goes after it.
  * `add-workspace` is a sign-in that lands on the workspace setup, for cloud signup with an account.
+ * `delete-account` deletes the account that asked for it.
  */
-type LinkPurpose = "sign-in" | "signup" | "add-workspace" | "join";
+type LinkPurpose = "sign-in" | "signup" | "add-workspace" | "join" | "delete-account";
 
 /**
  * The link an email carries: a page of the operator app, whose button uses the token. Opening it
@@ -53,6 +54,8 @@ export function createAuth({ db, secret, baseURL }: AuthOptions) {
       schema: { user: operator, session, account, verification },
     }),
     advanced: { database: { generateId: "uuid" } },
+    // Read with the session, so the session check can refuse a deleted account.
+    user: { additionalFields: { deletedAt: { type: "date", required: false, input: false } } },
     // Its own logs would hold a failed query's parameters, such as tokens.
     // With this, an unexpected error reaches the app's error handler, which logs safe fields.
     logger: { disabled: true },
@@ -121,7 +124,7 @@ async function signInToken(auth: Auth, email: string, route: LinkRoute): Promise
 export const signInLink = async (
   auth: Auth,
   email: string,
-  purpose: Exclude<LinkPurpose, "join"> = "sign-in",
+  purpose: Exclude<LinkPurpose, "join" | "delete-account"> = "sign-in",
   route: LinkRoute = "shown",
 ): Promise<string> =>
   confirmUrl(String(auth.options.baseURL), purpose, await signInToken(auth, email, route));

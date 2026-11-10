@@ -25,7 +25,7 @@ import {
   workspaceMember,
   workspace as workspaceTable,
 } from "../src/db/schema.ts";
-import { withWorkspace } from "../src/db/tenant.ts";
+import { type Database, withWorkspace } from "../src/db/tenant.ts";
 import { createImages } from "../src/images.ts";
 import { createLive, createSignals, OPERATORS } from "../src/live.ts";
 import { appendMessage } from "../src/messages.ts";
@@ -59,7 +59,10 @@ export async function startE2EServer(
     emailAvailable?: boolean;
     /** False for a server with no mail server, whose admin hands out sign-in links. */
     mail?: boolean;
-    cloud?: CloudSettings;
+    /** The cloud's settings, or a function that makes them once the database exists. */
+    cloud?:
+      | CloudSettings
+      | ((databases: { db: Database; owner: Database }) => Promise<CloudSettings>);
   } = {},
 ) {
   const admin = new pg.Client({ connectionString: DATABASE_URL });
@@ -110,7 +113,7 @@ export async function startE2EServer(
   // Moves forward, so every image URL handed out so far has expired.
   let imageClockMs = 0;
   app = createApp({
-    cloud,
+    cloud: typeof cloud === "function" ? await cloud({ db, owner }) : cloud,
     // Every browser here shares one address, and sends more than any person does.
     limitScale: 1000,
     alerts: { push, emailAvailable, secret: AUTH_SECRET },

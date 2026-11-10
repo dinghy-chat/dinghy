@@ -69,6 +69,7 @@ export const ERROR_CODES = [
   "busy",
   "checkout_retry_later",
   "conversation_closed",
+  "email_mismatch",
   "email_rejected",
   "email_taken",
   "email_unavailable",
@@ -79,6 +80,7 @@ export const ERROR_CODES = [
   "invite_invalid",
   "invite_other_email",
   "last_owner",
+  "last_workspace",
   "link_invalid",
   "mail_failed",
   "name_mismatch",
@@ -93,6 +95,7 @@ export const ERROR_CODES = [
   "push_unavailable",
   "read_only",
   "signed_in",
+  "sole_owner",
   "storage_full",
   "suspended",
   "too_large",
@@ -113,6 +116,8 @@ export const failure = (code: ErrorCode, message: string) => ({ error: { code, m
 
 export const NOT_FOUND = failure("not_found", "This does not exist.");
 export const FORBIDDEN = failure("forbidden", "Your role does not allow this.");
+/** No session, or the account was deleted. */
+export const UNAUTHORIZED = failure("unauthorized", "Sign in to continue.");
 /** A write to the operator API from a page that is not this server's own. */
 export const WRONG_ORIGIN = failure("origin_not_allowed", "This site may not do this.");
 /** A sign-in or join link that expired or was already used. */

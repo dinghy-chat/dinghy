@@ -1,6 +1,6 @@
 {
-  "id": "0d865db4-980c-486c-8d69-980f5c0b0872",
-  "prevId": "b98b602e-6ef7-405c-9b72-aefb1c381288",
+  "id": "401773c5-014a-4838-af0f-2f94d99dcb51",
+  "prevId": "e0d64142-be81-4e31-b98c-39be51be30a2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1403,95 +1403,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.lifecycle_email": {
-      "name": "lifecycle_email",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "lifecycle_email_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "occurrence_at": {
-          "name": "occurrence_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "due_at": {
-          "name": "due_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claimed_until": {
-          "name": "claimed_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "lifecycle_email_due_idx": {
-          "name": "lifecycle_email_due_idx",
-          "columns": [
-            {
-              "expression": "due_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "where": "\"lifecycle_email\".\"sent_at\" is null",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "lifecycle_email_workspace_id_workspace_id_fk": {
-          "name": "lifecycle_email_workspace_id_workspace_id_fk",
-          "tableFrom": "lifecycle_email",
-          "columnsFrom": ["workspace_id"],
-          "tableTo": "workspace",
-          "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "lifecycle_email_workspace_id_kind_occurrence_at_pk": {
-          "name": "lifecycle_email_workspace_id_kind_occurrence_at_pk",
-          "columns": ["workspace_id", "kind", "occurrence_at"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.message": {
       "name": "message",
       "schema": "",
@@ -1748,6 +1659,12 @@
         "image": {
           "name": "image",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -3166,12 +3083,6 @@
           "notNull": true,
           "default": false
         },
-        "onboarding_stopped_at": {
-          "name": "onboarding_stopped_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3244,28 +3155,6 @@
       "name": "conversation_status",
       "schema": "public",
       "values": ["open", "closed"]
-    },
-    "public.lifecycle_email_kind": {
-      "name": "lifecycle_email_kind",
-      "schema": "public",
-      "values": [
-        "ready",
-        "install",
-        "team",
-        "check_in",
-        "review",
-        "cancellation",
-        "ending_soon",
-        "payment_failed",
-        "payment_reminder",
-        "payment_last_day",
-        "payment_recovered",
-        "read_only",
-        "welcome_back",
-        "deletion_30",
-        "deletion_7",
-        "deleted"
-      ]
     },
     "public.member_role": {
       "name": "member_role",

@@ -7,10 +7,12 @@ import type { Auth } from "../../apps/server/src/auth.ts";
 import type { Config } from "../../apps/server/src/config.ts";
 import { subscription } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
+import type { CopyReply } from "../../apps/server/src/inbox.ts";
 import type { Limits } from "../../apps/server/src/limits.ts";
 import type { Live, Signals } from "../../apps/server/src/live.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import type { RateLimit } from "../../apps/server/src/rate-limit.ts";
+import type { ObjectStore } from "../../apps/server/src/storage.ts";
 import {
   type BillingOptions,
   billingFromConfig,
@@ -22,6 +24,7 @@ import { registerOnboardingStop } from "./lifecycle-emails.ts";
 import { createLimits, type LimitOptions } from "./limits.ts";
 import { removeOldImages } from "./retention.ts";
 import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
+import { createCopyReply, type WelcomeSettings, welcomeProblem } from "./welcome.ts";
 
 /** For `chat signups`, which lists the early signups that wait for the cloud. */
 export { signupsCsv } from "./signup.ts";
@@ -37,13 +40,30 @@ export interface CloudSettings {
   signup?: "early" | undefined;
   /** Smaller limits, for tests. The plan's own apply otherwise. */
   limits?: LimitOptions | undefined;
+  /** Each new workspace starts with a chat with the founder. Off when unset. */
+  welcome?: WelcomeSettings | undefined;
 }
 
 /** The cloud's settings, or none on a self-hosted install, which leaves them all unset. */
 export function cloudFromConfig(config: Config): CloudSettings | undefined {
   const billing = billingFromConfig(config);
   if (billing === undefined && config.CLOUD_SIGNUP === undefined) return undefined;
-  return { billing, signup: config.CLOUD_SIGNUP };
+  const workspaceId = config.CLOUD_WELCOME_WORKSPACE_ID;
+  const operatorEmail = config.CLOUD_WELCOME_OPERATOR_EMAIL;
+  const welcome =
+    workspaceId === undefined || operatorEmail === undefined
+      ? undefined
+      : { workspaceId, operatorEmail };
+  return { billing, signup: config.CLOUD_SIGNUP, welcome };
+}
+
+/** Why the web role cannot start with these settings, or null when it can. */
+export async function cloudProblem(
+  settings: CloudSettings | undefined,
+  db: Database,
+): Promise<string | null> {
+  if (settings?.welcome === undefined) return null;
+  return welcomeProblem(db, settings.welcome);
 }
 
 export interface CloudDeps {
@@ -53,6 +73,8 @@ export interface CloudDeps {
   logger: Logger;
   mailer: Mailer | undefined;
   rateLimit: RateLimit;
+  /** Where images live, so a welcome chat can copy one. None on a server without images. */
+  store: ObjectStore | undefined;
   valkey: Redis | null;
 }
 
@@ -67,6 +89,8 @@ export interface Cloud {
   limits: Limits;
   /** Where a suspended workspace's operators write to. */
   contact: string;
+  /** Copies a reply in a welcome chat to its other side. */
+  copyReply: CopyReply | undefined;
   /** Checkout, the portal, the webhook and signup. */
   registerRoutes(app: App): void;
 }
@@ -80,14 +104,18 @@ export function createCloud(
   const signup: SignupMode | null =
     billing !== undefined ? "payment" : settings?.signup === "early" ? "early" : null;
   if (signup === null) return undefined;
-  const { auth, db, live, logger, mailer, rateLimit, valkey } = deps;
+  const { auth, db, live, logger, mailer, rateLimit, store, valkey } = deps;
   const client = billing === undefined ? undefined : createBilling(billing, db, logger, live);
+  const limits = createLimits(valkey, logger, settings?.limits);
+  const welcome = settings?.welcome;
   return {
     billing: client !== undefined,
     signup,
     now: client?.now ?? (() => new Date()),
-    limits: createLimits(valkey, logger, settings?.limits),
+    limits,
     contact: CLOUD_CONTACT,
+    copyReply:
+      welcome === undefined ? undefined : createCopyReply({ db, limits, live, logger, store }),
     beforeDelete:
       client &&
       (async (workspaceId) => {
@@ -104,7 +132,17 @@ export function createCloud(
         registerBillingRoutes(app, { auth, billing, client, db, rateLimit });
         registerOnboardingStop(app, { db, secret: auth.options.secret, rateLimit });
       }
-      registerSignup(app, { auth, db, logger, mailer, mode: signup, rateLimit, valkey });
+      registerSignup(app, {
+        auth,
+        db,
+        live,
+        logger,
+        mailer,
+        mode: signup,
+        rateLimit,
+        valkey,
+        welcome,
+      });
     },
   };
 }

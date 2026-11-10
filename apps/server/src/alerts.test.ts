@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
-import { signedInOperator } from "../test/operators.ts";
+import { deletedDuring, signedInOperator } from "../test/operators.ts";
 import {
   claimDeliveries,
   emailStopUrl,
@@ -1274,6 +1274,23 @@ describe("the routes", () => {
     const bad = device("https://169.254.169.254/latest/meta-data");
     expect((await request("PUT", "/v1/operator/push-subscription", bad)).status).toBe(400);
     expect(await mine()).toHaveLength(1);
+  });
+
+  test("a device is not saved for an account deleted while the request ran", async () => {
+    const answer = await deletedDuring(owner, operatorId, () =>
+      request(
+        "PUT",
+        "/v1/operator/push-subscription",
+        device(`https://fcm.googleapis.com/fcm/send/${randomUUID()}`),
+      ),
+    );
+    expect(answer.status).toBe(401);
+    expect(
+      await owner
+        .select()
+        .from(pushSubscription)
+        .where(eq(pushSubscription.operatorId, operatorId)),
+    ).toEqual([]);
   });
 
   test("a device with keys of the wrong size is refused", async () => {

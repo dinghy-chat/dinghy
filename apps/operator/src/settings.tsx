@@ -1,22 +1,26 @@
 /** @jsxImportSource react */
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type CodeLanguage, highlight } from "../../../packages/widget/src/highlight.ts";
 import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import {
   type BillingState,
   type Me,
   type Role,
+  requestAccountDelete,
   type Usage,
   updateName,
   type WorkspaceApi,
   type WorkspaceSettings,
 } from "./api.ts";
 import { ApiKeysRow, WebhooksRow } from "./integrations.tsx";
+import { navigate } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, InviteDialog, imagesText, operatorsText, TeamTab, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
 import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import {
   CopyButton,
+  CopyText,
   ErrorNote,
   Field,
   failureText,
@@ -29,11 +33,50 @@ import {
   StatusNote,
 } from "./ui.tsx";
 
-function CodeBlock({ value }: { value: string }) {
+/** The code's lines as text and colored spans. Each span's key is where it starts in the code. */
+function codeNodes(value: string, language: CodeLanguage): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let at = 0;
+  highlight(value, language).forEach((line, index) => {
+    if (index > 0) {
+      nodes.push("\n");
+      at += 1;
+    }
+    for (const { kind, text } of line.tokens) {
+      nodes.push(
+        kind === null ? (
+          text
+        ) : (
+          <span key={at} className={`code-${kind}`}>
+            {text}
+          </span>
+        ),
+      );
+      at += text.length;
+    }
+  });
+  return nodes;
+}
+
+/** Code to paste, colored as in the docs. Copy copies the exact text. */
+function CodeBlock({
+  value,
+  language,
+  title,
+}: {
+  value: string;
+  language: CodeLanguage;
+  title: string;
+}) {
   return (
     <div className="code-block">
-      <pre>{value}</pre>
-      <CopyButton value={value} />
+      <div className="code-bar">
+        <span>{title}</span>
+        <CopyButton value={value} />
+      </div>
+      <pre>
+        <code>{codeNodes(value, language)}</code>
+      </pre>
     </div>
   );
 }
@@ -47,16 +90,11 @@ function SnippetRow({ publicKey, waiting }: { publicKey: string; waiting: boolea
       </PageRow>
     );
   }
-  // One attribute per line, so no screen breaks the tag inside an attribute.
-  const snippet = [
-    "<script",
-    `  src="${location.origin}/widget/loader.js"`,
-    `  data-key="${publicKey}"`,
-    "  async></script>",
-  ].join("\n");
+  // One line, as a developer pastes it. It scrolls sideways in its box instead of breaking.
+  const snippet = `<script src="${location.origin}/widget/loader.js" data-key="${publicKey}" async></script>`;
   return (
     <PageRow title={t("snippetTitle")} help={t("snippetHelp")}>
-      <CodeBlock value={snippet} />
+      <CodeBlock value={snippet} language="html" title={t("codeHtml")} />
     </PageRow>
   );
 }
@@ -463,7 +501,153 @@ function ThemeChoice() {
   );
 }
 
-export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
+/** Where the account's delete sends a sole owner: a workspace's Team tab or its delete dialog. */
+export type OwnerStep = "team" | "delete";
+
+/** Opens another workspace on its Team tab or its delete dialog. */
+export const openOwnerStep = (workspaceId: string, step: OwnerStep) =>
+  navigate(`/?workspace=${workspaceId}&settings=${step}`);
+
+/**
+ * The operator deletes their account, once no workspace would be left without an owner. The
+ * Profile page shows it, and so does every screen an operator can land on without a workspace.
+ */
+export function DeleteAccount({
+  me,
+  emailAvailable,
+  keepsLastWorkspace,
+  onOpen,
+  onDeleted,
+}: {
+  me: Me;
+  /** The server sends email, so a link confirms. Without, the operator types their email. */
+  emailAvailable: boolean;
+  /** A self-hosted server, which keeps its last workspace. */
+  keepsLastWorkspace: boolean;
+  onOpen(workspaceId: string, step: OwnerStep): void;
+  onDeleted(): void;
+}) {
+  const blockers = me.workspaces.filter((one) => one.soleOwner);
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<TextId | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const { deleted } = await requestAccountDelete(emailAvailable ? undefined : typed.trim());
+      if (deleted) {
+        onDeleted();
+        return;
+      }
+      setSent(true);
+    } catch (failure) {
+      setError(failureText(failure, { 400: "deleteAccountFailed" }, "deleteAccountFailed"));
+    }
+    setBusy(false);
+  };
+  const [before, after = ""] = t("deleteAccountType").split("{email}");
+  const matches = typed.trim().toLowerCase() === me.email.toLowerCase();
+  return (
+    <>
+      {blockers.length > 0 && (
+        <>
+          <p className="note">{t("deleteAccountBlocked")}</p>
+          <ul className="blockers">
+            {blockers.map((one) => (
+              <li key={one.workspaceId}>
+                <b>{one.name}</b>
+                <span className="actions">
+                  <button
+                    type="button"
+                    className="pill small"
+                    onClick={() => onOpen(one.workspaceId, "delete")}
+                  >
+                    {t("deleteAccountWorkspace")}
+                  </button>
+                  {/* A workspace that waits for payment has no Team tab until it is paid. */}
+                  {(one.active || one.waiting) && (
+                    <button
+                      type="button"
+                      className="pill small"
+                      onClick={() => onOpen(one.workspaceId, "team")}
+                    >
+                      {t("deleteAccountMakeOwner")}
+                    </button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {keepsLastWorkspace && <p className="hint">{t("deleteAccountOnlyServer")}</p>}
+        </>
+      )}
+      <button
+        type="button"
+        className="pill danger-soft"
+        disabled={blockers.length > 0}
+        onClick={() => {
+          setTyped("");
+          setSent(false);
+          setError(null);
+          setOpen(true);
+        }}
+      >
+        {t("deleteAccountOpen")}
+      </button>
+      {open && (
+        <Confirm
+          title={t("deleteAccountConfirmTitle")}
+          text={t(emailAvailable ? "deleteAccountConfirmEmail" : "deleteAccountConfirmTyped")}
+          confirm={t(emailAvailable ? "deleteAccountSend" : "deleteAccountButton")}
+          disabled={busy || sent || (!emailAvailable && !matches)}
+          onConfirm={() => void submit()}
+          onCancel={() => setOpen(false)}
+        >
+          {!emailAvailable && (
+            <Field
+              label={
+                <>
+                  {before}
+                  <CopyText value={me.email} />
+                  {after}
+                </>
+              }
+              type="email"
+              value={typed}
+              onChange={setTyped}
+              autoComplete="off"
+            />
+          )}
+          {sent && (
+            <p className="note" role="status">
+              {t("deleteAccountSent", { email: me.email })}
+            </p>
+          )}
+          <ErrorNote text={error} />
+        </Confirm>
+      )}
+    </>
+  );
+}
+
+export function ProfilePage({
+  me,
+  emailAvailable,
+  keepsLastWorkspace,
+  onChanged,
+  onOpenWorkspace,
+  onAccountDeleted,
+}: {
+  me: Me;
+  emailAvailable: boolean;
+  keepsLastWorkspace: boolean;
+  onChanged(): void;
+  onOpenWorkspace(workspaceId: string, step: OwnerStep): void;
+  onAccountDeleted(): void;
+}) {
   const [name, setName] = useState(me.name);
   const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState(false);
@@ -516,6 +700,16 @@ export function ProfilePage({ me, onChanged }: { me: Me; onChanged(): void }) {
           <ThemeChoice />
         </PageRow>
       </form>
+      {/* Outside the form, because its dialog has a form of its own. */}
+      <PageRow title={t("deleteAccountTitle")} help={t("deleteAccountHelp")} danger>
+        <DeleteAccount
+          me={me}
+          emailAvailable={emailAvailable}
+          keepsLastWorkspace={keepsLastWorkspace}
+          onOpen={onOpenWorkspace}
+          onDeleted={onAccountDeleted}
+        />
+      </PageRow>
     </Page>
   );
 }
@@ -601,7 +795,9 @@ export function SettingsPage({
   waiting,
   emailAvailable,
   initialTab = "team",
+  openDelete = false,
   onLeft,
+  onDeleted,
   onLogoChanged,
 }: {
   api: WorkspaceApi;
@@ -617,7 +813,11 @@ export function SettingsPage({
   emailAvailable: boolean;
   /** The tab that opens first, such as Install from the inbox's first steps. */
   initialTab?: Tab;
+  /** Opens the delete dialog at once, for the account's delete. */
+  openDelete?: boolean;
   onLeft(): void;
+  /** The owner deleted the workspace, which had this name. */
+  onDeleted(name: string): void;
   /** The logo changed, so the sidebar shows the new one. */
   onLogoChanged(logoUrl: string | null): void;
 }) {
@@ -625,6 +825,8 @@ export function SettingsPage({
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [settingsFailure, setSettingsFailure] = useState<TextId | null>(null);
   const [picked, setPicked] = useState<Tab>(initialTab);
+  // Only on the first visit to the Data tab: a later one shows the row, not the dialog.
+  const [deleteOpening, setDeleteOpening] = useState(openDelete);
   const [inviting, setInviting] = useState(false);
 
   useEffect(() => {
@@ -680,7 +882,14 @@ export function SettingsPage({
         )
       }
     >
-      <Tabs tabs={tabs} current={tab} onPick={setPicked} />
+      <Tabs
+        tabs={tabs}
+        current={tab}
+        onPick={(next) => {
+          setPicked(next);
+          setDeleteOpening(false);
+        }}
+      />
       <div className="tab-panel" id="tab-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {settings === null && tab === "team" && <ErrorNote text={settingsFailure} />}
         {tab === "team" && (
@@ -733,7 +942,14 @@ export function SettingsPage({
             )}
             {team.blocked.length > 0 && <BlockedRow api={api} team={team} />}
             {role === "owner" && (
-              <DeleteRow api={api} name={workspaceName} cloud={me.billing} onDeleted={onLeft} />
+              <DeleteRow
+                api={api}
+                name={workspaceName}
+                cloud={me.billing}
+                deletion={settings?.deletion ?? null}
+                startOpen={deleteOpening}
+                onDeleted={() => onDeleted(workspaceName)}
+              />
             )}
           </>
         )}
@@ -753,19 +969,86 @@ export function SettingsPage({
   );
 }
 
+type Deletion = WorkspaceSettings["deletion"];
+
+/** "312 conversations, 40 images and 3 team members are deleted for good." */
+function deletionText({ conversations, images, members }: Deletion): string {
+  const count = (value: number, one: TextId, many: TextId) =>
+    value === 1 ? t(one) : t(many, { count: value });
+  return t("deleteWorkspaceCounts", {
+    conversations: count(conversations, "deleteCountConversationsOne", "deleteCountConversations"),
+    images: count(images, "deleteCountImagesOne", "deleteCountImages"),
+    members: count(members, "deleteCountMembersOne", "deleteCountMembers"),
+  });
+}
+
 /** The owner deletes the workspace by typing its name, in a dialog. */
 function DeleteRow({
   api,
   name,
   cloud,
+  deletion,
+  startOpen,
   onDeleted,
 }: {
   api: WorkspaceApi;
   name: string;
   cloud: boolean;
+  /** What the delete removes, once the settings have loaded. */
+  deletion: Deletion | null;
+  /** The account's delete opened this workspace to delete it. */
+  startOpen: boolean;
   onDeleted(): void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
+  const help = cloud
+    ? `${t("deleteWorkspaceHelp")} ${t("deleteWorkspaceCloud")}`
+    : t("deleteWorkspaceHelp");
+  return (
+    <PageRow title={t("deleteWorkspaceTitle")} help={help} danger>
+      {/* An outline, as for replacing the secret. The filled red is for the confirm step. */}
+      <button type="button" className="pill danger-soft" onClick={() => setOpen(true)}>
+        {t("deleteWorkspaceOpen")}
+      </button>
+      {open && (
+        <DeleteWorkspaceDialog
+          api={api}
+          name={name}
+          cloud={cloud}
+          deletion={deletion}
+          exportUrl={api.exportUrl}
+          onDeleted={onDeleted}
+          onCancel={() => setOpen(false)}
+        />
+      )}
+    </PageRow>
+  );
+}
+
+/**
+ * The dialog that deletes a workspace once its name is typed. The settings show it, and so does
+ * the payment screen of a workspace that never paid, which has no counts and no export.
+ */
+export function DeleteWorkspaceDialog({
+  api,
+  name,
+  cloud,
+  deletion,
+  exportUrl,
+  onDeleted,
+  onCancel,
+}: {
+  api: Pick<WorkspaceApi, "deleteWorkspace">;
+  name: string;
+  /** A paid cloud workspace, whose subscription the delete ends. */
+  cloud: boolean;
+  /** What the delete removes, when it is known. */
+  deletion: Deletion | null;
+  /** Where to download an export first, when the workspace can export. */
+  exportUrl: string | null;
+  onDeleted(): void;
+  onCancel(): void;
+}) {
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
@@ -786,41 +1069,45 @@ function DeleteRow({
       );
     }
   };
-  const help = cloud
-    ? `${t("deleteWorkspaceHelp")} ${t("deleteWorkspaceCloud")}`
-    : t("deleteWorkspaceHelp");
+  // The name sits inside the sentence, so each language puts it where its grammar needs it.
+  const [before, after = ""] = t("deleteWorkspaceType").split("{name}");
+  const only = deletion?.onlyWorkspace ?? false;
+  const goes = deletion === null ? t("deleteWorkspaceConfirm") : deletionText(deletion);
   return (
-    <PageRow title={t("deleteWorkspaceTitle")} help={help} danger>
-      {/* An outline, as for replacing the secret. The filled red is for the confirm step. */}
-      <button
-        type="button"
-        className="pill danger-soft"
-        onClick={() => {
-          setTyped("");
-          setError(null);
-          setOpen(true);
-        }}
-      >
-        {t("deleteWorkspaceOpen")}
-      </button>
-      {open && (
-        <Confirm
-          title={t("deleteWorkspaceConfirmTitle", { name })}
-          text={t("deleteWorkspaceConfirm")}
-          confirm={t("deleteWorkspaceButton")}
-          disabled={busy || typed.trim() !== name}
-          onConfirm={() => void submit()}
-          onCancel={() => setOpen(false)}
-        >
-          <Field
-            label={t("deleteWorkspaceType", { name })}
-            value={typed}
-            onChange={setTyped}
-            autoComplete="off"
-          />
-          <ErrorNote text={error} />
-        </Confirm>
+    <Confirm
+      title={t("deleteWorkspaceConfirmTitle", { name })}
+      text={
+        <>
+          <p>{cloud ? `${goes} ${t("deleteWorkspaceCloud")}` : goes}</p>
+          {exportUrl !== null && (
+            <a className="pill small" href={exportUrl} download>
+              {t("deleteWorkspaceExport")}
+            </a>
+          )}
+        </>
+      }
+      confirm={t("deleteWorkspaceButton")}
+      disabled={busy || only || typed.trim() !== name}
+      onConfirm={() => void submit()}
+      onCancel={onCancel}
+    >
+      {only ? (
+        <p className="note">{t("deleteWorkspaceOnly")}</p>
+      ) : (
+        <Field
+          label={
+            <>
+              {before}
+              <CopyText value={name} />
+              {after}
+            </>
+          }
+          value={typed}
+          onChange={setTyped}
+          autoComplete="off"
+        />
       )}
-    </PageRow>
+      <ErrorNote text={error} />
+    </Confirm>
   );
 }

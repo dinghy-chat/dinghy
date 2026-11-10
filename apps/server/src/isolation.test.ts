@@ -877,6 +877,33 @@ const ATTACKS: Record<string, Attack> = {
     const forged = await pressLinkButton(server, `${PUBLIC_URL}/link?for=join&token=forged`);
     expect(await forged.json()).toMatchObject({ error: { code: "link_invalid" } });
   },
+  "POST /v1/operator/account/delete": async ({ operator: as, anna, bea }) => {
+    // With no mail server the typed email confirms, and only the caller's own email does.
+    const response = await as(anna, "POST", "/v1/operator/account/delete", { email: bea.email });
+    expect(response.status).toBe(400);
+    const rows = await owner
+      .select({ deletedAt: operator.deletedAt })
+      .from(operator)
+      .where(sql`${operator.id} in (${anna.id}, ${bea.id})`);
+    expect(rows).toEqual([{ deletedAt: null }, { deletedAt: null }]);
+  },
+  "POST /v1/account/delete": async ({ server, bea }) => {
+    // A join link's row that names Bea: a delete link reads only its own kind of row.
+    const token = randomUUID();
+    await owner.insert(verification).values({
+      identifier: `invite-join:${createHash("sha256").update(token).digest("hex")}`,
+      value: JSON.stringify({ operatorId: bea.id, email: bea.email }),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const response = await server.request("/v1/account/delete", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(response.status).toBe(400);
+    const [row] = await owner.select().from(operator).where(eq(operator.id, bea.id));
+    expect(row?.deletedAt).toBeNull();
+  },
   "POST /v1/operator/invites/accept": async ({ operator: as, anna, a, inviteB }) => {
     const moved = inviteB.token.replace(inviteB.token.split(".")[0] ?? "", a.id);
     expect((await as(anna, "POST", "/v1/operator/invites/accept", { token: moved })).status).toBe(
