@@ -110,7 +110,10 @@ export function createClient(
     me: (token: string) => call<Me>("me", token),
     /** The token only on the chat page, where it is what lets the request in. */
     presence: (token: string | null) =>
-      call<{ online: boolean | null; emailReplies: boolean; texts: Texts }>("presence", token),
+      call<{ online: boolean | null; emailReplies: boolean; texts: Texts; logoUrl: string | null }>(
+        "presence",
+        token,
+      ),
     reportPage: (token: string, address: string, title: string) =>
       call<{ ok: true }>("page", token, {
         method: "POST",

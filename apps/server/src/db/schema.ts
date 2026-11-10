@@ -6,6 +6,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   foreignKey,
   index,
   integer,
@@ -811,3 +812,19 @@ export const stripeEvent = pgTable(
     unique("stripe_event_id_key").on(table.eventId),
   ],
 );
+
+const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({ dataType: () => "bytea" });
+
+/**
+ * The workspace's logo, at most 256 pixels a side and encoded as WebP by the server. It lives in
+ * Postgres rather than the object store because it is small, and it does not count as image storage.
+ */
+export const workspaceLogo = pgTable("workspace_logo", {
+  workspaceId: uuid("workspace_id")
+    .primaryKey()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  data: bytea("data").notNull(),
+  contentType: text("content_type").notNull(),
+  // Part of the logo's address, so a new upload gets a new address past every cache.
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

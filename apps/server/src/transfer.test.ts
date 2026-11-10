@@ -26,6 +26,7 @@ import {
   pageView,
   visitor,
   workspace,
+  workspaceLogo,
   workspaceMember,
 } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
@@ -170,6 +171,11 @@ async function makeSource(): Promise<Source> {
       headers: { cookie, origin: ORIGIN, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+  await app.request(`${inSpace}/logo`, {
+    method: "PUT",
+    headers: { cookie, origin: ORIGIN, "content-type": "image/png" },
+    body: await png(),
+  });
   await write("POST", `/conversations/${conversationId}/messages`, {
     clientId: "from-operator",
     body: "Reply from the owner",
@@ -515,6 +521,43 @@ describe("a round trip onto a fresh install", () => {
     expect(after?.lastSeenAt).toBeInstanceOf(Date);
   });
 
+  test("the logo comes along, and the widget serves it", async () => {
+    const logoOf = async (install: Install) =>
+      (
+        await install.owner
+          .select()
+          .from(workspaceLogo)
+          .where(eq(workspaceLogo.workspaceId, source.space.id))
+      )[0];
+    const before = await logoOf(source.install);
+    const after = await logoOf(target);
+    // Encoded again on import, so the pixels come along rather than the exact bytes.
+    const shape = async (data: Uint8Array | undefined) => {
+      const { format, width, height } = await sharp(data).metadata();
+      return { format, width, height };
+    };
+    expect(await shape(after?.data)).toEqual(await shape(before?.data));
+    expect(await shape(after?.data)).toEqual({ format: "webp", width: 4, height: 3 });
+    const served = await target.app.request(`/v1/widget/${source.space.publicKey}/logo`);
+    expect(served.status).toBe(200);
+    expect(served.headers.get("content-type")).toBe("image/webp");
+  });
+
+  test("a file from before logos imports, with no logo", async () => {
+    const parts: Uint8Array[] = [];
+    for await (const entry of readTar(once(archive))) {
+      const data =
+        entry.name === "export.json" ? JSON.parse(Buffer.from(entry.bytes).toString()) : null;
+      if (data !== null) delete data.workspace.logo;
+      const bytes = data === null ? entry.bytes : Buffer.from(JSON.stringify(data));
+      parts.push(...tarEntry(entry.name, bytes));
+    }
+    parts.push(tarEnd());
+    const fresh = await freshInstall();
+    await importArchive(fresh.db, fresh.store, once(Buffer.concat(parts)));
+    expect(await fresh.owner.select().from(workspaceLogo)).toEqual([]);
+  }, 30_000);
+
   test("an API key comes along revoked, with no token, and its replies keep its name", async () => {
     const text = archive.toString("latin1");
     expect(text).not.toContain(source.key.token);
@@ -652,6 +695,15 @@ describe("a bad file changes nothing", () => {
       }),
     );
   }, 30_000);
+
+  test("a logo that is not an image", async () => {
+    await refuses(
+      await edited((data) => {
+        (data.workspace as Record<string, unknown>).logo = Buffer.from("<svg/>").toString("base64");
+      }),
+      "The logo cannot be used: not_an_image.",
+    );
+  });
 
   test("a page view of a visitor the file does not hold", async () => {
     const bad = await edited((data) => {

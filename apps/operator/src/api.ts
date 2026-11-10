@@ -145,6 +145,8 @@ export interface WorkspaceSettings {
   allowedOrigins: string[];
   signingSecret: string;
   widgetTexts: WidgetTexts;
+  /** The logo's address, which changes with each upload. Null with no logo. */
+  logoUrl: string | null;
   /** The plan's limits and their use, on Dinghy Cloud. Null with no limits. */
   usage: Usage | null;
 }
@@ -326,7 +328,7 @@ export function workspaceApi(workspaceId: string) {
   const base = `/v1/operator/workspaces/${workspaceId}`;
   const conversation = (id: string) => `${base}/conversations/${id}`;
   return {
-    get: () => call<{ id: string; name: string }>(base),
+    get: () => call<{ id: string; name: string; logoUrl: string | null }>(base),
     members: () => call<{ members: Member[] }>(`${base}/members`),
     setRole: (id: string, role: Role) =>
       call<{ ok: true }>(`${base}/members/${id}`, {
@@ -351,6 +353,19 @@ export function workspaceApi(workspaceId: string) {
         body: JSON.stringify({ widgetTexts }),
       }),
     rotateSecret: () => post<WorkspaceSettings>(`${base}/settings/rotate-secret`, {}),
+    /** The server checks the image, shrinks it and stores it as WebP. */
+    setLogo: async (file: Blob) => {
+      const response = await fetch(`${base}/logo`, {
+        method: "PUT",
+        cache: "no-store",
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+        headers: { "content-type": file.type },
+        body: file,
+      });
+      if (!response.ok) return failed(response);
+      return (await response.json()) as WorkspaceSettings;
+    },
+    removeLogo: () => call<WorkspaceSettings>(`${base}/logo`, { method: "DELETE" }),
     exportUrl: `${base}/export`,
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
     createApiKey: (name: string) => post<ApiKey & { token: string }>(`${base}/api-keys`, { name }),

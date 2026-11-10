@@ -16,12 +16,13 @@ import {
   pageView,
   visitor,
   workspace,
+  workspaceLogo,
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
-import { processImage } from "./images.ts";
+import { LOGO_MAX_BYTES, LOGO_TYPE, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
@@ -51,6 +52,12 @@ const ExportFile = z.strictObject({
     widgetTitle: z.string().max(40).nullable(),
     widgetGreeting: z.string().max(200).nullable(),
     widgetAway: z.string().max(200).nullable(),
+    // In base64. Files from before logos have none.
+    logo: z
+      .base64()
+      .max(Math.ceil(LOGO_MAX_BYTES / 3) * 4)
+      .nullable()
+      .optional(),
     createdAt: date,
   }),
   members: z.array(
@@ -216,6 +223,10 @@ async function readWorkspace(
     async (tx) => {
       const [space] = await tx.select().from(workspace).where(eq(workspace.id, workspaceId));
       if (space === undefined) return null;
+      const [logo] = await tx
+        .select({ data: workspaceLogo.data })
+        .from(workspaceLogo)
+        .where(eq(workspaceLogo.workspaceId, workspaceId));
       const members = await tx
         .select({
           id: operator.id,
@@ -254,6 +265,7 @@ async function readWorkspace(
           widgetTitle: space.widgetTitle,
           widgetGreeting: space.widgetGreeting,
           widgetAway: space.widgetAway,
+          logo: logo === undefined ? null : Buffer.from(logo.data).toString("base64"),
           createdAt: iso(space.createdAt),
         },
         members: members.map((row) => ({
@@ -461,11 +473,20 @@ async function storeImages(
   return images;
 }
 
+/** The file's logo, encoded again as an upload is, because this file may have come from anywhere. */
+async function readLogo(data: ExportData): Promise<Buffer | null> {
+  if (data.workspace.logo == null) return null;
+  const logo = await processLogo(Buffer.from(data.workspace.logo, "base64"));
+  if (typeof logo === "string") throw new ImportError(`The logo cannot be used: ${logo}.`);
+  return logo;
+}
+
 /** Inserts the workspace and its rows. Returns the emails of the operators it created. */
 async function insertWorkspace(
   tx: Transaction,
   data: ExportData,
   images: (typeof attachment.$inferInsert)[],
+  logo: Buffer | null,
 ): Promise<string[]> {
   const workspaceId = data.workspace.id;
   await tx.insert(workspace).values({
@@ -483,6 +504,9 @@ async function insertWorkspace(
     widgetAway: data.workspace.widgetAway,
     createdAt: new Date(data.workspace.createdAt),
   });
+  if (logo !== null) {
+    await tx.insert(workspaceLogo).values({ workspaceId, data: logo, contentType: LOGO_TYPE });
+  }
 
   // One email has one login on an install, so an existing account keeps its ID.
   const emails = data.members.map((member) => member.email.toLowerCase());
@@ -639,9 +663,10 @@ export async function importArchive(
       throw new ImportError(`Workspace ${workspaceId} is already on this server.`);
     }
 
+    const logo = await readLogo(data);
     const images = await storeImages(entries, data, store, stored);
     const newOperators = await withWorkspace(db, workspaceId, async (tx) => {
-      const created = await insertWorkspace(tx, data, images);
+      const created = await insertWorkspace(tx, data, images, logo);
       reachedCommit = true;
       return created;
     });

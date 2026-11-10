@@ -260,8 +260,12 @@ const NAV: { view: Exclude<View, "profile">; label: TextId; icon: IconName }[] =
   { view: "settings", label: "settings", icon: "gear" },
 ];
 
-/** Two letters for a workspace: "Acme" gives "AC", and "Harbor Labs" gives "HL". */
-function WorkspaceTile({ name }: { name: string }) {
+/**
+ * The workspace's logo, or two letters: "Acme" gives "AC", and "Harbor Labs" gives "HL". The name
+ * sits beside it, so the logo needs no text of its own.
+ */
+function WorkspaceTile({ name, logoUrl = null }: { name: string; logoUrl?: string | null }) {
+  if (logoUrl !== null) return <img className="ws-tile" src={logoUrl} alt="" />;
   const letters = initials(name);
   return (
     <span className="ws-tile" aria-hidden="true">
@@ -277,12 +281,15 @@ function WorkspaceTile({ name }: { name: string }) {
 function WorkspaceSwitcher({
   me,
   name,
+  logoUrl,
   workspaceId,
   canCreate,
   onSwitch,
 }: {
   me: Me;
   name: string;
+  /** The open workspace's logo. The others in the menu show their letters. */
+  logoUrl: string | null;
   workspaceId: string;
   canCreate: boolean;
   onSwitch(id: string): void;
@@ -290,7 +297,7 @@ function WorkspaceSwitcher({
   if (me.workspaces.length < 2 && !canCreate) {
     return (
       <div className="workspace">
-        <WorkspaceTile name={name} />
+        <WorkspaceTile name={name} logoUrl={logoUrl} />
         <span className="ws-name" aria-hidden="true">
           {name}
         </span>
@@ -321,7 +328,7 @@ function WorkspaceSwitcher({
       side="start"
       className="workspace-menu"
     >
-      <WorkspaceTile name={name} />
+      <WorkspaceTile name={name} logoUrl={logoUrl} />
       <span className="ws-name">{name}</span>
       <Icon name="chevron" size={12} />
     </Menu>
@@ -376,6 +383,7 @@ function Sidebar({
   me,
   role,
   name,
+  logoUrl,
   workspaceId,
   canCreate,
   view,
@@ -387,6 +395,7 @@ function Sidebar({
   me: Me;
   role: Role;
   name: string;
+  logoUrl: string | null;
   workspaceId: string;
   canCreate: boolean;
   view: View;
@@ -407,6 +416,7 @@ function Sidebar({
       <WorkspaceSwitcher
         me={me}
         name={name}
+        logoUrl={logoUrl}
         workspaceId={workspaceId}
         canCreate={canCreate}
         onSwitch={onSwitch}
@@ -603,6 +613,7 @@ export function Inbox({
   const api = useMemo(() => workspaceApi(workspaceId), [workspaceId]);
   useDeviceSync();
   const [name, setName] = useState(t("appName"));
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("open");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [waiting, setWaiting] = useState(0);
@@ -702,7 +713,10 @@ export function Inbox({
   useEffect(() => {
     api
       .get()
-      .then((workspace) => setName(workspace.name))
+      .then((workspace) => {
+        setName(workspace.name);
+        setLogoUrl(workspace.logoUrl);
+      })
       .catch(() => {});
   }, [api]);
 
@@ -727,6 +741,7 @@ export function Inbox({
           me={me}
           role={role}
           name={name}
+          logoUrl={logoUrl}
           workspaceId={workspaceId}
           canCreate={canCreate}
           view={view}
@@ -772,6 +787,7 @@ export function Inbox({
                 emailAvailable={emailAvailable}
                 initialTab={settingsTab}
                 onLeft={() => navigate("/")}
+                onLogoChanged={setLogoUrl}
               />
             )}
             {view === "analytics" && <AnalyticsPage api={api} />}

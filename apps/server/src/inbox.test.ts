@@ -125,7 +125,7 @@ describe("headers", () => {
 describe("membership", () => {
   test("a member reads its workspace", async () => {
     const response = await get(inA(""));
-    expect(await response.json()).toEqual({ id: a.id, name: "Acme" });
+    expect(await response.json()).toEqual({ id: a.id, name: "Acme", logoUrl: null });
   });
 
   test.each(["", "/conversations", "/stream"])(

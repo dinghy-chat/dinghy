@@ -203,7 +203,11 @@ describe("/v1", () => {
       for (const [method, { responses, security }] of Object.entries(operations)) {
         const operation = `${method.toUpperCase()} ${path}`;
         const read = method === "get";
-        if (path.startsWith("/v1/widget/{key}/")) expectAnswers(operation, [403, 429], responses);
+        // The logo answers an <img>, which sends no Origin, so it runs before the widget's checks.
+        const isLogo = path === "/v1/widget/{key}/logo";
+        if (path.startsWith("/v1/widget/{key}/") && !isLogo) {
+          expectAnswers(operation, [403, 429], responses);
+        }
         if (path.startsWith("/v1/operator/")) {
           expectAnswers(operation, read ? [401] : [401, 403], responses);
           if (security === undefined) missing.push(`${operation} security`);

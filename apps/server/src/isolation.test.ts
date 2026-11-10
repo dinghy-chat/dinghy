@@ -29,6 +29,7 @@ import {
   visitor,
   webhook,
   workspace,
+  workspaceLogo,
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
@@ -131,6 +132,16 @@ const png = () =>
     .png()
     .toBuffer();
 
+/** Sets a workspace's logo straight in the table, with bytes that name the workspace. */
+const plantLogo = (workspaceId: string) =>
+  owner
+    .insert(workspaceLogo)
+    .values({ workspaceId, data: Buffer.from(`logo of ${workspaceId}`), contentType: "image/webp" })
+    .onConflictDoNothing();
+
+const logoOf = async (workspaceId: string) =>
+  (await owner.select().from(workspaceLogo).where(eq(workspaceLogo.workspaceId, workspaceId)))[0];
+
 /** Runs against a route as the one caller that must be refused or see only its own data. */
 const ATTACKS: Record<string, Attack> = {
   "GET /v1/meta": async ({ server, secrets }) => {
@@ -227,7 +238,12 @@ const ATTACKS: Record<string, Attack> = {
   "GET /v1/widget/:key/presence": async ({ widget, a, b }) => {
     expect((await widget(a.publicKey, "GET", "presence", null, SITE_B)).status).toBe(403);
     const own = await widget(b.publicKey, "GET", "presence", null, SITE_B);
-    expect(Object.keys((await own.json()) as object)).toEqual(["online", "emailReplies", "texts"]);
+    expect(Object.keys((await own.json()) as object)).toEqual([
+      "online",
+      "emailReplies",
+      "texts",
+      "logoUrl",
+    ]);
   },
   "POST /v1/widget/:key/page": async ({ widget, a, b, one, two, other }) => {
     const pageOf = async (id: string) =>
@@ -594,6 +610,37 @@ const ATTACKS: Record<string, Attack> = {
     expect(row?.signingSecret).toBe(b.signingSecret);
     const [own] = await owner.select().from(workspace).where(eq(workspace.id, a.id));
     expect(own?.signingSecret).toBe(a.signingSecret);
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/logo": async ({ server, anna, a, b }) => {
+    const upload = async (workspaceId: string) =>
+      server.request(inWorkspace(workspaceId, "/logo"), {
+        method: "PUT",
+        headers: { cookie: anna.cookie, origin: ORIGIN, "content-type": "image/png" },
+        body: await png(),
+      });
+    const before = await logoOf(b.id);
+    expect((await upload(b.id)).status).toBe(404);
+    // A real upload here must not reach the other workspace.
+    const own = await upload(a.id);
+    expect(own.status).toBe(200);
+    expect(await own.text()).not.toContain(b.publicKey);
+    expect(await logoOf(b.id)).toEqual(before);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/logo": async ({ operator: as, anna, a, b }) => {
+    await plantLogo(b.id);
+    expect((await as(anna, "DELETE", inWorkspace(b.id, "/logo"))).status).toBe(404);
+    expect((await as(anna, "DELETE", inWorkspace(a.id, "/logo"))).status).toBe(200);
+    expect(await logoOf(b.id)).toBeDefined();
+  },
+  "GET /v1/widget/:key/logo": async ({ server, a, b }) => {
+    await plantLogo(a.id);
+    await plantLogo(b.id);
+    const own = await server.request(`/v1/widget/${a.publicKey}/logo`);
+    expect(Buffer.from(await own.arrayBuffer())).toEqual(
+      Buffer.from((await logoOf(a.id))?.data ?? []),
+    );
+    // The public key is the only way in: an ID in its place finds nothing.
+    expect((await server.request(`/v1/widget/${b.id}/logo`)).status).toBe(404);
   },
   "GET /v1/operator/workspaces/:workspaceId/alerts": async ({ operator: as, anna, b }) => {
     expect((await as(anna, "GET", inWorkspace(b.id, "/alerts"))).status).toBe(404);

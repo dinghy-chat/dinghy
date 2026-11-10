@@ -3,7 +3,7 @@ import { z } from "@hono/zod-openapi";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import type { Logger } from "pino";
-import sharp from "sharp";
+import sharp, { type OutputInfo, type Sharp } from "sharp";
 import type { App } from "./app.ts";
 import { attachment } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
@@ -54,6 +54,14 @@ sharp.concurrency(1);
 // A cache would keep decoded images in memory after the response.
 sharp.cache(false);
 
+// One image decodes at a time in this process. A chain of promises is the whole queue.
+let turn: Promise<unknown> = Promise.resolve();
+const inTurn = <T>(work: () => Promise<T>): Promise<T> => {
+  const run = turn.then(work, work);
+  turn = run.catch(() => undefined);
+  return run;
+};
+
 const OUTPUT = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" } as const;
 type Format = keyof typeof OUTPUT;
 
@@ -93,11 +101,14 @@ interface ProcessedImage {
 }
 
 /**
- * Decodes and re-encodes an image, which drops any payload hidden in it. The format comes from the
- * bytes, never from a file name or a header. Removing the metadata would remove the orientation
- * too, so the image is turned upright first.
+ * Decodes an upload and encodes it again with `encode`, which drops any payload hidden in it. The
+ * format comes from the bytes, never from a file name or a header. Removing the metadata would
+ * remove the orientation too, so the image is turned upright first.
  */
-export async function processImage(bytes: Uint8Array): Promise<ProcessedImage | Refusal> {
+async function reencode(
+  bytes: Uint8Array,
+  encode: (image: Sharp, format: Format) => Sharp,
+): Promise<{ data: Buffer; info: OutputInfo; format: Format } | Refusal> {
   const expected = imageFormat(bytes);
   if (expected === null) return "not_an_image";
   try {
@@ -105,16 +116,42 @@ export async function processImage(bytes: Uint8Array): Promise<ProcessedImage | 
     const input = () => sharp(bytes, { limitInputPixels: MAX_PIXELS, animated: false });
     const { format } = await input().metadata();
     if (format !== expected) return "not_an_image";
-    const { data, info } = await input()
-      .rotate()
-      .toFormat(expected)
-      .toBuffer({ resolveWithObject: true });
-    return { data, contentType: OUTPUT[expected], width: info.width, height: info.height };
+    const { data, info } = await encode(input().rotate(), expected).toBuffer({
+      resolveWithObject: true,
+    });
+    return { data, info, format: expected };
   } catch (error) {
     return error instanceof Error && error.message.includes("pixel limit")
       ? "too_many_pixels"
       : "not_an_image";
   }
+}
+
+/** Checks an image and encodes it again in its own format. */
+export async function processImage(bytes: Uint8Array): Promise<ProcessedImage | Refusal> {
+  const done = await reencode(bytes, (image, format) => image.toFormat(format));
+  if (typeof done === "string") return done;
+  return {
+    data: done.data,
+    contentType: OUTPUT[done.format],
+    width: done.info.width,
+    height: done.info.height,
+  };
+}
+
+export const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+const LOGO_SIZE_PX = 256;
+export const LOGO_TYPE = OUTPUT.webp;
+export const LOGO_TOO_LARGE = failure("too_large", "This logo is over 2 MB.");
+
+/** Checks a logo, then shrinks it to fit a 256-pixel square and encodes it as WebP. */
+export async function processLogo(bytes: Uint8Array): Promise<Buffer | Refusal> {
+  const done = await inTurn(() =>
+    reencode(bytes, (image) =>
+      image.resize(LOGO_SIZE_PX, LOGO_SIZE_PX, { fit: "inside", withoutEnlargement: true }).webp(),
+    ),
+  );
+  return typeof done === "string" ? done : done.data;
 }
 
 export interface Images {
@@ -162,13 +199,6 @@ export function createImages({
   let waitingToDecode = 0;
   const bufferedByWorkspace = new Map<string, number>();
   const uploadsByAddress = new Map<string, number>();
-  // One image decodes at a time. A chain of promises is the whole queue.
-  let turn: Promise<unknown> = Promise.resolve();
-  const inTurn = <T>(work: () => Promise<T>): Promise<T> => {
-    const run = turn.then(work, work);
-    turn = run.catch(() => undefined);
-    return run;
-  };
 
   const sign = (workspaceId: string, attachmentId: string, expires: string) =>
     createHmac("sha256", `dinghy-image-url:${secret}`)
@@ -315,6 +345,9 @@ export function refuseImage(c: Context, refusal: Refusal) {
   return c.json(failure(refusal, message), status) as any;
 }
 
+/** The routes that the image origin serves: images, and the logos that logo.ts serves. */
+const FILES_HOST_PATH = /^\/v1\/(files\/[^/]+\/[^/]+|widget\/[^/]+\/logo)$/;
+
 /** The only types the image route serves. An HTML or SVG body never goes out, whatever is stored. */
 const SERVED_TYPES = new Set<string>(Object.values(OUTPUT));
 
@@ -339,8 +372,8 @@ export function imageView(
  * Serves an image to anyone with a current signed URL, because an <img> cannot send a bearer token.
  * Only a client that could read the message gets the URL, and it expires in 15 minutes.
  *
- * With a separate image origin, that origin serves this route and nothing else, and the app's origin
- * does not serve it. Register this before every other route.
+ * With a separate image origin, that origin serves this route and the logo route and nothing else,
+ * and the app's origin does not serve them. Register this before every other route.
  */
 export function registerImageFiles(app: App, db: Database, images: Images, logger: Logger) {
   const uuid = z.uuid();
@@ -348,7 +381,7 @@ export function registerImageFiles(app: App, db: Database, images: Images, logge
   const onFilesHost = (url: string) => new URL(url).host === filesHost;
   if (filesHost !== undefined) {
     app.use("*", async (c, next) => {
-      const isFile = /^\/v1\/files\/[^/]+\/[^/]+$/.test(c.req.path);
+      const isFile = FILES_HOST_PATH.test(c.req.path);
       if (
         onFilesHost(c.req.url) &&
         !(isFile && (c.req.method === "GET" || c.req.method === "HEAD"))

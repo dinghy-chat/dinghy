@@ -7,6 +7,7 @@ import { Icon } from "./ui.tsx";
 const STEPS: { text: TextId; tab: SettingsTab }[] = [
   { text: "startSite", tab: "sites" },
   { text: "startInstall", tab: "install" },
+  { text: "startLogo", tab: "install" },
   { text: "startTexts", tab: "install" },
   { text: "startTeam", tab: "team" },
 ];

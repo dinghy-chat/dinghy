@@ -300,6 +300,21 @@ textarea {
   align-items: center;
   gap: 6px;
 }
+.logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+/* White behind it, as in the chat's header, so a transparent logo looks the same in both. */
+.logo-preview {
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  object-fit: contain;
+  background: #fff;
+}
 
 /* Small shared parts */
 .logo {
@@ -1059,6 +1074,10 @@ button.workspace[aria-expanded="true"],
   width: 24px;
   height: 24px;
   font-size: 10px;
+}
+img.ws-tile {
+  object-fit: contain;
+  background: #fff;
 }
 .item .ws-tile {
   width: 24px;
