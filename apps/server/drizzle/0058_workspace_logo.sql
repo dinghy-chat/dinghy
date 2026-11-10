@@ -1,7 +1,6 @@
 CREATE TABLE "workspace_logo" (
 	"workspace_id" uuid PRIMARY KEY NOT NULL,
 	"data" "bytea" NOT NULL,
-	"content_type" text NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

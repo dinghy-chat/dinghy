@@ -1,5 +1,5 @@
 {
-  "id": "5c7bc4a6-9b73-4887-9d2f-d6f28291ddd3",
+  "id": "7b84f098-16f7-4208-84b5-225c5ba0cb88",
   "prevId": "6b282e7b-7b42-4aff-808a-d50aa4ac1253",
   "version": "7",
   "dialect": "postgresql",
@@ -3012,12 +3012,6 @@
         "data": {
           "name": "data",
           "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_type": {
-          "name": "content_type",
-          "type": "text",
           "primaryKey": false,
           "notNull": true
         },

@@ -206,7 +206,7 @@ describe("the public logo route", () => {
     expect((await app.request(`/v1/widget/${space.publicKey}/logo`)).status).toBe(404);
   });
 
-  test("answers 404 once the workspace is suspended or deleted", async () => {
+  test("serves a suspended workspace's logo, for its dashboard, and stops once it is deleted", async () => {
     const boss = await person("owner");
     const { logoUrl } = (await (await upload(boss, await png(10, 10))).json()) as {
       logoUrl: string;
@@ -215,7 +215,7 @@ describe("the public logo route", () => {
       .update(workspace)
       .set({ suspendedAt: new Date() })
       .where(eq(workspace.id, space.id));
-    expect((await app.request(logoUrl)).status).toBe(404);
+    expect((await app.request(logoUrl)).status).toBe(200);
     await owner
       .update(workspace)
       .set({ suspendedAt: null, deletedAt: new Date() })

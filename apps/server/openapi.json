@@ -935,7 +935,7 @@
             }
           },
           "404": {
-            "description": "not_found: the key is unknown, its widget is off, or the workspace has no logo",
+            "description": "not_found: the key is unknown, its workspace is deleted, or it has no logo",
             "content": {
               "application/json": {
                 "schema": {

@@ -200,7 +200,7 @@ describe("the owner's delete", () => {
     // A logo, which goes with the workspace row by its foreign key.
     await owner
       .insert(workspaceLogo)
-      .values({ workspaceId: created.id, data: Buffer.from("logo"), contentType: "image/webp" });
+      .values({ workspaceId: created.id, data: Buffer.from("logo") });
     const response = await request("DELETE", `/v1/operator/workspaces/${created.id}`, {
       cookie,
       body: { name: "Home" },

@@ -22,7 +22,7 @@ import {
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
-import { LOGO_MAX_BYTES, LOGO_TYPE, processImage, processLogo } from "./images.ts";
+import { LOGO_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
@@ -52,11 +52,12 @@ const ExportFile = z.strictObject({
     widgetTitle: z.string().max(40).nullable(),
     widgetGreeting: z.string().max(200).nullable(),
     widgetAway: z.string().max(200).nullable(),
-    // In base64, or null with no logo.
+    // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z
       .base64()
       .max(Math.ceil(LOGO_MAX_BYTES / 3) * 4)
-      .nullable(),
+      .nullable()
+      .default(null),
     createdAt: date,
   }),
   members: z.array(
@@ -504,7 +505,7 @@ async function insertWorkspace(
     createdAt: new Date(data.workspace.createdAt),
   });
   if (logo !== null) {
-    await tx.insert(workspaceLogo).values({ workspaceId, data: logo, contentType: LOGO_TYPE });
+    await tx.insert(workspaceLogo).values({ workspaceId, data: logo });
   }
 
   // One email has one login on an install, so an existing account keeps its ID.

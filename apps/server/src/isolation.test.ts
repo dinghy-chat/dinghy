@@ -136,7 +136,7 @@ const png = () =>
 const plantLogo = (workspaceId: string) =>
   owner
     .insert(workspaceLogo)
-    .values({ workspaceId, data: Buffer.from(`logo of ${workspaceId}`), contentType: "image/webp" })
+    .values({ workspaceId, data: Buffer.from(`logo of ${workspaceId}`) })
     .onConflictDoNothing();
 
 const logoOf = async (workspaceId: string) =>

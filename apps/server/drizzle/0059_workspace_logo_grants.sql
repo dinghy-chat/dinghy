@@ -35,3 +35,21 @@ CREATE FUNCTION widget_workspace(key text)
 REVOKE ALL ON FUNCTION widget_workspace(text) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION widget_workspace(text) TO dinghy_app;
+--> statement-breakpoint
+-- The public logo route reads a logo by the workspace's public key, before it knows the workspace,
+-- so this reads across workspaces. It serves any workspace that is not deleted, because the
+-- dashboard of a waiting, read-only or suspended workspace still shows its logo.
+CREATE FUNCTION workspace_logo_by_key(key text)
+  RETURNS TABLE (data bytea)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public, pg_temp
+  AS $$
+    SELECT l.data
+    FROM workspace AS w
+    JOIN workspace_logo AS l ON l.workspace_id = w.id
+    WHERE w.public_key = key AND w.deleted_at IS NULL
+  $$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION workspace_logo_by_key(text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION workspace_logo_by_key(text) TO dinghy_app;

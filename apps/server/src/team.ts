@@ -36,7 +36,7 @@ import {
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
 import { emailAddressHash, normalizeOrigin, sha256Hex } from "./identity.ts";
-import { LOGO_TYPE, processLogo, refuseImage } from "./images.ts";
+import { processLogo, refuseImage } from "./images.ts";
 import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
@@ -907,7 +907,7 @@ export function registerTeamRoutes(
     const logo = await processLogo(new Uint8Array(await c.req.arrayBuffer()));
     if (typeof logo === "string") return refuseImage(c, logo);
     const settings = await withWorkspace(db, id, async (tx) => {
-      const saved = { data: logo, contentType: LOGO_TYPE, updatedAt: new Date() };
+      const saved = { data: logo, updatedAt: new Date() };
       await tx
         .insert(workspaceLogo)
         .values({ workspaceId: id, ...saved })

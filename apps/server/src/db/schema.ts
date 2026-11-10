@@ -823,8 +823,8 @@ export const workspaceLogo = pgTable("workspace_logo", {
   workspaceId: uuid("workspace_id")
     .primaryKey()
     .references(() => workspace.id, { onDelete: "cascade" }),
+  // Always WebP: the server encodes every logo again before it stores it.
   data: bytea("data").notNull(),
-  contentType: text("content_type").notNull(),
   // Part of the logo's address, so a new upload gets a new address past every cache.
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

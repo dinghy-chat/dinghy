@@ -1,11 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { App } from "./app.ts";
-import { workspaceLogo } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import type { Database } from "./db/tenant.ts";
 import { errorAnswer, NOT_FOUND } from "./errors.ts";
 import { LOGO_TYPE } from "./images.ts";
-import { widgetWorkspace } from "./workspaces.ts";
 
 // As the widget routes check it, before the lookup.
 const PUBLIC_KEY = /^wk_[0-9a-f]{32}$/;
@@ -35,9 +33,7 @@ const logoRoute = createRoute({
       description: "The logo. Its address changes with each upload, so it caches for a year.",
       content: { [LOGO_TYPE]: { schema: z.string().openapi({ format: "binary" }) } },
     },
-    404: errorAnswer(
-      "not_found: the key is unknown, its widget is off, or the workspace has no logo",
-    ),
+    404: errorAnswer("not_found: the key is unknown, its workspace is deleted, or it has no logo"),
   },
 });
 
@@ -54,16 +50,12 @@ export function registerLogoFile(app: App, db: Database, imagesOrigin: string | 
     }
     const { key } = c.req.valid("param");
     if (!PUBLIC_KEY.test(key)) return c.json(NOT_FOUND, 404);
-    const found = await widgetWorkspace(db, key);
-    if (found === null || found.logoUpdatedAt === null) return c.json(NOT_FOUND, 404);
-    const [row] = await withWorkspace(db, found.id, (tx) =>
-      tx
-        .select({ data: workspaceLogo.data, contentType: workspaceLogo.contentType })
-        .from(workspaceLogo)
-        .where(eq(workspaceLogo.workspaceId, found.id)),
+    // Any workspace that is not deleted, as its dashboard shows the logo while the widget is off.
+    const result = await db.execute<{ data: Buffer }>(
+      sql`select data from workspace_logo_by_key(${key})`,
     );
-    // Only the type the server encodes, whatever is stored.
-    if (row === undefined || row.contentType !== LOGO_TYPE) return c.json(NOT_FOUND, 404);
+    const row = result.rows[0];
+    if (row === undefined) return c.json(NOT_FOUND, 404);
     return c.body(new Uint8Array(row.data), 200, {
       "content-type": LOGO_TYPE,
       "content-length": String(row.data.byteLength),
