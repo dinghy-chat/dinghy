@@ -494,6 +494,11 @@ describe("the rules", () => {
     expect(
       billingEmails(cancelled, { ...paid, cancelAtPeriodEnd: true, currentPeriodEnd: end }, now),
     ).toEqual([]);
+    // Moved to inside the last 3 days: the reminder of the new date goes at once.
+    const close = new Date(now.getTime() + 2 * DAY_MS);
+    expect(
+      billingEmails(cancelled, { ...paid, cancelAtPeriodEnd: true, currentPeriodEnd: close }, now),
+    ).toEqual([{ kind: "ending_soon", occurrenceAt: close, dueAt: now }]);
   });
 });
 

@@ -197,10 +197,12 @@ function cancellationEmails(
   const end = after.currentPeriodEnd;
   const moved = !isNew && end?.getTime() !== before?.currentPeriodEnd?.getTime();
   const emails = isNew ? [on("cancellation", at)] : [];
-  // A cancellation in the last days already says when the plan ends.
-  if ((isNew || moved) && end !== null && addDays(end, -ENDING_SOON_DAYS) > at) {
-    emails.push(on("ending_soon", end, -ENDING_SOON_DAYS));
-  }
+  if (end === null) return emails;
+  const reminder = on("ending_soon", end, -ENDING_SOON_DAYS);
+  // A new cancellation in the last days already says when the plan ends.
+  if (isNew && reminder.dueAt > at) emails.push(reminder);
+  // A moved end needs a reminder of the new date, at once if its usual day has passed.
+  if (moved && end > at) emails.push(reminder.dueAt > at ? reminder : { ...reminder, dueAt: at });
   return emails;
 }
 
@@ -645,7 +647,6 @@ async function sendLifecycleEmails({
 /** The numbers of days that the emails name. */
 const MAIL_DAYS = { readOnly: READ_ONLY_DAYS };
 
-/** The dates an email names, from its occurrence and the workspace's state. */
 /** When service stops: the period's end, or the end of a failed payment's grace if sooner. */
 function serviceEnd(state: EmailState): Date | null {
   const graceEnd = state.paymentFailedAt && addDays(state.paymentFailedAt, GRACE_DAYS);
@@ -654,6 +655,7 @@ function serviceEnd(state: EmailState): Date | null {
   return graceEnd < state.currentPeriodEnd ? graceEnd : state.currentPeriodEnd;
 }
 
+/** The dates an email names, from its occurrence and the workspace's state. */
 function emailDates(email: ClaimedEmail, state: EmailState) {
   return {
     payUntil: addDays(email.occurrenceAt, GRACE_DAYS),
