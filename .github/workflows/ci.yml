@@ -21,6 +21,9 @@ concurrency:
 
 jobs:
   check:
+    # The release pull request changes only version numbers and the changelog. Every change in it already
+    # passed this job, and the Image workflow runs it again on the release tag.
+    if: github.head_ref != 'release'
     runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
     timeout-minutes: 10
     services:

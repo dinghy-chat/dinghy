@@ -1,0 +1,94 @@
+name: Release
+
+# On every push to main, tags a version that main reached, which starts the Image workflow, and keeps the
+# "Release X.Y.Z" pull request in step with the Unreleased section of CHANGELOG.md. Merging that pull
+# request is the release. See RELEASING.md.
+#
+# Both jobs use the dinghy-chat-release GitHub App's token: a tag or a pull request made with the
+# workflow's own GITHUB_TOKEN starts no other workflow.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          token: ${{ steps.app.outputs.token }}
+          fetch-depth: 0
+      - name: Tag a new version
+        env:
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version exists."
+            exit 0
+          fi
+          grep -qF "## [$version] - " CHANGELOG.md || { echo "CHANGELOG.md has no [$version] section." >&2; exit 1; }
+          git config user.name "$SLUG[bot]"
+          git config user.email "$SLUG[bot]@users.noreply.github.com"
+          git tag -a "v$version" -m "Release $version" "$GITHUB_SHA"
+          git push origin "v$version"
+
+  pull-request:
+    needs: tag
+    runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    # A burst of merges rebuilds the pull request once, from the newest main.
+    concurrency:
+      group: release-pull-request
+      cancel-in-progress: true
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          token: ${{ steps.app.outputs.token }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - name: Open or update the release pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          open="$(gh pr list --head release --state open --json number --jq '.[0].number // empty')"
+          status=0
+          output="$(scripts/release-prepare.sh)" || status=$?
+          echo "$output"
+          if [ "$status" = 3 ]; then
+            if [ -n "$open" ]; then gh pr close "$open" --delete-branch --comment "Nothing is left to release."; fi
+            exit 0
+          fi
+          [ "$status" = 0 ] || exit "$status"
+          version="$(tail -n 1 <<<"$output")"
+          git config user.name "$SLUG[bot]"
+          git config user.email "$SLUG[bot]@users.noreply.github.com"
+          git switch -c release
+          git commit -q -s -am "Release $version"
+          git push -f origin release
+          body="$(printf 'Merging this pull request releases %s: it tags the merge, publishes the image and the GitHub Release, and deploys Dinghy Cloud. The bot rebuilds it after every merge to main. See RELEASING.md.\n\n' "$version"
+            awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## /{on=0} on' CHANGELOG.md)"
+          if [ -n "$open" ]; then
+            gh pr edit "$open" --title "Release $version" --body "$body"
+          else
+            gh pr create --base main --head release --title "Release $version" --body "$body"
+          fi

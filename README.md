@@ -40,6 +40,7 @@ The code is the same. A paid cloud plan is planned, and it is not open yet.
 - [Troubleshooting](docs/troubleshooting.md)
 - [Run on Coolify or Dokploy](docs/deploy-coolify-dokploy.md), not tested yet
 - [Changelog](CHANGELOG.md)
+- [How releases work](RELEASING.md)
 - [Security](SECURITY.md)
 
 ## Development
