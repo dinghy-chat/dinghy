@@ -421,6 +421,20 @@
       "when": 1794344109956,
       "tag": "0059_workspace_logo_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794348972520,
+      "tag": "0060_lifecycle_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794348977237,
+      "tag": "0061_lifecycle_email_grants",
+      "breakpoints": true
     }
   ]
 }
