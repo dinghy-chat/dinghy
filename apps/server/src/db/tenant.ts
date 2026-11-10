@@ -41,13 +41,15 @@ export function withWorkspace<T>(
  * What a workspace allows, from the `workspace_access` SQL function, which works it out for the
  * operator API, the widget and a write under the workspace row lock.
  */
-export type WorkspaceAccess =
-  | "active"
-  | "waiting_cloud"
-  | "read_only"
-  | "suspended"
-  | "waiting_payment"
-  | "deleted";
+export const WORKSPACE_ACCESS = [
+  "active",
+  "waiting_cloud",
+  "read_only",
+  "suspended",
+  "waiting_payment",
+  "deleted",
+] as const;
+export type WorkspaceAccess = (typeof WORKSPACE_ACCESS)[number];
 
 /** Messages and other changes go in only while the workspace is active or waits for the cloud. */
 export const writable = (access: WorkspaceAccess) =>
@@ -99,18 +101,25 @@ export function accessFlags(access: WorkspaceAccess) {
   };
 }
 
+/** The account was deleted after the request's session check. The app answers 401, as that check does. */
+export class AccountDeletedError extends Error {
+  constructor() {
+    super("The operator's account was deleted");
+  }
+}
+
 /**
- * Holds an operator's row until commit, and says whether the account still exists. A write that
- * names or adds the operator calls it first: the account's delete locks the same row, so a request
- * that passed the session check before the delete committed waits for it, then finds it deleted.
- * It is the lock an UPDATE of the row takes, so a write that then updates the row, such as the
- * onboarding naming the account, waits its turn instead of deadlocking with a second one.
+ * Holds an operator's row until commit, and throws AccountDeletedError if the account is gone. A
+ * write that names or adds the operator calls it first: the account's delete locks the same row, so
+ * a request that passed the session check before the delete committed waits for it, then finds it
+ * deleted. It is the lock an UPDATE of the row takes, so a write that then updates the row, such as
+ * the onboarding naming the account, waits its turn instead of deadlocking with a second one.
  */
-export async function lockLiveOperator(tx: Transaction, operatorId: string): Promise<boolean> {
+export async function lockLiveOperator(tx: Transaction, operatorId: string): Promise<void> {
   const result = await tx.execute(
     sql`select 1 from operator where id = ${operatorId} and deleted_at is null for no key update`,
   );
-  return result.rows.length > 0;
+  if (result.rows.length === 0) throw new AccountDeletedError();
 }
 
 interface Membership {

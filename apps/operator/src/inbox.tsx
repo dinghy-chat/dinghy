@@ -17,7 +17,13 @@ import {
 import { useLatestLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
-import { openOwnerStep, ProfilePage, SettingsPage, type SettingsTab } from "./settings.tsx";
+import {
+  openOwnerStep,
+  ownerStepIn,
+  ProfilePage,
+  SettingsPage,
+  type SettingsTab,
+} from "./settings.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
 import { type TextId, t } from "./text.ts";
@@ -590,6 +596,23 @@ function listContext(status: Status, waiting: number): string {
   return t("waitingMany", { count: waiting });
 }
 
+/** Whether this browser already did something once. Storage can be off, which reads as no. */
+function remembered(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function remember(key: string): void {
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    // Without storage, the welcome chat opens again on the next load, which is harmless.
+  }
+}
+
 export function Inbox({
   me,
   workspaceId,
@@ -636,11 +659,7 @@ export function Inbox({
     return params.get("workspace") === workspaceId ? params.get("conversation") : null;
   });
   // The account's delete can open this workspace on its Team tab or its delete dialog.
-  const [ownerStep] = useState(() => {
-    const params = new URLSearchParams(location.search);
-    const step = params.get("workspace") === workspaceId ? params.get("settings") : null;
-    return step === "team" || step === "delete" ? step : null;
-  });
+  const [ownerStep] = useState(() => ownerStepIn(workspaceId));
   const [view, setView] = useState<View>(ownerStep === null ? "open" : "settings");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>(
     ownerStep === "delete" ? "data" : "team",
@@ -702,6 +721,9 @@ export function Inbox({
     shown.current = { status, limit };
   });
 
+  // A new workspace's first open list holds only the welcome chat, which opens by itself, once.
+  const firstList = useRef(true);
+  const welcomeKey = `dinghy.welcome-opened.${workspaceId}`;
   const reload = useLatestLoad(async () => {
     const wanted = shown.current;
     try {
@@ -716,6 +738,14 @@ export function Inbox({
       setListed(true);
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
+      if (firstList.current && wanted.status === "open") {
+        firstList.current = false;
+        const [only, ...rest] = page.conversations;
+        if (only?.welcome && rest.length === 0 && !remembered(welcomeKey)) {
+          remember(welcomeKey);
+          setSelected((current) => current ?? only.id);
+        }
+      }
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 401) onSignedOut();
     }

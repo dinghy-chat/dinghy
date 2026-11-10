@@ -15,6 +15,14 @@ const text = {
     text.linkLasts,
     "Didn't ask for it? You can ignore this email. Nobody gets in without the link.",
   ],
+  noAccountSubject: "You don't have a Dinghy account yet",
+  // Fixed text only: anyone can type any email on the sign-in page.
+  noAccountBody: (signupUrl: string) => [
+    "Someone, hopefully you, asked to sign in to Dinghy with this email, but it has no account yet.",
+    "To create one, sign up here:",
+    signupUrl,
+    "Didn't ask? You can ignore this email.",
+  ],
   joinSubject: "Your link to join your team on Dinghy",
   joinBody: (url: string) => [
     "Here's your link to finish joining your team on Dinghy:",
@@ -66,6 +74,12 @@ export function letter(
 export const signInMail = (url: string) => ({
   subject: text.signInSubject,
   body: letter(text.signInBody(url)),
+});
+
+/** Sent instead of a sign-in link to an email with no account, so nobody waits for nothing. */
+export const noAccountMail = (signupUrl: string) => ({
+  subject: text.noAccountSubject,
+  body: letter(text.noAccountBody(signupUrl)),
 });
 
 /** The link that joins an existing account to a workspace, from an invite that was emailed to it. */

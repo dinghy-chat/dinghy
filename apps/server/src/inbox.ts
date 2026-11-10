@@ -8,6 +8,7 @@ import { session, workspace, workspaceLogo } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
+  WORKSPACE_ACCESS,
   type WorkspaceAccess,
   withWorkspace,
 } from "./db/tenant.ts";
@@ -103,6 +104,8 @@ const Conversation = z
     assigneeOperatorId: z.string().nullable(),
     // The page where the visitor started it, as origin and path, if the widget reported one.
     startedPage: z.string().nullable(),
+    // On Dinghy Cloud, a welcome chat with Dinghy's founder. False everywhere else.
+    welcome: z.boolean(),
     // What the host page last sent with `Dinghy.setContext()`. Unsigned, so not verified.
     pageContext: PageContextSchema.nullable(),
     visitor: z.object({
@@ -226,14 +229,7 @@ const WelcomeChat = z
     z.object({
       with: z.literal("workspace"),
       name: z.string(),
-      access: z.enum([
-        "active",
-        "waiting_cloud",
-        "read_only",
-        "suspended",
-        "waiting_payment",
-        "deleted",
-      ]),
+      access: z.enum(WORKSPACE_ACCESS),
     }),
     // The other side deleted its conversation, or its whole workspace, and with it the link.
     z.object({ with: z.literal("deleted") }),
@@ -476,6 +472,7 @@ export function conversationView(
     updatedAt: row.updatedAt.toISOString(),
     assigneeOperatorId: row.assigneeOperatorId,
     startedPage: row.startedPage,
+    welcome: row.welcome,
     pageContext: PageContextSchema.nullable().catch(null).parse(row.visitorPageContext),
     visitor: {
       id: row.visitorId,

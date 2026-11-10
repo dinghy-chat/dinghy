@@ -324,7 +324,7 @@ const en = {
   onboardingSubmit: "Continue",
   signupSubmit: "Email me a sign-up link",
   signupEarly:
-    "Dinghy Cloud is in early access. Set up your workspace now, and we will email you when you can add the chat to your site.",
+    "A live chat for your website. Your visitors write, and your team answers from one inbox.",
   signupWorkspaceHint: "Usually your company or product name.",
   haveAccount: "I already have an account",
   payTitle: "Finish payment",

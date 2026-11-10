@@ -125,6 +125,7 @@ describe("asking for a link", () => {
     expect(link.startsWith(`${ORIGIN}/link?for=sign-in&token=`)).toBe(true);
     // The unknown email's work runs after the answer, so give it the time the known one took.
     await new Promise((resolve) => setTimeout(resolve, 200));
+    // A self-hosted server, with no signup, writes only to its operators.
     expect(mail.countTo(email("unknown"))).toBe(0);
     const [sent] = mail.sent.filter((one) => one.to === email("known"));
     expect(sent?.subject).toBe("Your Dinghy sign-in link");

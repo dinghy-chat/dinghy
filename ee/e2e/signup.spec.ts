@@ -218,8 +218,8 @@ test.describe("with early signup and no Stripe keys", () => {
     await page.goto(server.apiOrigin);
     await page.getByRole("link", { name: "Create an account" }).click();
     await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
-    // One line about early access, and no payment.
-    await expect(page.locator(".card .note")).toHaveText(/early access/);
+    // One line about the product, and no payment.
+    await expect(page.locator(".card .note")).toHaveText(/live chat for your website/);
     await expect(page.getByText(/pay|Stripe/i)).toHaveCount(0);
     await createAccount(page, server, email);
     await expect(page.getByText(/pay|Stripe/i)).toHaveCount(0);
@@ -230,7 +230,7 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.getByRole("status").locator(".banner-long")).toHaveText(
       `Dinghy Cloud opens soon. We will email ${email} when you can turn it on.`,
     );
-    await page.locator(".row", { hasText: "Julien from Dinghy" }).click();
+    // The welcome chat opens by itself, with no click.
     await expect(page.getByText("Welcome chat with the founder")).toBeVisible();
     await expect(
       page.getByText("Hi, I'm Julien, the founder of Dinghy.", { exact: false }),

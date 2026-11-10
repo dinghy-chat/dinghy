@@ -71,8 +71,8 @@ export function createAuth({ db, secret, baseURL }: AuthOptions) {
         // A copy of the database must not hold links that still work.
         storeToken: "hashed",
         // Opening a link for an email with no account creates one, so only the server's own code
-        // may deliver such a link: cloud signup, to the email that asked. The sign-in route sends
-        // nothing to an unknown email.
+        // may deliver such a link: cloud signup, to the email that asked. The sign-in route never
+        // sends an unknown email a link.
         disableSignUp: false,
         sendMagicLink: async (link) => {
           const deliver = delivery.getStore();

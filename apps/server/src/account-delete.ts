@@ -36,7 +36,7 @@ import { deleteAccountMail } from "./letter.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import type { Mailer } from "./mailer.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
-import { leaveWorkspace } from "./team.ts";
+import { leaveWorkspace, type Role } from "./team.ts";
 
 /** The name a deleted account's old replies show. */
 export const FORMER_MEMBER_NAME = "Former team member";
@@ -128,9 +128,13 @@ const confirmRoute = createRoute({
   },
 });
 
-/** The active owners of a workspace. Run it in the workspace's context. */
-export const ownerCount = (tx: Transaction, workspaceId: string) =>
-  tx.$count(
+/**
+ * Whether a member with this role is the workspace's only active owner, who cannot leave it or
+ * delete their account yet. Run it in the workspace's context.
+ */
+export async function isSoleOwner(tx: Transaction, workspaceId: string, role: Role) {
+  if (role !== "owner") return false;
+  const owners = await tx.$count(
     workspaceMember,
     and(
       eq(workspaceMember.workspaceId, workspaceId),
@@ -138,17 +142,18 @@ export const ownerCount = (tx: Transaction, workspaceId: string) =>
       isNull(workspaceMember.removedAt),
     ),
   );
+  return owners === 1;
+}
 
 /** The workspaces that would have no owner if this operator left. */
 async function soleOwnerWorkspaces(db: Database, operatorId: string): Promise<string[]> {
   const owned = (await operatorWorkspaces(db, operatorId)).filter((one) => one.role === "owner");
-  const counted = await Promise.all(
-    owned.map(async ({ workspaceId }) => ({
-      workspaceId,
-      owners: await withWorkspace(db, workspaceId, (tx) => ownerCount(tx, workspaceId)),
-    })),
+  const sole = await Promise.all(
+    owned.map(({ workspaceId, role }) =>
+      withWorkspace(db, workspaceId, (tx) => isSoleOwner(tx, workspaceId, role)),
+    ),
   );
-  return counted.filter((one) => one.owners === 1).map((one) => one.workspaceId);
+  return owned.filter((_, index) => sole[index]).map((one) => one.workspaceId);
 }
 
 /** The operator is the only owner of these workspaces. Its transaction rolls back. */

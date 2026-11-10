@@ -508,6 +508,50 @@ export type OwnerStep = "team" | "delete";
 export const openOwnerStep = (workspaceId: string, step: OwnerStep) =>
   navigate(`/?workspace=${workspaceId}&settings=${step}`);
 
+/** The step that `openOwnerStep` put in the address for this workspace, or null. */
+export function ownerStepIn(workspaceId: string): OwnerStep | null {
+  const params = new URLSearchParams(location.search);
+  if (params.get("workspace") !== workspaceId) return null;
+  const step = params.get("settings");
+  return step === "team" || step === "delete" ? step : null;
+}
+
+/**
+ * The field a delete waits for. The value to type sits in the label, where it copies itself, and
+ * the text names its place, so each language puts it where its grammar needs it.
+ */
+function TypeToConfirm({
+  text,
+  value,
+  typed,
+  onChange,
+  type,
+}: {
+  /** A sentence with one placeholder, such as "Type {name} to confirm". */
+  text: TextId;
+  value: string;
+  typed: string;
+  onChange(typed: string): void;
+  type?: "email";
+}) {
+  const [before, after = ""] = t(text).split(/\{\w+\}/);
+  return (
+    <Field
+      label={
+        <>
+          {before}
+          <CopyText value={value} />
+          {after}
+        </>
+      }
+      type={type}
+      value={typed}
+      onChange={onChange}
+      autoComplete="off"
+    />
+  );
+}
+
 /**
  * The operator deletes their account, once no workspace would be left without an owner. The
  * Profile page shows it, and so does every screen an operator can land on without a workspace.
@@ -548,7 +592,6 @@ export function DeleteAccount({
     }
     setBusy(false);
   };
-  const [before, after = ""] = t("deleteAccountType").split("{email}");
   const matches = typed.trim().toLowerCase() === me.email.toLowerCase();
   return (
     <>
@@ -607,18 +650,12 @@ export function DeleteAccount({
           onCancel={() => setOpen(false)}
         >
           {!emailAvailable && (
-            <Field
-              label={
-                <>
-                  {before}
-                  <CopyText value={me.email} />
-                  {after}
-                </>
-              }
-              type="email"
-              value={typed}
+            <TypeToConfirm
+              text="deleteAccountType"
+              value={me.email}
+              typed={typed}
               onChange={setTyped}
-              autoComplete="off"
+              type="email"
             />
           )}
           {sent && (
@@ -1069,8 +1106,6 @@ export function DeleteWorkspaceDialog({
       );
     }
   };
-  // The name sits inside the sentence, so each language puts it where its grammar needs it.
-  const [before, after = ""] = t("deleteWorkspaceType").split("{name}");
   const only = deletion?.onlyWorkspace ?? false;
   const goes = deletion === null ? t("deleteWorkspaceConfirm") : deletionText(deletion);
   return (
@@ -1094,18 +1129,7 @@ export function DeleteWorkspaceDialog({
       {only ? (
         <p className="note">{t("deleteWorkspaceOnly")}</p>
       ) : (
-        <Field
-          label={
-            <>
-              {before}
-              <CopyText value={name} />
-              {after}
-            </>
-          }
-          value={typed}
-          onChange={setTyped}
-          autoComplete="off"
-        />
+        <TypeToConfirm text="deleteWorkspaceType" value={name} typed={typed} onChange={setTyped} />
       )}
       <ErrorNote text={error} />
     </Confirm>

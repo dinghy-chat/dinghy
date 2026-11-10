@@ -4,6 +4,12 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- On Dinghy Cloud, the sign-in page emails an address with no account a link to signup, instead of sending nothing. A self-hosted server still writes only to its operators.
+- A new account's workspace setup no longer shows **Delete my account**. An account that was in a workspace still finds it there.
+- API: each conversation has `welcome`, true for a welcome chat on Dinghy Cloud.
+
 ## [0.15.0] - 2026-11-10
 
 ### Added

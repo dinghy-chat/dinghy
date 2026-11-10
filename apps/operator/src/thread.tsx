@@ -83,7 +83,9 @@ function origin(conversation: Conversation): string | null {
     conversation.startedPage === null || conversation.startedPage === conversation.visitor.lastPage
       ? null
       : t("startedOn", { page: bare(conversation.startedPage) });
-  const parts = [...otherIdentity(conversation.visitor), page].filter((part) => part !== null);
+  // A welcome chat's visitor ID is internal, so its header shows only the welcome line.
+  const identity = conversation.welcome ? [] : otherIdentity(conversation.visitor);
+  const parts = [...identity, page].filter((part) => part !== null);
   return parts.length === 0 ? null : parts.join(SEPARATOR);
 }
 

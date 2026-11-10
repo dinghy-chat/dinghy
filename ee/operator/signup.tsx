@@ -16,6 +16,7 @@ import {
   DeleteAccount,
   DeleteWorkspaceDialog,
   openOwnerStep,
+  ownerStepIn,
 } from "../../apps/operator/src/settings.tsx";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { AuthPage, ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
@@ -88,12 +89,15 @@ export function Onboarding({
   emailAvailable,
   onSignedOut,
   onAccountDeleted,
+  deletedName = null,
 }: {
   early: boolean;
   me: Me;
   emailAvailable: boolean;
   onSignedOut(): void;
   onAccountDeleted(): void;
+  /** The workspace the operator just deleted, when it was their last one. */
+  deletedName?: string | null;
 }) {
   const [name, setName] = useState(me.name);
   const [workspaceName, setWorkspaceName] = useState("");
@@ -124,6 +128,11 @@ export function Onboarding({
     <AuthPage time="afternoon">
       {/* Its own form, as the account's delete below has a dialog with a form of its own. */}
       <form className="card-form" onSubmit={submit}>
+        {deletedName !== null && (
+          <p className="note" role="status">
+            {t("workspaceDeleted", { name: deletedName })}
+          </p>
+        )}
         <h1>{t("onboardingTitle")}</h1>
         {!early && <p className="note">{t("signupHelp")}</p>}
         <Field
@@ -157,8 +166,9 @@ export function Onboarding({
           {t("signOut")}
         </button>
       </form>
-      {/* An account with no workspace has no Profile page, so its delete is here. */}
-      {me.workspaces.length === 0 && (
+      {/* An account that has been in a workspace has a name, and with no workspace it has no
+          Profile page, so its delete is here. A new account, still without a name, sees none. */}
+      {me.name !== "" && me.workspaces.length === 0 && (
         <DeleteAccount
           me={me}
           emailAvailable={emailAvailable}
@@ -195,10 +205,7 @@ export function FinishPayment({
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   // The account's delete, on another workspace's Profile page, opens this one to delete it.
-  const [deleting, setDeleting] = useState(() => {
-    const params = new URLSearchParams(location.search);
-    return params.get("workspace") === workspace.workspaceId && params.get("settings") === "delete";
-  });
+  const [deleting, setDeleting] = useState(() => ownerStepIn(workspace.workspaceId) === "delete");
   const isOwner = workspace.role === "owner";
   const pay = async () => {
     setError(null);

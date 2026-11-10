@@ -394,6 +394,9 @@
           "startedPage": {
             "type": ["string", "null"]
           },
+          "welcome": {
+            "type": "boolean"
+          },
           "pageContext": {
             "allOf": [
               {
@@ -470,6 +473,7 @@
           "updatedAt",
           "assigneeOperatorId",
           "startedPage",
+          "welcome",
           "pageContext",
           "visitor",
           "lastMessage"

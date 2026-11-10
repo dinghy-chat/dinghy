@@ -18,7 +18,6 @@ import {
   errorAnswer,
   failure,
   safeErrorFields,
-  UNAUTHORIZED,
   WRONG_ORIGIN,
 } from "../../apps/server/src/errors.ts";
 import { LINK_LASTS, letter } from "../../apps/server/src/letter.ts";
@@ -239,8 +238,8 @@ export function registerSignup(
     );
     if (wait !== null) return tooManyRequests(c, wait);
     const keys = workspaceKeys();
-    const created = await withWorkspace(db, keys.id, async (tx) => {
-      if (!(await lockLiveOperator(tx, operatorId))) return null;
+    const { welcomed, chatStarted } = await withWorkspace(db, keys.id, async (tx) => {
+      await lockLiveOperator(tx, operatorId);
       await tx.update(operator).set({ name: body.name }).where(eq(operator.id, operatorId));
       const names = { workspace: body.workspaceName, owner: body.name };
       const started = await insertSignupWorkspace(tx, keys, names, operatorId, mode, welcomeChat);
@@ -254,13 +253,13 @@ export function registerSignup(
         .returning({ id: operator.id });
       return { welcomed: marked.length > 0, chatStarted: started };
     });
-    // The account was deleted after this request's session check.
-    if (created === null) return c.json(UNAUTHORIZED, 401);
-    const { welcomed, chatStarted } = created;
     if (welcomed) welcome(c.get("operatorEmail"), body.name, body.workspaceName);
-    if (chatStarted && welcomeChat !== undefined) live.wake(welcomeChat.workspaceId, OPERATORS);
-    if (!chatStarted && welcomeChat !== undefined) {
-      logger.warn("no welcome chat: its operator left Dinghy's workspace, or it takes no messages");
+    if (welcomeChat !== undefined) {
+      if (chatStarted) live.wake(welcomeChat.workspaceId, OPERATORS);
+      else
+        logger.warn(
+          "no welcome chat: its operator left Dinghy's workspace, or it takes no messages",
+        );
     }
     return c.json({ workspaceId: keys.id }, 200);
   });

@@ -524,6 +524,14 @@ describe("signup by link", () => {
     expect(created.status).toBe(200);
   });
 
+  test("an unknown email on the sign-in page gets a note with the signup page, and no link", async () => {
+    const email = `lost-${randomUUID()}@example.com`;
+    const asked = await request(early, "POST", "/v1/auth/sign-in/magic-link", { body: { email } });
+    expect(asked.status).toBe(200);
+    expect(await linkFor(email, "You don't have a Dinghy account yet")).toBe(`${ORIGIN}/signup`);
+    expect(await operatorRow(email)).toBeUndefined();
+  });
+
   test("a known email gets a sign-in link to the same account, with a note about the attempt", async () => {
     const email = `taken-${randomUUID()}@example.com`;
     await linkSignup(early, email);
