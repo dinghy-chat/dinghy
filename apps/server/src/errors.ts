@@ -3,6 +3,21 @@ import { DrizzleQueryError } from "drizzle-orm/errors";
 import type { DatabaseError } from "pg";
 
 /**
+ * An error that names only the SQLSTATE code and keeps the stack's frames, so an error report can
+ * group and place it. The original message is left out, because Drizzle puts the parameters there.
+ */
+function databaseErrorWithStack(error: unknown, code: string | undefined): Error {
+  const safe = new Error(`A database query failed with code ${code ?? "unknown"}.`);
+  safe.name = "DatabaseError";
+  const frames =
+    error instanceof Error && error.stack !== undefined
+      ? error.stack.split("\n").filter((line) => line.startsWith("    at "))
+      : [];
+  safe.stack = [`${safe.name}: ${safe.message}`, ...frames].join("\n");
+  return safe;
+}
+
+/**
  * What a log may hold about an error. A database error holds the query's parameters and the row's
  * values, which can be chat text and tokens, so it logs only what identifies the failure. It walks
  * the whole chain, because a library can wrap the query's error in its own, and a logger prints
@@ -23,7 +38,10 @@ export function safeErrorFields(error: unknown): Record<string, unknown> {
   );
   if (database !== undefined) {
     const { code, constraint, table, routine } = database;
-    return { databaseError: { code, constraint, table, routine } };
+    return {
+      err: databaseErrorWithStack(error, code),
+      databaseError: { code, constraint, table, routine },
+    };
   }
   const wrapper = chain.findIndex((item) => item instanceof DrizzleQueryError);
   // Only Drizzle's wrapper holds the parameters, so what it wraps is safe to log.

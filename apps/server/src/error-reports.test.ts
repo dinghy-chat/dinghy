@@ -3,10 +3,12 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Writable } from "node:stream";
 import { gunzipSync } from "node:zlib";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { pino } from "pino";
 import { afterAll, expect, test } from "vitest";
 import { loadConfig } from "./config.ts";
 import { scrubEvent, startErrorReports } from "./error-reports.ts";
+import { safeErrorFields } from "./errors.ts";
 
 const base = {
   DATABASE_URL: "postgres://localhost/dinghy",
@@ -73,8 +75,29 @@ test("events lose request data and the parameters of a failed query", () => {
   const event = scrubEvent({
     type: undefined,
     request: { url: "https://chat.example.com/sign-in?token=secret" },
+    breadcrumbs: [{ data: { url: "https://push.example.com/send/device-token" } }],
     exception: { values: [{ type: "Error", value: "Failed query: select 1\nparams: secret" }] },
   });
   expect(event.request).toBeUndefined();
+  expect(event.breadcrumbs).toBeUndefined();
   expect(event.exception?.values?.[0]?.value).toBe("A query failed.");
+});
+
+test("a database error keeps its stack for the report, and none of its parameters", () => {
+  const database = Object.assign(new Error("duplicate key value violates unique constraint"), {
+    severity: "ERROR",
+    code: "23505",
+    constraint: "operator_email_key",
+  });
+  const wrapped = new DrizzleQueryError(
+    "insert into operator values ($1)",
+    ["someone@example.com"],
+    database,
+  );
+  const fields = safeErrorFields(wrapped);
+  const err = fields.err as Error;
+  expect(err.message).toBe("A database query failed with code 23505.");
+  expect(err.stack).toContain("error-reports.test.ts");
+  expect(JSON.stringify({ ...fields, stack: err.stack })).not.toContain("someone@example.com");
+  expect(fields.databaseError).toMatchObject({ code: "23505", constraint: "operator_email_key" });
 });

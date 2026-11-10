@@ -8,6 +8,7 @@ const QUERY_FAILED = /^Failed query:/;
 export function scrubEvent(event: ErrorEvent): ErrorEvent {
   // A URL can hold a sign-in token, and a header a session.
   delete event.request;
+  delete event.breadcrumbs;
   for (const exception of event.exception?.values ?? []) {
     if (exception.value !== undefined && QUERY_FAILED.test(exception.value)) {
       exception.value = "A query failed.";
@@ -19,7 +20,7 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
 /**
  * Sends errors to Sentry when SENTRY_DSN is set: what the logger writes at error and fatal, and
  * uncaught exceptions. Without SENTRY_DSN, the SDK is never loaded and nothing is sent. It sends no
- * request data, no local variables, no logs and no traces.
+ * request data, no breadcrumbs, no local variables, no logs and no traces.
  */
 export async function startErrorReports(
   config: Config,
@@ -47,9 +48,19 @@ export async function startErrorReports(
       stackFrameVariables: false,
     },
     initialScope: { tags: { role } },
+    // Only these, so no breadcrumbs: an outgoing request's URL, such as a push endpoint, holds a
+    // device token.
+    defaultIntegrations: false,
     integrations: [
+      Sentry.onUncaughtExceptionIntegration(),
+      // Strict, as Node is without Sentry: the process exits and Docker starts it again.
+      Sentry.onUnhandledRejectionIntegration({ mode: "strict" }),
+      Sentry.linkedErrorsIntegration(),
+      Sentry.contextLinesIntegration(),
+      Sentry.dedupeIntegration(),
       Sentry.pinoIntegration({ error: { levels: ["error", "fatal"] }, log: { levels: [] } }),
     ],
+    beforeBreadcrumb: () => null,
     beforeSend: scrubEvent,
   });
   return () => Sentry.close(2000);
