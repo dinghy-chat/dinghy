@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-11
+
 ### Changed
 
 - **Delete my account** works at once for a workspace's only owner. A workspace with other people in it passes to the admin who joined first, or else to the member who joined first. A workspace with nobody else in it is deleted with the account, and on Dinghy Cloud its subscription ends. The dialog lists what happens to each one. A self-hosted server still keeps its last workspace.
@@ -338,7 +340,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/dinghy-chat/dinghy/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/dinghy-chat/dinghy/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/dinghy-chat/dinghy/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/dinghy-chat/dinghy/compare/v0.15.0...v0.16.0
