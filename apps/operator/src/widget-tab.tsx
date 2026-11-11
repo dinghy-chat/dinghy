@@ -13,6 +13,7 @@ import {
 } from "../../../packages/widget/src/shared.ts";
 import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import type { Me, WorkspaceApi } from "./api.ts";
+import { hexColor } from "./hex-color.ts";
 import { setLeaveGuard } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -25,8 +26,6 @@ import {
   SaveNote,
   type UploadText,
 } from "./ui.tsx";
-
-const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 const LOGO_TEXT: UploadText = {
   upload: "logoUpload",
@@ -166,16 +165,14 @@ function Choices<T extends string>({
   );
 }
 
-/** A color picker and its hex code. Null keeps the widget's own color. */
+/** A color picker and its hex code in one box. Null keeps the widget's own color. */
 function ColorField({
   label,
-  hint,
   value,
   fallback,
   onChange,
 }: {
   label: string;
-  hint: string;
   value: string | null;
   fallback: string;
   onChange(value: string | null): void;
@@ -185,9 +182,8 @@ function ColorField({
   const [typed, setTyped] = useState(shown);
   useEffect(() => setTyped(shown), [shown]);
   return (
-    <fieldset className="widget-field">
-      <legend>{label}</legend>
-      <div className="color-field">
+    <div className="color-field">
+      <span className="color-box">
         <input
           type="color"
           aria-label={label}
@@ -198,23 +194,43 @@ function ColorField({
           className="mono"
           aria-label={t("widgetColorHex", { color: label })}
           spellCheck={false}
-          maxLength={7}
           value={typed}
           onChange={(event) => {
-            const next = event.target.value.trim();
-            setTyped(next);
-            if (HEX_COLOR.test(next)) onChange(next.toLowerCase());
+            const next = event.target.value;
+            const color = hexColor(next);
+            setTyped(color ?? next);
+            if (color !== null) onChange(color);
           }}
           onBlur={() => setTyped(shown)}
         />
-        {value !== null && (
-          <button type="button" className="text-button" onClick={() => onChange(null)}>
-            {t("widgetColorDefault")}
-          </button>
-        )}
+      </span>
+      {value !== null && (
+        <button type="button" className="text-button" onClick={() => onChange(null)}>
+          {t("widgetColorDefault")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** One line of the Look section: the label and its hint on the left, the control on the right. */
+function LookRow({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <div className="look-row">
+      <div className="look-label">
+        <span aria-hidden="true">{label}</span>
+        {hint !== undefined && <small className="hint">{hint}</small>}
       </div>
-      <small className="hint">{hint}</small>
-    </fieldset>
+      {children}
+    </div>
   );
 }
 
@@ -287,47 +303,60 @@ function LookFields({
   settings: WidgetSettings;
   onChange(change: Partial<WidgetSettings>): void;
 }) {
+  // Each control carries its own accessible name, so the visible label is for the eye only.
   return (
-    <>
-      <ColorField
-        label={t("widgetColorPrimary")}
-        hint={t("widgetColorPrimaryHelp")}
-        value={settings.primary}
-        fallback={DEFAULT_COLORS.primary}
-        onChange={(primary) => onChange({ primary })}
-      />
-      <ColorField
-        label={t("widgetColorAccent")}
-        hint={t("widgetColorAccentHelp")}
-        value={settings.accent}
-        fallback={DEFAULT_COLORS.accent}
-        onChange={(accent) => onChange({ accent })}
-      />
-      <Choices
-        label={t("widgetSide")}
-        value={settings.position}
-        options={SIDES}
-        onChange={(position) => onChange({ position })}
-      />
-      <Choices
-        label={t("widgetTheme")}
-        hint={t("widgetThemeHelp")}
-        value={settings.theme}
-        options={THEMES}
-        onChange={(theme) => onChange({ theme })}
-      />
-      <Choices
+    <div className="look-rows">
+      <LookRow label={t("widgetColorPrimary")} hint={t("widgetColorPrimaryHelp")}>
+        <ColorField
+          label={t("widgetColorPrimary")}
+          value={settings.primary}
+          fallback={DEFAULT_COLORS.primary}
+          onChange={(primary) => onChange({ primary })}
+        />
+      </LookRow>
+      <LookRow label={t("widgetColorAccent")} hint={t("widgetColorAccentHelp")}>
+        <ColorField
+          label={t("widgetColorAccent")}
+          value={settings.accent}
+          fallback={DEFAULT_COLORS.accent}
+          onChange={(accent) => onChange({ accent })}
+        />
+      </LookRow>
+      <LookRow label={t("widgetSide")}>
+        <Choices
+          label={t("widgetSide")}
+          hideLabel
+          value={settings.position}
+          options={SIDES}
+          onChange={(position) => onChange({ position })}
+        />
+      </LookRow>
+      <LookRow label={t("widgetTheme")} hint={t("widgetThemeHelp")}>
+        <Choices
+          label={t("widgetTheme")}
+          hideLabel
+          value={settings.theme}
+          options={THEMES}
+          onChange={(theme) => onChange({ theme })}
+        />
+      </LookRow>
+      <LookRow
         label={t("widgetLauncher")}
         hint={settings.launcher === "hidden" ? t("widgetLauncherHiddenHelp") : undefined}
-        value={settings.launcher}
-        options={LAUNCHERS}
-        onChange={(launcher) => onChange({ launcher })}
-      />
-      <label className="field">
-        <span>{t("widgetRadius")}</span>
+      >
+        <Choices
+          label={t("widgetLauncher")}
+          hideLabel
+          value={settings.launcher}
+          options={LAUNCHERS}
+          onChange={(launcher) => onChange({ launcher })}
+        />
+      </LookRow>
+      <LookRow label={t("widgetRadius")}>
         <div className="radius-field">
           <input
             type="range"
+            aria-label={t("widgetRadius")}
             min={0}
             max={RADIUS_MAX_PX}
             value={settings.radius}
@@ -335,13 +364,15 @@ function LookFields({
           />
           <output>{t("widgetRadiusValue", { radius: String(settings.radius) })}</output>
         </div>
-      </label>
-      <Switch
-        label={t("widgetMascot")}
-        checked={settings.mascot}
-        onChange={(mascot) => onChange({ mascot })}
-      />
-    </>
+      </LookRow>
+      <div className="look-row look-switch">
+        <Switch
+          label={t("widgetMascot")}
+          checked={settings.mascot}
+          onChange={(mascot) => onChange({ mascot })}
+        />
+      </div>
+    </div>
   );
 }
 
