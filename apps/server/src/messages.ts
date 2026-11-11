@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import {
+  type AnyColumn,
   and,
   asc,
   desc,
@@ -13,6 +14,7 @@ import {
   lte,
   ne,
   or,
+  type SQL,
   sql,
 } from "drizzle-orm";
 import { quoteExcerpt } from "../../../packages/widget/src/markdown.ts";
@@ -627,48 +629,83 @@ const visitorConversations = (tx: Transaction, workspaceId: string, visitorId: s
     .from(conversation)
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)));
 
+/** A reply email or a transcript, and the positions of the first and last message it carried. */
+interface EmailCoverage {
+  fromSeq: bigint;
+  toSeq: bigint;
+  /** "sending": planned, and its claim has not run out. */
+  state: "sent" | "failed" | "sending";
+  finishedAt: Date | null;
+}
+
+/**
+ * The reply emails and transcripts that carried messages of this conversation, from the range each
+ * one recorded when it was planned. A reply email carries replies from every conversation of the
+ * visitor, and a transcript its own conversation's. Receipts, the edit lock and a message's info
+ * all read this one source.
+ */
+async function emailCoverage(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  visitorId: string,
+): Promise<EmailCoverage[]> {
+  const rows = await tx
+    .select({
+      fromSeq: alertDelivery.coveredFromSeq,
+      toSeq: alertDelivery.coveredToSeq,
+      outcome: alertDelivery.outcome,
+      finishedAt: alertDelivery.finishedAt,
+    })
+    .from(alertDelivery)
+    .where(
+      and(
+        eq(alertDelivery.workspaceId, workspaceId),
+        eq(alertDelivery.visitorId, visitorId),
+        or(
+          eq(alertDelivery.channel, "email"),
+          and(
+            eq(alertDelivery.channel, "transcript"),
+            eq(alertDelivery.conversationId, conversationId),
+          ),
+        ),
+        or(
+          inArray(alertDelivery.outcome, ["sent", "failed"]),
+          and(isNull(alertDelivery.finishedAt), gt(alertDelivery.claimedUntil, sql`now()`)),
+        ),
+      ),
+    );
+  return rows.flatMap(({ fromSeq, toSeq, outcome, finishedAt }): EmailCoverage[] =>
+    fromSeq === null || toSeq === null || outcome === "skipped"
+      ? []
+      : [{ fromSeq, toSeq, finishedAt, state: outcome ?? "sending" }],
+  );
+}
+
+/** The emails that carried the message at this position. */
+const carrying = (coverage: EmailCoverage[], seq: bigint) =>
+  coverage.filter((email) => email.fromSeq <= seq && seq <= email.toSeq);
+
 /**
  * How far the visitor has seen the replies in one conversation: read in the chat up to `readSeq`,
- * sent by email up to `emailedSeq`, and up to `emailFailedSeq` when the newest reply email failed.
- * An email carries every reply the visitor had not read when it went, so it covers each reply
- * written before it. One statement, for the whole conversation.
+ * and the ranges that sent and failed emails carried.
  */
 export async function replyReceipts(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
   visitorId: string,
-): Promise<{ readSeq: bigint; emailedSeq: bigint | null; emailFailedSeq: bigint | null }> {
-  const result = await tx.execute<{
-    read_seq: string | null;
-    emailed_seq: string | null;
-    failed_seq: string | null;
-  }>(sql`
-    with email as (
-      select max(finished_at) filter (where outcome = 'sent') as sent_at,
-             max(finished_at) filter (where outcome = 'failed') as failed_at
-      from alert_delivery
-      where workspace_id = ${workspaceId} and visitor_id = ${visitorId} and channel = 'email'
-    ),
-    covered as (
-      select max(m.seq) filter (where m.created_at <= email.sent_at) as emailed_seq,
-             max(m.seq) filter (where m.created_at <= email.failed_at
-               and email.failed_at > coalesce(email.sent_at, '-infinity')) as failed_seq
-      from email
-      left join message as m on m.workspace_id = ${workspaceId}
-        and m.conversation_id = ${conversationId} and m.author_visitor_id is null
-        and m.kind in ('text', 'image')
-    )
-    select (select last_read_seq from visitor
-            where workspace_id = ${workspaceId} and id = ${visitorId}) as read_seq,
-           covered.emailed_seq, covered.failed_seq
-    from covered`);
-  const row = result.rows[0];
-  const big = (value: string | null | undefined) => (value == null ? null : BigInt(value));
+): Promise<{ readSeq: bigint; emails: { fromSeq: bigint; toSeq: bigint; sent: boolean }[] }> {
+  const [reader] = await tx
+    .select({ lastReadSeq: visitor.lastReadSeq })
+    .from(visitor)
+    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
+  const coverage = await emailCoverage(tx, workspaceId, conversationId, visitorId);
   return {
-    readSeq: big(row?.read_seq) ?? 0n,
-    emailedSeq: big(row?.emailed_seq),
-    emailFailedSeq: big(row?.failed_seq),
+    readSeq: reader?.lastReadSeq ?? 0n,
+    emails: coverage
+      .filter((email) => email.state !== "sending")
+      .map(({ fromSeq, toSeq, state }) => ({ fromSeq, toSeq, sent: state === "sent" })),
   };
 }
 
@@ -716,28 +753,33 @@ export async function listVisitorMessages(
   }
 
   const position = after ?? start;
-  // An edit or a delete sends the message again, at its change's position.
-  const changePosition = sql<bigint>`coalesce(${message.changedSeq}, ${message.seq})`;
-  const rows = await tx
-    .select(messageColumns)
-    .from(message)
-    .innerJoin(
-      conversation,
-      and(
-        eq(conversation.workspaceId, message.workspaceId),
-        eq(conversation.id, message.conversationId),
-      ),
-    )
-    .where(
-      and(
-        eq(message.workspaceId, workspaceId),
-        eq(conversation.visitorId, visitorId),
-        gt(changePosition, position.seq),
-      ),
-    )
-    .orderBy(asc(changePosition))
-    .limit(limit + 1);
-  const page = rows.slice(0, limit).map(stored);
+  // An edit or a delete sends the message again, at its change's position. New rows and changed
+  // rows are read apart, so each read follows an index: message_seq_key and message_changed_idx.
+  const read = (condition: SQL | undefined, order: AnyColumn) =>
+    tx
+      .select(messageColumns)
+      .from(message)
+      .innerJoin(
+        conversation,
+        and(
+          eq(conversation.workspaceId, message.workspaceId),
+          eq(conversation.id, message.conversationId),
+        ),
+      )
+      .where(
+        and(eq(message.workspaceId, workspaceId), eq(conversation.visitorId, visitorId), condition),
+      )
+      .orderBy(asc(order))
+      .limit(limit + 1);
+  const fresh = await read(
+    and(gt(message.seq, position.seq), isNull(message.changedSeq)),
+    message.seq,
+  );
+  const changed = await read(gt(message.changedSeq, position.seq), message.changedSeq);
+  const rows = [...fresh, ...changed]
+    .map(stored)
+    .sort((one, other) => (one.changeSeq < other.changeSeq ? -1 : 1));
+  const page = rows.slice(0, limit);
   const last = page.at(-1);
   return {
     messages: page,
@@ -795,6 +837,25 @@ export function joinVisitor() {
     eq(visitor.workspaceId, conversation.workspaceId),
     eq(visitor.id, conversation.visitorId),
   );
+}
+
+/**
+ * A conversation's visitor, or undefined. With `lock`, the visitor's row stays locked until commit.
+ * A change to a message takes this lock before the message's, as a read does.
+ */
+export async function conversationVisitor(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  lock?: "update",
+) {
+  const query = tx
+    .select({ id: visitor.id, email: visitor.email, lastReadSeq: visitor.lastReadSeq })
+    .from(conversation)
+    .innerJoin(visitor, joinVisitor())
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  const [row] = lock === undefined ? await query : await query.for(lock, { of: visitor });
+  return row;
 }
 
 interface ConversationSummary extends ConversationRow {
@@ -916,7 +977,7 @@ export async function countWaiting(tx: Transaction, workspaceId: string): Promis
     cross join lateral (
       select m.author_visitor_id from ${message} as m
       where m.workspace_id = c.workspace_id and m.conversation_id = c.id
-        and m.kind in ('text', 'image')
+        and m.kind in ('text', 'image') and m.deleted_at is null
       order by m.seq desc
       limit 1
     ) as newest
@@ -1000,7 +1061,7 @@ export async function authorNames(
   return new Map([...authors].map(([id, author]) => [id, author.name]));
 }
 
-/** One message, or null when it was deleted. */
+/** One message, or null when it does not exist. A deleted one is found, with `deleted` set. */
 export async function findMessage(
   tx: Transaction,
   workspaceId: string,
@@ -1377,6 +1438,25 @@ async function recordMessageChange(
   });
 }
 
+/**
+ * Sends again every reply that quotes this message, so an open chat shows its quote as it is now.
+ * Each gets a position of its own, because a stream pages by them. The caller holds the workspace
+ * lock, and the positions it takes have no event, a gap that is harmless.
+ */
+async function resendQuotes(tx: Transaction, workspaceId: string, messageId: string) {
+  await tx.execute(sql`
+    with quoting as (
+      select id, row_number() over (order by seq) as n from ${message}
+      where workspace_id = ${workspaceId} and reply_to_message_id = ${messageId}),
+    taken as (
+      update ${workspace} set event_seq = event_seq + (select count(*) from quoting)
+      where id = ${workspaceId}
+      returning event_seq - (select count(*) from quoting) as base)
+    update ${message} set changed_seq = taken.base + quoting.n
+    from quoting, taken
+    where ${message.workspaceId} = ${workspaceId} and ${message.id} = quoting.id`);
+}
+
 /** One chat line of this conversation, locked until commit, or undefined. */
 async function lockChatLine(
   tx: Transaction,
@@ -1409,43 +1489,20 @@ async function lockChatLine(
 }
 
 /**
- * Whether the visitor may have seen a reply: read it in the chat, or got an email that may carry it,
- * sent or being sent now. It locks the visitor's row, which a read takes too, so a read cannot slip
- * in before the edit commits. An email row still waiting reads the body when it goes.
+ * Whether the visitor may have seen a reply: read it in the chat, or got an email that carried it,
+ * sent or being sent now. The caller holds the visitor's row lock, which a read takes too, so a read
+ * cannot slip in before the edit commits. An email that has not been planned reads the new body.
  */
 async function visitorMaySee(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
-  line: { seq: bigint; createdAt: Date },
+  reader: { id: string; lastReadSeq: bigint },
+  seq: bigint,
 ): Promise<boolean> {
-  const [reader] = await tx
-    .select({ id: visitor.id, lastReadSeq: visitor.lastReadSeq })
-    .from(visitor)
-    .innerJoin(conversation, joinVisitor())
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)))
-    .for("update", { of: visitor });
-  if (reader === undefined) return true;
-  if (reader.lastReadSeq >= line.seq) return true;
-  const [email] = await tx
-    .select({ channel: alertDelivery.channel })
-    .from(alertDelivery)
-    .where(
-      and(
-        eq(alertDelivery.workspaceId, workspaceId),
-        eq(alertDelivery.visitorId, reader.id),
-        inArray(alertDelivery.channel, ["email", "transcript"]),
-        or(
-          and(
-            eq(alertDelivery.outcome, "sent"),
-            sql`${alertDelivery.finishedAt} >= ${line.createdAt.toISOString()}::timestamptz`,
-          ),
-          and(isNull(alertDelivery.finishedAt), sql`${alertDelivery.claimedUntil} > now()`),
-        ),
-      ),
-    )
-    .limit(1);
-  return email !== undefined;
+  if (reader.lastReadSeq >= seq) return true;
+  const coverage = await emailCoverage(tx, workspaceId, conversationId, reader.id);
+  return carrying(coverage, seq).some((email) => email.state !== "failed");
 }
 
 export type EditOutcome =
@@ -1467,10 +1524,14 @@ export async function editMessage(
   body: string,
 ): Promise<EditOutcome> {
   const seq = await nextSeq(tx, workspaceId);
+  const reader = await conversationVisitor(tx, workspaceId, conversationId, "update");
+  if (reader === undefined) return { kind: "missing" };
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined || line.deletedAt !== null) return { kind: "missing" };
   if (line.authorOperatorId !== operatorId || line.kind !== "text") return { kind: "not_yours" };
-  if (await visitorMaySee(tx, workspaceId, conversationId, line)) return { kind: "seen" };
+  if (await visitorMaySee(tx, workspaceId, conversationId, reader, line.seq)) {
+    return { kind: "seen" };
+  }
   const [row] = await tx
     .update(message)
     .set({ body, editedAt: sql`now()`, changedSeq: seq })
@@ -1478,8 +1539,8 @@ export async function editMessage(
     .returning(messageColumns);
   if (row === undefined) throw new Error("The message update returned no row");
   await recordMessageChange(tx, workspaceId, seq, "message.updated", line);
-  const found = await findConversation(tx, workspaceId, conversationId);
-  return { kind: "edited", message: stored(row), visitorId: found?.visitorId ?? "" };
+  await resendQuotes(tx, workspaceId, messageId);
+  return { kind: "edited", message: stored(row), visitorId: reader.id };
 }
 
 export type DeleteOutcome =
@@ -1500,11 +1561,12 @@ export async function deleteMessage(
   by: { operatorId: string; any: boolean },
 ): Promise<DeleteOutcome> {
   const seq = await nextSeq(tx, workspaceId);
+  const reader = await conversationVisitor(tx, workspaceId, conversationId, "update");
+  if (reader === undefined) return { kind: "missing" };
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined) return { kind: "missing" };
   if (!by.any && line.authorOperatorId !== by.operatorId) return { kind: "not_yours" };
-  const found = await findConversation(tx, workspaceId, conversationId);
-  const visitorId = found?.visitorId ?? "";
+  const visitorId = reader.id;
   if (line.deletedAt !== null) return { kind: "deleted", visitorId };
   await tx
     .update(message)
@@ -1525,38 +1587,20 @@ export async function deleteMessage(
       .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
   }
   await recordMessageChange(tx, workspaceId, seq, "message.deleted", line);
+  await resendQuotes(tx, workspaceId, messageId);
   return { kind: "deleted", visitorId };
 }
 
-/**
- * When the first email that may carry this reply went: a reply email or a transcript, sent after it
- * was written. Null when none did, or when its row was pruned.
- */
+/** When the first email that carried this message was sent. Null when none did, or it was pruned. */
 export async function emailedAt(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
-  line: { conversationId: string; createdAt: Date },
+  line: { conversationId: string; seq: bigint },
 ): Promise<Date | null> {
-  const [first] = await tx
-    .select({ at: alertDelivery.finishedAt })
-    .from(alertDelivery)
-    .where(
-      and(
-        eq(alertDelivery.workspaceId, workspaceId),
-        eq(alertDelivery.visitorId, visitorId),
-        eq(alertDelivery.outcome, "sent"),
-        or(
-          eq(alertDelivery.channel, "email"),
-          and(
-            eq(alertDelivery.channel, "transcript"),
-            eq(alertDelivery.conversationId, line.conversationId),
-          ),
-        ),
-        sql`${alertDelivery.finishedAt} >= ${line.createdAt.toISOString()}::timestamptz`,
-      ),
-    )
-    .orderBy(asc(alertDelivery.finishedAt))
-    .limit(1);
-  return first?.at ?? null;
+  const coverage = await emailCoverage(tx, workspaceId, line.conversationId, visitorId);
+  const times = carrying(coverage, line.seq).flatMap((email) =>
+    email.state === "sent" && email.finishedAt !== null ? [email.finishedAt.getTime()] : [],
+  );
+  return times.length === 0 ? null : new Date(Math.min(...times));
 }

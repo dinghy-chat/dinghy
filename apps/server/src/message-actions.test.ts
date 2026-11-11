@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
@@ -270,11 +270,19 @@ describe("a reply with a quote", () => {
 
   test("a deleted quoted message leaves the quote with no ID", async () => {
     const { token, conversationId, first } = await visitorStarts("My card is 4242 4242 4242 4242");
-    await reply(ana.cookie, conversationId, "Please never send that.", first.id);
+    const quoting = await reply(ana.cookie, conversationId, "Please never send that.", first.id);
+    const { cursor } = await widgetLines(token);
     const removed = await send(ana.cookie, "DELETE", `${thread(conversationId)}/${first.id}`);
     expect(removed.status).toBe(200);
     const deleted = { id: null, fromVisitor: true, excerpt: "", hasImage: false };
     expect((await operatorLines(conversationId)).at(-1)?.replyTo).toMatchObject(deleted);
+    // An open chat gets the reply that quotes it again, with its new quote, after the delete.
+    const live = await widgetLines(token, cursor);
+    expect(live.messages.map((line) => [line.id, line.replyTo?.id ?? null])).toEqual([
+      [first.id, null],
+      [quoting.id, null],
+    ]);
+    expect(live.messages[1]?.replyTo).toMatchObject(deleted);
     // The widget's history comes in change order, so the delete sends the quoted row last.
     const widgetReply = (await widgetLines(token)).messages.find((line) => line.replyTo !== null);
     expect(widgetReply?.replyTo).toMatchObject(deleted);
@@ -329,6 +337,21 @@ describe("editing a reply", () => {
     });
   });
 
+  test("an edit sends again the replies that quote it, with the new words", async () => {
+    const { token, conversationId } = await visitorStarts("Hi");
+    const sent = await reply(ana.cookie, conversationId, "Teh **answer**");
+    const quoting = await reply(ana.cookie, conversationId, "And more", sent.id);
+    const { cursor } = await widgetLines(token);
+    await send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
+      body: "The **answer**",
+    });
+    const live = await widgetLines(token, cursor);
+    expect(live.messages.map((line) => [line.id, line.replyTo?.excerpt ?? null])).toEqual([
+      [sent.id, null],
+      [quoting.id, "The answer"],
+    ]);
+  });
+
   test("only the operator who wrote a text reply may edit it, and never a key", async () => {
     const { conversationId, first } = await visitorStarts("Hi");
     const sent = await reply(ana.cookie, conversationId, "Mine");
@@ -363,6 +386,8 @@ describe("editing a reply", () => {
         messageId: sent.id,
         visitorId,
         channel: "email",
+        coveredFromSeq: BigInt(sent.seq),
+        coveredToSeq: BigInt(sent.seq),
         ...(state === "sent"
           ? { outcome: "sent", finishedAt: new Date(Date.now() + 1000) }
           : { claimedUntil: new Date(Date.now() + 60_000) }),
@@ -372,6 +397,41 @@ describe("editing a reply", () => {
       });
       expect(response.status).toBe(409);
     }
+  });
+});
+
+describe("edits and reads at once", () => {
+  test("a visitor's read and an edit that wait for the same visitor both finish", async () => {
+    const { token, visitorId, conversationId } = await visitorStarts("Hi");
+    const sent = await reply(ana.cookie, conversationId, "Teh answer");
+    const waiting = async () =>
+      (
+        await owner.execute<{ count: number }>(
+          sql`select count(*)::int as count from pg_locks where not granted`,
+        )
+      ).rows[0]?.count ?? 0;
+    const until = async (count: number) => {
+      while ((await waiting()) < count) await new Promise((resolve) => setTimeout(resolve, 10));
+    };
+    let release = () => {};
+    // Another read holds the visitor's row, so the read and the edit below line up behind it.
+    const holder = owner.transaction(async (tx) => {
+      await tx.execute(sql`select 1 from visitor where id = ${visitorId} for update`);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const read = widget(token, "POST", "read", { seq: sent.seq });
+    await until(1);
+    const edit = send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
+      body: "The answer",
+    });
+    await until(2);
+    release();
+    await holder;
+    // The read goes first, so the visitor saw the old text and the edit is refused, not stuck.
+    expect((await read).status).toBe(200);
+    expect((await edit).status).toBe(409);
   });
 });
 

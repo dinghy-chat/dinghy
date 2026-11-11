@@ -392,6 +392,10 @@ export const message = pgTable(
     index("message_conversation_idx").on(table.workspaceId, table.conversationId, table.seq),
     // Deleting a quoted row clears its replies' quote, which this finds.
     index("message_reply_to_idx").on(table.workspaceId, table.replyToMessageId),
+    // The widget's stream reads the messages an edit or a delete sent again after its cursor.
+    index("message_changed_idx")
+      .on(table.workspaceId, table.changedSeq)
+      .where(sql`${table.changedSeq} is not null`),
     // The widget's header shows the members who replied last: one short read per member.
     index("message_operator_seq_idx")
       .on(table.workspaceId, table.authorOperatorId, table.seq)
@@ -690,6 +694,11 @@ export const alertDelivery = pgTable(
     claimedUntil: timestamp("claimed_until", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     outcome: alertOutcome("outcome"),
+    // The positions of the first and last message a reply email or a transcript carried, set when
+    // it is planned. A reply email carries every unread reply in that range, and a transcript every
+    // message of its conversation in it, so "Sent by email" and the edit lock read them exactly.
+    coveredFromSeq: bigint("covered_from_seq", { mode: "bigint" }),
+    coveredToSeq: bigint("covered_to_seq", { mode: "bigint" }),
     createdAt: createdAt(),
   },
   (table) => [

@@ -864,14 +864,26 @@
           "readSeq": {
             "type": "string"
           },
-          "emailedSeq": {
-            "type": ["string", "null"]
-          },
-          "emailFailedSeq": {
-            "type": ["string", "null"]
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fromSeq": {
+                  "type": "string"
+                },
+                "toSeq": {
+                  "type": "string"
+                },
+                "sent": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["fromSeq", "toSeq", "sent"]
+            }
           }
         },
-        "required": ["readSeq", "emailedSeq", "emailFailedSeq"]
+        "required": ["readSeq", "emails"]
       },
       "MessageReceipt": {
         "type": "object",

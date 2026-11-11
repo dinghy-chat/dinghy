@@ -9,6 +9,7 @@ import { type Database, withWorkspace } from "./db/tenant.ts";
 import {
   appendMessage,
   countWaiting,
+  deleteMessage,
   listConversations,
   setConversationStatus,
 } from "./messages.ts";
@@ -519,6 +520,34 @@ describe("history", () => {
     const empty = await history(token, second.cursor);
     expect(empty.messages).toEqual([]);
     expect(empty.cursor).toBe(second.cursor);
+  });
+
+  test("pages mix new messages and changed ones in the order of their changes", async () => {
+    const { token } = await newVisitor();
+    const sent: WireMessage[] = [];
+    for (let i = 0; i < 4; i++) {
+      sent.push((await (await send(token, `x${i}`, `m${i}`)).json()) as WireMessage);
+    }
+    const { cursor } = await history(token);
+    const remove = (line: WireMessage | undefined) =>
+      withWorkspace(db, a.id, (tx) =>
+        deleteMessage(tx, a.id, line?.conversationId ?? "", line?.id ?? "", {
+          operatorId: OPERATOR,
+          any: true,
+        }),
+      );
+    await remove(sent[1]);
+    await send(token, "x4", "m4");
+    await remove(sent[0]);
+    const first = await history(token, cursor, 2);
+    expect(first.messages.map((m) => [m.id, m.body])).toEqual([
+      [sent[1]?.id, null],
+      [expect.any(String), "m4"],
+    ]);
+    expect(first.hasMore).toBe(true);
+    const second = await history(token, first.cursor, 2);
+    expect(second.messages.map((m) => [m.id, m.body])).toEqual([[sent[0]?.id, null]]);
+    expect(second.hasMore).toBe(false);
   });
 
   test("a cursor from another feed generation gets a resync", async () => {

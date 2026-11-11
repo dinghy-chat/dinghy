@@ -383,14 +383,16 @@ const conversationRoute = createRoute({
             ),
             // Cloud only: this is a welcome chat, which has no visit or pages. Null otherwise.
             welcome: WelcomeChat.nullable(),
-            // How far the visitor has seen the replies: read in the chat up to `readSeq`, sent by
-            // email up to `emailedSeq`, and up to `emailFailedSeq` when the newest reply email
-            // failed. A reply above them all is only stored.
+            // How far the visitor has seen the replies: read in the chat up to `readSeq`, and
+            // carried by the emails in `emails`, each from `fromSeq` to `toSeq`. A reply that a sent
+            // email carried was emailed, one only a failed email carried was not. A reply in none
+            // and above `readSeq` is only stored.
             receipts: z
               .object({
                 readSeq: z.string(),
-                emailedSeq: z.string().nullable(),
-                emailFailedSeq: z.string().nullable(),
+                emails: z.array(
+                  z.object({ fromSeq: z.string(), toSeq: z.string(), sent: z.boolean() }),
+                ),
               })
               .openapi("ReplyReceipts"),
           }),
@@ -908,8 +910,11 @@ export function createInbox({
         welcome: result.welcome,
         receipts: {
           readSeq: result.receipts.readSeq.toString(),
-          emailedSeq: result.receipts.emailedSeq?.toString() ?? null,
-          emailFailedSeq: result.receipts.emailFailedSeq?.toString() ?? null,
+          emails: result.receipts.emails.map((email) => ({
+            fromSeq: email.fromSeq.toString(),
+            toSeq: email.toSeq.toString(),
+            sent: email.sent,
+          })),
         },
       };
     },

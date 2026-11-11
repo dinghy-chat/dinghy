@@ -575,6 +575,20 @@
       "when": 1794431924601,
       "tag": "0081_message_reply_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1794434890208,
+      "tag": "0082_email_coverage",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1794434890699,
+      "tag": "0083_email_coverage_grants",
+      "breakpoints": true
     }
   ]
 }

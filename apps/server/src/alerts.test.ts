@@ -16,6 +16,7 @@ import {
   fanOutOne,
   finishDelivery,
   MAX_ATTEMPTS,
+  planDelivery,
   pruneOnce,
   queueTranscript,
   REPLY_EMAIL_DELAY_MS,
@@ -40,8 +41,11 @@ import { emailAddressHash } from "./identity.ts";
 import type { Mailer } from "./mailer.ts";
 import {
   appendMessage,
+  deleteMessage,
   editMessage,
+  emailedAt,
   listWorkspaceEvents,
+  replyReceipts,
   setConversationStatus,
 } from "./messages.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
@@ -208,6 +212,17 @@ const expireClaims = () =>
                     where finished_at is null and claimed_until is not null`);
 const makeDue = () =>
   owner.execute(sql`update alert_delivery set next_attempt_at = now() where finished_at is null`);
+/** Time passes: every waiting row comes due this much sooner, so they keep their real order. */
+const passes = (ms: number) =>
+  owner.execute(sql`update alert_delivery
+                    set next_attempt_at = next_attempt_at - ${ms}::float8 * interval '1 millisecond'
+                    where finished_at is null`);
+/** Waits for a check, letting time pass on each try, so every row that waits comes due. */
+const untilDue = (check: () => boolean | Promise<boolean>, what: string) =>
+  until(async () => {
+    await makeDue();
+    return check();
+  }, what);
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -283,6 +298,34 @@ describe("web push", () => {
     }
     // One row for each recipient and channel, however many devices the recipient has.
     expect(await deliveries()).toHaveLength(2);
+  });
+
+  test("a visitor's message deleted before its alert goes alerts nobody", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    await addDevice(anna, "anna-phone");
+    const remove = (written: Awaited<ReturnType<typeof visitorWrites>>) =>
+      withWorkspace(app, space.id, (tx) =>
+        deleteMessage(tx, space.id, written.message.conversationId, written.message.id, {
+          operatorId: anna,
+          any: true,
+        }),
+      );
+    // Deleted before the fan-out: no row.
+    const early = await visitorWrites(await addVisitor(), "My card is 4242 4242 4242 4242");
+    await remove(early);
+    await fanOutAll();
+    expect(await deliveries()).toEqual([]);
+    // Deleted while its row waits: the row sends nothing.
+    const late = await visitorWrites(await addVisitor(), "My card is 4242 4242 4242 4242");
+    await fanOutAll();
+    expect(await deliveries()).toHaveLength(1);
+    await remove(late);
+    runWorker();
+    await until(
+      async () => (await deliveries()).every((row) => row.outcome === "skipped"),
+      "the row to be skipped",
+    );
+    expect(received).toEqual([]);
   });
 
   test("an operator reply and an operator with no device send no push", async () => {
@@ -959,13 +1002,14 @@ describe("email", () => {
     await operatorWrites(anna, next.message.conversationId, "Answer in the second");
     await fanOutAll();
     expect(await replyRows()).toHaveLength(1);
-    await makeDue();
     runWorker({ mail: true });
-    // The first conversation's transcript goes too, and leaves the reply email, which carries a
-    // reply from the second conversation.
+    // The first conversation's transcript goes first and carries its reply, so the reply email
+    // carries only the reply from the second conversation.
     const replyMail = () => mails.find((one) => one.subject === "Acme replied to your message");
-    await until(() => replyMail() !== undefined, "the email");
-    expect(replyMail()?.text).toContain("Answer in the first");
+    await untilDue(() => replyMail() !== undefined, "the email");
+    expect(mails[0]?.subject).toBe("Your conversation with Acme");
+    expect(mails[0]?.text).toContain("Answer in the first");
+    expect(replyMail()?.text).not.toContain("Answer in the first");
     expect(replyMail()?.text).toContain("Answer in the second");
   });
 
@@ -1113,6 +1157,135 @@ describe("email", () => {
     await operatorWrites(anna, conversationId, "Over the limit");
     await fanOutAll();
     expect(await replyRows()).toHaveLength(REPLY_EMAILS_PER_DAY);
+  });
+
+  test("transcripts count toward the daily limit", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const conversationId = written.message.conversationId;
+    await operatorWrites(anna, conversationId, "Answer");
+    for (let sent = 0; sent < REPLY_EMAILS_PER_DAY; sent++) {
+      expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+      await fanOutAll();
+      const [row] = await claimDeliveries(workerDb, 1, 60_000);
+      if (row !== undefined) await finishDelivery(workerDb, row, "sent");
+      await operatorWrites(anna, conversationId, `Answer ${sent}`);
+      await fanOutAll();
+    }
+    // The reply emails that waited, and a new transcript, all stop at the limit.
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await fanOutAll();
+    runWorker({ mail: true });
+    await untilDue(
+      async () => (await deliveries()).every((row) => row.finishedAt !== null),
+      "every row to finish",
+    );
+    expect(mails).toEqual([]);
+  });
+
+  test("an email's receipt, edit lock and info cover exactly the replies it carried", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const conversationId = written.message.conversationId;
+    const replies = [];
+    for (let index = 1; index <= 6; index++) {
+      replies.push((await operatorWrites(anna, conversationId, `Answer ${index}`)).message);
+    }
+    await fanOutAll();
+    // The mail server holds the email, so a reply written during the send is not in it.
+    let release = () => {};
+    const holding: Mailer = {
+      async send(to, subject, text) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        mails.push({ to, subject, text });
+      },
+    };
+    runWorker({ mailer: holding });
+    await makeDue();
+    await until(
+      async () => (await replyRows())[0]?.coveredToSeq != null,
+      "the email to be planned",
+    );
+    const during = (await operatorWrites(anna, conversationId, "Answer 7")).message;
+    release();
+    await until(async () => (await replyRows())[0]?.outcome === "sent", "the email");
+    expect(mails[0]?.text).toContain("Answer 6");
+    expect(mails[0]?.text).not.toContain("Answer 1");
+    const [first, sixth] = [replies[0], replies[5]];
+    if (first === undefined || sixth === undefined) throw new Error("No replies");
+    const seen = await withWorkspace(app, space.id, async (tx) => ({
+      receipts: await replyReceipts(tx, space.id, conversationId, from),
+      first: await emailedAt(tx, space.id, from, first),
+      sixth: await emailedAt(tx, space.id, from, sixth),
+      during: await emailedAt(tx, space.id, from, during),
+    }));
+    expect(seen.receipts.emails).toEqual([
+      { fromSeq: replies[1]?.seq, toSeq: sixth.seq, sent: true },
+    ]);
+    expect(seen.first).toBeNull();
+    expect(seen.sixth).toBeInstanceOf(Date);
+    expect(seen.during).toBeNull();
+    const edit = (id: string, body: string) =>
+      withWorkspace(app, space.id, (tx) =>
+        editMessage(tx, space.id, conversationId, id, anna, body),
+      );
+    expect((await edit(first.id, "Answer one")).kind).toBe("edited");
+    expect((await edit(during.id, "Answer seven")).kind).toBe("edited");
+    expect((await edit(sixth.id, "Answer six")).kind).toBe("seen");
+  });
+
+  test("an email planned while an edit commits carries the edited text", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const conversationId = written.message.conversationId;
+    const reply = await operatorWrites(anna, conversationId, "Teh answer");
+    await fanOutAll();
+    await makeDue();
+    let commit = () => {};
+    let edited = false;
+    const editing = withWorkspace(app, space.id, async (tx) => {
+      const outcome = await editMessage(
+        tx,
+        space.id,
+        conversationId,
+        reply.message.id,
+        anna,
+        "The answer",
+      );
+      edited = true;
+      await new Promise<void>((resolve) => {
+        commit = resolve;
+      });
+      return outcome;
+    });
+    await until(() => edited, "the edit to hold its locks");
+    const [row] = await claimDeliveries(workerDb, 1, 60_000);
+    if (row === undefined) throw new Error("No claim");
+    let planned = false;
+    const planning = planDelivery(workerDb, row, {
+      publicUrl: PUBLIC_URL,
+      secret: AUTH_SECRET,
+      imageOrigin: PUBLIC_URL,
+    }).finally(() => {
+      planned = true;
+    });
+    // The plan either waits for the edit's lock, or reads the old text at once.
+    const lockWaits = async () =>
+      (
+        await owner.execute<{ count: number }>(
+          sql`select count(*)::int as count from pg_locks where not granted`,
+        )
+      ).rows[0]?.count ?? 0;
+    await until(async () => planned || (await lockWaits()) > 0, "the plan to wait or finish");
+    commit();
+    expect((await editing).kind).toBe("edited");
+    const plan = await planning;
+    expect(plan?.channel === "email" && plan.text).toContain("The answer");
   });
 });
 
@@ -1452,11 +1625,13 @@ describe("transcripts", () => {
     );
   const transcripts = async () =>
     (await deliveries()).filter((row) => row.channel === "transcript");
-  /** Only the transcripts become due, so a waiting reply email keeps its own time. */
-  const transcriptsDue = () =>
-    owner.execute(sql`update alert_delivery set next_attempt_at = now()
-                      where finished_at is null and channel = 'transcript'`);
   const allFinished = async () => (await deliveries()).every((row) => row.finishedAt !== null);
+  const eventsToFanOut = async () =>
+    (
+      await owner.execute<{ count: number }>(sql`
+        select count(*)::int as count from event
+        where workspace_id = ${space.id} and needs_alert`)
+    ).rows[0]?.count ?? 0;
 
   async function chat(email: string | null = "visitor@example.com") {
     const anna = await addOperator(`anna-${randomUUID()}@example.com`);
@@ -1467,40 +1642,72 @@ describe("transcripts", () => {
     return { anna, from, conversationId };
   }
 
-  test("a close sends one transcript after the delay, and drops the waiting reply email", async () => {
-    const { anna, conversationId } = await chat();
-    await setStatus(conversationId, anna, "closed");
+  /**
+   * The reply's email is due at t0 + 5 minutes, and the close 30 seconds later makes the transcript
+   * due at t0 + 5:30, so the reply email comes due first, as it does for real.
+   */
+  async function replyThenClose() {
+    const conversation = await chat();
     await fanOutAll();
-    const [row, ...others] = await transcripts();
-    expect(others).toEqual([]);
-    expect(row?.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() + TRANSCRIPT_DELAY_MS - 60_000);
-    await transcriptsDue();
+    await passes(30_000);
+    await setStatus(conversation.conversationId, conversation.anna, "closed");
+    await fanOutAll();
+    const replyEmail = (await deliveries()).find((row) => row.channel === "email");
+    const [transcript] = await transcripts();
+    expect(transcript?.nextAttemptAt.getTime()).toBeGreaterThan(
+      Date.now() + TRANSCRIPT_DELAY_MS - 60_000,
+    );
+    expect(
+      (transcript?.nextAttemptAt.getTime() ?? 0) - (replyEmail?.nextAttemptAt.getTime() ?? 0),
+    ).toBeGreaterThan(25_000);
+    return conversation;
+  }
+  const replyEmailRow = async () => (await deliveries()).find((row) => row.channel === "email");
+
+  test("a reply email due before the close's transcript waits for it, and the reply goes once", async () => {
+    await replyThenClose();
     runWorker({ mail: true });
-    await until(async () => (await transcripts())[0]?.finishedAt != null, "the transcript");
-    await until(allFinished, "the reply email to be dropped");
-    expect(mails).toHaveLength(1);
+    // The reply email is due, and the transcript 30 seconds later.
+    await passes(REPLY_EMAIL_DELAY_MS - 30_000);
+    await until(async () => {
+      const row = await replyEmailRow();
+      return row?.claimedUntil === null && (row?.nextAttemptAt.getTime() ?? 0) > Date.now();
+    }, "the reply email to wait for the transcript");
+    expect(mails).toEqual([]);
+    await untilDue(allFinished, "both rows to finish");
+    expect(mails.map((mail) => mail.subject)).toEqual(["Your conversation with Acme"]);
     const [mail] = mails;
-    expect(mail?.subject).toBe("Your conversation with Acme");
     expect(mail?.text).toMatch(
       /You, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC:\nHow do I export my data\?/,
     );
     expect(mail?.text).toContain("anna-");
     expect(mail?.text).toContain("Continue the chat: ");
     expect(mail?.html).toContain("<strong>Settings</strong>");
-    const reply = (await deliveries()).find((one) => one.channel === "email");
-    expect(reply?.outcome).toBe("skipped");
+    expect((await replyEmailRow())?.outcome).toBe("skipped");
   });
 
-  test("a reopen within the delay cancels it", async () => {
-    const { anna, conversationId } = await chat();
-    await setStatus(conversationId, anna, "closed");
-    await fanOutAll();
+  test("a transcript that fails or is cancelled leaves the reply email to carry the reply", async () => {
+    const failing: Mailer = {
+      async send(to, subject, text) {
+        if (subject.startsWith("Your conversation")) throw new Error("The mail server refused");
+        mails.push({ to, subject, text });
+      },
+    };
+    await replyThenClose();
+    runWorker({ mailer: failing });
+    await untilDue(allFinished, "both rows to finish");
+    expect((await transcripts())[0]?.outcome).toBe("failed");
+    expect(mails.map((mail) => mail.subject)).toEqual(["Acme replied to your message"]);
+    expect(mails[0]?.text).toContain("Open **Settings**, then Export.");
+  });
+
+  test("a reopen within the delay cancels it, and the reply email still goes", async () => {
+    const { anna, conversationId } = await replyThenClose();
     await setStatus(conversationId, anna, "open");
-    await transcriptsDue();
     runWorker({ mail: true });
-    await until(async () => (await transcripts())[0]?.finishedAt != null, "the transcript row");
+    await untilDue(allFinished, "both rows to finish");
     expect((await transcripts())[0]?.outcome).toBe("skipped");
-    expect(mails.filter((one) => one.subject.startsWith("Your conversation"))).toEqual([]);
+    expect(mails.map((mail) => mail.subject)).toEqual(["Acme replied to your message"]);
   });
 
   test("a new close sends another only after new messages", async () => {
@@ -1561,7 +1768,28 @@ describe("transcripts", () => {
     await fanOutAll();
     expect(await transcripts()).toHaveLength(1);
     runWorker({ mail: true });
-    await until(() => mails.some((one) => one.subject === "Your conversation with Acme"), "it");
+    await until(async () => (await transcripts())[0]?.outcome === "sent", "it");
+    // A retry of the click after it went sends nothing new.
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await until(async () => (await eventsToFanOut()) === 0, "the fan-out");
+    expect(await transcripts()).toHaveLength(1);
+    expect(mails.filter((one) => one.subject === "Your conversation with Acme")).toHaveLength(1);
+  });
+
+  test("a hand-sent one that failed can be sent again", async () => {
+    const { conversationId } = await chat();
+    const refusing: Mailer = {
+      async send() {
+        throw new Error("The mail server refused");
+      },
+    };
+    const worker = runWorker({ mailer: refusing });
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await until(async () => (await transcripts())[0]?.outcome === "failed", "the failure");
+    await worker.stop();
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await fanOutAll();
+    expect(await transcripts()).toHaveLength(2);
   });
 
   test("a hand-sent one needs an email, and stays in its workspace", async () => {

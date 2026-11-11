@@ -1008,7 +1008,7 @@ describe("waiting for a reply", () => {
     expect(await waiting("closed")).toBe(1);
 
     // The visitor writes again after the reply, so it waits again.
-    await app.request(`/v1/widget/${team.publicKey}/messages`, {
+    const again = await app.request(`/v1/widget/${team.publicKey}/messages`, {
       method: "POST",
       headers: {
         origin: WIDGET_ORIGIN,
@@ -1018,6 +1018,15 @@ describe("waiting for a reply", () => {
       body: JSON.stringify({ clientId: "again", body: "Thanks, one more thing" }),
     });
     expect(await waiting()).toBe(2);
+
+    // A deleted message no longer counts, so the reply before it is the newest again.
+    const { id } = (await again.json()) as { id: string };
+    const removed = await app.request(
+      `${base}/conversations/${first.conversationId}/messages/${id}`,
+      { method: "DELETE", headers: { cookie: dee, origin: ORIGIN } },
+    );
+    expect(removed.status).toBe(200);
+    expect(await waiting()).toBe(1);
   });
 
   test("another workspace's conversations are not counted", async () => {
@@ -1032,7 +1041,7 @@ describe("waiting for a reply", () => {
 describe("reply receipts", () => {
   type Read = {
     messages: { id: string; seq: string; fromVisitor: boolean }[];
-    receipts: { readSeq: string; emailedSeq: string | null; emailFailedSeq: string | null };
+    receipts: { readSeq: string; emails: { fromSeq: string; toSeq: string; sent: boolean }[] };
   };
   const readThread = async (conversationId: string) =>
     (await (await get(inA(`/conversations/${conversationId}/messages`))).json()) as Read;
@@ -1046,8 +1055,7 @@ describe("reply receipts", () => {
     const reply = (await sent.json()) as { seq: string };
     expect((await readThread(conversationId)).receipts).toEqual({
       readSeq: expect.any(String),
-      emailedSeq: null,
-      emailFailedSeq: null,
+      emails: [],
     });
     expect(BigInt((await readThread(conversationId)).receipts.readSeq)).toBeLessThan(
       BigInt(reply.seq),
@@ -1071,7 +1079,7 @@ describe("reply receipts", () => {
     expect(tells).toHaveLength(1);
   });
 
-  test("a sent reply email covers the replies before it, and a newer failure shows", async () => {
+  test("receipts show the replies each sent or failed email carried", async () => {
     const { conversationId } = await visitorSends(a.publicKey, "Email me");
     const reply = async (clientId: string) =>
       (await (
@@ -1086,24 +1094,30 @@ describe("reply receipts", () => {
         sql`select visitor_id from conversation where id = ${conversationId}`,
       )
     ).rows;
-    const delivery = (messageId: string, outcome: "sent" | "failed", seq: number) =>
+    const delivery = (
+      line: { id: string; seq: string },
+      outcome: "sent" | "failed" | null,
+      seq: number,
+    ) =>
       owner.execute(sql`
         insert into alert_delivery
           (workspace_id, event_seq, conversation_id, message_id, visitor_id, channel,
-           finished_at, outcome)
-        values (${a.id}, ${seq}, ${conversationId}, ${messageId}, ${row?.visitor_id}, 'email',
-                now(), ${outcome})`);
-    await delivery(first.id, "sent", 900_001);
+           finished_at, outcome, covered_from_seq, covered_to_seq)
+        values (${a.id}, ${seq}, ${conversationId}, ${line.id}, ${row?.visitor_id}, 'email',
+                ${outcome === null ? null : new Date().toISOString()}::timestamptz, ${outcome},
+                ${line.seq}, ${line.seq})`);
+    await delivery(first, "sent", 900_001);
     const second = await reply("email-second");
-    expect((await readThread(conversationId)).receipts).toMatchObject({
-      emailedSeq: first.seq,
-      emailFailedSeq: null,
-    });
-    await delivery(second.id, "failed", 900_002);
-    expect((await readThread(conversationId)).receipts).toMatchObject({
-      emailedSeq: first.seq,
-      emailFailedSeq: second.seq,
-    });
+    // A row still waiting, or one that was never planned, carried nothing yet.
+    await delivery(second, null, 900_002);
+    expect((await readThread(conversationId)).receipts.emails).toEqual([
+      { fromSeq: first.seq, toSeq: first.seq, sent: true },
+    ]);
+    await delivery(second, "failed", 900_003);
+    expect((await readThread(conversationId)).receipts.emails).toEqual([
+      { fromSeq: first.seq, toSeq: first.seq, sent: true },
+      { fromSeq: second.seq, toSeq: second.seq, sent: false },
+    ]);
   });
 });
 
