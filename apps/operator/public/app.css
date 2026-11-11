@@ -958,6 +958,133 @@ button.workspace[aria-expanded="true"],
   min-height: 56px;
   padding: 10px;
 }
+/* Get started, above the operator: a ring that fills, the words and the count. */
+.get-started {
+  position: relative;
+  margin-top: auto;
+}
+.get-started + .me-menu {
+  margin-top: 8px;
+}
+.get-started-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px 8px 10px;
+  border-radius: 14px;
+  color: var(--navy);
+  font-weight: 650;
+  text-align: left;
+  transition: background-color 0.15s;
+}
+.get-started-button:hover,
+.get-started-button[aria-expanded="true"] {
+  background: var(--side-tint-hover);
+}
+.steps-count {
+  margin-left: auto;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.progress-ring {
+  flex: none;
+  transform: rotate(-90deg);
+}
+.progress-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+.ring-track {
+  stroke: var(--line);
+}
+.ring-fill {
+  stroke: var(--blue);
+  stroke-linecap: round;
+}
+.get-started-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  display: grid;
+  gap: 10px;
+  width: 300px;
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px rgb(11 34 57 / 0.08),
+    0 4px 8px rgb(11 34 57 / 0.05),
+    0 12px 32px rgb(11 34 57 / 0.12);
+}
+.get-started-panel header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.get-started-panel h2 {
+  font-size: 18px;
+}
+.steps-progress {
+  color: var(--mute);
+  font-size: 13.5px;
+}
+.get-started-panel .icon-button {
+  width: 32px;
+  height: 32px;
+  margin: -4px -6px 0 0;
+}
+.get-started-panel ol {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+}
+.get-started-panel li button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  color: var(--navy);
+  text-align: left;
+}
+.get-started-panel li button:hover {
+  background: var(--row-hover);
+}
+.step-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+}
+.get-started-panel li.done .step-mark {
+  background: var(--green);
+  box-shadow: none;
+  color: #fff;
+}
+.step-text {
+  flex: 1;
+}
+.get-started-panel li.done .step-text {
+  color: var(--mute);
+  text-decoration: line-through;
+}
+.get-started-panel > .text-button.quiet {
+  justify-self: start;
+  padding: 0;
+  color: var(--mute);
+  font-weight: 500;
+}
 /* The operator's own tile is navy, whatever tint their name gives it elsewhere. */
 .me .avatar {
   width: 34px;
@@ -1520,35 +1647,6 @@ img.ws-tile {
   color: var(--navy);
   font-size: 15px;
   font-weight: 600;
-}
-/* The first steps under an empty inbox. A link per step, so nothing is required. */
-.start {
-  display: grid;
-  gap: 2px;
-  margin: 0 16px 20px;
-  padding: 14px 16px 10px;
-  border-radius: 14px;
-  background: var(--tile-blue);
-}
-.start h3 {
-  margin: 0 0 4px;
-  color: var(--navy);
-  font-size: 15px;
-  font-weight: 600;
-}
-.start ol {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.start .text-button {
-  padding: 0;
-}
-.start .text-button.quiet {
-  justify-self: start;
-  color: var(--mute);
-  font-weight: 500;
 }
 /* The empty-list drawing: navy line work on the paper, with the pennant the only colour. */
 .empty-art {
@@ -3521,6 +3619,30 @@ img.ws-tile {
   .me-menu {
     margin: 0 0 0 auto;
   }
+  /* Get started shrinks to its ring and count, beside the operator. */
+  .get-started {
+    margin: 0 0 0 auto;
+  }
+  .get-started + .me-menu {
+    margin: 0;
+  }
+  .get-started-button {
+    min-height: 40px;
+    width: auto;
+  }
+  .get-started-button > span:not(.steps-count) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .get-started-panel {
+    top: calc(100% + 8px);
+    right: 0;
+    bottom: auto;
+    left: auto;
+  }
   .me {
     min-height: 0;
     padding: 3px;
@@ -3605,6 +3727,21 @@ img.ws-tile {
   .me-menu {
     order: 2;
     margin: 0;
+  }
+  .get-started {
+    order: 2;
+    margin: 0;
+  }
+  /* On a phone the steps rise as a sheet from the bottom. */
+  .get-started-panel {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
   }
   .nav {
     order: 3;
@@ -3818,6 +3955,7 @@ img.ws-tile {
   .select-button,
   .check input,
   .check input::after,
+  .get-started-button,
   .fold-chevron {
     transition: none;
   }

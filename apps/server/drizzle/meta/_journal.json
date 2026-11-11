@@ -512,6 +512,20 @@
       "when": 1794425402578,
       "tag": "0072_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1794426696958,
+      "tag": "0073_get_started",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1794426711282,
+      "tag": "0074_get_started_backfill",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import type { ReactNode } from "react";
 
 import { type Me, type Role, signOut } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -147,6 +148,7 @@ export function Sidebar({
   onProfile: isProfile,
   waiting,
   liveCount,
+  steps,
   onView,
   onProfileOpen,
   onSwitch,
@@ -165,6 +167,8 @@ export function Sidebar({
   waiting: number;
   /** Tabs of the site open now, or null when unknown. */
   liveCount: number | null;
+  /** Above the user menu: the Get started steps, while they show. */
+  steps: ReactNode;
   onView(view: View): void;
   onProfileOpen(): void;
   onSwitch(id: string): void;
@@ -220,6 +224,7 @@ export function Sidebar({
           {waitingText}
         </span>
       )}
+      {steps}
       <UserMenu
         me={me}
         role={role}

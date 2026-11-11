@@ -121,6 +121,17 @@ export interface Message {
   createdAt: string;
 }
 
+/** Which first steps are done, for the signed-in member. */
+export interface GetStarted {
+  install: boolean;
+  logo: boolean;
+  widget: boolean;
+  team: boolean;
+  notifications: boolean;
+  chat: boolean;
+  dismissed: boolean;
+}
+
 /** One open tab of the site, from its last beat. */
 export interface LiveVisitor {
   tab: string;
@@ -474,6 +485,8 @@ export function workspaceApi(workspaceId: string) {
       }),
     exportUrl: `${base}/export`,
     contactsExportUrl: `${base}/contacts/export`,
+    getStarted: () => call<GetStarted>(`${base}/get-started`),
+    dismissGetStarted: () => post<{ ok: true }>(`${base}/get-started/dismiss`, {}),
     liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
     liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
     contacts: (query: { q: string; sort: ContactSort; before: string | null }) => {

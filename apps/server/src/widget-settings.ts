@@ -201,7 +201,12 @@ async function readAppearance(
     .innerJoin(workspace, eq(workspace.id, widgetSettings.workspaceId))
     .where(eq(widgetSettings.workspaceId, workspaceId));
   if (row === undefined) throw new Error("The widget settings row is missing");
-  const { workspaceId: _workspace, logoUpdatedAt, ...settings } = row.settings;
+  const {
+    workspaceId: _workspace,
+    logoUpdatedAt,
+    customizedAt: _customized,
+    ...settings
+  } = row.settings;
   const team = await recentRepliers(tx, workspaceId);
   return {
     ...settings,
@@ -267,7 +272,13 @@ export function registerWidgetSettingsRoutes(
   app.openapi(putRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const saved = await change(id, (tx) =>
-      tx.update(widgetSettings).set(c.req.valid("json")).where(eq(widgetSettings.workspaceId, id)),
+      tx
+        .update(widgetSettings)
+        .set({
+          ...c.req.valid("json"),
+          customizedAt: sql`coalesce(${widgetSettings.customizedAt}, now())`,
+        })
+        .where(eq(widgetSettings.workspaceId, id)),
     );
     return c.json(saved, 200);
   });

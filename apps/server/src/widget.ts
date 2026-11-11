@@ -1258,6 +1258,9 @@ export function registerWidgetRoutes(
     return c.json({ ok: true as const }, 200);
   });
 
+  // Workspaces this process knows an allowed site has loaded, so a beat writes that once.
+  const seenWidget = new Set<string>();
+
   app.openapi(beatRoute, async (c) => {
     const found = c.get("workspace");
     const token = c.get("widgetToken");
@@ -1265,6 +1268,16 @@ export function registerWidgetRoutes(
     const path = sitePage(page, c.req.header("origin"));
     // A chat link's page is this server's, not the site's.
     if (path === null || token.kind === "link") return c.json({ ok: true as const }, 200);
+    if (!seenWidget.has(found.id)) {
+      // The first step of Get started. It matches no row once set, so it takes no lock then.
+      await withWorkspace(db, found.id, (tx) =>
+        tx
+          .update(workspace)
+          .set({ widgetSeenAt: sql`now()` })
+          .where(and(eq(workspace.id, found.id), isNull(workspace.widgetSeenAt))),
+      );
+      seenWidget.add(found.id);
+    }
     const country = countryOf(c.get("clientIp"));
     const zone = knownTimeZone(timeZone);
     // A token that no longer works still counts the tab, as a visitor with none.

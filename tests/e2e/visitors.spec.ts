@@ -38,6 +38,18 @@ test("the operator sees the visitor's draft, the read receipt and the visitor's 
 }) => {
   const operator = await signedIn(browser, server, "vera@example.com");
   const widget = await visitor(browser, "Do you have **yearly** plans?");
+  // The widget's page installed it, and the chat is the test chat.
+  await operator.getByRole("button", { name: /^Get started/ }).click();
+  const steps = operator.getByRole("region", { name: "Get started" });
+  await expect(steps.getByRole("listitem").filter({ hasText: "Install the widget" })).toHaveClass(
+    "done",
+  );
+  await expect(steps.getByRole("listitem").filter({ hasText: "Send a test chat" })).toHaveClass(
+    "done",
+  );
+  await picture(operator, "get-started");
+  await operator.keyboard.press("Escape");
+  await expect(steps).toHaveCount(0);
   await operator.locator(".row", { hasText: "yearly" }).click();
   // The visitor's Markdown shows as formatting.
   await expect(operator.locator(".msg.visitor strong", { hasText: "yearly" })).toBeVisible();

@@ -13,6 +13,7 @@ import {
   workspaceApi,
 } from "./api.ts";
 import { ContactsPage } from "./contacts.tsx";
+import { GetStarted } from "./get-started.tsx";
 import { Icon } from "./icons.tsx";
 import { useChanges, usePresence, useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
@@ -22,7 +23,6 @@ import { EmptyArt, Harbor } from "./scene.tsx";
 import { Settings, type SettingsPage, settingsAddress, settingsInAddress } from "./settings.tsx";
 import { Sidebar, type View } from "./sidebar.tsx";
 import { chime, prepareSound } from "./sound.ts";
-import { StartHint } from "./start-hint.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
@@ -491,6 +491,11 @@ export function Inbox({
           onProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
           liveCount={liveCount}
+          steps={
+            role === "member" ? null : (
+              <GetStarted api={api} version={version} onOpen={openSettings} />
+            )
+          }
           onView={(next) => {
             if (next === "contacts") setContactId(null);
             if (next !== view || next === "contacts") leave(() => showView(next));
@@ -642,19 +647,6 @@ export function Inbox({
                     />
                   ))}
                 </ul>
-                {status === "open" &&
-                  who === "all" &&
-                  listed &&
-                  found === null &&
-                  role !== "member" && (
-                    <StartHint
-                      api={api}
-                      workspaceId={workspaceId}
-                      hasConversations={conversations.length > 0}
-                      version={version}
-                      onOpen={openSettings}
-                    />
-                  )}
                 {hasMore && found === null && (
                   <button
                     type="button"

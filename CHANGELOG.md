@@ -17,7 +17,12 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - **Contacts** in the sidebar lists everyone who started a conversation, with search, sorting, paging and **Export CSV**. A contact's page shows what the team knows, every conversation, the pages they visited and a private note. A signed-out contact's name and email can be corrected, and owners and admins can delete a contact with all their conversations. API: `/v1/operator/workspaces/{id}/contacts`.
 - A conversation has a panel on its right with the visitor, the assignee and status, the details, the pages visited, their other conversations and the team's note. The header's button shows or hides it, and each fold remembers whether it is open.
 - **Visitors** in the sidebar shows who is on your site now, on a world map and in a list with their country, local time, page, time on site, device and where they came from, and links to the conversation of a visitor who is chatting. The sidebar counts them. Each tab of a page with the widget sends a beat a minute while it shows, with a random ID that lives only in the page's memory. The server finds the country from the address and drops the address, and keeps the live view in Valkey only. For a visitor who has chatted, it saves their country and time zone. API: `POST /v1/widget/{key}/beat`, `POST /v1/widget/{key}/leave`, and `GET /v1/operator/workspaces/{id}/visitors/live` and `/visitors/live/count`.
+- **Get started** at the foot of the sidebar, for owners and admins, shows how many of six first steps are done, with a ring, and opens them: install the widget, add a logo, customize the widget, invite a teammate, turn on notifications, and send a test chat. The server checks each step, and **Hide for good** hides them for the member on every device. API: `GET /v1/operator/workspaces/{id}/get-started` and `POST .../get-started/dismiss`.
 - The reply box has a row of tools: attach, emoji, then bold, italic, code, link, bulleted and numbered lists, with Cmd or Ctrl with B, I, E and K.
+
+### Removed
+
+- The first steps under an empty inbox, which **Get started** replaces.
 
 ### Changed
 

@@ -77,6 +77,8 @@ export const workspace = pgTable(
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
     // Why, for the server's admin. Operators do not see it.
     suspendedReason: text("suspended_reason"),
+    // When an allowed site first loaded the widget, for the Get started steps.
+    widgetSeenAt: timestamp("widget_seen_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -191,6 +193,8 @@ export const workspaceMember = pgTable(
     alertEmail: boolean("alert_email").notNull().default(false),
     // Cloud only. The member followed the stop link in an onboarding email. Billing emails still go.
     onboardingStoppedAt: timestamp("onboarding_stopped_at", { withTimezone: true }),
+    // The member hid the Get started steps.
+    getStartedDismissedAt: timestamp("get_started_dismissed_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -961,6 +965,8 @@ export const widgetSettings = pgTable(
     emailAsk: widgetEmailAsk("email_ask").notNull().default(WIDGET_DEFAULTS.emailAsk),
     // The "Powered by Dinghy" line.
     branding: boolean("branding").notNull().default(WIDGET_DEFAULTS.branding),
+    // When an owner or admin first saved these settings, for the Get started steps.
+    customizedAt: timestamp("customized_at", { withTimezone: true }),
     // Operators see what a visitor types before they send it. Nothing stores the draft.
     typingPreview: boolean("typing_preview").notNull().default(WIDGET_DEFAULTS.typingPreview),
   },

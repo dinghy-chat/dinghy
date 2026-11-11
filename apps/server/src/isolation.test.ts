@@ -819,6 +819,23 @@ const ATTACKS: Record<string, Attack> = {
       tab,
     );
   },
+  "GET /v1/operator/workspaces/:workspaceId/get-started": async ({ operator: as, anna, a, b }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/get-started"))).status).toBe(404);
+    expect((await as(anna, "GET", inWorkspace(a.id, "/get-started"))).status).toBe(200);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/get-started/dismiss": async ({
+    operator: as,
+    anna,
+    bea,
+    b,
+  }) => {
+    expect((await as(anna, "POST", inWorkspace(b.id, "/get-started/dismiss"))).status).toBe(404);
+    const [row] = await owner
+      .select({ dismissed: workspaceMember.getStartedDismissedAt })
+      .from(workspaceMember)
+      .where(and(eq(workspaceMember.workspaceId, b.id), eq(workspaceMember.operatorId, bea.id)));
+    expect(row?.dismissed ?? null).toBeNull();
+  },
   "GET /v1/operator/workspaces/:workspaceId/visitors/live": async ({ operator: as, anna, b }) => {
     expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/live"))).status).toBe(404);
   },

@@ -20,6 +20,7 @@ import { registerContactRoutes } from "./contacts.ts";
 import { AccountDeletedError, type Database } from "./db/tenant.ts";
 import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
+import { registerGetStartedRoutes } from "./get-started.ts";
 import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { NO_LIMITS } from "./limits.ts";
@@ -417,6 +418,7 @@ export function createApp({
     registerModerationRoutes(app, db, live);
     registerContactRoutes(app, db, live);
     registerLiveVisitorRoutes(app, db, liveVisitors);
+    registerGetStartedRoutes(app, db);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
     registerTeamRoutes(app, {
       auth,
