@@ -40,6 +40,7 @@ import { noAccountMail, signInMail } from "./letter.ts";
 import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
+import { countWaiting } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
@@ -99,6 +100,27 @@ const meRoute = createRoute({
               contact: z.string().nullable(),
             })
             .openapi("Operator"),
+        },
+      },
+    },
+    ...OPERATOR_ERRORS,
+  },
+});
+
+const waitingRoute = createRoute({
+  method: "get",
+  path: "/v1/operator/waiting",
+  security: SESSION,
+  summary:
+    "Count, in each of the operator's workspaces, the open conversations that wait for a reply",
+  responses: {
+    200: {
+      description: "One count for each workspace, as the Inbox counts it",
+      content: {
+        "application/json": {
+          schema: z.object({
+            workspaces: z.array(z.object({ workspaceId: z.string(), waiting: z.number().int() })),
+          }),
         },
       },
     },
@@ -368,6 +390,18 @@ export function registerOperatorRoutes(
     const wait = await rateLimit.hit("push-test", c.get("operatorId"), 5, 60);
     return wait === null ? next() : tooManyRequests(c, wait);
   });
+  // One short count per workspace, each in its own workspace's context. An operator has few.
+  app.openapi(waitingRoute, async (c) => {
+    const memberships = await operatorWorkspaces(db, c.get("operatorId"));
+    const workspaces = await Promise.all(
+      memberships.map(async ({ workspaceId }) => ({
+        workspaceId,
+        waiting: await withWorkspace(db, workspaceId, (tx) => countWaiting(tx, workspaceId)),
+      })),
+    );
+    return c.json({ workspaces }, 200);
+  });
+
   app.openapi(meRoute, async (c) => {
     const id = c.get("operatorId");
     const [picture] = await db

@@ -37,7 +37,7 @@ import {
   type ConversationRow,
   CURSOR_PATTERN,
   catchClosed,
-  countOpen,
+  countOpenByAssignee,
   countWaiting,
   findConversation,
   listConversationMessages,
@@ -201,6 +201,12 @@ const listRoute = createRoute({
             waiting: z.number().int(),
             // Open conversations for this assignee filter, across all pages.
             open: z.number().int(),
+            // Open conversations for each assignee filter. `mine` is 0 for an API key.
+            openBy: z.object({
+              all: z.number().int(),
+              mine: z.number().int(),
+              unassigned: z.number().int(),
+            }),
           }),
           example: {
             conversations: [
@@ -234,6 +240,7 @@ const listRoute = createRoute({
             hasMore: false,
             waiting: 1,
             open: 1,
+            openBy: { all: 1, mine: 0, unassigned: 1 },
           },
         },
       },
@@ -696,8 +703,10 @@ export function createInbox({
   };
 
   return {
+    /** `operatorId` counts the operator's own open conversations, and is null for an API key. */
     async list(
       workspaceId: string,
+      operatorId: string | null,
       status: "open" | "closed",
       assignee: AssigneeFilter,
       before: { updatedAt: Date; id: string } | undefined,
@@ -709,7 +718,7 @@ export function createInbox({
           ...listed,
           pictures: await welcomePictures(tx, workspaceId, listed.conversations, founderPicture),
           waiting: await countWaiting(tx, workspaceId),
-          open: await countOpen(tx, workspaceId, assignee),
+          openBy: await countOpenByAssignee(tx, workspaceId, operatorId),
         };
       });
       return {
@@ -718,7 +727,13 @@ export function createInbox({
         ),
         hasMore: page.hasMore,
         waiting: page.waiting,
-        open: page.open,
+        open:
+          assignee.kind === "all"
+            ? page.openBy.all
+            : assignee.kind === "none"
+              ? page.openBy.unassigned
+              : page.openBy.mine,
+        openBy: page.openBy,
       };
     },
 
@@ -872,7 +887,16 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       beforeUpdatedAt === undefined || beforeId === undefined
         ? undefined
         : { updatedAt: new Date(beforeUpdatedAt), id: beforeId };
-    return c.json(await inbox.list(c.get("memberWorkspaceId"), status, filter, before, limit), 200);
+    const operatorId = actor.kind === "operator" ? actor.operatorId : null;
+    const page = await inbox.list(
+      c.get("memberWorkspaceId"),
+      operatorId,
+      status,
+      filter,
+      before,
+      limit,
+    );
+    return c.json(page, 200);
   });
 
   app.openapi(conversationRoute, async (c) => {

@@ -114,6 +114,7 @@ const en = {
   pageProfile: "Profile",
   userMenu: "Your account",
   workspaceMenu: "Workspace: {name}",
+  waitingElsewhere: "chats wait in another workspace",
   createWorkspace: "Create a workspace",
   moreActions: "More actions",
   cancel: "Cancel",

@@ -7,8 +7,10 @@ import {
   ApiError,
   type Assignee,
   type Conversation,
+  getWaiting,
   type Me,
   type Member,
+  type OpenCounts,
   type WorkspaceApi,
   workspaceApi,
 } from "./api.ts";
@@ -314,6 +316,7 @@ export function Inbox({
   const [waiting, setWaiting] = useState(0);
   // Open conversations for the chosen assignee filter, for the Open choice.
   const [openCount, setOpenCount] = useState<number | null>(null);
+  const [openBy, setOpenBy] = useState<OpenCounts | null>(null);
   // In memory only, so a reload or a sign-out clears them.
   const drafts = useRef(new Map<string, string>()).current;
   // A notification opens the app on its conversation.
@@ -345,6 +348,7 @@ export function Inbox({
   const { lost, version, threadVersion, receiptsVersion, typing, teamVersion, accountVersion } =
     useChanges(api, visible, onSignedOut, onVisitorMessage);
   const liveCount = useLiveCount(api, visible);
+  const waitingBy = useWaitingBy(version);
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
   const name = membership?.name ?? t("appName");
@@ -405,6 +409,7 @@ export function Inbox({
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
       setOpenCount(page.open);
+      setOpenBy(page.openBy);
       if (firstList.current && wanted.status === "open" && wanted.assignee === null) {
         firstList.current = false;
         const [only, ...rest] = page.conversations;
@@ -496,6 +501,7 @@ export function Inbox({
           view={view}
           onProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
+          waitingBy={waitingBy}
           liveCount={liveCount}
           steps={
             role === "member" ? null : (
@@ -612,8 +618,14 @@ export function Inbox({
                     <Choices
                       label={t("listAssignee")}
                       variant="quiet"
+                      full
                       value={who}
-                      options={WHO_OPTIONS}
+                      // Counts of open conversations, so they show only on the Open list.
+                      options={WHO_OPTIONS.map((option) =>
+                        status === "open" && openBy !== null
+                          ? { ...option, count: openBy[option.value] }
+                          : option,
+                      )}
                       onChange={(next) => showFilter(status, next)}
                     />
                   )}
@@ -705,6 +717,32 @@ export function Inbox({
 const LIVE_COUNT_EVERY_MS = 30_000;
 
 /** The tabs of the site open now, read every 30 seconds while this tab shows. Null when unknown. */
+/** How often the other workspaces' waiting counts load again, besides on focus. */
+const WAITING_EVERY_MS = 60_000;
+
+/**
+ * Each workspace's waiting count, for the switcher. It loads again on this workspace's events, and
+ * every minute and on focus for the others, which have no stream here.
+ */
+function useWaitingBy(version: number): Record<string, number> {
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const load = useLatestLoad(async () => {
+    const { workspaces } = await getWaiting();
+    setCounts(Object.fromEntries(workspaces.map((one) => [one.workspaceId, one.waiting])));
+  });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each version asks for a load.
+  useEffect(load, [load, version]);
+  useEffect(() => {
+    const timer = setInterval(load, WAITING_EVERY_MS);
+    addEventListener("focus", load);
+    return () => {
+      clearInterval(timer);
+      removeEventListener("focus", load);
+    };
+  }, [load]);
+  return counts;
+}
+
 function useLiveCount(api: WorkspaceApi, visible: boolean): number | null {
   const [count, setCount] = useState<number | null>(null);
   useEffect(() => {

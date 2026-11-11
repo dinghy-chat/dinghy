@@ -41,6 +41,13 @@ export interface PageView {
   viewedAt: string;
 }
 
+/** Open conversations for each assignee filter. */
+export interface OpenCounts {
+  all: number;
+  mine: number;
+  unassigned: number;
+}
+
 /** On Dinghy Cloud: what a welcome chat is linked to. */
 export type WelcomeChat =
   | { with: "founder"; pictureUrl: string | null }
@@ -392,6 +399,9 @@ export const redeemJoinLink = (token: string) =>
 export const signOut = () => post<unknown>("/v1/auth/sign-out", {});
 export const updateName = (name: string) => post<unknown>("/v1/auth/update-user", { name });
 export const getMe = () => call<Me>("/v1/operator/me");
+/** In each of the operator's workspaces, the open conversations that wait for a reply. */
+export const getWaiting = () =>
+  call<{ workspaces: { workspaceId: string; waiting: number }[] }>("/v1/operator/waiting");
 type Picture = { pictureUrl: string | null };
 export const setPicture = (file: Blob) => putImage<Picture>("/v1/operator/me/picture", file);
 export const removePicture = () => call<Picture>("/v1/operator/me/picture", { method: "DELETE" });
@@ -572,6 +582,7 @@ export function workspaceApi(workspaceId: string) {
       const conversations: Conversation[] = [];
       let waiting = 0;
       let open = 0;
+      let openBy: OpenCounts | null = null;
       const whose = assignee === null ? "" : `&assignee=${assignee}`;
       for (;;) {
         const last = conversations.at(-1);
@@ -585,15 +596,17 @@ export function workspaceApi(workspaceId: string) {
           hasMore: boolean;
           waiting: number;
           open: number;
+          openBy: OpenCounts;
         }>(`${base}/conversations?status=${status}${whose}&limit=${size}${before}`);
         conversations.push(...page.conversations);
         // From the first page, so the count matches the rows on screen.
         if (last === undefined) {
           waiting = page.waiting;
           open = page.open;
+          openBy = page.openBy;
         }
         if (!page.hasMore || conversations.length >= limit || cancelled()) {
-          return { conversations, hasMore: page.hasMore, waiting, open };
+          return { conversations, hasMore: page.hasMore, waiting, open, openBy };
         }
       }
     },

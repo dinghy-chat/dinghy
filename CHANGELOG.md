@@ -21,6 +21,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Closing or reopening a conversation writes a small centered line in both the thread and the widget, such as "Julien closed this conversation" and, for the visitor, "This conversation is closed. Write to us again any time." It stays after a reload, and it never alerts anyone or shows as the Inbox preview. API: a message's `kind` can be `closed` or `reopened`, with a null `body`.
 - The widget plays the operator app's soft two-note chime when a reply arrives while the chat is closed or its tab is hidden, at most once every 2 seconds. **Settings > Appearance** turns it off with **Play a sound for new replies**. API: the widget settings have `sound`.
 - Dinghy Cloud's welcome chat shows the founder's picture in the Inbox row, the thread's header and next to the founder's messages. API: `visitor.pictureUrl` on a conversation, null except there, and `pictureUrl` on a `founder` welcome.
+- In the Inbox, **All**, **Mine** and **Unassigned** sit under **Open** and **Closed** as one filter block, each with its count of open conversations. The workspace menu shows how many chats wait in each workspace, and a dot on the menu's button says when chats wait in another one. API: `openBy` on the conversation list, and `GET /v1/operator/waiting`.
 - The reply box has a row of tools: attach, emoji, then bold, italic, code, link, bulleted and numbered lists, with Cmd or Ctrl with B, I, E and K.
 
 ### Removed

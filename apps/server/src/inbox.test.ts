@@ -373,6 +373,23 @@ describe("the assignee filter", () => {
     expect(ids(await list(""))).toEqual([annOne, boOne, nobody].sort());
   });
 
+  test("every list counts the open conversations of each filter, for the caller", async () => {
+    const { ann, bo, start, list } = await team();
+    await start("one for Ann", ann.id);
+    await start("two for Ann", ann.id);
+    await start("for Bo", bo.id);
+    await start("for no one", null);
+    const counts = (page: Page) => (page as Page & { openBy: unknown; open: number }).openBy;
+    expect(counts(await list(""))).toEqual({ all: 4, mine: 2, unassigned: 1 });
+    expect(counts(await list("status=closed", bo.cookie))).toEqual({
+      all: 4,
+      mine: 1,
+      unassigned: 1,
+    });
+    const none = (await list("assignee=none")) as Page & { open: number };
+    expect(none.open).toBe(1);
+  });
+
   test("the filter applies to closed conversations too", async () => {
     const { ann, base, start, list } = await team();
     const closed = await start("closed for Ann", ann.id);
@@ -1160,5 +1177,34 @@ describe("the typing preview", () => {
     expect(tells).toEqual([]);
     expect((await typing(a.publicKey, token, "x".repeat(2001))).status).toBe(400);
     expect((await typing(a.publicKey, "vt_nothing", "hi")).status).toBe(401);
+  });
+});
+
+describe("waiting counts across workspaces", () => {
+  test("each of the operator's workspaces has its count, and no other workspace shows", async () => {
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const first = await createWorkspace(db, "First", [WIDGET_ORIGIN]);
+    const second = await createWorkspace(db, "Second", [WIDGET_ORIGIN]);
+    const stranger = await createWorkspace(db, "Stranger", [WIDGET_ORIGIN]);
+    const kim = await signedInOperator({ app, auth, owner, name: "Kim", workspaceId: first.id });
+    await owner
+      .insert(schema.workspaceMember)
+      .values({ workspaceId: second.id, operatorId: kim.id, role: "member" });
+    await visitorSends(first.publicKey, "one");
+    await visitorSends(first.publicKey, "two", "c2");
+    await visitorSends(stranger.publicKey, "not Kim's");
+    const response = await get("/v1/operator/waiting", kim.cookie);
+    expect(response.status).toBe(200);
+    const { workspaces } = (await response.json()) as {
+      workspaces: { workspaceId: string; waiting: number }[];
+    };
+    expect(workspaces.sort((x, y) => y.waiting - x.waiting)).toEqual([
+      { workspaceId: first.id, waiting: 2 },
+      { workspaceId: second.id, waiting: 0 },
+    ]);
+  });
+
+  test("it needs a session", async () => {
+    expect((await app.request("/v1/operator/waiting")).status).toBe(401);
   });
 });

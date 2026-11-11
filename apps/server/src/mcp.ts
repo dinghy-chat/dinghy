@@ -133,7 +133,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
         const match = cursor === undefined ? null : CURSOR.exec(cursor);
         const before =
           match === null ? undefined : { updatedAt: new Date(match[1] ?? ""), id: match[2] ?? "" };
-        const page = await inbox.list(workspaceId, wanted, { kind: "all" }, before, limit);
+        const page = await inbox.list(workspaceId, null, wanted, { kind: "all" }, before, limit);
         const last = page.conversations.at(-1);
         return {
           data: {

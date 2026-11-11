@@ -247,6 +247,8 @@ export interface MenuItem {
   danger?: boolean;
   /** A line above this item, to set a group apart. */
   divider?: boolean;
+  /** Something small after the label, such as a count. */
+  trail?: ReactNode;
 }
 
 /** A button that opens a menu of actions. */
@@ -326,6 +328,7 @@ export function Menu({
             >
               {item.lead}
               <span className="item-label">{item.label}</span>
+              {item.trail}
               {item.checked === true && <Icon name="check" size={16} />}
             </div>
           ))}

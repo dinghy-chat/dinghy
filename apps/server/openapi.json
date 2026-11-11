@@ -3005,6 +3005,56 @@
         }
       }
     },
+    "/v1/operator/waiting": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Count, in each of the operator's workspaces, the open conversations that wait for a reply",
+        "responses": {
+          "200": {
+            "description": "One count for each workspace, as the Inbox counts it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workspaces": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "workspaceId": {
+                            "type": "string"
+                          },
+                          "waiting": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": ["workspaceId", "waiting"]
+                      }
+                    }
+                  },
+                  "required": ["workspaces"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/me": {
       "get": {
         "security": [
@@ -3815,7 +3865,12 @@
                   ],
                   "hasMore": false,
                   "waiting": 1,
-                  "open": 1
+                  "open": 1,
+                  "openBy": {
+                    "all": 1,
+                    "mine": 0,
+                    "unassigned": 1
+                  }
                 },
                 "schema": {
                   "type": "object",
@@ -3834,9 +3889,24 @@
                     },
                     "open": {
                       "type": "integer"
+                    },
+                    "openBy": {
+                      "type": "object",
+                      "properties": {
+                        "all": {
+                          "type": "integer"
+                        },
+                        "mine": {
+                          "type": "integer"
+                        },
+                        "unassigned": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": ["all", "mine", "unassigned"]
                     }
                   },
-                  "required": ["conversations", "hasMore", "waiting", "open"]
+                  "required": ["conversations", "hasMore", "waiting", "open", "openBy"]
                 }
               }
             }

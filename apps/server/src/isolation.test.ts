@@ -343,6 +343,13 @@ const ATTACKS: Record<string, Attack> = {
     expect(text).not.toContain(b.id);
     expect(text).not.toContain(secrets.b);
   },
+  "GET /v1/operator/waiting": async ({ operator: as, anna, a, b }) => {
+    const { workspaces } = (await (await as(anna, "GET", "/v1/operator/waiting")).json()) as {
+      workspaces: { workspaceId: string }[];
+    };
+    expect(workspaces.map((one) => one.workspaceId)).toContain(a.id);
+    expect(workspaces.map((one) => one.workspaceId)).not.toContain(b.id);
+  },
   "GET /v1/operator/workspaces/:workspaceId": async ({ operator: as, anna, a, b }) => {
     expect((await as(anna, "GET", inWorkspace(b.id))).status).toBe(404);
     const own = (await (await as(anna, "GET", inWorkspace(a.id))).json()) as { id: string };

@@ -698,20 +698,27 @@ export async function listConversations(
   };
 }
 
-/** How many open conversations the list's assignee filter holds, across all pages. */
-export async function countOpen(
+/** Open conversations for each assignee filter, across all pages: one scan of the workspace's. */
+export interface OpenCounts {
+  all: number;
+  /** The operator's own. Always 0 for an API key, which has no assignments. */
+  mine: number;
+  unassigned: number;
+}
+
+export async function countOpenByAssignee(
   tx: Transaction,
   workspaceId: string,
-  assignee: AssigneeFilter,
-): Promise<number> {
-  return tx.$count(
-    conversation,
-    and(
-      eq(conversation.workspaceId, workspaceId),
-      eq(conversation.status, "open"),
-      assigneeCondition(assignee),
-    ),
-  );
+  operatorId: string | null,
+): Promise<OpenCounts> {
+  const result = await tx.execute<{ every: number; mine: number; unassigned: number }>(sql`
+    select count(*)::int as every,
+           count(*) filter (where assignee_operator_id = ${operatorId}::uuid)::int as mine,
+           count(*) filter (where assignee_operator_id is null)::int as unassigned
+    from ${conversation}
+    where workspace_id = ${workspaceId} and status = 'open'`);
+  const row = result.rows[0];
+  return { all: row?.every ?? 0, mine: row?.mine ?? 0, unassigned: row?.unassigned ?? 0 };
 }
 
 /**

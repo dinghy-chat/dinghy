@@ -932,6 +932,25 @@ button.workspace[aria-expanded="true"],
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* In the workspace menu, how many chats wait in each workspace, as the Inbox item counts them. */
+.ws-waiting {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font: 700 11.5px / 16px var(--body);
+  text-align: center;
+}
+/* On the closed switcher: chats wait in another workspace. */
+.ws-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
 .workspace > svg:last-child,
 .me > svg:last-child {
   flex: none;
@@ -3023,8 +3042,8 @@ img.ws-tile {
 .list-filters {
   display: grid;
   justify-items: stretch;
-  gap: 6px;
-  margin: 0 24px 12px;
+  gap: 8px;
+  margin: 0 24px 14px;
 }
 /* One segmented control in an outline, such as Open or Closed. */
 .choices.outlined,
@@ -3042,18 +3061,21 @@ img.ws-tile {
   padding: 0 14px;
   font-size: 14px;
 }
-/* Quieter than an outlined one: small words, and no outline around the group. */
+/* Quieter than an outlined one: small muted words, and the chosen one navy on a soft pill. */
 .choices.quiet label {
+  gap: 5px;
   min-height: 28px;
   padding: 0 10px;
-  color: var(--text);
+  color: var(--mute);
   font-size: 13px;
 }
 .choices.quiet label:has(:checked) {
   box-shadow: none;
+  color: var(--navy);
 }
+/* Under Open and Closed, the same width, with its edges inside the outline's. */
 .list-filters > .choices.quiet {
-  justify-self: start;
+  padding: 0 3px;
 }
 /* Open and Closed, as two equal halves as wide as the search field. */
 .choices.full label {
@@ -3063,6 +3085,10 @@ img.ws-tile {
 .choice-count {
   color: var(--mute);
   font-variant-numeric: tabular-nums;
+}
+.choices.quiet .choice-count {
+  font-size: 12px;
+  font-weight: 500;
 }
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
    preview comes first, so on a narrow screen it sits above the form. */
