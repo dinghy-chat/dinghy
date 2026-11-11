@@ -121,13 +121,15 @@ curl https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/conversations 
   -H "Authorization: Bearer dk_..."
 ```
 
-A key has a member's permissions, in its own workspace only. It can:
+A key works in its own workspace only, at the access level chosen when it was made. **Conversations**, the default, has a member's permissions. It can:
 
 - list, search and read conversations, with the visitor and the page journey (`?assignee=none` lists the unassigned ones; a key is assigned nothing, so `assignee=me` answers 400),
 - reply with text or an image,
 - close, reopen and assign a conversation.
 
-A route that a key can call lists `apiKey` in its OpenAPI `security`. Any other route, such as settings, members, keys, webhooks, analytics, billing, export, deleting the workspace or `/v1/operator/me`, answers 403 `forbidden`. Another workspace's routes answer 404. An unknown or revoked key answers 401. Each key may send 300 requests a minute, and over that it gets 429 with `Retry-After`.
+**Setup** can do all of that, and manage the workspace's [webhooks](#webhooks): list, add, change, delete, replace a secret, send a test and read the deliveries. It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Setup key.
+
+A route that every key can call lists `apiKey` in its OpenAPI `security`, and a route that only a Setup key can call lists `setupKey`. A Conversations key on a webhook route answers 403 `forbidden`. Every other route, such as settings, members, keys, analytics, billing, export, deleting the workspace or `/v1/operator/me`, answers 403 `forbidden` to any key: no key can create, list or revoke keys. `POST .../api-keys` takes `level`, `conversations` or `setup`, and the key list answers each key's `level`. Another workspace's routes answer 404. An unknown or revoked key answers 401. Each key may send 300 requests a minute, and over that it gets 429 with `Retry-After`.
 
 A reply sent with a key has `authorApiKeyId` set and `authorOperatorId` null, and `authorName` is the key's name. Visitors see the key's name on it, with a bot icon. Revoking a key in Settings stops it at once, and its old replies keep its name. **Last used** shows to the minute.
 
@@ -135,7 +137,7 @@ A token names its workspace: it is `dk_`, the workspace's ID, a dot, and a rando
 
 ## Webhooks
 
-A webhook sends a signed `POST` to your server when something changes in a workspace. An owner or admin adds one in **Settings > API & webhooks**, with its address and the events it wants. A workspace has at most 5. The signing secret shows once, and **Replace secret** makes a new one. **Send test** sends a `webhook.test` event at once and shows the answer.
+A webhook sends a signed `POST` to your server when something changes in a workspace. An owner or admin adds one in **Settings > API & webhooks**, with its address and the events it wants, or a [Setup key](#api-keys) adds one with the same routes. Each webhook answers `createdBy`: `{ "kind": "operator" | "key", "name" }`, or null for one from an older release, and Settings shows it. A workspace has at most 5. The signing secret shows once, and **Replace secret** makes a new one. **Send test** sends a `webhook.test` event at once and shows the answer.
 
 | Event | When |
 |---|---|
@@ -217,5 +219,11 @@ Another client that supports remote servers over HTTP takes the same address and
 | `reply` | Replies in an open conversation. Pass the same `clientId` on a retry, so it is not sent twice |
 | `close_conversation`, `reopen_conversation` | Closes or reopens a conversation |
 | `assign_conversation` | Assigns a conversation to a member by operator ID, or clears it with `null` |
+| `list_webhooks` | Setup keys only. Lists the webhooks, with their events and who added them, never their secrets |
+| `create_webhook` | Setup keys only. Adds a webhook from `url` and `events`, and answers its signing secret, once |
+| `delete_webhook` | Setup keys only. Deletes a webhook |
+| `test_webhook` | Setup keys only. Sends a signed `webhook.test` now and answers what the webhook answered |
+
+A Conversations key's `tools/list` does not include the webhook tools, and calling one answers that there is no such tool.
 
 The server is stateless and answers JSON only: it keeps no session and opens no event stream, so `GET /v1/mcp` answers 405. A tool that fails answers with `isError: true` and the same stable `code` as the HTTP API, such as `not_found` or `conversation_closed`.

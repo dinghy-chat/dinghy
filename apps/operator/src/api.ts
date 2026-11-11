@@ -270,6 +270,8 @@ export interface ApiKey {
   id: string;
   /** Visitors and operators see this name on the key's replies. */
   name: string;
+  /** Conversations, or Setup, which also reaches the webhooks. */
+  level: ApiKeyLevel;
   createdByName: string | null;
   createdAt: string;
   lastUsedAt: string | null;
@@ -284,11 +286,15 @@ export const WEBHOOK_EVENTS = [
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
+export type ApiKeyLevel = "conversations" | "setup";
+
 export interface Webhook {
   id: string;
   url: string;
   events: WebhookEvent[];
   enabled: boolean;
+  /** Who added it, or null for one from before this was kept. */
+  createdBy: { kind: "operator" | "key"; name: string } | null;
   createdAt: string;
 }
 
@@ -520,7 +526,8 @@ export function workspaceApi(workspaceId: string) {
     deleteContact: (visitorId: string) =>
       call<{ ok: true }>(`${base}/contacts/${visitorId}`, { method: "DELETE" }),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
-    createApiKey: (name: string) => post<ApiKey & { token: string }>(`${base}/api-keys`, { name }),
+    createApiKey: (name: string, level: ApiKeyLevel) =>
+      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, level }),
     revokeApiKey: (id: string) =>
       call<{ ok: true }>(`${base}/api-keys/${id}`, { method: "DELETE" }),
     webhooks: () => call<{ webhooks: Webhook[] }>(`${base}/webhooks`),

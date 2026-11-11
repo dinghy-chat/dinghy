@@ -3485,6 +3485,15 @@ img.ws-tile {
   display: grid;
   gap: 8px;
 }
+/* The new key's access: a label, the choice, and one line on what the chosen one can do. */
+.key-level {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.key-level .hint {
+  margin: 0;
+}
 .created .hint {
   margin: 0;
 }

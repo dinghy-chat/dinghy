@@ -45,15 +45,20 @@ interface RouteRules {
   access: Map<string, AccessRule>;
   /** The routes whose security names `apiKey`, keyed the same way. Every other one refuses a key. */
   keys: Set<string>;
+  /** The routes whose security names `setupKey`: only a key with the Setup level reaches them. */
+  setupKeys: Set<string>;
 }
 
 function routeRules(app: App): RouteRules {
-  const rules: RouteRules = { access: new Map(), keys: new Set() };
+  const rules: RouteRules = { access: new Map(), keys: new Set(), setupKeys: new Set() };
   for (const definition of app.openAPIRegistry.definitions) {
     if (definition.type !== "route") continue;
     const path = definition.route.path.replaceAll(/\/{(.+?)}/g, "/:$1");
     const key = `${definition.route.method.toUpperCase()} ${path}`;
     if (definition.route.security?.some((scheme) => "apiKey" in scheme)) rules.keys.add(key);
+    if (definition.route.security?.some((scheme) => "setupKey" in scheme)) {
+      rules.setupKeys.add(key);
+    }
     const rule: unknown = definition.route[ACCESS_EXTENSION];
     if (isAccessRule(rule)) rules.access.set(key, rule);
   }
@@ -79,7 +84,11 @@ export function registerMemberCheck(app: App, db: Database): void {
     rules ??= routeRules(app);
     const route = matchedRoutes(c).findLast((one) => one.method === c.req.method);
     const key = route === undefined ? "" : `${route.method} ${route.path}`;
-    return { rule: rules.access.get(key), keyAllowed: rules.keys.has(key) };
+    return {
+      rule: rules.access.get(key),
+      keyAllowed: rules.keys.has(key),
+      setupKeyAllowed: rules.setupKeys.has(key),
+    };
   };
 
   /** The workspace's access and the caller's role in it, or null when it is not theirs. */
@@ -103,8 +112,10 @@ export function registerMemberCheck(app: App, db: Database): void {
     const membership = await membershipOf(actor, workspaceId);
     if (membership === null) return c.json(NOT_FOUND, 404);
     const { access } = membership;
-    const { rule, keyAllowed } = routeOf(c);
-    if (actor.kind === "key" && !keyAllowed) return c.json(FORBIDDEN, 403);
+    const { rule, keyAllowed, setupKeyAllowed } = routeOf(c);
+    if (actor.kind === "key" && !keyAllowed && !(setupKeyAllowed && actor.level === "setup")) {
+      return c.json(FORBIDDEN, 403);
+    }
     // A cloud signup that waits for payment: only its owner's Checkout works until then.
     if (access === "waiting_payment" && rule !== "unpaid" && rule !== "always") {
       return c.json(PAYMENT_REQUIRED, 402);

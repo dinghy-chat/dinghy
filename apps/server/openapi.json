@@ -22,6 +22,11 @@
         "type": "http",
         "scheme": "bearer",
         "description": "A workspace API key, `dk_...`, that an owner or admin creates in Settings. It works only in its own workspace, with a member's permissions: read, search, reply, close, reopen and assign conversations. It needs no Origin."
+      },
+      "setupKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A workspace API key, `dk_...`, made with the Setup access level. It reaches what a Conversations key does, and the webhooks: list, add, change, delete, rotate a secret, test and read deliveries. It never reaches keys, members, billing, export or the workspace's deletion."
       }
     },
     "schemas": {
@@ -807,6 +812,10 @@
           "name": {
             "type": "string"
           },
+          "level": {
+            "type": "string",
+            "enum": ["conversations", "setup"]
+          },
           "createdByName": {
             "type": ["string", "null"]
           },
@@ -817,7 +826,7 @@
             "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "createdByName", "createdAt", "lastUsedAt"]
+        "required": ["id", "name", "level", "createdByName", "createdAt", "lastUsedAt"]
       },
       "Webhook": {
         "type": "object",
@@ -844,11 +853,24 @@
           "enabled": {
             "type": "boolean"
           },
+          "createdBy": {
+            "type": ["object", "null"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["operator", "key"]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "name"]
+          },
           "createdAt": {
             "type": "string"
           }
         },
-        "required": ["id", "url", "events", "enabled", "createdAt"]
+        "required": ["id", "url", "events", "enabled", "createdBy", "createdAt"]
       },
       "WebhookDelivery": {
         "type": "object",
@@ -5039,6 +5061,11 @@
                     "minLength": 1,
                     "maxLength": 60,
                     "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$/u"
+                  },
+                  "level": {
+                    "type": "string",
+                    "enum": ["conversations", "setup"],
+                    "default": "conversations"
                   }
                 },
                 "required": ["name"]
@@ -5268,9 +5295,12 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
-        "summary": "List the workspace's webhooks. Owners and admins only",
+        "summary": "List the workspace's webhooks. Owners, admins and Setup API keys only",
         "parameters": [
           {
             "schema": {
@@ -5323,7 +5353,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role may not do this",
+            "description": "forbidden: this role, or a Conversations API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -5341,6 +5371,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -5348,6 +5388,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
         "summary": "Add a webhook. Its signing secret is shown only in this response",
@@ -5492,6 +5535,16 @@
               }
             }
           },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "busy: the workspace is busy. Retry after `retry-after`",
             "content": {
@@ -5510,6 +5563,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
         "summary": "Change a webhook's URL, events, or whether it is on",
@@ -5638,6 +5694,16 @@
               }
             }
           },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "busy: the workspace is busy. Retry after `retry-after`",
             "content": {
@@ -5655,6 +5721,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
         "summary": "Delete a webhook and its deliveries",
@@ -5756,6 +5825,16 @@
               }
             }
           },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "busy: the workspace is busy. Retry after `retry-after`",
             "content": {
@@ -5774,6 +5853,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
         "summary": "Replace a webhook's signing secret. The new one is shown only in this response",
@@ -5881,6 +5963,16 @@
               }
             }
           },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "busy: the workspace is busy. Retry after `retry-after`",
             "content": {
@@ -5899,6 +5991,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
         "summary": "Send a signed `webhook.test` event to the webhook now, and wait for its answer",
@@ -6005,6 +6100,16 @@
               }
             }
           },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "busy: the workspace is busy. Retry after `retry-after`",
             "content": {
@@ -6023,6 +6128,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
         "summary": "A webhook's newest 20 deliveries",
@@ -6087,7 +6195,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role may not do this",
+            "description": "forbidden: this role, or a Conversations API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -6098,6 +6206,16 @@
           },
           "404": {
             "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {
@@ -6117,7 +6235,7 @@
           }
         ],
         "summary": "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
-        "description": "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+        "description": "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
         "requestBody": {
           "required": true,
           "content": {

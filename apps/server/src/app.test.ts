@@ -186,6 +186,7 @@ describe("/v1", () => {
     expect(Object.keys(document.components.securitySchemes ?? {}).sort()).toEqual([
       "apiKey",
       "sessionCookie",
+      "setupKey",
       "visitorToken",
     ]);
     expect(document.components.schemas.Error?.properties.error.properties.code).toMatchObject({
@@ -215,7 +216,7 @@ describe("/v1", () => {
           if (security === undefined) missing.push(`${operation} security`);
         }
         // A key has a rate limit of its own.
-        if (security?.some((scheme) => "apiKey" in scheme)) {
+        if (security?.some((scheme) => "apiKey" in scheme || "setupKey" in scheme)) {
           expectAnswers(operation, [401, 429], responses);
         }
         if (path.startsWith(workspace)) {

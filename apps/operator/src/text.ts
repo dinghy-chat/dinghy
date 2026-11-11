@@ -480,6 +480,15 @@ const en = {
   apiKeyNameHint:
     "If software sends a reply with this key, visitors and your team see this name beside the reply.",
   apiKeyCreate: "Create key",
+  apiKeyLevel: "Access",
+  apiKeyLevelConversations: "Conversations",
+  apiKeyLevelSetup: "Setup",
+  apiKeyLevelConversationsHelp:
+    "Reads, searches, answers, closes, reopens and assigns conversations, in the API and in MCP.",
+  apiKeyLevelSetupHelp:
+    "All of Conversations, and it can add, change, test and delete webhooks, so an agent can connect Dinghy by itself. It never reaches keys, members, billing or deletion.",
+  webhookByKey: "Added by the key {name}",
+  webhookByOperator: "Added by {name}",
   apiKeyCopy: "Copy the key {name}",
   apiKeyMade: "Made {date}.",
   apiKeyMadeBy: "Made by {name} {date}.",

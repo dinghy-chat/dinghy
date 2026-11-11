@@ -44,7 +44,12 @@ import { createRateLimit, createSlots } from "./rate-limit.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
 import { registerExportRoute } from "./transfer.ts";
-import { PUBLIC_ONLY, registerWebhookRoutes, type WebhookPolicy } from "./webhooks.ts";
+import {
+  createWebhooks,
+  PUBLIC_ONLY,
+  registerWebhookRoutes,
+  type WebhookPolicy,
+} from "./webhooks.ts";
 import { registerWidgetRoutes, type WidgetToken } from "./widget.ts";
 import { registerWidgetFiles } from "./widget-files.ts";
 import { registerWidgetAppearance, registerWidgetSettingsRoutes } from "./widget-settings.ts";
@@ -413,9 +418,11 @@ export function createApp({
       visitorPresence,
     });
     registerApiKeyRoutes(app, db, logger);
-    registerWebhookRoutes(app, { db, logger, policy: webhooks });
+    const webhookManager = createWebhooks({ db, logger, policy: webhooks });
+    registerWebhookRoutes(app, { db, webhooks: webhookManager });
     registerMcp(app, {
       db,
+      webhooks: webhookManager,
       live,
       rateLimit,
       inbox: createInbox({

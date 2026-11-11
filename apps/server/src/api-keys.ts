@@ -5,7 +5,7 @@ import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
-import { apiKey, operator } from "./db/schema.ts";
+import { API_KEY_LEVELS, type ApiKeyLevel, apiKey, operator } from "./db/schema.ts";
 import {
   type Database,
   type WorkspaceAccess,
@@ -38,6 +38,8 @@ export type Actor =
       kind: "key";
       apiKeyId: string;
       name: string;
+      /** Conversations, or Setup, which also reaches the webhooks. */
+      level: ApiKeyLevel;
       workspaceId: string;
       /** The workspace's access when the request came in. */
       access: WorkspaceAccess;
@@ -67,7 +69,12 @@ export async function authenticateApiKey(db: Database, token: string): Promise<K
   const { workspaceId, tokenHash } = parsed;
   return withWorkspace(db, workspaceId, async (tx) => {
     const [row] = await tx
-      .select({ id: apiKey.id, name: apiKey.name, lastUsedAt: apiKey.lastUsedAt })
+      .select({
+        id: apiKey.id,
+        name: apiKey.name,
+        level: apiKey.level,
+        lastUsedAt: apiKey.lastUsedAt,
+      })
       .from(apiKey)
       .where(
         and(
@@ -92,7 +99,14 @@ export async function authenticateApiKey(db: Database, token: string): Promise<K
           ),
         );
     }
-    return { kind: "key" as const, apiKeyId: row.id, name: row.name, workspaceId, access };
+    return {
+      kind: "key" as const,
+      apiKeyId: row.id,
+      name: row.name,
+      level: row.level,
+      workspaceId,
+      access,
+    };
   });
 }
 
@@ -119,6 +133,8 @@ const ApiKey = z
     id: z.string(),
     // The author name visitors and operators see on the key's replies.
     name: z.string(),
+    // `conversations` reaches the conversations. `setup` reaches them and the webhooks.
+    level: z.enum(API_KEY_LEVELS),
     createdByName: z.string().nullable(),
     createdAt: z.string(),
     lastUsedAt: z.string().nullable(),
@@ -158,7 +174,14 @@ const createKeyRoute = createRoute({
     params: workspaceParams,
     body: {
       required: true,
-      content: { "application/json": { schema: z.object({ name: KeyName }) } },
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: KeyName,
+            level: z.enum(API_KEY_LEVELS).default("conversations"),
+          }),
+        },
+      },
     },
   },
   responses: {
@@ -191,6 +214,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
         .select({
           id: apiKey.id,
           name: apiKey.name,
+          level: apiKey.level,
           createdByName: operator.name,
           createdAt: apiKey.createdAt,
           lastUsedAt: apiKey.lastUsedAt,
@@ -216,20 +240,27 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const operatorId = c.get("operatorId");
-    const { name } = c.req.valid("json");
+    const { name, level } = c.req.valid("json");
     const token = `${TOKEN_PREFIX}${id}.${randomBytes(32).toString("base64url")}`;
     const [row] = await withWorkspace(db, id, (tx) =>
       tx
         .insert(apiKey)
-        .values({ workspaceId: id, name, tokenHash: sha256Hex(token), createdBy: operatorId })
+        .values({
+          workspaceId: id,
+          name,
+          level,
+          tokenHash: sha256Hex(token),
+          createdBy: operatorId,
+        })
         .returning({ id: apiKey.id, createdAt: apiKey.createdAt }),
     );
     if (row === undefined) throw new Error("The key insert returned no row");
-    audit(logger, "api_key.created", { workspaceId: id, operatorId, apiKeyId: row.id });
+    audit(logger, "api_key.created", { workspaceId: id, operatorId, apiKeyId: row.id, level });
     return c.json(
       {
         id: row.id,
         name,
+        level,
         createdByName: c.get("operatorName"),
         createdAt: row.createdAt.toISOString(),
         lastUsedAt: null,

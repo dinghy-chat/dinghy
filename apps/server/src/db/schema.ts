@@ -719,6 +719,14 @@ export const alertDelivery = pgTable(
  * A workspace API key, for scripts and AI agents. Only the token's hash is stored, and the token is
  * shown once. A revoked key keeps its row, so the replies it sent keep their author name.
  */
+/**
+ * What an API key reaches: `conversations`, the conversation routes and tools, or `setup`, those
+ * and the webhooks, so an agent can connect a workspace by itself. No key reaches keys, members,
+ * billing, export or the workspace's deletion.
+ */
+export const API_KEY_LEVELS = ["conversations", "setup"] as const;
+export type ApiKeyLevel = (typeof API_KEY_LEVELS)[number];
+
 export const apiKey = pgTable(
   "api_key",
   {
@@ -726,6 +734,7 @@ export const apiKey = pgTable(
     id: id(),
     // The author name visitors and operators see on the key's replies.
     name: text("name").notNull(),
+    level: text("level").$type<ApiKeyLevel>().notNull().default("conversations"),
     tokenHash: text("token_hash").notNull().unique(),
     createdBy: uuid("created_by").notNull(),
     // To a minute, so a busy key does not write on every request.
@@ -741,6 +750,7 @@ export const apiKey = pgTable(
       foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
     }),
     check("api_key_name_length", sql`char_length(${table.name}) between 1 and 60`),
+    check("api_key_level", sql`${table.level} in ('conversations', 'setup')`),
   ],
 );
 
@@ -765,9 +775,28 @@ export const webhook = pgTable(
     secret: text("secret").notNull(),
     events: text("events").array().$type<WebhookEvent[]>().notNull(),
     enabled: boolean("enabled").notNull().default(true),
+    // Who added it: an operator or a Setup API key. Both null for a webhook from before this.
+    createdByOperatorId: uuid("created_by_operator_id"),
+    createdByApiKeyId: uuid("created_by_api_key_id"),
     createdAt: createdAt(),
   },
-  (table) => [primaryKey({ columns: [table.workspaceId, table.id] })],
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "webhook_created_by_operator_fk",
+      columns: [table.workspaceId, table.createdByOperatorId],
+      foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
+    }),
+    foreignKey({
+      name: "webhook_created_by_api_key_fk",
+      columns: [table.workspaceId, table.createdByApiKeyId],
+      foreignColumns: [apiKey.workspaceId, apiKey.id],
+    }),
+    check(
+      "webhook_one_creator",
+      sql`num_nonnulls(${table.createdByOperatorId}, ${table.createdByApiKeyId}) <= 1`,
+    ),
+  ],
 );
 
 /** One event for one webhook. Delivery is at-least-once: a crash can repeat a send. */

@@ -479,3 +479,181 @@ test("the signature is the HMAC-SHA256 of the time and the body", () => {
     `t=1700000000,v1=${createHmac("sha256", "whsec_x").update('1700000000.{"a":1}').digest("hex")}`,
   );
 });
+
+describe("Setup API keys", () => {
+  const makeKey = async (level?: "conversations" | "setup", name = "Agent") => {
+    const response = await asBoss("POST", inSpace("/api-keys"), {
+      name,
+      ...(level === undefined ? {} : { level }),
+    });
+    expect(response.status).toBe(201);
+    return (await response.json()) as { id: string; token: string; level: string };
+  };
+  const withKey = (token: string, method: string, path: string, body?: unknown) =>
+    app.request(path, {
+      method,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const mcpTools = async (token: string) => {
+    const response = await app.request("/v1/mcp", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    const { result } = (await response.json()) as { result: { tools: { name: string }[] } };
+    return result.tools.map((one) => one.name);
+  };
+
+  test("a key is Conversations unless made Setup, and the list says which", async () => {
+    expect((await makeKey()).level).toBe("conversations");
+    expect((await makeKey("setup", "Builder")).level).toBe("setup");
+    const listed = (await (await asBoss("GET", inSpace("/api-keys"))).json()) as {
+      apiKeys: { name: string; level: string }[];
+    };
+    expect(Object.fromEntries(listed.apiKeys.map((one) => [one.name, one.level]))).toEqual({
+      Agent: "conversations",
+      Builder: "setup",
+    });
+  });
+
+  test("a Conversations key gets 403 on every webhook route", async () => {
+    const hook = await addWebhook(["message.created"]);
+    const key = await makeKey("conversations");
+    for (const [method, path, body] of [
+      ["GET", inSpace("/webhooks"), undefined],
+      ["POST", inSpace("/webhooks"), { url: receiverUrl, events: ["message.created"] }],
+      ["PATCH", inSpace(`/webhooks/${hook.id}`), { enabled: false }],
+      ["POST", inSpace(`/webhooks/${hook.id}/rotate-secret`), {}],
+      ["POST", inSpace(`/webhooks/${hook.id}/test`), {}],
+      ["GET", inSpace(`/webhooks/${hook.id}/deliveries`), undefined],
+      ["DELETE", inSpace(`/webhooks/${hook.id}`), undefined],
+    ] as const) {
+      const response = await withKey(key.token, method, path, body);
+      expect([method, path, response.status]).toEqual([method, path, 403]);
+    }
+    expect(await owner.select().from(webhook).where(eq(webhook.id, hook.id))).toHaveLength(1);
+  });
+
+  test("a Setup key adds, tests and deletes a webhook, which names it as its creator", async () => {
+    const key = await makeKey("setup", "Coding agent");
+    const added = await withKey(key.token, "POST", inSpace("/webhooks"), {
+      url: receiverUrl,
+      events: ["message.created"],
+    });
+    expect(added.status).toBe(201);
+    const made = (await added.json()) as { id: string; secret: string; createdBy: unknown };
+    expect(made.createdBy).toEqual({ kind: "key", name: "Coding agent" });
+    const [row] = await owner.select().from(webhook).where(eq(webhook.id, made.id));
+    expect(row).toMatchObject({ createdByApiKeyId: key.id, createdByOperatorId: null });
+    // The owner's list says who added it.
+    const listed = (await (await asBoss("GET", inSpace("/webhooks"))).json()) as {
+      webhooks: { id: string; createdBy: unknown }[];
+    };
+    expect(listed.webhooks.find((one) => one.id === made.id)?.createdBy).toEqual({
+      kind: "key",
+      name: "Coding agent",
+    });
+    const tested = await withKey(key.token, "POST", inSpace(`/webhooks/${made.id}/test`), {});
+    expect(await tested.json()).toEqual({ delivered: true, status: 200, error: null });
+    verified(received[0] as Received, made.secret);
+    expect((await withKey(key.token, "DELETE", inSpace(`/webhooks/${made.id}`))).status).toBe(200);
+    expect(await owner.select().from(webhook).where(eq(webhook.id, made.id))).toEqual([]);
+  });
+
+  test("an operator's webhook names the operator", async () => {
+    const made = await addWebhook(["message.created"]);
+    const [row] = await owner.select().from(webhook).where(eq(webhook.id, made.id));
+    expect(row).toMatchObject({ createdByOperatorId: boss.id, createdByApiKeyId: null });
+    const listed = (await (await asBoss("GET", inSpace("/webhooks"))).json()) as {
+      webhooks: { createdBy: unknown }[];
+    };
+    expect(listed.webhooks[0]?.createdBy).toEqual({ kind: "operator", name: "Hana" });
+  });
+
+  test("no key reaches the keys, the members, export or the workspace's deletion", async () => {
+    for (const level of ["conversations", "setup"] as const) {
+      const key = await makeKey(level, `Key ${level}`);
+      for (const [method, path, body] of [
+        ["GET", inSpace("/api-keys"), undefined],
+        ["POST", inSpace("/api-keys"), { name: "More", level: "setup" }],
+        ["DELETE", inSpace(`/api-keys/${key.id}`), undefined],
+        ["GET", inSpace("/members"), undefined],
+        ["POST", inSpace("/invites"), { email: "x@example.com", role: "member" }],
+        ["GET", inSpace("/export"), undefined],
+        ["DELETE", inSpace(""), { name: "Hooks" }],
+      ] as const) {
+        const response = await withKey(key.token, method, path, body);
+        expect([level, method, path, response.status]).toEqual([level, method, path, 403]);
+      }
+    }
+  });
+
+  test("MCP offers the webhook tools to a Setup key only", async () => {
+    const conversations = await mcpTools((await makeKey("conversations")).token);
+    const setup = await mcpTools((await makeKey("setup", "Builder")).token);
+    const webhookTools = ["list_webhooks", "create_webhook", "delete_webhook", "test_webhook"];
+    for (const name of webhookTools) {
+      expect(conversations).not.toContain(name);
+      expect(setup).toContain(name);
+    }
+    expect(setup.filter((name) => !webhookTools.includes(name))).toEqual(conversations);
+  });
+
+  test("a Setup key's MCP tools add, test and delete a webhook; a Conversations key's cannot", async () => {
+    const call = async (token: string, name: string, args: Record<string, unknown>) => {
+      const response = await app.request("/v1/mcp", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }),
+      });
+      return (await response.json()) as {
+        result?: { isError: boolean; structuredContent: Record<string, unknown> };
+        error?: { code: number };
+      };
+    };
+    const limited = await makeKey("conversations");
+    const refused = await call(limited.token, "create_webhook", {
+      url: receiverUrl,
+      events: ["message.created"],
+    });
+    expect(refused.error?.code).toBe(-32602);
+    const key = await makeKey("setup", "Builder");
+    const made = await call(key.token, "create_webhook", {
+      url: receiverUrl,
+      events: ["message.created"],
+    });
+    const created = made.result?.structuredContent as { webhook: { id: string }; secret: string };
+    expect(created.secret).toMatch(/^whsec_/);
+    const tested = await call(key.token, "test_webhook", { webhookId: created.webhook.id });
+    expect(tested.result?.structuredContent).toMatchObject({ delivered: true, status: 200 });
+    const listed = await call(key.token, "list_webhooks", {});
+    expect(JSON.stringify(listed.result?.structuredContent)).not.toContain(created.secret);
+    const gone = await call(key.token, "delete_webhook", { webhookId: created.webhook.id });
+    expect(gone.result?.isError).toBe(false);
+    expect(await owner.select().from(webhook).where(eq(webhook.id, created.webhook.id))).toEqual(
+      [],
+    );
+  });
+
+  test("a Setup key does not exist in another workspace", async () => {
+    const key = await makeKey("setup");
+    const other = await createWorkspace(db, "Other", [SITE]);
+    const elsewhere = `/v1/operator/workspaces/${other.id}/webhooks`;
+    expect((await withKey(key.token, "GET", elsewhere)).status).toBe(404);
+    const added = await withKey(key.token, "POST", elsewhere, {
+      url: receiverUrl,
+      events: ["message.created"],
+    });
+    expect(added.status).toBe(404);
+    expect(await owner.select().from(webhook).where(eq(webhook.workspaceId, other.id))).toEqual([]);
+  });
+});

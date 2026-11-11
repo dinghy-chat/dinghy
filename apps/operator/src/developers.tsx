@@ -2,6 +2,7 @@
 import { useState } from "react";
 import {
   type ApiKey,
+  type ApiKeyLevel,
   WEBHOOK_EVENTS,
   type Webhook,
   type WebhookDelivery,
@@ -14,10 +15,12 @@ import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   AddForm,
+  Choices,
   CopyField,
   ErrorNote,
   Field,
   failureText,
+  type Option,
   Page,
   PageRow,
   StatusNote,
@@ -63,10 +66,20 @@ function apiKeyLine(key: ApiKey): string {
   return `${made} ${used}`;
 }
 
+const LEVELS: Option<ApiKeyLevel>[] = [
+  { value: "conversations", label: "apiKeyLevelConversations" },
+  { value: "setup", label: "apiKeyLevelSetup" },
+];
+const LEVEL_HELP: Record<ApiKeyLevel, TextId> = {
+  conversations: "apiKeyLevelConversationsHelp",
+  setup: "apiKeyLevelSetupHelp",
+};
+
 /** Owners and admins make keys for scripts and AI agents, and revoke them. */
 function ApiKeysRow({ api }: { api: WorkspaceApi }) {
   const keys = useLoad(() => api.apiKeys(), [api]);
   const [name, setName] = useState("");
+  const [level, setLevel] = useState<ApiKeyLevel>("conversations");
   const [made, setMade] = useState<{ name: string; token: string } | null>(null);
   const [failure, setFailure] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,9 +101,10 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
   };
   const create = () =>
     act(async () => {
-      const { token, ...key } = await api.createApiKey(name.trim());
+      const { token, ...key } = await api.createApiKey(name.trim(), level);
       setMade({ name: key.name, token });
       setName("");
+      setLevel("conversations");
       setAdding(false);
     });
   const revoke = (key: ApiKey) =>
@@ -114,7 +128,12 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
           {list.map((key) => (
             <li key={key.id}>
               <span className="who-lines">
-                <strong>{key.name}</strong>
+                <strong>
+                  {key.name}{" "}
+                  <span className={key.level === "setup" ? "chip warn" : "chip"}>
+                    {t(key.level === "setup" ? "apiKeyLevelSetup" : "apiKeyLevelConversations")}
+                  </span>
+                </strong>
                 <span>{apiKeyLine(key)}</span>
               </span>
               <button
@@ -148,6 +167,7 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
         onCancel={() => {
           setAdding(false);
           setName("");
+          setLevel("conversations");
           setFailure(null);
         }}
         onSubmit={() => void create()}
@@ -162,6 +182,17 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
           value={name}
           onChange={setName}
         />
+        <div className="key-level">
+          <span className="setting-label">{t("apiKeyLevel")}</span>
+          <Choices<ApiKeyLevel>
+            label={t("apiKeyLevel")}
+            variant="outlined"
+            value={level}
+            options={LEVELS}
+            onChange={setLevel}
+          />
+          <p className="hint">{t(LEVEL_HELP[level])}</p>
+        </div>
       </AddForm>
       <ErrorNote text={failure ?? keys.failure} />
       {revoking !== null && (
@@ -296,6 +327,13 @@ function WebhookItem({
             {hook.url}
           </strong>
           <EventsSummary events={hook.events} />
+          {hook.createdBy !== null && (
+            <span>
+              {t(hook.createdBy.kind === "key" ? "webhookByKey" : "webhookByOperator", {
+                name: hook.createdBy.name,
+              })}
+            </span>
+          )}
         </span>
         <label className="check hook-switch">
           <span className="visually-hidden">{t("webhookEnabledLabel", { url: hook.url })}</span>
