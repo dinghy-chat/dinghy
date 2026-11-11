@@ -140,6 +140,9 @@ async function signup(
   return { response, email, workspaceId: body.workspaceId, cookie };
 }
 
+/** Each run starts a Node process, which takes over a second on a CI runner. */
+const CLI_TEST_MS = 20_000;
+
 /** The chat command, as an operator runs it on the server. */
 const runCli = (args: string[]) =>
   new Promise<{ code: number | null; stdout: string }>((resolve) => {
@@ -823,67 +826,75 @@ describe("once Stripe keys are set", () => {
       await admin.end();
     }
   });
-  test("chat free turns a waiting workspace on with no subscription, for good", async () => {
-    const created = await signup(early);
-    const base = `/v1/operator/workspaces/${created.workspaceId}`;
-    await owner
-      .update(workspace)
-      .set({ allowedOrigins: [SITE] })
-      .where(eq(workspace.id, created.workspaceId));
-    const { publicKey } = await workspaceRow(created.workspaceId);
+  test(
+    "chat free turns a waiting workspace on with no subscription, for good",
+    async () => {
+      const created = await signup(early);
+      const base = `/v1/operator/workspaces/${created.workspaceId}`;
+      await owner
+        .update(workspace)
+        .set({ allowedOrigins: [SITE] })
+        .where(eq(workspace.id, created.workspaceId));
+      const { publicKey } = await workspaceRow(created.workspaceId);
 
-    const freed = await runCli(["free", created.workspaceId]);
-    expect(freed.code).toBe(0);
-    expect(await workspaceRow(created.workspaceId)).toMatchObject({
-      active: true,
-      waitingSince: null,
-    });
-    expect(await widgetWorkspace(db, publicKey)).not.toBeNull();
-    expect((await visitorsFrom(paying, publicKey)).status).toBe(201);
-    const billing = await request(paying, "GET", `${base}/billing`, { cookie: created.cookie });
-    expect(await billing.json()).toMatchObject({ state: "free", date: null });
-    // Open inboxes hear about it from the feed.
-    const [last] = await owner
-      .select({ kind: event.kind })
-      .from(event)
-      .where(eq(event.workspaceId, created.workspaceId))
-      .orderBy(desc(event.seq))
-      .limit(1);
-    expect(last?.kind).toBe("billing.changed");
+      const freed = await runCli(["free", created.workspaceId]);
+      expect(freed.code).toBe(0);
+      expect(await workspaceRow(created.workspaceId)).toMatchObject({
+        active: true,
+        waitingSince: null,
+      });
+      expect(await widgetWorkspace(db, publicKey)).not.toBeNull();
+      expect((await visitorsFrom(paying, publicKey)).status).toBe(201);
+      const billing = await request(paying, "GET", `${base}/billing`, { cookie: created.cookie });
+      expect(await billing.json()).toMatchObject({ state: "free", date: null });
+      // Open inboxes hear about it from the feed.
+      const [last] = await owner
+        .select({ kind: event.kind })
+        .from(event)
+        .where(eq(event.workspaceId, created.workspaceId))
+        .orderBy(desc(event.seq))
+        .limit(1);
+      expect(last?.kind).toBe("billing.changed");
 
-    // Far past every deadline, the lifecycle worker leaves it on.
-    const before = await workspaceRow(created.workspaceId);
-    const far = new Date(Date.now() + 400 * DAY_MS);
-    await runLifecycle({
-      db: workerDb,
-      billing: createBilling(
-        {
-          secretKey: STRIPE_SECRET_KEY,
-          webhookSecret: STRIPE_WEBHOOK_SECRET,
-          priceId: STRIPE_PRICE_ID,
-          apiBase: stripe.apiBase,
-          now: () => far,
-        },
-        workerDb,
+      // Far past every deadline, the lifecycle worker leaves it on.
+      const before = await workspaceRow(created.workspaceId);
+      const far = new Date(Date.now() + 400 * DAY_MS);
+      await runLifecycle({
+        db: workerDb,
+        billing: createBilling(
+          {
+            secretKey: STRIPE_SECRET_KEY,
+            webhookSecret: STRIPE_WEBHOOK_SECRET,
+            priceId: STRIPE_PRICE_ID,
+            apiBase: stripe.apiBase,
+            now: () => far,
+          },
+          workerDb,
+          logger,
+        ),
         logger,
-      ),
-      logger,
-      mailer,
-      publicUrl: PUBLIC_URL,
-      secret: AUTH_SECRET,
-    });
-    expect(await workspaceRow(created.workspaceId)).toEqual(before);
-  });
+        mailer,
+        publicUrl: PUBLIC_URL,
+        secret: AUTH_SECRET,
+      });
+      expect(await workspaceRow(created.workspaceId)).toEqual(before);
+    },
+    CLI_TEST_MS,
+  );
 
-  test("chat free refuses a workspace with a subscription, and an unknown one", async () => {
-    const created = await signup(early);
-    await owner
-      .insert(subscription)
-      .values({ workspaceId: created.workspaceId, stripeCustomerId: "cus_free_test" });
-    const refused = await runCli(["free", created.workspaceId]);
-    expect(refused.code).toBe(1);
-    expect((await workspaceRow(created.workspaceId)).active).toBe(false);
-    expect((await runCli(["free", randomUUID()])).code).toBe(1);
-    expect((await runCli(["free", "not-an-id"])).code).toBe(2);
-  });
+  test(
+    "chat free refuses a workspace with a subscription, and an unknown one",
+    async () => {
+      const created = await signup(early);
+      await owner
+        .insert(subscription)
+        .values({ workspaceId: created.workspaceId, stripeCustomerId: "cus_free_test" });
+      const refused = await runCli(["free", created.workspaceId]);
+      expect(refused.code).toBe(1);
+      expect((await workspaceRow(created.workspaceId)).active).toBe(false);
+      expect((await runCli(["free", randomUUID()])).code).toBe(1);
+      expect((await runCli(["free", "not-an-id"])).code).toBe(2);
+    },
+    CLI_TEST_MS,
+  );
 });
