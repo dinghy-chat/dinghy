@@ -251,6 +251,7 @@ const en = {
   removeText: "They lose access to this workspace at once. You can invite them again later.",
   removeYes: "Remove",
   leaveWorkspace: "Leave the workspace",
+  leaveBlockedTip: "You can't leave while you're the only owner.",
   leaveTitle: "Leave {workspace}?",
   leaveText: "You lose access to this workspace at once. An owner or admin can invite you back.",
   leaveYes: "Leave",

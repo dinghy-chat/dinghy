@@ -390,8 +390,15 @@ test("the last owner cannot lower their role or leave, and the app says why", as
   await expect(page.getByRole("heading", { name: "Solo" })).toBeVisible();
   await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.getByRole("button", { name: `Role: ${lone}` })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Leave the workspace" })).toBeDisabled();
-  await expect(page.getByText("You're the only owner.")).toBeVisible();
+  const leaveButton = page.getByRole("button", { name: "Leave the workspace" });
+  await expect(leaveButton).toBeDisabled();
+  // It says why on hover, and to a screen reader.
+  await leaveButton.hover();
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  await expect(leaveButton).toHaveAccessibleDescription(
+    "You can't leave while you're the only owner.",
+  );
+  await expect(page.getByText(/^You're the only owner\./)).toBeVisible();
   // The server refuses it too, for a client that skips the app.
   const leave = await page.request.delete(
     `${server.apiOrigin}/v1/operator/workspaces/${id}/members/${await myId(page)}`,

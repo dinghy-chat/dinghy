@@ -297,6 +297,43 @@ textarea {
 .icon-button:hover:not(:disabled) {
   background: var(--soft);
 }
+/* A tip above a control, on hover and on keyboard focus. It ends at the control's right edge, so
+   a control at the end of a row keeps its tip on screen. */
+.tip {
+  position: relative;
+  display: inline-flex;
+}
+.tip-text {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  width: max-content;
+  max-width: 240px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--on-fill);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.tip:hover .tip-text,
+.tip:has(:focus-visible) .tip-text {
+  opacity: 1;
+}
+.icon-button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.icon-button[aria-disabled="true"]:hover {
+  background: none;
+  color: var(--mute);
+}
 /* The emoji button and its grid, which opens above it. */
 .emoji-picker {
   position: relative;

@@ -22,6 +22,7 @@ import {
   Icon,
   PageRow,
   ROLE_TEXT,
+  Tip,
   useModal,
 } from "./ui.tsx";
 import { visitorName } from "./visitor.ts";
@@ -164,16 +165,23 @@ function MemberRow({
       </td>
       <td className="end-cell">
         {canRemove && (
-          <button
-            type="button"
-            className="icon-button quiet-danger"
-            aria-label={removeText}
-            title={self && lastOwner ? t("lastOwnerNote") : removeText}
-            disabled={self && lastOwner}
-            onClick={() => onRemove(self)}
-          >
-            <Icon name={self ? "exit" : "trash"} size={18} />
-          </button>
+          <Tip text={self && lastOwner ? t("leaveBlockedTip") : removeText}>
+            {(tipId) => (
+              // Blocked, it stays focusable, so a keyboard reaches its tip too.
+              <button
+                type="button"
+                className="icon-button quiet-danger"
+                aria-label={removeText}
+                aria-describedby={self && lastOwner ? tipId : undefined}
+                aria-disabled={self && lastOwner}
+                onClick={() => {
+                  if (!(self && lastOwner)) onRemove(self);
+                }}
+              >
+                <Icon name={self ? "exit" : "trash"} size={18} />
+              </button>
+            )}
+          </Tip>
         )}
       </td>
     </tr>

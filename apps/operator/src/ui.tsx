@@ -671,6 +671,23 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
 }
 
 /**
+ * A short label that shows above its control on hover and on keyboard focus, which a native
+ * title does not do for a disabled button. The control names the tip with the given ID when the
+ * tip says more than its own label.
+ */
+export function Tip({ text, children }: { text: string; children(tipId: string): ReactNode }) {
+  const id = useId();
+  return (
+    <span className="tip">
+      {children(id)}
+      <span className="tip-text" role="tooltip" id={id}>
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/**
  * A page inside the white panel: a large title, one line of context, and the page's actions on the
  * right as pills.
  */
