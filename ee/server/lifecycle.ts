@@ -26,6 +26,7 @@ import { type Database, type Transaction, withWorkspace } from "../../apps/serve
 import { letter } from "../../apps/server/src/letter.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
+import type { BillingStateName } from "../operator/billing-states.ts";
 import type { Billing } from "./billing.ts";
 import {
   LIFECYCLE_SIGN_OFF,
@@ -70,8 +71,6 @@ export interface LifecycleRow {
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
 }
-
-type BillingStateName = "pending" | "free" | "active" | "ending" | "payment_failed" | "read_only";
 
 /** What the owner sees in Settings, and how they would pay again. */
 export function billingState(

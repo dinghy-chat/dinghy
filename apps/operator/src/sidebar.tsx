@@ -7,7 +7,7 @@ import { leaveDevice } from "./notifications.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { Logo } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { initials, ROLE_TEXT } from "./ui.tsx";
+import { Avatar, initials, ROLE_TEXT } from "./ui.tsx";
 
 /** What the panel shows: the Inbox, or a page. */
 export type View = "inbox" | "analytics" | "settings";
@@ -124,13 +124,7 @@ function UserMenu({
         },
       ]}
     >
-      {me.pictureUrl === null ? (
-        <span className="me-avatar" aria-hidden="true">
-          {initials(me.name)}
-        </span>
-      ) : (
-        <img className="me-avatar" src={me.pictureUrl} alt="" />
-      )}
+      <Avatar name={me.name} pictureUrl={me.pictureUrl} />
       <span className="me-text">
         <b>{me.name}</b>
         <small>{t(ROLE_TEXT[role])}</small>

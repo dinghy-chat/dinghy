@@ -401,9 +401,16 @@ function InviteDialog({
 /** The button in the Team page's title row. On a phone the short label keeps it in that row. */
 function InviteButton({ onClick }: { onClick(): void }) {
   return (
-    <button type="button" className="pill dark invite" onClick={onClick}>
+    <button
+      type="button"
+      className="pill dark invite"
+      aria-label={t("invitesTitle")}
+      onClick={onClick}
+    >
       <Icon name="plusBold" size={14} />
-      <span className="invite-long">{t("invitesTitle")}</span>
+      <span className="invite-long" aria-hidden="true">
+        {t("invitesTitle")}
+      </span>
       <span className="invite-short" aria-hidden="true">
         {t("inviteShort")}
       </span>
@@ -547,7 +554,7 @@ export function TeamPage({
 export function BlockedRow({ api, team }: { api: WorkspaceApi; team: Team }) {
   return (
     <PageRow title={t("blockedTitle")} help={t("blockedHelp")}>
-      <ul className="blocked">
+      <ul className="item-list">
         {team.blocked.map((person) => (
           <li key={person.id}>
             <Avatar name={visitorName(person)} />

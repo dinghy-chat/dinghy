@@ -152,7 +152,6 @@ export function Select<V extends string>({
   disabled = false,
   side = "start",
   className = "",
-  hideLabel = true,
 }: {
   /** What the choice is for. Screen readers read it with the chosen value. */
   label: string;
@@ -163,8 +162,6 @@ export function Select<V extends string>({
   /** The edge of the button that the popup lines up with. */
   side?: Side;
   className?: string;
-  /** False shows the label above the button, as a field. */
-  hideLabel?: boolean;
 }) {
   const chosen = Math.max(
     0,
@@ -184,7 +181,7 @@ export function Select<V extends string>({
   const valueId = `${popup.id}-value`;
   return (
     <div className={`select ${className}`} ref={popup.wrap}>
-      <span id={labelId} className={hideLabel ? "visually-hidden" : "select-label"}>
+      <span id={labelId} className="visually-hidden">
         {label}
       </span>
       <button

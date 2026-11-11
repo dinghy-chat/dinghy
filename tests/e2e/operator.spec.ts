@@ -450,7 +450,7 @@ test("clicking Load more twice in the blocked list still reaches every visitor",
   await server.blockVisitors(120);
   const operator = await signedIn(browser, server, "anna@example.com");
   await openSettings(operator, "Workspace");
-  const rows = operator.locator(".page .blocked li", { hasText: "Blocked " });
+  const rows = operator.locator(".page .item-list li", { hasText: "Blocked " });
   await expect(rows).toHaveCount(50);
   const more = operator.locator(".page").getByRole("button", { name: "Load more" });
   await more.evaluate((button: HTMLElement) => {

@@ -42,7 +42,7 @@ test("the grouped list opens each page, by a click and by its address", async ({
     "Developers",
   ]);
   await expect(list.getByRole("link")).toHaveText(PAGES.map((one) => one.name));
-  // The title row has no line under it.
+  // The list has its own title.
   await expect(list.getByRole("heading", { name: "Settings", level: 2 })).toBeVisible();
 
   for (const one of PAGES) {

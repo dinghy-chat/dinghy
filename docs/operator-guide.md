@@ -83,8 +83,6 @@ With a mail server, Dinghy emails you a confirmation link. Open it within 15 min
 
 ## Set up your team
 
-![The settings page](media/settings.png)
-
 Everyone can open **Settings**. A list on its left groups the pages:
 
 | Group | Pages |
@@ -123,6 +121,8 @@ Someone in two workspaces switches between them with the workspace name at the t
 ## The other settings
 
 **Settings > Install** has three sections. Owners and admins see it.
+
+![The Install page in Settings](media/settings.png)
 
 - **Install code** has the tag for your site, with a **Copy** button.
 - **Allowed sites** lists the sites that can load the chat, one per row. **Add a site** adds a row, and each row says if its address is not a site such as `https://example.com`.

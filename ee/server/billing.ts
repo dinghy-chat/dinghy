@@ -1,4 +1,5 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
+
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, sql, TransactionRollbackError } from "drizzle-orm";
@@ -14,6 +15,7 @@ import { noLive, OPERATORS, type Signals } from "../../apps/server/src/live.ts";
 import { OPEN_WHILE_CLOSED, OPEN_WHILE_UNPAID } from "../../apps/server/src/member.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import { type RateLimit, tooManyRequests } from "../../apps/server/src/rate-limit.ts";
+import { BILLING_STATES } from "../operator/billing-states.ts";
 import { billingEmails, billingState, ENDED, FAILING, PAID, queueEmails } from "./lifecycle.ts";
 
 interface BillingKeys {
@@ -114,7 +116,7 @@ const billingStateRoute = createRoute({
         "application/json": {
           schema: z
             .object({
-              state: z.enum(["pending", "free", "active", "ending", "payment_failed", "read_only"]),
+              state: z.enum(BILLING_STATES),
               // Renews, ends, becomes read-only or is deleted on this date, by state.
               date: z.string().nullable(),
               // How the owner pays again: a new Checkout, or Stripe's portal for a live subscription.

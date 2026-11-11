@@ -69,6 +69,8 @@
   --side-mute: light-dark(#6f6c63, #8693a2);
   --warn-soft: light-dark(#fdf3d7, #3a3115);
   --warn-ink: light-dark(#7a5600, #ffd66b);
+  /* A meter close to its limit. */
+  --warn-fill: #d99a00;
   /* A switch's track when off: 3:1 against the card, and the white knob 3:1 against it. */
   --switch-off: light-dark(#8a867b, #62758b);
   --nobody-line: light-dark(#bdb9ae, #4a5b70);
@@ -966,17 +968,12 @@ button.workspace[aria-expanded="true"],
   min-height: 56px;
   padding: 10px;
 }
-.me-avatar {
-  display: grid;
-  flex: none;
-  place-items: center;
+/* The operator's own tile is navy, whatever tint their name gives it elsewhere. */
+.me .avatar {
   width: 34px;
   height: 34px;
-  border-radius: 50%;
   background: var(--navy);
   color: var(--on-navy);
-  font: 700 13px / 1 var(--display);
-  object-fit: cover;
 }
 .me-text {
   display: grid;
@@ -1293,11 +1290,6 @@ img.ws-tile {
   gap: 6px;
   min-width: 0;
 }
-.select-label {
-  color: var(--navy);
-  font-size: 14.5px;
-  font-weight: 600;
-}
 .select-button {
   display: flex;
   align-items: center;
@@ -1336,9 +1328,6 @@ img.ws-tile {
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
-}
-.select-label + .select-button {
-  justify-self: start;
 }
 
 /* A small modal. */
@@ -2046,8 +2035,9 @@ img.ws-tile {
 .profile > .page-row:first-child {
   border-top: 0;
 }
+.page-row h3,
+.widget-section h3,
 .page-row h3 {
-  font: 650 15.5px / 1.3 var(--body);
   letter-spacing: 0;
 }
 .page-about .hint {
@@ -2065,9 +2055,7 @@ img.ws-tile {
 }
 .page-controls > .pill,
 .page-controls > .actions,
-.page-controls > .select {
-  justify-self: start;
-}
+.page-controls > .select,
 .page-controls > .text-button {
   justify-self: start;
 }
@@ -2688,9 +2676,6 @@ img.ws-tile {
   padding-top: 24px;
   border-top: 1px solid var(--line);
 }
-.widget-section h3 {
-  font: 650 15.5px / 1.3 var(--body);
-}
 /* Appearance: the preview goes above the form once both no longer fit side by side. */
 @container (max-width: 860px) {
   .appearance {
@@ -3023,7 +3008,7 @@ img.ws-tile {
   background: var(--navy);
 }
 .meter.near .meter-fill {
-  background: #d99a00;
+  background: var(--warn-fill);
 }
 .meter.full .meter-fill {
   background: var(--red);
@@ -3035,25 +3020,19 @@ img.ws-tile {
 .meter.full .meter-note {
   color: var(--bad);
 }
-.blocked,
+/* Blocked visitors, API keys and webhooks: one item a row, with a line between rows. */
 .item-list {
   display: grid;
 }
-.blocked > li,
 .item-list > li {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 0;
 }
-.blocked > li + li,
 .item-list > li + li {
   border-top: 1px solid var(--line);
 }
-.blocked .who-lines {
-  min-width: 0;
-}
-/* API keys and webhooks: one item a row, with a line between rows. */
 .item-list .who-lines {
   flex: 1;
 }
@@ -3145,9 +3124,6 @@ img.ws-tile {
   align-items: center;
   gap: 4px 10px;
   overflow-wrap: anywhere;
-}
-.page-controls > .text-button {
-  justify-self: start;
 }
 .check {
   display: flex;
@@ -3312,12 +3288,7 @@ img.ws-tile {
     display: inline;
   }
   .invite-long {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+    display: none;
   }
   .me-text,
   .me > svg:last-child {

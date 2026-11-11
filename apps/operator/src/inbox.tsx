@@ -42,7 +42,7 @@ type Status = "open" | "closed";
 /** Whose conversations the Inbox lists. */
 type Who = "all" | "mine" | "unassigned";
 
-const STATUS_LOOK: Record<Status, { empty: TextId; hint: TextId }> = {
+const STATUS_EMPTY: Record<Status, { empty: TextId; hint: TextId }> = {
   open: { empty: "noOpen", hint: "emptyHint" },
   closed: { empty: "noClosed", hint: "closedHint" },
 };
@@ -85,7 +85,7 @@ function filterAddress(status: Status, who: Who, from = location.href): string {
 function emptyLook(status: Status, who: Who): { empty: TextId; hint: TextId | null } {
   if (who === "mine") return { empty: "noMine", hint: null };
   if (who === "unassigned" && status === "open") return { empty: "noUnassigned", hint: null };
-  return STATUS_LOOK[status];
+  return STATUS_EMPTY[status];
 }
 
 /** The time today, and the date before today. */
@@ -380,9 +380,10 @@ export function Inbox({
     if (names.length === 0) return null;
     return t(names.length === 1 ? "isReplying" : "areReplying", { names: names.join(", ") });
   };
-  // A team of one has nothing to filter. The roster is empty only until it loads.
+  // A team of one has nothing to filter. The roster is empty only until it loads, and the
+  // address's filter holds until then.
   const isTeam = members.length > 1;
-  const who: Who = members.length === 1 ? "all" : chosenWho;
+  const who: Who = isTeam || members.length === 0 ? chosenWho : "all";
   const assignee = WHO_ASSIGNEE[who];
   const shown = useRef({ status, assignee, limit });
   useLayoutEffect(() => {

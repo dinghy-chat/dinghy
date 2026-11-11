@@ -354,7 +354,9 @@ test("an owner changes the color, theme and launcher in Appearance, and the site
   await expect(preview.locator(".panel")).toBeVisible();
   await expect(preview.locator(".launcher.label")).toContainText("Chat with us");
   await save.click();
-  await expect(owner.getByText("Saved. New pages of your site show this within 5 minutes.")).toBeVisible();
+  await expect(
+    owner.getByText("Saved. New pages of your site show this within 5 minutes."),
+  ).toBeVisible();
   await expect(save).toBeDisabled();
 
   const visitor = await visit(browser);

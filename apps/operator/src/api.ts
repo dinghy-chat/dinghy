@@ -1,3 +1,4 @@
+import type { BillingStateName } from "../../../ee/operator/billing-states.ts";
 import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
@@ -232,7 +233,7 @@ export interface AlertSettings {
 }
 
 export interface BillingState {
-  state: "pending" | "free" | "active" | "ending" | "payment_failed" | "read_only";
+  state: BillingStateName;
   /** Renews, ends, becomes read-only or is deleted on this date, by state. */
   date: string | null;
   payWith: "checkout" | "portal";
