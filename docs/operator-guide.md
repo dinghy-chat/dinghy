@@ -118,7 +118,7 @@ Someone in two workspaces switches between them with the workspace name at the t
 - **Colors and layout**: the main color and the accent color, the side of the page, the theme (light, dark, or **Use device setting**, which follows the visitor's device), the chat button (a bubble, a label with the chat's title, a square, a boat, or hidden so your own button opens the chat), the corner rounding, and whether the open chat shows the boat.
 - **Email and branding**: when to ask visitors for their email, so you can reply after they leave: never, after their first message, or before it. Dinghy never asks a signed-in user, nor anyone when your server sends no email. A switch hides the "Powered by Dinghy" line under the chat.
 
-**Save** sends the form, and your site shows the change within 5 minutes. The browser asks before you leave the page with a change you did not save. The top of the chat shows the workspace's logo, which you change in **Settings > Workspace**. It also shows up to 3 members who replied last, by first name and picture. Attributes in your site's tag win over these settings: see [Add the chat to your website](add-to-your-site.md#change-how-it-looks).
+**Save** sends the form. Pages of your site that open after the save show the change within 5 minutes, and a page already open keeps the look it loaded with. The browser asks before you leave the page with a change you did not save. The top of the chat shows the workspace's logo, which you change in **Settings > Workspace**. It also shows up to 3 members who replied last, by first name and picture. Attributes in your site's tag win over these settings: see [Add the chat to your website](add-to-your-site.md#change-how-it-looks).
 
 ## The other settings
 

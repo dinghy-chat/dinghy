@@ -20,7 +20,7 @@ Put the chat on your own site, not on a page served from the same address as Din
 
 ## Change how it looks
 
-The easiest way needs no code: **Settings > Appearance** in the operator app sets the colors, the side, the theme, the chat button, the corners, the boat, the words, when to ask for an email and the "Powered by Dinghy" line. The [operator guide](operator-guide.md#change-the-widget) explains it. Your site shows a saved change within 5 minutes.
+The easiest way needs no code: **Settings > Appearance** in the operator app sets the colors, the side, the theme, the chat button, the corners, the boat, the words, when to ask for an email and the "Powered by Dinghy" line. The [operator guide](operator-guide.md#change-the-widget) explains it. Pages of your site that open after a save show the change within 5 minutes, and a page already open keeps the look it loaded with.
 
 You can also set the look in the tag. These attributes win over the saved settings, and `Dinghy.configure()` wins too:
 

@@ -202,7 +202,7 @@ const en = {
   widgetEmailAfter: "After the first message",
   widgetEmailBefore: "Before the first message",
   widgetBranding: 'Show "Powered by Dinghy"',
-  widgetSaved: "Saved. Your site shows this within 5 minutes.",
+  widgetSaved: "Saved. New pages of your site show this within 5 minutes.",
   widgetMemberNote: "Only owners and admins can change the widget.",
   widgetLeaveTitle: "Leave without saving?",
   widgetLeaveText: "Your widget changes will be lost.",
