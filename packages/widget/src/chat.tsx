@@ -1,4 +1,4 @@
-import { render } from "preact";
+import { Fragment, render } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ChatMessage, createClient } from "./client.ts";
 import { imageProblem, inCommitOrder, newClientId, REFRESH_LIMIT_MS, REFUSED } from "./compose.ts";
@@ -11,7 +11,8 @@ import {
   ChatLine,
   Composer,
   CSS,
-  EmailForm,
+  EmailCard,
+  EmailSaved,
   EmptyLog,
   emailLayout,
   type Line,
@@ -701,6 +702,25 @@ function Chat({
     chatted: chatted || lines.length > 0,
     known: token === null || hasEmail !== undefined || emailState !== "idle",
   });
+  const emailCard = (
+    <EmailCard
+      face={saved.team[0] ?? null}
+      lead={email.composer ? "emailAfterFirst" : "emailBeforeFirst"}
+      email={emailDraft}
+      bad={emailState === "idle" || emailState === "saved" ? null : emailState}
+      onInput={setEmailDraft}
+      onSubmit={saveEmail}
+    />
+  );
+  // After the first message, the card, then the line that replaces it, stays in the conversation
+  // right after the visitor's first message, so it never reads as a second message box.
+  const emailInLog =
+    emailState === "saved" ? (
+      <EmailSaved email={emailDraft.trim()} />
+    ) : (
+      email.form && email.composer && emailCard
+    );
+  const emailAt = lines.findIndex((line) => line.fromVisitor);
 
   return (
     <section
@@ -737,23 +757,26 @@ function Chat({
       <div class="log" role="log" aria-live="polite" ref={log}>
         {lines.length === 0 && <EmptyLog mascot={mascot} greeting={say("empty")} />}
         {lines.map((line, index) => (
-          <ChatLine
-            key={line.id}
-            line={line}
-            showAuthor={startsRun(lines, index)}
-            onView={() => setViewing(line.id)}
-            onImageError={refreshImages}
-            onRetry={() => void deliver(line.id, line.body, line.file, line.quote?.id)}
-            onReply={
-              line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
-                ? undefined
-                : () => {
-                    setQuoting(line);
-                    input.current?.focus();
-                  }
-            }
-          />
+          <Fragment key={line.id}>
+            <ChatLine
+              line={line}
+              showAuthor={startsRun(lines, index)}
+              onView={() => setViewing(line.id)}
+              onImageError={refreshImages}
+              onRetry={() => void deliver(line.id, line.body, line.file, line.quote?.id)}
+              onReply={
+                line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
+                  ? undefined
+                  : () => {
+                      setQuoting(line);
+                      input.current?.focus();
+                    }
+              }
+            />
+            {index === emailAt && emailInLog}
+          </Fragment>
         ))}
+        {emailAt === -1 && emailInLog}
       </div>
       {viewing !== null && (
         // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
@@ -774,19 +797,7 @@ function Chat({
           {problem}
         </div>
       )}
-      {emailState === "saved" && (
-        <div class="notice" role="status">
-          {t("emailSaved")}
-        </div>
-      )}
-      {email.form && (
-        <EmailForm
-          email={emailDraft}
-          bad={emailState === "idle" || emailState === "saved" ? null : emailState}
-          onInput={setEmailDraft}
-          onSubmit={saveEmail}
-        />
-      )}
+      {email.form && !email.composer && emailCard}
       {email.composer && (
         <Composer
           draft={draft}

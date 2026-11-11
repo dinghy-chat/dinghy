@@ -297,7 +297,10 @@ test.describe("with early signup and no Stripe keys", () => {
     // The link lands on the workspace setup, which is why the person signed up again.
     await onboard(page, "Second Shop");
     const picked = page.getByRole("button", { name: /^Workspace:/ });
-    await expect(picked).toHaveAccessibleName("Workspace: Second Shop");
+    // First Shop's welcome chat waits for a reply, so the name also says a chat waits elsewhere.
+    await expect(picked).toHaveAccessibleName(
+      "Workspace: Second Shop, chats wait in another workspace",
+    );
     // On Dinghy Cloud the switcher also starts another workspace, at the signup's second step.
     await picked.click();
     await expect(page.getByRole("menuitemradio", { name: "Second Shop" })).toHaveAttribute(

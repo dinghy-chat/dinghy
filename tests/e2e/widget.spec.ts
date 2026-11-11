@@ -255,17 +255,33 @@ test("a refused stream waits for Retry-After before it tries again", async ({ br
   await context.close();
 });
 
-test("a visitor can save an email", async ({ browser }) => {
+test("after the first message, the email question is a card in the conversation", async ({
+  browser,
+}) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`${server.hostOrigin}/plain`);
   await launcher(page).click();
+  await expect(input(page)).toBeFocused();
   await expect(page.getByLabel("Your email")).toHaveCount(0);
   await input(page).fill("Hello");
   await input(page).press("Enter");
-  await page.getByLabel("Your email").fill("pat@example.com");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Thanks. We will use this email")).toBeVisible();
+
+  // The card follows the visitor's first message in the log, and the message box stays alone.
+  const card = page.getByRole("form", { name: "Get replies by email" });
+  await expect(page.getByRole("log").locator(".mine + .card")).toHaveCount(1);
+  await expect(card).toContainText("We'll email you when we reply, if you have left the page.");
+  await expect(page.locator(".compose input[type=email]")).toHaveCount(0);
+  await expect(input(page)).toBeFocused();
+
+  // Enter in the email field saves it and sends no message.
+  await card.getByLabel("Your email").fill("pat@example.com");
+  await card.getByLabel("Your email").press("Enter");
+  const saved = page.getByRole("log").getByRole("status");
+  await expect(saved).toHaveText("We'll email replies to pat@example.com");
+  await expect(saved.locator("b")).toHaveText("pat@example.com");
+  await expect(card).toHaveCount(0);
+  await expect(page.locator(".msg.mine")).toHaveCount(1);
   expect(await server.visitorEmails()).toContain("pat@example.com");
   await context.close();
 });

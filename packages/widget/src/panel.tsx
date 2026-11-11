@@ -116,8 +116,13 @@ dialog img{display:block;max-width:none}
 .emojis button{height:36px;padding:0;border:0;border-radius:8px;background:none;font-size:20px;cursor:pointer}
 .emojis button:hover{background:var(--fog)}
 .file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
-.email{flex-wrap:wrap;align-items:center}
-.email label{width:100%;font-size:12.5px;line-height:16px;color:var(--mute)}
+.card{display:block;align-self:stretch;margin:6px 0;padding:12px 14px;border:0;border-radius:16px;background:color-mix(in srgb,var(--primary) 7%,var(--paper));box-shadow:0 1px 2px rgb(13 34 64/.08)}
+.card .who{margin:0;color:var(--ink);font-weight:600}
+.card p{margin:4px 0 0;font-size:13px;line-height:18px;color:var(--mute)}
+.card .bad{color:var(--bad)}
+.card .face svg{width:18px;height:auto}
+.row{display:flex;gap:8px;margin-top:10px}
+.card input{padding:9px 14px;background:var(--paper);border-color:var(--line)}
 .notice{padding:7px 16px;font-size:12.5px;line-height:16px;color:var(--mute);border-top:1px solid var(--line)}
 .notice.bad{color:var(--bad)}
 .who{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12.5px;line-height:16px;color:var(--mute)}
@@ -480,13 +485,22 @@ export function EmptyLog({ mascot, greeting }: { mascot: boolean; greeting: stri
   );
 }
 
-/** Asks a signed-out visitor for an email, so a reply can reach them after they leave. */
-export function EmailForm({
+/**
+ * Asks a signed-out visitor for an email, so a reply can reach them after they leave. A card from
+ * the team, never a second message box: in the conversation after the first message, or alone
+ * before it.
+ */
+export function EmailCard({
+  face,
+  lead,
   email,
   bad,
   onInput,
   onSubmit,
 }: {
+  /** The team member the card comes from, or null for the boat. */
+  face: TeamFace | null;
+  lead: TextId;
   email: string;
   /** Why the last save failed, or null. */
   bad: TextId | null;
@@ -494,22 +508,49 @@ export function EmailForm({
   onSubmit(event: Event): void;
 }) {
   return (
-    <form class="email" onSubmit={onSubmit}>
-      <label for="dinghy-email">
-        {bad === null ? t("emailLabel") : <span class="bad">{t(bad)}</span>}
-      </label>
-      <input
-        id="dinghy-email"
-        type="email"
-        autocomplete="email"
-        required
-        value={email}
-        onInput={(event) => onInput(event.currentTarget.value)}
-      />
-      <button type="submit" class="action">
-        {t("emailSave")}
-      </button>
+    <form class="card" aria-label={t("emailTitle")} onSubmit={onSubmit}>
+      <b class="who">
+        {face === null ? (
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: a fixed string from boat.ts.
+          <span class="face" dangerouslySetInnerHTML={{ __html: boatSvg("sail", 18) }} />
+        ) : (
+          <Face {...face} />
+        )}
+        {t("emailTitle")}
+      </b>
+      <p>{t(lead)}</p>
+      <div class="row">
+        <input
+          type="email"
+          autocomplete="email"
+          aria-label={t("emailLabel")}
+          placeholder={t("emailPlaceholder")}
+          required
+          value={email}
+          onInput={(event) => onInput(event.currentTarget.value)}
+        />
+        <button type="submit" class="action">
+          {t("emailSave")}
+        </button>
+      </div>
+      {bad !== null && (
+        <p class="bad" role="alert">
+          {t(bad)}
+        </p>
+      )}
     </form>
+  );
+}
+
+/** Where the email card stood once the email is saved: one quiet line with the address. */
+export function EmailSaved({ email }: { email: string }) {
+  const [before, after] = t("emailSavedTo").split("{email}");
+  return (
+    <p class="note" role="status">
+      {before}
+      <b>{email}</b>
+      {after}
+    </p>
   );
 }
 

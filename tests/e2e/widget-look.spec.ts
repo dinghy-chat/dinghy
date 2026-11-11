@@ -179,12 +179,15 @@ test("before the first message, the email takes the message box's place until it
   await server.setWidgetSettings({ emailAsk: "before_first" });
   const visitor = await visit(browser);
   await launcher(visitor).click();
-  const email = visitor.getByRole("textbox", { name: "Your email, so we can reply if you leave" });
+  const email = visitor.getByRole("textbox", { name: "Your email" });
   await expect(email).toBeVisible();
+  await expect(visitor.getByText("Leave your email so we can reply")).toBeVisible();
   await expect(visitor.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
   await email.fill("visitor@example.com");
   await visitor.getByRole("button", { name: "Save" }).click();
-  await expect(visitor.getByText("Thanks. We will use this email if you leave.")).toBeVisible();
+  await expect(visitor.getByRole("log").getByRole("status")).toHaveText(
+    "We'll email replies to visitor@example.com",
+  );
   await expect(visitor.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expect(email).toHaveCount(0);
   // The server holds the email, so the next page, where the chat stays open, does not ask again.

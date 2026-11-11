@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 // The operator app's preview of the Widget tab: the chat's own pieces, with sample messages, and no
 // request to any server. It changes with each edit, before a save.
-import { render } from "preact";
+import { Fragment, render } from "preact";
 import { useRef } from "preact/hooks";
 import { LAUNCHER_CSS, LAUNCHER_ICONS, type LauncherKind, paintColors } from "./launcher.ts";
 import {
@@ -10,7 +10,7 @@ import {
   ChatLine,
   Composer,
   CSS,
-  EmailForm,
+  EmailCard,
   EmptyLog,
   emailLayout,
   type Line,
@@ -73,6 +73,16 @@ function Preview({ appearance, sample }: PreviewProps) {
     known: true,
   });
   const lines = email.composer ? sampleLines(sample) : [];
+  const card = (
+    <EmailCard
+      face={appearance.team[0] ?? null}
+      lead={email.composer ? "emailAfterFirst" : "emailBeforeFirst"}
+      email=""
+      bad={null}
+      onInput={ignore}
+      onSubmit={preventSubmit}
+    />
+  );
   return (
     <div class="stage">
       <section class="panel">
@@ -88,17 +98,20 @@ function Preview({ appearance, sample }: PreviewProps) {
         <div class="log">
           {lines.length === 0 && <EmptyLog mascot={mascot} greeting={say("empty")} />}
           {lines.map((line, index) => (
-            <ChatLine
-              key={line.id}
-              line={line}
-              showAuthor={startsRun(lines, index)}
-              onView={ignore}
-              onImageError={ignore}
-              onRetry={ignore}
-            />
+            <Fragment key={line.id}>
+              <ChatLine
+                line={line}
+                showAuthor={startsRun(lines, index)}
+                onView={ignore}
+                onImageError={ignore}
+                onRetry={ignore}
+              />
+              {/* The card follows the sample visitor's message, as in the chat. */}
+              {line.fromVisitor && email.form && card}
+            </Fragment>
           ))}
         </div>
-        {email.form && <EmailForm email="" bad={null} onInput={ignore} onSubmit={preventSubmit} />}
+        {email.form && !email.composer && card}
         {email.composer && (
           <Composer
             draft=""
