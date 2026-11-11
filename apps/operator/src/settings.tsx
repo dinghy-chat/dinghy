@@ -636,7 +636,15 @@ export function ProfilePage({
   );
 }
 
-export type SettingsTab = "team" | "widget" | "install" | "sites" | "secret" | "api" | "data";
+export type SettingsTab =
+  | "team"
+  | "widget"
+  | "install"
+  | "sites"
+  | "secret"
+  | "api"
+  | "webhooks"
+  | "data";
 type Tab = SettingsTab;
 
 const TAB_TEXT: Record<Tab, TextId> = {
@@ -646,6 +654,7 @@ const TAB_TEXT: Record<Tab, TextId> = {
   sites: "originsTitle",
   secret: "secretTitle",
   api: "tabApi",
+  webhooks: "tabWebhooks",
   data: "tabData",
 };
 
@@ -783,7 +792,7 @@ export function SettingsPage({
         };
   // Every member reads the widget's settings. The rest are for owners and admins.
   const tabs: Tab[] = ["team", "widget"];
-  if (settings !== null) tabs.push("install", "sites", "secret", "api");
+  if (settings !== null) tabs.push("install", "sites", "secret", "api", "webhooks");
   if (role === "owner" || team.blocked.length > 0) tabs.push("data");
   const tab = tabs.includes(picked) ? picked : "team";
 
@@ -844,12 +853,8 @@ export function SettingsPage({
         {tab === "secret" && settings !== null && (
           <SecretRow api={api} settings={settings} onSaved={setSettings} />
         )}
-        {tab === "api" && settings !== null && (
-          <>
-            <ApiKeysRow api={api} />
-            <WebhooksRow api={api} />
-          </>
-        )}
+        {tab === "api" && settings !== null && <ApiKeysRow api={api} />}
+        {tab === "webhooks" && settings !== null && <WebhooksRow api={api} />}
         {tab === "data" && (
           <>
             {role === "owner" && (

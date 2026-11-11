@@ -426,6 +426,7 @@ const en = {
   apiKeyAuthor: "{name} (API)",
   apiKeyUnknown: "An API key",
   tabApi: "API",
+  tabWebhooks: "Webhooks",
   apiKeysTitle: "API keys",
   apiKeysHelp:
     "A key lets a script or an AI agent read, search, reply to, close, reopen and assign conversations, through the API or MCP. It cannot change settings.",
@@ -455,6 +456,7 @@ const en = {
   webhookEventReopened: "A conversation is reopened",
   webhookEventAssigned: "A conversation is assigned",
   webhookEventCount: "{count} events",
+  webhookNew: "New webhook",
   webhookAdd: "Add webhook",
   webhookBadUrl: "Use an https address that is reachable from the internet.",
   webhookLimit: "This workspace has 5 webhooks, the most it can have.",

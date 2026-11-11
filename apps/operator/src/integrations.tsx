@@ -11,7 +11,7 @@ import {
 } from "./api.ts";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { CopyButton, ErrorNote, Field, failureText, PageRow, StatusNote } from "./ui.tsx";
+import { CopyButton, ErrorNote, Field, failureText, Icon, PageRow, StatusNote } from "./ui.tsx";
 
 const API_DOCS = "https://dinghy.chat/docs/api";
 const MAX_WEBHOOKS = 5;
@@ -371,6 +371,8 @@ export function WebhooksRow({ api }: { api: WorkspaceApi }) {
   const [failure, setFailure] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState<Asking>(null);
+  // The new webhook's form shows only once the owner asks for it.
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(() => {
     api.webhooks().then(
@@ -398,6 +400,8 @@ export function WebhooksRow({ api }: { api: WorkspaceApi }) {
       const made = await api.createWebhook(url.trim(), events);
       setSecret({ url: made.url, secret: made.secret });
       setUrl("");
+      setEvents([...WEBHOOK_EVENTS]);
+      setAdding(false);
       load();
     });
   };
@@ -416,12 +420,50 @@ export function WebhooksRow({ api }: { api: WorkspaceApi }) {
     });
 
   const full = hooks.length >= MAX_WEBHOOKS;
+  const cancel = () => {
+    setAdding(false);
+    setUrl("");
+    setEvents([...WEBHOOK_EVENTS]);
+    setFailure(null);
+  };
   return (
     <PageRow title={t("webhooksTitle")} help={t("webhooksHelp")}>
+      {hooks.length > 0 && (
+        <ul className="item-list">
+          {hooks.map((hook) => (
+            <WebhookItem
+              key={hook.id}
+              api={api}
+              hook={hook}
+              onAsk={setAsking}
+              onChanged={(changed) =>
+                setHooks((current) => current.map((one) => (one.id === changed.id ? changed : one)))
+              }
+            />
+          ))}
+        </ul>
+      )}
+      {secret !== null && (
+        <ShownOnce label={t("webhookSecretCopy", { url: secret.url })} value={secret.secret} />
+      )}
       {full ? (
         <StatusNote text="webhookLimit" />
+      ) : !adding ? (
+        <div className="actions">
+          <button
+            type="button"
+            className="pill dark"
+            onClick={() => {
+              setSecret(null);
+              setAdding(true);
+            }}
+          >
+            <Icon name="plusBold" size={14} />
+            {t("webhookNew")}
+          </button>
+        </div>
       ) : (
-        <form className="stack" onSubmit={add}>
+        <form className="stack hook-form" onSubmit={add}>
           <Field
             label={t("webhookUrl")}
             type="url"
@@ -443,28 +485,13 @@ export function WebhooksRow({ api }: { api: WorkspaceApi }) {
             >
               {t("webhookAdd")}
             </button>
+            <button type="button" className="pill" onClick={cancel}>
+              {t("cancel")}
+            </button>
           </div>
         </form>
       )}
-      {secret !== null && (
-        <ShownOnce label={t("webhookSecretCopy", { url: secret.url })} value={secret.secret} />
-      )}
       <ErrorNote text={failure} />
-      {hooks.length > 0 && (
-        <ul className="item-list">
-          {hooks.map((hook) => (
-            <WebhookItem
-              key={hook.id}
-              api={api}
-              hook={hook}
-              onAsk={setAsking}
-              onChanged={(changed) =>
-                setHooks((current) => current.map((one) => (one.id === changed.id ? changed : one)))
-              }
-            />
-          ))}
-        </ul>
-      )}
       <a className="text-button" href={API_DOCS} target="_blank" rel="noopener noreferrer">
         {t("apiDocsLink")}
       </a>

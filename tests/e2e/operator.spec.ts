@@ -613,9 +613,15 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   );
   await expect(code.locator(".code-attr")).toHaveText(["src", "data-key", "async"]);
 
-  await page.getByRole("tab", { name: "API" }).click();
+  await page.getByRole("tab", { name: "Webhooks" }).click();
   const add = page.getByRole("button", { name: "Add webhook" });
   const events = page.getByRole("group", { name: "Events" }).getByRole("checkbox");
+  // The form shows only once asked for, and Cancel puts it away.
+  await expect(events).toHaveCount(0);
+  await page.getByRole("button", { name: "New webhook" }).click();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(events).toHaveCount(0);
+  await page.getByRole("button", { name: "New webhook" }).click();
   await expect(events).toHaveCount(5);
   await expect(
     page.getByRole("checkbox", { name: /A message is sent\s*message\.created/ }),
@@ -633,4 +639,6 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   await expect(hook.locator(".hook-url")).toHaveAttribute("title", url);
   await expect(hook).toContainText("3 events");
   await expect(page.getByRole("checkbox", { name: `Send events to ${url}` })).toBeChecked();
+  // Once added, the form closes.
+  await expect(events).toHaveCount(0);
 });
