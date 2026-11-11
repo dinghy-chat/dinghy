@@ -821,9 +821,6 @@ textarea {
   width: 32px;
   height: 32px;
 }
-.banner-short {
-  display: none;
-}
 .billing-banner a {
   color: inherit;
   font-weight: 600;
@@ -2031,13 +2028,13 @@ img.ws-tile {
   padding: 24px 0;
   border-top: 1px solid var(--line);
 }
-.page-body > .page-row:first-child,
-.profile > .page-row:first-child {
+.page-body > .page-row:first-child {
   border-top: 0;
 }
 .page-row h3,
 .widget-section h3,
-.page-row h3 {
+.preview-bar h3 {
+  font: 650 15.5px / 1.3 var(--body);
   letter-spacing: 0;
 }
 .page-about .hint {
@@ -2118,7 +2115,7 @@ img.ws-tile {
   background: var(--row-hover);
   color: var(--navy);
 }
-/* The sidebar's current item: a soft fill, never a colored edge. */
+/* The Settings list's current page: a soft fill, never a colored edge. */
 .settings-link[aria-current="page"] {
   background: var(--soft);
   color: var(--navy);
@@ -2247,9 +2244,6 @@ img.ws-tile {
   min-width: 0;
   color: var(--navy);
   overflow-wrap: anywhere;
-}
-.page-row + .danger-zone {
-  border-top: 1.5px solid var(--bad-line);
 }
 /* Analytics: the headline numbers, then one row per chart. Bars and cells use the brand's navy
    and blue on the cream track, as the usage meters do. */
@@ -2518,7 +2512,8 @@ img.ws-tile {
   flex: 1;
   min-width: 0;
 }
-.invite-short {
+/* A long label and a short one for the same thing: the short one takes over on a phone. */
+.short-text {
   display: none;
 }
 .field .hint {
@@ -2688,12 +2683,12 @@ img.ws-tile {
     grid-column: 1;
   }
 }
-/* The Look and Behavior sections: one compact line per setting, the label on the left and the
-   control on the right, with a hairline between lines. */
-.look-rows {
+/* The "Colors and layout" and "Email and branding" sections on Appearance: one compact line per
+   setting, the label on the left and the control on the right, with a hairline between lines. */
+.setting-rows {
   display: grid;
 }
-.look-row {
+.setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -2701,31 +2696,31 @@ img.ws-tile {
   min-height: 56px;
   padding: 8px 0;
 }
-.look-row + .look-row {
+.setting-row + .setting-row {
   border-top: 1px solid var(--line);
 }
-.look-label {
+.setting-label {
   display: grid;
   gap: 1px;
   color: var(--navy);
   font-size: 14.5px;
   font-weight: 600;
 }
-.look-label .hint {
+.setting-label .hint {
   font-weight: 400;
 }
-.look-row.look-switch,
-.look-row.look-stacked {
+.setting-row.setting-switch,
+.setting-row.setting-stacked {
   grid-template-columns: minmax(0, 1fr);
 }
-.look-row.look-stacked {
+.setting-row.setting-stacked {
   gap: 10px;
   padding: 12px 0;
 }
-.look-row > .choices {
+.setting-row > .choices {
   justify-self: end;
 }
-.look-stacked > .choices {
+.setting-stacked > .choices {
   justify-self: start;
 }
 .color-field,
@@ -2797,10 +2792,10 @@ img.ws-tile {
 }
 /* On a narrow screen the control goes under its label. */
 @media (max-width: 520px) {
-  .look-row {
+  .setting-row {
     grid-template-columns: minmax(0, 1fr);
   }
-  .look-row > .choices,
+  .setting-row > .choices,
   .color-field,
   .radius-field {
     justify-self: start;
@@ -2825,9 +2820,6 @@ img.ws-tile {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-.preview-bar h3 {
-  font: 650 15.5px / 1.3 var(--body);
 }
 .preview-body {
   display: grid;
@@ -3278,16 +3270,10 @@ img.ws-tile {
   .invite {
     padding: 0 16px;
   }
-  .invite-short {
+  .short-text {
     display: inline;
   }
-  .banner-long {
-    display: none;
-  }
-  .banner-short {
-    display: inline;
-  }
-  .invite-long {
+  .long-text {
     display: none;
   }
   .me-text,

@@ -10,6 +10,7 @@ import { NAVIGATE_EVENT, navigate, replaceAddress } from "./nav.ts";
 import { DeleteAccount } from "./profile.tsx";
 import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./scene.tsx";
 import { openOwnerStep } from "./settings.tsx";
+import { readStored, store } from "./stored.ts";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
 
@@ -17,21 +18,8 @@ applyTheme(savedTheme());
 
 const WORKSPACE_KEY = "dinghy.workspace";
 
-function rememberedWorkspace(): string | null {
-  try {
-    return localStorage.getItem(WORKSPACE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function rememberWorkspace(id: string) {
-  try {
-    localStorage.setItem(WORKSPACE_KEY, id);
-  } catch {
-    // The choice lasts until the next page load.
-  }
-}
+const rememberedWorkspace = () => readStored(WORKSPACE_KEY);
+const rememberWorkspace = (id: string) => store(WORKSPACE_KEY, id);
 
 const here = () => `${location.pathname}${location.search}`;
 

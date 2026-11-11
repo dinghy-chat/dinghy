@@ -422,10 +422,16 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
               api={api}
               hook={hook}
               onAsk={setAsking}
+              // From the latest list, so two saves that finish together both show.
               onChanged={(changed) =>
-                loaded.setData({
-                  webhooks: hooks.map((one) => (one.id === changed.id ? changed : one)),
-                })
+                loaded.setData(
+                  (current) =>
+                    current && {
+                      webhooks: current.webhooks.map((one) =>
+                        one.id === changed.id ? changed : one,
+                      ),
+                    },
+                )
               }
             />
           ))}
@@ -446,7 +452,6 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
           newLabel={t("webhookNew")}
           submitLabel={t("webhookAdd")}
           canSubmit={!busy && url.trim() !== "" && events.length > 0}
-          className="stack hook-form"
           onOpen={() => {
             setSecret(null);
             setAdding(true);

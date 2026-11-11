@@ -92,7 +92,7 @@ Everyone can open **Settings**. A list on its left groups the pages:
 | **Chat widget** | **Appearance**, **Install** |
 | **Developers** | **API & webhooks** |
 
-Each page has its own address, such as `/settings/team`, so a reload or a bookmark opens it again. On a phone, the list is its own screen, and **Back** on a page returns to it. A member sees **Profile**, **Notifications**, **Team** and **Appearance**, and cannot change the team or the chat's look. Owners and admins see every page.
+Each page has its own address, such as `/settings/team?workspace=<id>`, so a reload, a bookmark or a shared link opens the same page of the same workspace. On a phone, the list is its own screen, and **Back** on a page returns to it. A member sees **Profile**, **Notifications**, **Team** and **Appearance**, and cannot change the team or the chat's look. Owners and admins see every page.
 
 To invite someone, open **Settings > Team**, select **Invite someone** at the top of the page, enter their email, pick a role, and select **Send invite**. Dinghy emails them a link to join. Without a mail server, select **Create invite link** instead, and send the link to that one person. Pending invites show in the team list with their email and the days they have left. Select the trash icon, then **Cancel invite**, to cancel one. To send an invite again, invite the same email again: the old link stops working. A link works once and lasts 7 days, and only that email can use it.
 

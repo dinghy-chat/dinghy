@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink, signedIn, signOut } from "./links.ts";
+import { openLink, signedIn, signInOn, signOut } from "./links.ts";
 import { openSettings, settingsList } from "./settings.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -318,8 +318,7 @@ test("a window whose session ended elsewhere reconnects with the new one", async
   const second = await first.context().newPage();
   await second.goto(server.apiOrigin);
   await signOut(second);
-  await openLink(second, await server.signInLink("owner@example.com"));
-  await expect(second.getByRole("button", { name: "Your account" })).toBeVisible();
+  await signInOn(second, server, "owner@example.com");
 
   // The next event ends the first window's old stream, and a later one must still arrive.
   await server.seedConversations(1, "after sign in");

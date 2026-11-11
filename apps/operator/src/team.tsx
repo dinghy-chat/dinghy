@@ -238,9 +238,14 @@ function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): 
 }
 
 const INVITED_ROLES = [
-  { value: "member", label: "roleMember", help: "inviteMemberHelp" },
-  { value: "admin", label: "roleAdmin", help: "inviteAdminHelp" },
+  { value: "member", label: "roleMember" },
+  { value: "admin", label: "roleAdmin" },
 ] as const;
+
+const INVITED_ROLE_HELP: Record<"admin" | "member", TextId> = {
+  member: "inviteMemberHelp",
+  admin: "inviteAdminHelp",
+};
 
 /** The role for an invite, as two pills, with a line on what the picked one can do. */
 function RolePicker({
@@ -251,7 +256,6 @@ function RolePicker({
   onChange(role: "admin" | "member"): void;
 }) {
   const hintId = useId();
-  const picked = INVITED_ROLES.find((one) => one.value === value) ?? INVITED_ROLES[0];
   return (
     <>
       <Choices
@@ -262,7 +266,7 @@ function RolePicker({
         onChange={onChange}
       />
       <p className="hint" id={hintId}>
-        {t(picked.help)}
+        {t(INVITED_ROLE_HELP[value])}
       </p>
     </>
   );
@@ -408,10 +412,10 @@ function InviteButton({ onClick }: { onClick(): void }) {
       onClick={onClick}
     >
       <Icon name="plusBold" size={14} />
-      <span className="invite-long" aria-hidden="true">
+      <span className="long-text" aria-hidden="true">
         {t("invitesTitle")}
       </span>
-      <span className="invite-short" aria-hidden="true">
+      <span className="short-text" aria-hidden="true">
         {t("inviteShort")}
       </span>
     </button>

@@ -104,8 +104,8 @@ export function WaitingBanner({
     return (
       <div className="banner billing-banner waiting-banner" role="status">
         {/* A phone shows the short line, so the banner stays one line tall. */}
-        <span className="banner-long">{t("waitingBanner", { email })}</span>
-        <span className="banner-short">{t("waitingBannerShort")}</span>
+        <span className="long-text">{t("waitingBanner", { email })}</span>
+        <span className="short-text">{t("waitingBannerShort")}</span>
       </div>
     );
   }

@@ -19,7 +19,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - The sidebar keeps **Inbox**, **Analytics** and **Settings**. **Closed** moved into the Inbox, **Alerts** is **Settings > Notifications**, and **Profile** is a page of Settings too.
 - In Settings, the **Widget** tab is now **Appearance**, **API** is **API & webhooks**, and **Allowed sites** and the identity secret are on **Install**. **Data** moved to the **Workspace** page.
 - The chat button is a bubble by default. A saved widget keeps its button.
-- **Settings > Appearance** has a compact **Look** section and a **Behavior** section. Its preview shows the open chat and the chat button together, on a light page behind a light widget. Pasting a hex code sets a color.
+- **Settings > Appearance** has a compact **Colors and layout** section and an **Email and branding** section. Its preview shows the open chat and the chat button together, on a light page behind a light widget. Pasting a hex code sets a color.
 - The save note in **Settings > Appearance** says that new pages of your site show the change within 5 minutes. A page that is already open keeps the look it loaded with.
 - The forms for a new API key and a new webhook open when you ask for them.
 - A webhook delivery's error says what to check next, and a failed test says so once.

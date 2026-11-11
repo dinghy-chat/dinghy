@@ -282,7 +282,6 @@ export function WorkspacePage({
           label={t("workspaceNameLabel")}
           name={name}
           autoComplete="organization"
-          saved="workspaceNameSaved"
           onSave={api.rename}
         />
       </PageRow>

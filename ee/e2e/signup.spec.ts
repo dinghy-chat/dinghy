@@ -231,7 +231,7 @@ test.describe("with early signup and no Stripe keys", () => {
 
     await expect(page.getByRole("heading", { name: "Early Shop" })).toBeVisible();
     // A wide screen shows the long line, with the email.
-    await expect(page.getByRole("status").locator(".banner-long")).toHaveText(
+    await expect(page.getByRole("status").locator(".long-text")).toHaveText(
       `Visitor chat is not available yet. We'll email ${email} when you can activate this workspace.`,
     );
     // The welcome chat opens by itself, with no click.
@@ -251,7 +251,7 @@ test.describe("with early signup and no Stripe keys", () => {
     ).toBeVisible();
     await expect(page.getByText("/widget/loader.js", { exact: false })).toHaveCount(0);
     // The banner is on every page.
-    await expect(page.getByRole("status").locator(".banner-long")).toBeVisible();
+    await expect(page.getByRole("status").locator(".long-text")).toBeVisible();
   });
 
   test("an account that left after the first step finishes onboarding at its next sign-in", async ({

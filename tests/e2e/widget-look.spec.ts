@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink, signedIn } from "./links.ts";
+import { signedIn, signInOn } from "./links.ts";
 import { openSettings, settingsList } from "./settings.ts";
 
 const tag = (attributes = "") =>
@@ -333,7 +333,7 @@ test("an owner changes the color, theme and launcher in Appearance, and the site
 }) => {
   const context = await browser.newContext();
   const owner = await context.newPage();
-  await openLink(owner, await server.signInLink("owner@example.com"));
+  await signInOn(owner, server, "owner@example.com");
   await openSettings(owner, "Appearance");
   const form = owner.locator(".widget-form");
   const save = form.getByRole("button", { name: "Save", exact: true });
@@ -396,7 +396,7 @@ test("Back with unsaved Appearance changes asks first, and Stay keeps them and t
 test("Appearance asks before another page or view drops unsaved changes", async ({ browser }) => {
   const context = await browser.newContext();
   const owner = await context.newPage();
-  await openLink(owner, await server.signInLink("owner@example.com"));
+  await signInOn(owner, server, "owner@example.com");
   await openSettings(owner, "Appearance");
   const list = settingsList(owner);
   const title = owner.locator(".widget-form").getByRole("textbox", { name: "Chat title" });

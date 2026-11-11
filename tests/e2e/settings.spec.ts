@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { signedIn } from "./links.ts";
-import { openSettings, settingsList } from "./settings.ts";
+import { openSettings, openSettingsList, settingsList } from "./settings.ts";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -27,14 +27,13 @@ test.afterAll(async () => {
   await server.stop();
 });
 
-/** The open page's title, which is the panel's second heading after "Settings". */
+/** The open page's title: a level-2 heading in the Settings pane. */
 const pageTitle = (page: Page, name: string) =>
   page.locator(".settings-pane").getByRole("heading", { name, exact: true, level: 2 });
 
 test("the grouped list opens each page, by a click and by its address", async ({ browser }) => {
   const page = await signedIn(browser, server, "owner@example.com");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const list = settingsList(page);
+  const list = await openSettingsList(page);
   await expect(list.getByRole("heading", { level: 3 })).toHaveText([
     "You",
     "Workspace",
@@ -65,6 +64,10 @@ test("the grouped list opens each page, by a click and by its address", async ({
   await list.getByRole("link", { name: "Install", exact: true }).click();
   await page.goBack();
   await expect(pageTitle(page, "Team")).toBeVisible();
+  await page.goForward();
+  await expect(pageTitle(page, "Install")).toBeVisible();
+  await page.goBack();
+  await expect(pageTitle(page, "Team")).toBeVisible();
   await page.getByRole("button", { name: "Inbox", exact: true }).click();
   await expect(page).toHaveURL(`${server.apiOrigin}/`);
   await expect(list).toHaveCount(0);
@@ -93,8 +96,7 @@ test("a member sees only their own pages, and the team and the widget read-only"
   browser,
 }) => {
   const page = await signedIn(browser, server, "member@example.com");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const list = settingsList(page);
+  const list = await openSettingsList(page);
   await expect(list.getByRole("link")).toHaveText(MEMBER_PAGES);
   await expect(list.getByRole("heading", { level: 3 })).toHaveText([
     "You",
@@ -160,8 +162,7 @@ test("on a phone the list is its own screen, and each page opens with a way back
 }) => {
   const page = await signedIn(browser, server, "owner@example.com");
   await page.setViewportSize({ width: 390, height: 780 });
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const list = settingsList(page);
+  const list = await openSettingsList(page);
   const back = page.getByRole("button", { name: "Back", exact: true });
   await expect(list).toBeVisible();
   await expect(back).toBeHidden();

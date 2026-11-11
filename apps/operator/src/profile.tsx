@@ -194,41 +194,37 @@ export function ProfilePage({
 }) {
   return (
     <Page title={t("pageProfile")} context={t("profileContext")}>
-      <div className="profile">
-        <PageRow title={t("accountName")} help={t("accountHelp")}>
-          <NameField
-            label={t("accountName")}
-            name={me.name}
-            autoComplete="name"
-            saved="accountNameSaved"
-            onSave={async (name) => {
-              await updateName(name);
-              onChanged();
-            }}
-          />
-        </PageRow>
-        <PageRow title={t("email")} help={t("accountEmailHelp")}>
-          <input aria-label={t("email")} value={me.email} readOnly />
-        </PageRow>
-        <PageRow title={t("pictureTitle")} help={t("pictureHelp")}>
-          <ImageUpload
-            url={me.pictureUrl}
-            text={PICTURE_TEXT}
-            onUpload={async (file) => {
-              await setPicture(file);
-              onChanged();
-            }}
-            onRemove={async () => {
-              await removePicture();
-              onChanged();
-            }}
-          />
-        </PageRow>
-        <PageRow title={t("theme")} help={t("themeHelp")}>
-          <ThemeChoice />
-        </PageRow>
-      </div>
-      {/* Outside the form, because its dialog has a form of its own. */}
+      <PageRow title={t("accountName")} help={t("accountHelp")}>
+        <NameField
+          label={t("accountName")}
+          name={me.name}
+          autoComplete="name"
+          onSave={async (name) => {
+            await updateName(name);
+            onChanged();
+          }}
+        />
+      </PageRow>
+      <PageRow title={t("email")} help={t("accountEmailHelp")}>
+        <input aria-label={t("email")} value={me.email} readOnly />
+      </PageRow>
+      <PageRow title={t("pictureTitle")} help={t("pictureHelp")}>
+        <ImageUpload
+          url={me.pictureUrl}
+          text={PICTURE_TEXT}
+          onUpload={async (file) => {
+            await setPicture(file);
+            onChanged();
+          }}
+          onRemove={async () => {
+            await removePicture();
+            onChanged();
+          }}
+        />
+      </PageRow>
+      <PageRow title={t("theme")} help={t("themeHelp")}>
+        <ThemeChoice />
+      </PageRow>
       <PageRow title={t("deleteAccountTitle")} help={t("deleteAccountHelp")} danger>
         <DeleteAccount
           me={me}

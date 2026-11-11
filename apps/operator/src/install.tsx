@@ -164,7 +164,7 @@ function OriginsRow({
       onSaved(saved);
       setRows(toRows(saved.allowedOrigins));
       setChecked(false);
-      setNote({ ok: true, text: "originsSaved" });
+      setNote({ ok: true, text: "saved" });
     } catch (failure) {
       setNote({ ok: false, text: failureText(failure, { 400: "originsBad" }) });
     }

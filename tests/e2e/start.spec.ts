@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { pngFile } from "./images.ts";
 import { openLink } from "./links.ts";
+import { settingsList } from "./settings.ts";
 
 const HOST_PAGE = `<!doctype html><title>Host</title><h1>Host</h1>
 <script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>`;
@@ -48,9 +49,10 @@ test("a logo uploaded in Workspace shows there, in the sidebar and in the chat's
   await server.createOperator("logo@example.com");
   await openLink(page, await server.signInLink("logo@example.com"));
   await page.getByRole("region", { name: "Get started" }).getByText("Add your logo").click();
-  await expect(
-    page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Workspace" }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect(settingsList(page).getByRole("link", { name: "Workspace" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 
   await page.getByLabel("Upload logo").setInputFiles(pngFile("logo.png"));
   // The image shows the upload worked, with no note.

@@ -75,7 +75,7 @@ export function useChanges(
   const [lost, setLost] = useState(false);
   const [version, setVersion] = useState(0);
   const [teamVersion, setTeamVersion] = useState(0);
-  const [billingVersion, setBillingVersion] = useState(0);
+  const [accountVersion, setAccountVersion] = useState(0);
   // A thread loads again only for its own conversation's changes, for a block of its visitor, or
   // for a change to the whole workspace.
   const [threads, setThreads] = useState<{ all: number; by: Record<string, number> }>({
@@ -115,16 +115,16 @@ export function useChanges(
                     },
               );
               if (kind === "team.changed") setTeamVersion((current) => current + 1);
-              // Both change `me`: the billing state, or a suspension by the server's admin.
+              // Both change `me`: the billing state, a suspension, or the workspace's name or logo.
               if (kind === "billing.changed" || kind === "workspace.changed") {
-                setBillingVersion((current) => current + 1);
+                setAccountVersion((current) => current + 1);
               }
             },
             ready(next) {
               live = true;
               // A first stream starts at the present, so a billing change since `me` loaded is
               // not on it.
-              if (cursor.current === null) setBillingVersion((current) => current + 1);
+              if (cursor.current === null) setAccountVersion((current) => current + 1);
               cursor.current = next;
               setLost(false);
               retryMs = 1000;
@@ -136,7 +136,7 @@ export function useChanges(
             resync(next) {
               cursor.current = next;
               // The events after the old cursor are gone, and a billing change may be among them.
-              setBillingVersion((current) => current + 1);
+              setAccountVersion((current) => current + 1);
             },
           });
           // Reading /me settles it: another workspace opens, or sign-in, or this session is fine and
@@ -164,11 +164,11 @@ export function useChanges(
 
   // A write refused as read-only means this page missed the change.
   useEffect(() => {
-    const onReadOnly = () => setBillingVersion((current) => current + 1);
+    const onReadOnly = () => setAccountVersion((current) => current + 1);
     addEventListener(READ_ONLY_EVENT, onReadOnly);
     return () => removeEventListener(READ_ONLY_EVENT, onReadOnly);
   }, []);
 
   const threadVersion = (id: string) => threads.all + (threads.by[id] ?? 0);
-  return { lost, version, threadVersion, teamVersion, billingVersion };
+  return { lost, version, threadVersion, teamVersion, accountVersion };
 }

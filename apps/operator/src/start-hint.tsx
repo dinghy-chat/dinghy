@@ -4,6 +4,7 @@ import type { WorkspaceApi } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import type { SettingsPage } from "./settings.tsx";
+import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 
 const STEPS: { text: TextId; page: SettingsPage }[] = [
@@ -16,21 +17,8 @@ const STEPS: { text: TextId; page: SettingsPage }[] = [
 
 const key = (workspaceId: string) => `dinghy.started.${workspaceId}`;
 
-function wasHidden(workspaceId: string): boolean {
-  try {
-    return localStorage.getItem(key(workspaceId)) !== null;
-  } catch {
-    return false;
-  }
-}
-
-function hide(workspaceId: string) {
-  try {
-    localStorage.setItem(key(workspaceId), "1");
-  } catch {
-    // It shows again on the next page load.
-  }
-}
+const wasHidden = (workspaceId: string) => readStored(key(workspaceId)) !== null;
+const hide = (workspaceId: string) => store(key(workspaceId), "1");
 
 /**
  * The first steps, in an empty inbox of a workspace that never had a conversation, until the

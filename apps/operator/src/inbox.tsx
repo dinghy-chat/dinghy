@@ -29,6 +29,7 @@ import {
 import { Sidebar, type View } from "./sidebar.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
+import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
 import { Avatar, Choices, type Option, PageHead } from "./ui.tsx";
@@ -252,22 +253,9 @@ function listContext(status: Status, waiting: number): string {
   return t("waitingMany", { count: waiting });
 }
 
-/** Whether this browser already did something once. Storage can be off, which reads as no. */
-function remembered(key: string): boolean {
-  try {
-    return localStorage.getItem(key) !== null;
-  } catch {
-    return false;
-  }
-}
-
-function remember(key: string): void {
-  try {
-    localStorage.setItem(key, "1");
-  } catch {
-    // Without storage, the welcome chat opens again on the next load, which is harmless.
-  }
-}
+/** Whether this browser already did something once. Without storage, it reads as no. */
+const remembered = (key: string) => readStored(key) !== null;
+const remember = (key: string) => store(key, "1");
 
 export function Inbox({
   me,
@@ -290,7 +278,7 @@ export function Inbox({
   emailAvailable: boolean;
   onSignedOut(): void;
   onSwitch(id: string): void;
-  /** The operator's name or a workspace's billing changed, so `me` must load again. */
+  /** The operator's name, or a workspace's billing, name or logo changed, so `me` must load again. */
   onAccountChanged(): void;
   /** The workspace the operator just deleted, for a note, or null. */
   deletedName: string | null;
@@ -342,7 +330,7 @@ export function Inbox({
     const looking = document.visibilityState === "visible" && document.hasFocus();
     if (!looking || conversationId !== shownConversation.current) chime();
   }, []);
-  const { lost, version, threadVersion, teamVersion, billingVersion } = useChanges(
+  const { lost, version, threadVersion, teamVersion, accountVersion } = useChanges(
     api,
     visible,
     onSignedOut,
@@ -357,14 +345,14 @@ export function Inbox({
   const readOnly = membership?.readOnly ?? false;
   const suspended = membership?.suspended ?? false;
   const waitsForCloud = membership?.waiting ?? false;
-  const billing = useBilling(api, me.billing && role === "owner", billingVersion);
+  const billing = useBilling(api, me.billing && role === "owner", accountVersion);
   // The read-only flag is in `me`, so it loads again with the billing state.
-  const seenBillingVersion = useRef(billingVersion);
+  const seenAccountVersion = useRef(accountVersion);
   useEffect(() => {
-    if (billingVersion === seenBillingVersion.current) return;
-    seenBillingVersion.current = billingVersion;
+    if (accountVersion === seenAccountVersion.current) return;
+    seenAccountVersion.current = accountVersion;
     onAccountChanged();
-  }, [billingVersion, onAccountChanged]);
+  }, [accountVersion, onAccountChanged]);
   const loadMembers = useLatestLoad(async () => {
     setMembers((await api.members()).members);
   });

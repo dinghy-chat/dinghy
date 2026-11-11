@@ -1,5 +1,7 @@
 import {
   type DependencyList,
+  type Dispatch,
+  type SetStateAction,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -39,11 +41,14 @@ export function useLatestLoad(load: () => Promise<void>): () => void {
   }, []);
 }
 
-/** What a load gave: its answer, or why it failed, with ways to replace it or load it again. */
-export interface Loaded<T> {
+/**
+ * What a load gave: its answer, or why it failed, with ways to replace it or load it again.
+ * `setData` takes an update function too, for changes that may finish in any order.
+ */
+interface Loaded<T> {
   data: T | null;
   failure: TextId | null;
-  setData(data: T): void;
+  setData: Dispatch<SetStateAction<T | null>>;
   reload(): void;
 }
 

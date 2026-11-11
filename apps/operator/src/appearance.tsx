@@ -20,11 +20,11 @@ import { Confirm } from "./popup.tsx";
 import { settingsAddress } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 import {
+  AppLink,
   Choices,
   DocLink,
   Field,
   failureText,
-  isPlainClick,
   Loading,
   type Note,
   type Option,
@@ -144,9 +144,14 @@ function ColorField({
   onChange(value: string | null): void;
 }) {
   const shown = value ?? fallback;
-  // The code as typed, which changes the color once it is whole.
+  // The code as typed, which changes the color once it is whole. A new color from the picker or a
+  // reset replaces it, during render, so the box never shows an old code.
   const [typed, setTyped] = useState(shown);
-  useEffect(() => setTyped(shown), [shown]);
+  const [lastShown, setLastShown] = useState(shown);
+  if (shown !== lastShown) {
+    setLastShown(shown);
+    setTyped(shown);
+  }
   return (
     <div className="color-field">
       <span className="color-box">
@@ -182,10 +187,10 @@ function ColorField({
 }
 
 /**
- * One line of the Look and Behavior sections: the label and its hint on the left, the control on
- * the right.
+ * One line of the "Colors and layout" and "Email and branding" sections: the label and its hint on
+ * the left, the control on the right.
  */
-function LookRow({
+function SettingRow({
   label,
   hint,
   doc,
@@ -203,8 +208,8 @@ function LookRow({
 }) {
   const hintId = useId();
   return (
-    <div className={stacked ? "look-row look-stacked" : "look-row"}>
-      <div className="look-label">
+    <div className={stacked ? "setting-row setting-stacked" : "setting-row"}>
+      <div className="setting-label">
         <span aria-hidden="true">{label}</span>
         {hint !== undefined && (
           <small className="hint" id={hintId}>
@@ -233,7 +238,7 @@ function Switch({
   const hintId = useId();
   return (
     <label className="check">
-      <span className="look-label">
+      <span className="setting-label">
         {label}
         {hint !== undefined && (
           <small className="hint" id={hintId}>
@@ -296,7 +301,7 @@ function TextFields({
 }
 
 /** The colors, the side, the theme, the launcher, the corners and the boat. */
-function LookFields({
+function LayoutFields({
   settings,
   onChange,
 }: {
@@ -305,8 +310,8 @@ function LookFields({
 }) {
   // Each control carries its own accessible name, so the visible label is for the eye only.
   return (
-    <div className="look-rows">
-      <LookRow label={t("widgetColorPrimary")} hint={t("widgetColorPrimaryHelp")}>
+    <div className="setting-rows">
+      <SettingRow label={t("widgetColorPrimary")} hint={t("widgetColorPrimaryHelp")}>
         {(hintId) => (
           <ColorField
             describedBy={hintId}
@@ -316,8 +321,8 @@ function LookFields({
             onChange={(primary) => onChange({ primary })}
           />
         )}
-      </LookRow>
-      <LookRow
+      </SettingRow>
+      <SettingRow
         label={t("widgetColorAccent")}
         hint={t("widgetColorAccentHelp")}
         doc={{ path: "add-to-your-site#change-how-it-looks", text: "appearanceDocsLink" }}
@@ -331,8 +336,8 @@ function LookFields({
             onChange={(accent) => onChange({ accent })}
           />
         )}
-      </LookRow>
-      <LookRow label={t("widgetSide")}>
+      </SettingRow>
+      <SettingRow label={t("widgetSide")}>
         {(hintId) => (
           <Choices
             describedBy={hintId}
@@ -343,8 +348,8 @@ function LookFields({
             onChange={(position) => onChange({ position })}
           />
         )}
-      </LookRow>
-      <LookRow label={t("widgetTheme")} hint={t("widgetThemeHelp")}>
+      </SettingRow>
+      <SettingRow label={t("widgetTheme")} hint={t("widgetThemeHelp")}>
         {(hintId) => (
           <Choices
             describedBy={hintId}
@@ -355,8 +360,8 @@ function LookFields({
             onChange={(theme) => onChange({ theme })}
           />
         )}
-      </LookRow>
-      <LookRow
+      </SettingRow>
+      <SettingRow
         label={t("widgetLauncher")}
         hint={settings.launcher === "hidden" ? t("widgetLauncherHiddenHelp") : undefined}
         doc={settings.launcher === "hidden" ? HIDDEN_BUTTON_DOC : undefined}
@@ -371,8 +376,8 @@ function LookFields({
             onChange={(launcher) => onChange({ launcher })}
           />
         )}
-      </LookRow>
-      <LookRow label={t("widgetRadius")}>
+      </SettingRow>
+      <SettingRow label={t("widgetRadius")}>
         {() => (
           <div className="radius-field">
             <input
@@ -386,8 +391,8 @@ function LookFields({
             <output>{t("widgetRadiusValue", { radius: String(settings.radius) })}</output>
           </div>
         )}
-      </LookRow>
-      <div className="look-row look-switch">
+      </SettingRow>
+      <div className="setting-row setting-switch">
         <Switch
           label={t("widgetMascot")}
           hint={t("widgetMascotHelp")}
@@ -475,16 +480,9 @@ function LogoNote({
   return (
     <p className="hint">
       {before}
-      <a
-        href={settingsAddress("workspace", workspaceId)}
-        onClick={(event) => {
-          if (!isPlainClick(event)) return;
-          event.preventDefault();
-          onOpenWorkspace();
-        }}
-      >
+      <AppLink href={settingsAddress("workspace", workspaceId)} onOpen={onOpenWorkspace}>
         {t("pageWorkspace")}
-      </a>
+      </AppLink>
       {after}
     </p>
   );
@@ -554,12 +552,12 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
           <FormSection title="widgetTextsTitle" help="widgetTextsHelp">
             <TextFields settings={draft} onChange={change} />
           </FormSection>
-          <FormSection title="widgetLookTitle">
-            <LookFields settings={draft} onChange={change} />
+          <FormSection title="widgetLayoutTitle">
+            <LayoutFields settings={draft} onChange={change} />
           </FormSection>
-          <FormSection title="widgetBehaviorTitle">
-            <div className="look-rows">
-              <LookRow
+          <FormSection title="widgetEmailTitle">
+            <div className="setting-rows">
+              <SettingRow
                 label={t("widgetEmailAsk")}
                 hint={t("widgetEmailAskHelp")}
                 doc={{ path: "add-to-your-site#what-visitors-can-do", text: "emailAskDocsLink" }}
@@ -575,8 +573,8 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
                     onChange={(emailAsk) => change({ emailAsk })}
                   />
                 )}
-              </LookRow>
-              <div className="look-row look-switch">
+              </SettingRow>
+              <div className="setting-row setting-switch">
                 <Switch
                   label={t("widgetBranding")}
                   checked={draft.branding}

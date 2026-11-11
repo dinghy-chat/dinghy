@@ -801,7 +801,7 @@ export async function recordBillingChange(tx: Transaction, workspaceId: string):
   await tx.insert(event).values({ workspaceId, seq, kind: "billing.changed" });
 }
 
-/** Tells every open operator app to read `me` again, for a new name. */
+/** Tells every open operator app to read `me` again, for a new name or logo. */
 export async function recordWorkspaceChange(tx: Transaction, workspaceId: string): Promise<void> {
   const seq = await nextSeq(tx, workspaceId);
   await tx.insert(event).values({ workspaceId, seq, kind: "workspace.changed" });

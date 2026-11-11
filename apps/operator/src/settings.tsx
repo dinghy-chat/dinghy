@@ -10,7 +10,7 @@ import { NotificationsPage } from "./notifications.tsx";
 import { ProfilePage } from "./profile.tsx";
 import { TeamPage, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
-import { isPlainClick, Loading } from "./ui.tsx";
+import { AppLink, Loading, Page } from "./ui.tsx";
 import { WorkspacePage } from "./workspace.tsx";
 
 const PAGES = [
@@ -109,21 +109,17 @@ function SettingsNav({
             <ul aria-labelledby={`settings-${group.label}`}>
               {shown.map((page) => (
                 <li key={page}>
-                  <a
+                  <AppLink
                     className="settings-link"
                     href={settingsAddress(page, workspaceId)}
-                    aria-current={page === current ? "page" : undefined}
-                    onClick={(event) => {
-                      if (!isPlainClick(event)) return;
-                      event.preventDefault();
-                      onPick(page);
-                    }}
+                    current={page === current}
+                    onOpen={() => onPick(page)}
                   >
                     {t(PAGE_TEXT[page])}
                     <span className="settings-arrow">
                       <Icon name="chevronRight" size={14} />
                     </span>
-                  </a>
+                  </AppLink>
                 </li>
               ))}
             </ul>
@@ -263,7 +259,9 @@ export function Settings({
         );
       case "install":
         return settings.data === null ? (
-          <Loading failure={settings.failure} />
+          <Page title={t("pageInstall")}>
+            <Loading failure={settings.failure} />
+          </Page>
         ) : (
           <InstallPage
             api={api}

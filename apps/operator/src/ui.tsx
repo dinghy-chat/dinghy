@@ -228,15 +228,12 @@ export function NameField({
   label,
   name,
   autoComplete,
-  saved,
   onSave,
 }: {
   label: string;
   /** The saved name, which Save stays off for. */
   name: string;
   autoComplete: "name" | "organization";
-  /** What the note says once the name is saved. */
-  saved: TextId;
   onSave(name: string): Promise<unknown>;
 }) {
   const [typed, setTyped] = useState(name);
@@ -249,7 +246,7 @@ export function NameField({
     try {
       await onSave(trimmed);
       setTyped(trimmed);
-      setNote({ ok: true, text: saved });
+      setNote({ ok: true, text: "saved" });
     } catch (failure) {
       setNote({ ok: false, text: failureText(failure, {}) });
     } finally {
@@ -324,7 +321,6 @@ export function AddForm({
   newLabel,
   submitLabel,
   canSubmit,
-  className = "stack",
   onOpen,
   onCancel,
   onSubmit,
@@ -334,7 +330,6 @@ export function AddForm({
   newLabel: string;
   submitLabel: string;
   canSubmit: boolean;
-  className?: string;
   onOpen(): void;
   onCancel(): void;
   onSubmit(): void;
@@ -352,7 +347,7 @@ export function AddForm({
   }
   return (
     <form
-      className={className}
+      className="stack"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
@@ -567,7 +562,7 @@ export function EmojiButton({
 }
 
 /** A click that moves in place: not one that asks for a new tab with a modifier key or button. */
-export const isPlainClick = (event: MouseEvent<HTMLAnchorElement>) =>
+const isPlainClick = (event: MouseEvent<HTMLAnchorElement>) =>
   event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 
 /**
@@ -577,20 +572,27 @@ export const isPlainClick = (event: MouseEvent<HTMLAnchorElement>) =>
 export function AppLink({
   href,
   className,
+  current = false,
+  onOpen = () => navigate(href),
   children,
 }: {
   href: string;
-  className: string;
+  className?: string;
+  /** The link to the page on screen, for aria-current. */
+  current?: boolean;
+  /** What a plain click does in place of loading the page. */
+  onOpen?(): void;
   children: ReactNode;
 }) {
   return (
     <a
       className={className}
       href={href}
+      aria-current={current ? "page" : undefined}
       onClick={(event) => {
         if (!isPlainClick(event)) return;
         event.preventDefault();
-        navigate(href);
+        onOpen();
       }}
     >
       {children}

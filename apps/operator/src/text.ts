@@ -119,7 +119,6 @@ const en = {
   themeSystem: "Use device setting",
   themeLight: "Light",
   themeDark: "Dark",
-  accountNameSaved: "Saved.",
   pageProfile: "Profile",
   userMenu: "Your account",
   workspaceMenu: "Workspace: {name}",
@@ -167,7 +166,7 @@ const en = {
   widgetTitleLabel: "Chat title",
   widgetGreetingLabel: "Greeting before the first message",
   widgetAwayLabel: "Message when nobody is online",
-  widgetLookTitle: "Colors and layout",
+  widgetLayoutTitle: "Colors and layout",
   widgetColorPrimary: "Main color",
   widgetColorPrimaryHelp: "Colors the chat header and visitors' messages.",
   widgetColorAccent: "Accent color",
@@ -193,7 +192,7 @@ const en = {
   widgetMascot: "Show the boat in the chat",
   widgetMascotHelp:
     "Shown in the header when there is no logo, and above the greeting before the first message.",
-  widgetBehaviorTitle: "Email and branding",
+  widgetEmailTitle: "Email and branding",
   widgetEmailAsk: "Ask visitors for their email",
   widgetEmailAskHelp:
     "An email address lets visitors receive replies after they leave your site. Dinghy skips this question for signed-in users and when email is unavailable.",
@@ -235,7 +234,7 @@ const en = {
   originsRemove: "Remove {site}",
   originsAdd: "Add a site",
   originsBadRow: "Enter a site like https://example.com, with no path after it.",
-  originsSaved: "Saved.",
+  saved: "Saved.",
   originsBad:
     "Check each website address. Use a full address such as https://example.com without a page path.",
   secretTitle: "Identify signed-in users (optional)",
@@ -576,7 +575,6 @@ const en = {
   pageWorkspace: "Workspace",
   workspaceContext: "Manage this workspace's name, logo, plan, and data.",
   workspaceNameLabel: "Workspace name",
-  workspaceNameSaved: "Saved.",
   appearanceLogoNote: "The chat shows the workspace logo. Change it in {workspace}.",
   teamUsage: "{used} of {limit} team members. Pending invites count too.",
   teamRolesLink: "Compare team roles",
