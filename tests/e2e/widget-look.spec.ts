@@ -338,3 +338,36 @@ test("an owner changes the color, theme and launcher in the Widget tab, and the 
   await visitor.context().close();
   await context.close();
 });
+
+test("the Widget tab asks before a tab or a view change drops unsaved changes", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const owner = await context.newPage();
+  await openLink(owner, await server.signInLink("owner@example.com"));
+  await owner.getByRole("button", { name: "Settings" }).click();
+  await owner.getByRole("tab", { name: "Widget" }).click();
+  const title = owner.locator(".widget-form").getByRole("textbox", { name: "Title" });
+  await title.fill("Unsaved");
+  const dialog = owner.getByRole("alertdialog", { name: "Leave without saving?" });
+
+  await owner.getByRole("tab", { name: "Team" }).click();
+  await expect(dialog).toContainText("Your widget changes will be lost.");
+  await dialog.getByRole("button", { name: "Stay" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(owner.getByRole("tab", { name: "Widget" })).toHaveAttribute("aria-selected", "true");
+  await expect(title).toHaveValue("Unsaved");
+
+  await owner.getByRole("button", { name: "Inbox" }).click();
+  await dialog.getByRole("button", { name: "Leave" }).click();
+  await expect(owner.getByRole("tab", { name: "Widget" })).toHaveCount(0);
+
+  // Nothing was saved, and with no change the tabs switch without asking.
+  await owner.getByRole("button", { name: "Settings" }).click();
+  await owner.getByRole("tab", { name: "Widget" }).click();
+  await expect(title).toHaveValue("");
+  await owner.getByRole("tab", { name: "Team" }).click();
+  await expect(owner.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
+  await expect(dialog).toHaveCount(0);
+  await context.close();
+});

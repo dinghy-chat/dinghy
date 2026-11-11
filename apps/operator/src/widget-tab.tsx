@@ -13,6 +13,8 @@ import {
 } from "../../../packages/widget/src/shared.ts";
 import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import type { Me, WorkspaceApi } from "./api.ts";
+import { setLeaveGuard } from "./nav.ts";
+import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   Field,
@@ -72,14 +74,37 @@ function editable({ logoUrl: _logo, team: _team, ...settings }: SavedAppearance)
 const sameSettings = (one: WidgetSettings, other: WidgetSettings) =>
   (Object.keys(one) as (keyof WidgetSettings)[]).every((key) => one[key] === other[key]);
 
-/** The browser asks before it leaves the page while a change is not saved. */
-function useLeaveGuard(unsaved: boolean) {
+/**
+ * Asks before a change that is not saved is lost: the browser asks before it leaves the page, and
+ * this dialog before the app moves to another tab, view or workspace.
+ */
+function LeaveGuard({ unsaved }: { unsaved: boolean }) {
+  const [move, setMove] = useState<(() => void) | null>(null);
   useEffect(() => {
     if (!unsaved) return;
     const guard = (event: BeforeUnloadEvent) => event.preventDefault();
     addEventListener("beforeunload", guard);
-    return () => removeEventListener("beforeunload", guard);
+    // A function in state must be wrapped, or React calls it as an updater.
+    setLeaveGuard((next) => setMove(() => next));
+    return () => {
+      removeEventListener("beforeunload", guard);
+      setLeaveGuard(null);
+    };
   }, [unsaved]);
+  if (move === null) return null;
+  return (
+    <Confirm
+      title={t("widgetLeaveTitle")}
+      text={t("widgetLeaveText")}
+      confirm={t("widgetLeaveYes")}
+      cancel={t("widgetStay")}
+      onConfirm={() => {
+        setMove(null);
+        move();
+      }}
+      onCancel={() => setMove(null)}
+    />
+  );
 }
 
 /** A heading and its controls, one part of the form. */
@@ -422,7 +447,6 @@ export function WidgetTab({
   const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState(false);
   const unsaved = saved !== null && draft !== null && !sameSettings(editable(saved), draft);
-  useLeaveGuard(unsaved);
 
   useEffect(() => {
     let current = true;
@@ -468,6 +492,7 @@ export function WidgetTab({
   };
   return (
     <div className="widget-tab">
+      <LeaveGuard unsaved={unsaved} />
       <WidgetPreview appearance={{ ...saved, ...draft }} me={me} />
       <form className="widget-form" onSubmit={save}>
         {!canEdit && <p className="note">{t("widgetMemberNote")}</p>}

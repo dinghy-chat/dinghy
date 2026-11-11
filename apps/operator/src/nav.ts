@@ -5,13 +5,28 @@
  */
 export const NAVIGATE_EVENT = "dinghy:navigate";
 
+/** Set by a screen with unsaved changes, which runs the move only if the operator lets it. */
+let leaveGuard: ((move: () => void) => void) | null = null;
+
+export function setLeaveGuard(guard: typeof leaveGuard) {
+  leaveGuard = guard;
+}
+
+/** Runs a move to another screen, view or tab, once no unsaved change stands in the way. */
+export function leave(move: () => void) {
+  if (leaveGuard === null) move();
+  else leaveGuard(move);
+}
+
 export function navigate(path: string) {
-  const url = new URL(path, location.origin);
-  // A link to another site, such as Stripe, leaves the app.
-  if (url.origin !== location.origin) {
-    location.assign(url.href);
-    return;
-  }
-  history.pushState(null, "", `${url.pathname}${url.search}`);
-  dispatchEvent(new Event(NAVIGATE_EVENT));
+  leave(() => {
+    const url = new URL(path, location.origin);
+    // A link to another site, such as Stripe, leaves the app.
+    if (url.origin !== location.origin) {
+      location.assign(url.href);
+      return;
+    }
+    history.pushState(null, "", `${url.pathname}${url.search}`);
+    dispatchEvent(new Event(NAVIGATE_EVENT));
+  });
 }

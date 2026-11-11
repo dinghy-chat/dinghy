@@ -14,7 +14,7 @@ import {
   type WorkspaceSettings,
 } from "./api.ts";
 import { ApiKeysRow, WebhooksRow } from "./integrations.tsx";
-import { navigate } from "./nav.ts";
+import { leave, navigate } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, InviteDialog, imagesText, operatorsText, TeamTab, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
@@ -810,8 +810,11 @@ export function SettingsPage({
         tabs={tabs}
         current={tab}
         onPick={(next) => {
-          setPicked(next);
-          setDeleteOpening(false);
+          if (next === tab) return;
+          leave(() => {
+            setPicked(next);
+            setDeleteOpening(false);
+          });
         }}
       />
       <div className="tab-panel" id="tab-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>

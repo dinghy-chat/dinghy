@@ -345,6 +345,7 @@ export function Confirm({
   title,
   text,
   confirm,
+  cancel = t("cancel"),
   onConfirm,
   onCancel,
   disabled = false,
@@ -353,6 +354,8 @@ export function Confirm({
   title: string;
   text: ReactNode;
   confirm: string;
+  /** The safe choice's label. */
+  cancel?: string;
   onConfirm(): void;
   onCancel(): void;
   /** The confirm button waits, as while the change runs or until a field is right. */
@@ -391,7 +394,7 @@ export function Confirm({
         {children}
         <div className="dialog-actions">
           <button type="button" className="pill" onClick={() => dialog.current?.close()}>
-            {t("cancel")}
+            {cancel}
           </button>
           <button type="submit" className="pill danger" disabled={disabled}>
             {confirm}
