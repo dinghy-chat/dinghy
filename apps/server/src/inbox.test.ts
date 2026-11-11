@@ -310,7 +310,11 @@ describe("conversations", () => {
     try {
       // The test tables are tiny, so make a scan of the whole table look as costly as it would be.
       await client.query("begin");
+      // A handful of rows makes any plan cheap, and once autovacuum has counted them the planner
+      // may pick a bitmap scan and a sort. These test that the index serves the page in order.
       await client.query("set local enable_seqscan = off");
+      await client.query("set local enable_bitmapscan = off");
+      await client.query("set local enable_sort = off");
       const plan = await client.query<{ "QUERY PLAN": string }>(
         `explain ${list[0]?.query}`,
         list[0]?.params,
@@ -445,7 +449,11 @@ describe("the assignee filter", () => {
     const client = await database.connect("migrator", 1).pool.connect();
     try {
       await client.query("begin");
+      // A handful of rows makes any plan cheap, and once autovacuum has counted them the planner
+      // may pick a bitmap scan and a sort. These test that the index serves the page in order.
       await client.query("set local enable_seqscan = off");
+      await client.query("set local enable_bitmapscan = off");
+      await client.query("set local enable_sort = off");
       const plan = await client.query<{ "QUERY PLAN": string }>(
         `explain ${list[0]?.query}`,
         list[0]?.params,
