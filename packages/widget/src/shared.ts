@@ -111,6 +111,8 @@ export interface DinghyState {
   ready: boolean;
   open: boolean;
   unread: number;
+  /** The visitor has an open conversation. Known once the chat has asked the server, false before. */
+  conversation: boolean;
 }
 
 /** Each event and what its callback receives. */
@@ -119,6 +121,8 @@ export interface DinghyEvents {
   open: undefined;
   close: undefined;
   unread: number;
+  /** Whether the visitor has an open conversation, once at once and on each change. */
+  conversation: boolean;
   /** The visitor's message reached the server. `body` is null for an image. */
   "message:sent": { body: string | null };
   /** A reply arrived while the page was open. `body` is null for an image. */
@@ -166,7 +170,7 @@ export type Listeners = { [E in DinghyEvent]?: Set<(data: DinghyEvents[E]) => vo
  * bundle: a tab keeps the loader it started with for days, and the chat bundle replaces a loader
  * with another number instead of reading a context it does not know.
  */
-export const CONTEXT_VERSION = 1;
+export const CONTEXT_VERSION = 2;
 
 /** What the loader hands to the chat bundle. */
 export interface WidgetContext {
