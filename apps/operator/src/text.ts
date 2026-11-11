@@ -134,6 +134,7 @@ const en = {
   closedHelp: "This conversation is closed. Reopen it to reply.",
   reconnecting: "Connection lost. Trying again...",
   attach: "Attach an image",
+  emoji: "Add an emoji",
   image: "Image",
   imageAlt: "An image in this conversation",
   imageSending: "Sending an image...",

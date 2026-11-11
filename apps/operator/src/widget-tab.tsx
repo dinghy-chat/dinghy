@@ -131,14 +131,12 @@ function FormSection({
 function Choices<T extends string>({
   label,
   hideLabel = false,
-  hint,
   value,
   options,
   onChange,
 }: {
   label: string;
   hideLabel?: boolean;
-  hint?: string | undefined;
   value: T;
   options: Option<T>[];
   onChange(value: T): void;
@@ -160,7 +158,6 @@ function Choices<T extends string>({
           </label>
         ))}
       </div>
-      {hint !== undefined && <small className="hint">{hint}</small>}
     </fieldset>
   );
 }
@@ -213,18 +210,24 @@ function ColorField({
   );
 }
 
-/** One line of the Look section: the label and its hint on the left, the control on the right. */
+/**
+ * One line of the Look and Behavior sections: the label and its hint on the left, the control on
+ * the right.
+ */
 function LookRow({
   label,
   hint,
+  stacked = false,
   children,
 }: {
   label: string;
   hint?: string | undefined;
+  /** The control goes under the label, for a control too wide to share the line. */
+  stacked?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="look-row">
+    <div className={stacked ? "look-row look-stacked" : "look-row"}>
       <div className="look-label">
         <span aria-hidden="true">{label}</span>
         {hint !== undefined && <small className="hint">{hint}</small>}
@@ -275,6 +278,7 @@ function TextFields({
         label={t("widgetTitleLabel")}
         placeholder={widgetText("title")}
         maxLength={TITLE_MAX}
+        emoji
         {...field("title")}
       />
       <Field
@@ -282,6 +286,7 @@ function TextFields({
         multiline
         placeholder={widgetText("empty")}
         maxLength={TEXT_MAX}
+        emoji
         {...field("greeting")}
       />
       <Field
@@ -289,6 +294,7 @@ function TextFields({
         multiline
         placeholder={widgetText("teamAway")}
         maxLength={TEXT_MAX}
+        emoji
         {...field("away")}
       />
     </>
@@ -543,18 +549,24 @@ export function WidgetTab({
             <LookFields settings={draft} onChange={change} />
           </FormSection>
           <FormSection title="widgetBehaviorTitle">
-            <Choices
-              label={t("widgetEmailAsk")}
-              hint={t("widgetEmailAskHelp")}
-              value={draft.emailAsk}
-              options={EMAIL_ASKS}
-              onChange={(emailAsk) => change({ emailAsk })}
-            />
-            <Switch
-              label={t("widgetBranding")}
-              checked={draft.branding}
-              onChange={(branding) => change({ branding })}
-            />
+            <div className="look-rows">
+              <LookRow label={t("widgetEmailAsk")} hint={t("widgetEmailAskHelp")} stacked>
+                <Choices
+                  label={t("widgetEmailAsk")}
+                  hideLabel
+                  value={draft.emailAsk}
+                  options={EMAIL_ASKS}
+                  onChange={(emailAsk) => change({ emailAsk })}
+                />
+              </LookRow>
+              <div className="look-row look-switch">
+                <Switch
+                  label={t("widgetBranding")}
+                  checked={draft.branding}
+                  onChange={(branding) => change({ branding })}
+                />
+              </div>
+            </div>
           </FormSection>
         </fieldset>
         {canEdit && (

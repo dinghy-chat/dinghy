@@ -2,10 +2,11 @@
 // The chat's panel, as pieces that hold no state of their own. The chat puts them together, and so
 // does the operator app's preview of the Widget tab, so both show the same widget.
 import { type ComponentChildren, Fragment, type RefObject } from "preact";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
 import type { ChatMessage } from "./client.ts";
 import { IMAGE_TYPES, isComposing } from "./compose.ts";
+import { EMOJIS, insertEmoji, SMILEY_ICON } from "./emoji.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
 import {
   DEFAULT_COLORS,
@@ -90,6 +91,10 @@ dialog img{display:block;max-width:none}
 .badge{position:absolute;top:-3px;right:-3px;min-width:22px;height:22px;padding:0 4px;box-sizing:border-box;border-radius:11px;background:#e5352b;color:#fff;box-shadow:0 0 0 2px #fff;font:700 12px/22px system-ui,sans-serif;text-align:center}
 .panel.drop{outline:3px dashed var(--d-accent,${ACCENT});outline-offset:-6px}
 .pick{background:transparent;color:inherit;padding:0}
+.compose{position:relative}
+.emojis{position:absolute;left:8px;right:8px;bottom:100%;margin:0;min-width:0;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:6px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgb(13 34 64/.18)}
+.emojis button{height:36px;padding:0;border:0;border-radius:8px;background:none;font-size:20px;cursor:pointer}
+.emojis button:hover{background:var(--fog)}
 .pick:hover{filter:none;background:var(--fog)}
 .file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
 .email{flex-wrap:wrap;align-items:center}
@@ -120,8 +125,11 @@ function Icon({ paths: [light, main], size = 20 }: { paths: Paths; size?: number
   );
 }
 
+/** The light layer of the round icons. */
+const CIRCLE = "M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z";
+
 const CLOSE_ICON: Paths = [
-  "M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z",
+  CIRCLE,
   "M165.66,101.66,139.31,128l26.35,26.34a8,8,0,0,1-11.32,11.32L128,139.31l-26.34,26.35a8,8,0,0,1-11.32-11.32L116.69,128,90.34,101.66a8,8,0,0,1,11.32-11.32L128,116.69l26.34-26.35a8,8,0,0,1,11.32,11.32ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z",
 ];
 const ATTACH_ICON: Paths = [
@@ -465,8 +473,30 @@ export function Composer({
   onFiles(files: Iterable<File>): void;
 }) {
   const picker = useRef<HTMLInputElement>(null);
+  const [emojis, setEmojis] = useState(false);
   return (
-    <form onSubmit={onSubmit}>
+    <form class="compose" onSubmit={onSubmit}>
+      {emojis && (
+        <fieldset
+          class="emojis"
+          aria-label={t("emoji")}
+          onKeyDown={(event) => event.key === "Escape" && setEmojis(false)}
+        >
+          {EMOJIS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => {
+                const field = inputRef.current;
+                if (field !== null) onDraft(insertEmoji(field, emoji));
+                setEmojis(false);
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+        </fieldset>
+      )}
       <input
         ref={picker}
         class="file"
@@ -487,6 +517,15 @@ export function Composer({
         onClick={() => picker.current?.click()}
       >
         <Icon paths={ATTACH_ICON} />
+      </button>
+      <button
+        type="button"
+        class="action pick"
+        aria-label={t("emoji")}
+        aria-expanded={emojis}
+        onClick={() => setEmojis(!emojis)}
+      >
+        <Icon paths={[CIRCLE, SMILEY_ICON]} />
       </button>
       <textarea
         onPaste={(event) => {

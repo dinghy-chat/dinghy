@@ -9,7 +9,8 @@ const LIMITS: Record<string, number> = {
   // configure, and a reset from another tab.
   "loader.js": 2100,
   "page.js": 1000,
-  "widget.js": 20_000,
+  // 20,500 since the emoji picker, which the owner asked for on 2026-11-11 (20,398 with it).
+  "widget.js": 20_500,
 };
 
 test("the bundles use no API that exists only on secure pages", async () => {

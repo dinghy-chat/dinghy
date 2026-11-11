@@ -21,7 +21,7 @@ import {
 import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
+import { Avatar, EmojiButton, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
 import {
   avatarLetters,
   detailRows,
@@ -434,6 +434,7 @@ function Composer({
   onFiles: ((files: Iterable<File>) => void) | undefined;
 }) {
   const picker = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
 
   const submit = (event: { preventDefault(): void }) => {
     event.preventDefault();
@@ -471,7 +472,9 @@ function Composer({
             </button>
           </>
         )}
+        <EmojiButton field={input} onPick={setDraft} />
         <textarea
+          ref={input}
           rows={1}
           onPaste={(event) => {
             // A copy from Word or Excel holds its text and a picture of it. The text is what is meant.

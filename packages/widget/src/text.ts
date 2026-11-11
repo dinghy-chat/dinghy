@@ -21,6 +21,7 @@ const en = {
   failed: "Not sent. Select to try again.",
   reconnecting: "Connection lost. Trying again...",
   attach: "Attach an image",
+  emoji: "Add an emoji",
   imageAlt: "An image in this conversation",
   imageSending: "Sending an image...",
   imageTooLarge: "This image is over 5 MB.",

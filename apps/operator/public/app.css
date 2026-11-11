@@ -297,6 +297,52 @@ textarea {
 .icon-button:hover:not(:disabled) {
   background: var(--soft);
 }
+/* The emoji button and its grid, which opens above it. */
+.emoji-picker {
+  position: relative;
+  flex: none;
+}
+.emoji-grid {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(8, 36px);
+  min-width: 0;
+  margin: 0;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgb(11 34 57 / 0.18);
+}
+.emoji-grid button {
+  height: 36px;
+  border-radius: 8px;
+  font-size: 20px;
+}
+.emoji-grid button:hover {
+  background: var(--soft);
+}
+/* In a field, the button sits inside the box on the right, and the grid opens toward the left. */
+.emoji-field {
+  position: relative;
+}
+.emoji-field input,
+.emoji-field textarea {
+  padding-right: 48px;
+}
+.emoji-field .emoji-picker {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
+.emoji-field .emoji-grid {
+  right: 0;
+  left: auto;
+}
 .quiet-danger {
   color: var(--mute);
 }
@@ -2395,8 +2441,8 @@ img.ws-tile {
   font-size: 14.5px;
   font-weight: 600;
 }
-/* The Look section: one compact line per setting, the label on the left and the control on the
-   right, with a hairline between lines. */
+/* The Look and Behavior sections: one compact line per setting, the label on the left and the
+   control on the right, with a hairline between lines. */
 .look-rows {
   display: grid;
 }
@@ -2421,12 +2467,20 @@ img.ws-tile {
 .look-label .hint {
   font-weight: 400;
 }
-.look-row.look-switch {
+.look-row.look-switch,
+.look-row.look-stacked {
   grid-template-columns: minmax(0, 1fr);
+}
+.look-row.look-stacked {
+  gap: 10px;
+  padding: 12px 0;
 }
 /* The choices as one segmented control. */
 .look-row .widget-field {
   justify-self: end;
+}
+.look-stacked .widget-field {
+  justify-self: start;
 }
 .look-row .choices {
   flex-wrap: nowrap;
