@@ -2,6 +2,7 @@
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { type CodeLanguage, highlight } from "../../../packages/widget/src/highlight.ts";
 import type { WorkspaceApi, WorkspaceSettings } from "./api.ts";
+import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
@@ -9,7 +10,6 @@ import {
   DocLink,
   ErrorNote,
   failureText,
-  Icon,
   type Note,
   Page,
   PageRow,
@@ -329,7 +329,7 @@ export function InstallPage({
 }) {
   return (
     <Page
-      title={t("tabInstall")}
+      title={t("pageInstall")}
       context={
         <>
           {t("installContext")}{" "}

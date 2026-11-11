@@ -8,8 +8,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { Icon } from "./icons.tsx";
 import { t } from "./text.ts";
-import { Icon, useModal } from "./ui.tsx";
+import { useModal } from "./ui.tsx";
 
 type Side = "start" | "end";
 type Direction = "down" | "up";

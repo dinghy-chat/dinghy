@@ -2,8 +2,9 @@
 import { type FormEvent, useState } from "react";
 import { askSignInLink, confirmAccountDelete, redeemJoinLink, redeemSignInLink } from "./api.ts";
 import { navigate } from "./nav.ts";
+import { AuthPage } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { AppLink, AuthPage, DocLink, ErrorNote, Field, failureText } from "./ui.tsx";
+import { AppLink, DocLink, ErrorNote, Field, failureText } from "./ui.tsx";
 
 export function SignIn({
   emailAvailable,

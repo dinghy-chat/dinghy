@@ -1,7 +1,6 @@
 /** @jsxImportSource react */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BillingBanner, useBilling, WaitingBanner } from "../../../ee/operator/billing.tsx";
-import { leaveDevice, useDeviceSync } from "./alerts.tsx";
 import { AnalyticsPage } from "./analytics.tsx";
 import {
   ApiError,
@@ -9,15 +8,15 @@ import {
   type Conversation,
   type Me,
   type Member,
-  READ_ONLY_EVENT,
-  type Role,
-  signOut,
   type WorkspaceApi,
   workspaceApi,
 } from "./api.ts";
+import { Icon } from "./icons.tsx";
+import { useChanges, usePresence, useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
 import { leave, NAVIGATE_EVENT, navigate } from "./nav.ts";
-import { Menu, type MenuItem } from "./popup.tsx";
+import { useDeviceSync } from "./notifications.tsx";
+import { EmptyArt, Harbor } from "./scene.tsx";
 import {
   openOwnerStep,
   ownerStepIn,
@@ -26,30 +25,17 @@ import {
   settingsAddress,
   settingsInAddress,
 } from "./settings.tsx";
+import { Sidebar, type View } from "./sidebar.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
 import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
-import {
-  Avatar,
-  Choices,
-  EmptyArt,
-  Harbor,
-  Icon,
-  type IconName,
-  initials,
-  Logo,
-  type Option,
-  PageHead,
-  ROLE_TEXT,
-} from "./ui.tsx";
+import { Avatar, Choices, type Option, PageHead } from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
 
-const RETRY_LIMIT_MS = 30_000;
 const PAGE_SIZE = 50;
 const SEARCH_WAIT_MS = 250;
 const SEARCH_MIN = 3;
-const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
 /** Whose conversations the Inbox lists. */
@@ -111,175 +97,6 @@ function shortTime(iso: string): string {
     : when.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-/**
- * Says which conversation is open, and learns who else has one open. This follows what is open, and
- * no keystroke, because the product has no typing indicators. Only a visible tab counts.
- */
-function usePresence(
-  api: WorkspaceApi,
-  selected: string | null,
-  visible: boolean,
-): Record<string, string[]> {
-  const [viewers, setViewers] = useState<Record<string, string[]>>({});
-  const open = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!visible) {
-      void api.leave(open.current).catch(() => {});
-      open.current = null;
-      return;
-    }
-    const left = open.current;
-    open.current = selected;
-    let stopped = false;
-    const beat = (previous: string | null) => {
-      api
-        .beat(selected, previous)
-        .then((state) => {
-          if (!stopped) setViewers(state.viewers);
-        })
-        .catch(() => {});
-    };
-    beat(left);
-    const timer = setInterval(() => beat(null), PRESENCE_EVERY_MS);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [api, selected, visible]);
-
-  useEffect(() => {
-    const onHide = () => void api.leave(open.current).catch(() => {});
-    addEventListener("pagehide", onHide);
-    return () => removeEventListener("pagehide", onHide);
-  }, [api]);
-
-  return viewers;
-}
-
-function useTabVisible(): boolean {
-  const [visible, setVisible] = useState(document.visibilityState === "visible");
-  useEffect(() => {
-    const onVisibility = () => setVisible(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
-  return visible;
-}
-
-/**
- * Holds the stream of changes, and counts them. Only a visible tab holds a stream, because browsers
- * allow about six HTTP/1.1 connections per origin. A tab catches up from its cursor when it becomes
- * visible again.
- */
-function useChanges(
-  api: WorkspaceApi,
-  visible: boolean,
-  onSignedOut: () => void,
-  /** A visitor's new message, live, after the stream has caught up. */
-  onVisitorMessage: (conversationId: string | null) => void,
-) {
-  const [lost, setLost] = useState(false);
-  const [version, setVersion] = useState(0);
-  const [teamVersion, setTeamVersion] = useState(0);
-  const [billingVersion, setBillingVersion] = useState(0);
-  // A thread loads again only for its own conversation's changes, for a block of its visitor, or
-  // for a change to the whole workspace.
-  const [threads, setThreads] = useState<{ all: number; by: Record<string, number> }>({
-    all: 0,
-    by: {},
-  });
-  const cursor = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!visible) return;
-    const controller = new AbortController();
-    let retryMs = 1000;
-    (async () => {
-      while (!controller.signal.aborted) {
-        let refusedMs: number | undefined;
-        // What a stream replays before `ready` is catch-up, and makes no sound.
-        let live = false;
-        try {
-          const reason = await api.stream(cursor.current, controller.signal, {
-            change(next, kind, conversationId, fromVisitor) {
-              cursor.current = next;
-              if (live && kind === "message.created" && fromVisitor) {
-                onVisitorMessage(conversationId);
-              }
-              // React batches these, so a long catch-up becomes few loads.
-              setVersion((current) => current + 1);
-              // A block or unblock is on the visitor, so it changes every one of their threads.
-              setThreads((current) =>
-                conversationId === null || kind === "conversation.moderated"
-                  ? { ...current, all: current.all + 1 }
-                  : {
-                      ...current,
-                      by: {
-                        ...current.by,
-                        [conversationId]: (current.by[conversationId] ?? 0) + 1,
-                      },
-                    },
-              );
-              if (kind === "team.changed") setTeamVersion((current) => current + 1);
-              // Both change `me`: the billing state, or a suspension by the server's admin.
-              if (kind === "billing.changed" || kind === "workspace.changed") {
-                setBillingVersion((current) => current + 1);
-              }
-            },
-            ready(next) {
-              live = true;
-              // A first stream starts at the present, so a billing change since `me` loaded is
-              // not on it.
-              if (cursor.current === null) setBillingVersion((current) => current + 1);
-              cursor.current = next;
-              setLost(false);
-              retryMs = 1000;
-              // Anything before this point is in these lists, and anything after is on the stream.
-              setVersion((current) => current + 1);
-              setThreads((current) => ({ ...current, all: current.all + 1 }));
-              setTeamVersion((current) => current + 1);
-            },
-            resync(next) {
-              cursor.current = next;
-              // The events after the old cursor are gone, and a billing change may be among them.
-              setBillingVersion((current) => current + 1);
-            },
-          });
-          // Reading /me settles it: another workspace opens, or sign-in, or this session is fine and
-          // the loop below connects again, as when another window signed in with a new cookie.
-          if (reason === "unauthorized") onSignedOut();
-          if (reason === "lifetime") continue;
-        } catch (failure) {
-          if (controller.signal.aborted) return;
-          if (failure instanceof ApiError && (failure.status === 401 || failure.status === 404)) {
-            onSignedOut();
-          }
-          if (failure instanceof ApiError) refusedMs = failure.retryMs;
-        }
-        if (controller.signal.aborted) return;
-        setLost(true);
-        // A refused stream waits as long as the server says, and anything else backs off.
-        await new Promise((resolve) =>
-          setTimeout(resolve, refusedMs ?? retryMs * (0.5 + Math.random() / 2)),
-        );
-        if (refusedMs === undefined) retryMs = Math.min(retryMs * 2, RETRY_LIMIT_MS);
-      }
-    })();
-    return () => controller.abort();
-  }, [api, onSignedOut, onVisitorMessage, visible]);
-
-  // A write refused as read-only means this page missed the change.
-  useEffect(() => {
-    const onReadOnly = () => setBillingVersion((current) => current + 1);
-    addEventListener(READ_ONLY_EVENT, onReadOnly);
-    return () => removeEventListener(READ_ONLY_EVENT, onReadOnly);
-  }, []);
-
-  const threadVersion = (id: string) => threads.all + (threads.by[id] ?? 0);
-  return { lost, version, threadVersion, teamVersion, billingVersion };
-}
-
 /** Above every page of a suspended workspace, with whom to write to. */
 function SuspendedBanner({ contact }: { contact: string | null }) {
   if (contact === null) {
@@ -298,223 +115,6 @@ function SuspendedBanner({ contact }: { contact: string | null }) {
         {after}
       </span>
     </div>
-  );
-}
-
-/** What the panel shows: the Inbox, or a page. */
-type View = "inbox" | "analytics" | "settings";
-
-const NAV: { view: View; label: TextId; icon: IconName }[] = [
-  { view: "inbox", label: "inbox", icon: "inbox" },
-  { view: "analytics", label: "analytics", icon: "chart" },
-  { view: "settings", label: "settings", icon: "gear" },
-];
-
-/**
- * The workspace's logo, or two letters: "Acme" gives "AC", and "Harbor Labs" gives "HL". The name
- * sits beside it, so the logo needs no text of its own.
- */
-function WorkspaceTile({ name, logoUrl = null }: { name: string; logoUrl?: string | null }) {
-  if (logoUrl !== null) return <img className="ws-tile" src={logoUrl} alt="" />;
-  const letters = initials(name);
-  return (
-    <span className="ws-tile" aria-hidden="true">
-      {letters.length > 1 ? letters : name.trim().slice(0, 2).toUpperCase()}
-    </span>
-  );
-}
-
-/**
- * The workspace's name at the top of the sidebar. With more than one workspace, or a way to make
- * one, it opens a menu to switch.
- */
-function WorkspaceSwitcher({
-  me,
-  name,
-  logoUrl,
-  workspaceId,
-  canCreate,
-  onSwitch,
-}: {
-  me: Me;
-  name: string;
-  logoUrl: string | null;
-  workspaceId: string;
-  canCreate: boolean;
-  onSwitch(id: string): void;
-}) {
-  if (me.workspaces.length < 2 && !canCreate) {
-    return (
-      <div className="workspace">
-        <WorkspaceTile name={name} logoUrl={logoUrl} />
-        <span className="ws-name" aria-hidden="true">
-          {name}
-        </span>
-      </div>
-    );
-  }
-  const items: MenuItem[] = me.workspaces.map((one) => ({
-    label: one.name,
-    lead: <WorkspaceTile name={one.name} logoUrl={one.logoUrl} />,
-    checked: one.workspaceId === workspaceId,
-    onSelect: () => {
-      if (one.workspaceId !== workspaceId) leave(() => onSwitch(one.workspaceId));
-    },
-  }));
-  if (canCreate) {
-    items.push({
-      label: t("createWorkspace"),
-      lead: <Icon name="plusCircle" size={18} />,
-      divider: true,
-      onSelect: () => navigate("/signup"),
-    });
-  }
-  return (
-    <Menu
-      label={t("workspaceMenu", { name })}
-      items={items}
-      buttonClass="workspace"
-      side="start"
-      className="workspace-menu"
-    >
-      <WorkspaceTile name={name} logoUrl={logoUrl} />
-      <span className="ws-name">{name}</span>
-      <Icon name="chevron" size={12} />
-    </Menu>
-  );
-}
-
-/** The operator at the foot of the sidebar, with their profile and sign out. */
-function UserMenu({
-  me,
-  role,
-  current,
-  onProfile,
-  onSignedOut,
-}: {
-  me: Me;
-  role: Role;
-  /** True on the Profile page, which the menu opens, so the menu shows it as the current page. */
-  current: boolean;
-  onProfile(): void;
-  onSignedOut(): void;
-}) {
-  return (
-    <Menu
-      label={t("userMenu")}
-      buttonClass={current ? "me current" : "me"}
-      side="start"
-      direction="up"
-      className="me-menu"
-      items={[
-        { label: t("profile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
-        {
-          divider: true,
-          label: t("signOut"),
-          lead: <Icon name="exit" size={18} />,
-          onSelect: () => leave(() => void leaveDevice().then(signOut).finally(onSignedOut)),
-        },
-      ]}
-    >
-      {me.pictureUrl === null ? (
-        <span className="me-avatar" aria-hidden="true">
-          {initials(me.name)}
-        </span>
-      ) : (
-        <img className="me-avatar" src={me.pictureUrl} alt="" />
-      )}
-      <span className="me-text">
-        <b>{me.name}</b>
-        <small>{t(ROLE_TEXT[role])}</small>
-      </span>
-      <Icon name="chevron" size={12} />
-    </Menu>
-  );
-}
-
-function Sidebar({
-  me,
-  role,
-  name,
-  logoUrl,
-  workspaceId,
-  canCreate,
-  view,
-  onProfile: isProfile,
-  waiting,
-  onView,
-  onProfileOpen,
-  onSwitch,
-  onSignedOut,
-}: {
-  me: Me;
-  role: Role;
-  name: string;
-  logoUrl: string | null;
-  workspaceId: string;
-  canCreate: boolean;
-  view: View;
-  /** Settings shows the Profile page, which the user menu opens. */
-  onProfile: boolean;
-  /** Open conversations that wait for a reply, in the whole workspace. */
-  waiting: number;
-  onView(view: View): void;
-  onProfileOpen(): void;
-  onSwitch(id: string): void;
-  onSignedOut(): void;
-}) {
-  const waitingText = t("waitingCount", { count: waiting });
-  return (
-    <aside className="side">
-      <div className="brand">
-        <Logo />
-      </div>
-      {/* The page's heading is the workspace, which the switcher shows. */}
-      <h1 className="visually-hidden">{name}</h1>
-      <WorkspaceSwitcher
-        me={me}
-        name={name}
-        logoUrl={logoUrl}
-        workspaceId={workspaceId}
-        canCreate={canCreate}
-        onSwitch={onSwitch}
-      />
-      <nav className="nav" aria-label={t("mainMenu")}>
-        {NAV.map((item) => {
-          const counted = item.view === "inbox" && waiting > 0;
-          return (
-            <button
-              type="button"
-              key={item.view}
-              aria-current={view === item.view ? "page" : undefined}
-              // A description, so the button's name stays "Inbox" while the number changes.
-              aria-describedby={counted ? "waiting-count" : undefined}
-              onClick={() => onView(item.view)}
-            >
-              <Icon name={item.icon} size={20} />
-              {t(item.label)}
-              {counted && (
-                <span className="count" aria-hidden="true">
-                  {waiting}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-      {waiting > 0 && (
-        <span id="waiting-count" className="visually-hidden">
-          {waitingText}
-        </span>
-      )}
-      <UserMenu
-        me={me}
-        role={role}
-        current={isProfile}
-        onProfile={onProfileOpen}
-        onSignedOut={onSignedOut}
-      />
-    </aside>
   );
 }
 

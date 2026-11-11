@@ -9,6 +9,7 @@ import {
   type WebhookTest,
   type WorkspaceApi,
 } from "./api.ts";
+import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
@@ -17,7 +18,6 @@ import {
   ErrorNote,
   Field,
   failureText,
-  Icon,
   Page,
   PageRow,
   StatusNote,
@@ -561,7 +561,7 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
 /** API & webhooks: what lets other software read and answer chats, or hear about them. */
 export function DevelopersPage({ api }: { api: WorkspaceApi }) {
   return (
-    <Page title={t("tabApi")}>
+    <Page title={t("pageDevelopers")}>
       <ApiKeysRow api={api} />
       <WebhooksRow api={api} />
     </Page>

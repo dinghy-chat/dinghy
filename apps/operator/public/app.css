@@ -58,7 +58,7 @@
   /* --soft under the pointer, and an open menu's button. */
   --soft-hover: light-dark(#e8e6e0, #243344);
   --soft-edge: light-dark(#dcd9d0, #2e3e51);
-  /* A row or a tab under the pointer. */
+  /* A row, a link or a choice under the pointer. */
   --row-hover: light-dark(#f8f7f4, #172230);
   --field-line: light-dark(#c4c1b6, #3a4a5c);
   --field-line-hover: light-dark(#a9a59a, #52657a);
@@ -2018,7 +2018,7 @@ img.ws-tile {
   max-width: none;
 }
 
-/* Pages in the panel: settings, profile and alerts. Rows with thin lines, no cards in cards. */
+/* Pages in the panel, such as each Settings page. Rows with thin lines, no cards in cards. */
 .page {
   display: flex;
   flex: 1;
@@ -2165,7 +2165,7 @@ img.ws-tile {
 }
 /* Appearance: the preview goes above the form once both no longer fit side by side. */
 @container (max-width: 860px) {
-  .widget-tab {
+  .appearance {
     grid-template-columns: minmax(0, 1fr);
   }
   .widget-preview,
@@ -2668,7 +2668,7 @@ img.ws-tile {
 }
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
    preview comes first, so on a narrow screen it sits above the form. */
-.widget-tab {
+.appearance {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
   gap: 32px;
@@ -3312,7 +3312,7 @@ img.ws-tile {
     box-shadow: 0 0 0 3px var(--surface);
   }
   /* The title and the button share a row, and the line of context takes the full width below on
-     every page, so a button on one tab cannot make it wrap differently from the next. */
+     every page, so a button on one page cannot make it wrap differently from the next. */
   .page-head {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -3393,7 +3393,7 @@ img.ws-tile {
     flex: 1 1 100%;
     justify-content: space-between;
     margin: 0;
-    /* Five tabs fit a 360px phone. A narrower screen scrolls them, never the page. */
+    /* The items fit a 360px phone. A narrower screen scrolls them, never the page. */
     overflow-x: auto;
     scrollbar-width: none;
   }

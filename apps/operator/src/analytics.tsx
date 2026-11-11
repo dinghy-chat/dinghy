@@ -2,8 +2,9 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
 import { Select } from "./popup.tsx";
+import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { DocLink, failureText, Loading, Page, PageRow, Pond } from "./ui.tsx";
+import { DocLink, failureText, Loading, Page, PageRow } from "./ui.tsx";
 
 type Period = `${AnalyticsDays}`;
 

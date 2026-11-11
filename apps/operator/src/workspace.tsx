@@ -353,7 +353,7 @@ export function WorkspacePage({
   onDeleted(): void;
 }) {
   return (
-    <Page title={t("workspaceSettingsTitle")} context={t("workspaceSettingsHelp")}>
+    <Page title={t("pageWorkspace")} context={t("workspaceContext")}>
       <NameRow api={api} name={name} onChanged={onChanged} />
       <LogoRow api={api} logoUrl={logoUrl} onChanged={onChanged} />
       {usage !== null && <PlanRow usage={usage} />}

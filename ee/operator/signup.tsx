@@ -13,10 +13,11 @@ import {
 import { CheckEmail } from "../../apps/operator/src/auth.tsx";
 import { navigate } from "../../apps/operator/src/nav.ts";
 import { DeleteAccount } from "../../apps/operator/src/profile.tsx";
+import { AuthPage } from "../../apps/operator/src/scene.tsx";
 import { openOwnerStep, ownerStepIn } from "../../apps/operator/src/settings.tsx";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
-import { AuthPage, ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
-import { DeleteWorkspaceDialog } from "../../apps/operator/src/workspace-page.tsx";
+import { ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
+import { DeleteWorkspaceDialog } from "../../apps/operator/src/workspace.tsx";
 import { CHECKOUT_FAILURES } from "./billing.tsx";
 
 const POLL_MS = 2000;

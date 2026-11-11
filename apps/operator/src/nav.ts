@@ -12,7 +12,7 @@ export function setLeaveGuard(guard: typeof leaveGuard) {
   leaveGuard = guard;
 }
 
-/** Runs a move to another screen, view or tab, once no unsaved change stands in the way. */
+/** Runs a move to another screen, view or page, once no unsaved change stands in the way. */
 export function leave(move: () => void) {
   if (leaveGuard === null) move();
   else leaveGuard(move);

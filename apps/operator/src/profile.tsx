@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type FormEvent, useId, useState } from "react";
 import { type Me, removePicture, requestAccountDelete, setPicture, updateName } from "./api.ts";
+import { Icon, type IconName } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
 import type { OwnerStep } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
@@ -9,8 +10,6 @@ import {
   DocLink,
   ErrorNote,
   failureText,
-  Icon,
-  type IconName,
   ImageUpload,
   type Note,
   Page,
@@ -220,7 +219,7 @@ export function ProfilePage({
   };
 
   return (
-    <Page title={t("profile")} context={t("profileContext")}>
+    <Page title={t("pageProfile")} context={t("profileContext")}>
       <form className="profile" onSubmit={save}>
         <PageRow title={t("accountName")} help={t("accountHelp")}>
           <div className="inline-field">

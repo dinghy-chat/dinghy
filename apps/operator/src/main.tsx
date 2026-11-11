@@ -8,10 +8,10 @@ import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate } from "./nav.ts";
 import { DeleteAccount } from "./profile.tsx";
+import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./scene.tsx";
 import { openOwnerStep } from "./settings.tsx";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
-import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./ui.tsx";
 
 applyTheme(savedTheme());
 

@@ -1,16 +1,17 @@
 /** @jsxImportSource react */
 import { useEffect, useState } from "react";
-import { NotificationsPage } from "./alerts.tsx";
 import type { BillingState, Me, Role, WorkspaceApi, WorkspaceSettings } from "./api.ts";
+import { AppearancePage } from "./appearance.tsx";
+import { DevelopersPage } from "./developers.tsx";
+import { Icon } from "./icons.tsx";
 import { InstallPage } from "./install.tsx";
-import { DevelopersPage } from "./integrations.tsx";
 import { navigate } from "./nav.ts";
+import { NotificationsPage } from "./notifications.tsx";
 import { ProfilePage } from "./profile.tsx";
 import { TeamPage, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
-import { failureText, Icon, Loading } from "./ui.tsx";
-import { AppearancePage } from "./widget-tab.tsx";
-import { WorkspacePage } from "./workspace-page.tsx";
+import { failureText, Loading } from "./ui.tsx";
+import { WorkspacePage } from "./workspace.tsx";
 
 const PAGES = [
   "profile",
@@ -33,13 +34,13 @@ const GROUPS: { label: TextId; pages: SettingsPage[] }[] = [
 ];
 
 const PAGE_TEXT: Record<SettingsPage, TextId> = {
-  profile: "profile",
-  notifications: "notifications",
-  workspace: "workspaceSettingsTitle",
-  team: "tabTeam",
-  appearance: "tabAppearance",
-  install: "tabInstall",
-  developers: "tabApi",
+  profile: "pageProfile",
+  notifications: "pageNotifications",
+  workspace: "pageWorkspace",
+  team: "pageTeam",
+  appearance: "pageAppearance",
+  install: "pageInstall",
+  developers: "pageDevelopers",
 };
 
 /** A member reads the team and the widget, and changes only their own settings. */

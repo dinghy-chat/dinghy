@@ -18,19 +18,11 @@ import {
   type WelcomeChat,
   type WorkspaceApi,
 } from "./api.ts";
+import { Icon } from "./icons.tsx";
 import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import {
-  Avatar,
-  DocLink,
-  EmojiButton,
-  ErrorNote,
-  failureText,
-  Icon,
-  Loading,
-  useModal,
-} from "./ui.tsx";
+import { Avatar, DocLink, EmojiButton, ErrorNote, failureText, Loading, useModal } from "./ui.tsx";
 import {
   avatarLetters,
   detailRows,

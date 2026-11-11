@@ -12,8 +12,9 @@ import {
 } from "./api.ts";
 import { CheckEmail } from "./auth.tsx";
 import { navigate } from "./nav.ts";
+import { AuthPage, SceneLoading } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { AuthPage, ErrorNote, Field, failureText, SceneLoading } from "./ui.tsx";
+import { ErrorNote, Field, failureText } from "./ui.tsx";
 
 export function InvitePage({ token, me }: { token: string; me: Me | null }) {
   const [offer, setOffer] = useState<InviteOffer | null>(null);

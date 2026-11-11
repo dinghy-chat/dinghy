@@ -9,6 +9,7 @@ import type {
   Usage,
   WorkspaceApi,
 } from "./api.ts";
+import { Icon } from "./icons.tsx";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
@@ -18,7 +19,6 @@ import {
   ErrorNote,
   Field,
   failureText,
-  Icon,
   Page,
   PageRow,
   ROLE_TEXT,
@@ -455,7 +455,7 @@ export function TeamPage({
   const manages = role !== "member";
   return (
     <Page
-      title={t("tabTeam")}
+      title={t("pageTeam")}
       context={
         usage === null
           ? undefined

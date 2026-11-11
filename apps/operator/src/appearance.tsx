@@ -72,7 +72,7 @@ const sameSettings = (one: WidgetSettings, other: WidgetSettings) =>
 
 /**
  * Asks before a change that is not saved is lost: the browser asks before it leaves the page, and
- * this dialog before the app moves to another tab, view or workspace.
+ * this dialog before the app moves to another page, view or workspace.
  */
 function LeaveGuard({ unsaved }: { unsaved: boolean }) {
   const [move, setMove] = useState<(() => void) | null>(null);
@@ -396,7 +396,7 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
       sample: { question: t("previewQuestion"), answer: t("previewAnswer"), author },
     });
   });
-  // With the tab, so the sea's animation frames and listeners stop.
+  // With the page, so the sea's animation frames and listeners stop.
   useEffect(() => {
     const shadow = host.current?.shadowRoot;
     return () => {
@@ -449,7 +449,7 @@ function LogoNote({ onOpenWorkspace }: { onOpenWorkspace(): void }) {
           onOpenWorkspace();
         }}
       >
-        {t("workspaceSettingsTitle")}
+        {t("pageWorkspace")}
       </a>
       {after}
     </p>
@@ -472,7 +472,7 @@ export function AppearancePage({
   onOpenWorkspace(): void;
 }) {
   return (
-    <Page title={t("tabAppearance")}>
+    <Page title={t("pageAppearance")}>
       <AppearanceForm api={api} me={me} canEdit={canEdit} onOpenWorkspace={onOpenWorkspace} />
     </Page>
   );
@@ -534,7 +534,7 @@ function AppearanceForm({
     }
   };
   return (
-    <div className="widget-tab">
+    <div className="appearance">
       <LeaveGuard unsaved={unsaved} />
       <WidgetPreview appearance={{ ...saved, ...draft }} me={me} />
       <form className="widget-form" onSubmit={save}>

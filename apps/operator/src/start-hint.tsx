@@ -1,9 +1,9 @@
 /** @jsxImportSource react */
 import { useEffect, useState } from "react";
 import type { WorkspaceApi } from "./api.ts";
+import { Icon } from "./icons.tsx";
 import type { SettingsPage } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
-import { Icon } from "./ui.tsx";
 
 const STEPS: { text: TextId; page: SettingsPage }[] = [
   { text: "startSite", page: "install" },

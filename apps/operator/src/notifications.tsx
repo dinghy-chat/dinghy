@@ -115,7 +115,7 @@ export function NotificationsPage({ api }: { api: WorkspaceApi }) {
   };
 
   return (
-    <Page title={t("notifications")} context={t("alertsContext")}>
+    <Page title={t("pageNotifications")} context={t("notificationsContext")}>
       {settings === null ? (
         <Loading failure={failure} />
       ) : (
