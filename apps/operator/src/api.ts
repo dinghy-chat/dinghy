@@ -135,7 +135,7 @@ export interface Me {
     waiting: boolean;
     /** The server's admin suspended it: operators can read, and nobody can send. */
     suspended: boolean;
-    /** This operator is its only owner, so they cannot delete their account yet. */
+    /** This operator is its only owner, so they cannot leave it. */
     soleOwner: boolean;
     /** For an only owner: who becomes the owner if they delete their account, or null when the
      * workspace goes with it. */

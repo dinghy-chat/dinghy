@@ -33,6 +33,7 @@ const BY_CODE: Record<string, TextId> = {
   payment_required: "paymentRequiredRefused",
   last_workspace: "deleteWorkspaceOnly",
   billing_unavailable: "billingUnavailable",
+  team_changed: "teamChanged",
   email_mismatch: "emailMismatch",
 };
 
@@ -233,6 +234,7 @@ export function NameField({
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
+    setError(null);
     try {
       await onSave(trimmed);
       setTyped(trimmed);

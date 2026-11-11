@@ -251,9 +251,14 @@ function Chat({
     };
   }, [identity, renewing, renewAttempt, visible]);
 
-  // The page's message fills an empty box only, so a draft the visitor typed stays.
+  // The page's message fills an empty box, or takes the place of the page's last message. A draft
+  // the visitor typed or changed stays.
+  const pageMessage = useRef<string | null>(null);
   useEffect(() => {
-    if (prefill !== null) setDraft((current) => (current.trim() === "" ? prefill.text : current));
+    if (prefill === null) return;
+    const last = pageMessage.current;
+    pageMessage.current = prefill.text;
+    setDraft((current) => (current.trim() === "" || current === last ? prefill.text : current));
   }, [prefill]);
 
   // Only a visitor with a token has the flag, so one who never chatted stores nothing.

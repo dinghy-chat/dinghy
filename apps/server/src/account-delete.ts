@@ -9,6 +9,7 @@ import { audit } from "./audit.ts";
 import { confirmUrl, LINK_MINUTES } from "./auth.ts";
 import {
   account,
+  invite,
   operator,
   operatorPicture,
   pushSubscription,
@@ -60,7 +61,11 @@ const LAST_WORKSPACE = failure(
 );
 const BILLING_UNAVAILABLE = failure(
   "billing_unavailable",
-  "A subscription could not be canceled, so nothing was deleted. Try again.",
+  "A subscription could not be canceled, so your account stays. Try again.",
+);
+const TEAM_CHANGED = failure(
+  "team_changed",
+  "Someone left one of your workspaces while your account was being deleted. Try again.",
 );
 
 const requestRoute = createRoute({
@@ -88,7 +93,7 @@ const requestRoute = createRoute({
       "invalid_request: the request is not valid. email_mismatch: on a server with no mail server, the email sent is not the account's",
     ),
     409: errorAnswer(
-      "last_workspace: on a self-hosted server, the operator is the only member of the last workspace",
+      "last_workspace: on a self-hosted server, the operator is the only member of the last workspace. team_changed: someone left a workspace during the delete. Try again",
     ),
     ...RATE_LIMITED,
     502: errorAnswer(
@@ -117,7 +122,7 @@ const confirmRoute = createRoute({
     ),
     403: errorAnswer("origin_not_allowed: another site sent this"),
     409: errorAnswer(
-      "last_workspace: on a self-hosted server, the operator is the only member of the last workspace",
+      "last_workspace: on a self-hosted server, the operator is the only member of the last workspace. team_changed: someone left a workspace during the delete. Try again",
     ),
     ...RATE_LIMITED,
     502: errorAnswer(
@@ -175,7 +180,7 @@ export async function heirOf(
 
 /** The account cannot go, and its transaction rolls back. */
 class Refusal extends Error {
-  readonly code: "last_workspace" | "billing_unavailable";
+  readonly code: "last_workspace" | "billing_unavailable" | "team_changed";
   constructor(code: Refusal["code"]) {
     super(code);
     this.code = code;
@@ -186,6 +191,26 @@ type Deletion =
   | { kind: "deleted"; leftWorkspaceIds: string[]; deletedWorkspaceIds: string[] }
   | { kind: "refused"; code: Refusal["code"] }
   | { kind: "gone" };
+
+/**
+ * The workspaces whose only owner is this operator, with nobody else in them. They go with the
+ * account, so their subscriptions end before its transaction starts.
+ */
+async function aloneIn(db: Database, operatorId: string): Promise<string[]> {
+  const owned = (await operatorWorkspaces(db, operatorId)).filter((one) => one.role === "owner");
+  const alone = await Promise.all(
+    owned.map(({ workspaceId, role }) =>
+      withWorkspace(
+        db,
+        workspaceId,
+        async (tx) =>
+          (await isSoleOwner(tx, workspaceId, role)) &&
+          (await heirOf(tx, workspaceId, operatorId)) === null,
+      ),
+    ),
+  );
+  return owned.filter((_, index) => alone[index]).map((one) => one.workspaceId);
+}
 
 interface DeleteRules {
   /** Cancels a workspace's subscription before it goes. A throw stops the delete. */
@@ -202,9 +227,23 @@ interface DeleteRules {
  */
 async function deleteAccount(
   db: Database,
+  logger: Logger,
   operatorId: string,
   { beforeDelete, keepsLastWorkspace }: DeleteRules,
 ): Promise<Deletion> {
+  // Stripe cannot roll back, so its calls come before the transaction, as in a workspace's own
+  // delete. A retry after a failure cancels again, which changes nothing that already ended.
+  const alone = await aloneIn(db, operatorId);
+  if (beforeDelete !== undefined) {
+    for (const workspaceId of alone) {
+      try {
+        await beforeDelete(workspaceId);
+      } catch (err) {
+        logger.error({ err, workspaceId }, "an account's delete could not cancel a subscription");
+        return { kind: "refused", code: "billing_unavailable" };
+      }
+    }
+  }
   try {
     return await db.transaction(async (tx) => {
       // Locked, so two links used at once take turns, and the second finds the account gone.
@@ -219,16 +258,19 @@ async function deleteAccount(
       for (const { workspaceId, role } of await operatorWorkspaces(tx, operatorId)) {
         await enterWorkspace(tx, workspaceId);
         if (await isSoleOwner(tx, workspaceId, role)) {
+          const goes = alone.includes(workspaceId);
+          // Its open invites end first, so a join either committed before, and the heir below
+          // finds the new member, or waits on the invite's row and then finds it revoked.
+          if (goes) await revokeInvites(tx, workspaceId);
           const heir = await heirOf(tx, workspaceId, operatorId);
           if (heir === null) {
+            // Someone left after the subscriptions were canceled, so this one still has its own.
+            if (!goes && beforeDelete !== undefined) throw new Refusal("team_changed");
             if (keepsLastWorkspace) {
               // As in the workspace's own delete, two deletes of the last two take turns.
               await tx.execute(sql`select pg_advisory_xact_lock(hashtext('workspace-delete'))`);
               if (await isOnlyWorkspace(tx, workspaceId)) throw new Refusal("last_workspace");
             }
-            await beforeDelete?.(workspaceId).catch(() => {
-              throw new Refusal("billing_unavailable");
-            });
             await tx
               .update(workspace)
               .set({ deletedAt: new Date() })
@@ -284,6 +326,15 @@ async function deleteAccount(
   }
 }
 
+/** Ends a workspace's invites that nobody used. Run it in the workspace's context. */
+const revokeInvites = (tx: Transaction, workspaceId: string) =>
+  tx
+    .update(invite)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(eq(invite.workspaceId, workspaceId), isNull(invite.usedAt), isNull(invite.revokedAt)),
+    );
+
 /** Whether the delete would stop at this server's last workspace, checked before a link goes. */
 async function keepsAccount(db: Database, operatorId: string): Promise<boolean> {
   for (const { workspaceId, role } of await operatorWorkspaces(db, operatorId)) {
@@ -319,7 +370,7 @@ export function registerAccountDelete(
 
   /** Deletes the account, then sends the signals and audit lines that its removals call for. */
   const remove = async (operatorId: string) => {
-    const deletion = await deleteAccount(db, operatorId, rules);
+    const deletion = await deleteAccount(db, logger, operatorId, rules);
     if (deletion.kind !== "deleted") return deletion;
     for (const workspaceId of deletion.leftWorkspaceIds) {
       // Open inboxes load the team again, and the next drain ends this operator's streams.
@@ -349,9 +400,8 @@ export function registerAccountDelete(
       }
       const deletion = await remove(operatorId);
       if (deletion.kind === "refused") {
-        return deletion.code === "last_workspace"
-          ? c.json(LAST_WORKSPACE, 409)
-          : c.json(BILLING_UNAVAILABLE, 502);
+        if (deletion.code === "billing_unavailable") return c.json(BILLING_UNAVAILABLE, 502);
+        return c.json(deletion.code === "last_workspace" ? LAST_WORKSPACE : TEAM_CHANGED, 409);
       }
       return c.json({ deleted: true }, 200);
     }
@@ -385,9 +435,8 @@ export function registerAccountDelete(
     // once. A refused delete keeps it, so the operator can try again.
     const deletion = await remove(operatorId);
     if (deletion.kind === "refused") {
-      return deletion.code === "last_workspace"
-        ? c.json(LAST_WORKSPACE, 409)
-        : c.json(BILLING_UNAVAILABLE, 502);
+      if (deletion.code === "billing_unavailable") return c.json(BILLING_UNAVAILABLE, 502);
+      return c.json(deletion.code === "last_workspace" ? LAST_WORKSPACE : TEAM_CHANGED, 409);
     }
     if (deletion.kind === "gone") return c.json(LINK_INVALID, 400);
     return c.json({ ok: true as const }, 200);

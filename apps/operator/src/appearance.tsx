@@ -527,6 +527,7 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
+    setError(null);
     try {
       loaded.setData(await api.setWidget(draft));
       setEdited(null);

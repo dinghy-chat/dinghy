@@ -43,6 +43,7 @@ function PushRow({ pushKey }: { pushKey: string | null }) {
   const [note, setNote] = useState<TextId | null>(null);
 
   const sendTest = async () => {
+    setNote(null);
     const result = await testPush().catch(() => null);
     if (result !== null && result.sent > 0) toast("pushTestSent");
     else setNote("pushTestFailed");

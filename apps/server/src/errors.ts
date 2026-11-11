@@ -97,6 +97,7 @@ export const ERROR_CODES = [
   "signed_in",
   "storage_full",
   "suspended",
+  "team_changed",
   "too_large",
   "too_many_attempts",
   "too_many_pixels",

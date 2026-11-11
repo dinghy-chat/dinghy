@@ -72,6 +72,7 @@
                   "signed_in",
                   "storage_full",
                   "suspended",
+                  "team_changed",
                   "too_large",
                   "too_many_attempts",
                   "too_many_pixels",
@@ -2634,7 +2635,7 @@
             }
           },
           "409": {
-            "description": "last_workspace: on a self-hosted server, the operator is the only member of the last workspace",
+            "description": "last_workspace: on a self-hosted server, the operator is the only member of the last workspace. team_changed: someone left a workspace during the delete. Try again",
             "content": {
               "application/json": {
                 "schema": {
@@ -2735,7 +2736,7 @@
             }
           },
           "409": {
-            "description": "last_workspace: on a self-hosted server, the operator is the only member of the last workspace",
+            "description": "last_workspace: on a self-hosted server, the operator is the only member of the last workspace. team_changed: someone left a workspace during the delete. Try again",
             "content": {
               "application/json": {
                 "schema": {

@@ -160,9 +160,21 @@ describe("a sole owner", () => {
     expect(mail.countTo(solo.email)).toBe(0);
 
     await createWorkspace(db, "Another", []);
+    // An invite nobody used yet ends with the workspace, so nobody joins a workspace that is gone.
+    await owner.insert(invite).values({
+      workspaceId: space.id,
+      tokenHash: sha256Hex(`${space.id}.${randomUUID()}`),
+      role: "member",
+      email: "late@example.com",
+      mailed: false,
+      createdBy: solo.id,
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
     expect((await pressLinkButton(app, await deleteLink(solo))).status).toBe(200);
     expect(await operatorRow(solo.id)).toMatchObject({ name: FORMER_MEMBER_NAME });
     expect((await workspaceRow(space.id))?.deletedAt).toBeInstanceOf(Date);
+    const [pending] = await owner.select().from(invite).where(eq(invite.workspaceId, space.id));
+    expect(pending?.revokedAt).toBeInstanceOf(Date);
     expect(wakes).toContain(space.id);
   });
 

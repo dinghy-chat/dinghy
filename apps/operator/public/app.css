@@ -442,6 +442,19 @@ textarea {
   font-size: 13px;
   line-height: 1.4;
 }
+/* Small shared parts */
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--navy);
+  font: 800 25px / 1 var(--display);
+  letter-spacing: -0.03em;
+}
+.logo svg {
+  display: block;
+}
+/* On Dinghy Cloud the account screens' logo goes back to the site. */
 .logo-home {
   display: inline-flex;
   border-radius: 8px;

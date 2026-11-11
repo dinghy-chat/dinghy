@@ -110,6 +110,9 @@ test("a queued open({ message }) fills the composer, keeps a typed draft, and re
   await input(page).fill("");
   await dinghy(page, (api) => api.open({ message: "Another question" }));
   await expect(input(page)).toHaveValue("Another question");
+  // A later message from the page takes the place of one the visitor did not change.
+  await dinghy(page, (api) => api.open({ message: "A third question" }));
+  await expect(input(page)).toHaveValue("A third question");
 
   // The visitor closes the chat from inside it, and the page hears it.
   await page.getByRole("button", { name: "Close chat" }).click();

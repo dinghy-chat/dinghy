@@ -423,7 +423,8 @@ const en = {
   reload: "Reload",
   billingTitle: "Billing",
   billingActive: "Active. Renews on {date}.",
-  billingUnavailable: "The subscription could not be canceled, so nothing was deleted. Try again.",
+  teamChanged: "Someone left one of your workspaces just now. Try again.",
+  billingUnavailable: "A subscription could not be canceled, so nothing was deleted. Try again.",
   billingEnding: "Subscription canceled. Chat stays available until {date}.",
   billingFailed:
     "The last payment failed. Update your payment method before {date} to keep visitor chat available.",
