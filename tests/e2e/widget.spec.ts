@@ -191,6 +191,43 @@ test("a visitor with only a closed conversation holds no stream", async ({ brows
   await context.close();
 });
 
+test("a chat left open on a closed conversation stays closed after a reload", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${server.hostOrigin}/plain`);
+  await sendMessage(page, "Closed while open");
+  await server.closeConversations();
+
+  // The panel stays shut while /me is held, so it never flashes open and shut.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/me", async (route) => {
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response }).catch(() => {});
+  });
+  const answered = page.waitForResponse("**/me");
+  await page.reload();
+  await expect(launcher(page)).toBeVisible();
+  await expect(page.locator(".panel")).toHaveCount(0);
+  release();
+  await answered;
+  await page.waitForTimeout(300);
+  await expect(page.locator(".panel")).toHaveCount(0);
+  await expect(launcher(page)).toBeVisible();
+
+  // The tab's flag is gone, so the next reload does not try again.
+  await page.unroute("**/me");
+  await page.reload();
+  await page.waitForTimeout(300);
+  await expect(page.locator(".panel")).toHaveCount(0);
+  await context.close();
+});
+
 test("a refused stream waits for Retry-After before it tries again", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();

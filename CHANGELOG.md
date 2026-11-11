@@ -32,6 +32,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - The empty Analytics page centers its boat in the card.
 - API: `GET /v1/operator/workspaces/{id}/conversations` answers `open`, the open conversations for its assignee filter.
 
+### Fixed
+
+- A chat left open in a tab no longer opens again after a reload when the operator closed its conversation. After a reload, the chat opens again only for an open conversation or a new, empty chat, and only once the server answers, so it never flashes open and shut.
+
 ## [0.20.0] - 2026-11-11
 
 ### Added

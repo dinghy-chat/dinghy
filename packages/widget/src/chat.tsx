@@ -1,5 +1,5 @@
 import { render } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ChatMessage, createClient } from "./client.ts";
 import { imageProblem, inCommitOrder, newClientId, REFRESH_LIMIT_MS, REFUSED } from "./compose.ts";
 import { cleanContext } from "./context.ts";
@@ -121,6 +121,10 @@ interface ChatProps {
   setOpen(open: boolean): void;
   /** Opened again after a reload, so it does not take the page's focus. */
   quiet: boolean;
+  /** The chat was open in this tab before a reload, and the server has not said yet whether it reopens. */
+  restoring: boolean;
+  /** Ends the restore: the chat reopens only with an open conversation or a new, empty chat. */
+  restored(reopen: boolean): void;
   /** A message that open({ message }) puts in the composer. */
   prefill: { text: string } | null;
   /** Drops the pre-filled message once the visitor sends, so a remount does not bring it back. */
@@ -140,6 +144,8 @@ function Chat({
   open,
   setOpen,
   quiet,
+  restoring,
+  restored,
   prefill,
   clearPrefill,
   contextVersion,
@@ -273,9 +279,10 @@ function Chat({
   }, [prefill]);
 
   // Only a visitor with a token has the flag, so one who never chatted stores nothing.
+  // While a restore waits for the server, the flag stays, so another reload can still restore.
   useEffect(() => {
-    if (!fullPage) rememberOpen(publicKey, open && token !== null);
-  }, [fullPage, open, publicKey, token]);
+    if (!fullPage && !restoring) rememberOpen(publicKey, open && token !== null);
+  }, [fullPage, open, publicKey, restoring, token]);
 
   // The panel waits for the saved look, so its words never change after it shows.
   const shown = open && saved !== undefined;
@@ -326,7 +333,10 @@ function Chat({
         if (replaced) return;
         renewDelay.current = 0;
         // A send during this request leaves a conversation open that this response may not show.
-        setOpenConversation(me.openConversation || sends.current !== sendsAtStart);
+        const hasOpenConversation = me.openConversation || sends.current !== sendsAtStart;
+        setOpenConversation(hasOpenConversation);
+        // Only closed conversations keep the chat closed, so a closed one does not pop up again.
+        if (restoring) restored(hasOpenConversation || !me.chatted);
         setChatted((current) => current || me.chatted);
         setHasEmail(me.hasEmail);
         // The larger one, because this response can be older than a read in this tab.
@@ -340,6 +350,7 @@ function Chat({
         if (!(error instanceof ApiError) || error.status !== 401) {
           // With no answer, the widget asks for an email rather than wait for it forever.
           setHasEmail((current) => current ?? false);
+          if (restoring) restored(false);
           return;
         }
         if (identity === null) {
@@ -352,7 +363,7 @@ function Chat({
     return () => {
       replaced = true;
     };
-  }, [client, identity, publicKey, token, tokenEpoch, visible]);
+  }, [client, identity, publicKey, restored, restoring, token, tokenEpoch, visible]);
 
   // Before the stream replays history, the server's count is the only one available.
   // With no stream, as after an operator closes the conversation, the lines can be behind too.
@@ -744,14 +755,25 @@ function Chat({
 
 function Root({ context }: { context: WidgetContext }) {
   const { publicKey } = context;
-  // A visitor with a token who had the chat open in this tab finds it open after a reload.
+  // A visitor with a token who had the chat open in this tab finds it open after a reload, once the
+  // server says it holds an open conversation. It starts closed, so it never flashes open and shut.
   const [remembered] = useState(
     () =>
       context.page !== true &&
       (context.identity !== null || readToken(publicKey) !== null) &&
       wasOpen(publicKey),
   );
-  const [open, setOpenState] = useState(remembered);
+  const [open, setOpenState] = useState(false);
+  const [restoring, setRestoring] = useState(remembered);
+  const restored = useCallback(
+    (reopen: boolean) => {
+      setRestoring(false);
+      if (!reopen) return;
+      context.state.open = true;
+      setOpenState(true);
+    },
+    [context],
+  );
   // The state changes at once, so a toggle() right after a close() sees it closed.
   const setOpen = (next: boolean) => {
     context.state.open = next;
@@ -776,12 +798,14 @@ function Root({ context }: { context: WidgetContext }) {
   useLayoutEffect(() => {
     const handlers = {
       open(message: string | undefined) {
+        setRestoring(false);
         context.state.open = true;
         setOpenState(true);
         setQuiet(false);
         if (typeof message === "string") setPrefill({ text: message.slice(0, MESSAGE_MAX) });
       },
       close: () => {
+        setRestoring(false);
         context.state.open = false;
         setOpenState(false);
       },
@@ -817,6 +841,8 @@ function Root({ context }: { context: WidgetContext }) {
       open={open}
       setOpen={setOpen}
       quiet={quiet}
+      restoring={restoring}
+      restored={restored}
       prefill={prefill}
       clearPrefill={setPrefill}
       contextVersion={contextVersion}
