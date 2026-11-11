@@ -1,10 +1,10 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { MESSAGE_KINDS, session } from "./db/schema.ts";
+import { MESSAGE_KINDS, session, welcomeLink } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
@@ -134,6 +134,8 @@ const Conversation = z
       // ISO 3166-1 alpha-2 and IANA, from the widget's last beat.
       country: z.string().nullable(),
       timeZone: z.string().nullable(),
+      // A visitor has no picture. Only Dinghy Cloud's welcome chat shows its founder's here.
+      pictureUrl: z.string().nullable(),
     }),
     lastMessage: z
       .object({ body: z.string().nullable(), fromVisitor: z.boolean(), createdAt: z.string() })
@@ -245,7 +247,8 @@ const listRoute = createRoute({
 const WelcomeChat = z
   .discriminatedUnion("with", [
     // A new workspace's chat with Dinghy's founder.
-    z.object({ with: z.literal("founder") }),
+    // The founder's picture, or null when they have none.
+    z.object({ with: z.literal("founder"), pictureUrl: z.string().nullable() }),
     // The founder's side: the workspace, and whether it takes the replies copied to it.
     z.object({
       with: z.literal("workspace"),
@@ -261,6 +264,7 @@ const WelcomeChat = z
 async function welcomeChat(
   tx: Transaction,
   conversationId: string,
+  founderPicture: FounderPicture,
 ): Promise<z.infer<typeof WelcomeChat>> {
   const result = await tx.execute<{
     founder_side: boolean;
@@ -269,7 +273,7 @@ async function welcomeChat(
   }>(sql`select founder_side, workspace_name, access from welcome_chat(${conversationId})`);
   const row = result.rows[0];
   if (row === undefined) return { with: "deleted" };
-  if (!row.founder_side) return { with: "founder" };
+  if (!row.founder_side) return { with: "founder", pictureUrl: await founderPicture(tx) };
   return { with: "workspace", name: row.workspace_name ?? "", access: row.access ?? "deleted" };
 }
 
@@ -493,10 +497,39 @@ export function messageView(
 }
 type MessageView = ReturnType<typeof messageView>;
 
+/** The founder's picture's address, or null with none or off Dinghy Cloud. */
+type FounderPicture = (tx: Transaction) => Promise<string | null>;
+
+/**
+ * The founder's picture for the new workspace's side of each listed welcome chat, by conversation.
+ * One read of the links for the whole page, and one of the picture.
+ */
+async function welcomePictures(
+  tx: Transaction,
+  workspaceId: string,
+  rows: ConversationRow[],
+  founderPicture: FounderPicture,
+): Promise<Map<string, string>> {
+  const ids = rows.filter((row) => row.welcome).map((row) => row.id);
+  if (ids.length === 0) return new Map();
+  const ours = await tx
+    .select({ id: welcomeLink.customerConversationId })
+    .from(welcomeLink)
+    .where(
+      and(
+        eq(welcomeLink.customerWorkspaceId, workspaceId),
+        inArray(welcomeLink.customerConversationId, ids),
+      ),
+    );
+  const url = ours.length === 0 ? null : await founderPicture(tx);
+  return url === null ? new Map() : new Map(ours.map((one) => [one.id, url]));
+}
+
 /** A conversation as the operator API shows it. */
 export function conversationView(
   row: ConversationRow,
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null,
+  pictureUrl: string | null = null,
 ) {
   return {
     id: row.id,
@@ -518,6 +551,7 @@ export function conversationView(
       lastSeenAt: row.visitorLastSeenAt?.toISOString() ?? null,
       country: row.visitorCountry,
       timeZone: row.visitorTimeZone,
+      pictureUrl,
     },
     lastMessage:
       lastMessage === null
@@ -562,6 +596,11 @@ type Appended = Awaited<ReturnType<typeof appendMessage>>;
  * Cloud only: copies a reply into another workspace, in the reply's own transaction. It runs before
  * that transaction, where it can copy an image's file, and returns what runs in it, or null.
  */
+/** On Dinghy Cloud, the operator whose picture a new workspace's welcome chat shows. */
+export type WelcomeFace = (
+  tx: Transaction,
+) => Promise<{ operatorId: string; pictureUpdatedAt: Date | null } | null>;
+
 export type CopyReply = (
   workspaceId: string,
   conversationId: string,
@@ -597,6 +636,8 @@ interface InboxOptions {
   stream: StreamOptions;
   visitorPresence: VisitorPresence;
   copyReply?: CopyReply | undefined;
+  /** The founder's picture, on Dinghy Cloud only. */
+  founderPicture?: FounderPicture | undefined;
 }
 
 /**
@@ -609,7 +650,11 @@ export function createInbox({
   live,
   visitorPresence,
   copyReply,
-}: Pick<InboxOptions, "db" | "images" | "live" | "visitorPresence" | "copyReply">) {
+  founderPicture = async () => null,
+}: Pick<
+  InboxOptions,
+  "db" | "images" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
+>) {
   /** Writes a reply in the caller's transaction, and wakes the clients after the commit. */
   const reply = async (
     workspaceId: string,
@@ -658,13 +703,19 @@ export function createInbox({
       before: { updatedAt: Date; id: string } | undefined,
       limit: number,
     ) {
-      const page = await withWorkspace(db, workspaceId, async (tx) => ({
-        ...(await listConversations(tx, workspaceId, status, assignee, before, limit)),
-        waiting: await countWaiting(tx, workspaceId),
-        open: await countOpen(tx, workspaceId, assignee),
-      }));
+      const page = await withWorkspace(db, workspaceId, async (tx) => {
+        const listed = await listConversations(tx, workspaceId, status, assignee, before, limit);
+        return {
+          ...listed,
+          pictures: await welcomePictures(tx, workspaceId, listed.conversations, founderPicture),
+          waiting: await countWaiting(tx, workspaceId),
+          open: await countOpen(tx, workspaceId, assignee),
+        };
+      });
       return {
-        conversations: page.conversations.map((row) => conversationView(row, row.lastMessage)),
+        conversations: page.conversations.map((row) =>
+          conversationView(row, row.lastMessage, page.pictures.get(row.id) ?? null),
+        ),
         hasMore: page.hasMore,
         waiting: page.waiting,
         open: page.open,
@@ -679,13 +730,19 @@ export function createInbox({
         const page = await listConversationMessages(tx, workspaceId, conversationId, after, limit);
         const names = await authorNames(tx, workspaceId, page.messages);
         const pages = await visitorPages(tx, workspaceId, found.visitorId);
-        const welcome = found.welcome ? await welcomeChat(tx, conversationId) : null;
+        const welcome = found.welcome
+          ? await welcomeChat(tx, conversationId, founderPicture)
+          : null;
         const receipts = await replyReceipts(tx, workspaceId, conversationId, found.visitorId);
         return { found, page, names, pages, welcome, receipts };
       });
       if (result === null) return null;
       return {
-        conversation: conversationView(result.found, null),
+        conversation: conversationView(
+          result.found,
+          null,
+          result.welcome?.with === "founder" ? result.welcome.pictureUrl : null,
+        ),
         messages: result.page.messages.map((message) =>
           messageView(images, workspaceId, result.names, message),
         ),
@@ -705,10 +762,18 @@ export function createInbox({
     },
 
     async search(workspaceId: string, q: string) {
-      const rows = await withWorkspace(db, workspaceId, (tx) =>
-        searchConversations(tx, workspaceId, q, 50),
-      );
-      return { conversations: rows.map((row) => conversationView(row, row.lastMessage)) };
+      const { rows, pictures } = await withWorkspace(db, workspaceId, async (tx) => {
+        const found = await searchConversations(tx, workspaceId, q, 50);
+        return {
+          rows: found,
+          pictures: await welcomePictures(tx, workspaceId, found, founderPicture),
+        };
+      });
+      return {
+        conversations: rows.map((row) =>
+          conversationView(row, row.lastMessage, pictures.get(row.id) ?? null),
+        ),
+      };
     },
 
     reply(

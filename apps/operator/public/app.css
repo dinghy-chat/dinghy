@@ -1743,6 +1743,21 @@ img.ws-tile {
   min-height: 0;
   background: var(--surface-dim);
 }
+/* The face and name over a run of the welcome chat founder's messages. */
+.author-face {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--mute);
+  font-size: 13px;
+}
+.author-face img {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
 /* Someone closed or reopened the conversation: a quiet line, not a bubble. */
 .status-note {
   align-self: center;

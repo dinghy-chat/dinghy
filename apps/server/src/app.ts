@@ -17,7 +17,7 @@ import type { Auth } from "./auth.ts";
 import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
 import { registerContactRoutes } from "./contacts.ts";
-import { AccountDeletedError, type Database } from "./db/tenant.ts";
+import { AccountDeletedError, type Database, type Transaction } from "./db/tenant.ts";
 import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { registerGetStartedRoutes } from "./get-started.ts";
@@ -392,8 +392,17 @@ export function createApp({
       publicUrl: String(auth.options.baseURL),
       rateLimit,
     });
+    // The founder's picture as the picture route serves it, for a new workspace's welcome chat.
+    const welcomeFace = cloud?.welcomeFace;
+    const founderPicture =
+      welcomeFace &&
+      (async (tx: Transaction) => {
+        const face = await welcomeFace(tx);
+        return face === null ? null : urls.picture(face.operatorId, face.pictureUpdatedAt);
+      });
     registerInboxRoutes(app, {
       copyReply: cloud?.copyReply,
+      founderPicture,
       db,
       images,
       imageUrls: urls,
@@ -409,7 +418,14 @@ export function createApp({
       db,
       live,
       rateLimit,
-      inbox: createInbox({ copyReply: cloud?.copyReply, db, images, live, visitorPresence }),
+      inbox: createInbox({
+        copyReply: cloud?.copyReply,
+        founderPicture,
+        db,
+        images,
+        live,
+        visitorPresence,
+      }),
       publicOrigin: new URL(String(auth.options.baseURL)).origin,
       version,
     });

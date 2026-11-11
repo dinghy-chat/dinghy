@@ -29,6 +29,8 @@ interface Visitor extends VisitorIdentity {
   country: string | null;
   /** IANA, such as Europe/Paris. */
   timeZone: string | null;
+  /** Only Dinghy Cloud's welcome chat has one: its founder's. */
+  pictureUrl: string | null;
 }
 
 /** A page in the visitor's journey, as the widget reported it. */
@@ -41,7 +43,7 @@ export interface PageView {
 
 /** On Dinghy Cloud: what a welcome chat is linked to. */
 export type WelcomeChat =
-  | { with: "founder" }
+  | { with: "founder"; pictureUrl: string | null }
   | {
       with: "workspace";
       name: string;

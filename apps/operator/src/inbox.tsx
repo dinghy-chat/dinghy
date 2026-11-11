@@ -141,7 +141,11 @@ function ConversationRow({
   return (
     <li>
       <button type="button" className="row" aria-current={selected} onClick={onSelect}>
-        <Avatar name={title(conversation)} letters={avatarLetters(conversation.visitor)} />
+        <Avatar
+          name={title(conversation)}
+          letters={avatarLetters(conversation.visitor)}
+          pictureUrl={conversation.visitor.pictureUrl}
+        />
         <span className="row-text">
           <span className="row-top">
             <strong>{title(conversation)}</strong>

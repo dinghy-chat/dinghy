@@ -56,6 +56,7 @@ describe("waiting", () => {
       lastSeenAt: null,
       country: null,
       timeZone: null,
+      pictureUrl: null,
     },
     lastMessage: { body: "hi", fromVisitor: true, createdAt: "2026-11-07T10:00:00.000Z" },
     welcome: false,

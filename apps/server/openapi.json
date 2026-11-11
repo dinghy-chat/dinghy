@@ -591,6 +591,9 @@
               },
               "timeZone": {
                 "type": ["string", "null"]
+              },
+              "pictureUrl": {
+                "type": ["string", "null"]
               }
             },
             "required": [
@@ -604,7 +607,8 @@
               "lastPage",
               "lastSeenAt",
               "country",
-              "timeZone"
+              "timeZone",
+              "pictureUrl"
             ]
           },
           "lastMessage": {
@@ -733,9 +737,12 @@
               "with": {
                 "type": "string",
                 "enum": ["founder"]
+              },
+              "pictureUrl": {
+                "type": ["string", "null"]
               }
             },
-            "required": ["with"]
+            "required": ["with", "pictureUrl"]
           },
           {
             "type": "object",

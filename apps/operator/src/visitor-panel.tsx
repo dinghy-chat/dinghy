@@ -365,7 +365,7 @@ export function VisitorPanel({
   return (
     <aside className={overlay ? "visitor-panel overlay" : "visitor-panel"} aria-label={name}>
       <header className="panel-head">
-        <Avatar name={name} letters={avatarLetters(visitor)} />
+        <Avatar name={name} letters={avatarLetters(visitor)} pictureUrl={visitor.pictureUrl} />
         <div className="panel-who">
           <h3>{name}</h3>
           {visitor.email !== null && visitor.email !== name && <p>{visitor.email}</p>}

@@ -7,7 +7,7 @@ import type { Auth } from "../../apps/server/src/auth.ts";
 import type { Config } from "../../apps/server/src/config.ts";
 import { subscription } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
-import type { CopyReply } from "../../apps/server/src/inbox.ts";
+import type { CopyReply, WelcomeFace } from "../../apps/server/src/inbox.ts";
 import type { Limits } from "../../apps/server/src/limits.ts";
 import type { Live, Signals } from "../../apps/server/src/live.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
@@ -24,7 +24,7 @@ import { registerOnboardingStop } from "./lifecycle-emails.ts";
 import { createLimits, type LimitOptions } from "./limits.ts";
 import { removeOldImages } from "./retention.ts";
 import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
-import { createCopyReply, type WelcomeSettings, welcomeProblem } from "./welcome.ts";
+import { createCopyReply, type WelcomeSettings, welcomeFace, welcomeProblem } from "./welcome.ts";
 
 /** For `chat signups`, which lists the early signups that wait for the cloud. */
 export { freeWorkspace, signupsCsv } from "./signup.ts";
@@ -91,6 +91,8 @@ export interface Cloud {
   contact: string;
   /** Copies a reply in a welcome chat to its other side. */
   copyReply: CopyReply | undefined;
+  /** The founder's operator, whose picture the new workspace's welcome chat shows. */
+  welcomeFace: WelcomeFace | undefined;
   /** Checkout, the portal, the webhook and signup. */
   registerRoutes(app: App): void;
 }
@@ -116,6 +118,7 @@ export function createCloud(
     contact: CLOUD_CONTACT,
     copyReply:
       welcome === undefined ? undefined : createCopyReply({ db, limits, live, logger, store }),
+    welcomeFace: welcome === undefined ? undefined : welcomeFace(welcome),
     beforeDelete:
       client &&
       (async (workspaceId) => {

@@ -182,7 +182,11 @@ function ThreadHead({
           <Icon name="back" />
         </button>
         <span className="avatar-wrap">
-          <Avatar name={title(conversation)} letters={avatarLetters(conversation.visitor)} />
+          <Avatar
+            name={title(conversation)}
+            letters={avatarLetters(conversation.visitor)}
+            pictureUrl={conversation.visitor.pictureUrl}
+          />
           {online === true && <i className="presence-dot" />}
         </span>
         <div className="who-text">
@@ -862,6 +866,7 @@ export function Thread({
   const closed = conversation.status === "closed";
   // A welcome chat's visitor is another workspace, with no visit to show.
   const showsPanel = welcome === null && panel.open;
+  const face = conversation.visitor.pictureUrl;
   const lastReply = lines.reduce(
     (last, line, index) =>
       !line.fromVisitor && line.note === undefined && line.seq !== null ? index : last,
@@ -936,6 +941,13 @@ export function Thread({
                   <StatusNote line={line} note={line.note} meId={meId} />
                 ) : (
                   <>
+                    {/* The welcome chat's founder has a face, as an operator does in the widget. */}
+                    {face !== null && line.fromVisitor && !sameSender(lines[index - 1], line) && (
+                      <div className="author-face">
+                        <img src={face} alt="" />
+                        {title(conversation)}
+                      </div>
+                    )}
                     <ThreadLine
                       line={line}
                       receipt={receipt}

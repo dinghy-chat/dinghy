@@ -16,6 +16,7 @@ import {
   conversation,
   event,
   message,
+  operator,
   subscription,
   visitor,
   welcomeLink,
@@ -154,7 +155,11 @@ const readChat = async (server: App, cookie: string, workspaceId: string, chatId
     { cookie },
   );
   expect(response.status).toBe(200);
-  return (await response.json()) as { welcome: unknown; visitorPages: unknown[] };
+  return (await response.json()) as {
+    welcome: unknown;
+    visitorPages: unknown[];
+    conversation: { visitor: { pictureUrl: string | null } };
+  };
 };
 
 beforeAll(async () => {
@@ -309,6 +314,41 @@ describe("a new workspace's welcome chat", () => {
         db,
       ),
     ).not.toBeNull();
+  });
+});
+
+describe("the founder's picture", () => {
+  test("the new workspace's chat carries it, its list too, and the founder's side does not", async () => {
+    await owner.update(operator).set({ pictureUpdatedAt: null }).where(eq(operator.id, julien.id));
+    const acme = await signUp(early, `Acme ${randomUUID()}`);
+    const chat = (await linkOf(acme.workspaceId)).customerConversationId;
+    const before = await readChat(early, acme.cookie, acme.workspaceId, chat);
+    expect(before.welcome).toEqual({ with: "founder", pictureUrl: null });
+
+    const at = new Date("2026-11-11T10:00:00Z");
+    await owner.update(operator).set({ pictureUpdatedAt: at }).where(eq(operator.id, julien.id));
+    const after = await readChat(early, acme.cookie, acme.workspaceId, chat);
+    const pictureUrl = after.conversation.visitor.pictureUrl;
+    expect(after.welcome).toEqual({ with: "founder", pictureUrl });
+    // The operator picture route's own address, so no new image route is needed.
+    expect(pictureUrl).toMatch(new RegExp(`^${PUBLIC_URL}/v1/pictures/${julien.id}\\?v=\\d+$`));
+    const list = await request(early, "GET", inWorkspace(acme.workspaceId, "/conversations"), {
+      cookie: acme.cookie,
+    });
+    const listed = (await list.json()) as {
+      conversations: { id: string; visitor: { pictureUrl: string | null } }[];
+    };
+    expect(listed.conversations.find((one) => one.id === chat)?.visitor.pictureUrl).toBe(
+      pictureUrl,
+    );
+    // Dinghy's side shows the new workspace, which has no picture.
+    const founderList = await request(early, "GET", inWorkspace(dinghy.id, "/conversations"), {
+      cookie: julien.cookie,
+    });
+    const founderRows = (await founderList.json()) as {
+      conversations: { visitor: { pictureUrl: string | null } }[];
+    };
+    expect(founderRows.conversations.every((one) => one.visitor.pictureUrl === null)).toBe(true);
   });
 });
 
