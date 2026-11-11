@@ -89,6 +89,7 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `IMAGES_ORIGIN` | A separate origin for images that visitors and operators send, such as `https://files.example.com`. Optional. See below |
 | `TRUSTED_PROXY_HOPS` | See below |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent` |
+| `GEOIP_COUNTRY_FILE` | The country database for the live view, set by the Docker image to the copy of DB-IP's IP to Country Lite it downloads when it is built. Leave it as it is. Without the file, the live view shows no countries |
 | `METRICS_TOKEN` | Turns on Prometheus metrics at `/metrics`, with this token as the bearer token. At least 16 characters |
 | `WEBHOOK_ALLOW_PRIVATE` | `true` lets [webhooks](api.md#webhooks) go over `http` and to private addresses, such as a service on your own network. Off by default: a webhook then goes only to an `https` address that is on the public internet, checked each time it sends |
 | `SENTRY_DSN` | Sends errors to your own [Sentry](https://sentry.io) project: what the server logs as an error, and crashes. It sends no request data, no logs and no traces. Optional. Without it, nothing is sent anywhere |

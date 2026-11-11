@@ -22,6 +22,7 @@ import {
   WIDGET_TOKEN_ERRORS,
   WIDGET_WRITE_ERRORS,
 } from "./errors.ts";
+import type { CountryOf } from "./geo.ts";
 import {
   type HostIdentity,
   isBrowserToken,
@@ -40,6 +41,7 @@ import {
 } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, wakeConversation } from "./live.ts";
+import type { LiveVisitors } from "./live-visitors.ts";
 import {
   appendMessage,
   CURSOR_PATTERN,
@@ -226,6 +228,70 @@ const contextRoute = createRoute({
     ...WIDGET_WRITE_ERRORS,
   },
 });
+
+/** A tab's random ID, made by the loader and kept only in the page's memory. */
+const TAB_ID = z.string().regex(/^[a-z0-9]{6,32}$/);
+
+const beatRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/beat",
+  security: VISITOR_TOKEN,
+  summary: "Say that a tab of the site is open, for the operators' live view",
+  description:
+    "The loader sends this when the page loads and once a minute while the tab is visible, with or without a token. It sets no cookie and stores no ID in the browser: the tab's ID lives in the page's memory. The server looks up the country of the request's address and drops the address, and keeps the tab only in Valkey, for 90 seconds after its last beat. For a visitor with a token, it saves the country and time zone on the visitor.",
+  request: {
+    params,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            tab: TAB_ID,
+            page: z.string().max(4096),
+            title: z.string().max(2000).optional(),
+            // Only on the tab's first beat. Only its origin is kept.
+            referrer: z.string().max(4096).optional(),
+            // IANA, as the browser gives it.
+            timeZone: z.string().max(64).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Noted, or dropped", content: okContent },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
+
+const leaveRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/leave",
+  summary: "Say that a tab of the site closed",
+  description: "The loader sends this with sendBeacon when the page goes away. It has no body.",
+  request: { params, query: z.object({ tab: TAB_ID }) },
+  responses: {
+    200: { description: "Noted", content: okContent },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
+
+/** The time zone, when the server knows it too. */
+function knownTimeZone(timeZone: string | undefined): string | null {
+  if (timeZone === undefined) return null;
+  try {
+    return new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+/** Only the origin of where the visitor came from, never its path. */
+function referrerOrigin(referrer: string | undefined): string | null {
+  if (referrer === undefined || !URL.canParse(referrer)) return null;
+  const { origin, protocol } = new URL(referrer);
+  return protocol === "http:" || protocol === "https:" ? origin : null;
+}
 
 /** The longest draft the widget sends, in characters. */
 const DRAFT_MAX = 2000;
@@ -763,6 +829,41 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
 const BLOCKED = failure("blocked", "You cannot send messages in this chat.");
 
 /**
+ * Saves where a visitor with a token is, when it changed, and returns their newest conversation,
+ * open first, for the live view's "Chatting" link.
+ */
+async function notePlace(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+  country: string | null,
+  timeZone: string | null,
+): Promise<string | null> {
+  if (country !== null || timeZone !== null) {
+    await tx
+      .update(visitor)
+      .set({
+        ...(country !== null && { country }),
+        ...(timeZone !== null && { timeZone }),
+      })
+      .where(
+        and(
+          eq(visitor.workspaceId, workspaceId),
+          eq(visitor.id, visitorId),
+          sql`(${visitor.country} is distinct from coalesce(${country}, ${visitor.country}) or ${visitor.timeZone} is distinct from coalesce(${timeZone}, ${visitor.timeZone}))`,
+        ),
+      );
+  }
+  const [newest] = await tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
+    .orderBy(sql`${conversation.status} = 'open' desc`, desc(conversation.updatedAt))
+    .limit(1);
+  return newest?.id ?? null;
+}
+
+/**
  * The open conversation a visitor's draft belongs to, or null when the workspace turned the preview
  * off, the visitor is blocked, or they have no open conversation. One statement.
  */
@@ -805,6 +906,8 @@ function limitFor(method: string, path: string): [string, number, number] {
   // A single-page site reports each change of address, and a page should not need more.
   if (path.endsWith("/page")) return ["widget-page", 30, 60];
   if (path.endsWith("/context")) return ["widget-context", 30, 60];
+  // A beat a minute for each tab, and many tabs behind one office's address.
+  if (path.endsWith("/beat") || path.endsWith("/leave")) return ["widget-beat", 240, 60];
   // Two drafts a second while typing, with room for a few tabs.
   if (path.endsWith("/typing")) return ["widget-typing", 150, 60];
   return ["widget-write", 120, 60];
@@ -829,6 +932,9 @@ interface WidgetOptions {
   visitorPresence: VisitorPresence;
   /** This server's own origin, where a chat link's page runs. */
   ownOrigin: string | undefined;
+  /** The tabs of the site open now, for the operators. */
+  liveVisitors: LiveVisitors;
+  countryOf: CountryOf;
 }
 
 /** A person with several tabs open. */
@@ -856,6 +962,8 @@ export function registerWidgetRoutes(
     stream,
     visitorPresence,
     ownOrigin,
+    liveVisitors,
+    countryOf,
   }: WidgetOptions,
 ): void {
   const view = (workspaceId: string, message: StoredMessage, authors = NO_AUTHORS) =>
@@ -1147,6 +1255,43 @@ export function registerWidgetRoutes(
         device: deviceLine(c.req.header("user-agent")),
       }),
     );
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(beatRoute, async (c) => {
+    const found = c.get("workspace");
+    const token = c.get("widgetToken");
+    const { tab, page, title, referrer, timeZone } = c.req.valid("json");
+    const path = sitePage(page, c.req.header("origin"));
+    // A chat link's page is this server's, not the site's.
+    if (path === null || token.kind === "link") return c.json({ ok: true as const }, 200);
+    const country = countryOf(c.get("clientIp"));
+    const zone = knownTimeZone(timeZone);
+    // A token that no longer works still counts the tab, as a visitor with none.
+    const visitorId =
+      token.kind === null ? null : await knownVisitor(db, found, c.req.param("key"), token);
+    const conversationId =
+      visitorId == null
+        ? null
+        : await withWorkspace(db, found.id, (tx) =>
+            notePlace(tx, found.id, visitorId, country, zone),
+          );
+    await liveVisitors.beat(found.id, {
+      tab,
+      page: path,
+      title: pageTitle(title),
+      referrer: referrerOrigin(referrer),
+      country,
+      timeZone: zone,
+      device: deviceLine(c.req.header("user-agent")),
+      visitorId: visitorId ?? null,
+      conversationId,
+    });
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(leaveRoute, async (c) => {
+    await liveVisitors.leave(c.get("workspace").id, c.req.valid("query").tab);
     return c.json({ ok: true as const }, 200);
   });
 

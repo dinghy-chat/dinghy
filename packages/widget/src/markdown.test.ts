@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { markdownHtml, parseMarkdown } from "./markdown.ts";
+import { markdownHtml, markdownText, parseMarkdown } from "./markdown.ts";
 
 test("bold, italic and inline code", () => {
   expect(markdownHtml("**Hi** *there* `npm i`")).toBe(
@@ -100,4 +100,9 @@ test("hostile input parses quickly and stays bounded", () => {
   // Markers nest only a few levels deep.
   const nested = `${"*".repeat(40)}x${"*".repeat(40)}`;
   expect(() => markdownHtml(nested)).not.toThrow();
+});
+
+test("markdownText keeps the words and drops the marks, for a preview", () => {
+  expect(markdownText("Yes, **both** and `x`.\n\n- one\n- two")).toBe("Yes, both and x. one two");
+  expect(markdownText("[Docs](https://a.example) <b>")).toBe("Docs <b>");
 });

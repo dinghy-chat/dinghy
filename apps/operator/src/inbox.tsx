@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BillingBanner, useBilling, WaitingBanner } from "../../../ee/operator/billing.tsx";
+import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import { AnalyticsPage } from "./analytics.tsx";
 import {
   ApiError,
@@ -27,6 +28,7 @@ import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
 import { Avatar, Choices, type Option, PageHead } from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
+import { VisitorsPage } from "./visitors.tsx";
 
 const PAGE_SIZE = 50;
 const SEARCH_WAIT_MS = 250;
@@ -131,8 +133,9 @@ function ConversationRow({
   onSelect(): void;
 }) {
   const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
+  const body = conversation.lastMessage?.body;
   const preview =
-    conversation.lastMessage?.body ?? (conversation.lastMessage === null ? "" : t("image"));
+    body != null ? markdownText(body) : conversation.lastMessage === null ? "" : t("image");
   const waits = isWaiting(conversation);
   const closed = showClosed && conversation.status === "closed";
   return (
@@ -335,6 +338,7 @@ export function Inbox({
   }, []);
   const { lost, version, threadVersion, receiptsVersion, typing, teamVersion, accountVersion } =
     useChanges(api, visible, onSignedOut, onVisitorMessage);
+  const liveCount = useLiveCount(api, visible);
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
   const name = membership?.name ?? t("appName");
@@ -486,6 +490,7 @@ export function Inbox({
           view={view}
           onProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
+          liveCount={liveCount}
           onView={(next) => {
             if (next === "contacts") setContactId(null);
             if (next !== view || next === "contacts") leave(() => showView(next));
@@ -558,6 +563,9 @@ export function Inbox({
               />
             )}
             {view === "analytics" && <AnalyticsPage api={api} />}
+            {view === "visitors" && (
+              <VisitorsPage api={api} onOpenConversation={(id) => openConversation(id, "open")} />
+            )}
             {view === "contacts" && (
               <ContactsPage
                 api={api}
@@ -693,4 +701,31 @@ export function Inbox({
       </div>
     </div>
   );
+}
+
+/** How often the sidebar asks how many people are on the site. */
+const LIVE_COUNT_EVERY_MS = 30_000;
+
+/** The tabs of the site open now, read every 30 seconds while this tab shows. Null when unknown. */
+function useLiveCount(api: WorkspaceApi, visible: boolean): number | null {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!visible) return;
+    let stopped = false;
+    const read = () => {
+      api.liveCount().then(
+        (answer) => {
+          if (!stopped) setCount(answer.count);
+        },
+        () => {},
+      );
+    };
+    read();
+    const timer = setInterval(read, LIVE_COUNT_EVERY_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [api, visible]);
+  return count;
 }

@@ -16,8 +16,8 @@ import {
 } from "./shared.ts";
 import { DEFAULT_TITLE, LAUNCHER_LABEL } from "./text.ts";
 
-// This file runs on every page of the host site, so it stays small. It makes one request, for the
-// saved look, which the browser caches for 5 minutes. The chat bundle loads when the visitor opens
+// This file runs on every page of the host site, so it stays small. It asks once for the saved
+// look, which the browser caches for 5 minutes, and sends a small beat a minute for the live view. The chat bundle loads when the visitor opens
 // the chat, the page calls identify(), or the visitor already has a token. Everything else lives
 // in the chat bundle.
 
@@ -205,6 +205,38 @@ if (script && publicKey) {
       launcher.appendChild(document.createElement("b")).textContent = saved?.title ?? DEFAULT_TITLE;
     if (kind === "hidden") api.hide();
     (document.body ?? document.documentElement).append(host);
+
+    // The operators' live view: a beat now and each minute while the tab shows. The tab's ID lives
+    // only in this page's memory: no cookie and no storage.
+    const tab = Math.random().toString(36).slice(2, 14);
+    const url = `${base}../v1/widget/${publicKey}/`;
+    let referrer: string | undefined = document.referrer;
+    const beat = () => {
+      if (document.visibilityState !== "visible") return;
+      const token = typeof context.identity === "string" ? context.identity : readToken(publicKey);
+      fetch(`${url}beat`, {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          "content-type": "application/json",
+          ...(token && { authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({
+          tab,
+          page: location.origin + location.pathname,
+          title: document.title,
+          referrer,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      }).catch(() => {});
+      referrer = undefined;
+    };
+    // At once, as on() calls back right away, and again when a chat starts, so the operators see
+    // who is chatting without waiting a minute.
+    api.on("conversation", beat);
+    setInterval(beat, 6e4);
+    addEventListener("visibilitychange", beat);
+    addEventListener("pagehide", () => navigator.sendBeacon(`${url}leave?tab=${tab}`));
   });
 
   const queued = (globalThis.Dinghy as { q?: QueuedCall[] } | undefined)?.q;

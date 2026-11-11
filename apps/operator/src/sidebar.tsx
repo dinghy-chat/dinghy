@@ -10,11 +10,12 @@ import { type TextId, t } from "./text.ts";
 import { Avatar, initials, ROLE_TEXT } from "./ui.tsx";
 
 /** What the panel shows: the Inbox, or a page. */
-export type View = "inbox" | "contacts" | "analytics" | "settings";
+export type View = "inbox" | "contacts" | "visitors" | "analytics" | "settings";
 
 const NAV: { view: View; label: TextId; icon: IconName }[] = [
   { view: "inbox", label: "inbox", icon: "inbox" },
   { view: "contacts", label: "contacts", icon: "contacts" },
+  { view: "visitors", label: "visitors", icon: "globe" },
   { view: "analytics", label: "analytics", icon: "chart" },
   { view: "settings", label: "settings", icon: "gear" },
 ];
@@ -145,6 +146,7 @@ export function Sidebar({
   view,
   onProfile: isProfile,
   waiting,
+  liveCount,
   onView,
   onProfileOpen,
   onSwitch,
@@ -161,6 +163,8 @@ export function Sidebar({
   onProfile: boolean;
   /** Open conversations that wait for a reply, in the whole workspace. */
   waiting: number;
+  /** Tabs of the site open now, or null when unknown. */
+  liveCount: number | null;
   onView(view: View): void;
   onProfileOpen(): void;
   onSwitch(id: string): void;
@@ -185,6 +189,7 @@ export function Sidebar({
       <nav className="nav" aria-label={t("mainMenu")}>
         {NAV.map((item) => {
           const counted = item.view === "inbox" && waiting > 0;
+          const live = item.view === "visitors" && liveCount !== null && liveCount > 0;
           return (
             <button
               type="button"
@@ -199,6 +204,11 @@ export function Sidebar({
               {counted && (
                 <span className="count" aria-hidden="true">
                   {waiting}
+                </span>
+              )}
+              {live && (
+                <span className="count live" title={t("liveCount", { count: liveCount })}>
+                  {liveCount}
                 </span>
               )}
             </button>

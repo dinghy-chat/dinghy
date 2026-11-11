@@ -244,21 +244,23 @@ function ThreadHead({
         </div>
       </div>
       <div className="actions">
-        <Select
-          label={t("assignTo")}
-          className="assignee"
-          side="end"
-          value={assignee}
-          choices={[
-            { value: "", label: t("unassigned"), lead: <span className="avatar nobody" /> },
-            ...members.map((member) => ({
-              value: member.id,
-              label: member.name,
-              lead: <Avatar name={member.name} pictureUrl={member.pictureUrl} />,
-            })),
-          ]}
-          onChange={(value) => onAssign(value === "" ? null : value)}
-        />
+        {!(panel?.open ?? false) && (
+          <Select
+            label={t("assignTo")}
+            className="assignee"
+            side="end"
+            value={assignee}
+            choices={[
+              { value: "", label: t("unassigned"), lead: <span className="avatar nobody" /> },
+              ...members.map((member) => ({
+                value: member.id,
+                label: member.name,
+                lead: <Avatar name={member.name} pictureUrl={member.pictureUrl} />,
+              })),
+            ]}
+            onChange={(value) => onAssign(value === "" ? null : value)}
+          />
+        )}
         <button
           type="button"
           className="pill dark"
@@ -559,7 +561,7 @@ function ReceiptLine({ receipt, later }: { receipt: Receipt; later: boolean }) {
 function TypingDraft({ draft }: { draft: string }) {
   return (
     <>
-      <div className="msg visitor draft" role="status" aria-label={t("visitorTypingLabel")}>
+      <div className="msg draft" role="status" aria-label={t("visitorTypingLabel")}>
         {draft}
       </div>
       <div className="meta visitor typing">

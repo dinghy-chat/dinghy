@@ -11,6 +11,7 @@ import { createAuth } from "./auth.ts";
 import { loadConfig, pushKeysFromConfig } from "./config.ts";
 import * as schema from "./db/schema.ts";
 import { startErrorReports } from "./error-reports.ts";
+import { loadCountries } from "./geo.ts";
 import { createImages } from "./images.ts";
 import { createLive, createSignals } from "./live.ts";
 import { createMailer } from "./mailer.ts";
@@ -104,6 +105,7 @@ if (role === "web" || role === "all") {
     webhooks,
     live,
     valkey,
+    countryOf: loadCountries(config.GEOIP_COUNTRY_FILE, logger),
     logger,
     metricsToken: config.METRICS_TOKEN,
     widgetDirectory: config.WIDGET_DIR,

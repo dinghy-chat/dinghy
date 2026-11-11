@@ -5,9 +5,9 @@ import { buildWidget } from "../build.ts";
 // Limits in gzipped bytes. The loader runs on every page of the host site, and new chat features
 // must fit inside the chat's limit.
 const LIMITS: Record<string, number> = {
-  // 2,300 since the label and square launchers, which the owner asked for on 2026-11-11 (2,276
-  // with them, from 2,096). The full page API before them took it to 2,100.
-  "loader.js": 2300,
+  // 2,700 since the live visitors' beat, which the owner asked for on 2026-11-11 (2,631 with it,
+  // from 2,291). The label and square launchers before it took it to 2,300.
+  "loader.js": 2700,
   "page.js": 1000,
   // 21,600 since Markdown in messages and the typing preview, which the owner asked for on
   // 2026-11-11 (21,506 with both, from 20,320). The emoji picker before them took it to 20,500.

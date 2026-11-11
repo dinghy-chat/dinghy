@@ -76,12 +76,14 @@ test("the grouped list opens each page, by a click and by its address", async ({
   await page.context().close();
 });
 
-test("the sidebar keeps Inbox, Analytics and Settings, and Profile opens from the user menu", async ({
+test("the sidebar keeps Inbox, Contacts, Visitors, Analytics and Settings, and Profile opens from the user menu", async ({
   browser,
 }) => {
   const page = await signedIn(browser, server, "owner@example.com");
   await expect(page.getByRole("navigation", { name: "Main menu" }).getByRole("button")).toHaveText([
     "Inbox",
+    "Contacts",
+    "Visitors",
     "Analytics",
     "Settings",
   ]);

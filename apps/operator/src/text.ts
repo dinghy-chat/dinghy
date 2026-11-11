@@ -694,6 +694,23 @@ const en = {
   deleteContactConfirm:
     "This deletes the contact and their {count} conversations, with every message and image. It can't be undone.",
   contactsDocsLink: "About contacts",
+  visitors: "Visitors",
+  visitorsMany: "{count} people on your site now.",
+  visitorsOne: "1 person on your site now.",
+  visitorsNone: "Nobody is on your site right now",
+  visitorsNoneHint:
+    "People show here while a page with the widget is open, and leave a minute after.",
+  visitorsUnknown: "Dinghy can't tell who is on your site right now. Try again in a moment.",
+  visitorsMap: "Where your visitors are",
+  visitorsList: "Open pages",
+  visitorsInCountry: "{country}: {count}",
+  unknownCountry: "Unknown country",
+  geoCredit: "IP geolocation by DB-IP",
+  chatting: "Chatting",
+  cameFrom: "From {site}",
+  onSiteMinutes: "{count} min on site",
+  onSiteHours: "{hours} h {minutes} min on site",
+  liveCount: "{count} on your site now",
 };
 
 export type TextId = keyof typeof en;

@@ -24,6 +24,10 @@
   --fill-hover: light-dark(#17335c, #ffffff);
   --on-fill: light-dark(#fff, #0b2239);
   --blue: #1f6bff;
+  /* The live map: a navy sea, blue dots of land and the brand's yellow for people. */
+  --map-sea: light-dark(#0b2239, #08182a);
+  --map-land: light-dark(#2f5d93, #2a5283);
+  --map-dot: #ffc917;
   /* Focus: the navy (off-white at night) for the line, and the warm sand for a field's halo. */
   --focus: var(--navy);
   --focus-halo: light-dark(#e8e6e0, #243344);
@@ -937,6 +941,11 @@ button.workspace[aria-expanded="true"],
   color: #fff;
   font: 700 12px / 18px var(--body);
   text-align: center;
+}
+/* People on the site now: quieter than the red count of those who wait. */
+.nav .count.live {
+  background: var(--navy);
+  color: var(--on-navy);
 }
 .menu-wrap {
   position: relative;
@@ -2001,9 +2010,11 @@ img.ws-tile {
 }
 /* A visitor's unsent words, faded, with three dots that move. */
 .msg.draft {
-  opacity: 0.6;
+  align-self: flex-start;
+  background: var(--surface);
   box-shadow: 0 0 0 1px var(--line);
-  border: 1px dashed transparent;
+  color: var(--navy);
+  opacity: 0.6;
 }
 .meta.typing {
   display: flex;
@@ -3871,4 +3882,81 @@ img.ws-tile {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+}
+
+/* Visitors: the world in dots on a navy sea, with a yellow dot for each country that has people. */
+.world-map {
+  position: relative;
+  max-width: 980px;
+  aspect-ratio: 360 / 142;
+  margin: 8px 0 20px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--map-sea);
+}
+.world-land {
+  position: absolute;
+  inset: 0;
+  background: var(--map-land);
+  mask: url("world.svg") center / 100% 100% no-repeat;
+}
+.world-map .map-dot {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--map-dot);
+  box-shadow: 0 0 0 4px rgb(255 201 23 / 0.25);
+  transform: translate(-50%, -50%);
+}
+.live-list {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+.live-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 4px;
+  border-top: 1px solid var(--line);
+}
+.live-flag {
+  flex: none;
+  width: 28px;
+  font-size: 22px;
+  line-height: 1.2;
+  text-align: center;
+}
+.live-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.live-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.live-text b {
+  color: var(--navy);
+}
+.live-page {
+  overflow: hidden;
+  color: var(--blue-deep);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-text small {
+  color: var(--mute);
+  font-size: 13px;
+}
+.live-chat {
+  cursor: pointer;
+}
+.map-credit {
+  margin-top: 18px;
+  font-size: 12.5px;
+}
+.credit-link {
+  color: var(--mute);
 }

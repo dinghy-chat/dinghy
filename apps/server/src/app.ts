@@ -19,10 +19,12 @@ import { clientIp } from "./client-ip.ts";
 import { registerContactRoutes } from "./contacts.ts";
 import { AccountDeletedError, type Database } from "./db/tenant.ts";
 import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
+import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { type Live, noLive } from "./live.ts";
+import { createLiveVisitors, registerLiveVisitorRoutes } from "./live-visitors.ts";
 import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
@@ -87,6 +89,8 @@ export interface AppOptions {
   publicUrl?: string | undefined;
   /** Whether webhooks may go over http and to private addresses. Off by default. */
   webhooks?: WebhookPolicy;
+  /** The country of an address, for the live view. Without it, every country is unknown. */
+  countryOf?: CountryOf;
 }
 
 export interface AppEnv {
@@ -198,6 +202,7 @@ export function createApp({
   widgetDirectory,
   publicUrl,
   webhooks = PUBLIC_ONLY,
+  countryOf = NO_COUNTRIES,
 }: AppOptions): App {
   const app: App = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -336,6 +341,7 @@ export function createApp({
     await next();
   });
   const visitorPresence = createVisitorPresence(valkey, logger, presenceTtlMs);
+  const liveVisitors = createLiveVisitors(valkey, logger);
   const ownOrigin = publicUrl === undefined ? undefined : new URL(publicUrl).origin;
   // Before the widget routes, because any site may read it.
   registerWidgetAppearance(app, db, urls, rateLimit);
@@ -351,6 +357,8 @@ export function createApp({
     slots: createSlots(valkey, logger, limitScale),
     stream,
     visitorPresence,
+    liveVisitors,
+    countryOf,
     ownOrigin,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
@@ -408,6 +416,7 @@ export function createApp({
     registerOperatorPresence(app, presence);
     registerModerationRoutes(app, db, live);
     registerContactRoutes(app, db, live);
+    registerLiveVisitorRoutes(app, db, liveVisitors);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
     registerTeamRoutes(app, {
       auth,

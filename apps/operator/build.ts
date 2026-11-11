@@ -25,6 +25,7 @@ export async function buildOperator(outdir: string): Promise<void> {
     "app.css",
     "manifest.webmanifest",
     "icon.svg",
+    "world.svg",
     "icon-180.png",
     "icon-192.png",
     "icon-512.png",

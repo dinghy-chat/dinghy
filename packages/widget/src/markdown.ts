@@ -152,6 +152,13 @@ export function renderMarkdown<Node>(source: string, h: CreateElement<Node>): (N
   );
 }
 
+/** The message's words without their marks, for a one-line preview. */
+export function markdownText(source: string): string {
+  const h: CreateElement<string> = (tag, _props, ...children) =>
+    `${children.join("")}${tag === "li" ? " " : ""}`;
+  return renderMarkdown(source, h).join(" ").replace(/\s+/g, " ").trim();
+}
+
 const ESCAPES: Record<string, string> = {
   "&": "&amp;",
   "<": "&lt;",

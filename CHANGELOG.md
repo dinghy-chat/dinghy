@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Upgrading
+
+- The Docker image downloads DB-IP's free IP to Country Lite database when it is built, for the countries in the new live view. Nothing to set. A server built from source can point `GEOIP_COUNTRY_FILE` at a copy, and without one the live view shows no countries.
+
 ### Added
 
 - Messages show a small Markdown: bold, italic, code, code blocks, links, bare web addresses and lists, in the widget, in the operator app and in the HTML part of reply emails. HTML, images and headings stay text, and links work only for `http`, `https` and `mailto`.
@@ -12,6 +16,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Operators see what a visitor types before they send it, live, in the thread and in the Inbox list. Nothing stores it. **Settings > Workspace** turns it off, and the widget then sends nothing. API: `POST /v1/widget/{key}/typing` and `PUT /v1/operator/workspaces/{id}/widget/typing-preview`, and the appearance answers `typingPreview`.
 - **Contacts** in the sidebar lists everyone who started a conversation, with search, sorting, paging and **Export CSV**. A contact's page shows what the team knows, every conversation, the pages they visited and a private note. A signed-out contact's name and email can be corrected, and owners and admins can delete a contact with all their conversations. API: `/v1/operator/workspaces/{id}/contacts`.
 - A conversation has a panel on its right with the visitor, the assignee and status, the details, the pages visited, their other conversations and the team's note. The header's button shows or hides it, and each fold remembers whether it is open.
+- **Visitors** in the sidebar shows who is on your site now, on a world map and in a list with their country, local time, page, time on site, device and where they came from, and links to the conversation of a visitor who is chatting. The sidebar counts them. Each tab of a page with the widget sends a beat a minute while it shows, with a random ID that lives only in the page's memory. The server finds the country from the address and drops the address, and keeps the live view in Valkey only. For a visitor who has chatted, it saves their country and time zone. API: `POST /v1/widget/{key}/beat`, `POST /v1/widget/{key}/leave`, and `GET /v1/operator/workspaces/{id}/visitors/live` and `/visitors/live/count`.
 - The reply box has a row of tools: attach, emoji, then bold, italic, code, link, bulleted and numbered lists, with Cmd or Ctrl with B, I, E and K.
 
 ### Changed

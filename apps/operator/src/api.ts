@@ -121,6 +121,22 @@ export interface Message {
   createdAt: string;
 }
 
+/** One open tab of the site, from its last beat. */
+export interface LiveVisitor {
+  tab: string;
+  /** Origin and path. */
+  page: string;
+  title: string | null;
+  /** Where they came from, as an origin. */
+  referrer: string | null;
+  country: string | null;
+  timeZone: string | null;
+  device: string | null;
+  startedAt: string;
+  /** Only for a visitor who has used the chat. */
+  visitor: (VisitorIdentity & { conversationId: string | null }) | null;
+}
+
 export type ContactSort = "lastSeen" | "firstSeen";
 
 /** A person with at least one conversation. */
@@ -458,6 +474,8 @@ export function workspaceApi(workspaceId: string) {
       }),
     exportUrl: `${base}/export`,
     contactsExportUrl: `${base}/contacts/export`,
+    liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
+    liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
     contacts: (query: { q: string; sort: ContactSort; before: string | null }) => {
       const search = new URLSearchParams({ sort: query.sort });
       if (query.q.trim() !== "") search.set("q", query.q.trim());

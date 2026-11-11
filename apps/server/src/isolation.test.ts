@@ -3,13 +3,14 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq, sql } from "drizzle-orm";
+import { Redis } from "iovalkey";
 import { SignJWT } from "jose";
 import { pino } from "pino";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
-import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { pressLinkButton, signedInOperator } from "../test/operators.ts";
 import { claimDeliveries, emailStopUrl, fanOutOne, planDelivery } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
@@ -53,6 +54,9 @@ const pushKeys = { ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" }
 let database: TestDatabase;
 let owner: Database;
 
+// The live view lives in Valkey, so the beat's attacks need a real one.
+const valkey = new Redis(VALKEY_URL, { lazyConnect: true });
+
 beforeAll(async () => {
   database = await createTestDatabase();
   await database.migrate();
@@ -60,6 +64,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  valkey.disconnect();
   await database.drop();
 });
 
@@ -789,6 +794,41 @@ const ATTACKS: Record<string, Attack> = {
     ).not.toEqual([]);
   },
 
+  "POST /v1/widget/:key/beat": async ({ widget, operator: as, anna, a, b, one }) => {
+    const tab = `iso${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    const body = { tab, page: `${SITE_B}/secret-page` };
+    // B's site beating into B: A's operators must not see it.
+    expect((await widget(b.publicKey, "POST", "beat", null, SITE_B, body)).status).toBe(200);
+    expect(await (await as(anna, "GET", inWorkspace(a.id, "/visitors/live"))).text()).not.toContain(
+      tab,
+    );
+    // A's token sent to B's key counts the tab in B with no visitor of A's.
+    expect((await widget(b.publicKey, "POST", "beat", one.token, SITE_B, body)).status).toBe(200);
+    const [row] = await owner.select().from(visitor).where(eq(visitor.id, one.id));
+    expect(row?.country ?? null).toBeNull();
+  },
+  "POST /v1/widget/:key/leave": async ({ widget, operator: as, anna, a, b }) => {
+    const tab = `iso${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    expect(
+      (await widget(a.publicKey, "POST", "beat", null, SITE_A, { tab, page: `${SITE_A}/x` }))
+        .status,
+    ).toBe(200);
+    // A leave sent to B's key leaves A's tab alone.
+    expect((await widget(b.publicKey, "POST", `leave?tab=${tab}`, null, SITE_B)).status).toBe(200);
+    expect(await (await as(anna, "GET", inWorkspace(a.id, "/visitors/live"))).text()).toContain(
+      tab,
+    );
+  },
+  "GET /v1/operator/workspaces/:workspaceId/visitors/live": async ({ operator: as, anna, b }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/live"))).status).toBe(404);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/visitors/live/count": async ({
+    operator: as,
+    anna,
+    b,
+  }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/live/count"))).status).toBe(404);
+  },
   "POST /v1/widget/:key/typing": async ({ widget, a, b, one, other }) => {
     const draft = { draft: "half a message" };
     expect((await widget(b.publicKey, "POST", "typing", one.token, SITE_B, draft)).status).toBe(
@@ -1259,6 +1299,7 @@ async function buildWorld(db: Database): Promise<World> {
       publicUrl: PUBLIC_URL,
     }),
     logger,
+    valkey,
     checks: { postgres: async () => {}, valkey: async () => {} },
     stream: { heartbeatMs: 25_000, lifetimeMs: 60_000 },
   });
