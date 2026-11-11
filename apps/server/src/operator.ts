@@ -16,7 +16,7 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, deliverLinks, redeemSignInToken } from "./auth.ts";
-import { operator, operatorPicture, workspace } from "./db/schema.ts";
+import { operator, operatorPicture, widgetSettings, workspace } from "./db/schema.ts";
 import { accessFlags, type Database, operatorWorkspaces, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -73,6 +73,8 @@ const meRoute = createRoute({
                   workspaceId: z.string(),
                   role: z.string(),
                   name: z.string(),
+                  // The workspace's logo, for the workspace menu. Null with no logo.
+                  logoUrl: z.string().nullable(),
                   // False while a cloud signup waits for payment.
                   active: z.boolean(),
                   // True after a cloud subscription ended: operators can read and export only.
@@ -381,13 +383,24 @@ export function registerOperatorRoutes(
             const { row, soleOwner } = await withWorkspace(db, workspaceId, async (tx) => ({
               row: (
                 await tx
-                  .select({ name: workspace.name })
+                  .select({
+                    name: workspace.name,
+                    publicKey: workspace.publicKey,
+                    logoUpdatedAt: widgetSettings.logoUpdatedAt,
+                  })
                   .from(workspace)
+                  .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
                   .where(eq(workspace.id, workspaceId))
               )[0],
               soleOwner: await isSoleOwner(tx, workspaceId, role),
             }));
-            return { ...membership, ...accessFlags(access), name: row?.name ?? "", soleOwner };
+            return {
+              ...membership,
+              ...accessFlags(access),
+              name: row?.name ?? "",
+              logoUrl: row === undefined ? null : imageUrls.logo(row.publicKey, row.logoUpdatedAt),
+              soleOwner,
+            };
           }),
         ),
         billing,

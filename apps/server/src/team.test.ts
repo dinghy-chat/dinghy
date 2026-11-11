@@ -24,6 +24,7 @@ import {
   invite,
   operator,
   verification,
+  workspace,
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
@@ -848,6 +849,7 @@ describe("invites", () => {
         workspaceId: space.id,
         role: "admin",
         name: "Acme",
+        logoUrl: null,
         active: true,
         readOnly: false,
         waiting: false,
@@ -1154,6 +1156,64 @@ describe("settings", () => {
       // workspace-delete.test.ts checks these numbers.
       deletion: expect.any(Object),
     });
+  });
+});
+
+describe("renaming the workspace", () => {
+  const rename = (as: Person, name: unknown, id = space.id) =>
+    call("PATCH", inSpace("", id), as, { name });
+  const nameIn = async (as: Person) => {
+    const me = await call("GET", "/v1/operator/me", as);
+    const { workspaces } = (await me.json()) as {
+      workspaces: { workspaceId: string; name: string }[];
+    };
+    return workspaces.find((one) => one.workspaceId === space.id)?.name;
+  };
+
+  test("an owner or an admin renames it, and open apps learn of it", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      const someone = await person(role);
+      wakes.length = 0;
+      const response = await rename(someone, `  Harbor ${role}  `);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ name: `Harbor ${role}` });
+      expect(await nameIn(someone)).toBe(`Harbor ${role}`);
+      expect(wakes).toEqual(["operators"]);
+      expect(audits("workspace.renamed")).toContainEqual(
+        expect.objectContaining({ workspaceId: space.id, operatorId: someone.id }),
+      );
+    }
+    const changes = await withWorkspace(db, space.id, (tx) =>
+      tx.select().from(event).where(eq(event.kind, "workspace.changed")),
+    );
+    expect(changes).toHaveLength(2);
+  });
+
+  test("a member cannot rename it", async () => {
+    const member = await person("member");
+    expect((await rename(member, "Mine now")).status).toBe(403);
+    expect(await nameIn(member)).toBe("Acme");
+  });
+
+  test.each([
+    ["blank", "   "],
+    ["over 100 characters", "a".repeat(101)],
+    ["not text", 42],
+  ])("a %s name changes nothing", async (_case, name) => {
+    const boss = await person("owner");
+    expect((await rename(boss, name)).status).toBe(400);
+    expect(await nameIn(boss)).toBe("Acme");
+  });
+
+  test("nobody renames a workspace they are not in", async () => {
+    const boss = await person("owner");
+    const other = await createWorkspace(db, "Other", [SITE]);
+    expect((await rename(boss, "Taken", other.id)).status).toBe(404);
+    const [row] = await owner
+      .select({ name: workspace.name })
+      .from(workspace)
+      .where(eq(workspace.id, other.id));
+    expect(row?.name).toBe("Other");
   });
 });
 

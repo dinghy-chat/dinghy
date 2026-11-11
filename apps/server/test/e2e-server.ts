@@ -186,8 +186,11 @@ export async function startE2EServer(
     linkTo: (email: string, index = 0) => mailer.linkTo(email, index),
     /** A sign-in link, as `chat sign-in-link` prints it. */
     signInLink: (email: string) => signInLink(auth, email),
-    /** An operator who is a member of this workspace, or of none with `member: false`. */
-    async createOperator(email: string, { member = true } = {}) {
+    /** An operator in this workspace, an owner unless `role` says otherwise, or in none. */
+    async createOperator(
+      email: string,
+      { member = true, role = "owner" }: { member?: boolean; role?: "owner" | "member" } = {},
+    ) {
       const [created] = await owner
         .insert(operator)
         .values({ name: email, email, emailVerified: true })
@@ -196,7 +199,7 @@ export async function startE2EServer(
       if (!member) return;
       await owner
         .insert(workspaceMember)
-        .values({ workspaceId: workspace.id, operatorId: id, role: "owner" });
+        .values({ workspaceId: workspace.id, operatorId: id, role });
     },
     /** Commits several messages in one go and signals once, as a lost signal's next wake does. */
     async visitorBurst(bodies: string[]) {

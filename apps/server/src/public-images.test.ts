@@ -8,7 +8,7 @@ import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
-import { workspace, workspaceLogo } from "./db/schema.ts";
+import { workspace, workspaceLogo, workspaceMember } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createImages, PUBLIC_IMAGE_MAX_BYTES } from "./images.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
@@ -30,6 +30,7 @@ let filesApp: App;
 let space: NewWorkspace;
 
 interface Person {
+  id: string;
   cookie: string;
 }
 
@@ -127,6 +128,27 @@ describe("uploading a logo", () => {
       new Uint8Array(await served.arrayBuffer()),
     ).metadata();
     expect({ format, width, height }).toEqual({ format: "webp", width: 256, height: 128 });
+  });
+
+  test("the account names each workspace's own logo, for the workspace menu", async () => {
+    const boss = await person("owner");
+    const other = await createWorkspace(db, "Other", [SITE]);
+    await owner
+      .insert(workspaceMember)
+      .values({ workspaceId: other.id, operatorId: boss.id, role: "owner" });
+    const { logoUrl } = (await (await upload(boss, await png(40, 40))).json()) as {
+      logoUrl: string;
+    };
+    const me = await app.request("/v1/operator/me", { headers: { cookie: boss.cookie } });
+    const { workspaces } = (await me.json()) as {
+      workspaces: { workspaceId: string; logoUrl: string | null }[];
+    };
+    expect(workspaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ workspaceId: space.id, logoUrl }),
+        expect.objectContaining({ workspaceId: other.id, logoUrl: null }),
+      ]),
+    );
   });
 
   test("a small logo is not enlarged, and a new upload gets a new address", async () => {

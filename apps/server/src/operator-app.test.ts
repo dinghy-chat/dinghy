@@ -31,6 +31,15 @@ test("the page's CSP allows fonts from this server and no inline style", async (
   expect(csp).toContain("style-src 'self';");
 });
 
+test.each(["/settings", "/settings/team", "/settings/workspace"])(
+  "%s opens the app, so a Settings page has an address of its own",
+  async (path) => {
+    const response = await operatorApp().request(path);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  },
+);
+
 test.each(["fonts/OFL.txt", "fonts/../index.html", "sw.js"])(
   "the asset route serves only its fixed list, so %s is not found",
   async (file) => {

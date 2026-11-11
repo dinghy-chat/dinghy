@@ -53,6 +53,9 @@ export function registerOperatorApp(
     "/invite",
     // Every emailed link opens this page, whose button uses the link.
     "/link",
+    // Settings and each of its pages. The app shows its first page for a name it does not know.
+    "/settings",
+    "/settings/:page",
     ...(signup ? ["/signup"] : []),
     ...(billing ? ["/billing/return"] : []),
   ];

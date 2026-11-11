@@ -42,7 +42,7 @@ import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { type Mailer, recipientRejected } from "./mailer.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
-import { assignConversation, recordTeamChange } from "./messages.ts";
+import { assignConversation, recordTeamChange, recordWorkspaceChange } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { isOnlyWorkspace } from "./workspace-delete.ts";
@@ -282,6 +282,23 @@ const rotateSecretRoute = createRoute({
   summary: "Replace the signing secret. Tokens signed with the old one stop at once.",
   request: { params: workspaceParams },
   responses: { 200: reply("The settings", Settings), ...ROLE_WRITE_ERRORS },
+});
+
+const renameRoute = createRoute({
+  method: "patch",
+  path: PREFIX,
+  security: SESSION,
+  summary: "Rename the workspace. Open operator apps show the new name.",
+  request: {
+    params: workspaceParams,
+    // The same rule as the workspace name at signup.
+    body: json(z.object({ name: z.string().trim().min(1).max(100) })),
+  },
+  responses: {
+    200: reply("The new name", z.object({ name: z.string() })),
+    ...ROLE_WRITE_ERRORS,
+    400: errorAnswer("invalid_request: the name is blank or over 100 characters"),
+  },
 });
 
 const assignRoute = createRoute({
@@ -916,6 +933,20 @@ export function registerTeamRoutes(
     });
     auditChange("signing_secret.rotated", id, c.get("operatorId"));
     return c.json(settings, 200);
+  });
+
+  app.openapi(renameRoute, async (c) => {
+    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    const id = c.get("memberWorkspaceId");
+    const { name } = c.req.valid("json");
+    await withWorkspace(db, id, async (tx) => {
+      await tx.update(workspace).set({ name }).where(eq(workspace.id, id));
+      await recordWorkspaceChange(tx, id);
+    });
+    // Open apps read `me` again on the event. A lost signal only delays it until the next one.
+    live.wake(id, OPERATORS);
+    auditChange("workspace.renamed", id, c.get("operatorId"));
+    return c.json({ name }, 200);
   });
 
   app.openapi(assignRoute, async (c) => {
