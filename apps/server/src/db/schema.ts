@@ -36,7 +36,13 @@ export const alertChannel = pgEnum("alert_channel", ["push", "email"]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);
 export const widgetPosition = pgEnum("widget_position", ["left", "right"]);
 export const widgetTheme = pgEnum("widget_theme", ["light", "dark", "auto"]);
-export const widgetLauncher = pgEnum("widget_launcher", ["boat", "bubble", "hidden"]);
+export const widgetLauncher = pgEnum("widget_launcher", [
+  "boat",
+  "bubble",
+  "hidden",
+  "label",
+  "square",
+]);
 export const widgetEmailAsk = pgEnum("widget_email_ask", ["off", "after_first", "before_first"]);
 
 export const workspace = pgTable(

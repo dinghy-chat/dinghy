@@ -67,7 +67,7 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 | `primary`, `accent` | A full hex color, such as `#0b2239`, or null for Dinghy's |
 | `position` | `left` or `right` |
 | `theme` | `light`, `dark` or `auto`, which follows the visitor's device |
-| `launcher` | `boat`, `bubble` or `hidden` |
+| `launcher` | `bubble`, `label`, `square`, `boat` or `hidden` |
 | `radius` | The corners in pixels, a whole number from 0 to 24 |
 | `mascot` | Whether the open chat shows the boat |
 | `emailAsk` | `off`, `after_first` or `before_first`: when a signed-out visitor is asked for an email |

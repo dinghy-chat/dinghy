@@ -29,7 +29,7 @@ You can also set the look in the tag. These attributes win over the saved settin
 | `data-primary` | A full hex color, such as `#112233` | The color of the header, the visitor's messages and the boat's hull |
 | `data-accent` | A full hex color | The color of the buttons and the boat's sail |
 | `data-mascot` | `false` or `true` | Hides or shows the boat in the open chat. Each state still shows its text |
-| `data-launcher` | `boat`, `bubble` or `hidden` | The chat button. `hidden` lets you open the chat from your own button |
+| `data-launcher` | `bubble`, `label`, `square`, `boat` or `hidden` | The chat button. `label` shows the chat's title beside the icon, and `hidden` lets you open the chat from your own button |
 | `data-position` | `left` or `right` | The corner for the button and the chat |
 | `data-offset-x` | Pixels, such as `24` | The distance from the side of the window. The default is `16` |
 | `data-offset-y` | Pixels, such as `80` | The distance from the bottom of the window. The default is `16` |
@@ -45,7 +45,7 @@ To match your fonts and corners, set these CSS variables on the `dinghy-chat` el
 dinghy-chat {
   --dinghy-font: "Inter", system-ui, sans-serif; /* the chat's text */
   --dinghy-radius: 12px; /* the chat panel's corners, 16px by default */
-  --dinghy-launcher-radius: 12px; /* the boat button's corners, 16px by default. The bubble is round */
+  --dinghy-launcher-radius: 12px; /* the square and boat buttons' corners, 16px by default. The bubble is round */
 }
 ```
 

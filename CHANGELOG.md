@@ -4,6 +4,15 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Two more chat buttons: **Label**, a pill with the chat's title, and **Square**, which takes the saved corners. `data-launcher` takes `label` and `square`.
+
+### Changed
+
+- The chat button is a bubble by default. A saved widget keeps its button.
+- The Widget tab's preview shows the open chat and the chat button together.
+
 ## [0.17.0] - 2026-11-11
 
 ### Added

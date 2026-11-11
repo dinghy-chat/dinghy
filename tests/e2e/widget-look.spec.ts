@@ -14,7 +14,7 @@ const DEFAULTS = {
   accent: null,
   position: "right",
   theme: "auto",
-  launcher: "boat",
+  launcher: "bubble",
   radius: 16,
   emailAsk: "after_first",
   branding: true,
@@ -73,6 +73,32 @@ test("the loader draws the launcher with the saved look", async ({ browser }) =>
   await visitor.context().close();
 });
 
+test("the loader draws a square with the saved corners, and a label with the chat's title", async ({
+  browser,
+}) => {
+  await server.setWidgetSettings({ launcher: "square", radius: 4 });
+  const square = await visit(browser);
+  await expect(launcher(square)).toHaveClass("launcher square");
+  expect(await launcher(square).evaluate((button) => getComputedStyle(button).borderRadius)).toBe(
+    "4px",
+  );
+  await square.context().close();
+
+  // The title is text, never markup.
+  await server.setWidgetSettings({ launcher: "label", title: "<i>Ask</i> us" });
+  const label = await visit(browser);
+  await expect(launcher(label)).toHaveClass("launcher label");
+  await expect(launcher(label).locator("svg")).toBeVisible();
+  await expect(launcher(label).locator("b")).toHaveText("<i>Ask</i> us");
+  await label.context().close();
+
+  // With no saved title, the label shows the chat's own.
+  await server.setWidgetSettings({ title: null });
+  const fallback = await visit(browser);
+  await expect(launcher(fallback).locator("b")).toHaveText("Chat with us");
+  await fallback.context().close();
+});
+
 test("the tag's attributes win over the saved look", async ({ browser }) => {
   await server.setWidgetSettings({ launcher: "bubble", accent: "#1f6bff", position: "left" });
   const visitor = await visit(browser, "/tagged");
@@ -88,11 +114,7 @@ test("with no answer, the launcher draws from the tag and the defaults", async (
   const visitor = await context.newPage();
   await visitor.route("**/appearance", (route) => route.abort());
   await visitor.goto(`${server.hostOrigin}/plain`);
-  await expect(launcher(visitor)).toHaveClass("launcher boat");
-  const radius = await launcher(visitor).evaluate(
-    (button) => getComputedStyle(button).borderRadius,
-  );
-  expect(radius).toBe("16px");
+  await expect(launcher(visitor)).toHaveClass("launcher bubble");
   await launcher(visitor).click();
   await expect(visitor.locator(".head b")).toHaveText("Chat with us");
   await context.close();
@@ -321,17 +343,17 @@ test("an owner changes the color, theme and launcher in the Widget tab, and the 
   await expect(device).toHaveCount(0);
   await expect(owner.locator(".preview-stage > div")).toHaveAttribute("data-theme", "light");
   await form.getByRole("group", { name: "Theme" }).getByRole("radio", { name: "Dark" }).check();
-  await form.getByRole("radio", { name: "Bubble" }).check();
-  // The preview changes before the save.
+  await form.getByRole("radio", { name: "Label" }).check();
+  // The preview changes before the save, and shows the open chat and its button together.
   const preview = owner.locator(".preview-stage > div");
-  await owner.getByRole("radio", { name: "Closed" }).check();
-  await expect(preview.locator(".launcher.bubble")).toBeVisible();
+  await expect(preview.locator(".panel")).toBeVisible();
+  await expect(preview.locator(".launcher.label")).toContainText("Chat with us");
   await save.click();
   await expect(owner.getByText("Saved. Your site shows this within 5 minutes.")).toBeVisible();
   await expect(save).toBeDisabled();
 
   const visitor = await visit(browser);
-  await expect(launcher(visitor)).toHaveClass("launcher bubble");
+  await expect(launcher(visitor)).toHaveClass("launcher label");
   expect(await hostStyle(visitor, "--d-accent")).toBe("#1f6bff");
   await launcher(visitor).click();
   await expect(visitor.locator("dinghy-chat")).toHaveAttribute("data-theme", "dark");

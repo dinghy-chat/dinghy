@@ -198,7 +198,7 @@
           },
           "launcher": {
             "type": "string",
-            "enum": ["boat", "bubble", "hidden"]
+            "enum": ["boat", "bubble", "hidden", "label", "square"]
           },
           "mascot": {
             "type": "boolean"

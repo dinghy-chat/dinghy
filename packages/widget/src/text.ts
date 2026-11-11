@@ -2,9 +2,11 @@
 
 // Apart from the others, so the loader does not bundle every string.
 export const LAUNCHER_LABEL = "Open chat";
+/** The chat's title, which the label launcher shows too. */
+export const DEFAULT_TITLE = "Chat with us";
 
 const en = {
-  title: "Chat with us",
+  title: DEFAULT_TITLE,
   teamOnline: "We are online",
   teamAway: "We are away. Leave a message and we will reply here.",
   waiting: "We will reply here.",
