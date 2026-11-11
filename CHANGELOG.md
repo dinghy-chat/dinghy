@@ -12,9 +12,9 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Docs links in Settings sit under each section's description, with a book icon.
 - "Saved." and other confirmations show as a short message at the bottom of the screen. A failure still shows next to its field.
 - **Allowed sites** lists each site as a card. **Add a site** opens the field, and each add or remove saves at once.
-- The picture and the logo have smaller buttons. The image itself picks a new one.
+- The picture and the logo have smaller buttons, with the file rule beside them.
 - The preview in **Settings > Appearance** shows a dark chat on a light page, so it stands out.
-- API: `GET /v1/operator/me` answers each workspace's `heir`. `POST /v1/operator/account/delete` no longer answers `sole_owner`. It answers `last_workspace` on a self-hosted server whose last workspace has only this operator, and `billing_unavailable` when a subscription could not be canceled.
+- API: `GET /v1/operator/me` answers each workspace's `heir`. `POST /v1/operator/account/delete` no longer answers `sole_owner`. It answers `last_workspace` on a self-hosted server whose last workspace has only this operator, `billing_unavailable` when a subscription could not be canceled, and `team_changed` when someone left a workspace during the delete.
 
 ### Fixed
 
