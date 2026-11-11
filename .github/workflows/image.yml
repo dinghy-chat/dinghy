@@ -52,7 +52,13 @@ jobs:
           target="ghcr.io/dinghy-chat/dinghy:${GITHUB_REF_NAME#v}-${arch#linux/}"
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker tag dinghy:check "$target"
-          docker push "$target"
+          # The two architectures push shared layers at once, and GHCR then sometimes answers
+          # "unknown blob". A push again sends only what is missing, so it is safe to repeat.
+          for attempt in 1 2 3 4; do
+            docker push "$target" && break
+            test "$attempt" -lt 4
+            sleep $((attempt * 15))
+          done
 
   # A release tag such as v0.1.0, after both architectures pass.
   publish:
