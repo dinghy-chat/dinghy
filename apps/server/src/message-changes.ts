@@ -209,7 +209,7 @@ export async function editMessage(
   body: string,
 ): Promise<EditOutcome> {
   const seq = await nextSeq(tx, workspaceId);
-  const reader = await conversationVisitor(tx, workspaceId, conversationId, "update");
+  const reader = await conversationVisitor(tx, workspaceId, conversationId, "no key update");
   if (reader === undefined) return { kind: "missing" };
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined || line.deletedAt !== null) return { kind: "missing" };
@@ -246,7 +246,7 @@ export async function deleteMessage(
   by: { operatorId: string; mayDeleteAnyone: boolean },
 ): Promise<DeleteOutcome> {
   const seq = await nextSeq(tx, workspaceId);
-  const reader = await conversationVisitor(tx, workspaceId, conversationId, "update");
+  const reader = await conversationVisitor(tx, workspaceId, conversationId, "no key update");
   if (reader === undefined) return { kind: "missing" };
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined) return { kind: "missing" };

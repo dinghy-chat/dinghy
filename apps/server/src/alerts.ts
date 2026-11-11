@@ -560,8 +560,9 @@ async function replyEmailPlan(
   if (transcriptDue !== null) {
     return { channel: "later", until: new Date(transcriptDue.getTime() + AFTER_TRANSCRIPT_MS) };
   }
-  // Every unread reply to this visitor, because other replies waited for this row to send. The
-  // share lock makes an edit wait until this email's range is recorded, or this read wait for it.
+  // Every unread reply to this visitor, because other replies waited for this row to send. The key
+  // share lock makes an edit or a delete wait until this email's range is recorded. It is no
+  // stronger, so a read or a resent quote, which update other columns, never waits in a cycle.
   const replies = await tx
     .select({ seq: message.seq, body: message.body, replyTo: messageColumns.replyTo })
     .from(message)
@@ -585,7 +586,7 @@ async function replyEmailPlan(
     )
     .orderBy(desc(message.seq))
     .limit(REPLIES_IN_EMAIL)
-    .for("share", { of: message });
+    .for("key share", { of: message });
   // The visitor came back and read everything, or a transcript carried it.
   if (replies.length === 0) return null;
   // Fan-out set the due time, but a slow retry of an earlier row can have sent since then.

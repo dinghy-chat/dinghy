@@ -3,12 +3,13 @@ import { createDecipheriv, createECDH, hkdfSync, randomBytes, randomUUID } from 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { lockWaiters, untilWaiting } from "../test/locks.ts";
 import { deletedDuring, signedInOperator } from "../test/operators.ts";
 import {
   claimDeliveries,
@@ -32,11 +33,11 @@ import {
   widgetSettings,
   workspaceMember,
 } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
 import type { Mailer } from "./mailer.ts";
 import { deleteMessage, editMessage, emailedAt, replyReceipts } from "./message-changes.ts";
-import { appendMessage, listWorkspaceEvents, setConversationStatus } from "./messages.ts";
+import { appendMessage, listWorkspaceEvents, markRead, setConversationStatus } from "./messages.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 import { queueTranscript, TRANSCRIPT_DELAY_MS } from "./transcripts.ts";
@@ -193,6 +194,7 @@ const operatorWrites = (operatorId: string, conversationId: string, body: string
   );
 
 const deliveries = () => owner.select().from(alertDelivery);
+const planOptions = { publicUrl: PUBLIC_URL, secret: AUTH_SECRET, imageOrigin: PUBLIC_URL };
 const fanOutAll = async (channels = { push: true, email: true }) => {
   while (await fanOutOne(workerDb, channels));
 };
@@ -1237,8 +1239,8 @@ describe("email", () => {
     const reply = await operatorWrites(anna, conversationId, "Teh answer");
     await fanOutAll();
     await makeDue();
-    let commit = () => {};
-    let edited = false;
+    const edited = Promise.withResolvers<void>();
+    const commit = Promise.withResolvers<void>();
     const editing = withWorkspace(app, space.id, async (tx) => {
       const outcome = await editMessage(
         tx,
@@ -1248,35 +1250,145 @@ describe("email", () => {
         anna,
         "The answer",
       );
-      edited = true;
-      await new Promise<void>((resolve) => {
-        commit = resolve;
-      });
+      edited.resolve();
+      await commit.promise;
       return outcome;
     });
-    await until(() => edited, "the edit to hold its locks");
+    try {
+      await edited.promise;
+      const [row] = await claimDeliveries(workerDb, 1, 60_000);
+      if (row === undefined) throw new Error("No claim");
+      const planning = planDelivery(workerDb, row, planOptions);
+      // The plan must wait for the edit's lock, not read the old text.
+      await untilWaiting(owner);
+      commit.resolve();
+      expect((await editing).kind).toBe("edited");
+      const plan = await planning;
+      expect(plan?.channel === "email" && plan.text).toContain("The answer");
+    } finally {
+      commit.resolve();
+    }
+  });
+});
+
+describe("a plan and a change to its messages at once", () => {
+  type Change = "edit" | "delete" | "read";
+  const CHANGES: Change[] = ["edit", "delete", "read"];
+  const CHANNELS = ["email", "transcript"] as const;
+  const NAMES = { email: "an email", transcript: "a transcript" };
+  const ACTS = { edit: "an edit", delete: "a delete", read: "a read" };
+
+  /**
+   * A visitor with an email and two replies, with this channel's row claimed and ready to plan. The
+   * change acts on the newer reply.
+   */
+  async function ready(channel: (typeof CHANNELS)[number]) {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const conversationId = (await visitorWrites(from, "Help")).message.conversationId;
+    const older = (await operatorWrites(anna, conversationId, "First")).message;
+    const reply = (await operatorWrites(anna, conversationId, "Teh answer")).message;
+    if (channel === "transcript") {
+      expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    }
+    await fanOutAll();
+    await owner.delete(alertDelivery).where(ne(alertDelivery.channel, channel));
+    await makeDue();
     const [row] = await claimDeliveries(workerDb, 1, 60_000);
-    if (row === undefined) throw new Error("No claim");
-    let planned = false;
-    const planning = planDelivery(workerDb, row, {
-      publicUrl: PUBLIC_URL,
-      secret: AUTH_SECRET,
-      imageOrigin: PUBLIC_URL,
-    }).finally(() => {
-      planned = true;
+    if (row?.channel !== channel) throw new Error(`No ${channel} row to plan`);
+    const change = (tx: Transaction, kind: Change): Promise<unknown> => {
+      if (kind === "read") return markRead(tx, space.id, from, reply.seq);
+      if (kind === "edit") {
+        return editMessage(tx, space.id, conversationId, reply.id, anna, "The answer");
+      }
+      return deleteMessage(tx, space.id, conversationId, reply.id, {
+        operatorId: anna,
+        mayDeleteAnyone: false,
+      });
+    };
+    return { row, olderId: older.id, newerId: reply.id, change };
+  }
+
+  /** Holds a reply's row FOR UPDATE until released. */
+  async function holdMessage(messageId: string) {
+    const held = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const done = owner.transaction(async (tx) => {
+      await tx.execute(sql`select 1 from message
+        where workspace_id = ${space.id} and id = ${messageId} for update`);
+      held.resolve();
+      await release.promise;
     });
-    // The plan either waits for the edit's lock, or reads the old text at once.
-    const lockWaits = async () =>
-      (
-        await owner.execute<{ count: number }>(
-          sql`select count(*)::int as count from pg_locks where not granted`,
-        )
-      ).rows[0]?.count ?? 0;
-    await until(async () => planned || (await lockWaits()) > 0, "the plan to wait or finish");
-    commit();
-    expect((await editing).kind).toBe("edited");
-    const plan = await planning;
-    expect(plan?.channel === "email" && plan.text).toContain("The answer");
+    await held.promise;
+    return { done, release: release.resolve };
+  }
+
+  /** Waits until the promise settles or this many connections wait on a lock. */
+  async function settledOrWaiting(promise: Promise<unknown>, count: number) {
+    let settled = false;
+    void promise.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await until(async () => settled || (await lockWaiters(owner)) >= count, "a lock wait");
+  }
+
+  for (const channel of CHANNELS) {
+    for (const kind of CHANGES) {
+      test(`${NAMES[channel]} plan that holds its messages, then ${ACTS[kind]}: both finish`, async () => {
+        const { row, olderId, change } = await ready(channel);
+        // A lock on the older reply stops the plan after it locked the newer one, which it reads
+        // first, and before its chat link checks the visitor's row.
+        const gate = await holdMessage(olderId);
+        try {
+          const planning = planDelivery(workerDb, row, planOptions);
+          await untilWaiting(owner);
+          const changing = withWorkspace(app, space.id, (tx) => change(tx, kind));
+          await settledOrWaiting(changing, 2);
+          gate.release();
+          await Promise.all([gate.done, planning, changing]);
+        } finally {
+          gate.release();
+        }
+      });
+
+      test(`${ACTS[kind]} that holds its rows, then ${NAMES[channel]} plan: both finish`, async () => {
+        const { row, change } = await ready(channel);
+        const changed = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const changing = withWorkspace(app, space.id, async (tx) => {
+          await change(tx, kind);
+          changed.resolve();
+          await release.promise;
+        });
+        try {
+          await changed.promise;
+          const planning = planDelivery(workerDb, row, planOptions);
+          await settledOrWaiting(planning, 1);
+          release.resolve();
+          await Promise.all([changing, planning]);
+        } finally {
+          release.resolve();
+        }
+      });
+    }
+  }
+
+  test(`${NAMES.email} plan and a read that lock the replies in opposite orders both finish`, async () => {
+    const { row, newerId, change } = await ready("email");
+    // Both wait for the newer reply. The plan, first in line, then wants the older one, which the
+    // read has updated by then.
+    const gate = await holdMessage(newerId);
+    try {
+      const planning = planDelivery(workerDb, row, planOptions);
+      await untilWaiting(owner);
+      const reading = withWorkspace(app, space.id, (tx) => change(tx, "read"));
+      await untilWaiting(owner, 2);
+      gate.release();
+      await Promise.all([gate.done, planning, reading]);
+    } finally {
+      gate.release();
+    }
   });
 });
 

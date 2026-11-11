@@ -600,7 +600,7 @@ export async function markRead(
     .select({ lastReadSeq: visitor.lastReadSeq })
     .from(visitor)
     .where(one)
-    .for("update");
+    .for("no key update");
   if (before === undefined) return false;
   const [moved] = await tx
     .update(visitor)
@@ -764,13 +764,14 @@ export function joinVisitor() {
 
 /**
  * A conversation's visitor, or undefined. With `lock`, the visitor's row stays locked until commit.
- * A change to a message takes this lock before the message's, as a read does.
+ * A change to a message takes this lock before the message's, as a read does. FOR NO KEY UPDATE still
+ * orders edits and reads, and lets a planner's chat link pass its foreign key check on this row.
  */
 export async function conversationVisitor(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
-  lock?: "update",
+  lock?: "no key update",
 ) {
   const query = tx
     .select({ id: visitor.id, email: visitor.email, lastReadSeq: visitor.lastReadSeq })

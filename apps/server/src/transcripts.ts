@@ -204,7 +204,8 @@ export async function transcriptPlan(
   if (state.fromClose && (state.status !== "closed" || state.later)) return null;
   if (await emailStopped(tx, workspaceId, state.email)) return null;
   if ((await sentToday(tx, workspaceId, visitorId)).length >= VISITOR_EMAILS_PER_DAY) return null;
-  // The share lock makes an edit wait until this transcript's range is recorded, as for a reply email.
+  // The key share lock makes an edit wait until this transcript's range is recorded, as for a reply
+  // email.
   const lines = (
     await tx
       .select({
@@ -228,7 +229,7 @@ export async function transcriptPlan(
       )
       .orderBy(desc(message.seq))
       .limit(TRANSCRIPT_MESSAGES)
-      .for("share", { of: message })
+      .for("key share", { of: message })
   ).reverse();
   if (lines.length === 0) return null;
   const authors = await messageAuthors(tx, workspaceId, lines);
