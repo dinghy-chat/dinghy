@@ -13,7 +13,7 @@ import {
   CSS,
   EmailForm,
   EmptyLog,
-  emailMode,
+  emailLayout,
   type Line,
   MESSAGE_MAX,
   type SceneState,
@@ -315,7 +315,12 @@ function Chat({
         readCursor.current = me.readCursor;
       })
       .catch((error: unknown) => {
-        if (replaced || !(error instanceof ApiError) || error.status !== 401) return;
+        if (replaced) return;
+        if (!(error instanceof ApiError) || error.status !== 401) {
+          // With no answer, the widget asks for an email rather than wait for it forever.
+          setHasEmail((current) => current ?? false);
+          return;
+        }
         if (identity === null) {
           writeToken(publicKey, null);
           setToken(null);
@@ -609,12 +614,12 @@ function Chat({
   const say = sayer(saved);
   const mascot = pageOr(context.attribute("mascot"), saved.mascot);
   // Only a visitor the host site did not sign in, only when this server sends email, and never
-  // again once the server holds an email. A visitor with a token waits for the server to say so,
-  // and a failed save keeps the form and its error, even when it made the visitor.
-  const withoutEmail = token === null || hasEmail === false || emailState !== "idle";
-  const email = emailMode(saved.emailAsk, {
-    mayAsk: emailReplies && identity === null && emailState !== "saved" && withoutEmail,
+  // again once the server holds an email. A failed save keeps the form and its error, even when
+  // it made the visitor, so its result is known without the server.
+  const email = emailLayout(saved.emailAsk, {
+    mayAsk: emailReplies && identity === null && emailState !== "saved" && hasEmail !== true,
     chatted: chatted || lines.length > 0,
+    known: token === null || hasEmail !== undefined || emailState !== "idle",
   });
 
   return (
@@ -692,7 +697,7 @@ function Chat({
           {t("emailSaved")}
         </div>
       )}
-      {email !== "none" && (
+      {email.form && (
         <EmailForm
           email={emailDraft}
           bad={emailState === "idle" || emailState === "saved" ? null : emailState}
@@ -700,7 +705,7 @@ function Chat({
           onSubmit={saveEmail}
         />
       )}
-      {email !== "first" && (
+      {email.composer && (
         <Composer
           draft={draft}
           inputRef={input}

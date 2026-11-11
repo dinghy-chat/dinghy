@@ -238,25 +238,30 @@ export function startsRun(lines: Line[], index: number): boolean {
   return author !== null && author.id !== before?.id;
 }
 
-/**
- * Where the panel asks for an email: in place of the message box until the visitor gives one,
- * under the log once the visitor has written, or nowhere.
- */
-export type EmailMode = "first" | "after" | "none";
+/** Whether the panel shows the email form and the message box. */
+export interface EmailLayout {
+  form: boolean;
+  composer: boolean;
+}
 
 /**
  * The email rule that the chat and the preview share. `mayAsk` is false once the email is saved,
- * for a visitor the site signed in, and on a server that sends no email.
+ * for a visitor the site signed in, and on a server that sends no email. `known` is false while
+ * the server has not said whether it holds the visitor's email.
  */
-export function emailMode(
+export function emailLayout(
   ask: WidgetSettings["emailAsk"],
-  { mayAsk, chatted }: { mayAsk: boolean; chatted: boolean },
-): EmailMode {
-  if (!mayAsk) return "none";
-  // A visitor who chatted before the setting changed is not stopped now.
-  if (ask === "before_first") return chatted ? "none" : "first";
+  { mayAsk, chatted, known }: { mayAsk: boolean; chatted: boolean; known: boolean },
+): EmailLayout {
+  if (!mayAsk) return { form: false, composer: true };
+  if (ask === "before_first") {
+    // A visitor who chatted before the setting changed is not stopped now.
+    if (chatted) return { form: false, composer: true };
+    // Neither shows until the server answers, so nobody writes before giving an email.
+    return { form: known, composer: false };
+  }
   // After the first message, so it takes no space from someone who is only looking.
-  return ask === "after_first" && chatted ? "after" : "none";
+  return { form: ask === "after_first" && chatted, composer: true };
 }
 
 /** A person's picture, a bot's icon, or an initial. */

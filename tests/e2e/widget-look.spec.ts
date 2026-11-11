@@ -199,6 +199,43 @@ test("before the first message, a failed save keeps the email form and its error
   await visitor.context().close();
 });
 
+test("before the first message, a visitor with a token waits for the server, and asks if it fails", async ({
+  browser,
+}) => {
+  await server.setWidgetSettings({ emailAsk: "before_first" });
+  const visitor = await visit(browser);
+  // A refused save leaves a token and no email.
+  await visitor.route("**/me", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const refused = await route.fetch({ postData: JSON.stringify({ email: "not an email" }) });
+    await route.fulfill({ response: refused });
+  });
+  await launcher(visitor).click();
+  await visitor.locator("input[type=email]").fill("visitor@example.com");
+  await visitor.getByRole("button", { name: "Save" }).click();
+  await expect(visitor.getByText("Enter a valid email.")).toBeVisible();
+
+  // On the next page, the server's answer about the email is held back.
+  await visitor.unroute("**/me");
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await visitor.route("**/me", async (route) => {
+    await held;
+    await route.abort();
+  });
+  await visitor.reload();
+  await expect(visitor.getByRole("region", { name: "Chat with us" })).toBeVisible();
+  await expect(visitor.locator("input[type=email]")).toHaveCount(0);
+  await expect(visitor.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
+  // With no answer, it asks for the email, and still not for a message.
+  release();
+  await expect(visitor.locator("input[type=email]")).toBeVisible();
+  await expect(visitor.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
+  await visitor.context().close();
+});
+
 test("a returning visitor's unread count shows on the launcher, even before the look arrives", async ({
   browser,
 }) => {

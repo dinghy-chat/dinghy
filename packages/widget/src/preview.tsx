@@ -12,7 +12,7 @@ import {
   CSS,
   EmailForm,
   EmptyLog,
-  emailMode,
+  emailLayout,
   type Line,
   sayer,
   startsRun,
@@ -70,8 +70,12 @@ function Preview({ appearance, open, sample }: PreviewProps) {
     );
   }
   // The sample visitor has written, unless the email comes first.
-  const email = emailMode(emailAsk, { mayAsk: true, chatted: emailAsk !== "before_first" });
-  const lines = email === "first" ? [] : sampleLines(sample);
+  const email = emailLayout(emailAsk, {
+    mayAsk: true,
+    chatted: emailAsk !== "before_first",
+    known: true,
+  });
+  const lines = email.composer ? sampleLines(sample) : [];
   return (
     <div class="stage">
       <section class="panel">
@@ -97,10 +101,8 @@ function Preview({ appearance, open, sample }: PreviewProps) {
             />
           ))}
         </div>
-        {email !== "none" && (
-          <EmailForm email="" bad={null} onInput={ignore} onSubmit={preventSubmit} />
-        )}
-        {email !== "first" && (
+        {email.form && <EmailForm email="" bad={null} onInput={ignore} onSubmit={preventSubmit} />}
+        {email.composer && (
           <Composer
             draft=""
             inputRef={input}
