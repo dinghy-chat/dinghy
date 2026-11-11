@@ -231,6 +231,8 @@ function SearchField({
         type="search"
         aria-label={t("searchLabel")}
         aria-busy={searching}
+        aria-description={t("searchHint")}
+        title={t("searchHint")}
         placeholder={t("searchPlaceholder")}
         maxLength={100}
         value={value}
