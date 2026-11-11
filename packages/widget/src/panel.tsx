@@ -27,9 +27,11 @@ const DARK =
 
 const { primary: PRIMARY, accent: ACCENT } = DEFAULT_COLORS;
 
+// The panel paints the head color behind its top 40px, under the head, so the rounded corners show
+// no white edge where the browser blends the panel with the head it clips.
 export const CSS = `
 *{box-sizing:border-box}
-.panel{--primary:var(--d-primary,${PRIMARY});--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:var(--paper);color:var(--ink);font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);border-radius:var(--dinghy-radius,var(--d-radius,16px));overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
+.panel{--primary:var(--d-primary,${PRIMARY});--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:linear-gradient(var(--primary) 0 40px,var(--paper) 40px);color:var(--ink);font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);border-radius:var(--dinghy-radius,var(--d-radius,16px));overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
 .head{display:flex;align-items:center;gap:8px;padding:16px 10px 16px 16px;background:var(--primary);color:var(--d-primary-text,#fff)}
 .scene{flex:1;min-width:0;display:flex;align-items:center;gap:12px}
 .scene b{display:block;min-height:21px;font-size:17px;font-weight:700;line-height:21px;letter-spacing:-.01em}
