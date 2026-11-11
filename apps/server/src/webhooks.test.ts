@@ -197,7 +197,7 @@ describe("managing webhooks", () => {
     expect(await tested.json()).toEqual({
       delivered: false,
       status: 500,
-      error: "The receiving server returned HTTP 500. Check its logs and webhook settings.",
+      error: "The receiving server refused the event. Check its logs and webhook settings.",
     });
   });
 
@@ -368,7 +368,7 @@ describe("delivery", () => {
     const [waiting] = await deliveriesOf(hook.id);
     expect(waiting).toMatchObject({ finishedAt: null, attempts: 1, lastStatus: 503 });
     expect(waiting?.lastError).toBe(
-      "The receiving server returned HTTP 503. Check its logs and webhook settings.",
+      "The receiving server refused the event. Check its logs and webhook settings.",
     );
     expect(waiting?.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() + 20_000);
     // Not due yet.

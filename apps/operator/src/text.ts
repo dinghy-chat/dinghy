@@ -501,7 +501,7 @@ const en = {
   webhookTestOk: "The receiving server accepted the test with HTTP status {status}.",
   webhookTestStatus:
     "The receiving server returned HTTP status {status}. Ask your developer to check the webhook URL and server logs.",
-  webhookTestError: "Dinghy could not confirm delivery of the test: {error}",
+  webhookTestError: "The test was not delivered. {error}",
   webhookRotate: "Replace the secret",
   webhookRotateTitle: "Replace the secret for {url}?",
   webhookRotateText:

@@ -262,12 +262,11 @@ function EventsSummary({ events }: { events: WebhookEvent[] }) {
 
 /** The text for a test send's result. */
 function testResultText(result: WebhookTest): { ok: boolean; text: string } {
-  if (result.delivered)
-    return { ok: true, text: t("webhookTestOk", { status: result.status ?? "" }) };
+  if (result.delivered) return { ok: true, text: t("webhookTestOk", { status: result.status }) };
   if (result.status !== null) {
     return { ok: false, text: t("webhookTestStatus", { status: result.status }) };
   }
-  return { ok: false, text: t("webhookTestError", { error: result.error ?? "" }) };
+  return { ok: false, text: t("webhookTestError", { error: result.error }) };
 }
 
 function Deliveries({ api, webhookId }: { api: WorkspaceApi; webhookId: string }) {

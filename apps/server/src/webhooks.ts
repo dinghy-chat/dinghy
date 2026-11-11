@@ -199,9 +199,10 @@ function sendWebhook(
         const ok = status !== null && status >= 200 && status < 300;
         resolve({
           status,
+          // The delivery shows the status beside this, so the words need not repeat it.
           error: ok
             ? null
-            : `The receiving server returned HTTP ${status}. Check its logs and webhook settings.`,
+            : "The receiving server refused the event. Check its logs and webhook settings.",
         });
       },
     );
@@ -210,7 +211,7 @@ function sendWebhook(
         error.message === REFUSED_ADDRESS
           ? REFUSED_ADDRESS
           : error.name === "AbortError" || error.name === "TimeoutError"
-            ? "The receiving server did not respond within 10 seconds. Ask your developer to check its response time."
+            ? `The receiving server did not respond within ${timeoutMs / 1000} seconds. Ask your developer to check its response time.`
             : `Dinghy could not connect to the receiving server. Ask your developer to check the address, HTTPS certificate, and server availability. Details: ${typeof error.code === "string" ? `${error.code}: ` : ""}${error.message}`;
       resolve({ status: null, error: reason.slice(0, ERROR_MAX) });
     });

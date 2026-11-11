@@ -219,11 +219,11 @@ export interface WebhookDelivery {
   finishedAt: string | null;
 }
 
-export interface WebhookTest {
-  delivered: boolean;
-  status: number | null;
-  error: string | null;
-}
+/** A test send: delivered with the server's 2xx status, or refused with a status or an error. */
+export type WebhookTest =
+  | { delivered: true; status: number; error: null }
+  | { delivered: false; status: number; error: string | null }
+  | { delivered: false; status: null; error: string };
 
 export interface AlertSettings {
   email: boolean;
