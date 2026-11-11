@@ -28,6 +28,7 @@ import {
   newBrowserToken,
   sha256Hex,
   verifyHostToken,
+  visitorAuthorId,
 } from "./identity.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
 import {
@@ -415,12 +416,6 @@ const streamRoute = createRoute({
   },
 });
 
-/** How much of the hash a widget gets: enough to tell a conversation's authors apart. */
-const AUTHOR_HASH_LENGTH = 16;
-
-/** An author's ID as a visitor gets it. A key's ID must not reach a visitor. */
-const authorHash = (authorId: string) => sha256Hex(authorId).slice(0, AUTHOR_HASH_LENGTH);
-
 /**
  * A reply author's name as a visitor reads it: a key's whole name, the placeholder of a deleted
  * account, or an operator's first name.
@@ -451,7 +446,7 @@ function messageView(
       authorOperatorId === null
         ? null
         : urls.picture(authorOperatorId, author?.pictureUpdatedAt ?? null),
-    authorId: authorId === null || author === undefined ? null : authorHash(authorId),
+    authorId: authorId === null || author === undefined ? null : visitorAuthorId(authorId),
     createdAt: createdAt.toISOString(),
     image: imageView(images, workspaceId, image),
   };

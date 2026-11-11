@@ -25,6 +25,7 @@ import {
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, FORBIDDEN, MEMBER_ERRORS, NOT_FOUND, ROLE_WRITE_ERRORS } from "./errors.ts";
+import { visitorAuthorId } from "./identity.ts";
 import { processLogo, refuseImage } from "./images.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
@@ -185,7 +186,7 @@ async function readAppearance(
     ...settings,
     logoUrl: urls.logo(row.publicKey, logoUpdatedAt),
     team: team.map((member) => ({
-      id: member.id,
+      id: visitorAuthorId(member.id),
       name: firstName(member.name),
       pictureUrl: urls.picture(member.id, member.pictureUpdatedAt),
     })),

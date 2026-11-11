@@ -18,6 +18,7 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { visitorAuthorId } from "./identity.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const SITE = "https://app.example.com";
@@ -269,13 +270,13 @@ describe("the widget's appearance", () => {
     const response = await appearance(space);
     const text = await response.text();
     expect(JSON.parse(text).team).toEqual([
-      { id: maya.id, name: "Maya", pictureUrl: null },
+      { id: visitorAuthorId(maya.id), name: "Maya", pictureUrl: null },
       {
-        id: ana.id,
+        id: visitorAuthorId(ana.id),
         name: "Ana",
         pictureUrl: `${PUBLIC_URL}/v1/pictures/${ana.id}?v=1800000000000`,
       },
-      { id: sam.id, name: "Sam", pictureUrl: null },
+      { id: visitorAuthorId(sam.id), name: "Sam", pictureUrl: null },
     ]);
     expect(text).not.toContain("@");
   });
