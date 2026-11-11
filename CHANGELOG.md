@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-11
+
 ### Added
 
 - A **Widget** tab in Settings changes the chat with no code: the logo, the words, the main and accent colors, the side, a light, dark or auto theme, the chat button (boat, bubble or hidden), the corners, the boat in the open chat, when to ask for an email, and the "Powered by Dinghy" line. A live preview shows each change before you save, open or closed, light or dark. Your site shows a saved change within 5 minutes. Every member sees the tab, and owners and admins change it.
@@ -288,7 +290,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/dinghy-chat/dinghy/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/dinghy-chat/dinghy/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/dinghy-chat/dinghy/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/dinghy-chat/dinghy/compare/v0.13.0...v0.14.0
