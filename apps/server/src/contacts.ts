@@ -82,8 +82,16 @@ const ContactDetailSchema = ContactSchema.extend({
 const SORTS = ["lastSeen", "firstSeen"] as const;
 type Sort = (typeof SORTS)[number];
 
-// A page's position: the sort key's time and the visitor's ID, as `time,id`.
-const CURSOR = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z,[0-9a-f-]{36}$/;
+// A page's position: the sort key's time, as CURSOR_TIME_FORMAT writes it, and the visitor's ID.
+const CURSOR =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z,[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
+
+/** The pattern lets through a day that does not exist, such as February 30, which Postgres refuses. */
+function isRealTime(cursor: string): boolean {
+  const second = cursor.slice(0, "YYYY-MM-DDTHH:MM:SS".length);
+  const time = new Date(`${second}Z`);
+  return !Number.isNaN(time.getTime()) && time.toISOString().startsWith(second);
+}
 
 const listRoute = createRoute({
   method: "get",
@@ -97,7 +105,7 @@ const listRoute = createRoute({
         description: "Matches the name, email or user ID, ignoring case.",
       }),
       sort: z.enum(SORTS).default("lastSeen"),
-      before: z.string().regex(CURSOR).optional().openapi({
+      before: z.string().regex(CURSOR).refine(isRealTime).optional().openapi({
         description: "The `next` of the page before.",
       }),
       limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),

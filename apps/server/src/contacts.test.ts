@@ -126,6 +126,20 @@ describe("the list", () => {
     }
   });
 
+  test("a malformed cursor is refused with 400, not a server error", async () => {
+    const id = "0b9e3c4a-1f2d-4e5f-8a6b-7c8d9e0f1a2b";
+    for (const before of [
+      `2026-11-11T10:00:00Z,${id}`,
+      `2026-11-11T10:00:00.1.2.3Z,${id}`,
+      `2026-02-30T10:00:00.000000Z,${id}`,
+      `2026-13-01T10:00:00.000000Z,${id}`,
+      "2026-11-11T10:00:00.000000Z,------------------------------------",
+    ]) {
+      expect((await get(path(`?before=${encodeURIComponent(before)}`))).status).toBe(400);
+    }
+    expect((await get(path(`?before=2026-11-11T10:00:00.000000Z,${id}`))).status).toBe(200);
+  });
+
   test("a page is one bounded index scan", async () => {
     const plan = await owner.execute<{ "QUERY PLAN": string }>(sql`
       explain select id from visitor
