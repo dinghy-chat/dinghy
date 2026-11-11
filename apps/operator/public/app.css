@@ -2163,18 +2163,6 @@ img.ws-tile {
     margin-inline: 0;
   }
 }
-/* Appearance: the preview goes above the form once both no longer fit side by side. */
-@container (max-width: 860px) {
-  .appearance {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .widget-preview,
-  .widget-form {
-    position: static;
-    grid-row: auto;
-    grid-column: 1;
-  }
-}
 /* Phone: the list is its own screen, and a page opens over it with a way back. */
 @media (max-width: 760px) {
   .settings {
@@ -2721,6 +2709,18 @@ img.ws-tile {
   font-size: 14.5px;
   font-weight: 600;
 }
+/* Appearance: the preview goes above the form once both no longer fit side by side. */
+@container (max-width: 860px) {
+  .appearance {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .widget-preview,
+  .widget-form {
+    position: static;
+    grid-row: auto;
+    grid-column: 1;
+  }
+}
 /* The Look and Behavior sections: one compact line per setting, the label on the left and the
    control on the right, with a hairline between lines. */
 .look-rows {
@@ -2880,10 +2880,12 @@ img.ws-tile {
   gap: 12px;
 }
 /* A page behind the widget, in the widget's own scheme and not the app's: the light sky behind a
-   light widget and the night behind a dark one, so the tokens inside follow it too. */
+   light widget and the night behind a dark one, so the tokens inside follow it too. It clips the
+   widget on a narrow phone rather than widen the page. */
 .preview-stage {
   display: grid;
   gap: 12px;
+  overflow: hidden;
   padding: 16px;
   border-radius: 18px;
   background: var(--sky);
