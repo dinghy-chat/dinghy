@@ -230,10 +230,27 @@ export const visitor = pgTable(
     // The page the widget last reported, as origin and path, and when.
     lastPage: text("last_page"),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    // Private to operators: what the team wrote about this person.
+    note: text("note"),
+    // ISO 3166-1 alpha-2, from the address of the widget's last beat, which is not kept.
+    country: text("country"),
+    // IANA, such as Europe/Paris, from the browser's last beat.
+    timeZone: text("time_zone"),
     createdAt: createdAt(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.id] }),
+    // Contacts, newest seen first, paged by (seen, id). A visitor never seen counts from its start.
+    index("visitor_seen_idx").on(
+      table.workspaceId,
+      sql`coalesce(${table.lastSeenAt}, ${table.createdAt})`,
+      table.id,
+    ),
+    // Contacts, newest first.
+    index("visitor_created_idx").on(table.workspaceId, table.createdAt, table.id),
+    check("visitor_note_length", sql`char_length(${table.note}) <= 5000`),
+    check("visitor_country", sql`${table.country} ~ '^[A-Z]{2}$'`),
+    check("visitor_time_zone_length", sql`char_length(${table.timeZone}) <= 64`),
     index("visitor_blocked_idx").on(table.workspaceId).where(sql`${table.blockedAt} is not null`),
     unique("visitor_external_id_key").on(table.workspaceId, table.externalId),
     unique("visitor_token_hash_key").on(table.tokenHash),

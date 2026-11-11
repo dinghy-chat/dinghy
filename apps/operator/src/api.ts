@@ -25,6 +25,10 @@ interface Visitor extends VisitorIdentity {
   /** The page the widget last reported, as origin and path. */
   lastPage: string | null;
   lastSeenAt: string | null;
+  /** ISO 3166-1 alpha-2, from the widget's last beat. */
+  country: string | null;
+  /** IANA, such as Europe/Paris. */
+  timeZone: string | null;
 }
 
 /** A page in the visitor's journey, as the widget reported it. */
@@ -115,6 +119,39 @@ export interface Message {
   /** The image was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
   createdAt: string;
+}
+
+export type ContactSort = "lastSeen" | "firstSeen";
+
+/** A person with at least one conversation. */
+export interface Contact extends VisitorIdentity {
+  /** The host site signed who this is, so the name and email are read-only. */
+  signedIn: boolean;
+  /** The signed `company` attribute. */
+  company: string | null;
+  country: string | null;
+  timeZone: string | null;
+  device: string | null;
+  lastPage: string | null;
+  lastSeenAt: string | null;
+  /** First seen. */
+  createdAt: string;
+  conversationCount: number;
+  blocked: boolean;
+}
+
+export interface ContactDetail extends Contact {
+  attributes: Record<string, unknown> | null;
+  pageContext: PageContext | null;
+  note: string | null;
+  conversations: {
+    id: string;
+    status: "open" | "closed";
+    createdAt: string;
+    updatedAt: string;
+    lastBody: string | null;
+  }[];
+  pages: PageView[];
 }
 
 /** How far the visitor has seen the replies, by message position. */
@@ -420,6 +457,24 @@ export function workspaceApi(workspaceId: string) {
         body: JSON.stringify({ enabled }),
       }),
     exportUrl: `${base}/export`,
+    contactsExportUrl: `${base}/contacts/export`,
+    contacts: (query: { q: string; sort: ContactSort; before: string | null }) => {
+      const search = new URLSearchParams({ sort: query.sort });
+      if (query.q.trim() !== "") search.set("q", query.q.trim());
+      if (query.before !== null) search.set("before", query.before);
+      return call<{ contacts: Contact[]; next: string | null }>(`${base}/contacts?${search}`);
+    },
+    contact: (visitorId: string) => call<ContactDetail>(`${base}/contacts/${visitorId}`),
+    changeContact: (
+      visitorId: string,
+      change: { note?: string | null; name?: string | null; email?: string | null },
+    ) =>
+      call<ContactDetail>(`${base}/contacts/${visitorId}`, {
+        method: "PATCH",
+        body: JSON.stringify(change),
+      }),
+    deleteContact: (visitorId: string) =>
+      call<{ ok: true }>(`${base}/contacts/${visitorId}`, { method: "DELETE" }),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
     createApiKey: (name: string) => post<ApiKey & { token: string }>(`${base}/api-keys`, { name }),
     revokeApiKey: (id: string) =>

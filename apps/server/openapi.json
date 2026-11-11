@@ -581,6 +581,12 @@
               },
               "lastSeenAt": {
                 "type": ["string", "null"]
+              },
+              "country": {
+                "type": ["string", "null"]
+              },
+              "timeZone": {
+                "type": ["string", "null"]
               }
             },
             "required": [
@@ -592,7 +598,9 @@
               "blocked",
               "device",
               "lastPage",
-              "lastSeenAt"
+              "lastSeenAt",
+              "country",
+              "timeZone"
             ]
           },
           "lastMessage": {
@@ -971,6 +979,142 @@
           "perDay",
           "operators",
           "hours"
+        ]
+      },
+      "Contact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "email": {
+            "type": ["string", "null"]
+          },
+          "externalId": {
+            "type": ["string", "null"]
+          },
+          "signedIn": {
+            "type": "boolean"
+          },
+          "company": {
+            "type": ["string", "null"]
+          },
+          "country": {
+            "type": ["string", "null"]
+          },
+          "timeZone": {
+            "type": ["string", "null"]
+          },
+          "device": {
+            "type": ["string", "null"]
+          },
+          "lastPage": {
+            "type": ["string", "null"]
+          },
+          "lastSeenAt": {
+            "type": ["string", "null"]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "conversationCount": {
+            "type": "integer"
+          },
+          "blocked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "externalId",
+          "signedIn",
+          "company",
+          "country",
+          "timeZone",
+          "device",
+          "lastPage",
+          "lastSeenAt",
+          "createdAt",
+          "conversationCount",
+          "blocked"
+        ]
+      },
+      "ContactDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Contact"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "attributes": {
+                "type": ["object", "null"],
+                "additionalProperties": {}
+              },
+              "pageContext": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PageContext"
+                  },
+                  {
+                    "type": ["object", "null"]
+                  }
+                ]
+              },
+              "note": {
+                "type": ["string", "null"]
+              },
+              "conversations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["open", "closed"]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "lastBody": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["id", "status", "createdAt", "updatedAt", "lastBody"]
+                }
+              },
+              "pages": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": ["string", "null"]
+                    },
+                    "viewedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["path", "title", "viewedAt"]
+                }
+              }
+            },
+            "required": ["attributes", "pageContext", "note", "conversations", "pages"]
+          }
         ]
       },
       "Member": {
@@ -3340,7 +3484,9 @@
                         "blocked": false,
                         "device": "Safari on iPhone",
                         "lastPage": "https://www.example.com/pricing",
-                        "lastSeenAt": "2026-11-08T09:30:00.000Z"
+                        "lastSeenAt": "2026-11-08T09:30:00.000Z",
+                        "country": "PT",
+                        "timeZone": "Europe/Lisbon"
                       },
                       "lastMessage": {
                         "body": "Do you have a yearly plan?",
@@ -6480,6 +6626,533 @@
           },
           "403": {
             "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/contacts": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List the people who have a conversation, newest first",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "Matches the name, email or user ID, ignoring case."
+            },
+            "required": false,
+            "description": "Matches the name, email or user ID, ignoring case.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["lastSeen", "firstSeen"],
+              "default": "lastSeen"
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T[\\d:.]+Z,[0-9a-f-]{36}$",
+              "description": "The `next` of the page before."
+            },
+            "required": false,
+            "description": "The `next` of the page before.",
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of contacts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contacts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Contact"
+                      }
+                    },
+                    "next": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["contacts", "next"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/contacts/export": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Download every contact who has a conversation, as CSV",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The CSV file",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/contacts/{visitorId}": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Get one contact with their conversations, pages and note",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "visitorId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The contact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Change a contact's note, or a signed-out contact's name and email",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "visitorId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": ["string", "null"],
+                    "maxLength": 5000,
+                    "pattern": "^[^\\0]*$"
+                  },
+                  "name": {
+                    "type": ["string", "null"],
+                    "maxLength": 100,
+                    "pattern": "^[^\\p{Cc}]*$/u"
+                  },
+                  "email": {
+                    "type": ["string", "null"],
+                    "maxLength": 320,
+                    "format": "email"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The contact after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "signed_in: the host site sets this person's name and email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Delete a contact with all their conversations, messages and images",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "visitorId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
             "content": {
               "application/json": {
                 "schema": {

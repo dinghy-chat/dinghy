@@ -30,18 +30,13 @@ import {
 } from "./api.ts";
 import { code, type Edit, link, list, wrap } from "./format.ts";
 import { Icon, type IconName } from "./icons.tsx";
-import { useLatestLoad } from "./load.ts";
+import { useLatestLoad, useLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
+import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
-import { Avatar, DocLink, EmojiButton, ErrorNote, failureText, Loading, useModal } from "./ui.tsx";
-import {
-  avatarLetters,
-  detailRows,
-  otherIdentity,
-  replyAuthor,
-  title,
-  webLink,
-} from "./visitor.ts";
+import { Avatar, EmojiButton, ErrorNote, failureText, Loading, useModal } from "./ui.tsx";
+import { ago, avatarLetters, bare, otherIdentity, replyAuthor, title, webLink } from "./visitor.ts";
+import { VisitorPanel } from "./visitor-panel.tsx";
 
 interface Line {
   id: string;
@@ -85,9 +80,6 @@ function merge(lines: Line[], message: Message): Line[] {
   return inCommitOrder(others, line);
 }
 
-/** A page as the header shows it: with no scheme, as in "acme.example/pricing". */
-const bare = (page: string) => page.replace(/^https?:\/\//, "");
-
 /** Who the visitor is and where they came from: the quiet line under their name. */
 function origin(conversation: Conversation): string | null {
   // The header shows the last page on a line of its own, so the same page is not said twice.
@@ -104,18 +96,7 @@ function origin(conversation: Conversation): string | null {
 /** A no-break space after the dot keeps it with the next part, so a line never ends with a dot. */
 const SEPARATOR = " ·\u00a0";
 
-const MINUTE_MS = 60_000;
 const ONLINE_EVERY_MS = 30_000;
-
-/** "5 minutes ago", "yesterday", in the browser's words. Narrow is "5m ago" in English. */
-function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "long"): string {
-  const words = new Intl.RelativeTimeFormat([], { numeric: "auto", style });
-  const minutes = Math.round((new Date(iso).getTime() - now) / MINUTE_MS);
-  if (minutes > -60) return words.format(Math.min(minutes, 0), "minute");
-  const hours = Math.round(minutes / 60);
-  if (hours > -24) return words.format(hours, "hour");
-  return words.format(Math.round(hours / 24), "day");
-}
 
 /**
  * The visit, under who the visitor is: online now or when last seen, the device, and the page the
@@ -196,54 +177,6 @@ function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
   );
 }
 
-const PAGES_FIRST = 5;
-
-/**
- * The pages the visitor went through, newest first: the title, or the address when the page has
- * none, as a link, and when. Five at first, and the rest of the 20 on request.
- */
-function PageJourney({ pages }: { pages: PageView[] }) {
-  const [all, setAll] = useState(false);
-  if (pages.length === 0) return null;
-  const shown = all ? pages : pages.slice(0, PAGES_FIRST);
-  return (
-    <section className="journey" aria-label={t("pagesVisited")}>
-      <h3>{t("pagesVisited")}</h3>
-      <ol>
-        {shown.map((page) => {
-          const link = webLink(page.path);
-          const name = page.title ?? bare(page.path);
-          return (
-            <li key={`${page.path} ${page.viewedAt}`}>
-              {link === null ? (
-                <span className="page-name">{name}</span>
-              ) : (
-                <a
-                  className="page-name"
-                  href={link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={bare(link)}
-                >
-                  {name}
-                </a>
-              )}
-              <time dateTime={page.viewedAt} title={new Date(page.viewedAt).toLocaleString()}>
-                {ago(page.viewedAt, Date.now(), "narrow")}
-              </time>
-            </li>
-          );
-        })}
-      </ol>
-      {pages.length > PAGES_FIRST && (
-        <button type="button" className="text-button" onClick={() => setAll(!all)}>
-          {all ? t("pagesFewer") : t("pagesAll", { count: pages.length })}
-        </button>
-      )}
-    </section>
-  );
-}
-
 /** What the operator can do with this conversation. */
 function ThreadHead({
   conversation,
@@ -256,9 +189,12 @@ function ThreadHead({
   onStatus,
   onBlocked,
   onDelete,
+  panel,
 }: {
   conversation: Conversation;
   welcome: WelcomeChat | null;
+  /** Whether the visitor's panel shows, and the button that shows or hides it. Null with none. */
+  panel: { open: boolean; toggle(): void } | null;
   /** A widget stream of the visitor's is open, or null when unknown. */
   online: boolean | null;
   members: Member[];
@@ -334,80 +270,20 @@ function ThreadHead({
         <Menu label={t("moreActions")} items={more} buttonClass="round">
           <Icon name="dots" />
         </Menu>
+        {panel !== null && (
+          <button
+            type="button"
+            className="round panel-toggle"
+            aria-pressed={panel.open}
+            aria-label={panel.open ? t("hidePanel") : t("showPanel")}
+            title={panel.open ? t("hidePanel") : t("showPanel")}
+            onClick={panel.toggle}
+          >
+            <Icon name="sidebar" />
+          </button>
+        )}
       </div>
     </header>
-  );
-}
-
-/**
- * Named values about the visitor. With `links`, a web address opens in a new tab. Only signed values
- * get links, because anyone can put an address in what a page sends.
- */
-function DetailList({ values, links }: { values: Record<string, unknown> | null; links: boolean }) {
-  const rows = detailRows(values);
-  if (rows.length === 0) return null;
-  return (
-    <dl className="context">
-      {rows.map(([name, value, link]) => (
-        <Fragment key={`${name}=${value}`}>
-          <dt>{name}</dt>
-          <dd>
-            {link === null || !links ? (
-              value
-            ) : (
-              <a href={link} target="_blank" rel="noopener noreferrer" title={link}>
-                {bare(link)}
-              </a>
-            )}
-          </dd>
-        </Fragment>
-      ))}
-    </dl>
-  );
-}
-
-/** What the page sent with setContext(). Anyone can change it in a browser, so it says so. */
-function PageContextList({ conversation }: { conversation: Conversation }) {
-  if (detailRows(conversation.pageContext).length === 0) return null;
-  return (
-    <section className="page-context" aria-label={t("pageContextTitle")}>
-      <h3>{t("pageContextTitle")}</h3>
-      <p className="quiet">{t("pageContextNote")}</p>
-      <DocLink path="add-to-your-site#tell-operators-about-the-page" text="pageContextDocsLink" />
-      <DetailList values={conversation.pageContext} links={false} />
-    </section>
-  );
-}
-
-/**
- * The visitor's attributes and pages, in a fold. It starts open on a wide screen and closed on a
- * phone, where it would push the messages below the fold.
- */
-function AboutVisitor({ conversation, pages }: { conversation: Conversation; pages: PageView[] }) {
-  const [open, setOpen] = useState(() => matchMedia("(min-width: 761px)").matches);
-  if (
-    detailRows(conversation.visitor.attributes).length === 0 &&
-    detailRows(conversation.pageContext).length === 0 &&
-    pages.length === 0
-  ) {
-    return null;
-  }
-  return (
-    <details
-      className="about-visitor"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary>
-        {t("visitorDetails")}
-        <Icon name="chevron" size={12} />
-      </summary>
-      <div className="about-body">
-        <DetailList values={conversation.visitor.attributes} links />
-        <PageContextList conversation={conversation} />
-        <PageJourney pages={pages} />
-      </div>
-    </details>
   );
 }
 
@@ -760,6 +636,8 @@ export function Thread({
   onBack,
   onChanged,
   onLoaded,
+  onOpenContact,
+  onOpenConversation,
 }: {
   api: WorkspaceApi;
   meId: string;
@@ -782,12 +660,21 @@ export function Thread({
   onChanged(): void;
   /** The conversation as each load finds it. */
   onLoaded(conversation: Conversation): void;
+  onOpenContact(visitorId: string): void;
+  onOpenConversation(id: string, status: "open" | "closed"): void;
 }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
   const [pages, setPages] = useState<PageView[]>([]);
   const [welcome, setWelcome] = useState<WelcomeChat | null>(null);
   const [receipts, setReceipts] = useState<ReplyReceipts | null>(null);
+  const panel = usePanel();
+  const visitorId = conversation?.visitor.id ?? null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
+  const contact = useLoad(
+    () => (visitorId === null ? null : api.contact(visitorId)),
+    [api, visitorId, version],
+  );
   // A read-only workspace can still answer in its welcome chat, in text: the server takes it there.
   const repliesOffReason: TextId | null = suspended
     ? "suspendedHelp"
@@ -985,112 +872,159 @@ export function Thread({
     );
   }
   const closed = conversation.status === "closed";
+  // A welcome chat's visitor is another workspace, with no visit to show.
+  const showsPanel = welcome === null && panel.open;
   const lastReply = lines.reduce(
     (last, line, index) => (!line.fromVisitor && line.seq !== null ? index : last),
     -1,
   );
   return (
-    <section
-      className={dropping && !closed ? "thread drop" : "thread"}
-      aria-label={title(conversation)}
-      onDragOver={(event) => {
-        // A drag of selected text keeps its normal behavior.
-        if (!event.dataTransfer.types.includes("Files")) return;
-        event.preventDefault();
-        setDropping(true);
-      }}
-      onDragLeave={() => setDropping(false)}
-      onDrop={(event) => {
-        setDropping(false);
-        if (!event.dataTransfer.types.includes("Files")) return;
-        event.preventDefault();
-        if (!closed && imagesOn) sendFiles(event.dataTransfer.files);
-      }}
-    >
-      <ThreadHead
-        conversation={conversation}
-        welcome={welcome}
-        online={online}
-        members={members}
-        canDelete={canDelete}
-        onBack={onBack}
-        onAssign={(operatorId) => void assign(operatorId)}
-        onStatus={(status) => void setStatus(status)}
-        onBlocked={(blocked) => void setBlocked(blocked)}
-        onDelete={() => setConfirming(true)}
-      />
-      {confirming && (
-        <Confirm
-          title={t("deleteTitle")}
-          text={t("deleteConfirm")}
-          confirm={t("deleteYes")}
-          onConfirm={() => void remove()}
-          onCancel={() => setConfirming(false)}
+    <div className="conversation-view">
+      <section
+        className={dropping && !closed ? "thread drop" : "thread"}
+        aria-label={title(conversation)}
+        onDragOver={(event) => {
+          // A drag of selected text keeps its normal behavior.
+          if (!event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          setDropping(true);
+        }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={(event) => {
+          setDropping(false);
+          if (!event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          if (!closed && imagesOn) sendFiles(event.dataTransfer.files);
+        }}
+      >
+        <ThreadHead
+          conversation={conversation}
+          welcome={welcome}
+          online={online}
+          members={members}
+          canDelete={canDelete}
+          onBack={onBack}
+          onAssign={(operatorId) => void assign(operatorId)}
+          onStatus={(status) => void setStatus(status)}
+          onBlocked={(blocked) => void setBlocked(blocked)}
+          onDelete={() => setConfirming(true)}
+          panel={welcome === null ? panel : null}
         />
-      )}
-      {conversation.visitor.blocked && (
-        <p className="replying blocked" role="status">
-          {t("blockedNote")}
-        </p>
-      )}
-      {replying !== null && (
-        <p className="replying" role="status">
-          {replying}
-        </p>
-      )}
-      {welcome === null && <AboutVisitor conversation={conversation} pages={pages} />}
-      <div className="log" role="log" aria-live="polite" ref={log}>
-        {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
-        {lines.map((line, index) => {
-          const day = dayOf(line);
-          const meta = groupMeta(lines, index, meId);
-          const receipt =
-            line.fromVisitor || line.seq === null || receipts === null ? null : (
-              <ReceiptLine receipt={receiptOf(line.seq, receipts)} later={index !== lastReply} />
+        {confirming && (
+          <Confirm
+            title={t("deleteTitle")}
+            text={t("deleteConfirm")}
+            confirm={t("deleteYes")}
+            onConfirm={() => void remove()}
+            onCancel={() => setConfirming(false)}
+          />
+        )}
+        {conversation.visitor.blocked && (
+          <p className="replying blocked" role="status">
+            {t("blockedNote")}
+          </p>
+        )}
+        {replying !== null && (
+          <p className="replying" role="status">
+            {replying}
+          </p>
+        )}
+        <div className="log" role="log" aria-live="polite" ref={log}>
+          {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
+          {lines.map((line, index) => {
+            const day = dayOf(line);
+            const meta = groupMeta(lines, index, meId);
+            const receipt =
+              line.fromVisitor || line.seq === null || receipts === null ? null : (
+                <ReceiptLine receipt={receiptOf(line.seq, receipts)} later={index !== lastReply} />
+              );
+            return (
+              <Fragment key={line.id}>
+                {line.createdAt !== undefined && day !== dayOf(lines[index - 1]) && (
+                  <div className="day">{dayLabel(line.createdAt)}</div>
+                )}
+                <ThreadLine
+                  line={line}
+                  receipt={receipt}
+                  onView={() => setViewing(line.id)}
+                  onImageError={refreshImages}
+                  onRetry={() => void deliver(line.id, line.body, line.file)}
+                />
+                {meta !== null && (
+                  <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>
+                )}
+              </Fragment>
             );
-          return (
-            <Fragment key={line.id}>
-              {line.createdAt !== undefined && day !== dayOf(lines[index - 1]) && (
-                <div className="day">{dayLabel(line.createdAt)}</div>
-              )}
-              <ThreadLine
-                line={line}
-                receipt={receipt}
-                onView={() => setViewing(line.id)}
-                onImageError={refreshImages}
-                onRetry={() => void deliver(line.id, line.body, line.file)}
-              />
-              {meta !== null && (
-                <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>
-              )}
-            </Fragment>
-          );
-        })}
-        {typingDraft !== null && <TypingDraft draft={typingDraft} />}
-      </div>
-      {viewing !== null && (
-        <ImageViewer
-          url={lines.find((line) => line.id === viewing)?.image?.url}
-          onClose={() => setViewing(null)}
-          onError={refreshImages}
+          })}
+          {typingDraft !== null && <TypingDraft draft={typingDraft} />}
+        </div>
+        {viewing !== null && (
+          <ImageViewer
+            url={lines.find((line) => line.id === viewing)?.image?.url}
+            onClose={() => setViewing(null)}
+            onError={refreshImages}
+          />
+        )}
+        <ErrorNote text={problem} />
+        {repliesOffReason !== null ? (
+          <p className="closed">{t(repliesOffReason)}</p>
+        ) : closed ? (
+          <p className="closed">
+            <Icon name="done" size={18} />
+            {t("closedHelp")}
+          </p>
+        ) : (
+          <Composer
+            draft={draft}
+            setDraft={setDraft}
+            onSend={sendText}
+            onFiles={imagesOn ? sendFiles : undefined}
+          />
+        )}
+      </section>
+      {showsPanel && (
+        <VisitorPanel
+          conversation={conversation}
+          contact={contact.data}
+          online={online}
+          pages={pages}
+          members={members}
+          overlay={!panel.wide}
+          onAssign={(operatorId) => void assign(operatorId)}
+          onOpenContact={() => onOpenContact(conversation.visitor.id)}
+          onOpenConversation={onOpenConversation}
+          onNote={async (note) => {
+            contact.setData(await api.changeContact(conversation.visitor.id, { note }));
+          }}
+          onClose={panel.toggle}
         />
       )}
-      <ErrorNote text={problem} />
-      {repliesOffReason !== null ? (
-        <p className="closed">{t(repliesOffReason)}</p>
-      ) : closed ? (
-        <p className="closed">
-          <Icon name="done" size={18} />
-          {t("closedHelp")}
-        </p>
-      ) : (
-        <Composer
-          draft={draft}
-          setDraft={setDraft}
-          onSend={sendText}
-          onFiles={imagesOn ? sendFiles : undefined}
-        />
-      )}
-    </section>
+    </div>
   );
+}
+
+const PANEL_KEY = "dinghy.panel.open";
+const WIDE = "(min-width: 1200px)";
+
+/**
+ * Whether the visitor's panel shows. On a wide screen it remembers this device's choice, and starts
+ * open. On a narrower one it opens as a drawer over the thread, and starts closed each time.
+ */
+function usePanel() {
+  const [wide, setWide] = useState(() => matchMedia(WIDE).matches);
+  const [open, setOpen] = useState(() => wide && readStored(PANEL_KEY) !== "closed");
+  useEffect(() => {
+    const query = matchMedia(WIDE);
+    const changed = () => {
+      setWide(query.matches);
+      setOpen(query.matches && readStored(PANEL_KEY) !== "closed");
+    };
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  const toggle = () => {
+    if (wide) store(PANEL_KEY, open ? "closed" : null);
+    setOpen(!open);
+  };
+  return { open, wide, toggle };
 }

@@ -11,6 +11,7 @@ import {
   type WorkspaceApi,
   workspaceApi,
 } from "./api.ts";
+import { ContactsPage } from "./contacts.tsx";
 import { Icon } from "./icons.tsx";
 import { useChanges, usePresence, useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
@@ -314,6 +315,8 @@ export function Inbox({
   // The address can open Settings, as a reload or a link does.
   const [initialPage] = useState(settingsInAddress);
   const [view, setView] = useState<View>(initialPage === undefined ? "inbox" : "settings");
+  // The contact the Contacts view shows, or null for its list.
+  const [contactId, setContactId] = useState<string | null>(null);
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(initialPage ?? null);
   const visible = useTabVisible();
   const [query, setQuery] = useState("");
@@ -456,6 +459,20 @@ export function Inbox({
   };
   const empty = emptyLook(status, who);
 
+  /** Opens a contact's page, from a conversation's panel. */
+  const openContact = (visitorId: string) =>
+    leave(() => {
+      setContactId(visitorId);
+      showView("contacts");
+    });
+  /** Opens a conversation in the Inbox, under Open or Closed as it is. */
+  const openConversation = (conversationId: string, conversationStatus: Status) =>
+    leave(() => {
+      showView("inbox");
+      setSelected(conversationId);
+      showFilter(conversationStatus, who);
+    });
+
   return (
     <div className="shell">
       <div className={view !== "inbox" ? "app paging" : selected === null ? "app" : "app showing"}>
@@ -470,7 +487,8 @@ export function Inbox({
           onProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
           onView={(next) => {
-            if (next !== view) leave(() => showView(next));
+            if (next === "contacts") setContactId(null);
+            if (next !== view || next === "contacts") leave(() => showView(next));
           }}
           onProfileOpen={() => openSettings("profile")}
           onSwitch={onSwitch}
@@ -540,6 +558,16 @@ export function Inbox({
               />
             )}
             {view === "analytics" && <AnalyticsPage api={api} />}
+            {view === "contacts" && (
+              <ContactsPage
+                api={api}
+                role={role}
+                contactId={contactId}
+                version={version}
+                onContact={setContactId}
+                onOpenConversation={openConversation}
+              />
+            )}
             <div className="split">
               <section className="list" aria-label={t("inbox")}>
                 <PageHead
@@ -647,6 +675,8 @@ export function Inbox({
                   conversationId={selected}
                   version={threadVersion(selected)}
                   receiptsVersion={receiptsVersion}
+                  onOpenContact={openContact}
+                  onOpenConversation={openConversation}
                   typingDraft={typing[selected] ?? null}
                   onBack={() => setSelected(null)}
                   onChanged={reload}

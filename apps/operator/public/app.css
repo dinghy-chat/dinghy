@@ -1662,70 +1662,130 @@ img.ws-tile {
   background: var(--bad-soft);
   color: var(--bad);
 }
-/* The fold around the visitor's attributes and pages. */
-.about-visitor {
+/* A conversation: the thread, and the visitor's panel on its right. */
+.conversation-view {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.conversation-view > .thread {
+  flex: 1;
+}
+.visitor-panel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 300px;
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+/* Below 1200px the panel is a drawer over the thread. */
+.visitor-panel.overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  max-width: calc(100% - 24px);
+  border-left: 0;
+  box-shadow: -12px 0 32px rgb(11 34 57 / 0.16);
+}
+.panel-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 20px 18px 16px;
   border-bottom: 1px solid var(--line);
 }
-.about-visitor > summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 28px;
+.panel-who {
+  min-width: 0;
+}
+.panel-who h3 {
+  overflow: hidden;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-who p {
+  overflow: hidden;
   color: var(--mute);
   font-size: 13.5px;
-  font-weight: 600;
-  list-style: none;
-  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.about-visitor > summary::-webkit-details-marker {
-  display: none;
+.panel-head .panel-contact {
+  grid-column: 1 / -1;
+  min-height: 36px;
+  margin-top: 8px;
 }
-.about-visitor > summary:hover {
+/* A fold of the panel or the contact page: a title that opens or closes it. */
+.fold {
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.fold h3 button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 18px;
+  color: var(--mute);
+  font: 600 13.5px / 1.4 var(--body);
+}
+.fold h3 button:hover {
   color: var(--navy);
 }
-.about-body > :last-child {
-  border-bottom: 0;
+.fold-chevron {
+  display: grid;
+  transition: transform 0.15s;
 }
+[aria-expanded="false"] > .fold-chevron {
+  transform: rotate(-90deg);
+}
+.fold-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 14px;
+}
+.facts,
 .context {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 2px 14px;
-  padding: 10px 28px;
-  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+  gap: 6px 14px;
   font-size: 13.5px;
 }
+.facts dt,
 .context dt {
   color: var(--mute);
 }
+.facts dd,
 .context dd {
+  min-width: 0;
   overflow-wrap: anywhere;
   color: var(--navy);
 }
-/* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
-.page-context {
-  padding: 10px 28px;
-  border-bottom: 1px solid var(--line);
-  font-size: 13.5px;
+.facts a {
+  color: var(--blue-deep);
 }
-.page-context h3 {
+.facts .assignee .select-button {
+  min-height: 34px;
+  max-width: 100%;
+}
+/* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
+.page-context h4 {
   color: var(--mute);
   font: 600 13.5px / 1.4 var(--body);
 }
 .page-context .context {
-  padding: 6px 0 0;
-  border-bottom: 0;
+  padding-top: 6px;
 }
 /* The visitor's pages, newest first: a title as a link, and how long ago on the right. */
-.journey {
-  padding: 10px 28px;
-  border-bottom: 1px solid var(--line);
-  font-size: 13.5px;
-}
-.journey h3 {
-  margin-bottom: 4px;
-  color: var(--mute);
-  font: 600 13.5px / 1.4 var(--body);
-}
 .journey ol {
   display: grid;
   gap: 2px;
@@ -1758,6 +1818,40 @@ img.ws-tile {
   min-height: 28px;
   margin-top: 4px;
   padding: 0;
+}
+.conversation-links {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+}
+.conversation-links .text-button {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 10px;
+  text-align: left;
+}
+.conversation-links .text-button:hover {
+  background: var(--row-hover);
+}
+.link-preview {
+  overflow: hidden;
+  color: var(--navy);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-links small {
+  color: var(--mute);
+  font-weight: 400;
+}
+.note-field {
+  min-height: 84px;
+  resize: vertical;
+  font-size: 14px;
 }
 .context a,
 .who-text .visit a {
@@ -2978,6 +3072,84 @@ img.ws-tile {
   border-collapse: collapse;
   font-size: 15px;
 }
+/* Contacts: search and sort above the table, and a row's person opens their page. */
+.contacts-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 6px 0 4px;
+}
+.contacts-tools .search {
+  flex: 1 1 260px;
+  max-width: 420px;
+  margin: 0;
+}
+.contact-open {
+  width: 100%;
+  min-height: 40px;
+  margin: -6px;
+  padding: 6px;
+  border-radius: 12px;
+  text-align: left;
+}
+.contact-open:hover {
+  background: var(--row-hover);
+}
+.contacts .number-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.contacts td {
+  color: var(--text-strong);
+}
+.contacts time {
+  white-space: nowrap;
+}
+/* One contact: the folds on the left, and the name and the delete beside them. */
+.contact-page {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: 24px 40px;
+  align-items: start;
+}
+.contact-folds {
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+}
+.contact-folds > .fold:last-child {
+  border-bottom: 0;
+}
+.contact-rows .page-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.contact-rows .page-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.identity-form {
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+}
+.identity-field {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+.identity-form .pill {
+  justify-self: start;
+}
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 0;
+  vertical-align: baseline;
+}
 .members th {
   padding: 14px 12px 10px;
   color: var(--text-strong);
@@ -3289,25 +3461,6 @@ img.ws-tile {
 .row[aria-current="true"] .chip:not(.warn) {
   background: var(--surface);
 }
-.about-visitor > summary svg {
-  transform: rotate(-90deg);
-  transition: transform 0.15s;
-}
-.about-visitor[open] > summary svg {
-  transform: none;
-}
-
-/* A wide thread puts the visitor's attributes and pages side by side, to keep room for messages. */
-@media (min-width: 1200px) {
-  .about-body:has(> .context + .journey) {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  }
-  .about-body:has(> .context + .journey) > .context {
-    align-content: start;
-    border-bottom: 0;
-  }
-}
 
 /* Tablet: the sidebar becomes a top bar on the grey. */
 @media (max-width: 1000px) {
@@ -3419,6 +3572,16 @@ img.ws-tile {
   .app {
     padding: 0 8px 8px;
   }
+  .contact-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contacts .wide-cell {
+    display: none;
+  }
+  .visitor-panel.overlay {
+    width: 100%;
+    max-width: none;
+  }
   .brand {
     order: 0;
   }
@@ -3501,10 +3664,7 @@ img.ws-tile {
   .assignee .select-value {
     flex: 1;
   }
-  .replying,
-  .context,
-  .journey,
-  .about-visitor > summary {
+  .replying {
     padding-inline: 14px;
   }
   .log {
@@ -3647,7 +3807,7 @@ img.ws-tile {
   .select-button,
   .check input,
   .check input::after,
-  .about-visitor > summary svg {
+  .fold-chevron {
     transition: none;
   }
 }

@@ -566,6 +566,8 @@ export interface ConversationRow {
   visitorDevice: string | null;
   visitorLastPage: string | null;
   visitorLastSeenAt: Date | null;
+  visitorCountry: string | null;
+  visitorTimeZone: string | null;
 }
 
 const conversationColumns = {
@@ -585,6 +587,8 @@ const conversationColumns = {
   visitorDevice: visitor.device,
   visitorLastPage: visitor.lastPage,
   visitorLastSeenAt: visitor.lastSeenAt,
+  visitorCountry: visitor.country,
+  visitorTimeZone: visitor.timeZone,
 };
 
 /** Joins a conversation to its visitor, inside the same workspace. */

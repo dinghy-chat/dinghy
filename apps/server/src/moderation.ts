@@ -120,7 +120,7 @@ async function unblock(tx: Transaction, workspaceId: string, visitorId: string):
  * Deletes a conversation and queues its stored files, in one transaction. The worker deletes the
  * files, because an object store can be down, and the database must not wait for it.
  */
-async function deleteConversation(
+export async function deleteConversation(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,

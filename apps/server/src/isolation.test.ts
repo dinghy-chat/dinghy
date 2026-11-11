@@ -789,6 +789,101 @@ const ATTACKS: Record<string, Attack> = {
     ).not.toEqual([]);
   },
 
+  "POST /v1/widget/:key/typing": async ({ widget, a, b, one, other }) => {
+    const draft = { draft: "half a message" };
+    expect((await widget(b.publicKey, "POST", "typing", one.token, SITE_B, draft)).status).toBe(
+      401,
+    );
+    expect((await widget(a.publicKey, "POST", "typing", other.token, SITE_A, draft)).status).toBe(
+      401,
+    );
+    expect((await widget(a.publicKey, "POST", "typing", one.token, SITE_A, draft)).status).toBe(
+      200,
+    );
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/widget/typing-preview": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+  }) => {
+    const before = await widgetSettingsOf(b.id);
+    const path = "/widget/typing-preview";
+    expect((await as(anna, "PUT", inWorkspace(b.id, path), { enabled: false })).status).toBe(404);
+    expect((await as(anna, "PUT", inWorkspace(a.id, path), { enabled: false })).status).toBe(200);
+    expect(await widgetSettingsOf(b.id)).toEqual(before);
+    await as(anna, "PUT", inWorkspace(a.id, path), { enabled: true });
+  },
+  "GET /v1/operator/workspaces/:workspaceId/contacts": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/contacts"))).status).toBe(404);
+    const text = await (await as(anna, "GET", inWorkspace(a.id, "/contacts?limit=100"))).text();
+    expect(text).not.toContain(other.id);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/contacts/export": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    const email = `other-${other.id}@example.com`;
+    await owner.update(visitor).set({ email }).where(eq(visitor.id, other.id));
+    expect((await as(anna, "GET", inWorkspace(b.id, "/contacts/export"))).status).toBe(404);
+    const text = await (await as(anna, "GET", inWorkspace(a.id, "/contacts/export"))).text();
+    expect(text.startsWith("name,email")).toBe(true);
+    expect(text).not.toContain(email);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/contacts/:visitorId": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    one,
+    other,
+  }) => {
+    expect((await as(anna, "GET", inWorkspace(a.id, `/contacts/${other.id}`))).status).toBe(404);
+    expect((await as(anna, "GET", inWorkspace(b.id, `/contacts/${other.id}`))).status).toBe(404);
+    expect((await as(anna, "GET", inWorkspace(a.id, `/contacts/${one.id}`))).status).toBe(200);
+  },
+  "PATCH /v1/operator/workspaces/:workspaceId/contacts/:visitorId": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    const noteOf = async () =>
+      (await owner.select().from(visitor).where(eq(visitor.id, other.id)))[0]?.note;
+    const before = await noteOf();
+    const change = { note: "Crossing over", name: "Moved" };
+    expect(
+      (await as(anna, "PATCH", inWorkspace(a.id, `/contacts/${other.id}`), change)).status,
+    ).toBe(404);
+    expect(
+      (await as(anna, "PATCH", inWorkspace(b.id, `/contacts/${other.id}`), change)).status,
+    ).toBe(404);
+    expect(await noteOf()).toBe(before);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/contacts/:visitorId": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    expect((await as(anna, "DELETE", inWorkspace(a.id, `/contacts/${other.id}`))).status).toBe(404);
+    expect((await as(anna, "DELETE", inWorkspace(b.id, `/contacts/${other.id}`))).status).toBe(404);
+    expect(await owner.select().from(visitor).where(eq(visitor.id, other.id))).toHaveLength(1);
+    expect(
+      await owner.select().from(conversation).where(eq(conversation.id, other.conversationId)),
+    ).toHaveLength(1);
+  },
   "GET /v1/operator/workspaces/:workspaceId/blocked-visitors": async ({
     operator: as,
     anna,

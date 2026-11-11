@@ -10,10 +10,13 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Under the last reply, the thread shows **Sent**, **Sent by email**, **Email failed** or **Read in chat**, and it changes live when the visitor reads. Point at an earlier reply to see its own.
 - API: `GET /v1/operator/workspaces/{id}/conversations/{conversationId}/messages` answers `receipts`, and the operator stream sends `notice` events, which carry no cursor and may be lost.
 - Operators see what a visitor types before they send it, live, in the thread and in the Inbox list. Nothing stores it. **Settings > Workspace** turns it off, and the widget then sends nothing. API: `POST /v1/widget/{key}/typing` and `PUT /v1/operator/workspaces/{id}/widget/typing-preview`, and the appearance answers `typingPreview`.
+- **Contacts** in the sidebar lists everyone who started a conversation, with search, sorting, paging and **Export CSV**. A contact's page shows what the team knows, every conversation, the pages they visited and a private note. A signed-out contact's name and email can be corrected, and owners and admins can delete a contact with all their conversations. API: `/v1/operator/workspaces/{id}/contacts`.
+- A conversation has a panel on its right with the visitor, the assignee and status, the details, the pages visited, their other conversations and the team's note. The header's button shows or hides it, and each fold remembers whether it is open.
 - The reply box has a row of tools: attach, emoji, then bold, italic, code, link, bulleted and numbered lists, with Cmd or Ctrl with B, I, E and K.
 
 ### Changed
 
+- The panel on the right of a conversation replaces the **Visitor details** fold above the messages.
 - An operator's first reply in an unassigned conversation assigns it to them, with the usual `conversation.assigned` event. A reply from an API key never assigns, and a conversation that has an assignee keeps it.
 - The inbox's **Open** and **Closed** choice fills the list's width, and **Open** shows how many conversations are open. The sidebar and the conversation list are narrower, so the conversation gets more room.
 - The empty Analytics page centers its boat in the card.

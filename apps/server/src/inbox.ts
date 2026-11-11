@@ -130,6 +130,9 @@ const Conversation = z
       // The page the widget last reported, as origin and path, and when the visitor was last seen.
       lastPage: z.string().nullable(),
       lastSeenAt: z.string().nullable(),
+      // ISO 3166-1 alpha-2 and IANA, from the widget's last beat.
+      country: z.string().nullable(),
+      timeZone: z.string().nullable(),
     }),
     lastMessage: z
       .object({ body: z.string().nullable(), fromVisitor: z.boolean(), createdAt: z.string() })
@@ -215,6 +218,8 @@ const listRoute = createRoute({
                   device: "Safari on iPhone",
                   lastPage: "https://www.example.com/pricing",
                   lastSeenAt: "2026-11-08T09:30:00.000Z",
+                  country: "PT",
+                  timeZone: "Europe/Lisbon",
                 },
                 lastMessage: {
                   body: "Do you have a yearly plan?",
@@ -510,6 +515,8 @@ export function conversationView(
       device: row.visitorDevice,
       lastPage: row.visitorLastPage,
       lastSeenAt: row.visitorLastSeenAt?.toISOString() ?? null,
+      country: row.visitorCountry,
+      timeZone: row.visitorTimeZone,
     },
     lastMessage:
       lastMessage === null

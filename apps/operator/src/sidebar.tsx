@@ -10,10 +10,11 @@ import { type TextId, t } from "./text.ts";
 import { Avatar, initials, ROLE_TEXT } from "./ui.tsx";
 
 /** What the panel shows: the Inbox, or a page. */
-export type View = "inbox" | "analytics" | "settings";
+export type View = "inbox" | "contacts" | "analytics" | "settings";
 
 const NAV: { view: View; label: TextId; icon: IconName }[] = [
   { view: "inbox", label: "inbox", icon: "inbox" },
+  { view: "contacts", label: "contacts", icon: "contacts" },
   { view: "analytics", label: "analytics", icon: "chart" },
   { view: "settings", label: "settings", icon: "gear" },
 ];

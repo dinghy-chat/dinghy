@@ -99,6 +99,14 @@ const ExportFile = z.strictObject({
       device: z.string().max(100).nullable(),
       lastPage: z.string().max(PAGE_PATH_MAX).nullable(),
       lastSeenAt: nullableDate,
+      // A file from before contacts has none of these.
+      note: z.string().max(5000).nullable().default(null),
+      country: z
+        .string()
+        .regex(/^[A-Z]{2}$/)
+        .nullable()
+        .default(null),
+      timeZone: z.string().max(64).nullable().default(null),
       createdAt: date,
     }),
   ),
@@ -300,6 +308,9 @@ async function readWorkspace(
           device: row.device,
           lastPage: row.lastPage,
           lastSeenAt: isoOrNull(row.lastSeenAt),
+          note: row.note,
+          country: row.country,
+          timeZone: row.timeZone,
           createdAt: iso(row.createdAt),
         })),
         conversations: conversations.map((row) => ({
@@ -585,6 +596,9 @@ async function insertWorkspace(
         device: row.device,
         lastPage: row.lastPage,
         lastSeenAt: row.lastSeenAt === null ? null : new Date(row.lastSeenAt),
+        note: row.note,
+        country: row.country,
+        timeZone: row.timeZone,
         createdAt: new Date(row.createdAt),
       })),
     );

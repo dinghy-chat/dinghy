@@ -86,3 +86,18 @@ export function replyAuthor(
   if (message.authorOperatorId === meId) return t("you");
   return message.authorName ?? t("aTeammate");
 }
+
+/** A page as the header shows it: with no scheme, as in "acme.example/pricing". */
+export const bare = (page: string) => page.replace(/^https?:\/\//, "");
+
+const MINUTE_MS = 60_000;
+
+/** "5 minutes ago", "yesterday", in the browser's words. Narrow is "5m ago" in English. */
+export function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "long"): string {
+  const words = new Intl.RelativeTimeFormat([], { numeric: "auto", style });
+  const minutes = Math.round((new Date(iso).getTime() - now) / MINUTE_MS);
+  if (minutes > -60) return words.format(Math.min(minutes, 0), "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours > -24) return words.format(hours, "hour");
+  return words.format(Math.round(hours / 24), "day");
+}

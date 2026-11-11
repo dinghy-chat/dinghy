@@ -16,6 +16,7 @@ import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
 import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
+import { registerContactRoutes } from "./contacts.ts";
 import { AccountDeletedError, type Database } from "./db/tenant.ts";
 import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type Images, registerImageFiles } from "./images.ts";
@@ -406,6 +407,7 @@ export function createApp({
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, presence);
     registerModerationRoutes(app, db, live);
+    registerContactRoutes(app, db, live);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
     registerTeamRoutes(app, {
       auth,
