@@ -399,6 +399,7 @@ const en = {
   billingFailed: "The last payment failed. The workspace becomes read-only on {date}.",
   billingReadOnly: "Read-only. The workspace and all its data are deleted on {date}.",
   billingPending: "Waiting for the first payment.",
+  billingFree: "Free. This workspace has no subscription.",
   billingManage: "Manage billing",
   billingHelp: "Change the card, see invoices or cancel on Stripe.",
   readOnlyBanner:

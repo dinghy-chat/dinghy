@@ -71,7 +71,7 @@ export interface LifecycleRow {
   cancelAtPeriodEnd: boolean;
 }
 
-type BillingStateName = "pending" | "active" | "ending" | "payment_failed" | "read_only";
+type BillingStateName = "pending" | "free" | "active" | "ending" | "payment_failed" | "read_only";
 
 /** What the owner sees in Settings, and how they would pay again. */
 export function billingState(
@@ -91,6 +91,8 @@ export function billingState(
       payWith: "checkout",
     };
   }
+  // Only `chat free` makes a workspace active with no subscription.
+  if (active && row === null) return { state: "free", date: null, payWith };
   if (!active || row === null) return { state: "pending", date: null, payWith };
   if (row.paymentFailedAt !== null) {
     return {

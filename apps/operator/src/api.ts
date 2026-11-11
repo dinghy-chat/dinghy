@@ -227,7 +227,7 @@ export interface AlertSettings {
 }
 
 export interface BillingState {
-  state: "pending" | "active" | "ending" | "payment_failed" | "read_only";
+  state: "pending" | "free" | "active" | "ending" | "payment_failed" | "read_only";
   /** Renews, ends, becomes read-only or is deleted on this date, by state. */
   date: string | null;
   payWith: "checkout" | "portal";

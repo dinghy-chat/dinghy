@@ -15,7 +15,7 @@ import pg from "pg";
 import { pino } from "pino";
 import { generateVAPIDKeys } from "web-push";
 import { z } from "zod";
-import { signupsCsv } from "../../../ee/server/index.ts";
+import { freeWorkspace, signupsCsv } from "../../../ee/server/index.ts";
 import { BadArchiveError } from "./archive.ts";
 import { type Auth, createAuth, LINK_MINUTES, signInLink } from "./auth.ts";
 import {
@@ -90,6 +90,9 @@ const USAGE = `Usage:
       not see it. Run it with the same settings as chat migrate.
   chat unsuspend <workspace-id>
       Lifts a suspension.
+  chat free <workspace-id>
+      For the cloud: turns on a workspace that never pays, with no Stripe subscription. It keeps
+      the plan's limits. It refuses a workspace that has a subscription.
   chat push-keys
       For development: prints new VAPID keys for web push. Changing the keys ends every device's
       subscription, so make them once.
@@ -177,7 +180,8 @@ async function operate(
     | "signups"
     | "workspaces"
     | "suspend"
-    | "unsuspend",
+    | "unsuspend"
+    | "free",
   args: string[],
 ): Promise<number> {
   const admin = await adminSettings();
@@ -195,6 +199,8 @@ async function operate(
     case "suspend":
     case "unsuspend":
       return suspendCommand(admin, args, command === "suspend");
+    case "free":
+      return freeCommand(admin, args);
     case "backup-key":
       return backupKeyCommand(admin);
     case "backup":
@@ -251,6 +257,25 @@ async function suspendCommand(
         : `Suspended ${workspaceId}. Without VALKEY_URL, its open chats close within 15 minutes.`
       : `Lifted the suspension of ${workspaceId}.`,
   );
+  return 0;
+}
+
+async function freeCommand({ withAdmin }: AdminSettings, args: string[]): Promise<number> {
+  const [workspaceId] = args;
+  if (workspaceId === undefined || args.length > 1 || !z.uuid().safeParse(workspaceId).success) {
+    console.error(USAGE);
+    return 2;
+  }
+  const result = await withAdmin((client) => freeWorkspace(client, workspaceId));
+  if (result === "missing") {
+    console.error(`No workspace has the ID ${workspaceId}.`);
+    return 1;
+  }
+  if (result === "subscribed") {
+    console.error(`${workspaceId} has a Stripe subscription, so it stays as it is.`);
+    return 1;
+  }
+  console.log(`${workspaceId} is on, for free.`);
   return 0;
 }
 
@@ -746,7 +771,8 @@ async function main(): Promise<number> {
     command === "signups" ||
     command === "workspaces" ||
     command === "suspend" ||
-    command === "unsuspend"
+    command === "unsuspend" ||
+    command === "free"
   ) {
     return operate(command, args);
   }

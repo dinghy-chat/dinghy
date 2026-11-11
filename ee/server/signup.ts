@@ -304,3 +304,47 @@ export async function signupsCsv(admin: pg.ClientBase): Promise<string> {
   ];
   return `${lines.join("\n")}\n`;
 }
+
+/** What `chat free` did, or why it did nothing. */
+export type FreeResult = "freed" | "missing" | "subscribed";
+
+/**
+ * Turns on a cloud workspace that never pays, such as Dinghy's own or Shipmail's. An active
+ * workspace with no subscription has full service, and the lifecycle worker never touches it, since
+ * the worker acts only on subscriptions. A workspace with a subscription is refused, because Stripe
+ * would keep billing it.
+ */
+export async function freeWorkspace(
+  admin: pg.ClientBase,
+  workspaceId: string,
+): Promise<FreeResult> {
+  await admin.query("BEGIN");
+  try {
+    const found = await admin.query<{ subscribed: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM subscription WHERE workspace_id = w.id) AS subscribed
+       FROM workspace AS w WHERE w.id = $1 AND w.deleted_at IS NULL FOR UPDATE OF w`,
+      [workspaceId],
+    );
+    const row = found.rows[0];
+    const result: FreeResult =
+      row === undefined ? "missing" : row.subscribed ? "subscribed" : "freed";
+    if (result !== "freed") {
+      await admin.query("ROLLBACK");
+      return result;
+    }
+    // The billing event in the same commit, so an open inbox finds the change from its cursor.
+    await admin.query(
+      `WITH freed AS (
+         UPDATE workspace SET active = true, waiting_since = NULL, event_seq = event_seq + 1
+         WHERE id = $1 RETURNING event_seq
+       )
+       INSERT INTO event (workspace_id, seq, kind) SELECT $1, event_seq, 'billing.changed' FROM freed`,
+      [workspaceId],
+    );
+    await admin.query("COMMIT");
+    return "freed";
+  } catch (error) {
+    await admin.query("ROLLBACK");
+    throw error;
+  }
+}

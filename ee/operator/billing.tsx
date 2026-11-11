@@ -11,6 +11,7 @@ import { ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx"
 
 const STATE_TEXT: Record<BillingState["state"], TextId> = {
   pending: "billingPending",
+  free: "billingFree",
   active: "billingActive",
   ending: "billingEnding",
   payment_failed: "billingFailed",
@@ -191,11 +192,12 @@ export function BillingRow({
   billing: BillingState | null;
 }) {
   if (billing === null) return null;
-  const pending = billing.state === "pending";
+  // Neither has a Stripe customer, so the portal has nothing to show.
+  const noPortal = billing.state === "pending" || billing.state === "free";
   return (
-    <PageRow title={t("billingTitle")} {...(!pending && { help: t("billingHelp") })}>
+    <PageRow title={t("billingTitle")} {...(!noPortal && { help: t("billingHelp") })}>
       <p>{withDate(STATE_TEXT[billing.state], billing.date)}</p>
-      {!pending && (
+      {!noPortal && (
         <div className="actions">
           <PayButton
             api={api}

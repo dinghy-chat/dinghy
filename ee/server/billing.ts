@@ -114,7 +114,7 @@ const billingStateRoute = createRoute({
         "application/json": {
           schema: z
             .object({
-              state: z.enum(["pending", "active", "ending", "payment_failed", "read_only"]),
+              state: z.enum(["pending", "free", "active", "ending", "payment_failed", "read_only"]),
               // Renews, ends, becomes read-only or is deleted on this date, by state.
               date: z.string().nullable(),
               // How the owner pays again: a new Checkout, or Stripe's portal for a live subscription.
