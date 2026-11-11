@@ -10,6 +10,9 @@ import { useLoad } from "../../apps/operator/src/load.ts";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { DocLink, ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
 
+// The states come from the server's leaf module, which has no Node code, so the app can name them.
+export type { BillingStateName } from "../server/billing-states.ts";
+
 const STATE_TEXT: Record<BillingState["state"], TextId> = {
   pending: "billingPending",
   free: "billingFree",

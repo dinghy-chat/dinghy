@@ -26,8 +26,8 @@ import { type Database, type Transaction, withWorkspace } from "../../apps/serve
 import { letter } from "../../apps/server/src/letter.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
-import type { BillingStateName } from "../operator/billing-states.ts";
 import type { Billing } from "./billing.ts";
+import type { BillingStateName } from "./billing-states.ts";
 import {
   LIFECYCLE_SIGN_OFF,
   lifecycleHtml,

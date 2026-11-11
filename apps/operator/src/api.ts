@@ -1,4 +1,4 @@
-import type { BillingStateName } from "../../../ee/operator/billing-states.ts";
+import type { BillingStateName } from "../../../ee/operator/billing.tsx";
 import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";

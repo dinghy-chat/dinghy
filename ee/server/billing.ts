@@ -15,7 +15,7 @@ import { noLive, OPERATORS, type Signals } from "../../apps/server/src/live.ts";
 import { OPEN_WHILE_CLOSED, OPEN_WHILE_UNPAID } from "../../apps/server/src/member.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import { type RateLimit, tooManyRequests } from "../../apps/server/src/rate-limit.ts";
-import { BILLING_STATES } from "../operator/billing-states.ts";
+import { BILLING_STATES } from "./billing-states.ts";
 import { billingEmails, billingState, ENDED, FAILING, PAID, queueEmails } from "./lifecycle.ts";
 
 interface BillingKeys {
