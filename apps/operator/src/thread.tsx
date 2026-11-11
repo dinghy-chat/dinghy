@@ -1,73 +1,47 @@
 /** @jsxImportSource react */
-import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
-import type { Conversation, Member, WorkspaceApi } from "./api.ts";
+import { useState } from "react";
+import type { Conversation, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
 import { Composer } from "./composer.tsx";
+import { useConversationActions } from "./conversation-actions.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
-import { type InfoLine, MessageInfo, MessageMenu, QuoteBlock, QuoteChip } from "./message.tsx";
-import { type Act, lineMenu, quoteOf, useMessageActions } from "./message-actions.tsx";
+import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
+import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
-import { ReceiptLine, receiptOf } from "./receipts.tsx";
-import { readStored, store } from "./stored.ts";
+import { receiptOf } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
 import { ThreadHead } from "./thread-head.tsx";
-import {
-  dayLabel,
-  dayOf,
-  groupMeta,
-  StatusNote,
-  sameSender,
-  ThreadLine,
-  TypingDraft,
-} from "./thread-line.tsx";
 import { type Line, useThreadLines } from "./thread-lines.ts";
-import { toast } from "./toast.tsx";
-import { ErrorNote, failureText, Loading, useModal } from "./ui.tsx";
+import { ThreadLog } from "./thread-log.tsx";
+import { ErrorNote, failureText, Loading } from "./ui.tsx";
 import { replyAuthor, title } from "./visitor.ts";
-import { VisitorPanel } from "./visitor-panel.tsx";
+import { usePanel, VisitorPanel } from "./visitor-panel.tsx";
 
-function ImageViewer({
-  url,
-  onClose,
-  onError,
-}: {
-  url: string | undefined;
-  onClose(): void;
-  onError(): void;
-}) {
-  const viewer = useModal();
-  return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
-    <dialog
-      ref={viewer}
-      className="viewer"
-      onClose={onClose}
-      onClick={() => viewer.current?.close()}
-    >
-      <img src={url} alt={t("imageAlt")} onError={onError} />
-    </dialog>
-  );
+/** The unsent reply, kept in `drafts` while the operator looks at another conversation. */
+function useDraft(drafts: Map<string, string>, conversationId: string) {
+  // Here and not in the composer, which unmounts while the conversation is closed.
+  const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
+  const setDraft = (next: string) => {
+    setDraftState(next);
+    if (next === "") drafts.delete(conversationId);
+    else drafts.set(conversationId, next);
+  };
+  return [draft, setDraft] as const;
 }
 
-const FLASH_MS = 1600;
-
-/** Scrolls the log to a message and highlights it for a moment. False when it is not loaded. */
-function useJump(log: RefObject<HTMLDivElement | null>) {
-  const [flashId, setFlashId] = useState<string | null>(null);
-  useEffect(() => {
-    if (flashId === null) return;
-    const timer = setTimeout(() => setFlashId(null), FLASH_MS);
-    return () => clearTimeout(timer);
-  }, [flashId]);
-  const jump = (id: string) => {
-    const found = log.current?.querySelector(`#message-${CSS.escape(id)}`);
-    if (found == null) return false;
-    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    found.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
-    setFlashId(id);
-    return true;
+/** What the info dialog says about a line: its time, its author and, for a reply, its receipt. */
+function infoOf(line: Line, author: string, receipts: ReplyReceipts | null): InfoLine | null {
+  if (line.createdAt === undefined) return null;
+  return {
+    id: line.id,
+    createdAt: line.createdAt,
+    author,
+    via: line.via,
+    receipt:
+      line.fromVisitor || receipts === null || line.seq === null
+        ? null
+        : { isRead: receiptOf(line.seq, receipts) === "read" },
   };
-  return { flashId, jump };
 }
 
 export function Thread({
@@ -132,21 +106,7 @@ export function Thread({
       return false;
     }
   };
-  const {
-    conversation,
-    setConversation,
-    online,
-    pages,
-    welcome,
-    receipts,
-    lines,
-    loadFailure,
-    refreshImages,
-    retry,
-    sendText,
-    sendFiles,
-    keep,
-  } = useThreadLines({
+  const thread = useThreadLines({
     api,
     conversationId,
     meId,
@@ -158,9 +118,17 @@ export function Thread({
     onChanged,
     onLoaded,
   });
-  const actions = useMessageActions({ api, conversationId, act, keep });
-  const { quoting, setQuoting, editing, setEditing, info, setInfo, deleting, setDeleting } =
-    actions;
+  const { conversation, online, welcome, receipts, lines, sendFiles } = thread;
+  const actions = useMessageActions({ api, conversationId, act, keep: thread.keep });
+  const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
+  const change = useConversationActions({
+    api,
+    conversationId,
+    act,
+    setConversation: thread.setConversation,
+    onChanged,
+    onBack,
+  });
   const panel = usePanel();
   const visitorId = conversation?.visitor.id ?? null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
@@ -175,127 +143,40 @@ export function Thread({
       ? "readOnlyHelp"
       : null;
   const imagesOn = !readOnly && !suspended;
-  // Here and not in the composer, which unmounts while the conversation is closed.
-  const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
-  const setDraft = (next: string) => {
-    setDraftState(next);
-    if (next === "") drafts.delete(conversationId);
-    else drafts.set(conversationId, next);
-  };
+  const [draft, setDraft] = useDraft(drafts, conversationId);
   const [dropping, setDropping] = useState(false);
-  const [viewing, setViewing] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const log = useRef<HTMLDivElement>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line or draft scrolls down.
-  useEffect(() => {
-    if (log.current !== null) log.current.scrollTop = log.current.scrollHeight;
-  }, [lines.length, typingDraft !== null]);
-
-  const { flashId, jump } = useJump(log);
-  // A copied link to a message ends with #message-<id>, and this scrolls to it once it is loaded.
-  const linkedMessage = useRef(
-    location.hash.startsWith("#message-") ? location.hash.slice("#message-".length) : null,
-  );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: each new line may be the linked one.
-  useEffect(() => {
-    const id = linkedMessage.current;
-    if (id !== null && jump(id)) linkedMessage.current = null;
-  }, [lines.length]);
-
+  if (conversation === null) {
+    return (
+      <div className="thread">
+        <Loading failure={thread.loadFailure} />
+      </div>
+    );
+  }
+  const closed = conversation.status === "closed";
+  const visitorName = title(conversation);
   /** Who wrote a line, as this thread names them. */
-  const authorOf = (line: Line) =>
-    line.fromVisitor ? (conversation === null ? "" : title(conversation)) : replyAuthor(line, meId);
-
+  const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
   const send = (body: string) => {
-    sendText(
+    thread.sendText(
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
     );
     setQuoting(null);
   };
-
-  const setBlocked = async (blocked: boolean) => {
-    if (!(await act(() => (blocked ? api.block(conversationId) : api.unblock(conversationId))))) {
-      return;
-    }
-    setConversation((current) =>
-      current === null ? current : { ...current, visitor: { ...current.visitor, blocked } },
-    );
-    onChanged();
-  };
-
-  const openQuote = (id: string) => {
-    if (!jump(id)) toast("quoteMissing", false);
-  };
-
-  const remove = async () => {
-    if (!(await act(() => api.remove(conversationId), { fallback: "deleteFailed" }))) {
-      setConfirming(false);
-      return;
-    }
-    onChanged();
-    onBack();
-  };
-
-  const assign = async (operatorId: string | null) => {
-    if (!(await act(() => api.assign(conversationId, operatorId)))) return;
-    setConversation((current) =>
-      current === null ? current : { ...current, assigneeOperatorId: operatorId },
-    );
-    onChanged();
-  };
-
-  const sendTranscript = async () => {
-    if (await act(() => api.sendTranscript(conversationId))) toast("transcriptSent");
-  };
-  const setStatus = async (status: "open" | "closed") => {
-    if (!(await act(() => api.setStatus(conversationId, status)))) return;
-    setConversation((current) => (current === null ? current : { ...current, status }));
-    onChanged();
-  };
-
-  if (conversation === null) {
-    return (
-      <div className="thread">
-        <Loading failure={loadFailure} />
-      </div>
-    );
-  }
-  const closed = conversation.status === "closed";
-  // A welcome chat's visitor is another workspace, with no visit to show.
-  const showsPanel = welcome === null && panel.open;
-  const face = conversation.visitor.pictureUrl;
-  const lastReply = lines.reduce(
-    (last, line, index) =>
-      !line.fromVisitor && line.note === undefined && line.seq !== null ? index : last,
-    -1,
-  );
-  const visitorName = title(conversation);
-  const who = {
-    meId,
-    mayDeleteAnyone,
-    canWrite: repliesOffReason === null,
-    canReply: repliesOffReason === null && !closed,
-  };
-  const infoLine: InfoLine | null =
-    info === null || info.createdAt === undefined
+  const infoLine =
+    info === null
       ? null
-      : {
-          id: info.id,
-          createdAt: info.createdAt,
-          author: info.fromVisitor ? visitorName : (info.authorName ?? authorOf(info)),
-          via: info.via,
-          receipt:
-            info.fromVisitor || receipts === null || info.seq === null
-              ? null
-              : { isRead: receiptOf(info.seq, receipts) === "read" },
-        };
+      : infoOf(
+          info,
+          info.fromVisitor ? visitorName : (info.authorName ?? authorOf(info)),
+          receipts,
+        );
   return (
     <div className="conversation-view">
       <section
         className={dropping && !closed ? "thread drop" : "thread"}
-        aria-label={title(conversation)}
+        aria-label={visitorName}
         onDragOver={(event) => {
           // A drag of selected text keeps its normal behavior.
           if (!event.dataTransfer.types.includes("Files")) return;
@@ -317,21 +198,21 @@ export function Thread({
           members={members}
           mayDeleteAnyone={mayDeleteAnyone}
           onBack={onBack}
-          onAssign={(operatorId) => void assign(operatorId)}
-          onStatus={(status) => void setStatus(status)}
-          onBlocked={(blocked) => void setBlocked(blocked)}
-          onDelete={() => setConfirming(true)}
-          onTranscript={() => void sendTranscript()}
+          onAssign={(operatorId) => void change.assign(operatorId)}
+          onStatus={(status) => void change.setStatus(status)}
+          onBlocked={(blocked) => void change.setBlocked(blocked)}
+          onDelete={() => change.setConfirming(true)}
+          onTranscript={() => void change.sendTranscript()}
           emailAvailable={emailAvailable}
           panel={welcome === null ? panel : null}
         />
-        {confirming && (
+        {change.confirming && (
           <Confirm
             title={t("deleteTitle")}
             text={t("deleteConfirm")}
             confirm={t("deleteYes")}
-            onConfirm={() => void remove()}
-            onCancel={() => setConfirming(false)}
+            onConfirm={() => void change.remove()}
+            onCancel={() => change.setConfirming(false)}
           />
         )}
         {deleting !== null && (
@@ -361,84 +242,21 @@ export function Thread({
             {replying}
           </p>
         )}
-        <div className="log" role="log" aria-live="polite" ref={log}>
-          {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
-          {lines.map((line, index) => {
-            const day = dayOf(line);
-            const meta = groupMeta(lines, index, meId);
-            const receipt =
-              line.fromVisitor || line.seq === null || receipts === null ? null : (
-                <ReceiptLine receipt={receiptOf(line.seq, receipts)} later={index !== lastReply} />
-              );
-            return (
-              <Fragment key={line.id}>
-                {line.createdAt !== undefined && day !== dayOf(lines[index - 1]) && (
-                  <div className="day">{dayLabel(line.createdAt)}</div>
-                )}
-                {line.note !== undefined ? (
-                  <StatusNote line={line} note={line.note} meId={meId} />
-                ) : (
-                  <>
-                    {/* The welcome chat's founder has a face, as an operator does in the widget. */}
-                    {face !== null && line.fromVisitor && !sameSender(lines[index - 1], line) && (
-                      <div className="author-face">
-                        <img src={face} alt="" />
-                        {title(conversation)}
-                      </div>
-                    )}
-                    <ThreadLine
-                      line={line}
-                      quote={
-                        line.replyTo === null ? null : (
-                          <QuoteBlock
-                            quote={line.replyTo}
-                            visitorName={visitorName}
-                            onOpen={openQuote}
-                          />
-                        )
-                      }
-                      menu={
-                        <MessageMenu
-                          items={lineMenu(line, who, receipts, actions.actionsFor(line))}
-                          side={line.fromVisitor ? "start" : "end"}
-                        />
-                      }
-                      editor={
-                        editing?.id === line.id ? (
-                          <Composer
-                            editing
-                            draft={editing.draft}
-                            setDraft={(draft) => setEditing({ ...editing, draft })}
-                            onSend={(body) => void actions.saveEdit(line.id, body)}
-                            onFiles={undefined}
-                            onEscape={() => setEditing(null)}
-                            above={<ErrorNote text={editing.problem} />}
-                          />
-                        ) : null
-                      }
-                      flash={flashId === line.id}
-                      receipt={receipt}
-                      onView={() => setViewing(line.id)}
-                      onImageError={refreshImages}
-                      onRetry={() => retry(line)}
-                    />
-                    {meta !== null && (
-                      <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>
-                    )}
-                  </>
-                )}
-              </Fragment>
-            );
-          })}
-          {typingDraft !== null && <TypingDraft draft={typingDraft} />}
-        </div>
-        {viewing !== null && (
-          <ImageViewer
-            url={lines.find((line) => line.id === viewing)?.image?.url}
-            onClose={() => setViewing(null)}
-            onError={refreshImages}
-          />
-        )}
+        <ThreadLog
+          conversation={conversation}
+          lines={lines}
+          receipts={receipts}
+          who={{
+            meId,
+            mayDeleteAnyone,
+            canWrite: repliesOffReason === null,
+            canReply: repliesOffReason === null && !closed,
+          }}
+          actions={actions}
+          typingDraft={typingDraft}
+          onImageError={thread.refreshImages}
+          onRetry={thread.retry}
+        />
         <ErrorNote text={problem} />
         {repliesOffReason !== null ? (
           <p className="closed">{t(repliesOffReason)}</p>
@@ -466,15 +284,16 @@ export function Thread({
           />
         )}
       </section>
-      {showsPanel && (
+      {/* A welcome chat's visitor is another workspace, with no visit to show. */}
+      {welcome === null && panel.open && (
         <VisitorPanel
           conversation={conversation}
           contact={contact.data}
           online={online}
-          pages={pages}
+          pages={thread.pages}
           members={members}
           overlay={!panel.wide}
-          onAssign={(operatorId) => void assign(operatorId)}
+          onAssign={(operatorId) => void change.assign(operatorId)}
           onOpenContact={() => onOpenContact(conversation.visitor.id)}
           onOpenConversation={onOpenConversation}
           onNote={async (note) => {
@@ -485,30 +304,4 @@ export function Thread({
       )}
     </div>
   );
-}
-
-const PANEL_KEY = "dinghy.panel.open";
-const WIDE = "(min-width: 1200px)";
-
-/**
- * Whether the visitor's panel shows. On a wide screen it remembers this device's choice, and starts
- * open. On a narrower one it opens as a drawer over the thread, and starts closed each time.
- */
-function usePanel() {
-  const [wide, setWide] = useState(() => matchMedia(WIDE).matches);
-  const [open, setOpen] = useState(() => wide && readStored(PANEL_KEY) !== "closed");
-  useEffect(() => {
-    const query = matchMedia(WIDE);
-    const changed = () => {
-      setWide(query.matches);
-      setOpen(query.matches && readStored(PANEL_KEY) !== "closed");
-    };
-    query.addEventListener("change", changed);
-    return () => query.removeEventListener("change", changed);
-  }, []);
-  const toggle = () => {
-    if (wide) store(PANEL_KEY, open ? "closed" : null);
-    setOpen(!open);
-  };
-  return { open, wide, toggle };
 }

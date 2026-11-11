@@ -426,3 +426,29 @@ export function VisitorPanel({
     </aside>
   );
 }
+
+const PANEL_KEY = "dinghy.panel.open";
+const WIDE = "(min-width: 1200px)";
+
+/**
+ * Whether the visitor's panel shows. On a wide screen it remembers this device's choice, and starts
+ * open. On a narrower one it opens as a drawer over the thread, and starts closed each time.
+ */
+export function usePanel() {
+  const [wide, setWide] = useState(() => matchMedia(WIDE).matches);
+  const [open, setOpen] = useState(() => wide && readStored(PANEL_KEY) !== "closed");
+  useEffect(() => {
+    const query = matchMedia(WIDE);
+    const changed = () => {
+      setWide(query.matches);
+      setOpen(query.matches && readStored(PANEL_KEY) !== "closed");
+    };
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  const toggle = () => {
+    if (wide) store(PANEL_KEY, open ? "closed" : null);
+    setOpen(!open);
+  };
+  return { open, wide, toggle };
+}

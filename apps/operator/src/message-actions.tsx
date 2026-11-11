@@ -27,10 +27,18 @@ interface LineActions {
   remove(): void;
 }
 
+/** Who looks at the thread, and what they may do to its messages. */
+export interface Rights {
+  meId: string;
+  mayDeleteAnyone: boolean;
+  canWrite: boolean;
+  canReply: boolean;
+}
+
 /** A line's menu, in its fixed order, without the items that do not apply. */
 export function lineMenu(
   line: Line,
-  who: { meId: string; mayDeleteAnyone: boolean; canWrite: boolean; canReply: boolean },
+  who: Rights,
   receipts: ReplyReceipts | null,
   act: LineActions,
 ): MenuItem[] {
@@ -166,3 +174,5 @@ export function useMessageActions({
     actionsFor,
   };
 }
+
+export type MessageActions = ReturnType<typeof useMessageActions>;
