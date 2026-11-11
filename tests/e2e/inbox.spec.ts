@@ -47,7 +47,7 @@ async function answer(page: Page, text: string) {
 }
 
 const row = (page: Page, text: string) => page.locator(".row", { hasText: text });
-const openCount = (page: Page) => page.locator(".nav .count");
+const openCount = (page: Page) => page.locator(".nav .count:not(.live)");
 
 test("each reply shows who sent it, and your own say You", async ({ browser }) => {
   const customer = await visitor(browser, "Who is answering?");

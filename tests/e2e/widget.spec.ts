@@ -151,7 +151,7 @@ test("the widget works under the strictest CSP it documents", async ({ page }) =
   expect(violations).toEqual([]);
 });
 
-test("a page load with no conversation asks only for the look, and writes no row", async ({
+test("a page load with no conversation asks for the look and beats, and writes no row", async ({
   browser,
 }) => {
   const context = await browser.newContext();
@@ -161,10 +161,13 @@ test("a page load with no conversation asks only for the look, and writes no row
   const before = await server.visitorCount();
   await page.goto(`${server.hostOrigin}/plain`);
   await expect(launcher(page)).toBeVisible();
-  // Only the saved look, which carries no token and no cookie.
-  const api = requests.filter((url) => url.includes("/v1/"));
-  expect(api).toHaveLength(1);
-  expect(new URL(api[0] ?? "").pathname).toMatch(/^\/v1\/widget\/wk_\w+\/appearance$/);
+  // The saved look, then the live view's beat. Neither carries a token or a cookie.
+  await expect
+    .poll(() => requests.filter((url) => url.includes("/v1/")).map((url) => new URL(url).pathname))
+    .toEqual([
+      expect.stringMatching(/^\/v1\/widget\/wk_\w+\/appearance$/),
+      expect.stringMatching(/^\/v1\/widget\/wk_\w+\/beat$/),
+    ]);
   expect(requests.filter((url) => url.endsWith("/widget/widget.js"))).toEqual([]);
   expect(await server.visitorCount()).toBe(before);
   await context.close();
