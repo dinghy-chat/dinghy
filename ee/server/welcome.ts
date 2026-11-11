@@ -238,7 +238,10 @@ async function copyInto(
   if (reply.body === null && image === undefined) return null;
   // A visitor's message reopens a closed chat, as the founder's side should see it.
   if (theirs.status === "closed") {
-    await setConversationStatus(tx, other.workspaceId, other.conversationId, "open");
+    await setConversationStatus(tx, other.workspaceId, other.conversationId, "open", {
+      kind: "visitor",
+      visitorId: theirs.id,
+    });
   }
   await appendMessage(
     tx,

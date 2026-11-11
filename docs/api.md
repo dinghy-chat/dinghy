@@ -43,7 +43,11 @@ A message or an image carries a `clientId` that the client makes, such as `m_4f9
 
 A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry of that message answers true too.
 
-A message's `body` is plain text that the widget, the operator app and reply emails show as a small Markdown: `**bold**`, `*italic*`, `` `code` ``, blocks between lines of three backticks, `[words](https://...)` links, bare `http` and `https` addresses, and lists that start with `-`, `*`, `+` or `1.`. HTML, images and headings stay text, and only `http`, `https` and `mailto` links work. The API stores and answers the body as it was sent. An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
+A message's `body` is plain text that the widget, the operator app and reply emails show as a small Markdown: `**bold**`, `*italic*`, `` `code` ``, blocks between lines of three backticks, `[words](https://...)` links, bare `http` and `https` addresses, and lists that start with `-`, `*`, `+` or `1.`. HTML, images and headings stay text, and only `http`, `https` and `mailto` links work. The API stores and answers the body as it was sent.
+
+A message's `kind` is `text` or `image` for what people wrote. Closing or reopening a conversation writes a status line in the same transaction as its `conversation.closed` or `conversation.reopened` event and with the event's position, so the widget and the operator app show it in order: `kind` is `closed` or `reopened`, `body` is null, and the author is whoever made the change (an operator, an API key, or no one shown on Dinghy Cloud's welcome chat). A status line has no `message.created` event, so it raises no alert, no push and no webhook, it is never a conversation's `lastMessage`, and it counts toward neither unread replies nor first replies. A client that shows only chat skips these kinds.
+
+An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
 
 ## Visitors
 

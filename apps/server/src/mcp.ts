@@ -113,8 +113,8 @@ const replyAnswer = (outcome: ReplyOutcome): Outcome => {
 function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
   const status =
     (target: "open" | "closed") =>
-    async (input: { conversationId: string }, { workspaceId }: Context): Promise<Outcome> =>
-      (await inbox.setStatus(workspaceId, input.conversationId, target))
+    async (input: { conversationId: string }, { workspaceId, actor }: Context): Promise<Outcome> =>
+      (await inbox.setStatus(workspaceId, actor, input.conversationId, target))
         ? { data: { ok: true } }
         : { error: NOT_FOUND };
   return [

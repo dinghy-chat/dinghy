@@ -19,7 +19,7 @@ import { type Database, enterWorkspace, type Transaction, withWorkspace } from "
 import { emailAddressHash } from "./identity.ts";
 import { prunePageViews } from "./journey.ts";
 import { letter, letterHtml } from "./letter.ts";
-import { joinVisitor } from "./messages.ts";
+import { isChat, joinVisitor } from "./messages.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 
@@ -505,6 +505,7 @@ async function replyEmailPlan(
         eq(message.workspaceId, workspaceId),
         eq(conversation.visitorId, visitorId),
         isNull(message.authorVisitorId),
+        isChat(),
         gt(message.seq, target.lastReadSeq),
       ),
     )

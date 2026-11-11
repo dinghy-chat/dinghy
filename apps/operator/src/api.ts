@@ -106,7 +106,8 @@ export interface Message {
   id: string;
   conversationId: string;
   seq: string;
-  kind: "text" | "image";
+  /** `closed` and `reopened` are status lines that a close or a reopen wrote, with no body. */
+  kind: "text" | "image" | "closed" | "reopened";
   fromVisitor: boolean;
   /** The operator who sent it, and their current name. Both null for a visitor's message. */
   authorOperatorId: string | null;

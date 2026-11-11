@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { session } from "./db/schema.ts";
+import { MESSAGE_KINDS, session } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
@@ -71,7 +71,8 @@ const InboxMessage = z
     id: z.string(),
     conversationId: z.string(),
     seq: z.string(),
-    kind: z.enum(["text", "image"]),
+    // `closed` and `reopened` are status lines a close or a reopen writes, with no body.
+    kind: z.enum(MESSAGE_KINDS),
     fromVisitor: z.boolean(),
     // The operator who sent it, or null for a visitor's message or an API key's.
     authorOperatorId: z.string().nullable(),
@@ -747,15 +748,23 @@ export function createInbox({
     },
 
     /** Closes or reopens a conversation. False when it does not exist. */
-    async setStatus(workspaceId: string, conversationId: string, status: "open" | "closed") {
-      const found = await withWorkspace(db, workspaceId, async (tx) => {
-        const row = await findConversation(tx, workspaceId, conversationId);
-        if (row === null) return false;
-        await setConversationStatus(tx, workspaceId, conversationId, status);
-        return true;
+    async setStatus(
+      workspaceId: string,
+      actor: Actor,
+      conversationId: string,
+      status: "open" | "closed",
+    ) {
+      const row = await withWorkspace(db, workspaceId, async (tx) => {
+        const found = await findConversation(tx, workspaceId, conversationId);
+        if (found === null) return null;
+        await setConversationStatus(tx, workspaceId, conversationId, status, actor);
+        return found;
       });
-      if (found) live.wake(workspaceId, OPERATORS);
-      return found;
+      if (row === null) return false;
+      live.wake(workspaceId, OPERATORS);
+      // The visitor's stream delivers the status line.
+      live.wake(workspaceId, row.visitorId);
+      return true;
     },
   };
 }
@@ -875,7 +884,12 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   app.openapi(statusRoute, async (c) => {
     const { conversationId } = c.req.valid("param");
     const { status } = c.req.valid("json");
-    const found = await inbox.setStatus(c.get("memberWorkspaceId"), conversationId, status);
+    const found = await inbox.setStatus(
+      c.get("memberWorkspaceId"),
+      c.get("actor"),
+      conversationId,
+      status,
+    );
     if (!found) return c.json(NOT_FOUND, 404);
     return c.json({ ok: true as const }, 200);
   });

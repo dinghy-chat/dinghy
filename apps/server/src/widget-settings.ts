@@ -173,7 +173,7 @@ const appearanceRoute = createRoute({
 
 /** The members who replied last, newest first. Each needs one short read of an index. */
 function recentRepliers(tx: Transaction, workspaceId: string) {
-  const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId})`;
+  const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId} and ${message.kind} in ('text', 'image'))`;
   return tx
     .select({ id: operator.id, name: operator.name, pictureUpdatedAt: operator.pictureUpdatedAt })
     .from(workspaceMember)

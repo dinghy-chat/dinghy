@@ -1706,6 +1706,14 @@ img.ws-tile {
   min-height: 0;
   background: var(--surface-dim);
 }
+/* Someone closed or reopened the conversation: a quiet line, not a bubble. */
+.status-note {
+  align-self: center;
+  margin: 10px 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  text-align: center;
+}
 .thread.drop {
   outline: 3px dashed var(--blue);
   outline-offset: -10px;

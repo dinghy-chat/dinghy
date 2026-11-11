@@ -909,7 +909,10 @@ describe("email", () => {
     await operatorWrites(anna, conversationId, "Answer in the first");
     await fanOutAll();
     await withWorkspace(app, space.id, (tx) =>
-      setConversationStatus(tx, space.id, conversationId, "closed"),
+      setConversationStatus(tx, space.id, conversationId, "closed", {
+        kind: "operator",
+        operatorId: anna,
+      }),
     );
     const next = await visitorWrites(from, "One more thing");
     expect(next.message.conversationId).not.toBe(conversationId);
@@ -1118,7 +1121,10 @@ describe("retention", () => {
     const written = await visitorWrites(from, "Waiting");
     const kept = (await feed(start)).cursor;
     await withWorkspace(app, space.id, (tx) =>
-      setConversationStatus(tx, space.id, written.message.conversationId, "closed"),
+      setConversationStatus(tx, space.id, written.message.conversationId, "closed", {
+        kind: "visitor",
+        visitorId: from,
+      }),
     );
     await owner
       .update(event)

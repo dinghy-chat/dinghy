@@ -5,7 +5,8 @@ export interface ChatMessage {
   id: string;
   conversationId: string;
   seq: string;
-  kind: "text" | "image";
+  /** `closed` and `reopened` are status lines, with no body. */
+  kind: "text" | "image" | "closed" | "reopened";
   fromVisitor: boolean;
   clientId: string | null;
   body: string | null;

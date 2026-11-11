@@ -66,6 +66,7 @@ export const CSS = `
 .msg p,.msg ul,.msg ol,.msg pre{margin:0}.msg>*+*{margin-top:6px}.msg ul,.msg ol{padding-left:20px}
 .msg pre,.msg code{font:13px/1.4 ui-monospace,monospace}.msg code{padding:0 3px;border-radius:4px;background:rgb(127 127 127/.18)}.msg pre code{display:block;padding:6px 8px;overflow-x:auto}.msg a{color:inherit}
 .mine{align-self:flex-end;border-radius:18px 18px 5px 18px;background:var(--primary);color:var(--d-primary-text,#fff);box-shadow:none}
+.note{align-self:center;margin:6px 0;font-size:12px;line-height:16px;color:var(--mute);text-align:center}
 .state{font-size:12.5px;line-height:16px;color:var(--mute);align-self:flex-end}
 .bad{color:var(--bad)}
 .action{display:grid;place-items:center;font:inherit;font-weight:600;flex:none;min-height:44px;min-width:44px;padding:0 14px;border:0;border-radius:22px;cursor:pointer;background:var(--d-accent,${ACCENT});color:var(--d-accent-text,#fff)}
@@ -165,6 +166,8 @@ export interface Line {
   fromVisitor: boolean;
   /** Null for the visitor's own message. */
   author: Author | null;
+  /** A status line: the team closed or reopened the conversation. */
+  note?: "closed" | "reopened";
   status: "sent" | "sending" | "failed";
 }
 
@@ -388,6 +391,7 @@ export function ChatLine({
   onImageError(): void;
   onRetry(): void;
 }) {
+  if (line.note !== undefined) return <p class="note">{t(line.note)}</p>;
   return (
     <Fragment>
       {showAuthor && line.author !== null && (

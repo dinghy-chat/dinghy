@@ -31,7 +31,15 @@ const workspaceId = () =>
 
 export const memberRole = pgEnum("member_role", ["owner", "admin", "member"]);
 export const conversationStatus = pgEnum("conversation_status", ["open", "closed"]);
-export const messageKind = pgEnum("message_kind", ["text", "image"]);
+/**
+ * A message's kind. `closed` and `reopened` are status lines that a close or a reopen writes, with
+ * the event's own sequence, so both sides see them in order. They are not chat: no alert, no
+ * preview, no unread count.
+ */
+export const MESSAGE_KINDS = ["text", "image", "closed", "reopened"] as const;
+export const messageKind = pgEnum("message_kind", MESSAGE_KINDS);
+/** The kinds that people wrote. */
+export const CHAT_KINDS = ["text", "image"] as const;
 export const alertChannel = pgEnum("alert_channel", ["push", "email"]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);
 export const widgetPosition = pgEnum("widget_position", ["left", "right"]);

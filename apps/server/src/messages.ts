@@ -16,6 +16,7 @@ import {
 import {
   apiKey,
   attachment,
+  CHAT_KINDS,
   conversation,
   type EventKind,
   event,
@@ -36,6 +37,17 @@ import {
 } from "./db/tenant.ts";
 import { type Limits, NO_LIMITS, StorageFullError } from "./limits.ts";
 
+type MessageKind = (typeof message.$inferSelect)["kind"];
+
+/** Only what people wrote, without the status lines of a close or a reopen. */
+export const isChat = () => inArray(message.kind, [...CHAT_KINDS]);
+
+/** Who closed or reopened a conversation, as the author of its status line. */
+export type StatusActor =
+  | { kind: "operator"; operatorId: string }
+  | { kind: "key"; apiKeyId: string }
+  | { kind: "visitor"; visitorId: string };
+
 export type Author =
   | { kind: "visitor"; visitorId: string }
   | { kind: "operator"; operatorId: string; conversationId: string }
@@ -45,7 +57,7 @@ export interface StoredMessage {
   id: string;
   conversationId: string;
   seq: bigint;
-  kind: "text" | "image";
+  kind: MessageKind;
   fromVisitor: boolean;
   /** The operator who sent it, or null for a visitor's message or a key's. */
   authorOperatorId: string | null;
@@ -78,7 +90,7 @@ interface MessageRow {
   id: string;
   conversationId: string;
   seq: bigint;
-  kind: "text" | "image";
+  kind: MessageKind;
   authorOperatorId: string | null;
   authorVisitorId: string | null;
   authorApiKeyId: string | null;
@@ -359,6 +371,7 @@ async function hasOperatorReply(tx: Transaction, workspaceId: string, conversati
         eq(message.workspaceId, workspaceId),
         eq(message.conversationId, conversationId),
         isNotNull(message.authorOperatorId),
+        isChat(),
       ),
     )
     .limit(1);
@@ -397,6 +410,7 @@ export async function readState(
           eq(message.workspaceId, workspaceId),
           eq(conversation.visitorId, visitorId),
           isNull(message.authorVisitorId),
+          isChat(),
           gt(message.seq, row.lastReadSeq),
         ),
       ),
@@ -462,6 +476,7 @@ export async function replyReceipts(
       from email
       left join message as m on m.workspace_id = ${workspaceId}
         and m.conversation_id = ${conversationId} and m.author_visitor_id is null
+        and m.kind in ('text', 'image')
     )
     select (select last_read_seq from visitor
             where workspace_id = ${workspaceId} and id = ${visitorId}) as read_seq,
@@ -632,7 +647,13 @@ export async function listConversations(
       createdAt: message.createdAt,
     })
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversation.id)))
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversation.id),
+        isChat(),
+      ),
+    )
     .orderBy(desc(message.seq))
     .limit(1)
     .as("newest");
@@ -704,6 +725,7 @@ export async function countWaiting(tx: Transaction, workspaceId: string): Promis
     cross join lateral (
       select m.author_visitor_id from ${message} as m
       where m.workspace_id = c.workspace_id and m.conversation_id = c.id
+        and m.kind in ('text', 'image')
       order by m.seq desc
       limit 1
     ) as newest
@@ -836,12 +858,17 @@ export async function listConversationMessages(
   return { messages: rows.slice(0, limit).map(stored), hasMore: rows.length > limit };
 }
 
-/** Closes or reopens a conversation, and adds an event so other operators catch up on it. */
+/**
+ * Closes or reopens a conversation. Its event tells other operators, and a status line with the
+ * event's sequence tells the visitor, in the same transaction, so both see it in order. The line has
+ * no message.created event, so it raises no alert and no webhook.
+ */
 export async function setConversationStatus(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
   status: "open" | "closed",
+  actor: StatusActor,
 ): Promise<void> {
   const seq = await nextSeq(tx, workspaceId);
   const changed = await tx
@@ -862,6 +889,19 @@ export async function setConversationStatus(
     kind: status === "closed" ? "conversation.closed" : "conversation.reopened",
     payload: { conversationId },
     needsWebhook: wantsWebhook(workspaceId),
+  });
+  await tx.insert(message).values({
+    workspaceId,
+    conversationId,
+    seq,
+    kind: status === "closed" ? "closed" : "reopened",
+    // One line per change, so the sequence makes it unique.
+    clientId: `status-${seq}`,
+    ...(actor.kind === "visitor"
+      ? { authorVisitorId: actor.visitorId }
+      : actor.kind === "operator"
+        ? { authorOperatorId: actor.operatorId }
+        : { authorApiKeyId: actor.apiKeyId }),
   });
 }
 
@@ -1039,7 +1079,13 @@ export async function searchConversations(
       createdAt: message.createdAt,
     })
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversation.id)))
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversation.id),
+        isChat(),
+      ),
+    )
     .orderBy(desc(message.seq))
     .limit(1)
     .as("newest");

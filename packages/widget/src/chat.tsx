@@ -84,7 +84,10 @@ function drawBadge(shadow: ShadowRoot, count: number) {
  * message, so a send whose response was lost cannot stay marked as failed or appear twice.
  */
 function merge(lines: Line[], message: ChatMessage): Line[] {
+  const { kind } = message;
+  const note = kind === "closed" || kind === "reopened" ? kind : undefined;
   const line: Line = {
+    ...(note && { note }),
     id: message.id,
     seq: BigInt(message.seq),
     // A removed image reads as a note where it was.
@@ -92,7 +95,7 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
     image: message.image,
     fromVisitor: message.fromVisitor,
     author:
-      message.authorId === null || message.authorName === null
+      note || message.authorId === null || message.authorName === null
         ? null
         : {
             id: message.authorId,
@@ -369,7 +372,9 @@ function Chat({
   // With no stream, as after an operator closes the conversation, the lines can be behind too.
   const unread =
     loaded && (open || openConversation)
-      ? lines.filter((line) => !line.fromVisitor && line.seq !== null && line.seq > lastRead).length
+      ? lines.filter(
+          (line) => !line.fromVisitor && !line.note && line.seq !== null && line.seq > lastRead,
+        ).length
       : lastRead > serverRead.position
         ? 0
         : serverRead.unread;
@@ -421,7 +426,11 @@ function Chat({
               const fresh =
                 replayed.current ||
                 (lastSent.current !== null && BigInt(message.seq) > lastSent.current);
-              if (fresh && !message.fromVisitor) {
+              const { kind } = message;
+              // A close ends the conversation, and a reopen brings it back, with no notice.
+              if (fresh && (kind === "closed" || kind === "reopened")) {
+                setOpenConversation(kind === "reopened");
+              } else if (fresh && !message.fromVisitor) {
                 setNewReply(true);
                 emit(context, "message:received", { body: message.body });
               }

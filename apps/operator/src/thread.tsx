@@ -57,11 +57,15 @@ interface Line {
   authorApiKeyId: string | null;
   authorName: string | null;
   status: "sent" | "sending" | "failed";
+  /** A status line: someone closed or reopened the conversation. */
+  note?: "closed" | "reopened";
 }
 
 /** Adds a confirmed message in commit order, and replaces its pending line if it has one. */
 function merge(lines: Line[], message: Message): Line[] {
+  const { kind } = message;
   const line: Line = {
+    ...((kind === "closed" || kind === "reopened") && { note: kind }),
     id: message.id,
     seq: BigInt(message.seq),
     body: message.body ?? "",
@@ -506,6 +510,37 @@ function ReceiptLine({ receipt, later }: { receipt: Receipt; later: boolean }) {
   );
 }
 
+/**
+ * A centered line where someone closed or reopened the conversation: who, and when. A reopen with
+ * no operator or key, as the cloud's welcome chat does, names nobody.
+ */
+function StatusNote({
+  line,
+  note,
+  meId,
+}: {
+  line: Line;
+  note: "closed" | "reopened";
+  meId: string;
+}) {
+  const byPerson = line.authorOperatorId !== null || line.authorApiKeyId !== null;
+  const text = !byPerson
+    ? t(note === "closed" ? "closedPlain" : "reopenedPlain")
+    : line.authorOperatorId === meId
+      ? t(note === "closed" ? "closedByYou" : "reopenedByYou")
+      : t(note === "closed" ? "closedBy" : "reopenedBy", { name: replyAuthor(line, meId) });
+  const time =
+    line.createdAt === undefined
+      ? null
+      : new Date(line.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return (
+    <p className="status-note">
+      {text}
+      {time !== null && <time dateTime={line.createdAt}> · {time}</time>}
+    </p>
+  );
+}
+
 /** A visitor's unsent words, faded, with dots that move while they type. */
 function TypingDraft({ draft }: { draft: string }) {
   return (
@@ -528,6 +563,8 @@ function TypingDraft({ draft }: { draft: string }) {
 const sameSender = (one: Line | undefined, other: Line | undefined) =>
   one !== undefined &&
   other !== undefined &&
+  one.note === undefined &&
+  other.note === undefined &&
   one.fromVisitor === other.fromVisitor &&
   one.authorOperatorId === other.authorOperatorId &&
   one.authorApiKeyId === other.authorApiKeyId;
@@ -826,7 +863,8 @@ export function Thread({
   // A welcome chat's visitor is another workspace, with no visit to show.
   const showsPanel = welcome === null && panel.open;
   const lastReply = lines.reduce(
-    (last, line, index) => (!line.fromVisitor && line.seq !== null ? index : last),
+    (last, line, index) =>
+      !line.fromVisitor && line.note === undefined && line.seq !== null ? index : last,
     -1,
   );
   return (
@@ -894,15 +932,21 @@ export function Thread({
                 {line.createdAt !== undefined && day !== dayOf(lines[index - 1]) && (
                   <div className="day">{dayLabel(line.createdAt)}</div>
                 )}
-                <ThreadLine
-                  line={line}
-                  receipt={receipt}
-                  onView={() => setViewing(line.id)}
-                  onImageError={refreshImages}
-                  onRetry={() => void deliver(line.id, line.body, line.file)}
-                />
-                {meta !== null && (
-                  <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>
+                {line.note !== undefined ? (
+                  <StatusNote line={line} note={line.note} meId={meId} />
+                ) : (
+                  <>
+                    <ThreadLine
+                      line={line}
+                      receipt={receipt}
+                      onView={() => setViewing(line.id)}
+                      onImageError={refreshImages}
+                      onRetry={() => void deliver(line.id, line.body, line.file)}
+                    />
+                    {meta !== null && (
+                      <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>
+                    )}
+                  </>
                 )}
               </Fragment>
             );

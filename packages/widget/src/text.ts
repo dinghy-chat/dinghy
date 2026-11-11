@@ -38,6 +38,8 @@ const en = {
   emailInvalid: "Enter a valid email.",
   emailFailed: "Not saved. Try again.",
   poweredBy: "Powered by Dinghy",
+  closed: "This conversation is closed. Write to us again any time.",
+  reopened: "Conversation reopened",
 };
 
 export type TextId = keyof typeof en;

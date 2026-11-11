@@ -18,6 +18,7 @@ import {
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import { isChat } from "./messages.ts";
 import { deleteConversation } from "./moderation.ts";
 import { allowed } from "./team.ts";
 
@@ -300,7 +301,13 @@ async function readContact(tx: Transaction, workspaceId: string, visitorId: stri
   const newest = tx
     .select({ body: message.body })
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversation.id)))
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversation.id),
+        isChat(),
+      ),
+    )
     .orderBy(desc(message.seq))
     .limit(1)
     .as("newest");

@@ -155,7 +155,7 @@ async function readAnalytics(
       LEFT JOIN LATERAL (
         SELECT m.created_at, m.author_operator_id, m.author_api_key_id FROM message AS m
         WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
-          AND m.author_visitor_id IS NULL
+          AND m.author_visitor_id IS NULL AND m.kind IN ('text', 'image')
         ORDER BY m.seq LIMIT 1
       ) AS reply ON true
     )

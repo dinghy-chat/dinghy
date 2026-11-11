@@ -8,7 +8,7 @@ import { firstName } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
-import { conversation, visitor, widgetSettings, workspace } from "./db/schema.ts";
+import { conversation, MESSAGE_KINDS, visitor, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { deviceLine } from "./device.ts";
 import {
@@ -335,7 +335,8 @@ const MessageSchema = z
     conversationId: z.string(),
     // The position in commit order, as a string because it can exceed a JSON number.
     seq: z.string(),
-    kind: z.enum(["text", "image"]),
+    // `closed` and `reopened` are status lines, with no body: the team closed or reopened the chat.
+    kind: z.enum(MESSAGE_KINDS),
     fromVisitor: z.boolean(),
     clientId: z.string().nullable(),
     body: z.string().nullable(),
