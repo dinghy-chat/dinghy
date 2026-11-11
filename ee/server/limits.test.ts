@@ -528,7 +528,7 @@ describe("a self-hosted install", () => {
         logger,
         publicUrl: PUBLIC_URL,
         secret: AUTH_SECRET,
-        signals: { wake() {}, revoke() {} },
+        signals: { wake() {}, revoke() {}, tell() {} },
       }),
     ).toBeUndefined();
   });

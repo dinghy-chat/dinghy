@@ -51,6 +51,8 @@ interface LiveStream {
   subscriber: string;
   expiresAt: Date | undefined;
   after: Cursor | undefined;
+  /** Passes on operator notices as `notice` events, which carry no cursor. */
+  notices?: boolean;
   /** Frees this stream's place in the plan's count when it ends. */
   release?: (() => void) | undefined;
   /**
@@ -149,6 +151,12 @@ export function openLiveStream(c: Context, stream: LiveStream): Response {
     const session: Session = {
       wake: () => void wake(),
       close: (reason) => void close(reason),
+      ...(stream.notices && {
+        tell: (notice) => {
+          // A notice that cannot be written is lost, which a notice may be.
+          if (!closed) sse.writeSSE({ event: "notice", data: notice }).catch(() => undefined);
+        },
+      }),
     };
     sse.onAbort(() => void close("aborted"));
 

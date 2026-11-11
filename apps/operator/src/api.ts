@@ -2,6 +2,7 @@ import type { BillingStateName } from "../../../ee/operator/billing.tsx";
 import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
+import type { OperatorNotice } from "../../server/src/live.ts";
 
 /** A list's assignee filter: the caller's conversations, or no one's. Null lists everyone's. */
 export type Assignee = "me" | "none";
@@ -114,6 +115,13 @@ export interface Message {
   /** The image was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
   createdAt: string;
+}
+
+/** How far the visitor has seen the replies, by message position. */
+export interface ReplyReceipts {
+  readSeq: string;
+  emailedSeq: string | null;
+  emailFailedSeq: string | null;
 }
 
 export interface Me {
@@ -506,6 +514,7 @@ export function workspaceApi(workspaceId: string) {
         visitorPages: PageView[];
         /** A welcome chat on Dinghy Cloud, which has no visit or pages. Null otherwise. */
         welcome: WelcomeChat | null;
+        receipts: ReplyReceipts;
       }>(`${conversation(id)}/messages?after=${after}`),
     /** Open and closed conversations by visitor or message text. A newer search aborts this one. */
     search: (query: string, signal: AbortSignal) =>
@@ -549,6 +558,8 @@ export function workspaceApi(workspaceId: string) {
         ): void;
         ready(cursor: string | null): void;
         resync(cursor: string): void;
+        /** A visitor's draft, or a sign to load a visitor's receipts again. It may be lost. */
+        notice(notice: OperatorNotice): void;
       },
     ): Promise<string | null> {
       const query = after === null ? "" : `?after=${encodeURIComponent(after)}`;
@@ -575,6 +586,8 @@ export function workspaceApi(workspaceId: string) {
           ),
         ready: handlers.ready,
         resync: handlers.resync,
+        // This server's own stream, which sends only the notices it knows.
+        notice: (value) => handlers.notice(value as OperatorNotice),
       });
     },
   };

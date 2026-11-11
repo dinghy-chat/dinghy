@@ -406,22 +406,74 @@ export async function readState(
 
 /**
  * Moves the read position forward. It never moves back, because tabs can report out of order, and
- * it stops at the feed's position, so a wrong value cannot hide messages that arrive later.
+ * it stops at the feed's position, so a wrong value cannot hide messages that arrive later. True
+ * when it moved.
  */
 export async function markRead(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
   seq: bigint,
-): Promise<void> {
-  await tx
+): Promise<boolean> {
+  const target = sql`least(${seq}::bigint, (
+    select ${workspace.eventSeq} from ${workspace} where ${workspace.id} = ${workspaceId}
+  ))`;
+  const moved = await tx
     .update(visitor)
-    .set({
-      lastReadSeq: sql`greatest(${visitor.lastReadSeq}, least(${seq}::bigint, (
-        select ${workspace.eventSeq} from ${workspace} where ${workspace.id} = ${workspaceId}
-      )))`,
-    })
-    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
+    .set({ lastReadSeq: target })
+    .where(
+      and(
+        eq(visitor.workspaceId, workspaceId),
+        eq(visitor.id, visitorId),
+        sql`${visitor.lastReadSeq} < ${target}`,
+      ),
+    )
+    .returning({ id: visitor.id });
+  return moved.length > 0;
+}
+
+/**
+ * How far the visitor has seen the replies in one conversation: read in the chat up to `readSeq`,
+ * sent by email up to `emailedSeq`, and up to `emailFailedSeq` when the newest reply email failed.
+ * An email carries every reply the visitor had not read when it went, so it covers each reply
+ * written before it. One statement, for the whole conversation.
+ */
+export async function replyReceipts(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  visitorId: string,
+): Promise<{ readSeq: bigint; emailedSeq: bigint | null; emailFailedSeq: bigint | null }> {
+  const result = await tx.execute<{
+    read_seq: string | null;
+    emailed_seq: string | null;
+    failed_seq: string | null;
+  }>(sql`
+    with email as (
+      select max(finished_at) filter (where outcome = 'sent') as sent_at,
+             max(finished_at) filter (where outcome = 'failed') as failed_at
+      from alert_delivery
+      where workspace_id = ${workspaceId} and visitor_id = ${visitorId} and channel = 'email'
+    ),
+    covered as (
+      select max(m.seq) filter (where m.created_at <= email.sent_at) as emailed_seq,
+             max(m.seq) filter (where m.created_at <= email.failed_at
+               and email.failed_at > coalesce(email.sent_at, '-infinity')) as failed_seq
+      from email
+      left join message as m on m.workspace_id = ${workspaceId}
+        and m.conversation_id = ${conversationId} and m.author_visitor_id is null
+    )
+    select (select last_read_seq from visitor
+            where workspace_id = ${workspaceId} and id = ${visitorId}) as read_seq,
+           covered.emailed_seq, covered.failed_seq
+    from covered`);
+  const row = result.rows[0];
+  const big = (value: string | null | undefined) => (value == null ? null : BigInt(value));
+  return {
+    readSeq: big(row?.read_seq) ?? 0n,
+    emailedSeq: big(row?.emailed_seq),
+    emailFailedSeq: big(row?.failed_seq),
+  };
 }
 
 export interface Cursor {

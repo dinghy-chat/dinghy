@@ -1,5 +1,13 @@
 /** @jsxImportSource react */
-import { createElement, Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  createElement,
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   IMAGE_TYPES,
   imageProblem,
@@ -16,6 +24,7 @@ import {
   type Member,
   type Message,
   type PageView,
+  type ReplyReceipts,
   type WelcomeChat,
   type WorkspaceApi,
 } from "./api.ts";
@@ -582,11 +591,14 @@ function Composer({
 /** One message in the log. */
 function ThreadLine({
   line,
+  receipt,
   onView,
   onImageError,
   onRetry,
 }: {
   line: Line;
+  /** How far the visitor has seen this reply, under its bubble. */
+  receipt: ReactNode;
   onView(): void;
   onImageError(): void;
   onRetry(): void;
@@ -622,12 +634,66 @@ function ThreadLine({
           ...renderMarkdown(line.body, createElement),
         )
       )}
+      {receipt}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}
       {line.status === "failed" && (
         <button type="button" className="retry" onClick={onRetry}>
           {t("failed")}
         </button>
       )}
+    </>
+  );
+}
+
+type Receipt = "sent" | "emailed" | "emailFailed" | "read";
+
+const RECEIPTS: Record<Receipt, { text: TextId; icon: IconName }> = {
+  sent: { text: "receiptSent", icon: "checkThin" },
+  emailed: { text: "receiptEmailed", icon: "checks" },
+  emailFailed: { text: "receiptEmailFailed", icon: "warningCircle" },
+  read: { text: "receiptRead", icon: "checks" },
+};
+
+/** How far the visitor has seen a stored reply at this position. */
+function receiptOf(seq: bigint, receipts: ReplyReceipts): Receipt {
+  if (seq <= BigInt(receipts.readSeq)) return "read";
+  if (receipts.emailedSeq !== null && seq <= BigInt(receipts.emailedSeq)) return "emailed";
+  if (receipts.emailFailedSeq !== null && seq <= BigInt(receipts.emailFailedSeq)) {
+    return "emailFailed";
+  }
+  return "sent";
+}
+
+/**
+ * The small line under a reply: a check and what happened to it. Under the last reply it always
+ * shows. Under an earlier one it shows when the pointer is on its bubble, and screen readers
+ * read it either way.
+ */
+function ReceiptLine({ receipt, later }: { receipt: Receipt; later: boolean }) {
+  const { text, icon } = RECEIPTS[receipt];
+  return (
+    <div className={`receipt ${receipt}${later ? " later" : ""}`}>
+      <Icon name={icon} size={14} />
+      {t(text)}
+    </div>
+  );
+}
+
+/** A visitor's unsent words, faded, with dots that move while they type. */
+function TypingDraft({ draft }: { draft: string }) {
+  return (
+    <>
+      <div className="msg visitor draft" role="status" aria-label={t("visitorTypingLabel")}>
+        {draft}
+      </div>
+      <div className="meta visitor typing">
+        <span className="typing-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        {t("visitorTyping")}
+      </div>
     </>
   );
 }
@@ -689,6 +755,8 @@ export function Thread({
   readOnly,
   suspended,
   drafts,
+  receiptsVersion,
+  typingDraft,
   onBack,
   onChanged,
   onLoaded,
@@ -706,6 +774,10 @@ export function Thread({
   conversationId: string;
   /** Goes up on every change, so this loads what it has not seen, in order, with no gaps. */
   version: number;
+  /** Goes up when this visitor read replies or got a reply email. */
+  receiptsVersion(visitorId: string): number;
+  /** What the visitor is typing and has not sent, or null. */
+  typingDraft: string | null;
   onBack(): void;
   onChanged(): void;
   /** The conversation as each load finds it. */
@@ -715,6 +787,7 @@ export function Thread({
   const [online, setOnline] = useState<boolean | null>(null);
   const [pages, setPages] = useState<PageView[]>([]);
   const [welcome, setWelcome] = useState<WelcomeChat | null>(null);
+  const [receipts, setReceipts] = useState<ReplyReceipts | null>(null);
   // A read-only workspace can still answer in its welcome chat, in text: the server takes it there.
   const repliesOffReason: TextId | null = suspended
     ? "suspendedHelp"
@@ -754,24 +827,26 @@ export function Thread({
       setOnline(page.visitorOnline);
       setPages(page.visitorPages);
       setWelcome(page.welcome);
+      setReceipts(page.receipts);
       setLines((current) => page.messages.reduce(merge, current));
       const last = page.messages.at(-1);
       if (last !== undefined) position.current = last.seq;
       more = page.hasMore;
     }
   });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
-  useEffect(load, [load, version]);
+  const receiptsSeen = conversation === null ? 0 : receiptsVersion(conversation.visitor.id);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each version asks for a load.
+  useEffect(load, [load, version, receiptsSeen]);
   // The visitor's online state changes with no event, so it is read again now and then.
   useEffect(() => {
     const timer = setInterval(load, ONLINE_EVERY_MS);
     return () => clearInterval(timer);
   }, [load]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line scrolls down.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line or draft scrolls down.
   useEffect(() => {
     if (log.current !== null) log.current.scrollTop = log.current.scrollHeight;
-  }, [lines.length]);
+  }, [lines.length, typingDraft !== null]);
 
   // An image's URL expires after 15 minutes. Loading from the start gives every line a new one.
   const refreshImages = () => {
@@ -910,6 +985,10 @@ export function Thread({
     );
   }
   const closed = conversation.status === "closed";
+  const lastReply = lines.reduce(
+    (last, line, index) => (!line.fromVisitor && line.seq !== null ? index : last),
+    -1,
+  );
   return (
     <section
       className={dropping && !closed ? "thread drop" : "thread"}
@@ -965,6 +1044,10 @@ export function Thread({
         {lines.map((line, index) => {
           const day = dayOf(line);
           const meta = groupMeta(lines, index, meId);
+          const receipt =
+            line.fromVisitor || line.seq === null || receipts === null ? null : (
+              <ReceiptLine receipt={receiptOf(line.seq, receipts)} later={index !== lastReply} />
+            );
           return (
             <Fragment key={line.id}>
               {line.createdAt !== undefined && day !== dayOf(lines[index - 1]) && (
@@ -972,6 +1055,7 @@ export function Thread({
               )}
               <ThreadLine
                 line={line}
+                receipt={receipt}
                 onView={() => setViewing(line.id)}
                 onImageError={refreshImages}
                 onRetry={() => void deliver(line.id, line.body, line.file)}
@@ -982,6 +1066,7 @@ export function Thread({
             </Fragment>
           );
         })}
+        {typingDraft !== null && <TypingDraft draft={typingDraft} />}
       </div>
       {viewing !== null && (
         <ImageViewer

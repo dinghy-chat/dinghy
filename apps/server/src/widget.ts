@@ -1044,9 +1044,12 @@ export function registerWidgetRoutes(
     const identified = await identify(c);
     if (identified === null) return c.json(UNAUTHORIZED, 401);
     const { seq } = c.req.valid("json");
-    await withWorkspace(db, found.id, (tx) =>
+    const moved = await withWorkspace(db, found.id, (tx) =>
       markRead(tx, found.id, identified.visitorId, BigInt(seq)),
     );
+    // After the commit, so an operator's thread shows "Read in chat". A lost notice only waits
+    // for the thread's next load.
+    if (moved) live.tell(found.id, { kind: "receipts", visitorId: identified.visitorId });
     return c.json({ ok: true as const }, 200);
   });
 

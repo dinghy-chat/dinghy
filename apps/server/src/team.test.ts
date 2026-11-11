@@ -64,6 +64,7 @@ const live: Live = {
     wakes.push(subscriber);
   },
   revoke() {},
+  tell() {},
   async subscribe() {
     return () => {};
   },

@@ -115,6 +115,7 @@ function ConversationRow({
   selected,
   members,
   replying,
+  typing,
   showClosed,
   onSelect,
 }: {
@@ -122,6 +123,8 @@ function ConversationRow({
   selected: boolean;
   members: Member[];
   replying: string | null;
+  /** The visitor is typing now. */
+  typing: boolean;
   /** Search results mix open and closed conversations, so a closed one says so. */
   showClosed: boolean;
   onSelect(): void;
@@ -140,7 +143,11 @@ function ConversationRow({
             <strong>{title(conversation)}</strong>
             <time dateTime={conversation.updatedAt}>{shortTime(conversation.updatedAt)}</time>
           </span>
-          <span className="preview">{preview}</span>
+          {typing ? (
+            <span className="preview typing">{t("visitorTyping")}</span>
+          ) : (
+            <span className="preview">{preview}</span>
+          )}
           {(waits || closed || replying !== null || assignee !== undefined) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
@@ -323,12 +330,8 @@ export function Inbox({
     const looking = document.visibilityState === "visible" && document.hasFocus();
     if (!looking || conversationId !== shownConversation.current) chime();
   }, []);
-  const { lost, version, threadVersion, teamVersion, accountVersion } = useChanges(
-    api,
-    visible,
-    onSignedOut,
-    onVisitorMessage,
-  );
+  const { lost, version, threadVersion, receiptsVersion, typing, teamVersion, accountVersion } =
+    useChanges(api, visible, onSignedOut, onVisitorMessage);
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
   const name = membership?.name ?? t("appName");
@@ -597,6 +600,7 @@ export function Inbox({
                       selected={conversation.id === selected}
                       members={members}
                       replying={replying(conversation.id)}
+                      typing={conversation.id in typing}
                       showClosed={found !== null}
                       onSelect={() => setSelected(conversation.id)}
                     />
@@ -642,6 +646,8 @@ export function Inbox({
                   suspended={suspended}
                   conversationId={selected}
                   version={threadVersion(selected)}
+                  receiptsVersion={receiptsVersion}
+                  typingDraft={typing[selected] ?? null}
                   onBack={() => setSelected(null)}
                   onChanged={reload}
                   onLoaded={(conversation) => {

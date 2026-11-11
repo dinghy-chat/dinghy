@@ -761,6 +761,21 @@
           }
         ]
       },
+      "ReplyReceipts": {
+        "type": "object",
+        "properties": {
+          "readSeq": {
+            "type": "string"
+          },
+          "emailedSeq": {
+            "type": ["string", "null"]
+          },
+          "emailFailedSeq": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["readSeq", "emailedSeq", "emailFailedSeq"]
+      },
       "ApiKey": {
         "type": "object",
         "properties": {
@@ -3387,6 +3402,9 @@
                     },
                     "welcome": {
                       "$ref": "#/components/schemas/WelcomeChat"
+                    },
+                    "receipts": {
+                      "$ref": "#/components/schemas/ReplyReceipts"
                     }
                   },
                   "required": [
@@ -3395,7 +3413,8 @@
                     "hasMore",
                     "visitorOnline",
                     "visitorPages",
-                    "welcome"
+                    "welcome",
+                    "receipts"
                   ]
                 }
               }
@@ -4179,7 +4198,7 @@
           }
         ],
         "summary": "Stream the workspace's changes after a cursor",
-        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {

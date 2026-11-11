@@ -639,6 +639,12 @@ const en = {
   formatTools: "Formatting",
   linkWords: "link",
   withShortcut: "{name} ({keys})",
+  receiptSent: "Sent",
+  receiptRead: "Read in chat",
+  receiptEmailed: "Sent by email",
+  receiptEmailFailed: "Email failed",
+  visitorTyping: "typing…",
+  visitorTypingLabel: "The visitor is typing",
 };
 
 export type TextId = keyof typeof en;

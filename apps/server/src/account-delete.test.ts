@@ -54,6 +54,7 @@ const live: Live = {
     wakes.push(workspaceId);
   },
   revoke() {},
+  tell() {},
   async subscribe() {
     return () => {};
   },

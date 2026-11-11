@@ -196,6 +196,11 @@ export function startWorker({
     return "sent";
   };
 
+  /** A reply email to a visitor finished, so the operators' threads show how it went. */
+  const tellReceipts = ({ workspaceId, visitorId }: ClaimedDelivery) => {
+    if (visitorId !== null) signals.tell(workspaceId, { kind: "receipts", visitorId });
+  };
+
   const deliver = async (row: ClaimedDelivery) => {
     // This row's earlier claims ended in crashes, so it does not get another.
     if (row.attempts > MAX_ATTEMPTS) {
@@ -210,12 +215,14 @@ export function startWorker({
         return;
       }
       await finishDelivery(db, row, plan === null ? "skipped" : await send(plan));
+      tellReceipts(row);
     } catch (err) {
       if (stopping.signal.aborted) {
         await releaseDelivery(db, row);
       } else if (row.attempts >= MAX_ATTEMPTS) {
         logger.error({ err, deliveryId: row.id }, "alert failed for good");
         await finishDelivery(db, row, "failed");
+        tellReceipts(row);
       } else {
         logger.warn({ err, deliveryId: row.id }, "alert failed and will retry");
         await retryDelivery(db, row, retryMs);

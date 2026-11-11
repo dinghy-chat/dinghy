@@ -11,7 +11,7 @@ import { createAuth } from "./auth.ts";
 import * as schema from "./db/schema.ts";
 import { session } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import type { Live } from "./live.ts";
+import type { Live, OperatorNotice } from "./live.ts";
 import { listConversations } from "./messages.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -28,12 +28,16 @@ let b: NewWorkspace;
 let cookie: string;
 let otherCookie: string;
 const wakes: [string, string][] = [];
+const tells: [string, OperatorNotice][] = [];
 
 const live: Live = {
   wake(workspaceId, subscriber) {
     wakes.push([workspaceId, subscriber]);
   },
   revoke() {},
+  tell(workspaceId, notice) {
+    tells.push([workspaceId, notice]);
+  },
   async subscribe() {
     return () => {};
   },
@@ -1005,5 +1009,83 @@ describe("waiting for a reply", () => {
     await visitorSends(a.publicKey, "Not yours");
     const response = await get(`/v1/operator/workspaces/${team.id}/conversations`, eve);
     expect(((await response.json()) as { waiting: number }).waiting).toBe(0);
+  });
+});
+
+describe("reply receipts", () => {
+  type Read = {
+    messages: { id: string; seq: string; fromVisitor: boolean }[];
+    receipts: { readSeq: string; emailedSeq: string | null; emailFailedSeq: string | null };
+  };
+  const readThread = async (conversationId: string) =>
+    (await (await get(inA(`/conversations/${conversationId}/messages`))).json()) as Read;
+
+  test("a visitor's read moves the receipt and tells the operators, once", async () => {
+    const { token, conversationId } = await visitorSends(a.publicKey, "Hi");
+    const sent = await write("POST", inA(`/conversations/${conversationId}/messages`), {
+      clientId: "receipt-1",
+      body: "Hello",
+    });
+    const reply = (await sent.json()) as { seq: string };
+    expect((await readThread(conversationId)).receipts).toEqual({
+      readSeq: expect.any(String),
+      emailedSeq: null,
+      emailFailedSeq: null,
+    });
+    expect(BigInt((await readThread(conversationId)).receipts.readSeq)).toBeLessThan(
+      BigInt(reply.seq),
+    );
+    tells.length = 0;
+    const markRead = () =>
+      app.request(`/v1/widget/${a.publicKey}/read`, {
+        method: "POST",
+        headers: {
+          origin: WIDGET_ORIGIN,
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ seq: reply.seq }),
+      });
+    expect((await markRead()).status).toBe(200);
+    expect((await readThread(conversationId)).receipts.readSeq).toBe(reply.seq);
+    expect(tells).toEqual([[a.id, { kind: "receipts", visitorId: expect.any(String) }]]);
+    // The same position again moves nothing, so it tells nobody.
+    expect((await markRead()).status).toBe(200);
+    expect(tells).toHaveLength(1);
+  });
+
+  test("a sent reply email covers the replies before it, and a newer failure shows", async () => {
+    const { conversationId } = await visitorSends(a.publicKey, "Email me");
+    const reply = async (clientId: string) =>
+      (await (
+        await write("POST", inA(`/conversations/${conversationId}/messages`), {
+          clientId,
+          body: clientId,
+        })
+      ).json()) as { id: string; seq: string };
+    const first = await reply("email-first");
+    const [row] = (
+      await owner.execute<{ visitor_id: string }>(
+        sql`select visitor_id from conversation where id = ${conversationId}`,
+      )
+    ).rows;
+    const delivery = (messageId: string, outcome: "sent" | "failed", seq: number) =>
+      owner.execute(sql`
+        insert into alert_delivery
+          (workspace_id, event_seq, conversation_id, message_id, visitor_id, channel,
+           finished_at, outcome)
+        values (${a.id}, ${seq}, ${conversationId}, ${messageId}, ${row?.visitor_id}, 'email',
+                now(), ${outcome})`);
+    await delivery(first.id, "sent", 900_001);
+    const second = await reply("email-second");
+    expect((await readThread(conversationId)).receipts).toMatchObject({
+      emailedSeq: first.seq,
+      emailFailedSeq: null,
+    });
+    await delivery(second.id, "failed", 900_002);
+    expect((await readThread(conversationId)).receipts).toMatchObject({
+      emailedSeq: first.seq,
+      emailFailedSeq: second.seq,
+    });
   });
 });

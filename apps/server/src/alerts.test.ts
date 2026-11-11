@@ -780,12 +780,19 @@ describe("email", () => {
     const wait = (rows[0]?.nextAttemptAt.getTime() ?? 0) - Date.now();
     expect(wait).toBeGreaterThan(REPLY_EMAIL_DELAY_MS - 5000);
 
-    runWorker({ mail: true });
+    const told: unknown[] = [];
+    runWorker({
+      mail: true,
+      signals: { wake() {}, revoke() {}, tell: (_workspaceId, notice) => told.push(notice) },
+    });
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(mails).toEqual([]);
 
     await makeDue();
     await until(() => mails.length === 1, "the email");
+    // The operators' threads learn that the email went, so they show "Sent by email".
+    await until(() => told.length === 1, "the receipts notice");
+    expect(told).toEqual([{ kind: "receipts", visitorId: from }]);
     const mail = mails[0];
     expect(mail?.to).toBe("v@example.com");
     expect(mail?.subject).toBe("Acme replied to your message");

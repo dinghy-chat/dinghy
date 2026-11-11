@@ -45,6 +45,7 @@ import {
   listWorkspaceEvents,
   type NewImage,
   parseCursor,
+  replyReceipts,
   type StoredMessage,
   searchConversations,
   setConversationStatus,
@@ -306,6 +307,16 @@ const conversationRoute = createRoute({
             ),
             // Cloud only: this is a welcome chat, which has no visit or pages. Null otherwise.
             welcome: WelcomeChat.nullable(),
+            // How far the visitor has seen the replies: read in the chat up to `readSeq`, sent by
+            // email up to `emailedSeq`, and up to `emailFailedSeq` when the newest reply email
+            // failed. A reply above them all is only stored.
+            receipts: z
+              .object({
+                readSeq: z.string(),
+                emailedSeq: z.string().nullable(),
+                emailFailedSeq: z.string().nullable(),
+              })
+              .openapi("ReplyReceipts"),
           }),
         },
       },
@@ -437,8 +448,9 @@ const streamRoute = createRoute({
   security: SESSION,
   summary: "Stream the workspace's changes after a cursor",
   description:
-    "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
+    "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
     "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
     params: workspaceParams,
@@ -660,7 +672,8 @@ export function createInbox({
         const names = await authorNames(tx, workspaceId, page.messages);
         const pages = await visitorPages(tx, workspaceId, found.visitorId);
         const welcome = found.welcome ? await welcomeChat(tx, conversationId) : null;
-        return { found, page, names, pages, welcome };
+        const receipts = await replyReceipts(tx, workspaceId, conversationId, found.visitorId);
+        return { found, page, names, pages, welcome, receipts };
       });
       if (result === null) return null;
       return {
@@ -675,6 +688,11 @@ export function createInbox({
           viewedAt: row.viewedAt.toISOString(),
         })),
         welcome: result.welcome,
+        receipts: {
+          readSeq: result.receipts.readSeq.toString(),
+          emailedSeq: result.receipts.emailedSeq?.toString() ?? null,
+          emailFailedSeq: result.receipts.emailFailedSeq?.toString() ?? null,
+        },
       };
     },
 
@@ -872,6 +890,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       options: stream,
       workspaceId: id,
       subscriber: OPERATORS,
+      notices: true,
       expiresAt: undefined,
       after: after === undefined ? undefined : parseCursor(after),
       read: async (position) => {

@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { OperatorNotice } from "../../server/src/live.ts";
 import { ApiError, READ_ONLY_EVENT, type WorkspaceApi } from "./api.ts";
 
 const RETRY_LIMIT_MS = 30_000;
+/** A visitor's draft goes away this long after its last update, as they may have left. */
+const TYPING_SHOWN_MS = 6000;
 const PRESENCE_EVERY_MS = 10_000;
 
 /**
  * Says which conversation is open, and learns who else has one open. This follows what is open, and
- * no keystroke, because the product has no typing indicators. Only a visible tab counts.
+ * no operator's keystroke. Only a visible tab counts.
  */
 export function usePresence(
   api: WorkspaceApi,
@@ -83,6 +86,8 @@ export function useChanges(
     by: {},
   });
   const cursor = useRef<string | null>(null);
+  const { typing, notice, stopTyping } = useNotices();
+  const [receipts, setReceipts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!visible) return;
@@ -95,8 +100,20 @@ export function useChanges(
         let live = false;
         try {
           const reason = await api.stream(cursor.current, controller.signal, {
+            notice(value) {
+              if (value.kind === "receipts") {
+                setReceipts((current) => ({
+                  ...current,
+                  [value.visitorId]: (current[value.visitorId] ?? 0) + 1,
+                }));
+              } else notice(value);
+            },
             change(next, kind, conversationId, fromVisitor) {
               cursor.current = next;
+              // The draft became this message.
+              if (kind === "message.created" && fromVisitor && conversationId !== null) {
+                stopTyping(conversationId);
+              }
               if (live && kind === "message.created" && fromVisitor) {
                 onVisitorMessage(conversationId);
               }
@@ -160,7 +177,7 @@ export function useChanges(
       }
     })();
     return () => controller.abort();
-  }, [api, onSignedOut, onVisitorMessage, visible]);
+  }, [api, onSignedOut, onVisitorMessage, visible, notice, stopTyping]);
 
   // A write refused as read-only means this page missed the change.
   useEffect(() => {
@@ -170,5 +187,49 @@ export function useChanges(
   }, []);
 
   const threadVersion = (id: string) => threads.all + (threads.by[id] ?? 0);
-  return { lost, version, threadVersion, teamVersion, accountVersion };
+  /** Goes up when a visitor read replies or got a reply email. */
+  const receiptsVersion = (visitorId: string) => receipts[visitorId] ?? 0;
+  return {
+    lost,
+    version,
+    threadVersion,
+    receiptsVersion,
+    typing,
+    teamVersion,
+    accountVersion,
+  };
+}
+
+/** Visitors' unsent drafts by conversation. Each goes after a while with no update. */
+function useNotices() {
+  const [typing, setTyping] = useState<Record<string, string>>({});
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const stopTyping = useCallback((conversationId: string) => {
+    clearTimeout(timers.current.get(conversationId));
+    timers.current.delete(conversationId);
+    setTyping((current) => {
+      if (!(conversationId in current)) return current;
+      const { [conversationId]: _gone, ...rest } = current;
+      return rest;
+    });
+  }, []);
+  const notice = useCallback(
+    (value: Extract<OperatorNotice, { kind: "typing" }>) => {
+      if (value.draft === "") return stopTyping(value.conversationId);
+      clearTimeout(timers.current.get(value.conversationId));
+      timers.current.set(
+        value.conversationId,
+        setTimeout(() => stopTyping(value.conversationId), TYPING_SHOWN_MS),
+      );
+      setTyping((current) => ({ ...current, [value.conversationId]: value.draft }));
+    },
+    [stopTyping],
+  );
+  useEffect(() => {
+    const running = timers.current;
+    return () => {
+      for (const timer of running.values()) clearTimeout(timer);
+    };
+  }, []);
+  return { typing, notice, stopTyping };
 }

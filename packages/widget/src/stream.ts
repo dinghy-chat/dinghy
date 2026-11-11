@@ -10,6 +10,8 @@ interface StreamHandlers<T> {
   data(value: T, cursor: string): void;
   ready(cursor: string | null): void;
   resync(cursor: string): void;
+  /** Something live and unstored, on an operator's stream. */
+  notice?(value: unknown): void;
 }
 
 /**
@@ -45,6 +47,7 @@ export async function readStream<T>(
       if (event === name) handlers.data(parsed, field("id") ?? "");
       if (event === "ready") handlers.ready(parsed.cursor);
       if (event === "resync") handlers.resync(parsed.cursor);
+      if (event === "notice") handlers.notice?.(parsed);
       if (event === "close") return parsed.reason;
     }
   }
