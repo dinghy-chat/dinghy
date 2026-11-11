@@ -105,12 +105,13 @@ export interface UploadText {
   replace: TextId;
   remove: TextId;
   preview: TextId;
-  saved: TextId;
-  removed: TextId;
   tooLarge: TextId;
 }
 
-/** An image that saves as soon as it is picked or removed: the logo, or an operator's picture. */
+/**
+ * An image that saves as soon as it is picked or removed: the logo, or an operator's picture. The
+ * image shows a success, so only a failure has a note.
+ */
 export function ImageUpload({
   url,
   text,
@@ -125,12 +126,11 @@ export function ImageUpload({
   const picker = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<Note>(null);
-  const change = async (save: () => Promise<unknown>, done: TextId) => {
+  const change = async (save: () => Promise<unknown>) => {
     setBusy(true);
     setNote(null);
     try {
       await save();
-      setNote({ ok: true, text: done });
     } catch (failure) {
       setNote({
         ok: false,
@@ -143,7 +143,20 @@ export function ImageUpload({
   return (
     <>
       <div className="logo-row">
-        {url !== null && <img className="logo-preview" src={url} alt={t(text.preview)} />}
+        {url !== null && (
+          <span className="logo-frame">
+            <img className="logo-preview" src={url} alt={t(text.preview)} />
+            <button
+              type="button"
+              className="logo-remove"
+              aria-label={t(text.remove)}
+              disabled={busy}
+              onClick={() => void change(onRemove)}
+            >
+              <Icon name="close" size={14} />
+            </button>
+          </span>
+        )}
         <input
           ref={picker}
           type="file"
@@ -154,7 +167,7 @@ export function ImageUpload({
             const file = event.currentTarget.files?.[0];
             // Cleared, so picking the same file again uploads it again.
             event.currentTarget.value = "";
-            if (file !== undefined) void change(() => onUpload(file), text.saved);
+            if (file !== undefined) void change(() => onUpload(file));
           }}
         />
         <button
@@ -165,16 +178,6 @@ export function ImageUpload({
         >
           {t(url === null ? text.upload : text.replace)}
         </button>
-        {url !== null && (
-          <button
-            type="button"
-            className="pill"
-            disabled={busy}
-            onClick={() => void change(onRemove, text.removed)}
-          >
-            {t(text.remove)}
-          </button>
-        )}
       </div>
       <SaveNote note={note} />
     </>
@@ -646,6 +649,8 @@ const ICONS = {
   eyeOff:
     "M53.92,34.62A8,8,0,1,0,42.08,45.38L61.32,66.55C25,88.84,9.38,123.2,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208a127.11,127.11,0,0,0,52.07-10.83l22,24.21a8,8,0,1,0,11.84-10.76Zm47.33,75.84,41.67,45.85a32,32,0,0,1-41.67-45.85ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.16,133.16,0,0,1,25,128c4.69-8.79,19.66-33.39,47.35-49.38l18,19.75a48,48,0,0,0,63.66,70l14.73,16.2A112,112,0,0,1,128,192Zm6-95.43a8,8,0,0,1,3-15.72,48.16,48.16,0,0,1,38.77,42.64,8,8,0,0,1-7.22,8.71,6.39,6.39,0,0,1-.75,0,8,8,0,0,1-8-7.26A32.09,32.09,0,0,0,134,96.57Zm113.28,34.69c-.42.94-10.55,23.37-33.36,43.8a8,8,0,1,1-10.67-11.92A132.77,132.77,0,0,0,231.05,128a133.15,133.15,0,0,0-23.12-30.77C185.67,75.19,158.78,64,128,64a118.37,118.37,0,0,0-19.36,1.57A8,8,0,1,1,106,49.79,134,134,0,0,1,128,48c34.88,0,66.57,13.26,91.66,38.35,18.83,18.83,27.3,37.62,27.65,38.41A8,8,0,0,1,247.31,131.26Z",
   smiley: SMILEY_ICON,
+  warning:
+    "M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z",
   copy: "M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z",
   trash:
     "M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z",

@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { type CodeLanguage, highlight } from "../../../packages/widget/src/highlight.ts";
 import {
   type BillingState,
@@ -42,8 +42,6 @@ const PICTURE_TEXT: UploadText = {
   replace: "pictureReplace",
   remove: "pictureRemove",
   preview: "picturePreview",
-  saved: "pictureSaved",
-  removed: "pictureRemoved",
   tooLarge: "pictureTooLarge",
 };
 
@@ -464,23 +462,24 @@ export function DeleteAccount({
     setBusy(false);
   };
   const matches = typed.trim().toLowerCase() === me.email.toLowerCase();
+  const blockedId = useId();
+  const isBlocked = blockers.length > 0;
   return (
     <>
-      {blockers.length > 0 && (
-        <>
-          <p className="note">{t("deleteAccountBlocked")}</p>
-          <ul className="blockers">
+      {isBlocked && (
+        <div className="blockers">
+          <p className="blockers-warning" id={blockedId}>
+            <Icon name="warning" size={18} />
+            {t("deleteAccountBlocked")}
+          </p>
+          <ul className="blocker-list">
             {blockers.map((one) => (
               <li key={one.workspaceId}>
-                <b>{one.name}</b>
+                <span className="blocker-name">
+                  <b>{one.name}</b>
+                  <span className="chip">{t("deleteAccountOnlyOwner")}</span>
+                </span>
                 <span className="actions">
-                  <button
-                    type="button"
-                    className="pill small"
-                    onClick={() => onOpen(one.workspaceId, "delete")}
-                  >
-                    {t("deleteAccountWorkspace")}
-                  </button>
                   {/* A workspace that waits for payment has no Team tab until it is paid. */}
                   {(one.active || one.waiting) && (
                     <button
@@ -491,17 +490,25 @@ export function DeleteAccount({
                       {t("deleteAccountMakeOwner")}
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="pill small danger-soft"
+                    onClick={() => onOpen(one.workspaceId, "delete")}
+                  >
+                    {t("deleteAccountWorkspace")}
+                  </button>
                 </span>
               </li>
             ))}
           </ul>
           {keepsLastWorkspace && <p className="hint">{t("deleteAccountOnlyServer")}</p>}
-        </>
+        </div>
       )}
       <button
         type="button"
         className="pill danger-soft"
-        disabled={blockers.length > 0}
+        disabled={isBlocked}
+        aria-describedby={isBlocked ? blockedId : undefined}
         onClick={() => {
           setTyped("");
           setSent(false);

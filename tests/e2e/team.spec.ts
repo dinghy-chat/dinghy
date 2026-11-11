@@ -414,6 +414,25 @@ test("the last owner cannot lower their role or leave, and the app says why", as
   await page.context().close();
 });
 
+test("a sole owner's account delete names each workspace, and waits until none is left", async ({
+  browser,
+}) => {
+  const lone = `sole-${Date.now()}@example.com`;
+  const { id } = await server.createSecondWorkspace("Harbor", lone);
+  const page = await signedIn(browser, lone);
+  await page.goto(`${server.apiOrigin}/?workspace=${id}`);
+  await page.getByRole("button", { name: "Your account" }).click();
+  await page.getByRole("menuitem", { name: "Profile" }).click();
+  const row = page.locator(".blocker-list li", { hasText: "Harbor" });
+  await expect(row.getByText("Only owner", { exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Make someone an owner" })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Delete workspace" })).toBeVisible();
+  const remove = page.getByRole("button", { name: "Delete my account" });
+  await expect(remove).toBeDisabled();
+  await expect(remove).toHaveAccessibleDescription(/You are the only owner of these workspaces/);
+  await page.context().close();
+});
+
 async function myId(page: Page): Promise<string> {
   const me = await page.request.get(`${server.apiOrigin}/v1/operator/me`);
   return ((await me.json()) as { id: string }).id;

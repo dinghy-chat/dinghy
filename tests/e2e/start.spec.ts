@@ -51,7 +51,7 @@ test("a logo uploaded in the Widget tab shows there, in the sidebar and in the c
   await expect(page.getByRole("tab", { name: "Widget" })).toHaveAttribute("aria-selected", "true");
 
   await page.getByLabel("Upload logo").setInputFiles(pngFile("logo.png"));
-  await expect(page.getByText("Logo saved.")).toBeVisible();
+  // The image shows the upload worked, with no note.
   const preview = page.getByRole("img", { name: "The current logo" });
   await expect(preview).toBeVisible();
   await expect
@@ -69,7 +69,7 @@ test("a logo uploaded in the Widget tab shows there, in the sidebar and in the c
   await expect(site.locator(".head .sea")).toHaveCount(0);
   await site.close();
 
-  await page.getByRole("button", { name: "Remove" }).click();
+  await page.getByRole("button", { name: "Remove logo" }).click();
   await expect(preview).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Upload logo" })).toBeVisible();
 });

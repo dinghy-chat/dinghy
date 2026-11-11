@@ -32,8 +32,6 @@ const LOGO_TEXT: UploadText = {
   replace: "logoReplace",
   remove: "logoRemove",
   preview: "logoPreview",
-  saved: "logoSaved",
-  removed: "logoRemoved",
   tooLarge: "logoTooLarge",
 };
 
@@ -54,8 +52,10 @@ const DEVICES: Option<"light" | "dark">[] = [
   { value: "dark", label: "themeDark" },
 ];
 const LAUNCHERS: Option<WidgetSettings["launcher"]>[] = [
-  { value: "boat", label: "widgetLauncherBoat" },
   { value: "bubble", label: "widgetLauncherBubble" },
+  { value: "label", label: "widgetLauncherLabel" },
+  { value: "square", label: "widgetLauncherSquare" },
+  { value: "boat", label: "widgetLauncherBoat" },
   { value: "hidden", label: "widgetLauncherHidden" },
 ];
 const EMAIL_ASKS: Option<WidgetSettings["emailAsk"]>[] = [
@@ -237,20 +237,33 @@ function LookRow({
   );
 }
 
-/** An on or off setting, as a switch. */
+/** An on or off setting, as a switch, with a hint under its label. */
 function Switch({
   label,
+  hint,
   checked,
   onChange,
 }: {
   label: string;
+  hint?: string;
   checked: boolean;
   onChange(checked: boolean): void;
 }) {
+  const hintId = useId();
   return (
     <label className="check">
-      {label}
+      <span className="look-label">
+        {label}
+        {hint !== undefined && (
+          <small className="hint" id={hintId}>
+            {hint}
+          </small>
+        )}
+      </span>
+      {/* Named by the label alone, and described by the hint. */}
       <input
+        aria-label={label}
+        aria-describedby={hint === undefined ? undefined : hintId}
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
@@ -374,6 +387,7 @@ function LookFields({
       <div className="look-row look-switch">
         <Switch
           label={t("widgetMascot")}
+          hint={t("widgetMascotHelp")}
           checked={settings.mascot}
           onChange={(mascot) => onChange({ mascot })}
         />
@@ -385,7 +399,6 @@ function LookFields({
 /** The chat as visitors will see it, drawn by the widget's own code in a Shadow DOM. */
 function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me }) {
   const host = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(true);
   // An auto theme follows the visitor's device, which the operator picks here.
   const [device, setDevice] = useState<"light" | "dark">("light");
   const theme = appearance.theme === "auto" ? device : appearance.theme;
@@ -405,7 +418,6 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
     const shadow = element.shadowRoot ?? element.attachShadow({ mode: "open" });
     renderPreview(shadow, {
       appearance,
-      open,
       theme,
       sample: { question: t("previewQuestion"), answer: t("previewAnswer"), author },
     });
@@ -430,33 +442,19 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
         </button>
       </div>
       <div className="preview-body">
-        <div className="preview-toggles">
+        {appearance.theme === "auto" && (
           <Choices
-            label={t("previewState")}
+            label={t("previewDevice")}
             hideLabel
-            value={open ? "open" : "closed"}
-            options={[
-              { value: "open", label: "previewOpen" },
-              { value: "closed", label: "previewClosed" },
-            ]}
-            onChange={(next) => setOpen(next === "open")}
+            value={device}
+            options={DEVICES}
+            onChange={(next) => setDevice(next)}
           />
-          {appearance.theme === "auto" && (
-            <Choices
-              label={t("previewDevice")}
-              hideLabel
-              value={device}
-              options={DEVICES}
-              onChange={(next) => setDevice(next)}
-            />
-          )}
-        </div>
+        )}
         <div className="preview-stage" data-dark={theme === "dark"}>
           {/* A picture of the widget: its sample buttons do nothing, so nothing can reach them. */}
           <div ref={host} inert />
-          {!open && appearance.launcher === "hidden" && (
-            <p className="hint">{t("previewLauncherHidden")}</p>
-          )}
+          {appearance.launcher === "hidden" && <p className="hint">{t("previewLauncherHidden")}</p>}
         </div>
       </div>
     </section>

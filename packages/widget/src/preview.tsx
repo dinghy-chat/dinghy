@@ -3,7 +3,7 @@
 // request to any server. It changes with each edit, before a save.
 import { render } from "preact";
 import { useRef } from "preact/hooks";
-import { LAUNCHER_CSS, LAUNCHER_ICONS, paintColors } from "./launcher.ts";
+import { LAUNCHER_CSS, LAUNCHER_ICONS, type LauncherKind, paintColors } from "./launcher.ts";
 import {
   Branding,
   ChatHead,
@@ -19,10 +19,11 @@ import {
 } from "./panel.tsx";
 import type { SavedAppearance, TeamFace } from "./shared.ts";
 
-// The panel stays in its box, where on a phone it would fill the screen, and the launcher keeps
-// to its side. `.stage .panel` is as specific as the phone's rule, and this sheet comes after.
+// The open panel, and under it the launcher on its side, as in the corner of a site. The panel
+// stays in its box, where on a phone it would fill the screen. `.stage .panel` is as specific as
+// the phone's rule, and this sheet comes after. The icon's wrapper is no box of its own.
 const PREVIEW_CSS =
-  ":host{display:block}.stage{display:flex;justify-content:flex-end;align-items:flex-end;min-height:120px}:host([data-side=left]) .stage{justify-content:flex-start}.stage .panel{position:relative;inset:auto;width:100%;max-width:370px;height:520px;max-height:none;border-radius:var(--dinghy-radius,var(--d-radius,16px))}";
+  ":host{display:block}.stage{display:flex;flex-direction:column;align-items:flex-end;gap:16px}:host([data-side=left]) .stage{align-items:flex-start}.stage .panel{position:relative;inset:auto;width:100%;max-width:370px;height:500px;max-height:none;border-radius:var(--dinghy-radius,var(--d-radius,16px))}.launcher i{display:contents}";
 
 /** The sample conversation, in the operator app's words. */
 interface PreviewSample {
@@ -34,7 +35,6 @@ interface PreviewSample {
 
 export interface PreviewProps {
   appearance: SavedAppearance;
-  open: boolean;
   /** The colors the panel shows: the saved theme, or for auto, the visitor's device. */
   theme: "light" | "dark";
   sample: PreviewSample;
@@ -51,24 +51,21 @@ function sampleLines({ question, answer, author }: PreviewSample): Line[] {
   ];
 }
 
-function Preview({ appearance, open, sample }: PreviewProps) {
+/** The launcher as the loader draws it. The label carries the chat's title. */
+function Launcher({ kind, title }: { kind: LauncherKind; title: string }) {
+  return (
+    <span class={`launcher ${kind}`}>
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: a fixed string from launcher.ts. */}
+      <i dangerouslySetInnerHTML={{ __html: LAUNCHER_ICONS[kind] }} />
+      {kind === "label" && <b>{title}</b>}
+    </span>
+  );
+}
+
+function Preview({ appearance, sample }: PreviewProps) {
   const input = useRef<HTMLTextAreaElement>(null);
   const say = sayer(appearance);
   const { launcher, mascot, emailAsk } = appearance;
-  // A hidden launcher draws nothing, and the operator app says so.
-  if (!open) {
-    return (
-      <div class="stage">
-        {launcher !== "hidden" && (
-          <span
-            class={`launcher ${launcher}`}
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: a fixed string from launcher.ts.
-            dangerouslySetInnerHTML={{ __html: LAUNCHER_ICONS[launcher] }}
-          />
-        )}
-      </div>
-    );
-  }
   // The sample visitor has written, unless the email comes first.
   const email = emailLayout(emailAsk, {
     mayAsk: true,
@@ -113,6 +110,8 @@ function Preview({ appearance, open, sample }: PreviewProps) {
         )}
         {appearance.branding && <Branding />}
       </section>
+      {/* A hidden launcher draws nothing, and the operator app says so. */}
+      {launcher !== "hidden" && <Launcher kind={launcher} title={say("title")} />}
     </div>
   );
 }

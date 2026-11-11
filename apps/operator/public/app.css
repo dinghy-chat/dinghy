@@ -402,6 +402,46 @@ textarea {
   align-items: center;
   gap: 12px;
 }
+/* The image, with its remove button on its top-right corner. */
+.logo-frame {
+  position: relative;
+  display: inline-flex;
+  margin: 10px 10px 0 0;
+}
+/* 28px to see, with a 44px target on a touch screen. */
+.logo-remove {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--navy);
+  box-shadow: 0 1px 3px rgb(11 34 57 / 0.16);
+  cursor: pointer;
+}
+.logo-remove::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.logo-remove:hover:not(:disabled) {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.logo-remove:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.logo-remove:disabled {
+  color: var(--mute);
+  cursor: default;
+}
 /* White behind it, as in the chat's header, so a transparent logo looks the same in both. */
 .logo-preview {
   width: 64px;
@@ -2017,8 +2057,10 @@ img.ws-tile {
   justify-self: start;
 }
 /* What cannot be undone: a red outline and a red button. */
-/* Outset by its padding, so its columns line up with the rows above it. */
+/* Outset by its padding, so its columns line up with the rows above it. No wider than those
+   rows' content, so its outline does not run on far past it. */
 .danger-zone {
+  max-width: calc(960px + 49px);
   margin: 16px -24px 0;
   padding: 22px 23px;
   border: 1.5px solid var(--bad-line);
@@ -2027,20 +2069,47 @@ img.ws-tile {
 .danger-zone h3 {
   color: var(--bad);
 }
-/* The workspaces that keep an account's delete waiting, each with its two ways out. */
+/* The workspaces that keep an account's delete waiting: why, then each one with its two ways
+   out, between hairlines. */
 .blockers {
   display: grid;
-  gap: 8px;
+  gap: 12px;
 }
-.blockers li {
+.blockers-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+.blockers-warning svg {
+  flex: none;
+  margin-top: 1px;
+}
+.blocker-list {
+  border-bottom: 1px solid var(--line);
+}
+.blocker-list > li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 12px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: var(--soft);
+  gap: 10px 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.blocker-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  color: var(--navy);
+  overflow-wrap: anywhere;
 }
 .page-row + .danger-zone,
 .tab-panel > .danger-zone:first-child {
@@ -2637,19 +2706,18 @@ img.ws-tile {
   display: grid;
   gap: 12px;
 }
-.preview-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-}
-/* A page behind the widget: the app's sky by day, and a dark page with the dark preview. */
+/* A page behind the widget, in the widget's own scheme and not the app's: the light sky behind a
+   light widget and the night behind a dark one, so the tokens inside follow it too. */
 .preview-stage {
+  display: grid;
+  gap: 12px;
   padding: 16px;
   border-radius: 18px;
   background: var(--sky);
+  color-scheme: light;
 }
 .preview-stage[data-dark="true"] {
-  background: #0b141d;
+  color-scheme: dark;
 }
 .preview-fold {
   display: none;
@@ -3279,6 +3347,10 @@ img.ws-tile {
   .danger-zone {
     margin-inline: 0;
     padding: 18px;
+  }
+  .blocker-list > li {
+    flex-direction: column;
+    align-items: flex-start;
   }
   .tabs {
     flex-wrap: wrap;
