@@ -232,12 +232,7 @@ async function readWorkspace(
         .from(widgetSettings)
         .where(eq(widgetSettings.workspaceId, workspaceId));
       if (widget === undefined) return null;
-      const {
-        workspaceId: _workspace,
-        logoUpdatedAt: _logo,
-        updatedAt: _updated,
-        ...look
-      } = widget;
+      const { workspaceId: _workspace, logoUpdatedAt: _logo, ...look } = widget;
       const members = await tx
         .select({
           id: operator.id,
