@@ -258,14 +258,19 @@ async function deleteAccount(
       for (const { workspaceId, role } of await operatorWorkspaces(tx, operatorId)) {
         await enterWorkspace(tx, workspaceId);
         if (await isSoleOwner(tx, workspaceId, role)) {
-          const goes = alone.includes(workspaceId);
-          // Its open invites end first, so a join either committed before, and the heir below
-          // finds the new member, or waits on the invite's row and then finds it revoked.
-          if (goes) await revokeInvites(tx, workspaceId);
-          const heir = await heirOf(tx, workspaceId, operatorId);
+          let heir = await heirOf(tx, workspaceId, operatorId);
+          if (heir === null) {
+            // It goes with the account. Its unused invites end first, so a join either committed
+            // before, and the second look finds the new member, or waits on the invite's row and
+            // then finds it revoked.
+            await revokeInvites(tx, workspaceId);
+            heir = await heirOf(tx, workspaceId, operatorId);
+          }
           if (heir === null) {
             // Someone left after the subscriptions were canceled, so this one still has its own.
-            if (!goes && beforeDelete !== undefined) throw new Refusal("team_changed");
+            if (!alone.includes(workspaceId) && beforeDelete !== undefined) {
+              throw new Refusal("team_changed");
+            }
             if (keepsLastWorkspace) {
               // As in the workspace's own delete, two deletes of the last two take turns.
               await tx.execute(sql`select pg_advisory_xact_lock(hashtext('workspace-delete'))`);
@@ -278,6 +283,8 @@ async function deleteAccount(
             deleted.push(workspaceId);
             continue;
           }
+          // A member who joined after the subscriptions were canceled becomes the owner too. The
+          // workspace keeps its data, and the lifecycle emails tell them how to pay again.
           await tx
             .update(workspaceMember)
             .set({ role: "owner" })

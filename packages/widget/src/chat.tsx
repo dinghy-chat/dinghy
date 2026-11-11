@@ -256,9 +256,13 @@ function Chat({
   const pageMessage = useRef<string | null>(null);
   useEffect(() => {
     if (prefill === null) return;
-    const last = pageMessage.current;
-    pageMessage.current = prefill.text;
-    setDraft((current) => (current.trim() === "" || current === last ? prefill.text : current));
+    setDraft((current) => {
+      if (current.trim() !== "" && current !== pageMessage.current) return current;
+      // Only a message that filled the box counts as the page's, so one it ignored never makes
+      // the visitor's words replaceable.
+      pageMessage.current = prefill.text;
+      return prefill.text;
+    });
   }, [prefill]);
 
   // Only a visitor with a token has the flag, so one who never chatted stores nothing.
