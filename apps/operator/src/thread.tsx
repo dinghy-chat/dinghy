@@ -34,6 +34,7 @@ import { useLatestLoad, useLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
+import { toast } from "./toast.tsx";
 import { Avatar, EmojiButton, ErrorNote, failureText, Loading, useModal } from "./ui.tsx";
 import { avatarLetters, presenceLine, replyAuthor, title } from "./visitor.ts";
 import { VisitorPanel } from "./visitor-panel.tsx";
@@ -137,6 +138,8 @@ function ThreadHead({
   onStatus,
   onBlocked,
   onDelete,
+  onTranscript,
+  emailAvailable,
   panel,
 }: {
   conversation: Conversation;
@@ -152,13 +155,27 @@ function ThreadHead({
   onStatus(status: "open" | "closed"): void;
   onBlocked(blocked: boolean): void;
   onDelete(): void;
+  onTranscript(): void;
+  /** This server sends email, so a transcript can go. */
+  emailAvailable: boolean;
 }) {
   const closed = conversation.status === "closed";
   const { blocked } = conversation.visitor;
   const assignee = members.some((member) => member.id === conversation.assigneeOperatorId)
     ? (conversation.assigneeOperatorId ?? "")
     : "";
+  const noEmail = !emailAvailable
+    ? t("transcriptNoServer")
+    : conversation.visitor.email === null
+      ? t("transcriptNoEmail")
+      : undefined;
   const more: MenuItem[] = [
+    {
+      label: t("sendTranscript"),
+      lead: <Icon name="download" size={18} />,
+      ...(noEmail === undefined ? {} : { unavailable: noEmail }),
+      onSelect: onTranscript,
+    },
     {
       label: blocked ? t("unblockVisitor") : t("blockVisitor"),
       lead: <Icon name="prohibit" size={18} />,
@@ -620,6 +637,7 @@ export function Thread({
   members,
   replying,
   canDelete,
+  emailAvailable,
   readOnly,
   suspended,
   drafts,
@@ -638,6 +656,8 @@ export function Thread({
   members: Member[];
   replying: string | null;
   canDelete: boolean;
+  /** This server sends email, so a transcript can go. */
+  emailAvailable: boolean;
   /** The subscription ended: replies are off, except text in the welcome chat. */
   readOnly: boolean;
   suspended: boolean;
@@ -850,6 +870,9 @@ export function Thread({
     onChanged();
   };
 
+  const sendTranscript = async () => {
+    if (await act(() => api.sendTranscript(conversationId))) toast("transcriptSent");
+  };
   const setStatus = async (status: "open" | "closed") => {
     if (!(await act(() => api.setStatus(conversationId, status)))) return;
     setConversation((current) => (current === null ? current : { ...current, status }));
@@ -902,6 +925,8 @@ export function Thread({
           onStatus={(status) => void setStatus(status)}
           onBlocked={(blocked) => void setBlocked(blocked)}
           onDelete={() => setConfirming(true)}
+          onTranscript={() => void sendTranscript()}
+          emailAvailable={emailAvailable}
           panel={welcome === null ? panel : null}
         />
         {confirming && (

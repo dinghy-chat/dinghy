@@ -209,7 +209,11 @@ export function startWorker({
       return;
     }
     try {
-      const plan = await planDelivery(db, row, { publicUrl, secret });
+      const plan = await planDelivery(db, row, {
+        publicUrl,
+        secret,
+        imageOrigin: images?.origin ?? publicUrl,
+      });
       if (plan?.channel === "later") {
         await postponeDelivery(db, row, plan.until);
         return;

@@ -1409,6 +1409,16 @@ button.workspace[aria-expanded="true"],
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* An item that cannot be chosen now, with the reason under its label. */
+.item[aria-disabled="true"] {
+  color: var(--mute);
+  cursor: default;
+}
+.item-label small {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+}
 .item[aria-selected="true"],
 .item[aria-checked="true"] {
   font-weight: 650;

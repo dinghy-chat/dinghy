@@ -45,6 +45,8 @@ A widget send also answers `conversationStarted`: true when that message started
 
 A message's `body` is plain text that the widget, the operator app and reply emails show as a small Markdown: `**bold**`, `*italic*`, `` `code` ``, blocks between lines of three backticks, `[words](https://...)` links, bare `http` and `https` addresses, and lists that start with `-`, `*`, `+` or `1.`. HTML, images and headings stay text, and only `http`, `https` and `mailto` links work. The API stores and answers the body as it was sent.
 
+`POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/transcript` emails the visitor the whole conversation now, open or closed, whatever the `transcript` setting says. It answers 409 `no_email` when the visitor gave no email and `email_unavailable` when the server sends no email. It adds a `transcript.requested` event, and the worker sends it at least once, as it does reply emails. A transcript drops the visitor's waiting reply email, unless that email also carries a reply from another conversation. Transcripts go to visitors only, never to operators.
+
 A message's `kind` is `text` or `image` for what people wrote. Closing or reopening a conversation writes a status line in the same transaction as its `conversation.closed` or `conversation.reopened` event and with the event's position, so the widget and the operator app show it in order: `kind` is `closed` or `reopened`, `body` is null, and the author is whoever made the change (an operator, an API key, or no one shown on Dinghy Cloud's welcome chat). A status line has no `message.created` event, so it raises no alert, no push and no webhook, it is never a conversation's `lastMessage`, and it counts toward neither unread replies nor first replies. A client that shows only chat skips these kinds.
 
 An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
@@ -88,6 +90,7 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 | `mascot` | Whether the open chat shows the boat |
 | `emailAsk` | `off`, `after_first` or `before_first`: when a signed-out visitor is asked for an email |
 | `branding` | Whether the chat shows "Powered by Dinghy" |
+| `transcript` | Whether a visitor with an email gets the whole conversation by email 5 minutes after it closes, when someone on the team replied. A reopen within the 5 minutes cancels it, and a later close sends another only after new messages |
 | `sound` | Whether the widget plays a soft chime for a reply that arrives while the chat is closed or its tab is hidden |
 
 Both answer the settings with `logoUrl` and `team`: up to 3 members who sent the latest replies, each with an `id` that matches the `authorId` on their replies, a first name and a picture's address. `PUT .../widget/logo` sets the logo from the raw body, a PNG, JPEG or WebP of at most 2 MB, and `DELETE .../widget/logo` removes it. An API key and MCP cannot reach these routes.

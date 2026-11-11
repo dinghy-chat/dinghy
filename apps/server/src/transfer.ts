@@ -56,6 +56,7 @@ const ExportFile = z.strictObject({
     widget: WidgetSettingsSchema.extend({
       typingPreview: z.boolean().default(true),
       sound: z.boolean().default(true),
+      transcript: z.boolean().default(true),
     }),
     // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z

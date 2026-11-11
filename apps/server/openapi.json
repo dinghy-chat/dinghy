@@ -65,6 +65,7 @@
                   "mail_failed",
                   "name_mismatch",
                   "no_customer",
+                  "no_email",
                   "not_a_member",
                   "not_an_image",
                   "not_found",
@@ -225,6 +226,9 @@
           },
           "sound": {
             "type": "boolean"
+          },
+          "transcript": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -240,7 +244,8 @@
           "radius",
           "emailAsk",
           "branding",
-          "sound"
+          "sound",
+          "transcript"
         ]
       },
       "NewVisitor": {
@@ -4865,7 +4870,7 @@
           }
         ],
         "summary": "Stream the workspace's changes after a cursor",
-        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
@@ -10546,6 +10551,135 @@
           },
           "413": {
             "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/transcript": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Email the visitor the whole conversation now, through the worker. A second request before a new message sends nothing more",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "no_email: the visitor gave no email. email_unavailable: this server sends no email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

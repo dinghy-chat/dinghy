@@ -42,6 +42,7 @@ const CHANGED = {
   emailAsk: "before_first",
   branding: false,
   sound: false,
+  transcript: false,
 };
 
 let database: TestDatabase;

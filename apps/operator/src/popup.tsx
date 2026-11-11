@@ -249,6 +249,8 @@ export interface MenuItem {
   divider?: boolean;
   /** Something small after the label, such as a count. */
   trail?: ReactNode;
+  /** Why it cannot be chosen now, shown under its label. */
+  unavailable?: string;
 }
 
 /** A button that opens a menu of actions. */
@@ -276,8 +278,10 @@ export function Menu({
     () => 0,
   );
   const choose = (index: number) => {
+    const item = items[index];
+    if (item?.unavailable !== undefined) return;
     popup.hide(true);
-    items[index]?.onSelect();
+    item?.onSelect();
   };
   return (
     <div className={`menu-wrap ${className}`} ref={popup.wrap}>
@@ -315,6 +319,7 @@ export function Menu({
               role={item.checked === undefined ? "menuitem" : "menuitemradio"}
               tabIndex={-1}
               aria-checked={item.checked}
+              aria-disabled={item.unavailable === undefined ? undefined : true}
               className={[
                 "item",
                 index === popup.active && "active",
@@ -327,7 +332,10 @@ export function Menu({
               onClick={() => choose(index)}
             >
               {item.lead}
-              <span className="item-label">{item.label}</span>
+              <span className="item-label">
+                {item.label}
+                {item.unavailable !== undefined && <small>{item.unavailable}</small>}
+              </span>
               {item.trail}
               {item.checked === true && <Icon name="check" size={16} />}
             </div>

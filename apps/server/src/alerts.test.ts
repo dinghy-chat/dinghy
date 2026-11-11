@@ -17,8 +17,10 @@ import {
   finishDelivery,
   MAX_ATTEMPTS,
   pruneOnce,
+  queueTranscript,
   REPLY_EMAIL_DELAY_MS,
   REPLY_EMAILS_PER_DAY,
+  TRANSCRIPT_DELAY_MS,
 } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -30,6 +32,7 @@ import {
   operator,
   pushSubscription,
   visitor,
+  widgetSettings,
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
@@ -650,7 +653,7 @@ describe("crashes of the real worker process", () => {
 });
 
 describe("email", () => {
-  const replyRows = async () => (await deliveries()).filter((row) => row.visitorId !== null);
+  const replyRows = async () => (await deliveries()).filter((row) => row.channel === "email");
 
   test("an operator who chose email gets one per conversation in a burst", async () => {
     const email = `anna-${randomUUID()}@example.com`;
@@ -921,9 +924,12 @@ describe("email", () => {
     expect(await replyRows()).toHaveLength(1);
     await makeDue();
     runWorker({ mail: true });
-    await until(() => mails.length === 1, "the email");
-    expect(mails[0]?.text).toContain("Answer in the first");
-    expect(mails[0]?.text).toContain("Answer in the second");
+    // The first conversation's transcript goes too, and leaves the reply email, which carries a
+    // reply from the second conversation.
+    const replyMail = () => mails.find((one) => one.subject === "Acme replied to your message");
+    await until(() => replyMail() !== undefined, "the email");
+    expect(replyMail()?.text).toContain("Answer in the first");
+    expect(replyMail()?.text).toContain("Answer in the second");
   });
 
   test("a reply during a send gets its own later email", async () => {
@@ -1399,5 +1405,135 @@ describe("the routes", () => {
     expect(await stops()).toEqual([
       expect.objectContaining({ addressHash: emailAddressHash(email) }),
     ]);
+  });
+});
+
+describe("transcripts", () => {
+  const setStatus = (conversationId: string, operatorId: string, status: "open" | "closed") =>
+    withWorkspace(app, space.id, (tx) =>
+      setConversationStatus(tx, space.id, conversationId, status, { kind: "operator", operatorId }),
+    );
+  const transcripts = async () =>
+    (await deliveries()).filter((row) => row.channel === "transcript");
+  /** Only the transcripts become due, so a waiting reply email keeps its own time. */
+  const transcriptsDue = () =>
+    owner.execute(sql`update alert_delivery set next_attempt_at = now()
+                      where finished_at is null and channel = 'transcript'`);
+  const allFinished = async () => (await deliveries()).every((row) => row.finishedAt !== null);
+
+  async function chat(email: string | null = "visitor@example.com") {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor(email);
+    const written = await visitorWrites(from, "How do I export my data?");
+    const conversationId = written.message.conversationId;
+    await operatorWrites(anna, conversationId, "Open **Settings**, then Export.");
+    return { anna, from, conversationId };
+  }
+
+  test("a close sends one transcript after the delay, and drops the waiting reply email", async () => {
+    const { anna, conversationId } = await chat();
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    const [row, ...others] = await transcripts();
+    expect(others).toEqual([]);
+    expect(row?.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() + TRANSCRIPT_DELAY_MS - 60_000);
+    await transcriptsDue();
+    runWorker({ mail: true });
+    await until(async () => (await transcripts())[0]?.finishedAt != null, "the transcript");
+    await until(allFinished, "the reply email to be dropped");
+    expect(mails).toHaveLength(1);
+    const [mail] = mails;
+    expect(mail?.subject).toBe("Your conversation with Acme");
+    expect(mail?.text).toMatch(
+      /You, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC:\nHow do I export my data\?/,
+    );
+    expect(mail?.text).toContain("anna-");
+    expect(mail?.text).toContain("Continue the chat: ");
+    expect(mail?.html).toContain("<strong>Settings</strong>");
+    const reply = (await deliveries()).find((one) => one.channel === "email");
+    expect(reply?.outcome).toBe("skipped");
+  });
+
+  test("a reopen within the delay cancels it", async () => {
+    const { anna, conversationId } = await chat();
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    await setStatus(conversationId, anna, "open");
+    await transcriptsDue();
+    runWorker({ mail: true });
+    await until(async () => (await transcripts())[0]?.finishedAt != null, "the transcript row");
+    expect((await transcripts())[0]?.outcome).toBe("skipped");
+    expect(mails.filter((one) => one.subject.startsWith("Your conversation"))).toEqual([]);
+  });
+
+  test("a new close sends another only after new messages", async () => {
+    const { anna, conversationId } = await chat();
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    await setStatus(conversationId, anna, "open");
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    // The first close's transcript still waits, and holds every message.
+    expect(await transcripts()).toHaveLength(1);
+    await setStatus(conversationId, anna, "open");
+    await operatorWrites(anna, conversationId, "One more thing.");
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    expect(await transcripts()).toHaveLength(2);
+  });
+
+  test("none goes with the setting off, with no email, with no reply or with no mail server", async () => {
+    const off = await chat();
+    await owner
+      .update(widgetSettings)
+      .set({ transcript: false })
+      .where(eq(widgetSettings.workspaceId, space.id));
+    await setStatus(off.conversationId, off.anna, "closed");
+    await fanOutAll();
+    await owner
+      .update(widgetSettings)
+      .set({ transcript: true })
+      .where(eq(widgetSettings.workspaceId, space.id));
+    const noEmail = await chat(null);
+    await setStatus(noEmail.conversationId, noEmail.anna, "closed");
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const silent = await visitorWrites(await addVisitor("quiet@example.com"), "Hello?");
+    await setStatus(silent.message.conversationId, anna, "closed");
+    await fanOutAll();
+    const noServer = await chat();
+    await setStatus(noServer.conversationId, noServer.anna, "closed");
+    await fanOutAll({ push: true, email: false });
+    expect(await transcripts()).toEqual([]);
+  });
+
+  test("a close alerts no operator", async () => {
+    const { anna, conversationId } = await chat(null);
+    await addDevice(anna, "anna-phone");
+    await fanOutAll();
+    const before = (await deliveries()).length;
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    expect(await deliveries()).toHaveLength(before);
+  });
+
+  test("an operator sends one by hand, even while the conversation is open", async () => {
+    const { conversationId } = await chat();
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    // A second click while the first waits adds nothing.
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await fanOutAll();
+    expect(await transcripts()).toHaveLength(1);
+    runWorker({ mail: true });
+    await until(() => mails.some((one) => one.subject === "Your conversation with Acme"), "it");
+  });
+
+  test("a hand-sent one needs an email, and stays in its workspace", async () => {
+    const { conversationId } = await chat(null);
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("no_email");
+    const other = await createWorkspace(app, "Other", ["https://other.example.com"]);
+    const theirs = await chat();
+    expect(await queueTranscript(app, other.id, theirs.conversationId)).toBe("missing");
+    await fanOutAll();
+    expect(await transcripts()).toEqual([]);
   });
 });

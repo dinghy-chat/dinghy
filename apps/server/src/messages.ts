@@ -868,7 +868,8 @@ export async function listConversationMessages(
 /**
  * Closes or reopens a conversation. Its event tells other operators, and a status line with the
  * event's sequence tells the visitor, in the same transaction, so both see it in order. The line has
- * no message.created event, so it raises no alert and no webhook.
+ * no message.created event, so it raises no reply alert and no message webhook. A close asks the
+ * worker whether to email the visitor a transcript.
  */
 export async function setConversationStatus(
   tx: Transaction,
@@ -890,26 +891,71 @@ export async function setConversationStatus(
     )
     .returning({ id: conversation.id });
   if (changed.length === 0) return;
+  const [line] = await tx
+    .insert(message)
+    .values({
+      workspaceId,
+      conversationId,
+      seq,
+      kind: status === "closed" ? "closed" : "reopened",
+      // One line per change, so the sequence makes it unique.
+      clientId: `status-${seq}`,
+      ...(actor.kind === "visitor"
+        ? { authorVisitorId: actor.visitorId }
+        : actor.kind === "operator"
+          ? { authorOperatorId: actor.operatorId }
+          : { authorApiKeyId: actor.apiKeyId }),
+    })
+    .returning({ id: message.id });
+  if (line === undefined) throw new Error("The status line insert returned no row");
   await tx.insert(event).values({
     workspaceId,
     seq,
     kind: status === "closed" ? "conversation.closed" : "conversation.reopened",
-    payload: { conversationId },
+    payload: { conversationId, messageId: line.id } satisfies StatusPayload,
+    // A close may email the visitor a transcript, which the worker decides.
+    needsAlert: status === "closed",
     needsWebhook: wantsWebhook(workspaceId),
   });
-  await tx.insert(message).values({
+}
+
+/**
+ * Asks the worker to email the visitor this conversation now, through the event table, so it goes
+ * at least once. The payload names the newest message. False with no message to send.
+ */
+export async function requestTranscript(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+): Promise<boolean> {
+  const [newest] = await tx
+    .select({ id: message.id })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversationId),
+        isChat(),
+      ),
+    )
+    .orderBy(desc(message.seq))
+    .limit(1);
+  if (newest === undefined) return false;
+  const seq = await nextSeq(tx, workspaceId);
+  await tx.insert(event).values({
     workspaceId,
-    conversationId,
     seq,
-    kind: status === "closed" ? "closed" : "reopened",
-    // One line per change, so the sequence makes it unique.
-    clientId: `status-${seq}`,
-    ...(actor.kind === "visitor"
-      ? { authorVisitorId: actor.visitorId }
-      : actor.kind === "operator"
-        ? { authorOperatorId: actor.operatorId }
-        : { authorApiKeyId: actor.apiKeyId }),
+    kind: "transcript.requested",
+    payload: { conversationId, messageId: newest.id } satisfies StatusPayload,
+    needsAlert: true,
   });
+  return true;
+}
+
+/** The payload of a close or a reopen: the conversation, and its status line. */
+export interface StatusPayload {
+  conversationId: string;
+  messageId: string;
 }
 
 /** Sets or clears the assignee. An event tells other operators. Returns false with no such row. */

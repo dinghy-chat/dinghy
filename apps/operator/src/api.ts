@@ -649,6 +649,9 @@ export function workspaceApi(workspaceId: string) {
       if (!response.ok) return failed(response);
       return (await response.json()) as Message;
     },
+    /** Emails the visitor the whole conversation, through the worker. */
+    sendTranscript: (id: string) =>
+      call<{ ok: true }>(`${conversation(id)}/transcript`, { method: "POST" }),
     setStatus: (id: string, status: "open" | "closed") =>
       call<{ ok: true }>(conversation(id), {
         method: "PATCH",

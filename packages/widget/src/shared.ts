@@ -41,6 +41,8 @@ export interface WidgetSettings {
   branding: boolean;
   /** A chime when a reply arrives and the visitor is not looking at the chat. */
   sound: boolean;
+  /** The visitor gets the conversation by email when it closes. The widget does not use it. */
+  transcript: boolean;
 }
 
 /** A member the widget's header shows: a first name and a picture, never an email. */
@@ -86,6 +88,7 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   emailAsk: "after_first",
   branding: true,
   sound: true,
+  transcript: true,
   typingPreview: true,
   logoUrl: null,
   team: [],

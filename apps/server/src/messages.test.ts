@@ -568,7 +568,7 @@ describe("status lines", () => {
       }),
     );
 
-  test("a close writes its line with its event's position, and raises no alert", async () => {
+  test("a close writes its line with its event's position", async () => {
     const { token } = await newVisitor();
     const sent = (await (await send(token, "s1", "help")).json()) as WireMessage;
     await closeAs(sent.conversationId, "closed");
@@ -587,7 +587,8 @@ describe("status lines", () => {
         .where(and(eq(event.workspaceId, a.id), eq(event.seq, line?.seq ?? 0n))),
     );
     expect(closed?.kind).toBe("conversation.closed");
-    expect(closed?.needsAlert).toBe(false);
+    // The worker decides on a transcript from it. Its payload names the line.
+    expect(closed?.payload).toMatchObject({ conversationId: sent.conversationId });
     // The widget's history delivers it, in order, with no body.
     const page = await history(token);
     expect(page.messages.map((one) => one.kind)).toEqual(["text", "closed"]);

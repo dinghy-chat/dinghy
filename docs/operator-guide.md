@@ -14,6 +14,8 @@ To send an image, paste it, drag it onto the chat, or select the image button. T
 
 If a message shows "Not sent", select it to try again. A retry cannot create a second copy.
 
+When you close a conversation, a visitor who gave an email gets the whole conversation by email 5 minutes later, if someone on the team replied, with a link to continue the chat. Reopening it within the 5 minutes cancels it. **Send transcript** in the conversation's **…** menu sends it now. **Settings > Appearance** turns the email at close off.
+
 Under your team's last reply, a small line says how far it got: **Sent** when Dinghy stored it, **Sent by email** when a reply email carried it to the visitor, **Email failed** when that email could not go, and **Read in chat** once the visitor has seen it in the widget. Point at an earlier reply to see its line. The line changes by itself when the visitor reads.
 
 If two of you open the same conversation, each sees "… has this conversation open", so you do not answer twice. It means only that the conversation is open on their screen.

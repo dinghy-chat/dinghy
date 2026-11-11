@@ -1,9 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { markdownHtml } from "../../../packages/widget/src/markdown.ts";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { escapeHtml, markdownHtml } from "../../../packages/widget/src/markdown.ts";
+import { firstName } from "../../../packages/widget/src/shared.ts";
 import { CHAT_LINK_DAYS, chatLinkUrl, createChatLink, pruneChatLinks } from "./chat-link.ts";
 import {
   alertDelivery,
+  CHAT_KINDS,
   conversation,
   emailStop,
   event,
@@ -12,6 +14,7 @@ import {
   operator,
   pushSubscription,
   visitor,
+  widgetSettings,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
@@ -19,7 +22,15 @@ import { type Database, enterWorkspace, type Transaction, withWorkspace } from "
 import { emailAddressHash } from "./identity.ts";
 import { prunePageViews } from "./journey.ts";
 import { letter, letterHtml } from "./letter.ts";
-import { isChat, joinVisitor } from "./messages.ts";
+import {
+  isChat,
+  joinVisitor,
+  type MessageAuthor,
+  messageAuthors,
+  requestTranscript,
+  type StatusPayload,
+} from "./messages.ts";
+import { imageUrls } from "./public-images.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 
@@ -35,6 +46,10 @@ const REPLY_EMAIL_GAP_MS = 15 * MINUTE_MS;
 export const REPLY_EMAILS_PER_DAY = 5;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 const REPLIES_IN_EMAIL = 5;
+// The transcript waits, so a quick reopen cancels it.
+export const TRANSCRIPT_DELAY_MS = 5 * MINUTE_MS;
+// The most messages a transcript holds, the newest ones. The chat link has the rest.
+const TRANSCRIPT_MESSAGES = 500;
 const PUSH_BODY_CHARACTERS = 200;
 export const RETENTION_MS = 30 * DAY_MS;
 const PRUNE_BATCH = 1000;
@@ -52,6 +67,19 @@ const text = {
     `Open the conversation: ${url}`,
     "You get these because email alerts are on for you. You can turn them off in Settings, " +
       "under Alerts.",
+  ],
+  transcriptSubject: (name: string) => `Your conversation with ${name}`,
+  transcriptIntro: (name: string) => `Here is your conversation with ${name}, for your records.`,
+  transcriptYou: "You",
+  transcriptImage: "Sent an image. Open the chat to see it.",
+  transcriptLine: (who: string, when: string) => `${who}, ${when}`,
+  transcriptBody: <Messages>(name: string, messages: Messages, chat: string, stop: string) => [
+    text.transcriptIntro(name),
+    messages,
+    `Continue the chat: ${chat}`,
+    `The link works for ${CHAT_LINK_DAYS} days. Anyone who has it can read and reply, so don't forward this email.`,
+    `You got this because this address was entered in a chat with ${name}. If that wasn't you, ` +
+      `or you'd rather not get these emails, stop them here: ${stop}`,
   ],
   replySubject: (name: string) => `${name} replied to your message`,
   replyBody: <Replies>(name: string, replies: Replies, chat: string, stop: string) => [
@@ -234,6 +262,7 @@ async function replyEmailRows(tx: Transaction, base: DeliveryBase): Promise<Deli
         and(
           eq(alertDelivery.workspaceId, workspaceId),
           eq(alertDelivery.visitorId, target.id),
+          eq(alertDelivery.channel, "email"),
           gt(alertDelivery.createdAt, new Date(now - DAY_MS)),
         ),
       )
@@ -257,6 +286,7 @@ async function replyEmailRows(tx: Transaction, base: DeliveryBase): Promise<Deli
           and(
             eq(alertDelivery.workspaceId, workspaceId),
             eq(alertDelivery.visitorId, target.id),
+            eq(alertDelivery.channel, "email"),
             isNull(alertDelivery.finishedAt),
           ),
         );
@@ -275,13 +305,111 @@ async function replyEmailRows(tx: Transaction, base: DeliveryBase): Promise<Deli
 }
 
 /**
+ * A close: one transcript to the visitor after a delay, when the visitor has an email, the workspace
+ * sends transcripts, someone on the team replied, and no transcript holds every message already.
+ */
+async function transcriptRows(tx: Transaction, base: DeliveryBase): Promise<DeliveryRow[]> {
+  const { workspaceId, conversationId } = base;
+  const [target] = await tx
+    .select({ id: visitor.id, email: visitor.email, wanted: widgetSettings.transcript })
+    .from(conversation)
+    .innerJoin(visitor, joinVisitor())
+    .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, conversation.workspaceId))
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  if (target === undefined || target.email === null || !target.wanted) return [];
+  if (await emailStopped(tx, workspaceId, target.email)) return [];
+  const result = await tx.execute<{ last_seq: string | null; replied: boolean }>(sql`
+    select max(seq) as last_seq, coalesce(bool_or(author_visitor_id is null), false) as replied
+    from ${message}
+    where workspace_id = ${workspaceId} and conversation_id = ${conversationId}
+      and kind in ('text', 'image')`);
+  const stats = result.rows[0];
+  if (stats === undefined || !stats.replied || stats.last_seq === null) return [];
+  // A sent or waiting transcript from a later close holds every message already.
+  const [covered] = await tx
+    .select({ id: alertDelivery.id })
+    .from(alertDelivery)
+    .where(
+      and(
+        eq(alertDelivery.workspaceId, workspaceId),
+        eq(alertDelivery.conversationId, conversationId),
+        eq(alertDelivery.channel, "transcript"),
+        gt(alertDelivery.eventSeq, BigInt(stats.last_seq)),
+        or(isNull(alertDelivery.outcome), eq(alertDelivery.outcome, "sent")),
+      ),
+    )
+    .limit(1);
+  if (covered !== undefined) return [];
+  return [
+    {
+      ...base,
+      visitorId: target.id,
+      channel: "transcript",
+      nextAttemptAt: new Date(Date.now() + TRANSCRIPT_DELAY_MS),
+    },
+  ];
+}
+
+/** An operator asked for a transcript now: the worker sends it. */
+export async function queueTranscript(
+  db: Database,
+  workspaceId: string,
+  conversationId: string,
+): Promise<"queued" | "no_email" | "missing"> {
+  return withWorkspace(db, workspaceId, async (tx) => {
+    const [target] = await tx
+      .select({ email: visitor.email })
+      .from(conversation)
+      .innerJoin(visitor, joinVisitor())
+      .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+    if (target === undefined) return "missing";
+    if (target.email === null) return "no_email";
+    return (await requestTranscript(tx, workspaceId, conversationId)) ? "queued" : "missing";
+  });
+}
+
+/** A transcript an operator asked for: now, unless one for this conversation still waits. */
+async function requestedTranscriptRows(
+  tx: Transaction,
+  base: DeliveryBase,
+): Promise<DeliveryRow[]> {
+  const { workspaceId, conversationId } = base;
+  const [target] = await tx
+    .select({ id: visitor.id, email: visitor.email })
+    .from(conversation)
+    .innerJoin(visitor, joinVisitor())
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  if (target === undefined || target.email === null) return [];
+  const [waiting] = await tx
+    .select({ id: alertDelivery.id })
+    .from(alertDelivery)
+    .where(
+      and(
+        eq(alertDelivery.workspaceId, workspaceId),
+        eq(alertDelivery.conversationId, conversationId),
+        eq(alertDelivery.channel, "transcript"),
+        isNull(alertDelivery.finishedAt),
+        eq(alertDelivery.messageId, base.messageId),
+      ),
+    )
+    .limit(1);
+  if (waiting !== undefined) return [];
+  return [{ ...base, visitorId: target.id, channel: "transcript" }];
+}
+
+/**
  * Creates the delivery rows for one event, in one transaction with clearing its flag, so a crash
  * here repeats the whole step and the unique key stops a second row. Returns false with no work.
  */
 export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
   return db.transaction(async (tx) => {
     const [found] = await tx
-      .select({ workspaceId: event.workspaceId, seq: event.seq, payload: event.payload })
+      .select({
+        workspaceId: event.workspaceId,
+        seq: event.seq,
+        kind: event.kind,
+        payload: event.payload,
+      })
       .from(event)
       .where(eq(event.needsAlert, true))
       .orderBy(event.createdAt)
@@ -292,8 +420,9 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
     await enterWorkspace(tx, workspaceId);
     // The email limits read past rows and then write new ones, so two workers must take turns.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}))`);
-    // Only a message.created event sets needsAlert.
-    const { messageId, conversationId } = found.payload as MessageCreatedPayload;
+    // Only a message.created event and a close set needsAlert. Both name a message: the new one,
+    // or the close's status line.
+    const { messageId, conversationId } = found.payload as MessageCreatedPayload | StatusPayload;
     const base = { workspaceId, eventSeq: seq, conversationId, messageId };
 
     const [written] = await tx
@@ -304,11 +433,17 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
     const rows =
       written === undefined
         ? []
-        : written.authorVisitorId !== null
-          ? await operatorAlertRows(tx, channels, base)
-          : channels.email
-            ? await replyEmailRows(tx, base)
-            : [];
+        : found.kind === "conversation.closed" || found.kind === "transcript.requested"
+          ? !channels.email
+            ? []
+            : found.kind === "conversation.closed"
+              ? await transcriptRows(tx, base)
+              : await requestedTranscriptRows(tx, base)
+          : written.authorVisitorId !== null
+            ? await operatorAlertRows(tx, channels, base)
+            : channels.email
+              ? await replyEmailRows(tx, base)
+              : [];
     if (rows.length > 0) await tx.insert(alertDelivery).values(rows).onConflictDoNothing();
     await tx
       .update(event)
@@ -326,7 +461,7 @@ export interface ClaimedDelivery {
   messageId: string;
   operatorId: string | null;
   visitorId: string | null;
-  channel: "push" | "email";
+  channel: "push" | "email" | "transcript";
   attempts: number;
 }
 
@@ -348,7 +483,7 @@ export async function claimDeliveries(
     message_id: string;
     operator_id: string | null;
     visitor_id: string | null;
-    channel: "push" | "email";
+    channel: "push" | "email" | "transcript";
     attempts: number;
   }>(sql`
     WITH due AS MATERIALIZED (
@@ -448,15 +583,18 @@ export type AlertPlan =
 interface PlanOptions {
   publicUrl: string;
   secret: string;
+  /** Where the workspace's logo is served: the image origin, or the app's. */
+  imageOrigin: string;
 }
 
 /** Reads what this row should send now, or null if it should send nothing. */
 export function planDelivery(
   db: Database,
   row: ClaimedDelivery,
-  { publicUrl, secret }: PlanOptions,
+  options: PlanOptions,
 ): Promise<AlertPlan | null> {
   const { workspaceId, conversationId } = row;
+  const { publicUrl } = options;
   return withWorkspace(db, workspaceId, async (tx) => {
     const [place] = await tx
       .select({ name: workspace.name })
@@ -467,8 +605,11 @@ export function planDelivery(
       .from(message)
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, row.messageId)));
     if (place === undefined || written === undefined) return null;
+    if (row.channel === "transcript" && row.visitorId !== null) {
+      return transcriptPlan(tx, row, row.visitorId, place.name, options);
+    }
     if (row.visitorId !== null) {
-      return replyEmailPlan(tx, row, row.visitorId, place.name, { publicUrl, secret });
+      return replyEmailPlan(tx, row, row.visitorId, place.name, options);
     }
     const threadUrl = new URL(threadPath(workspaceId, conversationId), publicUrl).href;
     return operatorPlan(tx, row, place.name, written.body, threadUrl);
@@ -521,6 +662,7 @@ async function replyEmailPlan(
       and(
         eq(alertDelivery.workspaceId, workspaceId),
         eq(alertDelivery.visitorId, visitorId),
+        eq(alertDelivery.channel, "email"),
         eq(alertDelivery.outcome, "sent"),
         gt(alertDelivery.finishedAt, new Date(Date.now() - DAY_MS)),
       ),
@@ -551,6 +693,150 @@ async function replyEmailPlan(
       text.replyBody(placeName, { html: written.map(markdownHtml).join("") }, chatUrl, stopUrl),
       placeName,
     ),
+    stopUrl,
+  };
+}
+
+/** "2026-11-11 20:20 UTC": the date and time, so the transcript reads the same anywhere. */
+const utcTime = (at: Date) => `${at.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+
+/** Who wrote a message, as the visitor knows them: themself, a first name, or a key's name. */
+function transcriptAuthor(
+  line: {
+    authorVisitorId: string | null;
+    authorOperatorId: string | null;
+    authorApiKeyId: string | null;
+  },
+  authors: Map<string, MessageAuthor>,
+): string {
+  if (line.authorVisitorId !== null) return text.transcriptYou;
+  const id = line.authorOperatorId ?? line.authorApiKeyId ?? "";
+  const author = authors.get(id);
+  if (author === undefined) return text.visitor;
+  return line.authorApiKeyId !== null || author.isDeleted ? author.name : firstName(author.name);
+}
+
+/**
+ * Drops the visitor's waiting reply email, which the transcript makes redundant. A reply email
+ * carries every unread reply to the visitor, so it stays when one of them is in another
+ * conversation.
+ */
+async function dropReplyEmails(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+  conversationId: string,
+): Promise<void> {
+  const result = await tx.execute<{ elsewhere: boolean }>(sql`
+    select exists (
+      select 1 from ${message} as m
+      join ${conversation} as c on c.workspace_id = m.workspace_id and c.id = m.conversation_id
+      join ${visitor} as v on v.workspace_id = c.workspace_id and v.id = c.visitor_id
+      where m.workspace_id = ${workspaceId} and c.visitor_id = ${visitorId}
+        and c.id <> ${conversationId} and m.author_visitor_id is null
+        and m.kind in ('text', 'image') and m.seq > v.last_read_seq
+    ) as elsewhere`);
+  if (result.rows[0]?.elsewhere !== false) return;
+  await tx
+    .update(alertDelivery)
+    .set({ outcome: "skipped", finishedAt: new Date() })
+    .where(
+      and(
+        eq(alertDelivery.workspaceId, workspaceId),
+        eq(alertDelivery.visitorId, visitorId),
+        eq(alertDelivery.channel, "email"),
+        isNull(alertDelivery.finishedAt),
+        or(isNull(alertDelivery.claimedUntil), lt(alertDelivery.claimedUntil, new Date())),
+      ),
+    );
+}
+
+/**
+ * The whole conversation by email. A close's transcript sends nothing when the conversation was
+ * reopened, or when a later close made another, and a reply email still waiting for this
+ * conversation is dropped, so the visitor does not get both.
+ */
+async function transcriptPlan(
+  tx: Transaction,
+  { workspaceId, conversationId, messageId, eventSeq }: ClaimedDelivery,
+  visitorId: string,
+  placeName: string,
+  { publicUrl, secret, imageOrigin }: PlanOptions,
+): Promise<AlertPlan | null> {
+  const [state] = await tx
+    .select({
+      status: conversation.status,
+      email: visitor.email,
+      publicKey: workspace.publicKey,
+      logoUpdatedAt: widgetSettings.logoUpdatedAt,
+      fromClose: sql<boolean>`exists (select 1 from ${message} where ${message.workspaceId} = ${workspaceId} and ${message.id} = ${messageId} and ${message.kind} = 'closed')`,
+      later: sql<boolean>`exists (select 1 from ${alertDelivery} where ${alertDelivery.workspaceId} = ${workspaceId} and ${alertDelivery.conversationId} = ${conversationId} and ${alertDelivery.channel} = 'transcript' and ${alertDelivery.eventSeq} > ${eventSeq}::bigint)`,
+    })
+    .from(conversation)
+    .innerJoin(visitor, joinVisitor())
+    .innerJoin(workspace, eq(workspace.id, conversation.workspaceId))
+    .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, conversation.workspaceId))
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  if (state === undefined || state.email === null) return null;
+  if (state.fromClose && (state.status !== "closed" || state.later)) return null;
+  if (await emailStopped(tx, workspaceId, state.email)) return null;
+  const lines = (
+    await tx
+      .select({
+        body: message.body,
+        kind: message.kind,
+        authorVisitorId: message.authorVisitorId,
+        authorOperatorId: message.authorOperatorId,
+        authorApiKeyId: message.authorApiKeyId,
+        createdAt: message.createdAt,
+      })
+      .from(message)
+      .where(
+        and(
+          eq(message.workspaceId, workspaceId),
+          eq(message.conversationId, conversationId),
+          inArray(message.kind, [...CHAT_KINDS]),
+        ),
+      )
+      .orderBy(desc(message.seq))
+      .limit(TRANSCRIPT_MESSAGES)
+  ).reverse();
+  if (lines.length === 0) return null;
+  const authors = await messageAuthors(tx, workspaceId, lines);
+  await dropReplyEmails(tx, workspaceId, visitorId, conversationId);
+  const chatUrl = chatLinkUrl(
+    publicUrl,
+    await createChatLink(tx, workspaceId, visitorId, conversationId),
+  );
+  const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, state.email);
+  const heads = lines.map((line) =>
+    text.transcriptLine(transcriptAuthor(line, authors), utcTime(line.createdAt)),
+  );
+  const plain = lines
+    .map(
+      (line, index) =>
+        `${heads[index]}:\n${line.kind === "image" ? text.transcriptImage : line.body}`,
+    )
+    .join("\n\n");
+  const logoUrl = imageUrls(imageOrigin).logo(state.publicKey, state.logoUpdatedAt);
+  const html = [
+    logoUrl === null
+      ? ""
+      : `<p><img src="${escapeHtml(logoUrl)}" width="48" height="48" alt="" style="border-radius:10px"></p>`,
+    ...lines.map(
+      (line, index) =>
+        `<p style="margin:18px 0 2px;color:#5f6e80;font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
+        (line.kind === "image"
+          ? `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(text.transcriptImage)}</a></p>`
+          : markdownHtml(line.body ?? "")),
+    ),
+  ].join("");
+  return {
+    channel: "email",
+    to: state.email,
+    subject: text.transcriptSubject(placeName),
+    text: letter(text.transcriptBody(placeName, plain, chatUrl, stopUrl), undefined, placeName),
+    html: letterHtml(text.transcriptBody(placeName, { html }, chatUrl, stopUrl), placeName),
     stopUrl,
   };
 }

@@ -457,6 +457,24 @@ const ATTACKS: Record<string, Attack> = {
       .where(eq(message.body, "an operator crossing over"));
     expect(rows).toEqual([]);
   },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/transcript": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    const here = inWorkspace(a.id, `/conversations/${other.conversationId}/transcript`);
+    const there = inWorkspace(b.id, `/conversations/${other.conversationId}/transcript`);
+    for (const path of [here, there]) {
+      expect((await as(anna, "POST", path, {})).status).toBe(404);
+    }
+    const requested = await owner
+      .select()
+      .from(event)
+      .where(and(eq(event.workspaceId, b.id), eq(event.kind, "transcript.requested")));
+    expect(requested).toEqual([]);
+  },
   "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/images": async ({
     server,
     anna,
@@ -1732,7 +1750,11 @@ describe("the worker with no row-level security", () => {
     const claims = await claimDeliveries(worker, 50, 60_000);
     const mine = claims.find((claim) => claim.workspaceId === space.id);
     if (mine === undefined) throw new Error("No claim for this workspace");
-    const plan = await planDelivery(worker, mine, { publicUrl: PUBLIC_URL, secret: AUTH_SECRET });
+    const plan = await planDelivery(worker, mine, {
+      publicUrl: PUBLIC_URL,
+      secret: AUTH_SECRET,
+      imageOrigin: PUBLIC_URL,
+    });
     expect(plan?.channel === "push" && plan.payload.title).toBe("The right workspace");
   });
 });

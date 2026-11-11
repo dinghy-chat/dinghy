@@ -85,6 +85,7 @@ export const ERROR_CODES = [
   "mail_failed",
   "name_mismatch",
   "no_customer",
+  "no_email",
   "not_a_member",
   "not_an_image",
   "not_found",

@@ -466,7 +466,7 @@ const streamRoute = createRoute({
   summary: "Stream the workspace's changes after a cursor",
   description:
     "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
-    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
     'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {

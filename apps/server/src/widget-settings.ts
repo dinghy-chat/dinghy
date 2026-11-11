@@ -74,6 +74,7 @@ export const WidgetSettingsSchema = z
     emailAsk: z.enum(widgetEmailAsk.enumValues),
     branding: z.boolean(),
     sound: z.boolean(),
+    transcript: z.boolean(),
   })
   .openapi("WidgetSettings") satisfies z.ZodType<WidgetSettings>;
 

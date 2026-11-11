@@ -40,7 +40,8 @@ export const MESSAGE_KINDS = ["text", "image", "closed", "reopened"] as const;
 export const messageKind = pgEnum("message_kind", MESSAGE_KINDS);
 /** The kinds that people wrote. */
 export const CHAT_KINDS = ["text", "image"] as const;
-export const alertChannel = pgEnum("alert_channel", ["push", "email"]);
+// `transcript` is the email of a whole conversation to its visitor, after a close or on request.
+export const alertChannel = pgEnum("alert_channel", ["push", "email", "transcript"]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);
 export const widgetPosition = pgEnum("widget_position", ["left", "right"]);
 export const widgetTheme = pgEnum("widget_theme", ["light", "dark", "auto"]);
@@ -432,6 +433,8 @@ const EVENT_KINDS = [
   "conversation.assigned",
   "conversation.deleted",
   "conversation.moderated",
+  // An operator asked to email the visitor the conversation. The worker sends it.
+  "transcript.requested",
   "team.changed",
   "billing.changed",
   "workspace.changed",
@@ -1004,6 +1007,8 @@ export const widgetSettings = pgTable(
     branding: boolean("branding").notNull().default(WIDGET_DEFAULTS.branding),
     // A chime in the widget for a reply the visitor is not looking at.
     sound: boolean("sound").notNull().default(WIDGET_DEFAULTS.sound),
+    // The visitor gets the conversation by email when it closes.
+    transcript: boolean("transcript").notNull().default(WIDGET_DEFAULTS.transcript),
     // When an owner or admin first saved these settings, for the Get started steps.
     customizedAt: timestamp("customized_at", { withTimezone: true }),
     // Operators see what a visitor types before they send it. Nothing stores the draft.

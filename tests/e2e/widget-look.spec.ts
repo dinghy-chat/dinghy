@@ -20,6 +20,7 @@ const DEFAULTS = {
   emailAsk: "after_first",
   branding: true,
   sound: true,
+  transcript: true,
 } as const;
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;

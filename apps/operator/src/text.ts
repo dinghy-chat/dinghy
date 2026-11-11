@@ -324,6 +324,13 @@ const en = {
   unblockVisitor: "Unblock",
   blockedNote: "This visitor is blocked and cannot send messages.",
   deleteConversation: "Delete",
+  sendTranscript: "Send transcript",
+  transcriptNoEmail: "The visitor gave no email",
+  transcriptNoServer: "This server sends no email",
+  transcriptSent: "The transcript is on its way.",
+  widgetTranscript: "Email the visitor a transcript when a conversation closes",
+  widgetTranscriptHelp:
+    "Five minutes after the close, if someone on the team replied. Without it, Send transcript in a conversation still works.",
   deleteTitle: "Delete this conversation?",
   deleteConfirm: "This deletes the conversation and its images for good.",
   deleteYes: "Delete it",
