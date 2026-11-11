@@ -1,3 +1,5 @@
+import { quoteExcerpt } from "./markdown.ts";
+
 /** A quoted message as the server shows it. Its `id` is null when that message was deleted. */
 export interface Quote {
   id: string | null;
@@ -16,3 +18,20 @@ export interface Quote {
  */
 export const quoteStandIn = (quote: Quote): "quoteDeleted" | "quoteImage" | null =>
   quote.id === null ? "quoteDeleted" : quote.excerpt === "" && quote.hasImage ? "quoteImage" : null;
+
+/**
+ * The quote of a team reply the visitor answers, shown at once until the server's copy replaces it.
+ * Its excerpt is the server's, so a long formatted reply never shows its Markdown. Only a text
+ * bubble has the reply button, so it has no image.
+ */
+export const quoteOfReply = (reply: {
+  id: string;
+  body: string;
+  author: { name: string } | null;
+}): Quote => ({
+  id: reply.id,
+  authorName: reply.author?.name ?? null,
+  fromVisitor: false,
+  excerpt: quoteExcerpt(reply.body),
+  hasImage: false,
+});

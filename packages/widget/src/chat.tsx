@@ -22,7 +22,7 @@ import {
   startsRun,
 } from "./panel.tsx";
 import { usePresence } from "./presence.ts";
-import type { Quote } from "./quote.ts";
+import { type Quote, quoteOfReply } from "./quote.ts";
 import {
   CONTEXT_VERSION,
   MESSAGE_MAX,
@@ -688,16 +688,7 @@ function Chat({
                 line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
                   ? undefined
                   : () => {
-                      setQuoting({
-                        id: line.id,
-                        authorName: line.author?.name ?? null,
-                        fromVisitor: false,
-                        // The words as written until the server's copy brings the excerpt: the
-                        // shared excerpt would cost the widget 66 bytes it does not have.
-                        excerpt: line.body,
-                        // Only a text bubble has the reply button.
-                        hasImage: false,
-                      });
+                      setQuoting(quoteOfReply(line));
                       input.current?.focus();
                     }
               }
