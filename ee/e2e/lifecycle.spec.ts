@@ -1,9 +1,12 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { expect, type Page, test } from "@playwright/test";
 import { openLink } from "../../tests/e2e/links.ts";
+import { openSettings } from "../../tests/e2e/settings.ts";
 import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
 
 type Server = Awaited<ReturnType<typeof startCloudE2EServer>>;
+
+const SUBSCRIPTION_ENDS = "The subscription ends today, with no refund.";
 
 let server: Server;
 
@@ -34,7 +37,7 @@ async function paidWorkspace(page: Page, name: string) {
   await openLink(page, await server.linkTo(email), "Get started");
   await page.getByLabel("Your name").fill("Nora");
   await page.getByLabel("Workspace name").fill(name);
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue to payment" }).click();
   const { sessionId, workspaceId } = await onCheckout(page);
   await server.completeCheckout(sessionId);
   const streaming = page.waitForResponse((response) => response.url().includes("/stream"));
@@ -50,10 +53,10 @@ test("an open inbox shows the read-only banner without a reload, and paying agai
 }) => {
   const workspaceId = await paidWorkspace(page, "Quiet Shop");
   await server.endSubscription(workspaceId);
-  const banner = page.getByRole("status").filter({ hasText: "This workspace is read-only" });
+  const banner = page.getByRole("status").filter({ hasText: "Visitor chat is off" });
   await expect(banner).toBeVisible();
 
-  await banner.getByRole("button", { name: "Pay again" }).click();
+  await banner.getByRole("button", { name: "Restart subscription" }).click();
   const { sessionId } = await onCheckout(page);
   // Stripe sends the browser back, and the webhook follows.
   await page.goto(`${server.apiOrigin}/billing/return?workspace=${workspaceId}`);
@@ -67,9 +70,9 @@ test("a write refused as read-only shows the banner, when the page missed the ch
 }) => {
   const workspaceId = await paidWorkspace(page, "Missed Shop");
   await server.markReadOnly(workspaceId);
-  const banner = page.getByRole("status").filter({ hasText: "This workspace is read-only" });
+  const banner = page.getByRole("status").filter({ hasText: "Visitor chat is off" });
   await expect(banner).toHaveCount(0);
-  await page.getByRole("button", { name: "Settings" }).click();
+  await openSettings(page, "Team");
   await page.getByRole("button", { name: "Invite someone" }).click();
   await page.getByRole("dialog").getByLabel("Email").fill("new@example.com");
   await page.getByRole("button", { name: "Send invite" }).click();
@@ -78,7 +81,7 @@ test("a write refused as read-only shows the banner, when the page missed the ch
 
 test("the owner sees the Billing section and opens Stripe's portal", async ({ page }) => {
   await paidWorkspace(page, "Busy Shop");
-  await page.getByRole("button", { name: "Settings" }).click();
+  await openSettings(page, "Workspace");
   await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
   await expect(page.getByText(/^Active\. Renews on /)).toBeVisible();
   await page.getByRole("button", { name: "Manage billing" }).click();
@@ -87,11 +90,11 @@ test("the owner sees the Billing section and opens Stripe's portal", async ({ pa
 
 test("the owner deletes the workspace after typing its name", async ({ page }) => {
   const workspaceId = await paidWorkspace(page, "Closing Shop");
-  await page.getByRole("button", { name: "Settings" }).click();
-  await page.getByRole("tab", { name: "Data" }).click();
+  await openSettings(page, "Workspace");
   await expect(page.getByRole("heading", { name: "Delete this workspace" })).toBeVisible();
   await page.getByRole("button", { name: "Delete workspace", exact: true }).click();
   await expect(page.getByRole("alertdialog")).toContainText("Delete Closing Shop?");
+  await expect(page.getByRole("alertdialog")).toContainText(SUBSCRIPTION_ENDS);
   const remove = page.getByRole("button", { name: "Delete the workspace" });
   await expect(remove).toBeDisabled();
   const confirm = page.getByLabel("Type Closing Shop to confirm");
@@ -107,4 +110,21 @@ test("the owner deletes the workspace after typing its name", async ({ page }) =
     (one) => one.metadata.workspace_id === workspaceId,
   );
   expect(subscriptions.map((one) => one.status)).toEqual(["canceled"]);
+});
+
+test("the delete of a free workspace, which has no subscription, says none ends", async ({
+  page,
+}) => {
+  // The seeded workspace is on, with no subscription, as `chat free` leaves one.
+  await server.createOperator("free-owner@example.com");
+  await openLink(page, await server.signInLink("free-owner@example.com"));
+  const billing = page.waitForResponse((response) => response.url().endsWith("/billing"));
+  await openSettings(page, "Workspace");
+  expect(await (await billing).json()).toMatchObject({ state: "free" });
+  const row = page.locator(".danger-zone");
+  await expect(row).toContainText("This deletes every conversation");
+  await expect(row).not.toContainText(SUBSCRIPTION_ENDS);
+  await page.getByRole("button", { name: "Delete workspace", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("Delete E2E?");
+  await expect(page.getByRole("alertdialog")).not.toContainText(SUBSCRIPTION_ENDS);
 });

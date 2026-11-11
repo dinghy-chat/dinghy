@@ -7,6 +7,6 @@ test("t fills each {name} in the text", () => {
 });
 
 test("t shows a value as it is, even with $ patterns or a placeholder in it", () => {
-  expect(t("isReplying", { names: "R$$D" })).toBe("R$$D is replying");
-  expect(t("isReplying", { names: "{names}" })).toBe("{names} is replying");
+  expect(t("isReplying", { names: "R$$D" })).toBe("R$$D has this conversation open");
+  expect(t("isReplying", { names: "{names}" })).toBe("{names} has this conversation open");
 });

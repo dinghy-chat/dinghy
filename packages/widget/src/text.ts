@@ -2,9 +2,11 @@
 
 // Apart from the others, so the loader does not bundle every string.
 export const LAUNCHER_LABEL = "Open chat";
+/** The chat's title, which the label launcher shows too. */
+export const DEFAULT_TITLE = "Chat with us";
 
 const en = {
-  title: "Chat with us",
+  title: DEFAULT_TITLE,
   teamOnline: "We are online",
   teamAway: "We are away. Leave a message and we will reply here.",
   waiting: "We will reply here.",
@@ -21,6 +23,7 @@ const en = {
   failed: "Not sent. Select to try again.",
   reconnecting: "Connection lost. Trying again...",
   attach: "Attach an image",
+  emoji: "Add an emoji",
   imageAlt: "An image in this conversation",
   imageSending: "Sending an image...",
   imageTooLarge: "This image is over 5 MB.",

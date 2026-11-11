@@ -1,15 +1,10 @@
 /** @jsxImportSource react */
 import { useEffect, useState } from "react";
-import {
-  type AlertSettings,
-  deleteDevice,
-  saveDevice,
-  testPush,
-  type WorkspaceApi,
-} from "./api.ts";
+import { deleteDevice, saveDevice, testPush, type WorkspaceApi } from "./api.ts";
+import { useLoad } from "./load.ts";
 import { setSoundOn, soundOn } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
-import { ErrorNote, failureText, Loading, Page, PageRow, StatusNote } from "./ui.tsx";
+import { DocLink, ErrorNote, failureText, Loading, Page, PageRow, StatusNote } from "./ui.tsx";
 
 const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window;
 
@@ -41,45 +36,10 @@ function decodeKey(key: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-export function AlertsPage({ api }: { api: WorkspaceApi }) {
-  const [settings, setSettings] = useState<AlertSettings | null>(null);
-  const [device, setDevice] = useState<PushSubscription | null>(null);
+/** Browser notifications on this device, for every workspace: turn them on, test them, or off. */
+function PushRow({ pushKey }: { pushKey: string | null }) {
+  const device = useLoad(() => currentDevice(), []);
   const [note, setNote] = useState<TextId | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  const [sound, setSound] = useState(soundOn);
-
-  useEffect(() => {
-    // An answer for a workspace this page no longer shows must not land here.
-    let current = true;
-    setFailure(null);
-    api.alerts().then(
-      (next) => {
-        if (current) setSettings(next);
-      },
-      (error: unknown) => {
-        if (current) setFailure(failureText(error, {}, "actionFailed"));
-      },
-    );
-    // A browser that cannot tell shows the button to turn alerts on.
-    currentDevice().then(
-      (next) => {
-        if (current) setDevice(next);
-      },
-      () => {},
-    );
-    return () => {
-      current = false;
-    };
-  }, [api]);
-
-  const setEmail = async (email: boolean) => {
-    setFailure(null);
-    try {
-      setSettings(await api.setAlerts({ email }));
-    } catch (error) {
-      setFailure(failureText(error, {}, "actionFailed"));
-    }
-  };
 
   const sendTest = async () => {
     const result = await testPush().catch(() => null);
@@ -100,7 +60,7 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
         applicationServerKey: decodeKey(key),
       });
       await saveDevice(created.toJSON());
-      setDevice(created);
+      device.setData(created);
       await sendTest();
     } catch {
       setNote("pushFailed");
@@ -110,43 +70,62 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
   const turnOff = async () => {
     setNote(null);
     await leaveDevice();
-    setDevice(null);
+    device.setData(null);
   };
 
   return (
-    <Page title={t("alerts")} context={t("alertsContext")}>
+    <PageRow title={t("pushThisDevice")} help={`${t("pushHelp")} ${t("pushNote")}`}>
+      {pushKey === null ? (
+        <p className="note">{t("pushNoKeys")}</p>
+      ) : !pushSupported() ? (
+        <p className="note">{t("pushUnsupported")}</p>
+      ) : device.data === null ? (
+        // A browser that cannot tell shows the button to turn alerts on.
+        <button type="button" className="pill dark" onClick={() => void turnOn(pushKey)}>
+          {t("pushOn")}
+        </button>
+      ) : (
+        <div className="actions">
+          <button type="button" className="pill dark" onClick={() => void sendTest()}>
+            {t("pushTest")}
+          </button>
+          <button type="button" className="pill" onClick={() => void turnOff()}>
+            {t("pushOff")}
+          </button>
+        </div>
+      )}
+      <StatusNote text={note} />
+      <DocLink path="troubleshooting#alerts" text="pushDocsLink" />
+    </PageRow>
+  );
+}
+
+/** Notifications: browser notifications for every workspace, email for this one, and sound. */
+export function NotificationsPage({ api }: { api: WorkspaceApi }) {
+  const alerts = useLoad(() => api.alerts(), [api]);
+  const [failure, setFailure] = useState<TextId | null>(null);
+  const [sound, setSound] = useState(soundOn);
+
+  const setEmail = async (email: boolean) => {
+    setFailure(null);
+    try {
+      alerts.setData(await api.setAlerts({ email }));
+    } catch (error) {
+      setFailure(failureText(error, {}, "actionFailed"));
+    }
+  };
+
+  const settings = alerts.data;
+  return (
+    <Page title={t("pageNotifications")} context={t("notificationsContext")}>
       {settings === null ? (
-        <Loading failure={failure} />
+        <Loading failure={alerts.failure} />
       ) : (
         <>
-          <PageRow title={t("pushThisDevice")} help={t("pushNote")}>
-            {settings.pushKey === null ? (
-              <p className="note">{t("pushNoKeys")}</p>
-            ) : !pushSupported() ? (
-              <p className="note">{t("pushUnsupported")}</p>
-            ) : device === null ? (
-              <button
-                type="button"
-                className="pill dark"
-                onClick={() => void turnOn(settings.pushKey ?? "")}
-              >
-                {t("pushOn")}
-              </button>
-            ) : (
-              <div className="actions">
-                <button type="button" className="pill dark" onClick={() => void sendTest()}>
-                  {t("pushTest")}
-                </button>
-                <button type="button" className="pill" onClick={() => void turnOff()}>
-                  {t("pushOff")}
-                </button>
-              </div>
-            )}
-            <StatusNote text={note} />
-          </PageRow>
+          <PushRow pushKey={settings.pushKey} />
           <PageRow
             title={t("email")}
-            help={settings.emailAvailable ? undefined : t("emailUnavailable")}
+            help={t(settings.emailAvailable ? "emailAlertsHelp" : "emailUnavailable")}
           >
             {settings.emailAvailable && (
               <label className="check">
@@ -157,6 +136,9 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
                   onChange={(event) => void setEmail(event.target.checked)}
                 />
               </label>
+            )}
+            {!settings.emailAvailable && (
+              <DocLink path="self-hosting#settings" text="emailDocsLink" />
             )}
             <ErrorNote text={failure} />
           </PageRow>
@@ -172,6 +154,8 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
                 }}
               />
             </label>
+            <p className="hint">{t("soundNote")}</p>
+            <DocLink path="operator-guide#get-alerts" text="notificationsDocsLink" />
           </PageRow>
         </>
       )}

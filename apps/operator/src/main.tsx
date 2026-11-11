@@ -6,31 +6,20 @@ import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
 import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
-import { NAVIGATE_EVENT, navigate } from "./nav.ts";
-import { DeleteAccount, openOwnerStep } from "./settings.tsx";
+import { NAVIGATE_EVENT, navigate, replaceAddress } from "./nav.ts";
+import { DeleteAccount } from "./profile.tsx";
+import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./scene.tsx";
+import { openOwnerStep } from "./settings.tsx";
+import { readStored, store } from "./stored.ts";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
-import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./ui.tsx";
 
 applyTheme(savedTheme());
 
 const WORKSPACE_KEY = "dinghy.workspace";
 
-function rememberedWorkspace(): string | null {
-  try {
-    return localStorage.getItem(WORKSPACE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function rememberWorkspace(id: string) {
-  try {
-    localStorage.setItem(WORKSPACE_KEY, id);
-  } catch {
-    // The choice lasts until the next page load.
-  }
-}
+const rememberedWorkspace = () => readStored(WORKSPACE_KEY);
+const rememberWorkspace = (id: string) => store(WORKSPACE_KEY, id);
 
 const here = () => `${location.pathname}${location.search}`;
 
@@ -61,11 +50,7 @@ function App() {
       getMe().then(show, () => show(null));
     };
     addEventListener(NAVIGATE_EVENT, moved);
-    addEventListener("popstate", moved);
-    return () => {
-      removeEventListener(NAVIGATE_EVENT, moved);
-      removeEventListener("popstate", moved);
-    };
+    return () => removeEventListener(NAVIGATE_EVENT, moved);
   }, []);
   const signedOut = useCallback(() => setMe(null), []);
   // The workspace this operator just deleted, for a note in the next one.
@@ -132,7 +117,7 @@ function App() {
     setDeletedName(null);
     rememberWorkspace(id);
     // The conversation in the address belongs to the old workspace.
-    history.replaceState(null, "", "/");
+    replaceAddress("/");
     setAt("/");
     setPicked(id);
   };
@@ -171,6 +156,9 @@ function App() {
       </AuthPage>
     );
   }
+  // The workspace on screen is the one to come back to, also when a link opened it, so that
+  // leaving the workspace setup with Cancel returns here. It writes only on a change.
+  if (rememberedWorkspace() !== first.workspaceId) rememberWorkspace(first.workspaceId);
   // A workspace that waits for the cloud keeps its dashboard, with a banner.
   if (!opens(first)) {
     return (

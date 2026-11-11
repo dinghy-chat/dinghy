@@ -131,7 +131,7 @@ describe("details and authors", () => {
 
   test("a reply from an API key shows its name, never You", () => {
     const reply = { authorOperatorId: null, authorApiKeyId: "k", authorName: "Support bot" };
-    expect(replyAuthor(reply, "me")).toBe("Support bot (API)");
+    expect(replyAuthor(reply, "me")).toBe("Support bot (automated reply)");
     expect(replyAuthor({ ...reply, authorApiKeyId: null, authorOperatorId: "me" }, "me")).toBe(
       "You",
     );

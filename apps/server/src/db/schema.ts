@@ -36,7 +36,13 @@ export const alertChannel = pgEnum("alert_channel", ["push", "email"]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);
 export const widgetPosition = pgEnum("widget_position", ["left", "right"]);
 export const widgetTheme = pgEnum("widget_theme", ["light", "dark", "auto"]);
-export const widgetLauncher = pgEnum("widget_launcher", ["boat", "bubble", "hidden"]);
+export const widgetLauncher = pgEnum("widget_launcher", [
+  "boat",
+  "bubble",
+  "hidden",
+  "label",
+  "square",
+]);
 export const widgetEmailAsk = pgEnum("widget_email_ask", ["off", "after_first", "before_first"]);
 
 export const workspace = pgTable(
@@ -268,6 +274,14 @@ export const conversation = pgTable(
     index("conversation_visitor_idx").on(table.workspaceId, table.visitorId),
     // The inbox list: one status, newest activity first, paged by (updated_at, id).
     index("conversation_list_idx").on(table.workspaceId, table.status, table.updatedAt, table.id),
+    // The same list for one assignee, or for none. It also serves the assignee foreign key.
+    index("conversation_assignee_list_idx").on(
+      table.workspaceId,
+      table.assigneeOperatorId,
+      table.status,
+      table.updatedAt,
+      table.id,
+    ),
     // Analytics read the conversations started in a period.
     index("conversation_created_idx").on(table.workspaceId, table.createdAt),
   ],

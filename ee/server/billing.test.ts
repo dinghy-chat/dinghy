@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { serve } from "@hono/node-server";
 import { eq } from "drizzle-orm";
 import { Redis } from "iovalkey";
+import pg from "pg";
 import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { type App, createApp } from "../../apps/server/src/app.ts";
@@ -25,6 +26,7 @@ import {
 } from "../../apps/server/test/operators.ts";
 import { billingFromConfig, verifyStripeSignature } from "./billing.ts";
 import { onboardingStopUrl } from "./lifecycle-emails.ts";
+import { freeWorkspace } from "./signup.ts";
 import {
   type FakeStripe,
   STRIPE_PRICE_ID,
@@ -525,6 +527,22 @@ describe("before payment", () => {
     expect(stripe.sessions.size - sessionsBefore).toBe(1);
     const [made] = [...stripe.sessions.values()].slice(-1);
     expect(made?.expired).toBe(true);
+  });
+
+  test("a Checkout under way when chat free turns the workspace on adds no subscription", async () => {
+    const created = await signup();
+    let freed: string | undefined;
+    // `chat free` commits while this request's customer create is at Stripe.
+    stripe.hooks.beforeCustomerCreate = async () => {
+      const admin = new pg.Client({ connectionString: database.adminUrl() });
+      await admin.connect();
+      freed = await freeWorkspace(admin, created.workspaceId).finally(() => admin.end());
+    };
+    const response = await checkout(created.workspaceId, created.cookie);
+    expect(freed).toBe("freed");
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "already_active" } });
+    expect(await billingRow(created.workspaceId)).toBeUndefined();
   });
 
   test("two Checkouts at once share one session, whatever the clock says between them", async () => {

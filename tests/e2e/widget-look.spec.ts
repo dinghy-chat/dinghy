@@ -1,6 +1,7 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { signedIn, signInOn } from "./links.ts";
+import { openSettings, settingsList } from "./settings.ts";
 
 const tag = (attributes = "") =>
   `<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" ${attributes} async></script>`;
@@ -14,7 +15,7 @@ const DEFAULTS = {
   accent: null,
   position: "right",
   theme: "auto",
-  launcher: "boat",
+  launcher: "bubble",
   radius: 16,
   emailAsk: "after_first",
   branding: true,
@@ -55,8 +56,13 @@ const hostStyle = (visitor: Page, name: string) =>
   visitor.locator("dinghy-chat").evaluate((host, property) => {
     return (host as HTMLElement).style.getPropertyValue(property);
   }, name);
-const background = (visitor: Page, selector: string) =>
-  visitor.locator(selector).evaluate((element) => getComputedStyle(element).backgroundColor);
+/** The panel's paper, under its header's color: the last stop of its background's gradient. */
+const paper = (visitor: Page) =>
+  visitor.locator(".panel").evaluate((element) =>
+    getComputedStyle(element)
+      .backgroundImage.match(/rgb\([^)]*\)/g)
+      ?.at(-1),
+  );
 
 test("the loader draws the launcher with the saved look", async ({ browser }) => {
   await server.setWidgetSettings({
@@ -71,6 +77,32 @@ test("the loader draws the launcher with the saved look", async ({ browser }) =>
   expect(await hostStyle(visitor, "--d-radius")).toBe("4px");
   await expect(visitor.locator("dinghy-chat")).toHaveAttribute("data-side", "left");
   await visitor.context().close();
+});
+
+test("the loader draws a square with the saved corners, and a label with the chat's title", async ({
+  browser,
+}) => {
+  await server.setWidgetSettings({ launcher: "square", radius: 4 });
+  const square = await visit(browser);
+  await expect(launcher(square)).toHaveClass("launcher square");
+  expect(await launcher(square).evaluate((button) => getComputedStyle(button).borderRadius)).toBe(
+    "4px",
+  );
+  await square.context().close();
+
+  // The title is text, never markup.
+  await server.setWidgetSettings({ launcher: "label", title: "<i>Ask</i> us" });
+  const label = await visit(browser);
+  await expect(launcher(label)).toHaveClass("launcher label");
+  await expect(launcher(label).locator("svg")).toBeVisible();
+  await expect(launcher(label).locator("b")).toHaveText("<i>Ask</i> us");
+  await label.context().close();
+
+  // With no saved title, the label shows the chat's own.
+  await server.setWidgetSettings({ title: null });
+  const fallback = await visit(browser);
+  await expect(launcher(fallback).locator("b")).toHaveText("Chat with us");
+  await fallback.context().close();
 });
 
 test("the tag's attributes win over the saved look", async ({ browser }) => {
@@ -88,11 +120,7 @@ test("with no answer, the launcher draws from the tag and the defaults", async (
   const visitor = await context.newPage();
   await visitor.route("**/appearance", (route) => route.abort());
   await visitor.goto(`${server.hostOrigin}/plain`);
-  await expect(launcher(visitor)).toHaveClass("launcher boat");
-  const radius = await launcher(visitor).evaluate(
-    (button) => getComputedStyle(button).borderRadius,
-  );
-  expect(radius).toBe("16px");
+  await expect(launcher(visitor)).toHaveClass("launcher bubble");
   await launcher(visitor).click();
   await expect(visitor.locator(".head b")).toHaveText("Chat with us");
   await context.close();
@@ -125,20 +153,20 @@ test.describe("the theme", () => {
     const visitor = await visit(browser, "/plain", { colorScheme: "light" });
     await launcher(visitor).click();
     await expect(visitor.locator("dinghy-chat")).toHaveAttribute("data-theme", "dark");
-    expect(await background(visitor, ".panel")).toBe(PAPER_DARK);
+    expect(await paper(visitor)).toBe(PAPER_DARK);
     await visitor.context().close();
   });
 
   test("auto follows the device, and light stays light on a dark one", async ({ browser }) => {
     const dark = await visit(browser, "/plain", { colorScheme: "dark" });
     await launcher(dark).click();
-    expect(await background(dark, ".panel")).toBe(PAPER_DARK);
+    expect(await paper(dark)).toBe(PAPER_DARK);
     await dark.context().close();
 
     await server.setWidgetSettings({ theme: "light" });
     const light = await visit(browser, "/plain", { colorScheme: "dark" });
     await launcher(light).click();
-    expect(await background(light, ".panel")).toBe(PAPER_LIGHT);
+    expect(await paper(light)).toBe(PAPER_LIGHT);
     await light.context().close();
   });
 });
@@ -300,14 +328,13 @@ test.describe("the Powered by Dinghy line", () => {
   });
 });
 
-test("an owner changes the color, theme and launcher in the Widget tab, and the site shows them", async ({
+test("an owner changes the color, theme and launcher in Appearance, and the site shows them", async ({
   browser,
 }) => {
   const context = await browser.newContext();
   const owner = await context.newPage();
-  await openLink(owner, await server.signInLink("owner@example.com"));
-  await owner.getByRole("button", { name: "Settings" }).click();
-  await owner.getByRole("tab", { name: "Widget" }).click();
+  await signInOn(owner, server, "owner@example.com");
+  await openSettings(owner, "Appearance");
   const form = owner.locator(".widget-form");
   const save = form.getByRole("button", { name: "Save", exact: true });
   await expect(save).toBeDisabled();
@@ -321,17 +348,19 @@ test("an owner changes the color, theme and launcher in the Widget tab, and the 
   await expect(device).toHaveCount(0);
   await expect(owner.locator(".preview-stage > div")).toHaveAttribute("data-theme", "light");
   await form.getByRole("group", { name: "Theme" }).getByRole("radio", { name: "Dark" }).check();
-  await form.getByRole("radio", { name: "Bubble" }).check();
-  // The preview changes before the save.
+  await form.getByRole("radio", { name: "Label" }).check();
+  // The preview changes before the save, and shows the open chat and its button together.
   const preview = owner.locator(".preview-stage > div");
-  await owner.getByRole("radio", { name: "Closed" }).check();
-  await expect(preview.locator(".launcher.bubble")).toBeVisible();
+  await expect(preview.locator(".panel")).toBeVisible();
+  await expect(preview.locator(".launcher.label")).toContainText("Chat with us");
   await save.click();
-  await expect(owner.getByText("Saved. Your site shows this within 5 minutes.")).toBeVisible();
+  await expect(
+    owner.getByText("Saved. New pages of your site show this within 5 minutes."),
+  ).toBeVisible();
   await expect(save).toBeDisabled();
 
   const visitor = await visit(browser);
-  await expect(launcher(visitor)).toHaveClass("launcher bubble");
+  await expect(launcher(visitor)).toHaveClass("launcher label");
   expect(await hostStyle(visitor, "--d-accent")).toBe("#1f6bff");
   await launcher(visitor).click();
   await expect(visitor.locator("dinghy-chat")).toHaveAttribute("data-theme", "dark");
@@ -339,35 +368,60 @@ test("an owner changes the color, theme and launcher in the Widget tab, and the 
   await context.close();
 });
 
-test("the Widget tab asks before a tab or a view change drops unsaved changes", async ({
+test("Back with unsaved Appearance changes asks first, and Stay keeps them and the address", async ({
   browser,
 }) => {
-  const context = await browser.newContext();
-  const owner = await context.newPage();
-  await openLink(owner, await server.signInLink("owner@example.com"));
-  await owner.getByRole("button", { name: "Settings" }).click();
-  await owner.getByRole("tab", { name: "Widget" }).click();
-  const title = owner.locator(".widget-form").getByRole("textbox", { name: "Title" });
+  const owner = await signedIn(browser, server, "owner@example.com");
+  await openSettings(owner, "Team");
+  await settingsList(owner).getByRole("link", { name: "Appearance" }).click();
+  const title = owner.locator(".widget-form").getByRole("textbox", { name: "Chat title" });
   await title.fill("Unsaved");
   const dialog = owner.getByRole("alertdialog", { name: "Leave without saving?" });
 
-  await owner.getByRole("tab", { name: "Team" }).click();
+  await owner.goBack();
+  await dialog.getByRole("button", { name: "Stay" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(owner).toHaveURL(/\/settings\/appearance\?/);
+  await expect(title).toHaveValue("Unsaved");
+
+  await owner.goBack();
+  await dialog.getByRole("button", { name: "Leave" }).click();
+  await expect(owner).toHaveURL(/\/settings\/team\?/);
+  await expect(
+    owner.locator(".settings-pane").getByRole("heading", { name: "Team" }),
+  ).toBeVisible();
+  await owner.context().close();
+});
+
+test("Appearance asks before another page or view drops unsaved changes", async ({ browser }) => {
+  const context = await browser.newContext();
+  const owner = await context.newPage();
+  await signInOn(owner, server, "owner@example.com");
+  await openSettings(owner, "Appearance");
+  const list = settingsList(owner);
+  const title = owner.locator(".widget-form").getByRole("textbox", { name: "Chat title" });
+  await title.fill("Unsaved");
+  const dialog = owner.getByRole("alertdialog", { name: "Leave without saving?" });
+
+  await list.getByRole("link", { name: "Team" }).click();
   await expect(dialog).toContainText("Your widget changes will be lost.");
   await dialog.getByRole("button", { name: "Stay" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(owner.getByRole("tab", { name: "Widget" })).toHaveAttribute("aria-selected", "true");
+  await expect(list.getByRole("link", { name: "Appearance" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   await expect(title).toHaveValue("Unsaved");
 
   await owner.getByRole("button", { name: "Inbox" }).click();
   await dialog.getByRole("button", { name: "Leave" }).click();
-  await expect(owner.getByRole("tab", { name: "Widget" })).toHaveCount(0);
+  await expect(list).toHaveCount(0);
 
-  // Nothing was saved, and with no change the tabs switch without asking.
-  await owner.getByRole("button", { name: "Settings" }).click();
-  await owner.getByRole("tab", { name: "Widget" }).click();
+  // Nothing was saved, and with no change the pages switch without asking.
+  await openSettings(owner, "Appearance");
   await expect(title).toHaveValue("");
-  await owner.getByRole("tab", { name: "Team" }).click();
-  await expect(owner.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
+  await list.getByRole("link", { name: "Team" }).click();
+  await expect(list.getByRole("link", { name: "Team" })).toHaveAttribute("aria-current", "page");
   await expect(dialog).toHaveCount(0);
   await context.close();
 });

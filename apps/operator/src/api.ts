@@ -1,6 +1,10 @@
+import type { BillingStateName } from "../../../ee/operator/billing.tsx";
 import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
+
+/** A list's assignee filter: the caller's conversations, or no one's. Null lists everyone's. */
+export type Assignee = "me" | "none";
 
 /** Who a visitor is, as the host site signed it. Every list that names a visitor holds this. */
 export interface VisitorIdentity {
@@ -122,6 +126,8 @@ export interface Me {
     workspaceId: string;
     role: Role;
     name: string;
+    /** The workspace's logo, for the workspace menu. Null with none. */
+    logoUrl: string | null;
     active: boolean;
     /** The subscription ended: operators can read and export, and cannot reply. */
     readOnly: boolean;
@@ -214,11 +220,11 @@ export interface WebhookDelivery {
   finishedAt: string | null;
 }
 
-export interface WebhookTest {
-  delivered: boolean;
-  status: number | null;
-  error: string | null;
-}
+/** A test send: delivered with the server's 2xx status, or refused with a status or an error. */
+export type WebhookTest =
+  | { delivered: true; status: number; error: null }
+  | { delivered: false; status: number; error: string | null }
+  | { delivered: false; status: null; error: string };
 
 export interface AlertSettings {
   email: boolean;
@@ -227,7 +233,7 @@ export interface AlertSettings {
 }
 
 export interface BillingState {
-  state: "pending" | "active" | "ending" | "payment_failed" | "read_only";
+  state: BillingStateName;
   /** Renews, ends, becomes read-only or is deleted on this date, by state. */
   date: string | null;
   payWith: "checkout" | "portal";
@@ -371,7 +377,8 @@ export function workspaceApi(workspaceId: string) {
   const base = `/v1/operator/workspaces/${workspaceId}`;
   const conversation = (id: string) => `${base}/conversations/${id}`;
   return {
-    get: () => call<{ id: string; name: string; logoUrl: string | null }>(base),
+    rename: (name: string) =>
+      call<{ name: string }>(base, { method: "PATCH", body: JSON.stringify({ name }) }),
     members: () => call<{ members: Member[] }>(`${base}/members`),
     setRole: (id: string, role: Role) =>
       call<{ ok: true }>(`${base}/members/${id}`, {
@@ -451,9 +458,15 @@ export function workspaceApi(workspaceId: string) {
     setAlerts: (change: { email: boolean }) =>
       call<AlertSettings>(`${base}/alerts`, { method: "PATCH", body: JSON.stringify(change) }),
     /** Reads pages from the server's cursor until it has this many conversations. */
-    async list(status: "open" | "closed", limit: number, cancelled: () => boolean) {
+    async list(
+      status: "open" | "closed",
+      assignee: Assignee | null,
+      limit: number,
+      cancelled: () => boolean,
+    ) {
       const conversations: Conversation[] = [];
       let waiting = 0;
+      const whose = assignee === null ? "" : `&assignee=${assignee}`;
       for (;;) {
         const last = conversations.at(-1);
         const before =
@@ -465,7 +478,7 @@ export function workspaceApi(workspaceId: string) {
           conversations: Conversation[];
           hasMore: boolean;
           waiting: number;
-        }>(`${base}/conversations?status=${status}&limit=${size}${before}`);
+        }>(`${base}/conversations?status=${status}${whose}&limit=${size}${before}`);
         conversations.push(...page.conversations);
         // From the first page, so the count matches the rows on screen.
         if (last === undefined) waiting = page.waiting;

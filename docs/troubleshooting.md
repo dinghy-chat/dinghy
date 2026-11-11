@@ -33,32 +33,32 @@ curl https://chat.example.com/readyz
 - If `loader.js` fails, the address in the tag is wrong, or your site's Content Security Policy blocks it. See [the policy to use](add-to-your-site.md#if-your-site-has-a-content-security-policy).
 - Check that the tag has `data-key`, and that it does not have `data-launcher="hidden"`.
 
-**The chat opens, but each message says "Not sent. Select to try again".** Your site is probably not on the allowed list. The browser's console then shows a CORS error for the request. Add your site's exact origin to **Settings > Allowed sites**. `https://example.com` and `https://www.example.com` are two different origins.
+**The chat opens, but each message says "Not sent. Select to try again".** Your site is probably not on the allowed list. The browser's console then shows a CORS error for the request. Add your site's exact origin under **Allowed sites** in **Settings > Install**. `https://example.com` and `https://www.example.com` are two different origins.
 
 **The chat says "Connection lost. Trying again..." and replies never appear.** Check that the page is not served from the same address as Dinghy. The chat must be on another origin.
 
-**A signed-in user sees "Not sent. Select to try again".** Check the token fields in [the table](add-to-your-site.md#show-who-is-chatting). The usual causes are a wrong `aud`, `iat` and `exp` more than 24 hours apart, or a secret that was replaced in Settings.
+**A signed-in user sees "Not sent. Select to try again".** Check the token fields in [the table](add-to-your-site.md#show-who-is-chatting). The usual causes are a wrong `aud`, `iat` and `exp` more than 24 hours apart, or a secret that was replaced in **Settings > Install**.
 
 **A visitor's image fails.** It must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels. Under heavy load, the server also refuses uploads for a short time. [The measurements](measurements.md) have the numbers.
 
 ## Alerts
 
-**No push notification.** In **Alerts**, select **Send a test**.
+**No push notification.** In **Settings > Notifications**, select **Send a test**. Browser notifications are set per browser, so turn them on in each browser you use.
 
-- "This server has no push keys" means `docker compose restart app` has not run since the setup.
-- "This browser blocks notifications" means you must allow them in the browser's settings for this site.
-- "Notifications could not be turned on" often means a private window. Use a normal one.
+- "Browser notifications are not set up on this server" means `docker compose restart app` has not run since the setup.
+- "Notification permission is not enabled" means you must allow notifications for this site in the browser's settings. Dismissing the browser's question has the same effect.
+- "Dinghy could not turn on notifications" often means a private window. Use a normal one.
 - On an iPhone, open the app from the Home Screen. See [Get alerts](operator-guide.md#get-alerts).
 
-**No email.** Set `SMTP_URL` and `MAIL_FROM` in `.env`, and run `docker compose up -d --wait`. Then read `docker compose logs app` for a mail error.
+**No email.** Email notifications are set per workspace, in **Settings > Notifications**. Check that they are on in this workspace. Then set `SMTP_URL` and `MAIL_FROM` in `.env`, and run `docker compose up -d --wait`. Then read `docker compose logs app` for a mail error.
 
 ## Sign-in
 
 **No sign-in link arrives.** Check the spam folder, then `docker compose logs app` for a mail error. Without a mail server, or for a link at once, run `docker compose exec app chat sign-in-link you@example.com`. It prints a link that works once, for 15 minutes.
 
-**"That link has expired or was already used".** Ask for a new one. A link works once, for 15 minutes. A mail scanner that opens links before you do can use it up, so open the newest one.
+**"That link has expired or was already used".** Ask for a new one. A link works once, for 15 minutes, and only the button on the page it opens uses it. A mail scanner that opens the link first does no harm. If you asked for several links, each one still works until it expires or you use it.
 
-**"Too many links asked for".** Wait an hour, or run `chat sign-in-link` as above.
+**"Too many email links requested".** Wait an hour, or run `chat sign-in-link` as above.
 
 **All visitors share one rate limit, or the limits look wrong.** Set `TRUSTED_PROXY_HOPS` as [Behind your own reverse proxy](self-hosting.md#behind-your-own-reverse-proxy) explains.
 

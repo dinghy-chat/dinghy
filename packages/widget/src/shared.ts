@@ -31,7 +31,7 @@ export interface WidgetSettings {
   accent: string | null;
   position: "left" | "right";
   theme: "light" | "dark" | "auto";
-  launcher: "boat" | "bubble" | "hidden";
+  launcher: "bubble" | "label" | "square" | "boat" | "hidden";
   /** The boat in the open chat. */
   mascot: boolean;
   /** Pixels, for the chat's corners and the launcher's. */
@@ -76,7 +76,7 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   accent: null,
   position: "right",
   theme: "auto",
-  launcher: "boat",
+  launcher: "bubble",
   mascot: true,
   radius: 16,
   emailAsk: "after_first",

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { pngFile } from "./images.ts";
 import { openLink } from "./links.ts";
+import { settingsList } from "./settings.ts";
 
 const HOST_PAGE = `<!doctype html><title>Host</title><h1>Host</h1>
 <script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>`;
@@ -24,15 +25,15 @@ test("a new workspace shows its first steps, which open settings and can be hidd
   const steps = page.getByRole("region", { name: "Get started" });
   await expect(steps).toBeVisible();
 
-  await steps.getByRole("button", { name: "Add your website" }).click();
-  await expect(page.getByRole("tab", { name: "Allowed sites" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  const list = page.getByRole("navigation", { name: "Settings" });
+  await steps.getByRole("button", { name: "Allow chat on your website" }).click();
+  await expect(list.getByRole("link", { name: "Install" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Allowed sites" })).toBeVisible();
 
   await page.getByRole("button", { name: "Inbox" }).click();
-  await steps.getByRole("button", { name: "Invite your team" }).click();
-  await expect(page.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
+  await steps.getByRole("button", { name: "Invite teammates (optional)" }).click();
+  await expect(list.getByRole("link", { name: "Team" })).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/\/settings\/team\?workspace=/);
 
   await page.getByRole("button", { name: "Inbox" }).click();
   await steps.getByRole("button", { name: "Hide these steps" }).click();
@@ -42,16 +43,19 @@ test("a new workspace shows its first steps, which open settings and can be hidd
   await expect(steps).toHaveCount(0);
 });
 
-test("a logo uploaded in the Widget tab shows there, in the sidebar and in the chat's header", async ({
+test("a logo uploaded in Workspace shows there, in the sidebar and in the chat's header", async ({
   page,
 }) => {
   await server.createOperator("logo@example.com");
   await openLink(page, await server.signInLink("logo@example.com"));
   await page.getByRole("region", { name: "Get started" }).getByText("Add your logo").click();
-  await expect(page.getByRole("tab", { name: "Widget" })).toHaveAttribute("aria-selected", "true");
+  await expect(settingsList(page).getByRole("link", { name: "Workspace" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 
   await page.getByLabel("Upload logo").setInputFiles(pngFile("logo.png"));
-  await expect(page.getByText("Logo saved.")).toBeVisible();
+  // The image shows the upload worked, with no note.
   const preview = page.getByRole("img", { name: "The current logo" });
   await expect(preview).toBeVisible();
   await expect
@@ -69,7 +73,7 @@ test("a logo uploaded in the Widget tab shows there, in the sidebar and in the c
   await expect(site.locator(".head .sea")).toHaveCount(0);
   await site.close();
 
-  await page.getByRole("button", { name: "Remove" }).click();
+  await page.getByRole("button", { name: "Remove logo" }).click();
   await expect(preview).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Upload logo" })).toBeVisible();
 });
@@ -80,9 +84,9 @@ test("a workspace whose conversations are all closed shows no first steps", asyn
   await server.createOperator("closed@example.com");
   await openLink(page, await server.signInLink("closed@example.com"));
   await expect(page.getByText("No open conversations.")).toBeVisible();
-  await page.getByRole("button", { name: "Closed" }).click();
+  await page.getByRole("radio", { name: "Closed" }).click();
   await expect(page.getByText("Earlier", { exact: false }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Inbox" }).click();
+  await page.getByRole("radio", { name: "Open" }).click();
   await expect(page.getByText("No open conversations.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Get started" })).toHaveCount(0);
 });

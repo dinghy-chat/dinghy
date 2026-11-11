@@ -27,6 +27,7 @@ import { letter } from "../../apps/server/src/letter.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import type { Billing } from "./billing.ts";
+import type { BillingStateName } from "./billing-states.ts";
 import {
   LIFECYCLE_SIGN_OFF,
   lifecycleHtml,
@@ -71,8 +72,6 @@ export interface LifecycleRow {
   cancelAtPeriodEnd: boolean;
 }
 
-type BillingStateName = "pending" | "active" | "ending" | "payment_failed" | "read_only";
-
 /** What the owner sees in Settings, and how they would pay again. */
 export function billingState(
   active: boolean,
@@ -91,6 +90,8 @@ export function billingState(
       payWith: "checkout",
     };
   }
+  // Only `chat free` makes a workspace active with no subscription.
+  if (active && row === null) return { state: "free", date: null, payWith };
   if (!active || row === null) return { state: "pending", date: null, payWith };
   if (row.paymentFailedAt !== null) {
     return {

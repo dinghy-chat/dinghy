@@ -1,4 +1,5 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
+
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, sql, TransactionRollbackError } from "drizzle-orm";
@@ -14,6 +15,7 @@ import { noLive, OPERATORS, type Signals } from "../../apps/server/src/live.ts";
 import { OPEN_WHILE_CLOSED, OPEN_WHILE_UNPAID } from "../../apps/server/src/member.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import { type RateLimit, tooManyRequests } from "../../apps/server/src/rate-limit.ts";
+import { BILLING_STATES } from "./billing-states.ts";
 import { billingEmails, billingState, ENDED, FAILING, PAID, queueEmails } from "./lifecycle.ts";
 
 interface BillingKeys {
@@ -114,7 +116,7 @@ const billingStateRoute = createRoute({
         "application/json": {
           schema: z
             .object({
-              state: z.enum(["pending", "active", "ending", "payment_failed", "read_only"]),
+              state: z.enum(BILLING_STATES),
               // Renews, ends, becomes read-only or is deleted on this date, by state.
               date: z.string().nullable(),
               // How the owner pays again: a new Checkout, or Stripe's portal for a live subscription.
@@ -520,12 +522,22 @@ export function registerBillingRoutes(
           `dinghy-customer-${id}`,
         ),
       );
-      await withWorkspace(db, id, (tx) =>
-        tx
+      // Under the workspace row's lock, which `chat free` also takes, so a workspace it turned on
+      // while Stripe answered never gets a subscription.
+      const isFreed = await withWorkspace(db, id, async (tx) => {
+        const [locked] = await tx
+          .select({ active: workspace.active })
+          .from(workspace)
+          .where(eq(workspace.id, id))
+          .for("no key update");
+        if (locked?.active === true) return true;
+        await tx
           .insert(subscription)
           .values({ workspaceId: id, stripeCustomerId: customer.id })
-          .onConflictDoNothing(),
-      );
+          .onConflictDoNothing();
+        return false;
+      });
+      if (isFreed) return c.json(ALREADY_ACTIVE, 409);
     }
     const [stored] = await withWorkspace(db, id, (tx) =>
       tx

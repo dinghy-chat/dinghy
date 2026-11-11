@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -24,13 +24,6 @@ test.afterAll(async () => {
 test.beforeEach(async () => {
   await server.closeConversations();
 });
-
-async function signedIn(browser: Browser, email: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await openLink(page, await server.signInLink(email));
-  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
-  return page;
-}
 
 async function visitor(browser: Browser, text: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
@@ -58,8 +51,8 @@ const openCount = (page: Page) => page.locator(".nav .count");
 
 test("each reply shows who sent it, and your own say You", async ({ browser }) => {
   const customer = await visitor(browser, "Who is answering?");
-  const alice = await signedIn(browser, "alice@example.com");
-  const bob = await signedIn(browser, "bob@example.com");
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const bob = await signedIn(browser, server, "bob@example.com");
 
   await row(alice, "Who is answering?").click();
   await answer(alice, "Alice here.");
@@ -96,7 +89,7 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
 test("the Inbox item and the tab title count the conversations that wait for a reply", async ({
   browser,
 }) => {
-  const operator = await signedIn(browser, "alice@example.com");
+  const operator = await signedIn(browser, server, "alice@example.com");
   await expect(openCount(operator)).toHaveCount(0);
   await expect(operator).toHaveTitle("Dinghy");
 
@@ -105,7 +98,7 @@ test("the Inbox item and the tab title count the conversations that wait for a r
   await expect(openCount(operator)).toHaveText("1");
   await expect(operator).toHaveTitle("(1) Dinghy");
   await expect(row(operator, "First question").locator(".chip.warn")).toHaveText(
-    "Waits for a reply",
+    "Waiting for a reply",
   );
 
   const second = await visitor(browser, "Second question");
@@ -113,7 +106,7 @@ test("the Inbox item and the tab title count the conversations that wait for a r
   await expect(operator).toHaveTitle("(2) Dinghy");
 
   // A reply takes it off the count. The count is the workspace's, so another tab sees it too.
-  const teammate = await signedIn(browser, "bob@example.com");
+  const teammate = await signedIn(browser, server, "bob@example.com");
   await expect(openCount(teammate)).toHaveText("2");
   await row(operator, "First question").click();
   await answer(operator, "Answered.");
@@ -136,7 +129,7 @@ test("the Inbox item and the tab title count the conversations that wait for a r
 test("a draft stays with its conversation when the operator opens another", async ({ browser }) => {
   const one = await visitor(browser, "Draft one");
   const two = await visitor(browser, "Draft two");
-  const operator = await signedIn(browser, "alice@example.com");
+  const operator = await signedIn(browser, server, "alice@example.com");
   const reply = operator.getByRole("textbox", { name: "Your reply" });
   await row(operator, "Draft one").click();
   await reply.fill("Half a sentence for one");
@@ -152,7 +145,7 @@ test("a draft stays with its conversation when the operator opens another", asyn
 
 test("a failed action says so", async ({ browser }) => {
   const customer = await visitor(browser, "Close me later");
-  const operator = await signedIn(browser, "alice@example.com");
+  const operator = await signedIn(browser, server, "alice@example.com");
   await row(operator, "Close me later").click();
   await operator.route("**/conversations/*", (route) =>
     route.request().method() === "PATCH" ? route.abort() : route.continue(),
@@ -166,7 +159,7 @@ test("a failed action says so", async ({ browser }) => {
 });
 
 test("an operator changes their name in Profile, which has no password", async ({ browser }) => {
-  const page = await signedIn(browser, "carol@example.com");
+  const page = await signedIn(browser, server, "carol@example.com");
   await page.getByRole("button", { name: "Your account" }).click();
   await page.getByRole("menuitem", { name: "Profile" }).click();
   await expect(page.getByText("Change password")).toHaveCount(0);
@@ -186,7 +179,92 @@ test("an operator changes their name in Profile, which has no password", async (
   await page.keyboard.press("Escape");
   await customer.context().close();
 
-  const again = await signedIn(browser, "carol@example.com");
+  const again = await signedIn(browser, server, "carol@example.com");
   await expect(again.locator(".me")).toContainText("Carol King");
   for (const one of [page, again]) await one.context().close();
+});
+
+test("the Closed switch lists closed conversations, by keyboard too, and a reload keeps it", async ({
+  browser,
+}) => {
+  const customer = await visitor(browser, "Close this one");
+  const page = await signedIn(browser, server, "alice@example.com");
+  await row(page, "Close this one").click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  // A conversation that stops matching leaves the list.
+  await expect(row(page, "Close this one")).toHaveCount(0);
+
+  const open = page.getByRole("radio", { name: "Open" });
+  await open.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(row(page, "Close this one")).toBeVisible();
+  await expect(page).toHaveURL(/[?&]view=closed/);
+
+  await page.reload();
+  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(row(page, "Close this one")).toBeVisible();
+  for (const one of [customer, page]) await one.context().close();
+});
+
+test("Mine and Unassigned follow assignments as they change", async ({ browser }) => {
+  const customers = [await visitor(browser, "For Alice"), await visitor(browser, "For Bob")];
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const bob = await signedIn(browser, server, "bob@example.com");
+  const assign = async (text: string, name: string) => {
+    await row(alice, text).click();
+    await alice.getByRole("button", { name: /^Assign to/ }).click();
+    await alice.getByRole("option", { name }).click();
+  };
+
+  await bob.getByRole("radio", { name: "Unassigned" }).click();
+  await expect(row(bob, "For Alice")).toBeVisible();
+  await expect(row(bob, "For Bob")).toBeVisible();
+  await bob.getByRole("radio", { name: "Mine" }).click();
+  await expect(bob.getByText("Nothing is assigned to you.")).toBeVisible();
+  await expect(bob).toHaveURL(/[?&]who=mine/);
+
+  await assign("For Alice", "alice@example.com");
+  await assign("For Bob", "bob@example.com");
+  // One that starts matching enters the list, and another operator's never shows.
+  await expect(row(bob, "For Bob")).toBeVisible();
+  await expect(row(bob, "For Alice")).toHaveCount(0);
+
+  // Reassigned away, it leaves.
+  await assign("For Bob", "alice@example.com");
+  await expect(row(bob, "For Bob")).toHaveCount(0);
+  await bob.getByRole("radio", { name: "Unassigned" }).click();
+  await expect(bob.getByText("Every open conversation has someone on it.")).toBeVisible();
+
+  await bob.reload();
+  await expect(bob.getByRole("radio", { name: "Unassigned" })).toBeChecked();
+  for (const one of [...customers, alice, bob]) await one.context().close();
+});
+
+test("an old Closed link opens the Inbox with Closed picked, and a conversation link its state", async ({
+  browser,
+}) => {
+  const customer = await visitor(browser, "Linked and closed");
+  const page = await signedIn(browser, server, "alice@example.com");
+  await row(page, "Linked and closed").click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(row(page, "Linked and closed")).toHaveCount(0);
+
+  await page.goto(`${server.apiOrigin}/?view=closed`);
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(row(page, "Linked and closed")).toBeVisible();
+
+  const workspaceId = server.workspaceId();
+  const listed = await page.request.get(
+    `${server.apiOrigin}/v1/operator/workspaces/${workspaceId}/conversations?status=closed`,
+  );
+  const { conversations } = (await listed.json()) as {
+    conversations: { id: string; lastMessage: { body: string } | null }[];
+  };
+  const linked = conversations.find((one) => one.lastMessage?.body === "Linked and closed");
+  await page.goto(`${server.apiOrigin}/?workspace=${workspaceId}&conversation=${linked?.id}`);
+  await expect(page.getByText("This conversation is closed.")).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  for (const one of [customer, page]) await one.context().close();
 });

@@ -1,29 +1,21 @@
 /** @jsxImportSource react */
 import {
-  createContext,
   type FormEvent,
   type InputHTMLAttributes,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
-  useCallback,
-  useContext,
   useEffect,
   useId,
-  useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import { BOAT_CSS, type BoatKind, boatSvg, logoSvg } from "../../../packages/widget/src/boat.ts";
-import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "../../../packages/widget/src/sea.ts";
+import { EMOJIS, insertEmoji } from "../../../packages/widget/src/emoji.ts";
 import { ApiError, type Role } from "./api.ts";
+import { Icon, type IconName } from "./icons.tsx";
 import { navigate } from "./nav.ts";
+import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-
-// One set of boat colors for the widget and this app. A constructed sheet passes style-src 'self'.
-const boatSheet = new CSSStyleSheet();
-boatSheet.replaceSync(BOAT_CSS);
-document.adoptedStyleSheets = [...document.adoptedStyleSheets, boatSheet];
 
 export const ROLE_TEXT: Record<Role, TextId> = {
   owner: "roleOwner",
@@ -104,12 +96,13 @@ export interface UploadText {
   replace: TextId;
   remove: TextId;
   preview: TextId;
-  saved: TextId;
-  removed: TextId;
   tooLarge: TextId;
 }
 
-/** An image that saves as soon as it is picked or removed: the logo, or an operator's picture. */
+/**
+ * An image that saves as soon as it is picked or removed: the logo, or an operator's picture. The
+ * image shows a success, so only a failure has a note.
+ */
 export function ImageUpload({
   url,
   text,
@@ -124,12 +117,11 @@ export function ImageUpload({
   const picker = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<Note>(null);
-  const change = async (save: () => Promise<unknown>, done: TextId) => {
+  const change = async (save: () => Promise<unknown>) => {
     setBusy(true);
     setNote(null);
     try {
       await save();
-      setNote({ ok: true, text: done });
     } catch (failure) {
       setNote({
         ok: false,
@@ -142,7 +134,20 @@ export function ImageUpload({
   return (
     <>
       <div className="logo-row">
-        {url !== null && <img className="logo-preview" src={url} alt={t(text.preview)} />}
+        {url !== null && (
+          <span className="logo-frame">
+            <img className="logo-preview" src={url} alt={t(text.preview)} />
+            <button
+              type="button"
+              className="logo-remove"
+              aria-label={t(text.remove)}
+              disabled={busy}
+              onClick={() => void change(onRemove)}
+            >
+              <Icon name="close" size={14} />
+            </button>
+          </span>
+        )}
         <input
           ref={picker}
           type="file"
@@ -153,7 +158,7 @@ export function ImageUpload({
             const file = event.currentTarget.files?.[0];
             // Cleared, so picking the same file again uploads it again.
             event.currentTarget.value = "";
-            if (file !== undefined) void change(() => onUpload(file), text.saved);
+            if (file !== undefined) void change(() => onUpload(file));
           }}
         />
         <button
@@ -164,16 +169,6 @@ export function ImageUpload({
         >
           {t(url === null ? text.upload : text.replace)}
         </button>
-        {url !== null && (
-          <button
-            type="button"
-            className="pill"
-            disabled={busy}
-            onClick={() => void change(onRemove, text.removed)}
-          >
-            {t(text.remove)}
-          </button>
-        )}
       </div>
       <SaveNote note={note} />
     </>
@@ -195,7 +190,7 @@ function useCopy(value: string): [done: boolean, copy: () => void] {
 }
 
 /** A value in running text, in bold, that copies itself when clicked. */
-export function CopyText({ value }: { value: string }) {
+function CopyText({ value }: { value: string }) {
   const [done, copy] = useCopy(value);
   return (
     <button
@@ -225,6 +220,169 @@ export function CopyButton({ value, label = t("copy") }: { value: string; label?
   );
 }
 
+/** The longest name the server takes, for a workspace or an operator. */
+const NAME_MAX_LENGTH = 100;
+
+/** A name with its own Save, such as the workspace's or the operator's. */
+export function NameField({
+  label,
+  name,
+  autoComplete,
+  onSave,
+}: {
+  label: string;
+  /** The saved name, which Save stays off for. */
+  name: string;
+  autoComplete: "name" | "organization";
+  onSave(name: string): Promise<unknown>;
+}) {
+  const [typed, setTyped] = useState(name);
+  const [note, setNote] = useState<Note>(null);
+  const [busy, setBusy] = useState(false);
+  const trimmed = typed.trim();
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await onSave(trimmed);
+      setTyped(trimmed);
+      setNote({ ok: true, text: "saved" });
+    } catch (failure) {
+      setNote({ ok: false, text: failureText(failure, {}) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="stack" onSubmit={save}>
+      <div className="inline-field">
+        <input
+          aria-label={label}
+          value={typed}
+          onChange={(event) => {
+            setTyped(event.target.value);
+            setNote(null);
+          }}
+          required
+          maxLength={NAME_MAX_LENGTH}
+          autoComplete={autoComplete}
+        />
+        <button
+          type="submit"
+          className="pill dark"
+          disabled={busy || trimmed === "" || trimmed === name}
+        >
+          {t("save")}
+        </button>
+      </div>
+      <SaveNote note={note} />
+    </form>
+  );
+}
+
+/** A value to copy, such as a secret shown once or an invite link, under a line about it. */
+export function CopyField({
+  hint,
+  label,
+  copyLabel = label,
+  value,
+}: {
+  hint: string;
+  /** The field's name, which the copy button takes too unless it has its own. */
+  label: string;
+  copyLabel?: string;
+  value: string;
+}) {
+  return (
+    <div className="created" role="status">
+      <p className="hint">{hint}</p>
+      <div className="copy-field">
+        <input
+          className="mono"
+          readOnly
+          aria-label={label}
+          value={value}
+          spellCheck={false}
+          autoComplete="off"
+          onFocus={(event) => event.target.select()}
+        />
+        <CopyButton value={value} label={copyLabel} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A "New ..." button that opens a form in its place, such as for an API key or a webhook. Cancel
+ * closes the form, and the caller clears what it held.
+ */
+export function AddForm({
+  isOpen,
+  newLabel,
+  submitLabel,
+  canSubmit,
+  onOpen,
+  onCancel,
+  onSubmit,
+  children,
+}: {
+  isOpen: boolean;
+  newLabel: string;
+  submitLabel: string;
+  canSubmit: boolean;
+  onOpen(): void;
+  onCancel(): void;
+  onSubmit(): void;
+  children: ReactNode;
+}) {
+  if (!isOpen) {
+    return (
+      <div className="actions">
+        <button type="button" className="pill dark" onClick={onOpen}>
+          <Icon name="plusBold" size={14} />
+          {newLabel}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <form
+      className="stack"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      {children}
+      <div className="actions">
+        <button type="submit" className="pill dark" disabled={!canSubmit}>
+          {submitLabel}
+        </button>
+        <button type="button" className="pill" onClick={onCancel}>
+          {t("cancel")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Where the docs live. Each link names a page and, often, a section on it. */
+const DOCS_URL = "https://dinghy.chat/docs/";
+
+/** A link to the docs, in a new tab, such as `api#webhooks`. */
+export function DocLink({ path, text }: { path: string; text: TextId }) {
+  return (
+    <a
+      className="text-button doc-link"
+      href={`${DOCS_URL}${path}`}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {t(text)}
+    </a>
+  );
+}
+
 interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
   /** Text, or text with a control in it, such as a name to copy. */
   label: ReactNode;
@@ -232,50 +390,180 @@ interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "value"
   hint?: string;
   /** A sentence or two, which a one-line box would cut off on a phone. */
   multiline?: boolean;
+  /** A button that puts an emoji in the text. */
+  emoji?: boolean;
   value: string;
   onChange(value: string): void;
 }
 
-export function Field({ label, hint, multiline = false, value, onChange, ...input }: FieldProps) {
+export function Field({
+  label,
+  hint,
+  multiline = false,
+  emoji = false,
+  value,
+  onChange,
+  ...input
+}: FieldProps) {
   const hintId = useId();
   const controlId = useId();
+  const control = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const describedBy = hint === undefined ? undefined : hintId;
+  const box = multiline ? (
+    // One line of text that wraps: the server takes no line breaks, so Enter saves as in a box.
+    <textarea
+      ref={control}
+      id={controlId}
+      rows={2}
+      placeholder={input.placeholder}
+      maxLength={input.maxLength}
+      aria-describedby={describedBy}
+      value={value}
+      onChange={(event) => onChange(event.target.value.replace(/[\r\n]+/g, " "))}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        event.currentTarget.form?.requestSubmit();
+      }}
+    />
+  ) : (
+    <input
+      {...input}
+      ref={control}
+      id={controlId}
+      aria-describedby={describedBy}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+  const note = hint !== undefined && (
+    <small className="hint" id={hintId}>
+      {hint}
+    </small>
+  );
+  // A label may hold no button, so with the emoji button the label wraps the name alone.
+  if (emoji) {
+    return (
+      <div className="field">
+        <label htmlFor={controlId}>
+          <span>{label}</span>
+        </label>
+        <div className="emoji-field">
+          {box}
+          <EmojiButton field={control} onPick={onChange} />
+        </div>
+        {note}
+      </div>
+    );
+  }
   return (
     <label className="field" htmlFor={controlId}>
       <span>{label}</span>
-      {multiline ? (
-        // One line of text that wraps: the server takes no line breaks, so Enter saves as in a box.
-        <textarea
-          id={controlId}
-          rows={2}
-          placeholder={input.placeholder}
-          maxLength={input.maxLength}
-          aria-describedby={describedBy}
-          value={value}
-          onChange={(event) => onChange(event.target.value.replace(/[\r\n]+/g, " "))}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return;
-            event.preventDefault();
-            event.currentTarget.form?.requestSubmit();
-          }}
-        />
-      ) : (
-        <input
-          {...input}
-          id={controlId}
-          aria-describedby={describedBy}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
-      {hint !== undefined && (
-        <small className="hint" id={hintId}>
-          {hint}
-        </small>
-      )}
+      {box}
+      {note}
     </label>
   );
 }
+
+/**
+ * The field a delete waits for. The value to type sits in the label, where it copies itself, and
+ * the text names its place, so each language puts it where its grammar needs it.
+ */
+export function TypeToConfirm({
+  text,
+  value,
+  typed,
+  onChange,
+  type,
+}: {
+  /** A sentence with one placeholder, such as "Type {name} to confirm". */
+  text: TextId;
+  value: string;
+  typed: string;
+  onChange(typed: string): void;
+  type?: "email";
+}) {
+  const [before, after = ""] = t(text).split(/\{\w+\}/);
+  return (
+    <Field
+      label={
+        <>
+          {before}
+          <CopyText value={value} />
+          {after}
+        </>
+      }
+      type={type}
+      value={typed}
+      onChange={onChange}
+      autoComplete="off"
+    />
+  );
+}
+
+/** A button that opens the shared emoji grid, and puts the chosen emoji in the field at its caret. */
+export function EmojiButton({
+  field,
+  onPick,
+}: {
+  field: RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
+  onPick(value: string): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  // A click anywhere else closes it.
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  return (
+    <div className="emoji-picker" ref={root}>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={t("emoji")}
+        title={t("emoji")}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="smiley" />
+      </button>
+      {open && (
+        <fieldset
+          className="emoji-grid"
+          aria-label={t("emoji")}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            // Escape closes the grid, and nothing behind it.
+            event.stopPropagation();
+            setOpen(false);
+          }}
+        >
+          {EMOJIS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => {
+                if (field.current !== null) onPick(insertEmoji(field.current, emoji));
+                setOpen(false);
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+        </fieldset>
+      )}
+    </div>
+  );
+}
+
+/** A click that moves in place: not one that asks for a new tab with a modifier key or button. */
+const isPlainClick = (event: MouseEvent<HTMLAnchorElement>) =>
+  event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 
 /**
  * A link to another screen of the app. It moves in place, as the app's buttons do, and still
@@ -284,190 +572,31 @@ export function Field({ label, hint, multiline = false, value, onChange, ...inpu
 export function AppLink({
   href,
   className,
+  current = false,
+  onOpen = () => navigate(href),
   children,
 }: {
   href: string;
-  className: string;
+  className?: string;
+  /** The link to the page on screen, for aria-current. */
+  current?: boolean;
+  /** What a plain click does in place of loading the page. */
+  onOpen?(): void;
   children: ReactNode;
 }) {
   return (
     <a
       className={className}
       href={href}
+      aria-current={current ? "page" : undefined}
       onClick={(event) => {
-        if (
-          event.button !== 0 ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.shiftKey ||
-          event.altKey
-        ) {
-          return;
-        }
+        if (!isPlainClick(event)) return;
         event.preventDefault();
-        navigate(href);
+        onOpen();
       }}
     >
       {children}
     </a>
-  );
-}
-
-/** A moving boat. Each place that shows one also shows text that says the same. */
-function Boat({ kind, size }: { kind: BoatKind; size: number }) {
-  return (
-    <span
-      className="ship"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: a fixed string from boat.ts.
-      dangerouslySetInnerHTML={{ __html: boatSvg(kind, size) }}
-    />
-  );
-}
-
-/** The product's site. On Dinghy Cloud, the logo on the account screens goes back to it. */
-const SITE = "https://dinghy.chat";
-let logoLinksHome = false;
-
-/** Set once the server says where it runs. A self-hosted server's screens keep a plain logo. */
-export const setLogoLinksHome = (cloud: boolean) => {
-  logoLinksHome = cloud;
-};
-
-export function Logo() {
-  return (
-    <span className="logo">
-      <span
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: a fixed string from boat.ts.
-        dangerouslySetInnerHTML={{ __html: logoSvg(30) }}
-      />
-      {t("brand")}
-    </span>
-  );
-}
-
-// The landing page's three swells, as each scene sets them.
-const PATCH: SeaOptions = {
-  layers: [
-    { level: 0.5, swell: 2.5, ...FAR },
-    { level: 0.68, swell: 3, ...MIDDLE },
-    { level: 0.86, swell: 3, ...NEAR },
-  ],
-  boatLayer: 1,
-  boatAt: 0.45,
-  drift: 10,
-  sunAt: 0.78,
-};
-const POND: SeaOptions = { ...PATCH, boatAt: 0.5, drift: 8, sunAt: undefined };
-const SHORE: SeaOptions = {
-  layers: [
-    { level: 0.52, swell: 3, ...FAR },
-    { level: 0.7, swell: 4, ...MIDDLE },
-    { level: 0.87, swell: 4, ...NEAR },
-  ],
-  boatLayer: 1,
-  boatAt: 0.2,
-  drift: 16,
-};
-
-const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/**
- * A boat riding layers of moving swell. The boat and the water are pictures: the place that shows
- * them also shows text that says the same. A new `boatAt` or `sunAt` glides there.
- */
-function Sea({
-  className,
-  options,
-  boatAt = options.boatAt,
-  sunAt = options.sunAt,
-  size,
-  children,
-}: {
-  className: string;
-  options: SeaOptions;
-  boatAt?: number;
-  sunAt?: number | undefined;
-  size: number;
-  children?: ReactNode;
-}) {
-  const host = useRef<HTMLDivElement>(null);
-  // The sea reads these each frame, so a change moves the boat without a new start.
-  const live = useRef<SeaOptions>({ ...options, boatAt, sunAt });
-  const stop = useRef(() => {});
-  const start = useCallback(() => {
-    stop.current();
-    stop.current = host.current ? startSea(host.current, live.current) : () => {};
-  }, []);
-  useEffect(() => {
-    live.current = { ...options, boatAt: live.current.boatAt, sunAt: live.current.sunAt };
-    start();
-    return () => stop.current();
-  }, [options, start]);
-  useEffect(() => {
-    live.current.boatAt = boatAt;
-    live.current.sunAt = sunAt;
-    // With reduced motion the sea is still, so it starts again in its new place.
-    if (lessMotion()) start();
-  }, [boatAt, sunAt, start]);
-  return (
-    <div className={`sea ${className}`} ref={host} aria-hidden="true">
-      {children}
-      <canvas className="sea-back" />
-      <span className="float">
-        <Boat kind="sail" size={size} />
-      </span>
-      <canvas className="sea-front" />
-    </div>
-  );
-}
-
-/** The boat on a small patch of sea in the sun, with the text that says the same thing. */
-export function Harbor({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <div className="harbor">
-      <Sea className="harbor-art" options={PATCH} size={96}>
-        <span className="harbor-sun" />
-      </Sea>
-      <b>{title}</b>
-      {children !== undefined && <p>{children}</p>}
-    </div>
-  );
-}
-
-/** A smaller patch of sea, for an empty list. */
-export function Pond() {
-  return <Sea className="pond" options={POND} size={64} />;
-}
-
-/**
- * A drawing for an empty list: the boat in the day for an empty inbox, and the same boat under the
- * moon for an empty list of closed conversations. The text beside it says the same.
- */
-export function EmptyArt({ scene }: { scene: "day" | "evening" }) {
-  return (
-    <svg className="empty-art" viewBox="0 0 120 120" aria-hidden="true">
-      <rect className="empty-sky" width="120" height="120" />
-      <circle className="empty-sun" cx="30" cy="38" r="10" />
-      {scene === "evening" && (
-        <>
-          <circle className="empty-sky" cx="35" cy="34" r="9" />
-          <path
-            className="empty-star"
-            d="M88 30l1.2 3.3 3.3 1.2-3.3 1.2L88 39l-1.2-3.3-3.3-1.2 3.3-1.2zM98 46l.8 2.2 2.2.8-2.2.8L98 52l-.8-2.2-2.2-.8 2.2-.8z"
-          />
-        </>
-      )}
-      <path
-        className="empty-water"
-        d="M0 82c10 0 10-3 20-3s10 3 20 3 10-3 20-3 10 3 20 3 10-3 20-3 10 3 20 3V120H0z"
-      />
-      <path className="empty-ink" d="M58 26v52" />
-      <path className="empty-flag" d="M60 26l11 4-11 4z" />
-      <path className="empty-sail" d="M61 38c10 8 16 20 18 34H61z" />
-      <path className="empty-sail" d="M55 44c-7 9-12 18-15 28h15z" />
-      <path className="empty-hull" d="M33 76h52c-2 7-8 11-15 11H48c-7 0-13-4-15-11z" />
-      <path className="empty-ripple" d="M24 98h14M50 98h20M82 98h14M38 108h44" />
-    </svg>
   );
 }
 
@@ -520,61 +649,20 @@ export function Avatar({
   );
 }
 
-// Phosphor Icons (MIT): the outline layer of the duotone weight.
-const ICONS = {
-  inbox:
-    "M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,16V152h-28.7A15.86,15.86,0,0,0,168,156.69L148.69,176H107.31L88,156.68A15.89,15.89,0,0,0,76.69,152H48V48Zm0,160H48V168H76.69L96,187.32A15.89,15.89,0,0,0,107.31,192h41.38A15.86,15.86,0,0,0,160,187.31L179.31,168H208v40Z",
-  done: "M173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z",
-  gear: "M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm109.94-52.79a8,8,0,0,0-3.89-5.4l-29.83-17-.12-33.62a8,8,0,0,0-2.83-6.08,111.91,111.91,0,0,0-36.72-20.67,8,8,0,0,0-6.46.59L128,41.85,97.88,25a8,8,0,0,0-6.47-.6A111.92,111.92,0,0,0,54.73,45.15a8,8,0,0,0-2.83,6.07l-.15,33.65-29.83,17a8,8,0,0,0-3.89,5.4,106.47,106.47,0,0,0,0,41.56,8,8,0,0,0,3.89,5.4l29.83,17,.12,33.63a8,8,0,0,0,2.83,6.08,111.91,111.91,0,0,0,36.72,20.67,8,8,0,0,0,6.46-.59L128,214.15,158.12,231a7.91,7.91,0,0,0,3.9,1,8.09,8.09,0,0,0,2.57-.42,112.1,112.1,0,0,0,36.68-20.73,8,8,0,0,0,2.83-6.07l.15-33.65,29.83-17a8,8,0,0,0,3.89-5.4A106.47,106.47,0,0,0,237.94,107.21Zm-15,34.91-28.57,16.25a8,8,0,0,0-3,3c-.58,1-1.19,2.06-1.81,3.06a7.94,7.94,0,0,0-1.22,4.21l-.15,32.25a95.89,95.89,0,0,1-25.37,14.3L134,199.13a8,8,0,0,0-3.91-1h-.19c-1.21,0-2.43,0-3.64,0a8.1,8.1,0,0,0-4.1,1l-28.84,16.1A96,96,0,0,1,67.88,201l-.11-32.2a8,8,0,0,0-1.22-4.22c-.62-1-1.23-2-1.8-3.06a8.09,8.09,0,0,0-3-3.06l-28.6-16.29a90.49,90.49,0,0,1,0-28.26L61.67,97.63a8,8,0,0,0,3-3c.58-1,1.19-2.06,1.81-3.06a7.94,7.94,0,0,0,1.22-4.21l.15-32.25a95.89,95.89,0,0,1,25.37-14.3L122,56.87a8,8,0,0,0,4.1,1c1.21,0,2.43,0,3.64,0a8,8,0,0,0,4.1-1l28.84-16.1A96,96,0,0,1,188.12,55l.11,32.2a8,8,0,0,0,1.22,4.22c.62,1,1.23,2,1.8,3.06a8.09,8.09,0,0,0,3,3.06l28.6,16.29A90.49,90.49,0,0,1,222.9,142.12Z",
-  chart:
-    "M224,200h-8V40a8,8,0,0,0-8-8H152a8,8,0,0,0-8,8V80H96a8,8,0,0,0-8,8v40H48a8,8,0,0,0-8,8v64H32a8,8,0,0,0,0,16H224a8,8,0,0,0,0-16ZM160,48h40V200H160ZM104,96h40V200H104ZM56,144H88v56H56Z",
-  bell: "M221.8,175.94C216.25,166.38,208,139.33,208,104a80,80,0,1,0-160,0c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z",
-  exit: "M120,216a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V40a8,8,0,0,1,8-8h64a8,8,0,0,1,0,16H56V208h56A8,8,0,0,1,120,216Zm109.66-93.66-40-40a8,8,0,0,0-11.32,11.32L204.69,120H112a8,8,0,0,0,0,16h92.69l-26.35,26.34a8,8,0,0,0,11.32,11.32l40-40A8,8,0,0,0,229.66,122.34Z",
-  search:
-    "M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z",
-  clip: "M209.66,122.34a8,8,0,0,1,0,11.32l-82.05,82a56,56,0,0,1-79.2-79.21L147.67,35.73a40,40,0,1,1,56.61,56.55L105,193A24,24,0,1,1,71,159L154.3,74.38A8,8,0,1,1,165.7,85.6L82.39,170.31a8,8,0,1,0,11.27,11.36L192.93,81A24,24,0,1,0,159,47L59.76,147.68a40,40,0,1,0,56.53,56.62l82.06-82A8,8,0,0,1,209.66,122.34Z",
-  back: "M168.49,199.51a12,12,0,0,1-17,17l-80-80a12,12,0,0,1,0-17l80-80a12,12,0,0,1,17,17L97,128Z",
-  // For these, the light layer is a square behind the mark, so they draw the mark alone.
-  check:
-    "M205.66,85.66l-96,96a8,8,0,0,1-11.32,0l-40-40a8,8,0,0,1,11.32-11.32L104,164.69l90.34-90.35a8,8,0,0,1,11.32,11.32Z",
-  plus: "M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z",
-  close:
-    "M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z",
-  dots: "M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128Zm56-12a12,12,0,1,0,12,12A12,12,0,0,0,196,116ZM60,116a12,12,0,1,0,12,12A12,12,0,0,0,60,116Z",
-  // Bold, single-layer marks for small controls.
-  chevron:
-    "M216.49,104.49l-80,80a12,12,0,0,1-17,0l-80-80a12,12,0,0,1,17-17L128,159l71.51-71.52a12,12,0,0,1,17,17Z",
-  chevronRight:
-    "M184.49,136.49l-80,80a12,12,0,0,1-17-17L159,128,87.51,56.49a12,12,0,1,1,17-17l80,80A12,12,0,0,1,184.49,136.49Z",
-  arrowUp:
-    "M208.49,120.49a12,12,0,0,1-17,0L140,69V216a12,12,0,0,1-24,0V69L64.49,120.49a12,12,0,0,1-17-17l72-72a12,12,0,0,1,17,0l72,72A12,12,0,0,1,208.49,120.49Z",
-  plusBold:
-    "M228,128a12,12,0,0,1-12,12H140v76a12,12,0,0,1-24,0V140H40a12,12,0,0,1,0-24h76V40a12,12,0,0,1,24,0v76h76A12,12,0,0,1,228,128Z",
-  lock: "M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Z",
-  eye: "M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z",
-  eyeOff:
-    "M53.92,34.62A8,8,0,1,0,42.08,45.38L61.32,66.55C25,88.84,9.38,123.2,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208a127.11,127.11,0,0,0,52.07-10.83l22,24.21a8,8,0,1,0,11.84-10.76Zm47.33,75.84,41.67,45.85a32,32,0,0,1-41.67-45.85ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.16,133.16,0,0,1,25,128c4.69-8.79,19.66-33.39,47.35-49.38l18,19.75a48,48,0,0,0,63.66,70l14.73,16.2A112,112,0,0,1,128,192Zm6-95.43a8,8,0,0,1,3-15.72,48.16,48.16,0,0,1,38.77,42.64,8,8,0,0,1-7.22,8.71,6.39,6.39,0,0,1-.75,0,8,8,0,0,1-8-7.26A32.09,32.09,0,0,0,134,96.57Zm113.28,34.69c-.42.94-10.55,23.37-33.36,43.8a8,8,0,1,1-10.67-11.92A132.77,132.77,0,0,0,231.05,128a133.15,133.15,0,0,0-23.12-30.77C185.67,75.19,158.78,64,128,64a118.37,118.37,0,0,0-19.36,1.57A8,8,0,1,1,106,49.79,134,134,0,0,1,128,48c34.88,0,66.57,13.26,91.66,38.35,18.83,18.83,27.3,37.62,27.65,38.41A8,8,0,0,1,247.31,131.26Z",
-  copy: "M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z",
-  trash:
-    "M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z",
-  user: "M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z",
-  prohibit:
-    "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm88,104a87.56,87.56,0,0,1-20.41,56.28L71.72,60.4A88,88,0,0,1,216,128ZM40,128A87.56,87.56,0,0,1,60.41,71.72L184.28,195.6A88,88,0,0,1,40,128Z",
-  sun: "M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z",
-  moon: "M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z",
-  monitor:
-    "M208,40H48A24,24,0,0,0,24,64V176a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V64A24,24,0,0,0,208,40Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V64a8,8,0,0,1,8-8H208a8,8,0,0,1,8,8Zm-48,48a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,224Z",
-  plusCircle:
-    "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm48-88a8,8,0,0,1-8,8H136v32a8,8,0,0,1-16,0V136H88a8,8,0,0,1,0-16h32V88a8,8,0,0,1,16,0v32h32A8,8,0,0,1,176,128Z",
-} satisfies Record<string, string>;
-
-export type IconName = keyof typeof ICONS;
-
-export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+/**
+ * A short label that shows above its control on hover and on keyboard focus, which a native
+ * title does not do for a disabled button. The control names the tip with the given ID when the
+ * tip says more than its own label.
+ */
+export function Tip({ text, children }: { text: string; children(tipId: string): ReactNode }) {
+  const id = useId();
   return (
-    <svg width={size} height={size} viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">
-      <path d={ICONS[name]} />
-    </svg>
+    <span className="tip">
+      {children(id)}
+      <span className="tip-text" role="tooltip" id={id}>
+        {text}
+      </span>
+    </span>
   );
 }
 
@@ -598,6 +686,52 @@ export function Page({
       <PageHead title={title} context={context} actions={actions} />
       <div className="page-body">{children}</div>
     </section>
+  );
+}
+
+/** One choice of a Choices control, with an icon before its words if it has one. */
+export type Option<T> = { value: T; label: TextId; icon?: IconName };
+
+/**
+ * Radio buttons drawn as pills, named by a legend for screen readers. Outlined draws them as one
+ * segmented control, and quiet as small words.
+ */
+export function Choices<T extends string>({
+  label,
+  variant,
+  describedBy,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  variant?: "outlined" | "quiet";
+  /** The ID of a hint that says more about the choice. */
+  describedBy?: string | undefined;
+  value: T;
+  options: readonly Option<T>[];
+  onChange(value: T): void;
+}) {
+  const name = useId();
+  return (
+    <fieldset
+      className={variant === undefined ? "choices" : `choices ${variant}`}
+      aria-describedby={describedBy}
+    >
+      <legend className="visually-hidden">{label}</legend>
+      {options.map((option) => (
+        <label key={option.value}>
+          <input
+            type="radio"
+            name={name}
+            checked={value === option.value}
+            onChange={() => onChange(option.value)}
+          />
+          {option.icon !== undefined && <Icon name={option.icon} size={16} />}
+          {t(option.label)}
+        </label>
+      ))}
+    </fieldset>
   );
 }
 
@@ -645,169 +779,5 @@ export function PageRow({
       </div>
       <div className="page-controls">{children}</div>
     </section>
-  );
-}
-
-/**
- * The account screens follow one day: sign in in the early morning, the email by mid-morning, the
- * link at midday and the workspace's setup in the afternoon.
- */
-type TimeOfDay = "morning" | "forenoon" | "noon" | "afternoon";
-
-/** Where the boat rests and where the sun lies, as shares of the width, at each time of day. */
-const DAY: Record<TimeOfDay, { boatAt: number; sunAt: number }> = {
-  morning: { boatAt: 0.16, sunAt: 0.14 },
-  forenoon: { boatAt: 0.32, sunAt: 0.17 },
-  noon: { boatAt: 0.52, sunAt: 0.79 },
-  afternoon: { boatAt: 0.76, sunAt: 0.86 },
-};
-
-/** The words for each time of day, so the moving scene also has text. */
-const DAY_TEXT: Record<TimeOfDay, TextId> = {
-  morning: "sceneMorning",
-  forenoon: "sceneForenoon",
-  noon: "sceneNoon",
-  afternoon: "sceneAfternoon",
-};
-
-/**
- * AuthPage tells the app it is on screen, and at what time of day, so the sky and the sea behind
- * it stay mounted.
- */
-const SceneUse = createContext<{ use(change: number): void; at(time: TimeOfDay): void }>({
-  use() {},
-  at() {},
-});
-
-function useScene(time?: TimeOfDay) {
-  const scene = useContext(SceneUse);
-  // A layout effect, so a screen that replaces another adds itself before the paint. The count
-  // never reaches zero between them, and the sea keeps moving.
-  useLayoutEffect(() => {
-    scene.use(1);
-    return () => scene.use(-1);
-  }, [scene]);
-  useLayoutEffect(() => {
-    if (time !== undefined) scene.at(time);
-  }, [scene, time]);
-}
-
-/** The sun shows only on wider screens. */
-const wide = () => matchMedia("(min-width: 761px)").matches;
-
-/**
- * The landing page's sky and sea, behind every screen for someone who is not signed in. It stays
- * mounted while one card replaces another, so only the card changes, and the sky, the sun and the
- * boat glide to the time of day of each step.
- */
-export function Scene({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState(0);
-  const [time, setTime] = useState<TimeOfDay>("morning");
-  const scene = useMemo(
-    () => ({
-      use: (change: number) => setUsers((current) => current + change),
-      at: setTime,
-    }),
-    [],
-  );
-  return (
-    <SceneUse.Provider value={scene}>
-      {users > 0 && (
-        <div className={`scene ${time}`} aria-hidden="true">
-          <div className="sky">
-            <span className="cloud cloud-a" />
-            <span className="cloud cloud-b" />
-            <span className="sun" />
-          </div>
-          <Sea
-            className="shore"
-            options={SHORE}
-            boatAt={DAY[time].boatAt}
-            sunAt={wide() ? DAY[time].sunAt : undefined}
-            size={150}
-          />
-        </div>
-      )}
-      {users > 0 && <p className="visually-hidden">{t(DAY_TEXT[time])}</p>}
-      {children}
-    </SceneUse.Provider>
-  );
-}
-
-/** The sky and the sea with no card, while an account screen loads. */
-export function SceneLoading() {
-  useScene();
-  return (
-    <main className="signin">
-      <p className="visually-hidden" role="status">
-        {t("loading")}
-      </p>
-    </main>
-  );
-}
-
-/**
- * The app's frame with nothing in it yet, while a signed-in operator's app loads, so the first
- * screen is the shape of the next one.
- */
-export function ShellLoading() {
-  return (
-    <div className="shell">
-      <div className="app">
-        <aside className="side">
-          <div className="brand">
-            <Logo />
-          </div>
-        </aside>
-        <main className="panel" aria-busy="true">
-          <p className="visually-hidden" role="status">
-            {t("loading")}
-          </p>
-        </main>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The page for everyone who is not signed in: one card over the sky and the sea from the landing
- * page, at the step's time of day. With onSubmit, the card is a form.
- */
-export function AuthPage({
-  time,
-  onSubmit,
-  children,
-}: {
-  /** The step's time of day. Without one, the scene stays where it is. */
-  time?: TimeOfDay;
-  onSubmit?(event: FormEvent): void;
-  children: ReactNode;
-}) {
-  useScene(time);
-  const content = (
-    <>
-      {logoLinksHome ? (
-        <a className="logo-home" href={SITE} aria-label={t("backToSite")}>
-          <Logo />
-        </a>
-      ) : (
-        <Logo />
-      )}
-      {children}
-    </>
-  );
-  // A new step is a new card, so it fades in while the scene stays.
-  return (
-    <main className="signin">
-      {onSubmit === undefined ? (
-        <div className="card" key={time}>
-          {content}
-        </div>
-      ) : (
-        <form className="card" key={time} onSubmit={onSubmit}>
-          {content}
-        </form>
-      )}
-    </main>
   );
 }

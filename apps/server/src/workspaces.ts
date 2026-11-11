@@ -1,9 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type pg from "pg";
 import { widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { normalizeOrigin } from "./identity.ts";
+import type { ImageUrls } from "./public-images.ts";
 
 // A workspace's public key. Checked before a lookup, because Postgres rejects some bytes that a
 // URL can decode to.
@@ -95,4 +96,23 @@ export async function workspacesTable(admin: pg.ClientBase): Promise<string> {
   return [["id", "public key", "state", "name"], ...rows]
     .map((row) => `${row.join("\t")}\n`)
     .join("");
+}
+
+/** A workspace's name and its logo's address, as the app's workspace menu and the API show them. */
+export async function readWorkspaceFace(
+  tx: Transaction,
+  imageUrls: ImageUrls,
+  workspaceId: string,
+) {
+  const [row] = await tx
+    .select({
+      name: workspace.name,
+      publicKey: workspace.publicKey,
+      logoUpdatedAt: widgetSettings.logoUpdatedAt,
+    })
+    .from(workspace)
+    .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
+    .where(eq(workspace.id, workspaceId));
+  if (row === undefined) return undefined;
+  return { name: row.name, logoUrl: imageUrls.logo(row.publicKey, row.logoUpdatedAt) };
 }

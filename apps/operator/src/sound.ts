@@ -1,25 +1,18 @@
 // A short, soft two-note chime for a visitor's new message, made with the Web Audio API, so the app
 // ships no sound file. The setting is per device, and on until someone turns it off.
 
+import { readStored, store } from "./stored.ts";
+
 const KEY = "dinghy:sound";
 const GAP_MS = 2000;
 
-/** Storage can throw in a private window or with blocked site data. Then the sound stays on. */
+/** Without storage, the sound stays on. */
 export function soundOn(): boolean {
-  try {
-    return localStorage.getItem(KEY) !== "off";
-  } catch {
-    return true;
-  }
+  return readStored(KEY) !== "off";
 }
 
 export function setSoundOn(on: boolean): void {
-  try {
-    if (on) localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, "off");
-  } catch {
-    // The choice lasts until the page reloads.
-  }
+  store(KEY, on ? null : "off");
 }
 
 let audio: AudioContext | null = null;

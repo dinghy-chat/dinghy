@@ -19,7 +19,11 @@
       "correctness": {
         "noUnusedImports": "error",
         "noUnusedVariables": "error",
-        "noUnusedFunctionParameters": "error"
+        "noUnusedFunctionParameters": "error",
+        "useExhaustiveDependencies": {
+          "level": "error",
+          "options": { "hooks": [{ "name": "useLoad", "closureIndex": 0, "dependenciesIndex": 1 }] }
+        }
       }
     }
   }

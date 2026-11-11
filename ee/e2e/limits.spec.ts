@@ -1,6 +1,7 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { expect, type Page, test } from "@playwright/test";
 import { openLink } from "../../tests/e2e/links.ts";
+import { openSettings, settingsList } from "../../tests/e2e/settings.ts";
 import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
 
 let server: Awaited<ReturnType<typeof startCloudE2EServer>>;
@@ -28,21 +29,28 @@ test("a workspace with 5 operators shows the limit when an owner creates an invi
   page,
 }) => {
   await signIn(page);
-  await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.getByRole("region", { name: "Plan" })).toBeVisible();
-  const operators = page.locator(".meter", { hasText: "Operators" });
+  await openSettings(page, "Workspace");
+  const plan = page.locator(".page-row", {
+    has: page.getByRole("heading", { name: "Plan and usage" }),
+  });
+  const operators = plan.locator(".meter", { hasText: "Team members" });
   await expect(operators).toContainText("5 of 5");
-  await expect(operators).toContainText("At the limit.");
+  await expect(operators).toContainText("All team places are in use.");
   await expect(operators).toHaveClass(/full/);
-  const images = page.locator(".meter", { hasText: "Images" });
+  const images = plan.locator(".meter", { hasText: "Image storage" });
   await expect(images).toContainText("0 MB of 1 GB");
   await expect(images).toHaveClass(/ ok/);
-  await expect(page.getByText("Each image is kept for 12 months.")).toBeVisible();
+  await expect(
+    page.getByText("Dinghy Cloud automatically deletes chat images after 12 months."),
+  ).toBeVisible();
+  // The Team page says how full it is, under its title, beside its Invite button.
+  await settingsList(page).getByRole("link", { name: "Team" }).click();
+  await expect(page.getByText("5 of 5 team members. Pending invites count too.")).toBeVisible();
   await page.getByRole("button", { name: "Invite someone" }).click();
   await page.getByRole("dialog").getByLabel("Email").fill("new@example.com");
   await page.getByRole("button", { name: "Send invite" }).click();
   await expect(
-    page.getByText("This workspace has 5 operators, the most the plan allows."),
+    page.getByText("This workspace has reached its limit of 5 team members", { exact: false }),
   ).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Invite link" })).toHaveCount(0);
 });

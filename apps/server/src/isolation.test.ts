@@ -615,6 +615,13 @@ const ATTACKS: Record<string, Attack> = {
     const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
     expect(row?.allowedOrigins).toEqual([SITE_B]);
   },
+  "PATCH /v1/operator/workspaces/:workspaceId": async ({ operator: as, anna, a, b }) => {
+    expect((await as(anna, "PATCH", inWorkspace(b.id, ""), { name: "Taken" })).status).toBe(404);
+    // A real rename here must not reach the other workspace.
+    expect((await as(anna, "PATCH", inWorkspace(a.id, ""), { name: "Acme Two" })).status).toBe(200);
+    const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+    expect(row?.name).toBe("Beta");
+  },
   "POST /v1/operator/workspaces/:workspaceId/settings/rotate-secret": async (world) => {
     const { operator: as, anna, a, b } = world;
     expect((await as(anna, "POST", inWorkspace(b.id, "/settings/rotate-secret"), {})).status).toBe(

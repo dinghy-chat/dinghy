@@ -4,6 +4,37 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Settings is one page: a list grouped into **You**, **Workspace**, **Chat widget** and **Developers**, with the open page beside it. Each page has its own address, such as `/settings/team?workspace=<id>`, so a link or a bookmark opens the same page of the same workspace. On a phone the list is its own screen, and each page has a way back.
+- A **Workspace** page in Settings, where owners and admins rename the workspace and change its logo. It also holds the plan and usage, billing, blocked visitors, the export and the delete.
+- The Inbox lists open or closed conversations, and in a team, all of them, yours or the unassigned ones. The address keeps the choice, and Back and Forward bring it back.
+- An emoji picker in the chat's message box, for visitors and operators, and in the widget's words in **Settings > Appearance**.
+- Two more chat buttons: **Label**, a pill with the chat's title, and **Square**, which takes the saved corners. `data-launcher` takes `label` and `square`.
+- On Dinghy Cloud, `chat free <workspace-id>` turns on a workspace that never pays, such as your own.
+- API: `PATCH /v1/operator/workspaces/{workspaceId}` renames a workspace. `GET /v1/operator/workspaces/{workspaceId}/conversations` takes `assignee=me` or `assignee=none`. `GET /v1/operator/me` answers each workspace's `logoUrl`. The billing state can be `free`.
+
+### Changed
+
+- The sidebar keeps **Inbox**, **Analytics** and **Settings**. **Closed** moved into the Inbox, **Alerts** is **Settings > Notifications**, and **Profile** is a page of Settings too.
+- In Settings, the **Widget** tab is now **Appearance**, **API** is **API & webhooks**, and **Allowed sites** and the identity secret are on **Install**. **Data** moved to the **Workspace** page.
+- The chat button is a bubble by default. A saved widget keeps its button.
+- **Settings > Appearance** has a compact **Colors and layout** section and an **Email and branding** section. Its preview shows the open chat and the chat button together, on a light page behind a light widget. Pasting a hex code sets a color.
+- The save note in **Settings > Appearance** says that new pages of your site show the change within 5 minutes. A page that is already open keeps the look it loaded with.
+- The forms for a new API key and a new webhook open when you ask for them.
+- A webhook delivery's error says what to check next, and a failed test says so once.
+- Renaming the workspace or changing its logo shows in every operator's open app.
+- **Cancel** leaves the setup of an extra workspace.
+- A tip says why the leave button is off for a workspace's only owner.
+- Focus shows in the app's navy, with a warm halo on fields.
+
+### Fixed
+
+- Back and Forward ask before they drop unsaved changes in **Settings > Appearance**, and **Stay** keeps the page and its address.
+- **Settings > Appearance** fits a phone without scrolling sideways.
+- The open chat has no white edge at its top corners.
+- A disabled red-outline button looks disabled.
+
 ## [0.17.0] - 2026-11-11
 
 ### Added

@@ -1,0 +1,1 @@
+CREATE INDEX "conversation_assignee_list_idx" ON "conversation" USING btree ("workspace_id","assignee_operator_id","status","updated_at","id");

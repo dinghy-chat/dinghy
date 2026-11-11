@@ -508,11 +508,24 @@ interface ConversationSummary extends ConversationRow {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null;
 }
 
+/** Whose conversations a list holds: everyone's, one operator's, or no one's. */
+export type AssigneeFilter =
+  | { kind: "all" }
+  | { kind: "operator"; operatorId: string }
+  | { kind: "none" };
+
+function assigneeCondition(assignee: AssigneeFilter) {
+  if (assignee.kind === "all") return undefined;
+  if (assignee.kind === "none") return isNull(conversation.assigneeOperatorId);
+  return eq(conversation.assigneeOperatorId, assignee.operatorId);
+}
+
 /** A page of conversations, newest activity first. */
 export async function listConversations(
   tx: Transaction,
   workspaceId: string,
   status: "open" | "closed",
+  assignee: AssigneeFilter,
   before: { updatedAt: Date; id: string } | undefined,
   limit: number,
 ): Promise<{ conversations: ConversationSummary[]; hasMore: boolean }> {
@@ -542,6 +555,7 @@ export async function listConversations(
       and(
         eq(conversation.workspaceId, workspaceId),
         eq(conversation.status, status),
+        assigneeCondition(assignee),
         // A row comparison bounds the scan of conversation_list_idx, where an OR would not.
         before === undefined
           ? undefined
@@ -785,6 +799,12 @@ export async function recordTeamChange(tx: Transaction, workspaceId: string): Pr
 export async function recordBillingChange(tx: Transaction, workspaceId: string): Promise<void> {
   const seq = await nextSeq(tx, workspaceId);
   await tx.insert(event).values({ workspaceId, seq, kind: "billing.changed" });
+}
+
+/** Tells every open operator app to read `me` again, for a new name or logo. */
+export async function recordWorkspaceChange(tx: Transaction, workspaceId: string): Promise<void> {
+  const seq = await nextSeq(tx, workspaceId);
+  await tx.insert(event).values({ workspaceId, seq, kind: "workspace.changed" });
 }
 
 interface FeedEvent {

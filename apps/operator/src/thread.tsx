@@ -18,10 +18,11 @@ import {
   type WelcomeChat,
   type WorkspaceApi,
 } from "./api.ts";
+import { Icon } from "./icons.tsx";
 import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { Avatar, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
+import { Avatar, DocLink, EmojiButton, ErrorNote, failureText, Loading, useModal } from "./ui.tsx";
 import {
   avatarLetters,
   detailRows,
@@ -361,6 +362,7 @@ function PageContextList({ conversation }: { conversation: Conversation }) {
     <section className="page-context" aria-label={t("pageContextTitle")}>
       <h3>{t("pageContextTitle")}</h3>
       <p className="quiet">{t("pageContextNote")}</p>
+      <DocLink path="add-to-your-site#tell-operators-about-the-page" text="pageContextDocsLink" />
       <DetailList values={conversation.pageContext} links={false} />
     </section>
   );
@@ -434,6 +436,7 @@ function Composer({
   onFiles: ((files: Iterable<File>) => void) | undefined;
 }) {
   const picker = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
 
   const submit = (event: { preventDefault(): void }) => {
     event.preventDefault();
@@ -471,7 +474,9 @@ function Composer({
             </button>
           </>
         )}
+        <EmojiButton field={input} onPick={setDraft} />
         <textarea
+          ref={input}
           rows={1}
           onPaste={(event) => {
             // A copy from Word or Excel holds its text and a picture of it. The text is what is meant.
@@ -608,6 +613,7 @@ export function Thread({
   drafts,
   onBack,
   onChanged,
+  onLoaded,
 }: {
   api: WorkspaceApi;
   meId: string;
@@ -624,6 +630,8 @@ export function Thread({
   version: number;
   onBack(): void;
   onChanged(): void;
+  /** The conversation as each load finds it. */
+  onLoaded(conversation: Conversation): void;
 }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
@@ -664,6 +672,7 @@ export function Thread({
       });
       setLoadFailure(null);
       setConversation(page.conversation);
+      onLoaded(page.conversation);
       setOnline(page.visitorOnline);
       setPages(page.visitorPages);
       setWelcome(page.welcome);

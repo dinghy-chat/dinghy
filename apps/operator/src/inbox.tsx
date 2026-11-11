@@ -1,61 +1,93 @@
 /** @jsxImportSource react */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BillingBanner, useBilling, WaitingBanner } from "../../../ee/operator/billing.tsx";
-import { AlertsPage, leaveDevice, useDeviceSync } from "./alerts.tsx";
 import { AnalyticsPage } from "./analytics.tsx";
 import {
   ApiError,
+  type Assignee,
   type Conversation,
   type Me,
   type Member,
-  READ_ONLY_EVENT,
-  type Role,
-  signOut,
   type WorkspaceApi,
   workspaceApi,
 } from "./api.ts";
+import { Icon } from "./icons.tsx";
+import { useChanges, usePresence, useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
-import { leave, navigate } from "./nav.ts";
-import { Menu, type MenuItem } from "./popup.tsx";
+import { leave, NAVIGATE_EVENT, navigate, pushAddress, replaceAddress } from "./nav.ts";
+import { useDeviceSync } from "./notifications.tsx";
+import { EmptyArt, Harbor } from "./scene.tsx";
 import {
   openOwnerStep,
-  ownerStepIn,
-  ProfilePage,
-  SettingsPage,
-  type SettingsTab,
+  ownerStepPage,
+  Settings,
+  type SettingsPage,
+  settingsAddress,
+  settingsInAddress,
+  wantsDelete,
 } from "./settings.tsx";
+import { Sidebar, type View } from "./sidebar.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
+import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
-import {
-  Avatar,
-  EmptyArt,
-  Harbor,
-  Icon,
-  type IconName,
-  initials,
-  Logo,
-  PageHead,
-  ROLE_TEXT,
-} from "./ui.tsx";
+import { Avatar, Choices, type Option, PageHead } from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
 
-const RETRY_LIMIT_MS = 30_000;
 const PAGE_SIZE = 50;
 const SEARCH_WAIT_MS = 250;
 const SEARCH_MIN = 3;
-const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
+/** Whose conversations the Inbox lists. */
+type Who = "all" | "mine" | "unassigned";
 
-const STATUS_LOOK: Record<
-  Status,
-  { label: TextId; empty: TextId; hint: TextId; icon: "inbox" | "done" }
-> = {
-  open: { label: "inbox", empty: "noOpen", hint: "emptyHint", icon: "inbox" },
-  closed: { label: "closed", empty: "noClosed", hint: "closedHint", icon: "done" },
+const STATUS_EMPTY: Record<Status, { empty: TextId; hint: TextId }> = {
+  open: { empty: "noOpen", hint: "emptyHint" },
+  closed: { empty: "noClosed", hint: "closedHint" },
 };
+
+const STATUS_OPTIONS: Option<Status>[] = [
+  { value: "open", label: "open" },
+  { value: "closed", label: "closed" },
+];
+const WHO_OPTIONS: Option<Who>[] = [
+  { value: "all", label: "filterAll" },
+  { value: "mine", label: "filterMine" },
+  { value: "unassigned", label: "unassigned" },
+];
+const WHO_ASSIGNEE: Record<Who, Assignee | null> = { all: null, mine: "me", unassigned: "none" };
+
+/** What the Inbox lists. */
+type Filter = { status: Status; who: Who };
+
+/** What the Inbox shows, from the address: `?view=closed` and `&who=mine` or `&who=unassigned`. */
+function filterInAddress(): Filter {
+  const params = new URLSearchParams(location.search);
+  const who = params.get("who");
+  return {
+    status: params.get("view") === "closed" ? "closed" : "open",
+    who: who === "mine" || who === "unassigned" ? who : "all",
+  };
+}
+
+/** The Inbox's address with this choice, keeping the rest of `from`, such as a conversation. */
+function filterAddress(status: Status, who: Who, from = location.href): string {
+  const url = new URL(from);
+  if (status === "closed") url.searchParams.set("view", "closed");
+  else url.searchParams.delete("view");
+  if (who === "all") url.searchParams.delete("who");
+  else url.searchParams.set("who", who);
+  return `${url.pathname}${url.search}`;
+}
+
+/** The empty list's words: a filter's own, or the status's. */
+function emptyLook(status: Status, who: Who): { empty: TextId; hint: TextId | null } {
+  if (who === "mine") return { empty: "noMine", hint: null };
+  if (who === "unassigned" && status === "open") return { empty: "noUnassigned", hint: null };
+  return STATUS_EMPTY[status];
+}
 
 /** The time today, and the date before today. */
 function shortTime(iso: string): string {
@@ -63,175 +95,6 @@ function shortTime(iso: string): string {
   return when.toDateString() === new Date().toDateString()
     ? when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : when.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-/**
- * Says which conversation is open, and learns who else has one open. This follows what is open, and
- * no keystroke, because the product has no typing indicators. Only a visible tab counts.
- */
-function usePresence(
-  api: WorkspaceApi,
-  selected: string | null,
-  visible: boolean,
-): Record<string, string[]> {
-  const [viewers, setViewers] = useState<Record<string, string[]>>({});
-  const open = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!visible) {
-      void api.leave(open.current).catch(() => {});
-      open.current = null;
-      return;
-    }
-    const left = open.current;
-    open.current = selected;
-    let stopped = false;
-    const beat = (previous: string | null) => {
-      api
-        .beat(selected, previous)
-        .then((state) => {
-          if (!stopped) setViewers(state.viewers);
-        })
-        .catch(() => {});
-    };
-    beat(left);
-    const timer = setInterval(() => beat(null), PRESENCE_EVERY_MS);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [api, selected, visible]);
-
-  useEffect(() => {
-    const onHide = () => void api.leave(open.current).catch(() => {});
-    addEventListener("pagehide", onHide);
-    return () => removeEventListener("pagehide", onHide);
-  }, [api]);
-
-  return viewers;
-}
-
-function useTabVisible(): boolean {
-  const [visible, setVisible] = useState(document.visibilityState === "visible");
-  useEffect(() => {
-    const onVisibility = () => setVisible(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
-  return visible;
-}
-
-/**
- * Holds the stream of changes, and counts them. Only a visible tab holds a stream, because browsers
- * allow about six HTTP/1.1 connections per origin. A tab catches up from its cursor when it becomes
- * visible again.
- */
-function useChanges(
-  api: WorkspaceApi,
-  visible: boolean,
-  onSignedOut: () => void,
-  /** A visitor's new message, live, after the stream has caught up. */
-  onVisitorMessage: (conversationId: string | null) => void,
-) {
-  const [lost, setLost] = useState(false);
-  const [version, setVersion] = useState(0);
-  const [teamVersion, setTeamVersion] = useState(0);
-  const [billingVersion, setBillingVersion] = useState(0);
-  // A thread loads again only for its own conversation's changes, for a block of its visitor, or
-  // for a change to the whole workspace.
-  const [threads, setThreads] = useState<{ all: number; by: Record<string, number> }>({
-    all: 0,
-    by: {},
-  });
-  const cursor = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!visible) return;
-    const controller = new AbortController();
-    let retryMs = 1000;
-    (async () => {
-      while (!controller.signal.aborted) {
-        let refusedMs: number | undefined;
-        // What a stream replays before `ready` is catch-up, and makes no sound.
-        let live = false;
-        try {
-          const reason = await api.stream(cursor.current, controller.signal, {
-            change(next, kind, conversationId, fromVisitor) {
-              cursor.current = next;
-              if (live && kind === "message.created" && fromVisitor) {
-                onVisitorMessage(conversationId);
-              }
-              // React batches these, so a long catch-up becomes few loads.
-              setVersion((current) => current + 1);
-              // A block or unblock is on the visitor, so it changes every one of their threads.
-              setThreads((current) =>
-                conversationId === null || kind === "conversation.moderated"
-                  ? { ...current, all: current.all + 1 }
-                  : {
-                      ...current,
-                      by: {
-                        ...current.by,
-                        [conversationId]: (current.by[conversationId] ?? 0) + 1,
-                      },
-                    },
-              );
-              if (kind === "team.changed") setTeamVersion((current) => current + 1);
-              // Both change `me`: the billing state, or a suspension by the server's admin.
-              if (kind === "billing.changed" || kind === "workspace.changed") {
-                setBillingVersion((current) => current + 1);
-              }
-            },
-            ready(next) {
-              live = true;
-              // A first stream starts at the present, so a billing change since `me` loaded is
-              // not on it.
-              if (cursor.current === null) setBillingVersion((current) => current + 1);
-              cursor.current = next;
-              setLost(false);
-              retryMs = 1000;
-              // Anything before this point is in these lists, and anything after is on the stream.
-              setVersion((current) => current + 1);
-              setThreads((current) => ({ ...current, all: current.all + 1 }));
-              setTeamVersion((current) => current + 1);
-            },
-            resync(next) {
-              cursor.current = next;
-              // The events after the old cursor are gone, and a billing change may be among them.
-              setBillingVersion((current) => current + 1);
-            },
-          });
-          // Reading /me settles it: another workspace opens, or sign-in, or this session is fine and
-          // the loop below connects again, as when another window signed in with a new cookie.
-          if (reason === "unauthorized") onSignedOut();
-          if (reason === "lifetime") continue;
-        } catch (failure) {
-          if (controller.signal.aborted) return;
-          if (failure instanceof ApiError && (failure.status === 401 || failure.status === 404)) {
-            onSignedOut();
-          }
-          if (failure instanceof ApiError) refusedMs = failure.retryMs;
-        }
-        if (controller.signal.aborted) return;
-        setLost(true);
-        // A refused stream waits as long as the server says, and anything else backs off.
-        await new Promise((resolve) =>
-          setTimeout(resolve, refusedMs ?? retryMs * (0.5 + Math.random() / 2)),
-        );
-        if (refusedMs === undefined) retryMs = Math.min(retryMs * 2, RETRY_LIMIT_MS);
-      }
-    })();
-    return () => controller.abort();
-  }, [api, onSignedOut, onVisitorMessage, visible]);
-
-  // A write refused as read-only means this page missed the change.
-  useEffect(() => {
-    const onReadOnly = () => setBillingVersion((current) => current + 1);
-    addEventListener(READ_ONLY_EVENT, onReadOnly);
-    return () => removeEventListener(READ_ONLY_EVENT, onReadOnly);
-  }, []);
-
-  const threadVersion = (id: string) => threads.all + (threads.by[id] ?? 0);
-  return { lost, version, threadVersion, teamVersion, billingVersion };
 }
 
 /** Above every page of a suspended workspace, with whom to write to. */
@@ -252,221 +115,6 @@ function SuspendedBanner({ contact }: { contact: string | null }) {
         {after}
       </span>
     </div>
-  );
-}
-
-/** What the panel shows: one of the two lists, or a page. */
-type View = Status | "analytics" | "settings" | "alerts" | "profile";
-
-const NAV: { view: Exclude<View, "profile">; label: TextId; icon: IconName }[] = [
-  { view: "open", label: "inbox", icon: STATUS_LOOK.open.icon },
-  { view: "closed", label: "closed", icon: STATUS_LOOK.closed.icon },
-  { view: "analytics", label: "analytics", icon: "chart" },
-  { view: "alerts", label: "alerts", icon: "bell" },
-  { view: "settings", label: "settings", icon: "gear" },
-];
-
-/**
- * The workspace's logo, or two letters: "Acme" gives "AC", and "Harbor Labs" gives "HL". The name
- * sits beside it, so the logo needs no text of its own.
- */
-function WorkspaceTile({ name, logoUrl = null }: { name: string; logoUrl?: string | null }) {
-  if (logoUrl !== null) return <img className="ws-tile" src={logoUrl} alt="" />;
-  const letters = initials(name);
-  return (
-    <span className="ws-tile" aria-hidden="true">
-      {letters.length > 1 ? letters : name.trim().slice(0, 2).toUpperCase()}
-    </span>
-  );
-}
-
-/**
- * The workspace's name at the top of the sidebar. With more than one workspace, or a way to make
- * one, it opens a menu to switch.
- */
-function WorkspaceSwitcher({
-  me,
-  name,
-  logoUrl,
-  workspaceId,
-  canCreate,
-  onSwitch,
-}: {
-  me: Me;
-  name: string;
-  /** The open workspace's logo. The others in the menu show their letters. */
-  logoUrl: string | null;
-  workspaceId: string;
-  canCreate: boolean;
-  onSwitch(id: string): void;
-}) {
-  if (me.workspaces.length < 2 && !canCreate) {
-    return (
-      <div className="workspace">
-        <WorkspaceTile name={name} logoUrl={logoUrl} />
-        <span className="ws-name" aria-hidden="true">
-          {name}
-        </span>
-      </div>
-    );
-  }
-  const items: MenuItem[] = me.workspaces.map((one) => ({
-    label: one.name,
-    lead: <WorkspaceTile name={one.name} />,
-    checked: one.workspaceId === workspaceId,
-    onSelect: () => {
-      if (one.workspaceId !== workspaceId) leave(() => onSwitch(one.workspaceId));
-    },
-  }));
-  if (canCreate) {
-    items.push({
-      label: t("createWorkspace"),
-      lead: <Icon name="plusCircle" size={18} />,
-      divider: true,
-      onSelect: () => navigate("/signup"),
-    });
-  }
-  return (
-    <Menu
-      label={t("workspaceMenu", { name })}
-      items={items}
-      buttonClass="workspace"
-      side="start"
-      className="workspace-menu"
-    >
-      <WorkspaceTile name={name} logoUrl={logoUrl} />
-      <span className="ws-name">{name}</span>
-      <Icon name="chevron" size={12} />
-    </Menu>
-  );
-}
-
-/** The operator at the foot of the sidebar, with their profile and sign out. */
-function UserMenu({
-  me,
-  role,
-  current,
-  onProfile,
-  onSignedOut,
-}: {
-  me: Me;
-  role: Role;
-  /** True on the Profile page, which the menu opens, so the menu shows it as the current page. */
-  current: boolean;
-  onProfile(): void;
-  onSignedOut(): void;
-}) {
-  return (
-    <Menu
-      label={t("userMenu")}
-      buttonClass={current ? "me current" : "me"}
-      side="start"
-      direction="up"
-      className="me-menu"
-      items={[
-        { label: t("profile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
-        {
-          divider: true,
-          label: t("signOut"),
-          lead: <Icon name="exit" size={18} />,
-          onSelect: () => leave(() => void leaveDevice().then(signOut).finally(onSignedOut)),
-        },
-      ]}
-    >
-      {me.pictureUrl === null ? (
-        <span className="me-avatar" aria-hidden="true">
-          {initials(me.name)}
-        </span>
-      ) : (
-        <img className="me-avatar" src={me.pictureUrl} alt="" />
-      )}
-      <span className="me-text">
-        <b>{me.name}</b>
-        <small>{t(ROLE_TEXT[role])}</small>
-      </span>
-      <Icon name="chevron" size={12} />
-    </Menu>
-  );
-}
-
-function Sidebar({
-  me,
-  role,
-  name,
-  logoUrl,
-  workspaceId,
-  canCreate,
-  view,
-  waiting,
-  onView,
-  onSwitch,
-  onSignedOut,
-}: {
-  me: Me;
-  role: Role;
-  name: string;
-  logoUrl: string | null;
-  workspaceId: string;
-  canCreate: boolean;
-  view: View;
-  /** Open conversations that wait for a reply, in the whole workspace. */
-  waiting: number;
-  onView(view: View): void;
-  onSwitch(id: string): void;
-  onSignedOut(): void;
-}) {
-  const waitingText = t("waitingCount", { count: waiting });
-  return (
-    <aside className="side">
-      <div className="brand">
-        <Logo />
-      </div>
-      {/* The page's heading is the workspace, which the switcher shows. */}
-      <h1 className="visually-hidden">{name}</h1>
-      <WorkspaceSwitcher
-        me={me}
-        name={name}
-        logoUrl={logoUrl}
-        workspaceId={workspaceId}
-        canCreate={canCreate}
-        onSwitch={onSwitch}
-      />
-      <nav className="nav" aria-label={t("mainMenu")}>
-        {NAV.map((item) => {
-          const counted = item.view === "open" && waiting > 0;
-          return (
-            <button
-              type="button"
-              key={item.view}
-              aria-current={view === item.view ? "page" : undefined}
-              // A description, so the button's name stays "Inbox" while the number changes.
-              aria-describedby={counted ? "waiting-count" : undefined}
-              onClick={() => onView(item.view)}
-            >
-              <Icon name={item.icon} size={20} />
-              {t(item.label)}
-              {counted && (
-                <span className="count" aria-hidden="true">
-                  {waiting}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-      {waiting > 0 && (
-        <span id="waiting-count" className="visually-hidden">
-          {waitingText}
-        </span>
-      )}
-      <UserMenu
-        me={me}
-        role={role}
-        current={view === "profile"}
-        onProfile={() => onView("profile")}
-        onSignedOut={onSignedOut}
-      />
-    </aside>
   );
 }
 
@@ -523,9 +171,11 @@ function ConversationRow({
 function useSearch(
   api: WorkspaceApi,
   query: string,
-): { found: Conversation[] | null; searching: boolean } {
+): { found: Conversation[] | null; searching: boolean; failed: boolean } {
   const [found, setFound] = useState<Conversation[] | null>(null);
   const [answered, setAnswered] = useState("");
+  // The words whose search failed, so the list says why it did not change.
+  const [failedFor, setFailedFor] = useState<string | null>(null);
   const wanted = query.trim();
   useEffect(() => {
     if (wanted.length < SEARCH_MIN) {
@@ -538,10 +188,13 @@ function useSearch(
         (result) => {
           setFound(result.conversations);
           setAnswered(wanted);
+          setFailedFor(null);
         },
         () => {
           // An aborted search has a newer one behind it, and a failed one keeps the last rows.
-          if (!controller.signal.aborted) setAnswered(wanted);
+          if (controller.signal.aborted) return;
+          setAnswered(wanted);
+          setFailedFor(wanted);
         },
       );
     }, SEARCH_WAIT_MS);
@@ -550,8 +203,8 @@ function useSearch(
       controller.abort();
     };
   }, [api, wanted]);
-  if (wanted.length < SEARCH_MIN) return { found: null, searching: false };
-  return { found, searching: answered !== wanted };
+  if (wanted.length < SEARCH_MIN) return { found: null, searching: false, failed: false };
+  return { found, searching: answered !== wanted, failed: failedFor === wanted };
 }
 
 /** The search field at the top of the list. Escape clears it. */
@@ -600,22 +253,9 @@ function listContext(status: Status, waiting: number): string {
   return t("waitingMany", { count: waiting });
 }
 
-/** Whether this browser already did something once. Storage can be off, which reads as no. */
-function remembered(key: string): boolean {
-  try {
-    return localStorage.getItem(key) !== null;
-  } catch {
-    return false;
-  }
-}
-
-function remember(key: string): void {
-  try {
-    localStorage.setItem(key, "1");
-  } catch {
-    // Without storage, the welcome chat opens again on the next load, which is harmless.
-  }
-}
+/** Whether this browser already did something once. Without storage, it reads as no. */
+const remembered = (key: string) => readStored(key) !== null;
+const remember = (key: string) => store(key, "1");
 
 export function Inbox({
   me,
@@ -638,7 +278,7 @@ export function Inbox({
   emailAvailable: boolean;
   onSignedOut(): void;
   onSwitch(id: string): void;
-  /** The operator's name or a workspace's billing changed, so `me` must load again. */
+  /** The operator's name, or a workspace's billing, name or logo changed, so `me` must load again. */
   onAccountChanged(): void;
   /** The workspace the operator just deleted, for a note, or null. */
   deletedName: string | null;
@@ -648,12 +288,20 @@ export function Inbox({
 }) {
   const api = useMemo(() => workspaceApi(workspaceId), [workspaceId]);
   useDeviceSync();
-  const [name, setName] = useState(t("appName"));
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status>("open");
+  const [filter, setFilter] = useState(filterInAddress);
+  const { status, who: chosenWho } = filter;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   // The first page has arrived, so an empty list means an empty inbox and not one still loading.
   const [listed, setListed] = useState(false);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  // A new filter starts at its first page, and the old filter's rows must not show while it loads.
+  const [listedFilter, setListedFilter] = useState(filter);
+  if (listedFilter !== filter) {
+    setListedFilter(filter);
+    setLimit(PAGE_SIZE);
+    setConversations([]);
+    setListed(false);
+  }
   const [waiting, setWaiting] = useState(0);
   // In memory only, so a reload or a sign-out clears them.
   const drafts = useRef(new Map<string, string>()).current;
@@ -662,28 +310,27 @@ export function Inbox({
     const params = new URLSearchParams(location.search);
     return params.get("workspace") === workspaceId ? params.get("conversation") : null;
   });
-  // The account's delete can open this workspace on its Team tab or its delete dialog.
-  const [ownerStep] = useState(() => ownerStepIn(workspaceId));
-  const [view, setView] = useState<View>(ownerStep === null ? "open" : "settings");
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>(
-    ownerStep === "delete" ? "data" : "team",
-  );
-  const [openDelete, setOpenDelete] = useState(ownerStep === "delete");
+  // The address can open Settings, as the account's delete does for its Team page or delete dialog.
+  const [initialPage] = useState(settingsInAddress);
+  const [view, setView] = useState<View>(initialPage === undefined ? "inbox" : "settings");
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(initialPage ?? null);
+  const [openDelete, setOpenDelete] = useState(() => wantsDelete(workspaceId));
   const visible = useTabVisible();
   const [query, setQuery] = useState("");
-  const { found, searching } = useSearch(api, query);
+  const { found, searching, failed: searchFailed } = useSearch(api, query);
+  const searchTooShort = query.trim().length > 0 && query.trim().length < SEARCH_MIN;
   useEffect(prepareSound, []);
   const shownConversation = useRef(selected);
   useLayoutEffect(() => {
     // A page such as Analytics hides the thread, so its conversation is not in view then.
-    shownConversation.current = view === "open" || view === "closed" ? selected : null;
+    shownConversation.current = view === "inbox" ? selected : null;
   });
   // A sound only when the operator is not already looking at that conversation.
   const onVisitorMessage = useCallback((conversationId: string | null) => {
     const looking = document.visibilityState === "visible" && document.hasFocus();
     if (!looking || conversationId !== shownConversation.current) chime();
   }, []);
-  const { lost, version, threadVersion, teamVersion, billingVersion } = useChanges(
+  const { lost, version, threadVersion, teamVersion, accountVersion } = useChanges(
     api,
     visible,
     onSignedOut,
@@ -691,25 +338,26 @@ export function Inbox({
   );
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
+  const name = membership?.name ?? t("appName");
+  const logoUrl = membership?.logoUrl ?? null;
   // The roster is newer than `me`, because a role can change while this page is open.
   const role = members.find((member) => member.id === me.id)?.role ?? membership?.role ?? "member";
   const readOnly = membership?.readOnly ?? false;
   const suspended = membership?.suspended ?? false;
   const waitsForCloud = membership?.waiting ?? false;
-  const billing = useBilling(api, me.billing && role === "owner", billingVersion);
+  const billing = useBilling(api, me.billing && role === "owner", accountVersion);
   // The read-only flag is in `me`, so it loads again with the billing state.
-  const seenBillingVersion = useRef(billingVersion);
+  const seenAccountVersion = useRef(accountVersion);
   useEffect(() => {
-    if (billingVersion === seenBillingVersion.current) return;
-    seenBillingVersion.current = billingVersion;
+    if (accountVersion === seenAccountVersion.current) return;
+    seenAccountVersion.current = accountVersion;
     onAccountChanged();
-  }, [billingVersion, onAccountChanged]);
+  }, [accountVersion, onAccountChanged]);
   const loadMembers = useLatestLoad(async () => {
     setMembers((await api.members()).members);
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: teamVersion asks for a load.
   useEffect(loadMembers, [loadMembers, teamVersion]);
-  const [limit, setLimit] = useState(PAGE_SIZE);
   const [hasMore, setHasMore] = useState(false);
   const viewers = usePresence(api, selected, visible);
   /** Who else has this conversation open, by name. Someone who left the team has no name here. */
@@ -720,10 +368,17 @@ export function Inbox({
     if (names.length === 0) return null;
     return t(names.length === 1 ? "isReplying" : "areReplying", { names: names.join(", ") });
   };
-  const shown = useRef({ status, limit });
+  // A team of one has nothing to filter. The roster is empty only until it loads, and the
+  // address's filter holds until then.
+  const isTeam = members.length > 1;
+  const who: Who = isTeam || members.length === 0 ? chosenWho : "all";
+  const assignee = WHO_ASSIGNEE[who];
+  const shown = useRef({ status, assignee, limit });
   useLayoutEffect(() => {
-    shown.current = { status, limit };
+    shown.current = { status, assignee, limit };
   });
+  // The conversation a link opened, whose status picks Open or Closed once it loads.
+  const linked = useRef(selected);
 
   // A new workspace's first open list holds only the welcome chat, which opens by itself, once.
   const firstList = useRef(true);
@@ -731,18 +386,16 @@ export function Inbox({
   const reload = useLatestLoad(async () => {
     const wanted = shown.current;
     try {
-      const page = await api.list(
-        wanted.status,
-        wanted.limit,
-        () => wanted.status !== shown.current.status,
-      );
-      // The operator may have switched tabs while this was on its way.
-      if (wanted.status !== shown.current.status) return;
+      const moved = () =>
+        wanted.status !== shown.current.status || wanted.assignee !== shown.current.assignee;
+      const page = await api.list(wanted.status, wanted.assignee, wanted.limit, moved);
+      // The operator may have picked another filter while this was on its way.
+      if (moved()) return;
       setConversations(page.conversations);
       setListed(true);
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
-      if (firstList.current && wanted.status === "open") {
+      if (firstList.current && wanted.status === "open" && wanted.assignee === null) {
         firstList.current = false;
         const [only, ...rest] = page.conversations;
         if (only?.welcome && rest.length === 0 && !remembered(welcomeKey)) {
@@ -755,7 +408,7 @@ export function Inbox({
     }
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: each of these asks for a load.
-  useEffect(reload, [reload, status, limit, version]);
+  useEffect(reload, [reload, status, assignee, limit, version]);
 
   // A count in the tab's title, so a waiting visitor shows from another tab.
   useEffect(() => {
@@ -765,36 +418,52 @@ export function Inbox({
     };
   }, [waiting]);
 
-  useEffect(() => {
-    api
-      .get()
-      .then((workspace) => {
-        setName(workspace.name);
-        setLogoUrl(workspace.logoUrl);
-      })
-      .catch(() => {});
-  }, [api]);
-
-  const showView = (next: View, tab: SettingsTab = "team") => {
-    setSettingsTab(tab);
-    setOpenDelete(false);
+  /** Shows a view, and a Settings page in it, and puts it in the address for Back and reloads. */
+  const showView = (next: View, page: SettingsPage | null = null, deleting = false) => {
+    setSettingsPage(page);
+    setOpenDelete(deleting);
     // The account's delete reads who owns what, which can change in Settings.
-    if (next === "profile") onAccountChanged();
-    // Settings can change the team, so the names in the list load again after it.
-    if (view === "settings" && next !== "settings") loadMembers();
+    if (page === "profile") onAccountChanged();
     setView(next);
-    // The list reloads only when the tab changes, so the open tab must keep its rows.
-    if (next !== "open" && next !== "closed") return;
-    if (next === status) return;
-    setStatus(next);
-    setLimit(PAGE_SIZE);
-    // The old tab's rows must not show under this one while it loads.
-    setConversations([]);
+    const address =
+      next === "settings"
+        ? settingsAddress(page, workspaceId)
+        : filterAddress(status, who, new URL("/", location.origin).href);
+    if (address !== `${location.pathname}${location.search}`) pushAddress(address);
   };
+  const openSettings = (page: SettingsPage | null) => leave(() => showView("settings", page));
+
+  // Back and Forward move between the pages, and a link in the app can open one.
+  useEffect(() => {
+    const moved = () => {
+      const page = settingsInAddress();
+      setOpenDelete(false);
+      if (page === undefined) {
+        setView((current) => (current === "settings" ? "inbox" : current));
+        const next = filterInAddress();
+        setFilter((current) =>
+          current.status === next.status && current.who === next.who ? current : next,
+        );
+        return;
+      }
+      setView("settings");
+      setSettingsPage(page);
+    };
+    addEventListener(NAVIGATE_EVENT, moved);
+    return () => removeEventListener(NAVIGATE_EVENT, moved);
+  }, []);
+
+  /** Shows another filter, and puts it in the address, so a reload or a shared link keeps it. */
+  const showFilter = (nextStatus: Status, nextWho: Who) => {
+    if (nextStatus === status && nextWho === who) return;
+    replaceAddress(filterAddress(nextStatus, nextWho));
+    setFilter({ status: nextStatus, who: nextWho });
+  };
+  const empty = emptyLook(status, who);
 
   return (
     <div className="shell">
-      <div className={view !== status ? "app paging" : selected === null ? "app" : "app showing"}>
+      <div className={view !== "inbox" ? "app paging" : selected === null ? "app" : "app showing"}>
         <Sidebar
           me={me}
           role={role}
@@ -803,10 +472,12 @@ export function Inbox({
           workspaceId={workspaceId}
           canCreate={canCreate}
           view={view}
+          onProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
           onView={(next) => {
             if (next !== view) leave(() => showView(next));
           }}
+          onProfileOpen={() => openSettings("profile")}
           onSwitch={onSwitch}
           onSignedOut={onSignedOut}
         />
@@ -849,60 +520,79 @@ export function Inbox({
           )}
           <main className="panel">
             {view === "settings" && (
-              <SettingsPage
+              <Settings
                 api={api}
                 me={me}
                 role={role}
+                members={members}
+                onMembersChanged={loadMembers}
                 workspaceId={workspaceId}
                 workspaceName={name}
+                logoUrl={logoUrl}
                 billing={billing}
                 waiting={waitsForCloud}
                 emailAvailable={emailAvailable}
-                initialTab={settingsTab}
-                openDelete={openDelete}
-                onLeft={() => navigate("/")}
-                onDeleted={onWorkspaceDeleted}
-                onLogoChanged={setLogoUrl}
-              />
-            )}
-            {view === "analytics" && <AnalyticsPage api={api} />}
-            {view === "alerts" && <AlertsPage api={api} />}
-            {view === "profile" && (
-              <ProfilePage
-                me={me}
-                emailAvailable={emailAvailable}
                 keepsLastWorkspace={!canCreate}
-                onOpenWorkspace={(id, step) => {
-                  if (id !== workspaceId) {
-                    openOwnerStep(id, step);
-                    return;
-                  }
-                  showView("settings", step === "delete" ? "data" : "team");
-                  setOpenDelete(step === "delete");
-                }}
-                onAccountDeleted={onAccountDeleted}
-                onChanged={() => {
+                page={settingsPage}
+                openDelete={openDelete}
+                onPage={openSettings}
+                onLeft={() => navigate("/")}
+                onWorkspaceDeleted={onWorkspaceDeleted}
+                onProfileChanged={() => {
                   // The name shows on assignments and in the dropdown too, which read the members.
                   onAccountChanged();
                   loadMembers();
                 }}
+                onOpenWorkspace={(id, step) => {
+                  if (id === workspaceId)
+                    showView("settings", ownerStepPage(step), step === "delete");
+                  else openOwnerStep(id, step);
+                }}
+                onAccountDeleted={onAccountDeleted}
               />
             )}
+            {view === "analytics" && <AnalyticsPage api={api} />}
             <div className="split">
-              <section className="list" aria-label={t(STATUS_LOOK[status].label)}>
+              <section className="list" aria-label={t("inbox")}>
                 <PageHead
-                  title={t(STATUS_LOOK[status].label)}
+                  title={t("inbox")}
                   context={
                     found === null ? listContext(status, waiting) : foundContext(found.length)
                   }
                 />
+                <div className="list-filters">
+                  <Choices
+                    label={t("listStatus")}
+                    variant="outlined"
+                    value={status}
+                    options={STATUS_OPTIONS}
+                    onChange={(next) => showFilter(next, who)}
+                  />
+                  {isTeam && (
+                    <Choices
+                      label={t("listAssignee")}
+                      variant="quiet"
+                      value={who}
+                      options={WHO_OPTIONS}
+                      onChange={(next) => showFilter(status, next)}
+                    />
+                  )}
+                </div>
                 <SearchField value={query} searching={searching} onChange={setQuery} />
+                {(searchTooShort || searchFailed) && (
+                  <p
+                    className={searchFailed ? "bad search-note" : "hint search-note"}
+                    role="status"
+                  >
+                    {t(searchFailed ? "searchFailed" : "searchTooShort")}
+                  </p>
+                )}
                 <ul className="rows" aria-busy={searching}>
-                  {found === null && conversations.length === 0 && (
+                  {found === null && listed && conversations.length === 0 && (
                     <li className="list-empty">
                       <EmptyArt scene={status === "open" ? "day" : "evening"} />
-                      <b>{t(STATUS_LOOK[status].empty)}</b>
-                      {t(STATUS_LOOK[status].hint)}
+                      <b>{t(empty.empty)}</b>
+                      {empty.hint !== null && t(empty.hint)}
                     </li>
                   )}
                   {found !== null && found.length === 0 && !searching && (
@@ -917,20 +607,24 @@ export function Inbox({
                       selected={conversation.id === selected}
                       members={members}
                       replying={replying(conversation.id)}
-                      showClosed={found !== null && status === "open"}
+                      showClosed={found !== null}
                       onSelect={() => setSelected(conversation.id)}
                     />
                   ))}
                 </ul>
-                {status === "open" && listed && found === null && role !== "member" && (
-                  <StartHint
-                    api={api}
-                    workspaceId={workspaceId}
-                    hasConversations={conversations.length > 0}
-                    version={version}
-                    onOpen={(tab) => showView("settings", tab)}
-                  />
-                )}
+                {status === "open" &&
+                  who === "all" &&
+                  listed &&
+                  found === null &&
+                  role !== "member" && (
+                    <StartHint
+                      api={api}
+                      workspaceId={workspaceId}
+                      hasConversations={conversations.length > 0}
+                      version={version}
+                      onOpen={openSettings}
+                    />
+                  )}
                 {hasMore && found === null && (
                   <button
                     type="button"
@@ -960,6 +654,11 @@ export function Inbox({
                   version={threadVersion(selected)}
                   onBack={() => setSelected(null)}
                   onChanged={reload}
+                  onLoaded={(conversation) => {
+                    if (linked.current !== conversation.id) return;
+                    linked.current = null;
+                    showFilter(conversation.status, who);
+                  }}
                 />
               )}
             </div>

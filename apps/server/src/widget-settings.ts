@@ -27,6 +27,8 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, FORBIDDEN, MEMBER_ERRORS, NOT_FOUND, ROLE_WRITE_ERRORS } from "./errors.ts";
 import { visitorAuthorId } from "./identity.ts";
 import { processLogo, refuseImage } from "./images.ts";
+import { type Live, OPERATORS } from "./live.ts";
+import { recordWorkspaceChange } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
 import { allowed } from "./team.ts";
@@ -197,7 +199,12 @@ async function readAppearance(
  * The widget's settings in the operator app. Every member reads them, and only an owner or an
  * admin changes them. An API key and MCP cannot reach them: the routes take a session only.
  */
-export function registerWidgetSettingsRoutes(app: App, db: Database, urls: ImageUrls): void {
+export function registerWidgetSettingsRoutes(
+  app: App,
+  db: Database,
+  urls: ImageUrls,
+  live: Live,
+): void {
   // Every change takes an owner or an admin. Before the routes, so a member's logo upload is
   // refused before it is read.
   for (const path of [putRoute.getRoutingPath(), setLogoRoute.getRoutingPath()]) {
@@ -208,6 +215,19 @@ export function registerWidgetSettingsRoutes(app: App, db: Database, urls: Image
       await next();
     });
   }
+
+  /**
+   * Runs a change of the logo, which the workspace menu shows too, so open apps read `me` again on
+   * the event. A lost signal only delays it until the next one.
+   */
+  const changeLogo = async (workspaceId: string, write: (tx: Transaction) => Promise<unknown>) => {
+    const saved = await change(workspaceId, async (tx) => {
+      await write(tx);
+      await recordWorkspaceChange(tx, workspaceId);
+    });
+    live.wake(workspaceId, OPERATORS);
+    return saved;
+  };
 
   /** Runs a change, and answers with the settings after it. */
   const change = (workspaceId: string, write: (tx: Transaction) => Promise<unknown>) =>
@@ -233,7 +253,7 @@ export function registerWidgetSettingsRoutes(app: App, db: Database, urls: Image
     const id = c.get("memberWorkspaceId");
     const logo = await processLogo(new Uint8Array(await c.req.arrayBuffer()));
     if (typeof logo === "string") return refuseImage(c, logo);
-    const saved = await change(id, async (tx) => {
+    const saved = await changeLogo(id, async (tx) => {
       await tx
         .insert(workspaceLogo)
         .values({ workspaceId: id, data: logo })
@@ -248,7 +268,7 @@ export function registerWidgetSettingsRoutes(app: App, db: Database, urls: Image
 
   app.openapi(removeLogoRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
-    const saved = await change(id, async (tx) => {
+    const saved = await changeLogo(id, async (tx) => {
       await tx.delete(workspaceLogo).where(eq(workspaceLogo.workspaceId, id));
       await tx
         .update(widgetSettings)

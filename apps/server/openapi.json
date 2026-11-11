@@ -198,7 +198,7 @@
           },
           "launcher": {
             "type": "string",
-            "enum": ["boat", "bubble", "hidden"]
+            "enum": ["boat", "bubble", "hidden", "label", "square"]
           },
           "mascot": {
             "type": "boolean"
@@ -456,6 +456,9 @@
                 "name": {
                   "type": "string"
                 },
+                "logoUrl": {
+                  "type": ["string", "null"]
+                },
                 "active": {
                   "type": "boolean"
                 },
@@ -476,6 +479,7 @@
                 "workspaceId",
                 "role",
                 "name",
+                "logoUrl",
                 "active",
                 "readOnly",
                 "waiting",
@@ -2859,6 +2863,131 @@
           }
         }
       },
+      "patch": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Rename the workspace. Open operator apps show the new name.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["name"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the name is blank or over 100 characters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "x-workspace-access": "always",
         "security": [
@@ -3035,6 +3164,17 @@
             },
             "required": false,
             "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["me", "none"],
+              "description": "`me`: assigned to the signed-in operator. `none`: assigned to no one. Leave it out for all. An API key has no assignments, so it may pass `none` only."
+            },
+            "required": false,
+            "description": "`me`: assigned to the signed-in operator. `none`: assigned to no one. Leave it out for all. An API key has no assignments, so it may pass `none` only.",
+            "name": "assignee",
             "in": "query"
           },
           {

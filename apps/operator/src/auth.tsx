@@ -2,8 +2,9 @@
 import { type FormEvent, useState } from "react";
 import { askSignInLink, confirmAccountDelete, redeemJoinLink, redeemSignInLink } from "./api.ts";
 import { navigate } from "./nav.ts";
+import { AuthPage } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { AppLink, AuthPage, ErrorNote, Field, failureText } from "./ui.tsx";
+import { AppLink, DocLink, ErrorNote, Field, failureText } from "./ui.tsx";
 
 export function SignIn({
   emailAvailable,
@@ -42,6 +43,7 @@ export function SignIn({
         <h1>{t("signInTitle")}</h1>
         <ErrorNote text={error} />
         <p className="note">{t("signInNoMail")}</p>
+        <DocLink path="operator-guide#if-no-sign-in-link-arrives" text="signInDocsLink" />
       </AuthPage>
     );
   }
@@ -163,11 +165,13 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
 
   if (deleted) return <AccountDeleted />;
   const { again } = PURPOSES[kind];
+  // Only the invite, or the Profile page, makes a new link of these kinds.
+  const spent: TextId = kind === "delete-account" ? "deleteLinkInvalid" : "joinLinkInvalid";
   // A refused join link is used up too, so its button would only say the link expired.
   if (error === "linkInvalid" || (again === null && error !== null && SPENT.has(error))) {
     return (
       <AuthPage time="noon">
-        <ErrorNote text={again === null && error === "linkInvalid" ? "joinLinkInvalid" : error} />
+        <ErrorNote text={again === null && error === "linkInvalid" ? spent : error} />
         {again !== null && (
           <AppLink className="btn primary large" href={again}>
             {t("linkAskAgain")}

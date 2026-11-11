@@ -416,7 +416,7 @@ export function createApp({
       rateLimit,
       keepsLastWorkspace: cloud === undefined,
     });
-    registerWidgetSettingsRoutes(app, db, urls);
+    registerWidgetSettingsRoutes(app, db, urls, live);
     if (alerts !== undefined) {
       registerAlertRoutes(app, {
         db,

@@ -205,6 +205,17 @@ describe("what a key can do", () => {
     expect((await withKey(key.token, "PUT", assignee, { operatorId: ownerB.id })).status).toBe(400);
   });
 
+  test("it lists the unassigned conversations, and has none of its own", async () => {
+    const key = await makeKey("Triage bot");
+    const { conversationId } = await visitorSends(a.publicKey, "Nobody has this yet");
+    const unassigned = await withKey(key.token, "GET", inA("/conversations?assignee=none"));
+    expect(unassigned.status).toBe(200);
+    expect(await unassigned.text()).toContain(conversationId);
+    const mine = await withKey(key.token, "GET", inA("/conversations?assignee=me"));
+    expect(mine.status).toBe(400);
+    expect(await mine.json()).toMatchObject({ error: { code: "invalid_request" } });
+  });
+
   test("it sends an image under its own name", async () => {
     const key = await makeKey("Image bot");
     const { conversationId } = await visitorSends(a.publicKey, "Show me");

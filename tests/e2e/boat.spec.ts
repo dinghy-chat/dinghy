@@ -9,12 +9,15 @@ let server: Awaited<ReturnType<typeof startE2EServer>>;
 
 test.beforeAll(async () => {
   server = await startE2EServer({
-    "/plain": { html: `<!doctype html><title>Host</title>${tag()}` },
+    // The boat launcher, since the default is the bubble.
+    "/plain": { html: `<!doctype html><title>Host</title>${tag('data-launcher="boat"')}` },
     "/plain2": { html: `<!doctype html><title>Host</title>${tag()}` },
-    "/no-mascot": { html: `<!doctype html><title>Host</title>${tag('data-mascot="false"')}` },
+    "/no-mascot": {
+      html: `<!doctype html><title>Host</title>${tag('data-mascot="false" data-launcher="boat"')}`,
+    },
     "/bubble": { html: `<!doctype html><title>Host</title>${tag('data-launcher="bubble"')}` },
     "/themed": {
-      html: `<!doctype html><title>Host</title>${tag('data-primary="#112233" data-accent="#f0e000"')}`,
+      html: `<!doctype html><title>Host</title>${tag('data-primary="#112233" data-accent="#f0e000" data-launcher="boat"')}`,
     },
     "/bad-theme": {
       html: `<!doctype html><title>Host</title>${tag('data-primary="red" data-accent="#12"')}`,

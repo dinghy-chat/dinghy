@@ -1,8 +1,6 @@
 /** @jsxImportSource react */
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
-import { BillingRow } from "../../../ee/operator/billing.tsx";
 import type {
-  BillingState,
   BlockedVisitor,
   Me,
   Member,
@@ -11,17 +9,21 @@ import type {
   Usage,
   WorkspaceApi,
 } from "./api.ts";
+import { Icon } from "./icons.tsx";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   Avatar,
-  CopyButton,
+  Choices,
+  CopyField,
+  DocLink,
   ErrorNote,
   Field,
   failureText,
-  Icon,
+  Page,
   PageRow,
   ROLE_TEXT,
+  Tip,
   useModal,
 } from "./ui.tsx";
 import { visitorName } from "./visitor.ts";
@@ -30,9 +32,17 @@ const teamFailure = (failure: unknown) => failureText(failure, { 409: "lastOwner
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
-/** Team, blocked visitors and invites load together, and any change to one reloads them all. */
-export function useTeam(api: WorkspaceApi, role: Role) {
-  const [members, setMembers] = useState<Member[]>([]);
+/**
+ * The team, its invites and blocked visitors, which load together, and any change to one reloads
+ * them all. The members come from the app, which keeps them for the inbox too. Only owners and
+ * admins read the invites and the blocked visitors.
+ */
+export function useTeam(
+  api: WorkspaceApi,
+  role: Role,
+  members: Member[],
+  onMembersChanged: () => void,
+) {
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [blocked, setBlocked] = useState<BlockedVisitor[]>([]);
   const [moreBlocked, setMoreBlocked] = useState(false);
@@ -40,7 +50,7 @@ export function useTeam(api: WorkspaceApi, role: Role) {
 
   // Each load counts up, so an answer from an older load cannot overwrite a newer one.
   const loads = useRef(0);
-  const load = useCallback(() => {
+  const loadOwn = useCallback(() => {
     const id = ++loads.current;
     const apply =
       <T,>(set: (value: T) => void) =>
@@ -48,10 +58,7 @@ export function useTeam(api: WorkspaceApi, role: Role) {
         if (id === loads.current) set(value);
       };
     const failed = apply((failure: unknown) => setNote(teamFailure(failure)));
-    api.members().then(
-      apply((page) => setMembers(page.members)),
-      failed,
-    );
+    if (role === "member") return;
     api.blockedVisitors(0).then(
       apply((page) => {
         setBlocked(page.visitors);
@@ -59,20 +66,22 @@ export function useTeam(api: WorkspaceApi, role: Role) {
       }),
       failed,
     );
-    if (role !== "member") {
-      api.invites().then(
-        apply((page) => setInvites(page.invites)),
-        failed,
-      );
-    }
+    api.invites().then(
+      apply((page) => setInvites(page.invites)),
+      failed,
+    );
   }, [api, role]);
   useEffect(() => {
-    load();
+    loadOwn();
     return () => {
       // A later answer is for a page that is gone.
       loads.current += 1;
     };
-  }, [load]);
+  }, [loadOwn]);
+  const load = () => {
+    onMembersChanged();
+    loadOwn();
+  };
 
   const loadingBlocked = useRef(false);
   const loadMoreBlocked = async () => {
@@ -107,7 +116,7 @@ export function useTeam(api: WorkspaceApi, role: Role) {
   return { members, invites, blocked, moreBlocked, note, setNote, load, loadMoreBlocked, act };
 }
 
-type Team = ReturnType<typeof useTeam>;
+export type Team = ReturnType<typeof useTeam>;
 
 const ROLES = ["owner", "admin", "member"] as const;
 
@@ -164,16 +173,23 @@ function MemberRow({
       </td>
       <td className="end-cell">
         {canRemove && (
-          <button
-            type="button"
-            className="icon-button quiet-danger"
-            aria-label={removeText}
-            title={self && lastOwner ? t("lastOwnerNote") : removeText}
-            disabled={self && lastOwner}
-            onClick={() => onRemove(self)}
-          >
-            <Icon name={self ? "exit" : "trash"} size={18} />
-          </button>
+          <Tip text={self && lastOwner ? t("leaveBlockedTip") : removeText}>
+            {(tipId) => (
+              // Blocked, it stays focusable, so a keyboard reaches its tip too.
+              <button
+                type="button"
+                className="icon-button quiet-danger"
+                aria-label={removeText}
+                aria-describedby={self && lastOwner ? tipId : undefined}
+                aria-disabled={self && lastOwner}
+                onClick={() => {
+                  if (!(self && lastOwner)) onRemove(self);
+                }}
+              >
+                <Icon name={self ? "exit" : "trash"} size={18} />
+              </button>
+            )}
+          </Tip>
         )}
       </td>
     </tr>
@@ -194,7 +210,7 @@ function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): 
     <tr>
       <td>
         <div className="who-cell">
-          <Avatar name={pending.email} letters={pending.email.slice(0, 1).toUpperCase()} />
+          <Avatar name={pending.email} />
           <span className="who-lines">
             {/* No name until they join. The email column shows the email, except on a phone. */}
             <span className="chip warn">{pendingText}</span>
@@ -222,9 +238,14 @@ function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): 
 }
 
 const INVITED_ROLES = [
-  { value: "member", label: "roleMember", help: "inviteMemberHelp" },
-  { value: "admin", label: "roleAdmin", help: "inviteAdminHelp" },
+  { value: "member", label: "roleMember" },
+  { value: "admin", label: "roleAdmin" },
 ] as const;
+
+const INVITED_ROLE_HELP: Record<"admin" | "member", TextId> = {
+  member: "inviteMemberHelp",
+  admin: "inviteAdminHelp",
+};
 
 /** The role for an invite, as two pills, with a line on what the picked one can do. */
 function RolePicker({
@@ -234,23 +255,19 @@ function RolePicker({
   value: "admin" | "member";
   onChange(role: "admin" | "member"): void;
 }) {
-  const picked = INVITED_ROLES.find((one) => one.value === value) ?? INVITED_ROLES[0];
+  const hintId = useId();
   return (
     <>
-      <fieldset className="choices" aria-label={t("inviteRole")}>
-        {INVITED_ROLES.map((choice) => (
-          <label key={choice.value}>
-            <input
-              type="radio"
-              name="invite-role"
-              checked={value === choice.value}
-              onChange={() => onChange(choice.value)}
-            />
-            {t(choice.label)}
-          </label>
-        ))}
-      </fieldset>
-      <p className="hint">{t(picked.help)}</p>
+      <Choices
+        label={t("inviteRole")}
+        describedBy={hintId}
+        value={value}
+        options={INVITED_ROLES}
+        onChange={onChange}
+      />
+      <p className="hint" id={hintId}>
+        {t(INVITED_ROLE_HELP[value])}
+      </p>
     </>
   );
 }
@@ -259,7 +276,7 @@ function RolePicker({
  * "Invite someone": an email and a role. With a mail server the invite goes by email. Without one,
  * the dialog shows a link to copy.
  */
-export function InviteDialog({
+function InviteDialog({
   api,
   role,
   emailAvailable,
@@ -344,19 +361,12 @@ export function InviteDialog({
             <span>{t("inviteSent", { email: made.email })}</span>
           </p>
         ) : (
-          <div className="created">
-            <p className="hint">{t("inviteLink", { email: made.email })}</p>
-            <div className="copy-field">
-              <input
-                className="mono"
-                readOnly
-                aria-label={t("inviteLinkLabel")}
-                value={made.url}
-                onFocus={(event) => event.target.select()}
-              />
-              <CopyButton value={made.url} label={t("inviteLinkCopy")} />
-            </div>
-          </div>
+          <CopyField
+            hint={t("inviteLink", { email: made.email })}
+            label={t("inviteLinkLabel")}
+            copyLabel={t("inviteLinkCopy")}
+            value={made.url}
+          />
         )}
         <ErrorNote text={error} />
         <div className="dialog-actions">
@@ -392,14 +402,33 @@ export function InviteDialog({
   );
 }
 
-export function TeamTab({
+/** The button in the Team page's title row. On a phone the short label keeps it in that row. */
+function InviteButton({ onClick }: { onClick(): void }) {
+  return (
+    <button
+      type="button"
+      className="pill dark invite"
+      aria-label={t("invitesTitle")}
+      onClick={onClick}
+    >
+      <Icon name="plusBold" size={14} />
+      <span className="long-text" aria-hidden="true">
+        {t("invitesTitle")}
+      </span>
+      <span className="short-text" aria-hidden="true">
+        {t("inviteShort")}
+      </span>
+    </button>
+  );
+}
+
+export function TeamPage({
   api,
   me,
   role,
   team,
   usage,
-  billing,
-  workspaceId,
+  emailAvailable,
   workspaceName,
   onLeft,
 }: {
@@ -407,12 +436,14 @@ export function TeamTab({
   me: Me;
   role: Role;
   team: Team;
+  /** On Dinghy Cloud, with pending invites counted. Null with no limits. */
   usage: Usage | null;
-  billing: BillingState | null;
-  workspaceId: string;
+  /** The server sends email, so invites go by email. */
+  emailAvailable: boolean;
   workspaceName: string;
   onLeft(): void;
 }) {
+  const [inviting, setInviting] = useState(false);
   const [leaving, setLeaving] = useState<Leaving | null>(null);
   const [revoking, setRevoking] = useState<PendingInvite | null>(null);
   const owners = team.members.filter((member) => member.role === "owner").length;
@@ -432,7 +463,18 @@ export function TeamTab({
   };
   const manages = role !== "member";
   return (
-    <>
+    <Page
+      title={t("pageTeam")}
+      context={
+        usage === null
+          ? undefined
+          : t("teamUsage", {
+              used: usage.operators.used,
+              limit: usage.operators.limit,
+            })
+      }
+      actions={manages ? <InviteButton onClick={() => setInviting(true)} /> : undefined}
+    >
       <table className="members">
         <thead>
           <tr>
@@ -471,13 +513,13 @@ export function TeamTab({
         </p>
       )}
       <ErrorNote text={team.note} />
-      {usage !== null && <PlanCards usage={usage} />}
-      {role === "owner" && <BillingRow api={api} workspaceId={workspaceId} billing={billing} />}
+      {manages && <DocLink path="operator-guide#set-up-your-team" text="teamRolesLink" />}
       {revoking !== null && (
         <Confirm
           title={t("inviteRevokeTitle", { email: revoking.email })}
           text={t("inviteRevokeText")}
           confirm={t("inviteRevokeYes")}
+          cancel={t("inviteKeep")}
           onConfirm={() => {
             setRevoking(null);
             void team.act(api.revokeInvite(revoking.id));
@@ -498,14 +540,25 @@ export function TeamTab({
           onCancel={() => setLeaving(null)}
         />
       )}
-    </>
+      {inviting && (
+        <InviteDialog
+          api={api}
+          role={role}
+          emailAvailable={emailAvailable}
+          onClose={() => {
+            setInviting(false);
+            team.load();
+          }}
+        />
+      )}
+    </Page>
   );
 }
 
 export function BlockedRow({ api, team }: { api: WorkspaceApi; team: Team }) {
   return (
     <PageRow title={t("blockedTitle")} help={t("blockedHelp")}>
-      <ul className="blocked">
+      <ul className="item-list">
         {team.blocked.map((person) => (
           <li key={person.id}>
             <Avatar name={visitorName(person)} />
@@ -529,80 +582,5 @@ export function BlockedRow({ api, team }: { api: WorkspaceApi; team: Team }) {
         </button>
       )}
     </PageRow>
-  );
-}
-
-/** Bytes in the decimal units the plan uses, such as 12.3 MB or 1 GB. */
-function formatBytes(bytes: number): string {
-  if (bytes >= 1e9) return `${Number((bytes / 1e9).toFixed(2))} GB`;
-  return `${Number((bytes / 1e6).toFixed(1))} MB`;
-}
-
-/** How full one limit is, as a thin bar and words. Near or at the limit, both say so. */
-function Meter({
-  label,
-  used,
-  limit,
-  text,
-  note,
-}: {
-  label: string;
-  used: number;
-  limit: number;
-  text: string;
-  note: string;
-}) {
-  const share = limit > 0 ? Math.min(used / limit, 1) : 0;
-  const level = share >= 1 ? "full" : share >= 0.8 ? "near" : "ok";
-  return (
-    <div className={`meter ${level}`}>
-      <div className="meter-top">
-        <span className="meter-label">{label}</span>
-        <span className="meter-value">{text}</span>
-      </div>
-      {/* The words above say the same, for screen readers too. */}
-      <div className="meter-bar" aria-hidden="true">
-        <span
-          className="meter-fill"
-          style={{ width: `${Math.max(share * 100, used > 0 ? 1.5 : 0)}%` }}
-        />
-      </div>
-      <p className="meter-note">
-        {level === "ok" ? note : t(level === "full" ? "usageFull" : "usageNear")}
-      </p>
-    </div>
-  );
-}
-
-export const operatorsText = (usage: Usage) =>
-  t("usageOf", {
-    used: String(usage.operators.used),
-    limit: String(usage.operators.limit),
-  });
-export const imagesText = (usage: Usage) =>
-  t("usageOf", {
-    used: formatBytes(usage.imageBytes.used),
-    limit: formatBytes(usage.imageBytes.limit),
-  });
-
-/** The plan's limits and how much of each is used, on Dinghy Cloud. */
-function PlanCards({ usage }: { usage: Usage }) {
-  return (
-    <section className="meters" aria-label={t("usageTitle")}>
-      <Meter
-        label={t("usageOperators")}
-        used={usage.operators.used}
-        limit={usage.operators.limit}
-        text={operatorsText(usage)}
-        note={t("usageOperatorsNote")}
-      />
-      <Meter
-        label={t("usageImages")}
-        used={usage.imageBytes.used}
-        limit={usage.imageBytes.limit}
-        text={imagesText(usage)}
-        note={t("usageImagesNote")}
-      />
-    </section>
   );
 }

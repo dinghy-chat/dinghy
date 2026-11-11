@@ -14,7 +14,7 @@ import {
   type WidgetContext,
   type WidgetSettings,
 } from "./shared.ts";
-import { LAUNCHER_LABEL } from "./text.ts";
+import { DEFAULT_TITLE, LAUNCHER_LABEL } from "./text.ts";
 
 // This file runs on every page of the host site, so it stays small. It makes one request, for the
 // saved look, which the browser caches for 5 minutes. The chat bundle loads when the visitor opens
@@ -194,10 +194,13 @@ if (script && publicKey) {
     }
     paint(own);
     const kind = attribute("launcher") ?? saved?.launcher;
-    // A hidden launcher still has a drawing, for show().
-    const drawn: LauncherKind = kind === "bubble" ? kind : "boat";
+    // A hidden launcher still has a drawing, for show(). hasOwn, so "toString" is no kind.
+    const drawn = (Object.hasOwn(LAUNCHER_ICONS, kind as string) ? kind : "bubble") as LauncherKind;
     launcher.className = `launcher ${drawn}`;
     launcher.innerHTML = LAUNCHER_ICONS[drawn];
+    // As text, never markup: the title is the workspace's own.
+    if (drawn === "label")
+      launcher.appendChild(document.createElement("b")).textContent = saved?.title ?? DEFAULT_TITLE;
     if (kind === "hidden") api.hide();
     (document.body ?? document.documentElement).append(host);
   });

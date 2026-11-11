@@ -27,7 +27,7 @@ import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
 import { createCopyReply, type WelcomeSettings, welcomeProblem } from "./welcome.ts";
 
 /** For `chat signups`, which lists the early signups that wait for the cloud. */
-export { signupsCsv } from "./signup.ts";
+export { freeWorkspace, signupsCsv } from "./signup.ts";
 
 /**
  * The entry point that core calls: once in the app, once in the worker. Nothing here runs on a

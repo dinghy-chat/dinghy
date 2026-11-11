@@ -1,16 +1,21 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 /** @jsxImportSource react */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   type BillingState,
   startCheckout,
   type WorkspaceApi,
 } from "../../apps/operator/src/api.ts";
+import { useLoad } from "../../apps/operator/src/load.ts";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
-import { ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
+import { DocLink, ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
+
+// The states come from the server's leaf module, which has no Node code, so the app can name them.
+export type { BillingStateName } from "../server/billing-states.ts";
 
 const STATE_TEXT: Record<BillingState["state"], TextId> = {
   pending: "billingPending",
+  free: "billingFree",
   active: "billingActive",
   ending: "billingEnding",
   payment_failed: "billingFailed",
@@ -29,28 +34,13 @@ export function useBilling(
   enabled: boolean,
   version: number,
 ): BillingState | null {
-  const [state, setState] = useState<BillingState | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
-  useEffect(() => {
-    if (!enabled) return;
-    // A newer load may answer first, so an older answer must not overwrite it.
-    let current = true;
-    void api
-      .billing()
-      .then((next) => {
-        if (current) setState(next);
-      })
-      .catch(() => {});
-    return () => {
-      current = false;
-    };
-  }, [api, enabled, version]);
-  return state;
+  return useLoad(() => (enabled ? api.billing() : null), [api, enabled, version]).data;
 }
 
 /** What a failed start of Checkout or the portal tells the owner, by status. */
 export const CHECKOUT_FAILURES: Partial<Record<number, TextId>> = {
-  429: "tooManyAttempts",
+  429: "tooManyRequests",
   409: "payInProgress",
   503: "checkoutRetryLater",
 };
@@ -117,8 +107,8 @@ export function WaitingBanner({
     return (
       <div className="banner billing-banner waiting-banner" role="status">
         {/* A phone shows the short line, so the banner stays one line tall. */}
-        <span className="banner-long">{t("waitingBanner", { email })}</span>
-        <span className="banner-short">{t("waitingBannerShort")}</span>
+        <span className="long-text">{t("waitingBanner", { email })}</span>
+        <span className="short-text">{t("waitingBannerShort")}</span>
       </div>
     );
   }
@@ -191,11 +181,12 @@ export function BillingRow({
   billing: BillingState | null;
 }) {
   if (billing === null) return null;
-  const pending = billing.state === "pending";
+  // Neither has a Stripe customer, so the portal has nothing to show.
+  const noPortal = billing.state === "pending" || billing.state === "free";
   return (
-    <PageRow title={t("billingTitle")} {...(!pending && { help: t("billingHelp") })}>
+    <PageRow title={t("billingTitle")} {...(!noPortal && { help: t("billingHelp") })}>
       <p>{withDate(STATE_TEXT[billing.state], billing.date)}</p>
-      {!pending && (
+      {!noPortal && (
         <div className="actions">
           <PayButton
             api={api}
@@ -206,6 +197,7 @@ export function BillingRow({
           />
         </div>
       )}
+      <DocLink path="operator-guide#billing" text="billingDocsLink" />
     </PageRow>
   );
 }
