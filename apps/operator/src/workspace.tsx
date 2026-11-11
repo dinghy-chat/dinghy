@@ -201,14 +201,14 @@ function deletionText({ conversations, images, members }: Deletion): string {
 function DeleteRow({
   api,
   name,
-  cloud,
+  endsSubscription,
   deletion,
   startOpen,
   onDeleted,
 }: {
   api: WorkspaceApi;
   name: string;
-  cloud: boolean;
+  endsSubscription: boolean;
   /** What the delete removes, once the settings have loaded. */
   deletion: Deletion | null;
   /** The account's delete opened this workspace to delete it. */
@@ -216,7 +216,7 @@ function DeleteRow({
   onDeleted(): void;
 }) {
   const [open, setOpen] = useState(startOpen);
-  const help = cloud
+  const help = endsSubscription
     ? `${t("deleteWorkspaceHelp")} ${t("deleteWorkspaceCloud")}`
     : t("deleteWorkspaceHelp");
   return (
@@ -230,7 +230,7 @@ function DeleteRow({
         <DeleteWorkspaceDialog
           api={api}
           name={name}
-          cloud={cloud}
+          endsSubscription={endsSubscription}
           deletion={deletion}
           exportUrl={api.exportUrl}
           onDeleted={onDeleted}
@@ -248,7 +248,7 @@ function DeleteRow({
 export function DeleteWorkspaceDialog({
   api,
   name,
-  cloud,
+  endsSubscription,
   deletion,
   exportUrl,
   onDeleted,
@@ -256,8 +256,8 @@ export function DeleteWorkspaceDialog({
 }: {
   api: Pick<WorkspaceApi, "deleteWorkspace">;
   name: string;
-  /** A paid cloud workspace, whose subscription the delete ends. */
-  cloud: boolean;
+  /** A cloud workspace with a subscription, which the delete ends. */
+  endsSubscription: boolean;
   /** What the delete removes, when it is known. */
   deletion: Deletion | null;
   /** Where to download an export first, when the workspace can export. */
@@ -292,7 +292,7 @@ export function DeleteWorkspaceDialog({
       title={t("deleteWorkspaceConfirmTitle", { name })}
       text={
         <>
-          <p>{cloud ? `${goes} ${t("deleteWorkspaceCloud")}` : goes}</p>
+          <p>{endsSubscription ? `${goes} ${t("deleteWorkspaceCloud")}` : goes}</p>
           {exportUrl !== null && (
             <a className="pill small" href={exportUrl} download>
               {t("deleteWorkspaceExport")}
@@ -324,8 +324,8 @@ export function WorkspacePage({
   isOwner,
   name,
   logoUrl,
-  cloud,
-  settings,
+  endsSubscription,
+  deletion,
   usage,
   billing,
   workspaceId,
@@ -338,9 +338,10 @@ export function WorkspacePage({
   isOwner: boolean;
   name: string;
   logoUrl: string | null;
-  /** A paid cloud workspace, whose subscription the delete ends. */
-  cloud: boolean;
-  settings: WorkspaceSettings | null;
+  /** A cloud workspace with a subscription, which the delete ends. */
+  endsSubscription: boolean;
+  /** What the delete removes, once the settings have loaded. */
+  deletion: Deletion | null;
   /** On Dinghy Cloud, with pending invites counted. Null with no limits. */
   usage: Usage | null;
   billing: BillingState | null;
@@ -371,8 +372,8 @@ export function WorkspacePage({
         <DeleteRow
           api={api}
           name={name}
-          cloud={cloud}
-          deletion={settings?.deletion ?? null}
+          endsSubscription={endsSubscription}
+          deletion={deletion}
           startOpen={openDelete}
           onDeleted={onDeleted}
         />

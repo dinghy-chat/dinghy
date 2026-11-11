@@ -1,9 +1,8 @@
 /** @jsxImportSource react */
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 import {
   ApiError,
   acceptInvite,
-  type InviteOffer,
   joinWithInvite,
   type Me,
   previewInvite,
@@ -11,23 +10,20 @@ import {
   updateName,
 } from "./api.ts";
 import { CheckEmail } from "./auth.tsx";
+import { useLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { AuthPage, SceneLoading } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
 import { ErrorNote, Field, failureText } from "./ui.tsx";
 
 export function InvitePage({ token, me }: { token: string; me: Me | null }) {
-  const [offer, setOffer] = useState<InviteOffer | null>(null);
-  const [invalid, setInvalid] = useState(false);
+  const preview = useLoad(() => previewInvite(token), [token]);
+  const offer = preview.data;
+  // Any failure reads as a link that no longer works.
+  const invalid = preview.failure !== null;
   const [name, setName] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
-
-  useEffect(() => {
-    previewInvite(token)
-      .then(setOffer)
-      .catch(() => setInvalid(true));
-  }, [token]);
 
   const accept = async (event?: FormEvent) => {
     event?.preventDefault();

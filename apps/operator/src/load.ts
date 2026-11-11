@@ -1,4 +1,13 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import {
+  type DependencyList,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import type { TextId } from "./text.ts";
+import { failureText } from "./ui.tsx";
 
 /**
  * Runs one load at a time, and once more if it was asked again meanwhile. Canceling a slow load for
@@ -28,4 +37,42 @@ export function useLatestLoad(load: () => Promise<void>): () => void {
       run.running = false;
     })();
   }, []);
+}
+
+/** What a load gave: its answer, or why it failed, with ways to replace it or load it again. */
+export interface Loaded<T> {
+  data: T | null;
+  failure: TextId | null;
+  setData(data: T): void;
+  reload(): void;
+}
+
+/**
+ * Loads on mount, and again when `deps` change or `reload` runs. A load that returns null loads
+ * nothing. An answer that a newer load replaced is dropped, so a slow one never overwrites it.
+ */
+export function useLoad<T>(load: () => Promise<T> | null, deps: DependencyList): Loaded<T> {
+  const [data, setData] = useState<T | null>(null);
+  const [failure, setFailure] = useState<TextId | null>(null);
+  const [version, setVersion] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the caller's list names what `load` reads.
+  useEffect(() => {
+    const loading = load();
+    if (loading === null) return;
+    let current = true;
+    setFailure(null);
+    loading.then(
+      (next) => {
+        if (current) setData(next);
+      },
+      (error: unknown) => {
+        if (current) setFailure(failureText(error, {}, "actionFailed"));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [...deps, version]);
+  const reload = useCallback(() => setVersion((current) => current + 1), []);
+  return { data, failure, setData, reload };
 }

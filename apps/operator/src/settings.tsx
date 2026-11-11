@@ -1,16 +1,16 @@
 /** @jsxImportSource react */
-import { useEffect, useState } from "react";
-import type { BillingState, Me, Role, WorkspaceApi, WorkspaceSettings } from "./api.ts";
+import type { BillingState, Me, Member, Role, WorkspaceApi } from "./api.ts";
 import { AppearancePage } from "./appearance.tsx";
 import { DevelopersPage } from "./developers.tsx";
 import { Icon } from "./icons.tsx";
 import { InstallPage } from "./install.tsx";
+import { useLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { NotificationsPage } from "./notifications.tsx";
 import { ProfilePage } from "./profile.tsx";
 import { TeamPage, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
-import { failureText, isPlainClick, Loading } from "./ui.tsx";
+import { isPlainClick, Loading } from "./ui.tsx";
 import { WorkspacePage } from "./workspace.tsx";
 
 const PAGES = [
@@ -42,6 +42,9 @@ const PAGE_TEXT: Record<SettingsPage, TextId> = {
   install: "pageInstall",
   developers: "pageDevelopers",
 };
+
+/** The pages that read the workspace's settings: its usage, its delete's counts or its code. */
+const SETTINGS_READERS: readonly SettingsPage[] = ["workspace", "team", "install"];
 
 /** A member reads the team and the widget, and changes only their own settings. */
 const MEMBER_PAGES: readonly SettingsPage[] = ["profile", "notifications", "team", "appearance"];
@@ -131,29 +134,6 @@ function SettingsNav({
   );
 }
 
-/** The workspace's settings, which owners and admins read. Null until they load, or for a member. */
-function useWorkspaceSettings(api: WorkspaceApi, role: Role) {
-  const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  useEffect(() => {
-    if (role === "member") return;
-    let current = true;
-    setFailure(null);
-    api.settings().then(
-      (next) => {
-        if (current) setSettings(next);
-      },
-      (error: unknown) => {
-        if (current) setFailure(failureText(error, {}, "actionFailed"));
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [api, role]);
-  return { settings, setSettings, failure };
-}
-
 /**
  * Settings: the grouped list, and the open page beside it. A phone shows one at a time: the list
  * first, then the page with a way back to the list.
@@ -162,6 +142,8 @@ export function Settings({
   api,
   me,
   role,
+  members,
+  onMembersChanged,
   workspaceId,
   workspaceName,
   logoUrl,
@@ -182,6 +164,9 @@ export function Settings({
   api: WorkspaceApi;
   me: Me;
   role: Role;
+  /** The team, which the inbox keeps too. */
+  members: Member[];
+  onMembersChanged(): void;
   workspaceId: string;
   workspaceName: string;
   logoUrl: string | null;
@@ -207,12 +192,14 @@ export function Settings({
   onOpenWorkspace(workspaceId: string, step: OwnerStep): void;
   onAccountDeleted(): void;
 }) {
-  const team = useTeam(api, role);
-  const { settings, setSettings, failure } = useWorkspaceSettings(api, role);
+  const team = useTeam(api, role, members, onMembersChanged);
   const pages = role === "member" ? MEMBER_PAGES : PAGES;
   const current = page !== null && pages.includes(page) ? page : null;
   const shown = current ?? "profile";
-  const counted = settings?.usage ?? null;
+  // Owners and admins read them, and only on a page that shows them.
+  const readsSettings = role !== "member" && SETTINGS_READERS.includes(shown);
+  const settings = useLoad(() => (readsSettings ? api.settings() : null), [api, readsSettings]);
+  const counted = settings.data?.usage ?? null;
   // The plan's limit counts pending invites as operators, so the bar and the line count them too.
   const usage =
     counted === null
@@ -244,8 +231,8 @@ export function Settings({
             isOwner={role === "owner"}
             name={workspaceName}
             logoUrl={logoUrl}
-            cloud={me.billing}
-            settings={settings}
+            endsSubscription={billing !== null && billing.state !== "free"}
+            deletion={settings.data?.deletion ?? null}
             usage={usage}
             billing={billing}
             workspaceId={workspaceId}
@@ -279,10 +266,15 @@ export function Settings({
           />
         );
       case "install":
-        return settings === null ? (
-          <Loading failure={failure} />
+        return settings.data === null ? (
+          <Loading failure={settings.failure} />
         ) : (
-          <InstallPage api={api} settings={settings} waiting={waiting} onSaved={setSettings} />
+          <InstallPage
+            api={api}
+            settings={settings.data}
+            waiting={waiting}
+            onSaved={settings.setData}
+          />
         );
       case "developers":
         return <DevelopersPage api={api} />;

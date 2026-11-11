@@ -1,11 +1,12 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 /** @jsxImportSource react */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   type BillingState,
   startCheckout,
   type WorkspaceApi,
 } from "../../apps/operator/src/api.ts";
+import { useLoad } from "../../apps/operator/src/load.ts";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { DocLink, ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
 
@@ -30,23 +31,8 @@ export function useBilling(
   enabled: boolean,
   version: number,
 ): BillingState | null {
-  const [state, setState] = useState<BillingState | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
-  useEffect(() => {
-    if (!enabled) return;
-    // A newer load may answer first, so an older answer must not overwrite it.
-    let current = true;
-    void api
-      .billing()
-      .then((next) => {
-        if (current) setState(next);
-      })
-      .catch(() => {});
-    return () => {
-      current = false;
-    };
-  }, [api, enabled, version]);
-  return state;
+  return useLoad(() => (enabled ? api.billing() : null), [api, enabled, version]).data;
 }
 
 /** What a failed start of Checkout or the portal tells the owner, by status. */

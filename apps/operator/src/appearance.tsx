@@ -14,6 +14,7 @@ import {
 import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import type { Me, WorkspaceApi } from "./api.ts";
 import { hexColor } from "./hex-color.ts";
+import { useLoad } from "./load.ts";
 import { setLeaveGuard } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
 import { settingsAddress } from "./settings.tsx";
@@ -488,43 +489,27 @@ interface AppearanceProps {
 }
 
 function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: AppearanceProps) {
-  const [saved, setSaved] = useState<SavedAppearance | null>(null);
-  const [draft, setDraft] = useState<WidgetSettings | null>(null);
-  const [loadFailure, setLoadFailure] = useState<TextId | null>(null);
+  const loaded = useLoad(() => api.widget(), [api]);
+  const saved = loaded.data;
+  // Null until the first change, so the form shows what is saved until then.
+  const [edited, setEdited] = useState<WidgetSettings | null>(null);
   const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState(false);
-  const unsaved = saved !== null && draft !== null && !sameSettings(editable(saved), draft);
+  const unsaved = saved !== null && edited !== null && !sameSettings(editable(saved), edited);
 
-  useEffect(() => {
-    let current = true;
-    api.widget().then(
-      (answer) => {
-        if (!current) return;
-        setSaved(answer);
-        setDraft(editable(answer));
-      },
-      (failure: unknown) => {
-        if (current) setLoadFailure(failureText(failure, {}, "actionFailed"));
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [api]);
-
-  if (saved === null || draft === null) return <Loading failure={loadFailure} />;
+  if (saved === null) return <Loading failure={loaded.failure} />;
+  const draft = edited ?? editable(saved);
 
   const change = (next: Partial<WidgetSettings>) => {
-    setDraft({ ...draft, ...next });
+    setEdited({ ...draft, ...next });
     setNote(null);
   };
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     try {
-      const answer = await api.setWidget(draft);
-      setSaved(answer);
-      setDraft(editable(answer));
+      loaded.setData(await api.setWidget(draft));
+      setEdited(null);
       setNote({ ok: true, text: "widgetSaved" });
     } catch (failure) {
       setNote({ ok: false, text: failureText(failure, {}) });

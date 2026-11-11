@@ -435,8 +435,6 @@ export function Inbox({
     setOpenDelete(deleting);
     // The account's delete reads who owns what, which can change in Settings.
     if (page === "profile") onAccountChanged();
-    // Settings can change the team, so the names in the list load again after it.
-    if (view === "settings" && next !== "settings") loadMembers();
     setView(next);
     const address =
       next === "settings"
@@ -537,6 +535,8 @@ export function Inbox({
                 api={api}
                 me={me}
                 role={role}
+                members={members}
+                onMembersChanged={loadMembers}
                 workspaceId={workspaceId}
                 workspaceName={name}
                 logoUrl={logoUrl}

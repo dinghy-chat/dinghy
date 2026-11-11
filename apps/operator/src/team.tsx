@@ -14,7 +14,7 @@ import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   Avatar,
-  CopyButton,
+  CopyField,
   DocLink,
   ErrorNote,
   Field,
@@ -31,9 +31,17 @@ const teamFailure = (failure: unknown) => failureText(failure, { 409: "lastOwner
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
-/** Team, blocked visitors and invites load together, and any change to one reloads them all. */
-export function useTeam(api: WorkspaceApi, role: Role) {
-  const [members, setMembers] = useState<Member[]>([]);
+/**
+ * The team, its invites and blocked visitors, which load together, and any change to one reloads
+ * them all. The members come from the app, which keeps them for the inbox too. Only owners and
+ * admins read the invites and the blocked visitors.
+ */
+export function useTeam(
+  api: WorkspaceApi,
+  role: Role,
+  members: Member[],
+  onMembersChanged: () => void,
+) {
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [blocked, setBlocked] = useState<BlockedVisitor[]>([]);
   const [moreBlocked, setMoreBlocked] = useState(false);
@@ -41,7 +49,7 @@ export function useTeam(api: WorkspaceApi, role: Role) {
 
   // Each load counts up, so an answer from an older load cannot overwrite a newer one.
   const loads = useRef(0);
-  const load = useCallback(() => {
+  const loadOwn = useCallback(() => {
     const id = ++loads.current;
     const apply =
       <T,>(set: (value: T) => void) =>
@@ -49,10 +57,7 @@ export function useTeam(api: WorkspaceApi, role: Role) {
         if (id === loads.current) set(value);
       };
     const failed = apply((failure: unknown) => setNote(teamFailure(failure)));
-    api.members().then(
-      apply((page) => setMembers(page.members)),
-      failed,
-    );
+    if (role === "member") return;
     api.blockedVisitors(0).then(
       apply((page) => {
         setBlocked(page.visitors);
@@ -60,20 +65,22 @@ export function useTeam(api: WorkspaceApi, role: Role) {
       }),
       failed,
     );
-    if (role !== "member") {
-      api.invites().then(
-        apply((page) => setInvites(page.invites)),
-        failed,
-      );
-    }
+    api.invites().then(
+      apply((page) => setInvites(page.invites)),
+      failed,
+    );
   }, [api, role]);
   useEffect(() => {
-    load();
+    loadOwn();
     return () => {
       // A later answer is for a page that is gone.
       loads.current += 1;
     };
-  }, [load]);
+  }, [loadOwn]);
+  const load = () => {
+    onMembersChanged();
+    loadOwn();
+  };
 
   const loadingBlocked = useRef(false);
   const loadMoreBlocked = async () => {
@@ -202,7 +209,7 @@ function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): 
     <tr>
       <td>
         <div className="who-cell">
-          <Avatar name={pending.email} letters={pending.email.slice(0, 1).toUpperCase()} />
+          <Avatar name={pending.email} />
           <span className="who-lines">
             {/* No name until they join. The email column shows the email, except on a phone. */}
             <span className="chip warn">{pendingText}</span>
@@ -352,19 +359,12 @@ function InviteDialog({
             <span>{t("inviteSent", { email: made.email })}</span>
           </p>
         ) : (
-          <div className="created">
-            <p className="hint">{t("inviteLink", { email: made.email })}</p>
-            <div className="copy-field">
-              <input
-                className="mono"
-                readOnly
-                aria-label={t("inviteLinkLabel")}
-                value={made.url}
-                onFocus={(event) => event.target.select()}
-              />
-              <CopyButton value={made.url} label={t("inviteLinkCopy")} />
-            </div>
-          </div>
+          <CopyField
+            hint={t("inviteLink", { email: made.email })}
+            label={t("inviteLinkLabel")}
+            copyLabel={t("inviteLinkCopy")}
+            value={made.url}
+          />
         )}
         <ErrorNote text={error} />
         <div className="dialog-actions">

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { WorkspaceApi } from "./api.ts";
 import { Icon } from "./icons.tsx";
+import { useLoad } from "./load.ts";
 import type { SettingsPage } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 
@@ -51,35 +52,19 @@ export function StartHint({
   onOpen(page: SettingsPage): void;
 }) {
   const [hidden, setHidden] = useState(() => wasHidden(workspaceId));
-  // Null until the closed list answers: a workspace whose conversations are all closed is in use.
-  const [closedNone, setClosedNone] = useState<boolean | null>(null);
+  // A workspace whose conversations are all closed is in use too. One page of one fits in one read.
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a new check.
+  const closed = useLoad(
+    () => (hidden || hasConversations ? null : api.list("closed", null, 1, () => false)),
+    [api, hidden, hasConversations, version],
+  );
+  const inUse = hasConversations || (closed.data?.conversations.length ?? 0) > 0;
   useEffect(() => {
-    if (hidden) return;
-    if (hasConversations) {
-      hide(workspaceId);
-      setHidden(true);
-      return;
-    }
-    let current = true;
-    api
-      .list("closed", null, 1, () => !current)
-      .then(
-        (page) => {
-          if (!current) return;
-          if (page.conversations.length === 0) setClosedNone(true);
-          else {
-            hide(workspaceId);
-            setHidden(true);
-          }
-        },
-        () => {},
-      );
-    return () => {
-      current = false;
-    };
-  }, [api, hidden, hasConversations, workspaceId, version]);
-  if (hidden || hasConversations || closedNone !== true) return null;
+    if (!inUse || hidden) return;
+    hide(workspaceId);
+    setHidden(true);
+  }, [inUse, hidden, workspaceId]);
+  if (hidden || inUse || closed.data === null) return null;
   return (
     <section className="start" aria-labelledby="start-title">
       <h3 id="start-title">{t("startTitle")}</h3>

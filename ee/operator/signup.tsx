@@ -282,7 +282,7 @@ export function FinishPayment({
         <DeleteWorkspaceDialog
           api={workspaceApi(workspace.workspaceId)}
           name={workspace.name}
-          cloud={false}
+          endsSubscription={false}
           deletion={null}
           exportUrl={null}
           onDeleted={() => onWorkspaceDeleted(workspace.name)}

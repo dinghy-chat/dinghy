@@ -219,6 +219,94 @@ export function CopyButton({ value, label = t("copy") }: { value: string; label?
   );
 }
 
+/** A value to copy, such as a secret shown once or an invite link, under a line about it. */
+export function CopyField({
+  hint,
+  label,
+  copyLabel = label,
+  value,
+}: {
+  hint: string;
+  /** The field's name, which the copy button takes too unless it has its own. */
+  label: string;
+  copyLabel?: string;
+  value: string;
+}) {
+  return (
+    <div className="created" role="status">
+      <p className="hint">{hint}</p>
+      <div className="copy-field">
+        <input
+          className="mono"
+          readOnly
+          aria-label={label}
+          value={value}
+          spellCheck={false}
+          autoComplete="off"
+          onFocus={(event) => event.target.select()}
+        />
+        <CopyButton value={value} label={copyLabel} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A "New ..." button that opens a form in its place, such as for an API key or a webhook. Cancel
+ * closes the form, and the caller clears what it held.
+ */
+export function AddForm({
+  isOpen,
+  newLabel,
+  submitLabel,
+  canSubmit,
+  className = "stack",
+  onOpen,
+  onCancel,
+  onSubmit,
+  children,
+}: {
+  isOpen: boolean;
+  newLabel: string;
+  submitLabel: string;
+  canSubmit: boolean;
+  className?: string;
+  onOpen(): void;
+  onCancel(): void;
+  onSubmit(): void;
+  children: ReactNode;
+}) {
+  if (!isOpen) {
+    return (
+      <div className="actions">
+        <button type="button" className="pill dark" onClick={onOpen}>
+          <Icon name="plusBold" size={14} />
+          {newLabel}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <form
+      className={className}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      {children}
+      <div className="actions">
+        <button type="submit" className="pill dark" disabled={!canSubmit}>
+          {submitLabel}
+        </button>
+        <button type="button" className="pill" onClick={onCancel}>
+          {t("cancel")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** Where the docs live. Each link names a page and, often, a section on it. */
 const DOCS_URL = "https://dinghy.chat/docs/";
 

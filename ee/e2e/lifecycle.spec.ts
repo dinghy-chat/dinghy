@@ -6,6 +6,8 @@ import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
 
 type Server = Awaited<ReturnType<typeof startCloudE2EServer>>;
 
+const SUBSCRIPTION_ENDS = "The subscription ends today, with no refund.";
+
 let server: Server;
 
 test.beforeAll(async () => {
@@ -92,6 +94,7 @@ test("the owner deletes the workspace after typing its name", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Delete this workspace" })).toBeVisible();
   await page.getByRole("button", { name: "Delete workspace", exact: true }).click();
   await expect(page.getByRole("alertdialog")).toContainText("Delete Closing Shop?");
+  await expect(page.getByRole("alertdialog")).toContainText(SUBSCRIPTION_ENDS);
   const remove = page.getByRole("button", { name: "Delete the workspace" });
   await expect(remove).toBeDisabled();
   const confirm = page.getByLabel("Type Closing Shop to confirm");
@@ -107,4 +110,21 @@ test("the owner deletes the workspace after typing its name", async ({ page }) =
     (one) => one.metadata.workspace_id === workspaceId,
   );
   expect(subscriptions.map((one) => one.status)).toEqual(["canceled"]);
+});
+
+test("the delete of a free workspace, which has no subscription, says none ends", async ({
+  page,
+}) => {
+  // The seeded workspace is on, with no subscription, as `chat free` leaves one.
+  await server.createOperator("free-owner@example.com");
+  await openLink(page, await server.signInLink("free-owner@example.com"));
+  const billing = page.waitForResponse((response) => response.url().endsWith("/billing"));
+  await openSettings(page, "Workspace");
+  expect(await (await billing).json()).toMatchObject({ state: "free" });
+  const row = page.locator(".danger-zone");
+  await expect(row).toContainText("This deletes every conversation");
+  await expect(row).not.toContainText(SUBSCRIPTION_ENDS);
+  await page.getByRole("button", { name: "Delete workspace", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("Delete E2E?");
+  await expect(page.getByRole("alertdialog")).not.toContainText(SUBSCRIPTION_ENDS);
 });
