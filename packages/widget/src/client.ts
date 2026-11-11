@@ -54,6 +54,8 @@ interface Me {
   openConversation: boolean;
   /** Has a conversation, open or closed. Only then does the widget report pages. */
   chatted: boolean;
+  /** The visitor gave an email, so the widget does not ask again. */
+  hasEmail: boolean;
   lastReadSeq: string;
   unread: number;
   /** A stream from here reads only what follows the read position. */

@@ -157,6 +157,10 @@ test("before the first message, the email takes the message box's place until it
   await expect(visitor.getByText("Thanks. We will use this email if you leave.")).toBeVisible();
   await expect(visitor.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expect(email).toHaveCount(0);
+  // The server holds the email, so the next page, where the chat stays open, does not ask again.
+  await visitor.reload();
+  await expect(visitor.getByRole("textbox", { name: "Your message" })).toBeVisible();
+  await expect(email).toHaveCount(0);
   await visitor.context().close();
 });
 

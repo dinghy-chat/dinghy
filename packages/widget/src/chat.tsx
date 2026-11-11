@@ -146,6 +146,8 @@ function Chat({
   const [openConversation, setOpenConversation] = useState(false);
   // Has a conversation, open or closed. Only such a visitor's pages are reported.
   const [chatted, setChatted] = useState(false);
+  // Whether the visitor gave an email, from the server. Undefined until it answers.
+  const [hasEmail, setHasEmail] = useState<boolean>();
   const [lastRead, setLastRead] = useState(0n);
   // The server's count, with the read position it was computed from.
   const [serverRead, setServerRead] = useState({ unread: 0, position: 0n });
@@ -305,6 +307,7 @@ function Chat({
         // A send during this request leaves a conversation open that this response may not show.
         setOpenConversation(me.openConversation || sends.current !== sendsAtStart);
         setChatted((current) => current || me.chatted);
+        setHasEmail(me.hasEmail);
         // The larger one, because this response can be older than a read in this tab.
         const position = BigInt(me.lastReadSeq);
         setLastRead((current) => larger(current, position));
@@ -342,12 +345,12 @@ function Chat({
 
   // A message counts as read only when the visitor can see it.
   useEffect(() => {
-    if (!open || !visible || !loaded || token === null || delivered <= lastRead) return;
+    if (!shown || !visible || !loaded || token === null || delivered <= lastRead) return;
     setLastRead(delivered);
     client.markRead(token, delivered.toString()).catch(() => {
       // The count returns on the next page load, and a later read moves the position past it.
     });
-  }, [client, delivered, lastRead, loaded, open, token, visible]);
+  }, [client, delivered, lastRead, loaded, shown, token, visible]);
 
   // Only the visible tab holds a stream, because browsers allow about six HTTP/1.1 connections per
   // origin across all tabs. A tab catches up from its cursor when it becomes visible again.
@@ -605,10 +608,12 @@ function Chat({
             : "waiting";
   const say = sayer(saved);
   const mascot = pageOr(context.attribute("mascot"), saved.mascot);
-  // Only a visitor the host site did not sign in, and only when this server sends email. A failed
-  // save keeps the form and its error, even when it made the visitor.
+  // Only a visitor the host site did not sign in, only when this server sends email, and never
+  // again once the server holds an email. A visitor with a token waits for the server to say so,
+  // and a failed save keeps the form and its error, even when it made the visitor.
+  const withoutEmail = token === null || hasEmail === false || emailState !== "idle";
   const email = emailMode(saved.emailAsk, {
-    mayAsk: emailReplies && identity === null && emailState !== "saved",
+    mayAsk: emailReplies && identity === null && emailState !== "saved" && withoutEmail,
     chatted: chatted || lines.length > 0,
   });
 

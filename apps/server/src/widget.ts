@@ -95,6 +95,8 @@ const VisitorSchema = z
     openConversation: z.boolean(),
     // The visitor has a conversation, open or closed. Only then does the widget report pages.
     chatted: z.boolean(),
+    // The visitor gave an email, so the widget does not ask again.
+    hasEmail: z.boolean(),
     lastReadSeq: z.string(),
     unread: z.number(),
     // A stream from here reads only what follows the read position, as a closed panel needs.
@@ -711,6 +713,10 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
       .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
       .orderBy(sql`${conversation.status} = 'open' desc`)
       .limit(1);
+    const [saved] = await tx
+      .select({ email: visitor.email })
+      .from(visitor)
+      .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
     const { lastReadSeq, unread } = await readState(tx, workspaceId, visitorId);
     const [current] = await tx
       .select({ generation: workspace.feedGeneration })
@@ -721,6 +727,7 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
       signedIn,
       openConversation: newest?.status === "open",
       chatted: newest !== undefined,
+      hasEmail: saved?.email != null,
       lastReadSeq: lastReadSeq.toString(),
       unread,
       readCursor: formatCursor({ generation: current?.generation ?? 0, seq: lastReadSeq }),

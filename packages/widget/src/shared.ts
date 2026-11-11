@@ -43,7 +43,8 @@ export interface WidgetSettings {
 
 /** A member the widget's header shows: a first name and a picture, never an email. */
 export interface TeamFace {
-  /** The operator's ID, which tells two members with one first name apart. */
+  /** A hash of the operator's ID, the same as `authorId` on their replies. It tells two members
+   * with one first name apart. */
   id: string;
   name: string;
   pictureUrl: string | null;

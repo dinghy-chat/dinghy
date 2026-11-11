@@ -378,6 +378,9 @@
           "chatted": {
             "type": "boolean"
           },
+          "hasEmail": {
+            "type": "boolean"
+          },
           "lastReadSeq": {
             "type": "string"
           },
@@ -393,6 +396,7 @@
           "signedIn",
           "openConversation",
           "chatted",
+          "hasEmail",
           "lastReadSeq",
           "unread",
           "readCursor"
