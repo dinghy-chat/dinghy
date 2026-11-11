@@ -3,6 +3,9 @@ import { escapeHtml } from "../../../packages/widget/src/markdown.ts";
 /** How long a sign-in link works. Every email that carries one says so. */
 export const LINK_MINUTES = 15;
 
+/** The colors of the HTML emails: the text, quiet text, and a quote's background. */
+export const EMAIL_COLORS = { text: "#0b2239", muted: "#5f6e80", quote: "#f3efe4" };
+
 // Every email is plain text in one voice: a greeting, a few short paragraphs and the same sign-off.
 // Every string has a key here or next to its sender, so a locale can be added later.
 const text = {
@@ -93,7 +96,7 @@ export function letterHtml(paragraphs: (string | HtmlParagraph)[], team = "Dingh
   const body = [text.hi, ...paragraphs, text.signOff(oneLine(team) || "Dinghy")]
     .map(paragraphHtml)
     .join("");
-  return `<!doctype html><html><body style="font:15px/1.5 -apple-system,'Segoe UI',sans-serif;color:#0b2239">${body}</body></html>`;
+  return `<!doctype html><html><body style="font:15px/1.5 -apple-system,'Segoe UI',sans-serif;color:${EMAIL_COLORS.text}">${body}</body></html>`;
 }
 
 /** The sign-in link that an operator asked for on the sign-in page. */

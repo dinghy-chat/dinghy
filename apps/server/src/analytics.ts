@@ -5,7 +5,7 @@ import type { App } from "./app.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure, INVALID, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
-import { authorNames } from "./messages.ts";
+import { authorNames, isChat } from "./messages.ts";
 
 /** A replier's operator or key, in the shape `authorNames` reads. */
 const replierIds = (one: { operatorId: string | null; apiKeyId: string | null }) => ({
@@ -155,7 +155,7 @@ async function readAnalytics(
       LEFT JOIN LATERAL (
         SELECT m.created_at, m.author_operator_id, m.author_api_key_id FROM message AS m
         WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
-          AND m.author_visitor_id IS NULL AND m.kind IN ('text', 'image')
+          AND m.author_visitor_id IS NULL AND ${isChat(sql`m.kind`)}
         ORDER BY m.seq LIMIT 1
       ) AS reply ON true
     )

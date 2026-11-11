@@ -379,15 +379,14 @@ describe("the assignee filter", () => {
     await start("two for Ann", ann.id);
     await start("for Bo", bo.id);
     await start("for no one", null);
-    const counts = (page: Page) => (page as Page & { openBy: unknown; open: number }).openBy;
+    const counts = (page: Page) => (page as Page & { openBy: unknown }).openBy;
     expect(counts(await list(""))).toEqual({ all: 4, mine: 2, unassigned: 1 });
     expect(counts(await list("status=closed", bo.cookie))).toEqual({
       all: 4,
       mine: 1,
       unassigned: 1,
     });
-    const none = (await list("assignee=none")) as Page & { open: number };
-    expect(none.open).toBe(1);
+    expect(counts(await list("assignee=none"))).toEqual({ all: 4, mine: 2, unassigned: 1 });
   });
 
   test("the filter applies to closed conversations too", async () => {

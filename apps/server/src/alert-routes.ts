@@ -1,7 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, notInArray } from "drizzle-orm";
 import type { Logger } from "pino";
-import { queueTranscript, sendToOperator, testPayload, verifyEmailStop } from "./alerts.ts";
+import { sendToOperator, testPayload } from "./alerts.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { emailStop, pushSubscription, workspaceMember } from "./db/schema.ts";
@@ -18,6 +18,8 @@ import {
 } from "./errors.ts";
 import { isPushEndpoint, isPushKeys, type Push } from "./push.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
+import { queueTranscript } from "./transcripts.ts";
+import { verifyEmailStop } from "./visitor-email.ts";
 
 const NO_PUSH = failure("push_unavailable", "This server has no push keys.");
 const BAD_ENDPOINT = failure("bad_endpoint", "This browser's push service is not supported.");

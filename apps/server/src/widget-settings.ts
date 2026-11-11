@@ -28,7 +28,7 @@ import { errorAnswer, FORBIDDEN, MEMBER_ERRORS, NOT_FOUND, ROLE_WRITE_ERRORS } f
 import { visitorAuthorId } from "./identity.ts";
 import { processLogo, refuseImage } from "./images.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { recordWorkspaceChange } from "./messages.ts";
+import { isChat, recordWorkspaceChange } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
 import { allowed } from "./team.ts";
@@ -175,7 +175,7 @@ const appearanceRoute = createRoute({
 
 /** The members who replied last, newest first. Each needs one short read of an index. */
 function recentRepliers(tx: Transaction, workspaceId: string) {
-  const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId} and ${message.kind} in ('text', 'image'))`;
+  const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId} and ${isChat()})`;
   return tx
     .select({ id: operator.id, name: operator.name, pictureUpdatedAt: operator.pictureUpdatedAt })
     .from(workspaceMember)

@@ -12,16 +12,12 @@ import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.t
 import { deletedDuring, signedInOperator } from "../test/operators.ts";
 import {
   claimDeliveries,
-  emailStopUrl,
   fanOutOne,
   finishDelivery,
   MAX_ATTEMPTS,
   planDelivery,
   pruneOnce,
-  queueTranscript,
   REPLY_EMAIL_DELAY_MS,
-  REPLY_EMAILS_PER_DAY,
-  TRANSCRIPT_DELAY_MS,
 } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -39,17 +35,12 @@ import {
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
 import type { Mailer } from "./mailer.ts";
-import {
-  appendMessage,
-  deleteMessage,
-  editMessage,
-  emailedAt,
-  listWorkspaceEvents,
-  replyReceipts,
-  setConversationStatus,
-} from "./messages.ts";
+import { deleteMessage, editMessage, emailedAt, replyReceipts } from "./message-changes.ts";
+import { appendMessage, listWorkspaceEvents, setConversationStatus } from "./messages.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
+import { queueTranscript, TRANSCRIPT_DELAY_MS } from "./transcripts.ts";
+import { emailStopUrl, VISITOR_EMAILS_PER_DAY } from "./visitor-email.ts";
 import { startWorker, type Worker } from "./worker.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -307,7 +298,7 @@ describe("web push", () => {
       withWorkspace(app, space.id, (tx) =>
         deleteMessage(tx, space.id, written.message.conversationId, written.message.id, {
           operatorId: anna,
-          any: true,
+          mayDeleteAnyone: true,
         }),
       );
     // Deleted before the fan-out: no row.
@@ -1068,7 +1059,7 @@ describe("email", () => {
     await fanOutAll();
     const old = new Date(Date.now() - 3_600_000);
     await owner.insert(alertDelivery).values(
-      Array.from({ length: REPLY_EMAILS_PER_DAY }, (_, index) => ({
+      Array.from({ length: VISITOR_EMAILS_PER_DAY }, (_, index) => ({
         workspaceId: space.id,
         eventSeq: BigInt(1000 + index),
         conversationId,
@@ -1152,11 +1143,11 @@ describe("email", () => {
     await makeDue();
     const [row] = await claimDeliveries(workerDb, 1, 60_000);
     if (row !== undefined) await finishDelivery(workerDb, row, "sent");
-    for (let index = 2; index < REPLY_EMAILS_PER_DAY; index++) await sendOne();
-    expect(await replyRows()).toHaveLength(REPLY_EMAILS_PER_DAY);
+    for (let index = 2; index < VISITOR_EMAILS_PER_DAY; index++) await sendOne();
+    expect(await replyRows()).toHaveLength(VISITOR_EMAILS_PER_DAY);
     await operatorWrites(anna, conversationId, "Over the limit");
     await fanOutAll();
-    expect(await replyRows()).toHaveLength(REPLY_EMAILS_PER_DAY);
+    expect(await replyRows()).toHaveLength(VISITOR_EMAILS_PER_DAY);
   });
 
   test("transcripts count toward the daily limit", async () => {
@@ -1165,7 +1156,7 @@ describe("email", () => {
     const written = await visitorWrites(from, "Help");
     const conversationId = written.message.conversationId;
     await operatorWrites(anna, conversationId, "Answer");
-    for (let sent = 0; sent < REPLY_EMAILS_PER_DAY; sent++) {
+    for (let sent = 0; sent < VISITOR_EMAILS_PER_DAY; sent++) {
       expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
       await fanOutAll();
       const [row] = await claimDeliveries(workerDb, 1, 60_000);

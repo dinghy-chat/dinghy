@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
+import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import {
   apiKeyToken,
   authenticateApiKey,
@@ -199,7 +200,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
           .string()
           .trim()
           .min(1)
-          .max(10_000)
+          .max(MESSAGE_MAX)
           .regex(/^[^\0]*$/),
         clientId: z
           .string()

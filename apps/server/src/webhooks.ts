@@ -13,7 +13,7 @@ import { audit } from "./audit.ts";
 import {
   apiKey,
   event,
-  type MessageCreatedPayload,
+  type MessagePayload,
   operator,
   WEBHOOK_EVENTS,
   type WebhookEvent,
@@ -699,7 +699,7 @@ export function registerWebhookRoutes(
 /** The webhook events one feed event makes: a first message also starts its conversation. */
 function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
   if (kind === "message.created") {
-    const created = (payload as MessageCreatedPayload).conversationCreated === true;
+    const created = (payload as MessagePayload).conversationCreated === true;
     return created ? ["conversation.created", "message.created"] : ["message.created"];
   }
   return WEBHOOK_EVENTS.some((one) => one === kind) ? [kind as WebhookEvent] : [];

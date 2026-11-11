@@ -4,7 +4,7 @@ import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
-import { firstName } from "../../../packages/widget/src/shared.ts";
+import { firstName, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
@@ -427,7 +427,7 @@ const sendMessageRoute = createRoute({
               .string()
               .trim()
               .min(1)
-              .max(10_000)
+              .max(MESSAGE_MAX)
               .regex(/^[^\0]*$/),
           }),
           example: {

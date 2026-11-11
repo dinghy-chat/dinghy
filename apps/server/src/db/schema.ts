@@ -461,8 +461,11 @@ const EVENT_KINDS = [
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
-/** The payload of a `message.created` event, which the alert and webhook fan-outs read back. */
-export interface MessageCreatedPayload {
+/**
+ * The payload of a `message.created`, `message.updated` or `message.deleted` event, which the alert
+ * and webhook fan-outs read back.
+ */
+export interface MessagePayload {
   messageId: string;
   conversationId: string;
   fromVisitor: boolean;

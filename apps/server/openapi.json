@@ -4010,7 +4010,6 @@
                   ],
                   "hasMore": false,
                   "waiting": 1,
-                  "open": 1,
                   "openBy": {
                     "all": 1,
                     "mine": 0,
@@ -4032,9 +4031,6 @@
                     "waiting": {
                       "type": "integer"
                     },
-                    "open": {
-                      "type": "integer"
-                    },
                     "openBy": {
                       "type": "object",
                       "properties": {
@@ -4051,7 +4047,7 @@
                       "required": ["all", "mine", "unassigned"]
                     }
                   },
-                  "required": ["conversations", "hasMore", "waiting", "open", "openBy"]
+                  "required": ["conversations", "hasMore", "waiting", "openBy"]
                 }
               }
             }

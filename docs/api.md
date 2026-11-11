@@ -81,7 +81,7 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 
 `GET /v1/operator/workspaces/{workspaceId}/get-started` answers which first steps are done for the signed-in member: `install`, `logo`, `widget`, `team`, `notifications` and `chat`, and `dismissed`. `POST .../get-started/dismiss` hides them for that member.
 
-`GET /v1/operator/workspaces/{workspaceId}/conversations` answers `waiting`, the open conversations whose newest message is the visitor's, `open`, the open conversations for its assignee filter, and `openBy`, the open conversations for each filter: `all`, `mine` (always 0 for an API key) and `unassigned`. `GET /v1/operator/waiting` answers `waiting` for each of the signed-in operator's workspaces, for the workspace menu.
+`GET /v1/operator/workspaces/{workspaceId}/conversations` answers `waiting`, the open conversations whose newest message is the visitor's, and `openBy`, the open conversations for each filter: `all`, `mine` (always 0 for an API key) and `unassigned`. `GET /v1/operator/waiting` answers `waiting` for each of the signed-in operator's workspaces, for the workspace menu.
 
 `GET /v1/operator/workspaces/{workspaceId}/conversations/search?q=` searches open and closed conversations by the visitor's name, email or user ID and by message text, ignoring case. `q` has 3 to 100 characters, and the answer has at most 50 conversations, newest activity first. A conversation found by a message has that message's text as `lastMessage.body`, while `fromVisitor` and `createdAt` stay those of the newest message.
 

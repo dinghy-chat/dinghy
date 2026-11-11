@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Logger } from "pino";
+import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
@@ -30,6 +31,7 @@ import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import { closedFailure, OPEN_TO_WELCOME, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import { deleteMessage, editMessage, emailedAt, replyReceipts } from "./message-changes.ts";
 import {
   type AssigneeFilter,
   type Author,
@@ -41,9 +43,6 @@ import {
   catchClosed,
   countOpenByAssignee,
   countWaiting,
-  deleteMessage,
-  editMessage,
-  emailedAt,
   findConversation,
   findMessage,
   InvalidReplyToError,
@@ -54,7 +53,6 @@ import {
   parseCursor,
   QuoteSchema,
   quoteView,
-  replyReceipts,
   type StoredMessage,
   searchConversations,
   setConversationStatus,
@@ -101,7 +99,7 @@ const BODY = z
   .string()
   .trim()
   .min(1)
-  .max(10_000)
+  .max(MESSAGE_MAX)
   .regex(/^[^\0]*$/);
 
 const InboxMessage = z
@@ -258,8 +256,6 @@ const listRoute = createRoute({
             hasMore: z.boolean(),
             // Open conversations whose newest message is from the visitor, across all pages.
             waiting: z.number().int(),
-            // Open conversations for this assignee filter, across all pages.
-            open: z.number().int(),
             // Open conversations for each assignee filter. `mine` is 0 for an API key.
             openBy: z.object({
               all: z.number().int(),
@@ -298,7 +294,6 @@ const listRoute = createRoute({
             ],
             hasMore: false,
             waiting: 1,
-            open: 1,
             openBy: { all: 1, mine: 0, unassigned: 1 },
           },
         },
@@ -735,15 +730,15 @@ const actorId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId 
 
 type Appended = Awaited<ReturnType<typeof appendMessage>>;
 
-/**
- * Cloud only: copies a reply into another workspace, in the reply's own transaction. It runs before
- * that transaction, where it can copy an image's file, and returns what runs in it, or null.
- */
 /** On Dinghy Cloud, the operator whose picture a new workspace's welcome chat shows. */
 export type WelcomeFace = (
   tx: Transaction,
 ) => Promise<{ operatorId: string; pictureUpdatedAt: Date | null } | null>;
 
+/**
+ * Cloud only: copies a reply into another workspace, in the reply's own transaction. It runs before
+ * that transaction, where it can copy an image's file, and returns what runs in it, or null.
+ */
 export type CopyReply = (
   workspaceId: string,
   conversationId: string,
@@ -867,12 +862,6 @@ export function createInbox({
         ),
         hasMore: page.hasMore,
         waiting: page.waiting,
-        open:
-          assignee.kind === "all"
-            ? page.openBy.all
-            : assignee.kind === "none"
-              ? page.openBy.unassigned
-              : page.openBy.mine,
         openBy: page.openBy,
       };
     },
@@ -1148,7 +1137,10 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   app.openapi(deleteMessageRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId, messageId } = c.req.valid("param");
-    const by = { operatorId: c.get("operatorId"), any: allowed.settings(c.get("memberRole")) };
+    const by = {
+      operatorId: c.get("operatorId"),
+      mayDeleteAnyone: allowed.settings(c.get("memberRole")),
+    };
     const outcome = await withWorkspace(db, id, (tx) =>
       deleteMessage(tx, id, conversationId, messageId, by),
     );

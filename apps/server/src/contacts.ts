@@ -18,7 +18,7 @@ import {
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
-import { isChat } from "./messages.ts";
+import { containing, isChat } from "./messages.ts";
 import { deleteConversation } from "./moderation.ts";
 import { allowed } from "./team.ts";
 
@@ -246,9 +246,6 @@ const sortKey = (sort: Sort) =>
   sort === "lastSeen"
     ? sql`coalesce(${visitor.lastSeenAt}, ${visitor.createdAt})`
     : sql`${visitor.createdAt}`;
-
-/** `%` and `_` match anything in a LIKE pattern, so a search for them must escape them. */
-const containing = (text: string) => `%${text.replace(/[\\%_]/g, "\\$&")}%`;
 
 /**
  * A page of contacts, newest first by the sort, in one statement: a bounded scan of the sort's

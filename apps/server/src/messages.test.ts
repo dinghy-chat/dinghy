@@ -6,10 +6,10 @@ import { sendOperatorMessage } from "../test/messages.ts";
 import { type App, createApp } from "./app.ts";
 import { conversation, event, message, operator, workspace, workspaceMember } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { deleteMessage } from "./message-changes.ts";
 import {
   appendMessage,
   countWaiting,
-  deleteMessage,
   listConversations,
   setConversationStatus,
 } from "./messages.ts";
@@ -533,7 +533,7 @@ describe("history", () => {
       withWorkspace(db, a.id, (tx) =>
         deleteMessage(tx, a.id, line?.conversationId ?? "", line?.id ?? "", {
           operatorId: OPERATOR,
-          any: true,
+          mayDeleteAnyone: true,
         }),
       );
     await remove(sent[1]);
