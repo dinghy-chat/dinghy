@@ -14,6 +14,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -32,6 +33,10 @@ export const conversationStatus = pgEnum("conversation_status", ["open", "closed
 export const messageKind = pgEnum("message_kind", ["text", "image"]);
 export const alertChannel = pgEnum("alert_channel", ["push", "email"]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);
+export const widgetPosition = pgEnum("widget_position", ["left", "right"]);
+export const widgetTheme = pgEnum("widget_theme", ["light", "dark", "auto"]);
+export const widgetLauncher = pgEnum("widget_launcher", ["boat", "bubble", "hidden"]);
+export const widgetEmailAsk = pgEnum("widget_email_ask", ["off", "after_first", "before_first"]);
 
 export const workspace = pgTable(
   "workspace",
@@ -65,10 +70,6 @@ export const workspace = pgTable(
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
     // Why, for the server's admin. Operators do not see it.
     suspendedReason: text("suspended_reason"),
-    // The widget's own words. Null means Dinghy's default text.
-    widgetTitle: text("widget_title"),
-    widgetGreeting: text("widget_greeting"),
-    widgetAway: text("widget_away"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -93,6 +94,9 @@ export const operator = pgTable("operator", {
   // sessions. Nothing ever sets it back.
   emailProven: boolean("email_proven").notNull().default(true),
   image: text("image"),
+  // Part of the picture's address, so a new upload gets a new address past every cache. Null with
+  // no picture.
+  pictureUpdatedAt: timestamp("picture_updated_at", { withTimezone: true }),
   // Set when the operator deletes their account. The row stays, with its personal data erased, so
   // the messages and member rows that point to it keep working.
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -330,6 +334,10 @@ export const message = pgTable(
     ),
     unique("message_seq_key").on(table.workspaceId, table.seq),
     index("message_conversation_idx").on(table.workspaceId, table.conversationId, table.seq),
+    // The widget's header shows the members who replied last: one short read per member.
+    index("message_operator_seq_idx")
+      .on(table.workspaceId, table.authorOperatorId, table.seq)
+      .where(sql`${table.authorOperatorId} is not null`),
     // Search finds a substring of a message, which only a trigram index can serve. The workspace
     // leads it, so a search reads only its own workspace's entries.
     index("message_workspace_body_trgm_idx").using(
@@ -870,6 +878,7 @@ const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({ dataTyp
 /**
  * The workspace's logo, at most 256 pixels a side and encoded as WebP by the server. It lives in
  * Postgres rather than the object store because it is small, and it does not count as image storage.
+ * When it last changed is in `widget_settings`, which the widget reads.
  */
 export const workspaceLogo = pgTable("workspace_logo", {
   workspaceId: uuid("workspace_id")
@@ -877,9 +886,56 @@ export const workspaceLogo = pgTable("workspace_logo", {
     .references(() => workspace.id, { onDelete: "cascade" }),
   // Always WebP: the server encodes every logo again before it stores it.
   data: bytea("data").notNull(),
-  // Part of the logo's address, so a new upload gets a new address past every cache.
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * An operator's picture, 128 pixels square and encoded as WebP by the server, as a logo is. It is
+ * global, like the operator: one face in every workspace. It does not count as image storage.
+ */
+export const operatorPicture = pgTable("operator_picture", {
+  operatorId: uuid("operator_id")
+    .primaryKey()
+    .references(() => operator.id, { onDelete: "cascade" }),
+  data: bytea("data").notNull(),
+});
+
+/**
+ * How the widget looks and what it says, one row per workspace, made with the workspace. It is
+ * apart from `workspace`, because each message locks the workspace row, and a save must not wait
+ * for that lock or hold it. Null texts and colors mean the widget's own.
+ */
+export const widgetSettings = pgTable(
+  "widget_settings",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    title: text("title"),
+    greeting: text("greeting"),
+    away: text("away"),
+    // Part of the logo's address, so a new upload gets a new address past every cache. Null with
+    // no logo.
+    logoUpdatedAt: timestamp("logo_updated_at", { withTimezone: true }),
+    // Full hex colors, as the snippet's data-primary and data-accent take them.
+    primary: text("primary_color"),
+    accent: text("accent_color"),
+    position: widgetPosition("position").notNull().default("right"),
+    theme: widgetTheme("theme").notNull().default("auto"),
+    launcher: widgetLauncher("launcher").notNull().default("boat"),
+    // The boat in the open chat. A logo takes its place in the header either way.
+    mascot: boolean("mascot").notNull().default(true),
+    // Pixels, for the chat's corners and the launcher's.
+    radius: smallint("radius").notNull().default(16),
+    emailAsk: widgetEmailAsk("email_ask").notNull().default("after_first"),
+    // The "Powered by Dinghy" line.
+    branding: boolean("branding").notNull().default(true),
+  },
+  (table) => [
+    check("widget_settings_primary_color", sql`${table.primary} ~ '^#[0-9a-f]{6}$'`),
+    check("widget_settings_accent_color", sql`${table.accent} ~ '^#[0-9a-f]{6}$'`),
+    check("widget_settings_radius", sql`${table.radius} between 0 and 24`),
+  ],
+);
 
 /**
  * Cloud only. A welcome chat: a new workspace's conversation with Dinghy's founder, and its other

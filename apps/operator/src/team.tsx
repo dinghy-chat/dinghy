@@ -137,7 +137,7 @@ function MemberRow({
     <tr>
       <td>
         <div className="who-cell">
-          <Avatar name={member.name} />
+          <Avatar name={member.name} pictureUrl={member.pictureUrl} />
           <span className="who-lines">
             <strong>
               {member.name}

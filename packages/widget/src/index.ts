@@ -23,9 +23,9 @@ export type {
 export interface InitOptions extends Appearance {
   /** Your Dinghy server, such as `https://chat.example.com`. */
   url: string;
-  /** The workspace's public key, from Settings > Widget snippet. */
+  /** The workspace's public key, from Settings > Install. */
   key: string;
-  /** False removes the boat. Every state keeps its text. */
+  /** Hides or shows the boat in the open chat, over the saved setting. Every state keeps its text. */
   mascot?: boolean;
   /** False hides the launcher, so your own button opens the chat. */
   launcher?: boolean;
@@ -109,7 +109,7 @@ export function init(options: InitOptions): DinghyApi {
     ["position", options.position],
     ["offset-x", options.offsetX],
     ["offset-y", options.offsetY],
-    ["mascot", options.mascot === false ? "false" : undefined],
+    ["mascot", options.mascot === undefined ? undefined : String(options.mascot)],
     ["launcher", options.launcher === false ? "hidden" : undefined],
   ];
   for (const [name, value] of attributes) {

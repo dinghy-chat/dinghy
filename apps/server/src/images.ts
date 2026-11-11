@@ -139,20 +139,31 @@ export async function processImage(bytes: Uint8Array): Promise<ProcessedImage | 
   };
 }
 
-export const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+/** A logo or an operator's picture: public, small, and always WebP. */
+export const PUBLIC_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+export const PUBLIC_IMAGE_TYPE = OUTPUT.webp;
+export const PUBLIC_IMAGE_TOO_LARGE = failure("too_large", "This image is over 2 MB.");
 const LOGO_SIZE_PX = 256;
-export const LOGO_TYPE = OUTPUT.webp;
-export const LOGO_TOO_LARGE = failure("too_large", "This logo is over 2 MB.");
+const PICTURE_SIZE_PX = 128;
 
-/** Checks a logo, then shrinks it to fit a 256-pixel square and encodes it as WebP. */
-export async function processLogo(bytes: Uint8Array): Promise<Buffer | Refusal> {
-  const done = await inTurn(() =>
-    reencode(bytes, (image) =>
-      image.resize(LOGO_SIZE_PX, LOGO_SIZE_PX, { fit: "inside", withoutEnlargement: true }).webp(),
-    ),
-  );
+/** Checks a public image, then resizes it and encodes it as WebP. */
+async function processPublicImage(
+  bytes: Uint8Array,
+  resize: (image: Sharp) => Sharp,
+): Promise<Buffer | Refusal> {
+  const done = await inTurn(() => reencode(bytes, (image) => resize(image).webp()));
   return typeof done === "string" ? done : done.data;
 }
+
+/** A logo shrinks to fit a 256-pixel square. */
+export const processLogo = (bytes: Uint8Array) =>
+  processPublicImage(bytes, (image) =>
+    image.resize(LOGO_SIZE_PX, LOGO_SIZE_PX, { fit: "inside", withoutEnlargement: true }),
+  );
+
+/** A picture fills a 128-pixel square, cut from its middle. */
+export const processPicture = (bytes: Uint8Array) =>
+  processPublicImage(bytes, (image) => image.resize(PICTURE_SIZE_PX, PICTURE_SIZE_PX));
 
 export interface Images {
   /**
@@ -345,8 +356,8 @@ export function refuseImage(c: Context, refusal: Refusal) {
   return c.json(failure(refusal, message), status) as any;
 }
 
-/** The routes that the image origin serves: images, and the logos that logo.ts serves. */
-const FILES_HOST_PATH = /^\/v1\/(files\/[^/]+\/[^/]+|widget\/[^/]+\/logo)$/;
+/** The routes that the image origin serves: images, and the logos and pictures of public-images.ts. */
+const FILES_HOST_PATH = /^\/v1\/(files\/[^/]+\/[^/]+|widget\/[^/]+\/logo|pictures\/[^/]+)$/;
 
 /** The only types the image route serves. An HTML or SVG body never goes out, whatever is stored. */
 const SERVED_TYPES = new Set<string>(Object.values(OUTPUT));
@@ -372,7 +383,7 @@ export function imageView(
  * Serves an image to anyone with a current signed URL, because an <img> cannot send a bearer token.
  * Only a client that could read the message gets the URL, and it expires in 15 minutes.
  *
- * With a separate image origin, that origin serves this route and the logo route and nothing else,
+ * With a separate image origin, that origin serves this route and the public images and nothing else,
  * and the app's origin does not serve them. Register this before every other route.
  */
 export function registerImageFiles(app: App, db: Database, images: Images, logger: Logger) {

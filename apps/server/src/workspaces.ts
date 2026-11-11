@@ -1,9 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type pg from "pg";
-import { workspace } from "./db/schema.ts";
+import { widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { normalizeOrigin } from "./identity.ts";
+
+// A workspace's public key. Checked before a lookup, because Postgres rejects some bytes that a
+// URL can decode to.
+export const PUBLIC_KEY = /^wk_[0-9a-f]{32}$/;
 
 export interface NewWorkspace {
   id: string;
@@ -47,22 +51,13 @@ export async function insertWorkspace(
     return normalized;
   });
   await tx.insert(workspace).values({ ...keys, name, allowedOrigins: origins, active });
-}
-
-/** The widget's own words for a workspace. Null means the widget's default text. */
-interface WidgetTexts {
-  title: string | null;
-  greeting: string | null;
-  away: string | null;
+  await tx.insert(widgetSettings).values({ workspaceId: keys.id });
 }
 
 export interface WidgetWorkspace {
   id: string;
   allowedOrigins: string[];
   signingSecret: string;
-  texts: WidgetTexts;
-  /** When the logo last changed, or null with no logo. */
-  logoUpdatedAt: Date | null;
 }
 
 /** Finds a workspace by its public key. The caller has no workspace context yet. */
@@ -74,21 +69,10 @@ export async function widgetWorkspace(
     id: string;
     allowed_origins: string[];
     signing_secret: string;
-    widget_title: string | null;
-    widget_greeting: string | null;
-    widget_away: string | null;
-    // Text, because Drizzle's driver leaves timestamps unparsed.
-    logo_updated_at: string | null;
   }>(sql`select * from widget_workspace(${publicKey})`);
   const row = result.rows[0];
   if (row === undefined) return null;
-  return {
-    id: row.id,
-    allowedOrigins: row.allowed_origins,
-    signingSecret: row.signing_secret,
-    texts: { title: row.widget_title, greeting: row.widget_greeting, away: row.widget_away },
-    logoUpdatedAt: row.logo_updated_at === null ? null : new Date(row.logo_updated_at),
-  };
+  return { id: row.id, allowedOrigins: row.allowed_origins, signingSecret: row.signing_secret };
 }
 
 /**

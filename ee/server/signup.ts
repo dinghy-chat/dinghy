@@ -25,7 +25,11 @@ import { type Live, OPERATORS } from "../../apps/server/src/live.ts";
 import { createLinkLimit, tooManyAttempts } from "../../apps/server/src/login-limit.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "../../apps/server/src/rate-limit.ts";
-import { type NewWorkspace, workspaceKeys } from "../../apps/server/src/workspaces.ts";
+import {
+  insertWorkspace,
+  type NewWorkspace,
+  workspaceKeys,
+} from "../../apps/server/src/workspaces.ts";
 import { startWelcomeChat, type WelcomeSettings } from "./welcome.ts";
 
 /**
@@ -140,7 +144,7 @@ async function insertSignupWorkspace(
   mode: SignupMode,
   welcome: WelcomeSettings | undefined,
 ): Promise<boolean> {
-  await tx.insert(workspace).values({ ...keys, name: names.workspace });
+  await insertWorkspace(tx, keys, names.workspace, []);
   await tx.insert(workspaceMember).values({ workspaceId: keys.id, operatorId, role: "owner" });
   const started =
     welcome !== undefined &&

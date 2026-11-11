@@ -67,7 +67,9 @@ A phone can delay or drop a notification, so do not rely on one for urgent work.
 
 ## Your profile
 
-Select your name at the bottom of the sidebar, then **Profile**, to change the name your teammates see. **Sign out** is in the same menu.
+Select your name at the bottom of the sidebar, then **Profile**, to change the name your teammates see. Visitors see only your first name, next to your replies. **Sign out** is in the same menu.
+
+**Picture** in **Profile** sets your picture from a PNG, JPEG or WebP of up to 2 MB. Dinghy cuts it to a square. Visitors see it next to your replies and at the top of the chat, and your team sees it in place of your initials in the inbox, a conversation and **Team**. It is the same in every workspace.
 
 **Delete my account** is in **Profile** too, on the payment screen, on the screen that asks for an invite, and on the workspace setup once you have been in a workspace. It takes you out of every workspace, ends your sessions, and erases your name and email. The workspaces keep their conversations, and your old replies show as from "Former team member".
 
@@ -79,7 +81,7 @@ With a mail server, Dinghy emails you a link that confirms the delete. It works 
 
 ![The settings page](media/settings.png)
 
-Everyone can open **Settings**. Its tabs are **Team**, **Install**, **Allowed sites**, **Signing secret**, **API** and **Data**. A member sees the team, and the blocked visitors under **Data** once someone is blocked. The other tabs are for owners and admins.
+Everyone can open **Settings**. Its tabs are **Team**, **Widget**, **Install**, **Allowed sites**, **Signing secret**, **API** and **Data**. A member sees the team, the widget's settings without changing them, and the blocked visitors under **Data** once someone is blocked. The other tabs are for owners and admins.
 
 To invite someone, select **Invite someone** at the top of Settings, enter their email, pick a role, and select **Send invite**. Dinghy emails them a link to join. Without a mail server, select **Create invite link** instead, and send the link to that one person. Pending invites show in the team list with their email and the days they have left. Select the trash icon and confirm to revoke one. To send an invite again, invite the same email again: the old link stops working. A link works once and lasts 7 days, and only that email can use it.
 
@@ -95,9 +97,20 @@ A workspace always keeps an owner. While you are the only one, your role stays *
 
 Someone in two workspaces switches between them with the workspace name at the top of the sidebar. On Dinghy Cloud, the same menu has **Create a workspace**.
 
+## Change the widget
+
+**Widget** in **Settings** changes how the chat looks and behaves on your site, with no code. The preview beside the form shows each change before you save, with the chat open or closed, in light or dark colors. On a phone, the preview sits above the form, and **Hide the preview** folds it away.
+
+- **Logo** shows at the top of the chat, in place of the boat. It saves as soon as you pick it.
+- **Words**: the chat's title, its greeting in an empty chat and its text for when nobody is online. An empty box keeps Dinghy's own words.
+- **Look**: the main color and the accent color, the side of the page, the theme (light, dark, or auto, which follows the visitor's device), the chat button (a boat, a bubble, or hidden so your own button opens the chat), the corners, and whether the open chat shows the boat.
+- **Behavior**: when to ask a visitor for an email, so you can reply after they leave: never, after their first message, or before it. Dinghy never asks a signed-in user, nor anyone when your server sends no email. A switch hides the "Powered by Dinghy" line under the chat.
+
+**Save** sends the form, and your site shows the change within 5 minutes. The browser asks before you leave the page with a change you did not save. The top of the chat also shows up to 3 members who replied last, by first name and picture. Attributes in your site's tag win over these settings: see [Add the chat to your website](add-to-your-site.md#change-how-it-looks).
+
 ## The other settings
 
-- **Install** has the tag for your site, with a **Copy** button, then the chat's title, its greeting in an empty chat and its text for when nobody is online. An empty box keeps Dinghy's own words.
+- **Install** has the tag for your site, with a **Copy** button.
 - **Allowed sites** lists the sites that can load the chat, one per row. **Add a site** adds a row, and each row says if its address is not a site such as `https://example.com`.
 - **Signing secret** is for [signed-in users](add-to-your-site.md#show-who-is-chatting). It stays hidden until you select the eye. **Replace the secret** asks first, because the old one stops working at once.
 - **API** has the workspace's [API keys](api.md#api-keys), for your own scripts and AI agents, and its [webhooks](api.md#webhooks), which tell your server about new conversations and messages. A key's token and a webhook's secret show once, so copy them then. A key's replies show its name, and **Revoke** stops it at once.

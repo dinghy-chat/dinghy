@@ -12,6 +12,7 @@ test.beforeAll(async () => {
     "/plain": { html: `<!doctype html><title>Host</title>${tag()}` },
     "/plain2": { html: `<!doctype html><title>Host</title>${tag()}` },
     "/no-mascot": { html: `<!doctype html><title>Host</title>${tag('data-mascot="false"')}` },
+    "/bubble": { html: `<!doctype html><title>Host</title>${tag('data-launcher="bubble"')}` },
     "/themed": {
       html: `<!doctype html><title>Host</title>${tag('data-primary="#112233" data-accent="#f0e000"')}`,
     },
@@ -214,11 +215,12 @@ test.describe("reduced motion", () => {
 });
 
 test.describe("the host's options", () => {
-  test("mascot off removes the boat and keeps the text", async ({ browser }) => {
+  test("mascot off removes the boat from the chat and keeps the text", async ({ browser }) => {
     const page = await openWidget(browser, "/no-mascot");
     await expect(page.locator(".scene")).toContainText(/We are (away|online)/);
     await expect(page.locator(".ship")).toHaveCount(0);
-    await expect(page.locator(".launcher.boat")).toHaveCount(0);
+    // The launcher is a setting of its own.
+    await expect(page.locator(".launcher.boat")).toHaveCount(1);
     await page.context().close();
   });
 
@@ -260,10 +262,10 @@ test.describe("the host's options", () => {
     await page.context().close();
   });
 
-  test("the launcher with no boat keeps its bubble", async ({ browser }) => {
+  test("the bubble launcher has no boat", async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(`${server.hostOrigin}/no-mascot`);
+    await page.goto(`${server.hostOrigin}/bubble`);
     const launcher = page.getByRole("button", { name: "Open chat" });
     await expect(launcher.locator("svg")).toBeVisible();
     await expect(launcher.locator("path.s")).toHaveCount(0);

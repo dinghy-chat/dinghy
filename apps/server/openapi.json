@@ -125,6 +125,109 @@
         },
         "required": ["name", "version", "billing", "signup", "email"]
       },
+      "WidgetAppearance": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WidgetSettings"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "logoUrl": {
+                "type": ["string", "null"]
+              },
+              "team": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "pictureUrl": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["name", "pictureUrl"]
+                }
+              }
+            },
+            "required": ["logoUrl", "team"]
+          }
+        ]
+      },
+      "WidgetSettings": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "greeting": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "away": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "primary": {
+            "type": ["string", "null"],
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "accent": {
+            "type": ["string", "null"],
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "position": {
+            "type": "string",
+            "enum": ["left", "right"]
+          },
+          "theme": {
+            "type": "string",
+            "enum": ["light", "dark", "auto"]
+          },
+          "launcher": {
+            "type": "string",
+            "enum": ["boat", "bubble", "hidden"]
+          },
+          "mascot": {
+            "type": "boolean"
+          },
+          "radius": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "emailAsk": {
+            "type": "string",
+            "enum": ["off", "after_first", "before_first"]
+          },
+          "branding": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "title",
+          "greeting",
+          "away",
+          "primary",
+          "accent",
+          "position",
+          "theme",
+          "launcher",
+          "mascot",
+          "radius",
+          "emailAsk",
+          "branding"
+        ]
+      },
       "NewVisitor": {
         "type": "object",
         "properties": {
@@ -187,6 +290,15 @@
           "imageRemoved": {
             "type": "boolean"
           },
+          "fromBot": {
+            "type": "boolean"
+          },
+          "authorName": {
+            "type": ["string", "null"]
+          },
+          "authorPictureUrl": {
+            "type": ["string", "null"]
+          },
           "createdAt": {
             "type": "string"
           }
@@ -201,6 +313,9 @@
           "body",
           "image",
           "imageRemoved",
+          "fromBot",
+          "authorName",
+          "authorPictureUrl",
           "createdAt"
         ],
         "example": {
@@ -213,6 +328,9 @@
           "body": "Do you have a yearly plan?",
           "image": null,
           "imageRemoved": false,
+          "fromBot": false,
+          "authorName": null,
+          "authorPictureUrl": null,
           "createdAt": "2026-11-08T09:30:00.000Z"
         }
       },
@@ -309,6 +427,9 @@
           "email": {
             "type": "string"
           },
+          "pictureUrl": {
+            "type": ["string", "null"]
+          },
           "workspaces": {
             "type": "array",
             "items": {
@@ -358,7 +479,7 @@
             "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "email", "workspaces", "billing", "contact"]
+        "required": ["id", "name", "email", "pictureUrl", "workspaces", "billing", "contact"]
       },
       "InboxWorkspace": {
         "type": "object",
@@ -829,9 +950,12 @@
           "role": {
             "type": "string",
             "enum": ["owner", "admin", "member"]
+          },
+          "pictureUrl": {
+            "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "email", "role"]
+        "required": ["id", "name", "email", "role", "pictureUrl"]
       },
       "PendingInvite": {
         "type": "object",
@@ -866,24 +990,6 @@
           },
           "signingSecret": {
             "type": "string"
-          },
-          "widgetTexts": {
-            "type": "object",
-            "properties": {
-              "title": {
-                "type": ["string", "null"]
-              },
-              "greeting": {
-                "type": ["string", "null"]
-              },
-              "away": {
-                "type": ["string", "null"]
-              }
-            },
-            "required": ["title", "greeting", "away"]
-          },
-          "logoUrl": {
-            "type": ["string", "null"]
           },
           "usage": {
             "type": ["object", "null"],
@@ -934,36 +1040,7 @@
             "required": ["conversations", "images", "members", "onlyWorkspace"]
           }
         },
-        "required": [
-          "publicKey",
-          "allowedOrigins",
-          "signingSecret",
-          "widgetTexts",
-          "logoUrl",
-          "usage",
-          "deletion"
-        ]
-      },
-      "WidgetTexts": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": ["string", "null"],
-            "maxLength": 40,
-            "pattern": "^[^\\p{Cc}]*$/u"
-          },
-          "greeting": {
-            "type": ["string", "null"],
-            "maxLength": 200,
-            "pattern": "^[^\\p{Cc}]*$/u"
-          },
-          "away": {
-            "type": ["string", "null"],
-            "maxLength": 200,
-            "pattern": "^[^\\p{Cc}]*$/u"
-          }
-        },
-        "required": ["title", "greeting", "away"]
+        "required": ["publicKey", "allowedOrigins", "signingSecret", "usage", "deletion"]
       },
       "AlertSettings": {
         "type": "object",
@@ -986,7 +1063,7 @@
   "paths": {
     "/v1/widget/{key}/logo": {
       "get": {
-        "summary": "Get the workspace's logo, as WebP. Use the address that the widget's presence gives.",
+        "summary": "Get the workspace's logo, as WebP. Use the address that the widget's appearance gives.",
         "parameters": [
           {
             "schema": {
@@ -1007,7 +1084,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The logo. Its address changes with each upload, so it caches for a year.",
+            "description": "The image. Its address changes with each upload, so it caches for a year.",
             "content": {
               "image/webp": {
                 "schema": {
@@ -1030,6 +1107,63 @@
         }
       }
     },
+    "/v1/pictures/{operatorId}": {
+      "get": {
+        "summary": "Get an operator's picture, as WebP. Use the address that a member or a message gives.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "operatorId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "v",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image. Its address changes with each upload, so it caches for a year.",
+            "content": {
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: this operator has no picture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/meta": {
       "get": {
         "summary": "Get the server's name and version",
@@ -1040,6 +1174,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Meta"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/widget/{key}/appearance": {
+      "get": {
+        "summary": "Get the widget's saved look and words. Any site may read them, as the widget shows them.",
+        "description": "The loader asks for this on each page view, before it draws the launcher. It caches for 5 minutes and answers 304 to a matching If-None-Match. The snippet's attributes and Dinghy.configure() win over these values.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The widget's settings, with its logo and the members it shows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetAppearance"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not changed since the ETag in If-None-Match"
+          },
+          "404": {
+            "description": "not_found: the key is unknown, or the workspace's widget is off: it is suspended, waits, is read-only or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1176,6 +1361,9 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "fromBot": false,
+                    "authorName": null,
+                    "authorPictureUrl": null,
                     "createdAt": "2026-11-08T09:30:00.000Z"
                   }
                 }
@@ -1211,6 +1399,9 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "fromBot": false,
+                    "authorName": null,
+                    "authorPictureUrl": null,
                     "createdAt": "2026-11-08T09:30:00.000Z"
                   }
                 }
@@ -1521,6 +1712,9 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "fromBot": false,
+                    "authorName": null,
+                    "authorPictureUrl": null,
                     "createdAt": "2026-11-08T09:30:00.000Z"
                   }
                 }
@@ -1556,6 +1750,9 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "fromBot": false,
+                    "authorName": null,
+                    "authorPictureUrl": null,
                     "createdAt": "2026-11-08T09:30:00.000Z"
                   }
                 }
@@ -2166,27 +2363,9 @@
                     },
                     "emailReplies": {
                       "type": "boolean"
-                    },
-                    "texts": {
-                      "type": "object",
-                      "properties": {
-                        "title": {
-                          "type": ["string", "null"]
-                        },
-                        "greeting": {
-                          "type": ["string", "null"]
-                        },
-                        "away": {
-                          "type": ["string", "null"]
-                        }
-                      },
-                      "required": ["title", "greeting", "away"]
-                    },
-                    "logoUrl": {
-                      "type": ["string", "null"]
                     }
                   },
-                  "required": ["online", "emailReplies", "texts", "logoUrl"]
+                  "required": ["online", "emailReplies"]
                 }
               }
             }
@@ -2235,6 +2414,120 @@
           },
           "401": {
             "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/me/picture": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Set your picture from a PNG, JPEG or WebP of at most 2 MB, as the raw request body. The server cuts it to a 128-pixel square and stores it as WebP. Visitors see it next to your replies.",
+        "responses": {
+          "200": {
+            "description": "The picture's new address, or null with none",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pictureUrl": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["pictureUrl"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the picture is over 2 MB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Remove your picture, so your initials show again",
+        "responses": {
+          "200": {
+            "description": "The picture's new address, or null with none",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pictureUrl": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["pictureUrl"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
             "content": {
               "application/json": {
                 "schema": {
@@ -6843,7 +7136,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Replace the allowed origins, the widget's texts, or both",
+        "summary": "Replace the allowed origins",
         "parameters": [
           {
             "schema": {
@@ -6869,11 +7162,9 @@
                       "maxLength": 300
                     },
                     "maxItems": 20
-                  },
-                  "widgetTexts": {
-                    "$ref": "#/components/schemas/WidgetTexts"
                   }
-                }
+                },
+                "required": ["allowedOrigins"]
               }
             }
           }
@@ -6970,210 +7261,6 @@
           }
         ],
         "summary": "Replace the signing secret. Tokens signed with the old one stop at once.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The settings",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkspaceSettings"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request: the request is not valid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "402": {
-            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found: it does not exist, or this operator is not a member",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "too_large: the body is over 64 KB",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "busy: the workspace is busy. Retry after `retry-after`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/operator/workspaces/{workspaceId}/logo": {
-      "put": {
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Set the logo from a PNG, JPEG or WebP of at most 2 MB, as the raw request body. The server shrinks it to fit 256 pixels and stores it as WebP.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The settings",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkspaceSettings"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "402": {
-            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found: it does not exist, or this operator is not a member",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "too_large: the logo is over 2 MB",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "busy: the workspace is busy. Retry after `retry-after`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Remove the logo, so the widget shows its boat again",
         "parameters": [
           {
             "schema": {
@@ -7833,6 +7920,384 @@
           },
           "413": {
             "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/widget": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Get the widget's look, words and behavior",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The widget's settings, with its logo and the members it shows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetAppearance"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Replace the widget's look, words and behavior. Sites show it within 5 minutes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WidgetSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The widget's settings, with its logo and the members it shows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetAppearance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/widget/logo": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Set the logo from a PNG, JPEG or WebP of at most 2 MB, as the raw request body. The server shrinks it to fit 256 pixels and stores it as WebP.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The widget's settings, with its logo and the members it shows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetAppearance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the logo is over 2 MB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Remove the logo, so the widget shows its boat again",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The widget's settings, with its logo and the members it shows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetAppearance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

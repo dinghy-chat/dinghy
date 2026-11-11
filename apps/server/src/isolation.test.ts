@@ -23,11 +23,13 @@ import {
   invite,
   message,
   operator,
+  operatorPicture,
   pageView,
   pushSubscription,
   verification,
   visitor,
   webhook,
+  widgetSettings,
   workspace,
   workspaceLogo,
   workspaceMember,
@@ -142,6 +144,12 @@ const plantLogo = (workspaceId: string) =>
 const logoOf = async (workspaceId: string) =>
   (await owner.select().from(workspaceLogo).where(eq(workspaceLogo.workspaceId, workspaceId)))[0];
 
+const widgetSettingsOf = async (workspaceId: string) =>
+  (await owner.select().from(widgetSettings).where(eq(widgetSettings.workspaceId, workspaceId)))[0];
+
+const pictureOf = async (operatorId: string) =>
+  (await owner.select().from(operatorPicture).where(eq(operatorPicture.operatorId, operatorId)))[0];
+
 /** Runs against a route as the one caller that must be refused or see only its own data. */
 const ATTACKS: Record<string, Attack> = {
   "GET /v1/meta": async ({ server, secrets }) => {
@@ -238,12 +246,20 @@ const ATTACKS: Record<string, Attack> = {
   "GET /v1/widget/:key/presence": async ({ widget, a, b }) => {
     expect((await widget(a.publicKey, "GET", "presence", null, SITE_B)).status).toBe(403);
     const own = await widget(b.publicKey, "GET", "presence", null, SITE_B);
-    expect(Object.keys((await own.json()) as object)).toEqual([
-      "online",
-      "emailReplies",
-      "texts",
-      "logoUrl",
-    ]);
+    expect(Object.keys((await own.json()) as object)).toEqual(["online", "emailReplies"]);
+  },
+  "GET /v1/widget/:key/appearance": async ({ server, a, b, secrets }) => {
+    await owner
+      .update(widgetSettings)
+      .set({ title: `title of ${b.id}` })
+      .where(eq(widgetSettings.workspaceId, b.id));
+    const text = await (await server.request(`/v1/widget/${a.publicKey}/appearance`)).text();
+    expect(text).not.toContain(b.id);
+    expect(text).not.toContain(secrets.b);
+    // Members' first names and pictures only, never an email.
+    expect(text).not.toContain("@");
+    // The public key is the only way in: an ID in its place finds nothing.
+    expect((await server.request(`/v1/widget/${b.id}/appearance`)).status).toBe(404);
   },
   "POST /v1/widget/:key/page": async ({ widget, a, b, one, two, other }) => {
     const pageOf = async (id: string) =>
@@ -611,9 +627,29 @@ const ATTACKS: Record<string, Attack> = {
     const [own] = await owner.select().from(workspace).where(eq(workspace.id, a.id));
     expect(own?.signingSecret).toBe(a.signingSecret);
   },
-  "PUT /v1/operator/workspaces/:workspaceId/logo": async ({ server, anna, a, b }) => {
+  "GET /v1/operator/workspaces/:workspaceId/widget": async ({ operator: as, anna, a, b }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/widget"))).status).toBe(404);
+    const own = await as(anna, "GET", inWorkspace(a.id, "/widget"));
+    expect(own.status).toBe(200);
+    expect(await own.text()).not.toContain(b.id);
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/widget": async ({ operator: as, anna, a, b }) => {
+    const before = await widgetSettingsOf(b.id);
+    const read = await as(anna, "GET", inWorkspace(a.id, "/widget"));
+    const {
+      logoUrl: _logo,
+      team: _team,
+      ...settings
+    } = (await read.json()) as Record<string, unknown>;
+    const body = { ...settings, title: "Crossing over" };
+    expect((await as(anna, "PUT", inWorkspace(b.id, "/widget"), body)).status).toBe(404);
+    // A real change here must not reach the other workspace.
+    expect((await as(anna, "PUT", inWorkspace(a.id, "/widget"), body)).status).toBe(200);
+    expect(await widgetSettingsOf(b.id)).toEqual(before);
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/widget/logo": async ({ server, anna, a, b }) => {
     const upload = async (workspaceId: string) =>
-      server.request(inWorkspace(workspaceId, "/logo"), {
+      server.request(inWorkspace(workspaceId, "/widget/logo"), {
         method: "PUT",
         headers: { cookie: anna.cookie, origin: ORIGIN, "content-type": "image/png" },
         body: await png(),
@@ -626,11 +662,46 @@ const ATTACKS: Record<string, Attack> = {
     expect(await own.text()).not.toContain(b.publicKey);
     expect(await logoOf(b.id)).toEqual(before);
   },
-  "DELETE /v1/operator/workspaces/:workspaceId/logo": async ({ operator: as, anna, a, b }) => {
+  "DELETE /v1/operator/workspaces/:workspaceId/widget/logo": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+  }) => {
     await plantLogo(b.id);
-    expect((await as(anna, "DELETE", inWorkspace(b.id, "/logo"))).status).toBe(404);
-    expect((await as(anna, "DELETE", inWorkspace(a.id, "/logo"))).status).toBe(200);
+    expect((await as(anna, "DELETE", inWorkspace(b.id, "/widget/logo"))).status).toBe(404);
+    expect((await as(anna, "DELETE", inWorkspace(a.id, "/widget/logo"))).status).toBe(200);
     expect(await logoOf(b.id)).toBeDefined();
+  },
+  "PUT /v1/operator/me/picture": async ({ server, anna, bea }) => {
+    const response = await server.request("/v1/operator/me/picture", {
+      method: "PUT",
+      headers: { cookie: anna.cookie, origin: ORIGIN, "content-type": "image/png" },
+      body: await png(),
+    });
+    expect(response.status).toBe(200);
+    // Only the caller's own picture changes.
+    expect(await pictureOf(anna.id)).toBeDefined();
+    expect(await pictureOf(bea.id)).toBeUndefined();
+  },
+  "DELETE /v1/operator/me/picture": async ({ operator: as, anna, bea }) => {
+    await owner
+      .insert(operatorPicture)
+      .values({ operatorId: bea.id, data: Buffer.from("bea") })
+      .onConflictDoNothing();
+    expect((await as(anna, "DELETE", "/v1/operator/me/picture")).status).toBe(200);
+    expect(await pictureOf(bea.id)).toBeDefined();
+  },
+  "GET /v1/pictures/:operatorId": async ({ server, anna, bea }) => {
+    await owner
+      .insert(operatorPicture)
+      .values({ operatorId: bea.id, data: Buffer.from(`picture of ${bea.id}`) })
+      .onConflictDoNothing();
+    const served = await server.request(`/v1/pictures/${bea.id}`);
+    expect(Buffer.from(await served.arrayBuffer())).toEqual(
+      Buffer.from((await pictureOf(bea.id))?.data ?? []),
+    );
+    expect(await (await server.request(`/v1/pictures/${anna.id}x`)).text()).not.toContain(bea.id);
   },
   "GET /v1/widget/:key/logo": async ({ server, a, b }) => {
     await plantLogo(a.id);

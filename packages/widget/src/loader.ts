@@ -1,29 +1,31 @@
 import "./globals.ts";
+import { LAUNCHER_CSS, LAUNCHER_ICONS, type LauncherKind, textOn } from "./launcher.ts";
 import {
   type Appearance,
-  broadcastReset,
   type DinghyApi,
   type DinghyEvents,
+  forgetVisitor,
   type Listeners,
+  loadAppearance,
   type QueuedCall,
   RESET_PREFIX,
   readToken,
   type WidgetContext,
-  writeToken,
 } from "./shared.ts";
 import { LAUNCHER_LABEL } from "./text.ts";
 
-// This file runs on every page of the host site, so it stays small and makes no request until it
-// has a reason to. The chat bundle loads when the visitor opens the chat, the page calls
-// identify(), or the visitor already has a token. Everything else lives in the chat bundle.
+// This file runs on every page of the host site, so it stays small. It makes one request, for the
+// saved look, which the browser caches for 5 minutes. The chat bundle loads when the visitor opens
+// the chat, the page calls identify(), or the visitor already has a token. Everything else lives
+// in the chat bundle.
 
 const script = document.currentScript as HTMLScriptElement | null;
-const publicKey = script?.getAttribute("data-key");
+const publicKey = script?.dataset.key;
 if (script && publicKey) {
-  const attribute = (name: string) => script.getAttribute(`data-${name}`);
+  // By its dataset name: data-offset-x is offsetX.
+  const attribute = (name: string) => script.dataset[name];
   const number = (name: string) => Number(attribute(name) || Number.NaN);
   const base = new URL(".", script.src).href;
-  const mascot = attribute("mascot") !== "false";
   const host = document.createElement("dinghy-chat");
   // Inline and important, because a rule on the host page beats :host. This uses the CSSOM,
   // because a strict style-src blocks a style attribute.
@@ -39,15 +41,14 @@ if (script && publicKey) {
   // A whole number of pixels, or a z-index, from 0 up. Anything else keeps the current value.
   const whole = (value: unknown, current: number) =>
     Number.isInteger(value) && (value as number) >= 0 ? (value as number) : current;
-  const configure = (options: Appearance) => {
-    // Only a full hex color, because this value goes into the page's CSS.
+  const paint = (options: Appearance) => {
+    // Only a full hex color, because this value goes into the page's CSS. A value that is not a
+    // string turns into one, such as "null", which fails the test.
     for (const name of ["primary", "accent"] as const) {
-      const value = options[name];
-      if (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) {
-        const rgb = Number.parseInt(value.slice(1), 16);
-        const light = 299 * (rgb >> 16) + 587 * ((rgb >> 8) & 255) + 114 * (rgb & 255) > 150_000;
+      const value = options[name] as string;
+      if (/^#[0-9a-f]{6}$/i.test(value)) {
         style(`--d-${name}`, value, "");
-        style(`--d-${name}-text`, light ? "#0b2239" : "#fff", "");
+        style(`--d-${name}-text`, textOn(value), "");
       }
     }
     if (options.position === "left" || options.position === "right") side = options.position;
@@ -61,30 +62,40 @@ if (script && publicKey) {
     style("--d-x", `${x}px`, "");
     style("--d-y", `${y}px`, "");
   };
-  // configure() checks every value, so a missing attribute's null changes nothing.
-  configure({
-    primary: attribute("primary"),
-    accent: attribute("accent"),
-    position: attribute("position"),
-    offsetX: number("offset-x"),
-    offsetY: number("offset-y"),
-  } as Appearance);
+  // The page's own values, from the tag's attributes and configure(), which win over the saved ones.
+  // paint() checks every value, so a missing attribute or another data attribute changes nothing.
+  const own = {
+    ...script.dataset,
+    offsetX: number("offsetX"),
+    offsetY: number("offsetY"),
+  } as Appearance;
+  const configure = (options: Appearance) => paint(Object.assign(own, options));
   const shadow = host.attachShadow({ mode: "open" });
   const sheet = new CSSStyleSheet();
-  sheet.replaceSync(
-    ".launcher{all:initial;position:relative;box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:60px;height:60px;border-radius:var(--dinghy-launcher-radius,30px);background:var(--d-accent,#e5352b);color:var(--d-accent-text,#fff);cursor:pointer;box-shadow:0 8px 24px rgb(13 34 64/.26)}.launcher:focus-visible{outline:3px solid var(--d-primary,#0b2239);outline-offset:2px}.boat{background:#fff}.s{fill:var(--d-accent,#e5352b)}.h{fill:var(--d-primary,#0b2239)}.boat svg{animation:b 3.2s ease-in-out infinite}@keyframes b{50%{transform:translateY(-2px)}}@media (prefers-reduced-motion:reduce){.boat svg{animation:none}}",
-  );
+  sheet.replaceSync(LAUNCHER_CSS);
   shadow.adoptedStyleSheets = [sheet];
+  // No type: a shadow root holds no form, so the button submits nothing.
   const launcher = document.createElement("button");
-  launcher.type = "button";
-  launcher.className = mascot ? "launcher boat" : "launcher";
   launcher.setAttribute("aria-label", LAUNCHER_LABEL);
-  // Drawn here and not imported from boat.ts, because this file runs on every page and must stay small.
-  launcher.innerHTML = mascot
-    ? '<svg width="38" height="38" viewBox="0 0 52 52" aria-hidden="true"><path class="h" d="M25 2h1.9v38H25zM3 39H49C47.5 45 42 49 36 49H16C10 49 4.5 45 3 39z"/><path class="s" d="M28 6C37 14 43 25 45 36H28z"/><path fill="#ffc917" d="M24 12C18 20 12 28 8 36H24z"/></svg>'
-    : '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 4h18v13H8l-5 4z"/></svg>';
-  if (attribute("launcher") === "hidden") launcher.style.display = "none";
   shadow.append(launcher);
+
+  // The chat goes on the page once the saved look arrives, so the launcher never changes shape.
+  const appearance = loadAppearance(base, publicKey);
+  appearance.then((saved) => {
+    // The workspace serves no widget, so the page shows nothing.
+    if (!saved) return;
+    paint(saved as Appearance);
+    paint(own);
+    // The CSS reads the page's own --dinghy-radius first, so that still wins.
+    style("--d-radius", `${saved.radius ?? 16}px`, "");
+    const kind = attribute("launcher") ?? saved.launcher;
+    // A hidden launcher still has a drawing, for show().
+    const drawn: LauncherKind = kind === "bubble" ? kind : "boat";
+    launcher.className = `launcher ${drawn}`;
+    launcher.innerHTML = LAUNCHER_ICONS[drawn];
+    if (kind === "hidden") api.hide();
+    (document.body ?? document.documentElement).append(host);
+  });
 
   const state = { ready: false, open: false, unread: 0 };
   const listeners: Listeners = {};
@@ -92,7 +103,8 @@ if (script && publicKey) {
     publicKey,
     base,
     shadow,
-    mascot,
+    appearance,
+    attribute,
     identity: null,
     pageContext: null,
     state,
@@ -158,9 +170,8 @@ if (script && publicKey) {
     reset() {
       // Only the tab that called reset() clears the token. Another tab can handle this event late,
       // after a new chat has started, and it must not delete that chat's token.
-      writeToken(publicKey, null);
+      forgetVisitor(publicKey);
       endSession();
-      broadcastReset(publicKey);
     },
     setContext(data) {
       context.pageContext = data;
@@ -189,6 +200,5 @@ if (script && publicKey) {
     (api[method as keyof DinghyApi] as (...values: unknown[]) => void)(...args);
   }
 
-  (document.body ?? document.documentElement).append(host);
   if (readToken(publicKey) !== null) load();
 }

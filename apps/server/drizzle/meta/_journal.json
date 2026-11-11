@@ -463,6 +463,20 @@
       "when": 1794352079446,
       "tag": "0065_lifecycle_email_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1794394850557,
+      "tag": "0066_widget_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1794394866961,
+      "tag": "0067_widget_settings_grants",
+      "breakpoints": true
     }
   ]
 }

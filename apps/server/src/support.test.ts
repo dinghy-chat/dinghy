@@ -35,7 +35,6 @@ let app: App;
 let a: NewWorkspace;
 let b: NewWorkspace;
 let ownerCookie: string;
-let agentCookie: string;
 
 const inA = (path: string) => `/v1/operator/workspaces/${a.id}${path}`;
 const asOperator = (path: string, cookie = ownerCookie, init: RequestInit = {}) =>
@@ -143,8 +142,6 @@ beforeAll(async () => {
   a = await createWorkspace(db, "Acme", [SITE]);
   b = await createWorkspace(db, "Beta", [SITE]);
   ownerCookie = (await signedInOperator({ app, auth, owner, workspaceId: a.id })).cookie;
-  agentCookie = (await signedInOperator({ app, auth, owner, workspaceId: a.id, role: "member" }))
-    .cookie;
 }, 30_000);
 
 afterAll(async () => {
@@ -578,51 +575,6 @@ describe("visitor details for operators", () => {
     await reader.cancel();
     expect(text).toContain('"kind":"message.created"');
     expect(text).toContain('"fromVisitor":true');
-  });
-});
-
-describe("widget texts", () => {
-  const patch = (body: unknown, cookie = ownerCookie) =>
-    asOperator(inA("/settings"), cookie, { method: "PATCH", body: JSON.stringify(body) });
-
-  test("an owner sets them, the widget gets them, and empty means the default", async () => {
-    const saved = await patch({
-      widgetTexts: { title: " Talk to Acme ", greeting: "Ask us anything.", away: "" },
-    });
-    expect(saved.status).toBe(200);
-    expect(((await saved.json()) as { widgetTexts: unknown }).widgetTexts).toEqual({
-      title: "Talk to Acme",
-      greeting: "Ask us anything.",
-      away: null,
-    });
-    const presence = await widget(a.publicKey, "presence", null);
-    expect(((await presence.json()) as { texts: unknown }).texts).toEqual({
-      title: "Talk to Acme",
-      greeting: "Ask us anything.",
-      away: null,
-    });
-    // A change to the origins alone keeps the texts.
-    await patch({ allowedOrigins: [SITE] });
-    const [row] = await owner
-      .select({ title: workspace.widgetTitle })
-      .from(workspace)
-      .where(eq(workspace.id, a.id));
-    expect(row?.title).toBe("Talk to Acme");
-  });
-
-  test("the limits hold", async () => {
-    const texts = { title: null, greeting: null, away: null };
-    expect((await patch({ widgetTexts: { ...texts, title: "x".repeat(41) } })).status).toBe(400);
-    expect((await patch({ widgetTexts: { ...texts, greeting: "x".repeat(201) } })).status).toBe(
-      400,
-    );
-    expect((await patch({ widgetTexts: { ...texts, away: "x".repeat(201) } })).status).toBe(400);
-    expect((await patch({ widgetTexts: { ...texts, title: "a\u0000b" } })).status).toBe(400);
-  });
-
-  test("an agent cannot change them", async () => {
-    const texts = { title: "Mine", greeting: null, away: null };
-    expect((await patch({ widgetTexts: texts }, agentCookie)).status).toBe(403);
   });
 });
 

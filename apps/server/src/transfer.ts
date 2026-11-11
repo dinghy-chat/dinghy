@@ -15,6 +15,7 @@ import {
   operator,
   pageView,
   visitor,
+  widgetSettings,
   workspace,
   workspaceLogo,
   workspaceMember,
@@ -22,10 +23,11 @@ import {
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
-import { LOGO_MAX_BYTES, processImage, processLogo } from "./images.ts";
+import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
+import { WidgetSettings } from "./widget-settings.ts";
 
 const VERSION = 1;
 const JSON_NAME = "export.json";
@@ -49,13 +51,11 @@ const ExportFile = z.strictObject({
     allowedOrigins: z.array(z.string().max(300)).max(200),
     eventSeq: seq,
     feedGeneration: z.number().int().min(1).max(999_999_999),
-    widgetTitle: z.string().max(40).nullable(),
-    widgetGreeting: z.string().max(200).nullable(),
-    widgetAway: z.string().max(200).nullable(),
+    widget: WidgetSettings,
     // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z
       .base64()
-      .max(Math.ceil(LOGO_MAX_BYTES / 3) * 4)
+      .max(Math.ceil(PUBLIC_IMAGE_MAX_BYTES / 3) * 4)
       .nullable()
       .default(null),
     createdAt: date,
@@ -227,6 +227,17 @@ async function readWorkspace(
         .select({ data: workspaceLogo.data })
         .from(workspaceLogo)
         .where(eq(workspaceLogo.workspaceId, workspaceId));
+      const [widget] = await tx
+        .select()
+        .from(widgetSettings)
+        .where(eq(widgetSettings.workspaceId, workspaceId));
+      if (widget === undefined) return null;
+      const {
+        workspaceId: _workspace,
+        logoUpdatedAt: _logo,
+        updatedAt: _updated,
+        ...look
+      } = widget;
       const members = await tx
         .select({
           id: operator.id,
@@ -262,9 +273,7 @@ async function readWorkspace(
           allowedOrigins: space.allowedOrigins,
           eventSeq: space.eventSeq.toString(),
           feedGeneration: space.feedGeneration,
-          widgetTitle: space.widgetTitle,
-          widgetGreeting: space.widgetGreeting,
-          widgetAway: space.widgetAway,
+          widget: look,
           logo: logo === undefined ? null : Buffer.from(logo.data).toString("base64"),
           createdAt: iso(space.createdAt),
         },
@@ -499,10 +508,12 @@ async function insertWorkspace(
     // New and random, so a client's old cursor gets resync, even when one file is imported onto
     // two servers in turn at the same address. A count from the file would repeat there.
     feedGeneration: newGeneration(data.workspace.feedGeneration),
-    widgetTitle: data.workspace.widgetTitle,
-    widgetGreeting: data.workspace.widgetGreeting,
-    widgetAway: data.workspace.widgetAway,
     createdAt: new Date(data.workspace.createdAt),
+  });
+  await tx.insert(widgetSettings).values({
+    ...data.workspace.widget,
+    workspaceId,
+    logoUpdatedAt: logo === null ? null : new Date(),
   });
   if (logo !== null) {
     await tx.insert(workspaceLogo).values({ workspaceId, data: logo });

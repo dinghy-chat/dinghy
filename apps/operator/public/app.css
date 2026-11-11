@@ -361,6 +361,7 @@ textarea {
   color: var(--navy);
   font: 700 13px / 1 var(--display);
   letter-spacing: 0.01em;
+  object-fit: cover;
 }
 .tint-0 {
   background: var(--tile-blue);
@@ -844,6 +845,7 @@ button.workspace[aria-expanded="true"],
   background: var(--navy);
   color: var(--on-navy);
   font: 700 13px / 1 var(--display);
+  object-fit: cover;
 }
 .me-text {
   display: grid;
@@ -2333,6 +2335,148 @@ img.ws-tile {
   display: grid;
   align-content: start;
   min-width: 0;
+}
+/* The Widget tab: the form, and the preview beside it, which stays in view. In the markup the
+   preview comes first, so on a narrow screen it sits above the form. */
+.widget-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  gap: 32px;
+  align-items: start;
+  padding-top: 16px;
+}
+.widget-preview {
+  position: sticky;
+  top: 16px;
+  grid-row: 1;
+  grid-column: 2;
+  display: grid;
+  gap: 12px;
+}
+.widget-form {
+  grid-row: 1;
+  grid-column: 1;
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  max-width: 620px;
+}
+.widget-sections {
+  display: grid;
+  gap: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.widget-section {
+  display: grid;
+  gap: 16px;
+}
+.widget-section + .widget-section {
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.widget-section h3 {
+  font: 650 15.5px / 1.3 var(--body);
+}
+.widget-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.widget-field legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--navy);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.color-field,
+.radius-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.color-field input[type="color"] {
+  width: 46px;
+  height: 46px;
+  padding: 4px;
+  border: 1.5px solid var(--field-line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.color-field .mono {
+  width: 120px;
+}
+.radius-field input {
+  flex: 1;
+  min-width: 140px;
+  accent-color: var(--fill);
+}
+.radius-field output {
+  min-width: 48px;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.widget-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.preview-bar h3 {
+  font: 650 15.5px / 1.3 var(--body);
+}
+.preview-body {
+  display: grid;
+  gap: 12px;
+}
+.preview-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+/* A page behind the widget: the app's sky by day, and a dark page with the dark preview. */
+.preview-stage {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--sky);
+}
+.preview-stage[data-dark="true"] {
+  background: #0b141d;
+}
+.preview-fold {
+  display: none;
+}
+@media (max-width: 1000px) {
+  .widget-tab {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .widget-preview,
+  .widget-form {
+    position: static;
+    grid-row: auto;
+    grid-column: 1;
+  }
+}
+@media (max-width: 760px) {
+  .preview-fold {
+    display: inline-flex;
+  }
+  .widget-preview[data-folded="true"] .preview-body {
+    display: none;
+  }
+  .preview-stage {
+    padding: 8px;
+  }
 }
 .members {
   width: 100%;

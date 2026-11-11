@@ -22,7 +22,6 @@ import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { type Live, noLive } from "./live.ts";
-import { logoUrls, registerLogoFile } from "./logo.ts";
 import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
@@ -35,6 +34,7 @@ import {
   registerOperatorPresence,
   registerWidgetPresence,
 } from "./presence.ts";
+import { imageUrls, registerPublicImages } from "./public-images.ts";
 import type { Push } from "./push.ts";
 import { createRateLimit, createSlots } from "./rate-limit.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
@@ -43,6 +43,7 @@ import { registerExportRoute } from "./transfer.ts";
 import { PUBLIC_ONLY, registerWebhookRoutes, type WebhookPolicy } from "./webhooks.ts";
 import { registerWidgetRoutes, type WidgetToken } from "./widget.ts";
 import { registerWidgetFiles } from "./widget-files.ts";
+import { registerWidgetAppearance, registerWidgetSettingsRoutes } from "./widget-settings.ts";
 import { lastWorkerPass } from "./worker.ts";
 import { registerWorkspaceDelete } from "./workspace-delete.ts";
 import type { WidgetWorkspace } from "./workspaces.ts";
@@ -275,9 +276,9 @@ export function createApp({
   // First, so a separate image origin serves images and nothing else.
   if (images !== undefined) registerImageFiles(app, db, images, logger);
   // Before the widget routes, whose access check would refuse an <img>'s request.
-  registerLogoFile(app, db, images?.origin);
-  // Logos come from the image origin, like every user image, or from this server's own.
-  const logoUrl = logoUrls(
+  registerPublicImages(app, db, images?.origin);
+  // Logos and pictures come from the image origin, like every user image, or from this server's own.
+  const urls = imageUrls(
     images?.origin ?? publicUrl ?? (auth === undefined ? "" : String(auth.options.baseURL)),
   );
 
@@ -335,9 +336,12 @@ export function createApp({
   });
   const visitorPresence = createVisitorPresence(valkey, logger, presenceTtlMs);
   const ownOrigin = publicUrl === undefined ? undefined : new URL(publicUrl).origin;
+  // Before the widget routes, because any site may read it.
+  registerWidgetAppearance(app, db, urls, rateLimit);
   registerWidgetRoutes(app, {
     db,
     images,
+    imageUrls: urls,
     ipSecret,
     limits,
     live,
@@ -349,7 +353,7 @@ export function createApp({
     ownOrigin,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
-  registerWidgetPresence(app, presence, alerts?.emailAvailable ?? false, logoUrl);
+  registerWidgetPresence(app, presence, alerts?.emailAvailable ?? false);
   if (ownOrigin !== undefined) {
     registerChatPage(app, { db, rateLimit, imagesOrigin: images?.origin });
   }
@@ -359,6 +363,7 @@ export function createApp({
       billing: cloud?.billing ?? false,
       contact: cloud?.contact ?? null,
       db,
+      imageUrls: urls,
       logger,
       mailer,
       rateLimit,
@@ -379,10 +384,10 @@ export function createApp({
       copyReply: cloud?.copyReply,
       db,
       images,
+      imageUrls: urls,
       limits,
       live,
       logger,
-      logoUrl,
       stream,
       visitorPresence,
     });
@@ -406,11 +411,12 @@ export function createApp({
       limits,
       live,
       logger,
-      logoUrl,
+      imageUrls: urls,
       mailer,
       rateLimit,
       keepsLastWorkspace: cloud === undefined,
     });
+    registerWidgetSettingsRoutes(app, db, urls);
     if (alerts !== undefined) {
       registerAlertRoutes(app, {
         db,

@@ -16,23 +16,31 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, deliverLinks, redeemSignInToken } from "./auth.ts";
-import { operator, workspace } from "./db/schema.ts";
+import { operator, operatorPicture, workspace } from "./db/schema.ts";
 import { accessFlags, type Database, operatorWorkspaces, withWorkspace } from "./db/tenant.ts";
 import {
+  errorAnswer,
   FORBIDDEN,
   failure,
   LINK_INVALID,
   OPERATOR_ERRORS,
+  OPERATOR_POST_ERRORS,
   safeErrorFields,
   UNAUTHORIZED,
   WRONG_ORIGIN,
 } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
-import { LOGO_MAX_BYTES, LOGO_TOO_LARGE } from "./images.ts";
+import {
+  PUBLIC_IMAGE_MAX_BYTES,
+  PUBLIC_IMAGE_TOO_LARGE,
+  processPicture,
+  refuseImage,
+} from "./images.ts";
 import { noAccountMail, signInMail } from "./letter.ts";
 import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
+import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 
 const AccountName = z.strictObject({
@@ -58,6 +66,8 @@ const meRoute = createRoute({
               id: z.string(),
               name: z.string(),
               email: z.string(),
+              // The operator's picture, the same in every workspace. Null with none.
+              pictureUrl: z.string().nullable(),
               workspaces: z.array(
                 z.object({
                   workspaceId: z.string(),
@@ -91,9 +101,42 @@ const meRoute = createRoute({
   },
 });
 
+const pictureAnswer = {
+  description: "The picture's new address, or null with none",
+  content: {
+    "application/json": { schema: z.object({ pictureUrl: z.string().nullable() }) },
+  },
+};
+
+const setPictureRoute = createRoute({
+  method: "put",
+  path: "/v1/operator/me/picture",
+  security: SESSION,
+  summary:
+    "Set your picture from a PNG, JPEG or WebP of at most 2 MB, as the raw request body. The server cuts it to a 128-pixel square and stores it as WebP. Visitors see it next to your replies.",
+  responses: {
+    200: pictureAnswer,
+    ...OPERATOR_POST_ERRORS,
+    400: errorAnswer("not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels"),
+    413: errorAnswer("too_large: the picture is over 2 MB"),
+  },
+});
+
+const removePictureRoute = createRoute({
+  method: "delete",
+  path: "/v1/operator/me/picture",
+  security: SESSION,
+  summary: "Remove your picture, so your initials show again",
+  responses: { 200: pictureAnswer, ...OPERATOR_POST_ERRORS },
+});
+
+/** The routes whose body is an image, read as bytes rather than as text. */
+const PUBLIC_IMAGE_PATH = /\/(logo|picture)$/;
+
 interface OperatorOptions {
   auth: Auth;
   db: Database;
+  imageUrls: ImageUrls;
   logger: Logger;
   /** Sends sign-in links. Without one, an operator asks the server's admin for a link. */
   mailer: Mailer | undefined;
@@ -122,7 +165,18 @@ const AUTH_ROUTES = new Set([
 
 export function registerOperatorRoutes(
   app: App,
-  { auth, billing, contact, db, logger, mailer, rateLimit, signup, valkey }: OperatorOptions,
+  {
+    auth,
+    billing,
+    contact,
+    db,
+    imageUrls,
+    logger,
+    mailer,
+    rateLimit,
+    signup,
+    valkey,
+  }: OperatorOptions,
 ) {
   const publicOrigin = new URL(String(auth.options.baseURL)).origin;
   const links = createLinkLimit(valkey, logger);
@@ -183,8 +237,8 @@ export function registerOperatorRoutes(
     // ends. Otherwise a member could send a body slowly and finish it after their removal. Hono
     // keeps the text for the route. An image streams instead, and its route checks again.
     if (c.req.method !== "GET" && !c.req.path.endsWith("/images")) {
-      // A logo is binary, which reading it as text would garble for its route.
-      const body = c.req.path.endsWith("/logo") ? c.req.arrayBuffer() : c.req.text();
+      // A logo or a picture is binary, which reading it as text would garble for its route.
+      const body = PUBLIC_IMAGE_PATH.test(c.req.path) ? c.req.arrayBuffer() : c.req.text();
       await body.catch(() => undefined);
     }
     const { response: found, headers } = await auth.api.getSession({
@@ -293,15 +347,15 @@ export function registerOperatorRoutes(
   app.on(["GET", "POST"], "/v1/auth/*", (c) => auth.handler(c.req.raw));
 
   const smallBody = bodyLimit({ maxSize: 64 * 1024 });
-  const logoBody = bodyLimit({
-    maxSize: LOGO_MAX_BYTES,
-    onError: (c) => c.json(LOGO_TOO_LARGE, 413),
+  const imageBody = bodyLimit({
+    maxSize: PUBLIC_IMAGE_MAX_BYTES,
+    onError: (c) => c.json(PUBLIC_IMAGE_TOO_LARGE, 413),
   });
   app.use(
     "/v1/operator/*",
     (c, next) => {
       if (c.req.path.endsWith("/images")) return next();
-      return (c.req.path.endsWith("/logo") ? logoBody : smallBody)(c, next);
+      return (PUBLIC_IMAGE_PATH.test(c.req.path) ? imageBody : smallBody)(c, next);
     },
     requireOperator,
   );
@@ -311,11 +365,16 @@ export function registerOperatorRoutes(
   });
   app.openapi(meRoute, async (c) => {
     const id = c.get("operatorId");
+    const [picture] = await db
+      .select({ pictureUpdatedAt: operator.pictureUpdatedAt })
+      .from(operator)
+      .where(eq(operator.id, id));
     return c.json(
       {
         id,
         name: c.get("operatorName"),
         email: c.get("operatorEmail"),
+        pictureUrl: imageUrls.picture(id, picture?.pictureUpdatedAt ?? null),
         workspaces: await Promise.all(
           (await operatorWorkspaces(db, id)).map(async ({ access, ...membership }) => {
             const { workspaceId, role } = membership;
@@ -336,5 +395,44 @@ export function registerOperatorRoutes(
       },
       200,
     );
+  });
+
+  /**
+   * Saves or removes the picture, unless the account was deleted after the session was read. The
+   * update locks the operator's row first, as an account's delete does, so the two take turns and
+   * a picture never outlives its account.
+   */
+  const savePicture = async (operatorId: string, data: Buffer | null) => {
+    const pictureUpdatedAt = data === null ? null : new Date();
+    const changed = await db.transaction(async (tx) => {
+      const [found] = await tx
+        .update(operator)
+        .set({ pictureUpdatedAt })
+        .where(and(eq(operator.id, operatorId), isNull(operator.deletedAt)))
+        .returning({ id: operator.id });
+      if (found === undefined) return false;
+      if (data === null) {
+        await tx.delete(operatorPicture).where(eq(operatorPicture.operatorId, operatorId));
+      } else {
+        await tx
+          .insert(operatorPicture)
+          .values({ operatorId, data })
+          .onConflictDoUpdate({ target: operatorPicture.operatorId, set: { data } });
+      }
+      return true;
+    });
+    return changed ? { pictureUrl: imageUrls.picture(operatorId, pictureUpdatedAt) } : null;
+  };
+
+  app.openapi(setPictureRoute, async (c) => {
+    const picture = await processPicture(new Uint8Array(await c.req.arrayBuffer()));
+    if (typeof picture === "string") return refuseImage(c, picture);
+    const saved = await savePicture(c.get("operatorId"), picture);
+    return saved === null ? c.json(UNAUTHORIZED, 401) : c.json(saved, 200);
+  });
+
+  app.openapi(removePictureRoute, async (c) => {
+    const saved = await savePicture(c.get("operatorId"), null);
+    return saved === null ? c.json(UNAUTHORIZED, 401) : c.json(saved, 200);
   });
 }

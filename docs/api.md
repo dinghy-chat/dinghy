@@ -57,7 +57,29 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 
 `GET /v1/operator/workspaces/{workspaceId}/analytics?days=30&tz=Europe/Paris` answers support numbers for any member. `days` is 7, 30 or 90, and `tz` is an IANA time zone, by default `UTC`. The period runs from the start of the day, `days - 1` days ago, in `tz`, to now, and every number is about the conversations that started in it: `started`, `closed` (closed now), `answered`, `firstReply` with `medianSeconds`, `p90Seconds` and `within5Minutes` (the share of `started` answered within 5 minutes, from 0 to 1), `perDay` (one `{ date, conversations }` per day, oldest first), `operators` (conversations by who sent the first reply, with `operatorId` or `apiKeyId`, `name` and `conversations`) and `hours` (7 rows, Monday first, of 24 counts by the hour each conversation started). A first reply is the conversation's first message from an operator or an API key, timed from the conversation's start. The numbers come from the stored conversations and messages; nothing tracks visitors for them. On Dinghy Cloud, the welcome chat counts nowhere.
 
-`GET /v1/widget/{key}/presence` also answers `texts`: the workspace's own `title`, `greeting` and `away` text for the widget, each null for the default. Owners and admins set them with `PATCH /v1/operator/workspaces/{workspaceId}/settings` and `{ "widgetTexts": { "title", "greeting", "away" } }`, at most 40, 200 and 200 characters, where an empty text means the default.
+## The widget's look
+
+`GET /v1/operator/workspaces/{workspaceId}/widget` answers the widget's settings to any member. Owners and admins replace them with `PUT` on the same address, with every field:
+
+| Field | Value |
+|---|---|
+| `title`, `greeting`, `away` | The widget's own words, at most 40, 200 and 200 characters on one line, or null for Dinghy's |
+| `primary`, `accent` | A full hex color, such as `#0b2239`, or null for Dinghy's |
+| `position` | `left` or `right` |
+| `theme` | `light`, `dark` or `auto`, which follows the visitor's device |
+| `launcher` | `boat`, `bubble` or `hidden` |
+| `radius` | The corners in pixels, a whole number from 0 to 24 |
+| `mascot` | Whether the open chat shows the boat |
+| `emailAsk` | `off`, `after_first` or `before_first`: when a signed-out visitor is asked for an email |
+| `branding` | Whether the chat shows "Powered by Dinghy" |
+
+Both answer the settings with `logoUrl` and `team`: up to 3 members who sent the latest replies, each with a first name and a picture's address. `PUT .../widget/logo` sets the logo from the raw body, a PNG, JPEG or WebP of at most 2 MB, and `DELETE .../widget/logo` removes it. An API key and MCP cannot reach these routes.
+
+`GET /v1/widget/{key}/appearance` answers the same, with no `Origin` check, because the widget shows all of it. Any site may read it. It caches for 5 minutes, so a saved change reaches sites within 5 minutes, and it answers 304 to a matching `If-None-Match`. A workspace whose widget is off, or an unknown key, answers 404. `GET /v1/widget/{key}/presence` answers only `online` and `emailReplies`.
+
+A message in the widget API has `fromBot`, true for a reply sent with an API key, `authorName`, the operator's first name or the key's name, and `authorPictureUrl`. They are null for the visitor's own messages.
+
+An operator sets their picture with `PUT /v1/operator/me/picture` and the raw body, a PNG, JPEG or WebP of at most 2 MB, and removes it with `DELETE`. The server cuts it to a 128-pixel square. `GET /v1/operator/me` and the members list answer `pictureUrl`, and `GET /v1/pictures/{operatorId}` serves it to anyone.
 
 ## Live updates
 
@@ -89,7 +111,7 @@ A key has a member's permissions, in its own workspace only. It can:
 
 A route that a key can call lists `apiKey` in its OpenAPI `security`. Any other route, such as settings, members, keys, webhooks, analytics, billing, export, deleting the workspace or `/v1/operator/me`, answers 403 `forbidden`. Another workspace's routes answer 404. An unknown or revoked key answers 401. Each key may send 300 requests a minute, and over that it gets 429 with `Retry-After`.
 
-A reply sent with a key has `authorApiKeyId` set and `authorOperatorId` null, and `authorName` is the key's name. Visitors see it as a reply from your team, as they see any reply, without a name. Revoking a key in Settings stops it at once, and its old replies keep its name. **Last used** shows to the minute.
+A reply sent with a key has `authorApiKeyId` set and `authorOperatorId` null, and `authorName` is the key's name. Visitors see the key's name on it, with a bot icon. Revoking a key in Settings stops it at once, and its old replies keep its name. **Last used** shows to the minute.
 
 A token names its workspace: it is `dk_`, the workspace's ID, a dot, and a random part.
 

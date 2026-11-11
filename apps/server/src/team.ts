@@ -15,7 +15,6 @@ import {
   operator,
   verification,
   workspace,
-  workspaceLogo,
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, lockLiveOperator, type Transaction, withWorkspace } from "./db/tenant.ts";
@@ -38,14 +37,13 @@ import {
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
 import { emailAddressHash, normalizeOrigin, sha256Hex } from "./identity.ts";
-import { processLogo, refuseImage } from "./images.ts";
 import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import type { LogoUrl } from "./logo.ts";
 import { type Mailer, recipientRejected } from "./mailer.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { assignConversation, recordTeamChange } from "./messages.ts";
+import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { isOnlyWorkspace } from "./workspace-delete.ts";
 
@@ -125,36 +123,23 @@ const reply = <T extends z.ZodType>(description: string, schema: T) => ({
 });
 
 const Member = z
-  .object({ id: z.string(), name: z.string(), email: z.string(), role: roleEnum })
+  .object({
+    id: z.string(),
+    name: z.string(),
+    email: z.string(),
+    role: roleEnum,
+    // The member's picture, which they set on their profile. Null with none.
+    pictureUrl: z.string().nullable(),
+  })
   .openapi("Member");
 const PendingInvite = z
   .object({ id: z.string(), email: z.string(), role: invitedRole, expiresAt: z.string() })
   .openapi("PendingInvite");
-/** The widget's own words. Null, or an empty text in a change, means the widget's default. */
-const widgetText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .regex(/^[^\p{Cc}]*$/u)
-    .nullable()
-    .transform((value) => (value === "" ? null : value));
-const WidgetTexts = z
-  .object({ title: widgetText(40), greeting: widgetText(200), away: widgetText(200) })
-  .openapi("WidgetTexts");
-
 const Settings = z
   .object({
     publicKey: z.string(),
     allowedOrigins: z.array(z.string()),
     signingSecret: z.string(),
-    widgetTexts: z.object({
-      title: z.string().nullable(),
-      greeting: z.string().nullable(),
-      away: z.string().nullable(),
-    }),
-    // The logo's address, which changes with each upload. Null with no logo.
-    logoUrl: z.string().nullable(),
     // The plan's limits and how much of each is used, on Dinghy Cloud. Null with no limits.
     usage: z
       .object({
@@ -276,15 +261,10 @@ const patchSettingsRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/settings`,
   security: SESSION,
-  summary: "Replace the allowed origins, the widget's texts, or both",
+  summary: "Replace the allowed origins",
   request: {
     params: workspaceParams,
-    body: json(
-      z.object({
-        allowedOrigins: z.array(z.string().max(300)).max(MAX_ORIGINS).optional(),
-        widgetTexts: WidgetTexts.optional(),
-      }),
-    ),
+    body: json(z.object({ allowedOrigins: z.array(z.string().max(300)).max(MAX_ORIGINS) })),
   },
   responses: {
     200: reply("The settings", Settings),
@@ -300,30 +280,6 @@ const rotateSecretRoute = createRoute({
   path: `${PREFIX}/settings/rotate-secret`,
   security: SESSION,
   summary: "Replace the signing secret. Tokens signed with the old one stop at once.",
-  request: { params: workspaceParams },
-  responses: { 200: reply("The settings", Settings), ...ROLE_WRITE_ERRORS },
-});
-
-const setLogoRoute = createRoute({
-  method: "put",
-  path: `${PREFIX}/logo`,
-  security: SESSION,
-  summary:
-    "Set the logo from a PNG, JPEG or WebP of at most 2 MB, as the raw request body. The server shrinks it to fit 256 pixels and stores it as WebP.",
-  request: { params: workspaceParams },
-  responses: {
-    200: reply("The settings", Settings),
-    ...ROLE_WRITE_ERRORS,
-    400: errorAnswer("not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels"),
-    413: errorAnswer("too_large: the logo is over 2 MB"),
-  },
-});
-
-const removeLogoRoute = createRoute({
-  method: "delete",
-  path: `${PREFIX}/logo`,
-  security: SESSION,
-  summary: "Remove the logo, so the widget shows its boat again",
   request: { params: workspaceParams },
   responses: { 200: reply("The settings", Settings), ...ROLE_WRITE_ERRORS },
 });
@@ -518,7 +474,6 @@ function joinFailure(error: unknown) {
 /** What the settings read besides the workspace's rows. */
 interface SettingsSources {
   limits: Limits;
-  logoUrl: LogoUrl;
   keepsLastWorkspace: boolean;
 }
 
@@ -539,7 +494,7 @@ async function deletionContents(tx: Transaction, workspaceId: string) {
 
 async function readSettings(
   tx: Transaction,
-  { limits, logoUrl, keepsLastWorkspace }: SettingsSources,
+  { limits, keepsLastWorkspace }: SettingsSources,
   workspaceId: string,
 ) {
   const [row] = await tx
@@ -547,20 +502,12 @@ async function readSettings(
       publicKey: workspace.publicKey,
       allowedOrigins: workspace.allowedOrigins,
       signingSecret: workspace.signingSecret,
-      title: workspace.widgetTitle,
-      greeting: workspace.widgetGreeting,
-      away: workspace.widgetAway,
-      logoUpdatedAt: workspaceLogo.updatedAt,
     })
     .from(workspace)
-    .leftJoin(workspaceLogo, eq(workspaceLogo.workspaceId, workspace.id))
     .where(eq(workspace.id, workspaceId));
   if (row === undefined) throw new Error("The workspace row is missing");
-  const { title, greeting, away, logoUpdatedAt, ...rest } = row;
   return {
-    ...rest,
-    widgetTexts: { title, greeting, away },
-    logoUrl: logoUrl(row.publicKey, logoUpdatedAt),
+    ...row,
     usage: await limits.usage(tx, workspaceId),
     deletion: {
       ...(await deletionContents(tx, workspaceId)),
@@ -673,7 +620,7 @@ interface TeamOptions {
   limits: Limits;
   live: Live;
   logger: Logger;
-  logoUrl: LogoUrl;
+  imageUrls: ImageUrls;
   /** Sends join links. Without one, a new operator signs in from the join's answer. */
   mailer: Mailer | undefined;
   rateLimit: RateLimit;
@@ -683,28 +630,33 @@ interface TeamOptions {
 
 export function registerTeamRoutes(
   app: App,
-  { auth, db, limits, live, logger, logoUrl, mailer, rateLimit, keepsLastWorkspace }: TeamOptions,
+  { auth, db, limits, live, logger, imageUrls, mailer, rateLimit, keepsLastWorkspace }: TeamOptions,
 ): void {
-  const sources = { limits, logoUrl, keepsLastWorkspace };
+  const sources = { limits, keepsLastWorkspace };
   const publicUrl = String(auth.options.baseURL);
   const publicOrigin = new URL(publicUrl).origin;
   const auditChange = (event: string, workspaceId: string, operatorId: string, fields = {}) =>
     audit(logger, event, { workspaceId, operatorId, ...fields });
   app.openapi(listMembersRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
-    const members = await withWorkspace(db, id, (tx) =>
+    const rows = await withWorkspace(db, id, (tx) =>
       tx
         .select({
           id: operator.id,
           name: operator.name,
           email: operator.email,
           role: workspaceMember.role,
+          pictureUpdatedAt: operator.pictureUpdatedAt,
         })
         .from(workspaceMember)
         .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
         .where(and(eq(workspaceMember.workspaceId, id), isNull(workspaceMember.removedAt)))
         .orderBy(asc(operator.name)),
     );
+    const members = rows.map(({ pictureUpdatedAt, ...member }) => ({
+      ...member,
+      pictureUrl: imageUrls.picture(member.id, pictureUpdatedAt),
+    }));
     return c.json({ members }, 200);
   });
 
@@ -929,9 +881,9 @@ export function registerTeamRoutes(
   app.openapi(patchSettingsRoute, async (c) => {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
-    const { allowedOrigins, widgetTexts } = c.req.valid("json");
+    const { allowedOrigins } = c.req.valid("json");
     const origins = new Set<string>();
-    for (const origin of allowedOrigins ?? []) {
+    for (const origin of allowedOrigins) {
       const normalized = normalizeOrigin(origin);
       if (normalized === null) {
         return c.json(failure("bad_origin", `This is not a valid origin: ${origin}`), 400);
@@ -939,27 +891,16 @@ export function registerTeamRoutes(
       origins.add(normalized);
     }
     const settings = await withWorkspace(db, id, async (tx) => {
-      const change = {
-        ...(allowedOrigins === undefined ? {} : { allowedOrigins: [...origins] }),
-        ...(widgetTexts === undefined
-          ? {}
-          : {
-              widgetTitle: widgetTexts.title,
-              widgetGreeting: widgetTexts.greeting,
-              widgetAway: widgetTexts.away,
-            }),
-      };
-      if (Object.keys(change).length > 0) {
-        await tx.update(workspace).set(change).where(eq(workspace.id, id));
-      }
+      await tx
+        .update(workspace)
+        .set({ allowedOrigins: [...origins] })
+        .where(eq(workspace.id, id));
       return readSettings(tx, sources, id);
     });
     // Origins are public, as every page that embeds the widget shows its own.
-    if (allowedOrigins !== undefined) {
-      auditChange("origins.changed", id, c.get("operatorId"), {
-        allowedOrigins: settings.allowedOrigins,
-      });
-    }
+    auditChange("origins.changed", id, c.get("operatorId"), {
+      allowedOrigins: settings.allowedOrigins,
+    });
     return c.json(settings, 200);
   });
 
@@ -974,32 +915,6 @@ export function registerTeamRoutes(
       return readSettings(tx, sources, id);
     });
     auditChange("signing_secret.rotated", id, c.get("operatorId"));
-    return c.json(settings, 200);
-  });
-
-  app.openapi(setLogoRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
-    const logo = await processLogo(new Uint8Array(await c.req.arrayBuffer()));
-    if (typeof logo === "string") return refuseImage(c, logo);
-    const settings = await withWorkspace(db, id, async (tx) => {
-      const saved = { data: logo, updatedAt: new Date() };
-      await tx
-        .insert(workspaceLogo)
-        .values({ workspaceId: id, ...saved })
-        .onConflictDoUpdate({ target: workspaceLogo.workspaceId, set: saved });
-      return readSettings(tx, sources, id);
-    });
-    return c.json(settings, 200);
-  });
-
-  app.openapi(removeLogoRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
-    const settings = await withWorkspace(db, id, async (tx) => {
-      await tx.delete(workspaceLogo).where(eq(workspaceLogo.workspaceId, id));
-      return readSettings(tx, sources, id);
-    });
     return c.json(settings, 200);
   });
 

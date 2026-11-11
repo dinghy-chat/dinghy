@@ -24,7 +24,7 @@ test.afterAll(async () => {
 
 test.beforeEach(async () => {
   await server.closeConversations();
-  await server.setWidgetTexts({ title: null, greeting: null, away: null });
+  await server.setWidgetSettings({ title: null, greeting: null, away: null });
 });
 
 async function signedIn(browser: Browser): Promise<Page> {
@@ -53,7 +53,7 @@ test("the reply email's link opens the conversation on its own page, to read and
 }) => {
   await visitor(browser, "/pricing", "Is there a yearly plan?");
   await server.reply("Yes, two months free.");
-  await server.setWidgetTexts({ title: "Talk to E2E", greeting: null, away: null });
+  await server.setWidgetSettings({ title: "Talk to E2E" });
   const link = await server.chatLink();
 
   const page = await (await browser.newContext()).newPage();
@@ -90,27 +90,25 @@ test("an unknown link shows a clear page", async ({ page }) => {
 });
 
 test("the widget uses the workspace's own title and greeting", async ({ page }) => {
-  await server.setWidgetTexts({
-    title: "Ask Acme",
-    greeting: "Ask us anything at all.",
-    away: null,
-  });
-  // A slow first answer, so the header is read before the texts arrive.
+  await server.setWidgetSettings({ title: "Ask Acme", greeting: "Ask us anything at all." });
+  // A slow answer, so the page is read before the saved settings arrive.
   let answer: () => void = () => {};
   const held = new Promise<void>((resolve) => {
     answer = resolve;
   });
-  await page.route("**/presence", async (route) => {
+  await page.route("**/appearance", async (route) => {
     await held;
     await route.continue();
   });
   await page.goto(`${server.hostOrigin}/pricing`);
-  await page.getByRole("button", { name: "Open chat" }).click();
-  await expect(page.locator(".head b")).toHaveText("");
-  await expect(page.getByText("Chat with us")).toHaveCount(0);
+  // The launcher waits for them, so it never changes shape, and the default title never shows.
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("button", { name: "Open chat" })).toHaveCount(0);
   answer();
+  await page.getByRole("button", { name: "Open chat" }).click();
   await expect(page.locator(".head b")).toHaveText("Ask Acme");
   await expect(page.getByText("Ask us anything at all.")).toBeVisible();
+  await expect(page.getByText("Chat with us")).toHaveCount(0);
 });
 
 test("the operator sees the visitor online, their device and the page they moved to", async ({

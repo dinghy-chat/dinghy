@@ -129,4 +129,6 @@ dumpTest(
       await upgraded.drop();
     }
   },
+  // Two CLI runs, every migration and a pg_dump take longer than the default under a full run.
+  30_000,
 );

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { html, raw } from "hono/html";
 import type { App } from "./app.ts";
-import { chatLink, visitor, workspace } from "./db/schema.ts";
+import { chatLink, visitor, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace, workspaceAccess } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
@@ -137,8 +137,9 @@ export function registerChatPage(app: App, { db, rateLimit, imagesOrigin }: Chat
       if (link === null) return null;
       const access = await workspaceAccess(tx, workspaceId);
       const [space] = await tx
-        .select({ publicKey: workspace.publicKey, title: workspace.widgetTitle })
+        .select({ publicKey: workspace.publicKey, title: widgetSettings.title })
         .from(workspace)
+        .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
         .where(eq(workspace.id, workspaceId));
       return space === undefined ? null : { ...link, ...space, access };
     });

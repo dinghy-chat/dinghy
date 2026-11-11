@@ -203,9 +203,11 @@ describe("/v1", () => {
       for (const [method, { responses, security }] of Object.entries(operations)) {
         const operation = `${method.toUpperCase()} ${path}`;
         const read = method === "get";
-        // The logo answers an <img>, which sends no Origin, so it runs before the widget's checks.
-        const isLogo = path === "/v1/widget/{key}/logo";
-        if (path.startsWith("/v1/widget/{key}/") && !isLogo) {
+        // The logo answers an <img>, which sends no Origin, and the appearance answers any site,
+        // so both run before the widget's checks.
+        const beforeChecks =
+          path === "/v1/widget/{key}/logo" || path === "/v1/widget/{key}/appearance";
+        if (path.startsWith("/v1/widget/{key}/") && !beforeChecks) {
           expectAnswers(operation, [403, 429], responses);
         }
         if (path.startsWith("/v1/operator/")) {

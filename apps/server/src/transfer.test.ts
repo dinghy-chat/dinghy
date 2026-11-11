@@ -25,6 +25,7 @@ import {
   operator,
   pageView,
   visitor,
+  widgetSettings,
   workspace,
   workspaceLogo,
   workspaceMember,
@@ -171,7 +172,7 @@ async function makeSource(): Promise<Source> {
       headers: { cookie, origin: ORIGIN, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  await app.request(`${inSpace}/logo`, {
+  await app.request(`${inSpace}/widget/logo`, {
     method: "PUT",
     headers: { cookie, origin: ORIGIN, "content-type": "image/png" },
     body: await png(),
@@ -211,9 +212,16 @@ async function makeSource(): Promise<Source> {
     .where(eq(workspaceMember.operatorId, gone.id));
   await owner.insert(emailStop).values({ workspaceId: space.id, addressHash: "a".repeat(64) });
   await owner
-    .update(workspace)
-    .set({ widgetTitle: "Ask Acme", widgetGreeting: "Hello there", widgetAway: "Back soon" })
-    .where(eq(workspace.id, space.id));
+    .update(widgetSettings)
+    .set({
+      title: "Ask Acme",
+      greeting: "Hello there",
+      away: "Back soon",
+      accent: "#1f6bff",
+      theme: "dark",
+      launcher: "bubble",
+    })
+    .where(eq(widgetSettings.workspaceId, space.id));
   await app.request(`/v1/widget/${space.publicKey}/page`, {
     method: "POST",
     headers: {
@@ -491,16 +499,26 @@ describe("a round trip onto a fresh install", () => {
     expect(rows.map((row) => row.addressHash)).toEqual(["a".repeat(64)]);
   });
 
-  test("the widget's words and the visitor's details come along", async () => {
-    const [space] = await target.owner
-      .select()
-      .from(workspace)
-      .where(eq(workspace.id, source.space.id));
-    expect([space?.widgetTitle, space?.widgetGreeting, space?.widgetAway]).toEqual([
-      "Ask Acme",
-      "Hello there",
-      "Back soon",
-    ]);
+  test("the widget's settings and the visitor's details come along", async () => {
+    const settingsOf = async (install: Install) => {
+      const [row] = await install.owner
+        .select()
+        .from(widgetSettings)
+        .where(eq(widgetSettings.workspaceId, source.space.id));
+      const { logoUpdatedAt, ...settings } = row ?? {};
+      return { ...settings, hasLogo: logoUpdatedAt !== null };
+    };
+    const imported = await settingsOf(target);
+    expect(imported).toEqual(await settingsOf(source.install));
+    expect(imported).toMatchObject({
+      title: "Ask Acme",
+      greeting: "Hello there",
+      away: "Back soon",
+      accent: "#1f6bff",
+      theme: "dark",
+      launcher: "bubble",
+      hasLogo: true,
+    });
     const [before] = await source.install.owner
       .select()
       .from(visitor)

@@ -12,6 +12,7 @@ import { pino } from "pino";
 import { generateVAPIDKeys } from "web-push";
 import type { CloudSettings } from "../../../ee/server/index.ts";
 import { buildWidget } from "../../../packages/widget/build.ts";
+import type { WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { buildOperator } from "../../operator/build.ts";
 import { createApp } from "../src/app.ts";
 import { createAuth, signInLink } from "../src/auth.ts";
@@ -22,6 +23,7 @@ import {
   operator,
   session,
   visitor,
+  widgetSettings,
   workspaceMember,
   workspace as workspaceTable,
 } from "../src/db/schema.ts";
@@ -313,16 +315,12 @@ export async function startE2EServer(
       );
       return chatLinkUrl(apiOrigin, token);
     },
-    /** Sets the widget's own texts, as an owner does in Settings. */
-    async setWidgetTexts(texts: {
-      title: string | null;
-      greeting: string | null;
-      away: string | null;
-    }) {
+    /** Changes the widget's saved settings, as an owner does in the Widget tab. */
+    async setWidgetSettings(change: Partial<WidgetSettings>) {
       await owner
-        .update(workspaceTable)
-        .set({ widgetTitle: texts.title, widgetGreeting: texts.greeting, widgetAway: texts.away })
-        .where(eq(workspaceTable.id, workspace.id));
+        .update(widgetSettings)
+        .set(change)
+        .where(eq(widgetSettings.workspaceId, workspace.id));
     },
     async closeConversations() {
       await withWorkspace(db, workspace.id, (tx) =>

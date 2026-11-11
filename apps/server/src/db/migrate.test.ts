@@ -120,6 +120,51 @@ describe("chat migrate", () => {
     ]);
   });
 
+  test("the widget's words and the logo's time move to widget_settings, with the defaults", async () => {
+    await run(await migrationsBefore("0066_"));
+    const [worded, plain] = [
+      "00000000-0000-4000-8000-000000000011",
+      "00000000-0000-4000-8000-000000000012",
+    ];
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret, widget_title, widget_greeting, widget_away)
+       values ('${worded}', 'Worded', 'wk_worded', 's', 'Ask Acme', 'Hello there', 'Back soon'),
+              ('${plain}', 'Plain', 'wk_plain', 's', null, null, null)`,
+    );
+    await query(
+      `insert into workspace_logo (workspace_id, data, updated_at)
+       values ('${worded}', '\\x00', '2026-11-01T10:00:00Z')`,
+    );
+    await run();
+    expect(
+      await query(
+        `select workspace_id, title, greeting, away, logo_updated_at, launcher, radius, branding
+         from widget_settings order by workspace_id`,
+      ),
+    ).toEqual([
+      {
+        workspace_id: worded,
+        title: "Ask Acme",
+        greeting: "Hello there",
+        away: "Back soon",
+        logo_updated_at: new Date("2026-11-01T10:00:00Z"),
+        launcher: "boat",
+        radius: 16,
+        branding: true,
+      },
+      {
+        workspace_id: plain,
+        title: null,
+        greeting: null,
+        away: null,
+        logo_updated_at: null,
+        launcher: "boat",
+        radius: 16,
+        branding: true,
+      },
+    ]);
+  });
+
   test("stored passwords go, and the accounts and their sessions stay", async () => {
     await run(await migrationsBefore("0040_"));
     const id = "00000000-0000-4000-8000-0000000000bb";

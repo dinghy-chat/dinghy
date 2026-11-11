@@ -373,9 +373,13 @@ function UserMenu({
         },
       ]}
     >
-      <span className="me-avatar" aria-hidden="true">
-        {initials(me.name)}
-      </span>
+      {me.pictureUrl === null ? (
+        <span className="me-avatar" aria-hidden="true">
+          {initials(me.name)}
+        </span>
+      ) : (
+        <img className="me-avatar" src={me.pictureUrl} alt="" />
+      )}
       <span className="me-text">
         <b>{me.name}</b>
         <small>{t(ROLE_TEXT[role])}</small>

@@ -27,7 +27,7 @@ Compose adds two one-shot services from the same image: `init` writes the secret
 
 ## Tenant isolation
 
-A workspace is a tenant. `operator` and its session tables are global and hold no workspace data. Every other table has a `workspace_id`.
+A workspace is a tenant. `operator`, its picture and its session tables are global and hold no workspace data. Every other table has a `workspace_id`.
 
 Two layers keep workspaces apart:
 
@@ -45,6 +45,14 @@ A message and its row in the `event` table commit in one Postgres transaction. T
 A cursor is `generation.seq`. A restore or an import gives the workspace a new random generation. A client sends its cursor when it reconnects, and the server replays the events after it. When the cursor's generation is old, or its events were pruned, the server answers `resync`, and the client loads everything again.
 
 Each send carries an ID that the client made. A retry with the same ID returns the first message, so it cannot create a duplicate.
+
+## The widget's settings
+
+How a workspace's widget looks and behaves lives in `widget_settings`, one row per workspace, made in the same transaction as the workspace. Typed columns let the database check each value and hold the defaults. The row is apart from `workspace`, because every message takes the workspace row's lock for its sequence, and a save must not wait for that lock or hold it.
+
+The loader asks for them on each page view at `GET /v1/widget/{key}/appearance`, which any site may read and a browser keeps for 5 minutes, then draws the launcher. The chat bundle uses the same answer. The snippet's attributes and `Dinghy.configure()` win over it. The answer also names up to 3 members who replied last, by first name and picture, so its ETag hashes the whole answer rather than the row's change time.
+
+A logo and an operator's picture are small WebP files in Postgres, in `workspace_logo` and `operator_picture`, and do not count as image storage. Their addresses carry the upload's time, so they cache for good.
 
 ## Live signals
 

@@ -714,20 +714,20 @@ describe("who sent a reply", () => {
     expect(await retry.json()).toMatchObject({ authorName: "Cleo" });
   });
 
-  test("the visitor never learns which operator replied", async () => {
-    const { token, conversationId } = await visitorSends(a.publicKey, "Who is there?");
-    await write("POST", inA(`/conversations/${conversationId}/messages`), {
-      clientId: "private-sender",
-      body: "Someone",
-    });
-    const history = await app.request(`/v1/widget/${a.publicKey}/messages`, {
+  test("the visitor learns only the replying operator's first name, never an email or an ID", async () => {
+    const team = await createWorkspace(db, "Named team", [WIDGET_ORIGIN]);
+    const dana = await operatorSession("dana@example.com", team.id, "Dana Lee");
+    const { token, conversationId } = await visitorSends(team.publicKey, "Who is there?");
+    const path = `/v1/operator/workspaces/${team.id}/conversations/${conversationId}/messages`;
+    await write("POST", path, { clientId: "private-sender", body: "Someone" }, dana);
+    const history = await app.request(`/v1/widget/${team.publicKey}/messages`, {
       headers: { origin: WIDGET_ORIGIN, authorization: `Bearer ${token}` },
     });
     const { messages } = (await history.json()) as { messages: Record<string, unknown>[] };
     const reply = messages.find((message) => message.body === "Someone");
-    expect(reply).toBeDefined();
+    expect(reply).toMatchObject({ fromBot: false, authorName: "Dana", authorPictureUrl: null });
     expect(reply).not.toHaveProperty("authorOperatorId");
-    expect(reply).not.toHaveProperty("authorName");
+    expect(JSON.stringify(reply)).not.toContain("@");
   });
 });
 

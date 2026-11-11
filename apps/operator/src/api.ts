@@ -1,3 +1,4 @@
+import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
 
@@ -115,6 +116,8 @@ export interface Me {
   id: string;
   name: string;
   email: string;
+  /** The same in every workspace. Null with none. */
+  pictureUrl: string | null;
   workspaces: {
     workspaceId: string;
     role: Role;
@@ -142,6 +145,7 @@ export interface Member {
   name: string;
   email: string;
   role: Role;
+  pictureUrl: string | null;
 }
 
 export interface PendingInvite {
@@ -164,20 +168,10 @@ export interface WorkspaceSettings {
   publicKey: string;
   allowedOrigins: string[];
   signingSecret: string;
-  widgetTexts: WidgetTexts;
-  /** The logo's address, which changes with each upload. Null with no logo. */
-  logoUrl: string | null;
   /** The plan's limits and their use, on Dinghy Cloud. Null with no limits. */
   usage: Usage | null;
   /** What a delete removes. A self-hosted server keeps its only workspace. */
   deletion: { conversations: number; images: number; members: number; onlyWorkspace: boolean };
-}
-
-/** The widget's own words. Null means the default. */
-export interface WidgetTexts {
-  title: string | null;
-  greeting: string | null;
-  away: string | null;
 }
 
 /** A workspace API key. Its token is shown only when it is made. */
@@ -286,6 +280,19 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 // Slower than the rest, because a phone's upload can take minutes.
 const UPLOAD_TIMEOUT_MS = 5 * 60_000;
 
+/** Sends an image as the raw body. The server checks it, resizes it and stores it as WebP. */
+async function putImage<T>(path: string, file: Blob): Promise<T> {
+  const response = await fetch(path, {
+    method: "PUT",
+    cache: "no-store",
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+    headers: { "content-type": file.type },
+    body: file,
+  });
+  if (!response.ok) return failed(response);
+  return (await response.json()) as T;
+}
+
 const post = <T>(path: string, body: unknown) =>
   call<T>(path, { method: "POST", body: JSON.stringify(body) });
 
@@ -301,6 +308,9 @@ export const redeemJoinLink = (token: string) =>
 export const signOut = () => post<unknown>("/v1/auth/sign-out", {});
 export const updateName = (name: string) => post<unknown>("/v1/auth/update-user", { name });
 export const getMe = () => call<Me>("/v1/operator/me");
+type Picture = { pictureUrl: string | null };
+export const setPicture = (file: Blob) => putImage<Picture>("/v1/operator/me/picture", file);
+export const removePicture = () => call<Picture>("/v1/operator/me/picture", { method: "DELETE" });
 /**
  * Deletes the account. With email, a link goes to it and `deleted` is false. Without, the typed
  * email confirms, and the account is gone.
@@ -380,25 +390,12 @@ export function workspaceApi(workspaceId: string) {
         method: "PATCH",
         body: JSON.stringify({ allowedOrigins }),
       }),
-    setWidgetTexts: (widgetTexts: WidgetTexts) =>
-      call<WorkspaceSettings>(`${base}/settings`, {
-        method: "PATCH",
-        body: JSON.stringify({ widgetTexts }),
-      }),
     rotateSecret: () => post<WorkspaceSettings>(`${base}/settings/rotate-secret`, {}),
-    /** The server checks the image, shrinks it and stores it as WebP. */
-    setLogo: async (file: Blob) => {
-      const response = await fetch(`${base}/logo`, {
-        method: "PUT",
-        cache: "no-store",
-        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
-        headers: { "content-type": file.type },
-        body: file,
-      });
-      if (!response.ok) return failed(response);
-      return (await response.json()) as WorkspaceSettings;
-    },
-    removeLogo: () => call<WorkspaceSettings>(`${base}/logo`, { method: "DELETE" }),
+    widget: () => call<SavedAppearance>(`${base}/widget`),
+    setWidget: (settings: WidgetSettings) =>
+      call<SavedAppearance>(`${base}/widget`, { method: "PUT", body: JSON.stringify(settings) }),
+    setLogo: (file: Blob) => putImage<SavedAppearance>(`${base}/widget/logo`, file),
+    removeLogo: () => call<SavedAppearance>(`${base}/widget/logo`, { method: "DELETE" }),
     exportUrl: `${base}/export`,
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
     createApiKey: (name: string) => post<ApiKey & { token: string }>(`${base}/api-keys`, { name }),
