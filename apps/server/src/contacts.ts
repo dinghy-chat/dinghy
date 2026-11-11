@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { conversation, message, visitor } from "./db/schema.ts";
@@ -238,6 +238,9 @@ const contactView = ({ blockedAt, lastSeenAt, createdAt, ...row }: ContactRow) =
   createdAt: createdAt.toISOString(),
 });
 
+// An ISO time in UTC to the microsecond, as the cursor carries it.
+const CURSOR_TIME_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
+
 /** The sort key, which an index of each sort holds in this exact form. */
 const sortKey = (sort: Sort) =>
   sort === "lastSeen"
@@ -260,7 +263,12 @@ async function listContacts(
   const [time, id] = options.before?.split(",") ?? [];
   const pattern = options.q === undefined || options.q === "" ? null : containing(options.q);
   const rows = await tx
-    .select(contactColumns)
+    .select({
+      ...contactColumns,
+      // As text, because Postgres keeps microseconds and a JavaScript date only milliseconds, so
+      // a cursor from a date would skip the rows that share its millisecond.
+      sortedAt: sql<string>`to_char(${key} at time zone 'UTC', ${CURSOR_TIME_FORMAT})`,
+    })
     .from(visitor)
     .where(
       and(
@@ -278,11 +286,9 @@ async function listContacts(
     .limit(options.limit + 1);
   const page = rows.slice(0, options.limit);
   const last = page.at(-1);
-  const sortedAt = (row: (typeof rows)[number]) =>
-    (options.sort === "lastSeen" ? (row.lastSeenAt ?? row.createdAt) : row.createdAt).toISOString();
   return {
-    contacts: page.map(contactView),
-    next: rows.length > options.limit && last !== undefined ? `${sortedAt(last)},${last.id}` : null,
+    contacts: page.map(({ sortedAt: _, ...row }) => contactView(row)),
+    next: rows.length > options.limit && last !== undefined ? `${last.sortedAt},${last.id}` : null,
   };
 }
 
@@ -306,6 +312,7 @@ async function readContact(tx: Transaction, workspaceId: string, visitorId: stri
         eq(message.workspaceId, workspaceId),
         eq(message.conversationId, conversation.id),
         isChat(),
+        isNull(message.deletedAt),
       ),
     )
     .orderBy(desc(message.seq))

@@ -14,6 +14,23 @@ const LIVE_TTL_MS = 90_000;
 /** Tabs a workspace shows at once. A beat above it is dropped, so a flood stays bounded. */
 export const LIVE_TAB_CAP = 2000;
 
+/**
+ * Drops the expired tabs, then adds this one unless the workspace is full, in one step, so beats at
+ * once cannot pass the cap. Returns the tab's details from before, "" for a new tab, or nil when full.
+ */
+const ADMIT_TAB = `
+local order, tabs, tab = KEYS[1], KEYS[2], ARGV[1]
+local expired = redis.call('ZRANGEBYSCORE', order, '-inf', ARGV[2])
+if #expired > 0 then
+  redis.call('ZREMRANGEBYSCORE', order, '-inf', ARGV[2])
+  redis.call('HDEL', tabs, unpack(expired))
+end
+if not redis.call('ZSCORE', order, tab) and redis.call('ZCARD', order) >= tonumber(ARGV[4]) then
+  return nil
+end
+redis.call('ZADD', order, ARGV[3], tab)
+return redis.call('HGET', tabs, tab) or ''`;
+
 const orderKey = (workspaceId: string) => `dinghy:live:${workspaceId}`;
 const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
 
@@ -72,40 +89,34 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
   return {
     beat(workspaceId, beat) {
       return attempt(false, async (client) => {
-        const order = orderKey(workspaceId);
         const tabs = tabsKey(workspaceId);
         const now = Date.now();
-        const read = await client
+        const previous = (await client.eval(
+          ADMIT_TAB,
+          2,
+          orderKey(workspaceId),
+          tabs,
+          beat.tab,
+          now,
+          now + LIVE_TTL_MS,
+          LIVE_TAB_CAP,
+        )) as string | null;
+        if (previous === null) return false;
+        const before = parse(previous === "" ? null : previous);
+        const entry: LiveTab = {
+          ...beat,
+          // The referrer comes with the first beat only, so later beats keep it.
+          referrer: before?.referrer ?? beat.referrer,
+          startedAt: before?.startedAt ?? now,
+          seenAt: now,
+        };
+        await client
           .multi()
-          .zrangebyscore(order, "-inf", now)
-          .zremrangebyscore(order, "-inf", now)
-          .zscore(order, beat.tab)
-          .zcard(order)
-          .hget(tabs, beat.tab)
+          .hset(tabs, beat.tab, JSON.stringify(entry))
+          .pexpire(orderKey(workspaceId), LIVE_TTL_MS * 2)
+          .pexpire(tabs, LIVE_TTL_MS * 2)
           .exec();
-        const value = (index: number) => read?.[index]?.[1];
-        const expired = (value(0) as string[] | undefined) ?? [];
-        const known = value(2) !== null && value(2) !== undefined;
-        const write = client.multi();
-        if (expired.length > 0) write.hdel(tabs, ...expired);
-        const full = !known && Number(value(3) ?? 0) >= LIVE_TAB_CAP;
-        if (!full) {
-          const before = parse((value(4) as string | null | undefined) ?? null);
-          const entry: LiveTab = {
-            ...beat,
-            // The referrer comes with the first beat only, so later beats keep it.
-            referrer: before?.referrer ?? beat.referrer,
-            startedAt: before?.startedAt ?? now,
-            seenAt: now,
-          };
-          write
-            .zadd(order, now + LIVE_TTL_MS, beat.tab)
-            .hset(tabs, beat.tab, JSON.stringify(entry))
-            .pexpire(order, LIVE_TTL_MS * 2)
-            .pexpire(tabs, LIVE_TTL_MS * 2);
-        }
-        await write.exec();
-        return !full;
+        return true;
       });
     },
     leave(workspaceId, tab) {

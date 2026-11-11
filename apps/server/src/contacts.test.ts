@@ -148,6 +148,22 @@ describe("one contact", () => {
     });
   });
 
+  test("a deleted message is not a conversation's preview", async () => {
+    const { visitorId, conversationId } = await visitorChats("Typo with my password");
+    const [written] = await owner
+      .select({ id: message.id })
+      .from(message)
+      .where(eq(message.conversationId, conversationId));
+    const removed = await send(
+      "DELETE",
+      `/v1/operator/workspaces/${space.id}/conversations/${conversationId}/messages/${written?.id}`,
+    );
+    expect(removed.status).toBe(200);
+    expect(await (await get(path(`/${visitorId}`))).json()).toMatchObject({
+      conversations: [{ id: conversationId, lastBody: null }],
+    });
+  });
+
   test("a member writes the note, and a signed-out contact's name and email", async () => {
     const { visitorId } = await visitorChats();
     const changed = await send(
@@ -246,5 +262,42 @@ describe("the CSV export", () => {
     expect(csvCell("@sum")).toBe("'@sum");
     expect(csvCell(null)).toBe("");
     expect(csvCell(3)).toBe("3");
+  });
+});
+
+// Last, because its 502 rows in another workspace would change the plan the index test reads.
+describe("ties", () => {
+  test("contacts that share a time to the microsecond page fully, in the list and the export", async () => {
+    // More than one page of the export, all seen at the same moment, which a millisecond cursor
+    // would cut short.
+    const tie = "2020-01-01T00:00:00.123456Z";
+    const own = await createWorkspace(db, "Ties", [SITE]);
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const { cookie } = await signedInOperator({ app, auth, owner, workspaceId: own.id });
+    const list = (rest: string) => get(`/v1/operator/workspaces/${own.id}/contacts${rest}`, cookie);
+    await owner.execute(sql`
+      with made as (
+        insert into visitor (workspace_id, id, token_hash, created_at, last_seen_at)
+        select ${own.id}, gen_random_uuid(), md5(random()::text), ${tie}::timestamptz,
+               ${tie}::timestamptz
+        from generate_series(1, 502)
+        returning workspace_id, id)
+      insert into conversation (workspace_id, visitor_id) select workspace_id, id from made`);
+    for (const sort of ["lastSeen", "firstSeen"]) {
+      const seen = new Set<string>();
+      let next: string | null = null;
+      do {
+        const query: string = `?sort=${sort}&limit=100${next === null ? "" : `&before=${next}`}`;
+        const page = (await (await list(query)).json()) as {
+          contacts: Contact[];
+          next: string | null;
+        };
+        for (const one of page.contacts) seen.add(one.id);
+        next = page.next;
+      } while (next !== null);
+      expect(seen.size).toBe(502);
+    }
+    const csv = await (await list("/export")).text();
+    expect(csv.trim().split("\r\n")).toHaveLength(503);
   });
 });

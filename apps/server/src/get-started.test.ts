@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
@@ -5,6 +6,7 @@ import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
+import { widgetSettings } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace } from "./workspaces.ts";
 
@@ -103,4 +105,15 @@ test("each step turns done with what it asks, and a dismiss hides them for that 
   expect((await read()).dismissed).toBe(true);
   // Notifications are this operator's own, and the dismiss is this member's.
   expect(await read(other.cookie)).toMatchObject({ dismissed: false, notifications: false });
+});
+
+test("a workspace with no widget settings yet reads its steps as not done", async () => {
+  const space = await createWorkspace(db, "Bare", [SITE]);
+  const { cookie } = await signedInOperator({ app, auth, owner, workspaceId: space.id });
+  await owner.delete(widgetSettings).where(eq(widgetSettings.workspaceId, space.id));
+  const response = await app.request(`/v1/operator/workspaces/${space.id}/get-started`, {
+    headers: { cookie },
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ logo: false, widget: false });
 });

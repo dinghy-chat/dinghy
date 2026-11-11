@@ -60,9 +60,12 @@ export function registerGetStartedRoutes(app: App, db: Database): void {
     const result = await withWorkspace(db, id, (tx) =>
       tx.execute<z.infer<typeof GetStartedSchema>>(sql`
         select
-          (select widget_seen_at is not null from workspace where id = ${id}) as install,
-          (select logo_updated_at is not null from widget_settings where workspace_id = ${id}) as logo,
-          (select customized_at is not null from widget_settings where workspace_id = ${id}) as widget,
+          coalesce((select widget_seen_at is not null from workspace where id = ${id}), false)
+            as install,
+          coalesce((select logo_updated_at is not null from widget_settings
+            where workspace_id = ${id}), false) as logo,
+          coalesce((select customized_at is not null from widget_settings
+            where workspace_id = ${id}), false) as widget,
           ((select count(*) from workspace_member
             where workspace_id = ${id} and removed_at is null) > 1
            or exists (select 1 from invite
@@ -77,7 +80,7 @@ export function registerGetStartedRoutes(app: App, db: Database): void {
     );
     const row = result.rows[0];
     if (row === undefined) throw new Error("The steps query returned no row");
-    return c.json(GetStartedSchema.parse(row), 200);
+    return c.json(row, 200);
   });
 
   app.openapi(dismissRoute, async (c) => {

@@ -9,7 +9,7 @@ import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { visitor } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { LIVE_TAB_CAP } from "./live-visitors.ts";
+import { createLiveVisitors, LIVE_TAB_CAP } from "./live-visitors.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const SITE = "https://app.example.com";
@@ -198,6 +198,33 @@ describe("the beat", () => {
     expect(await valkey.zcard(order)).toBe(LIVE_TAB_CAP);
     await beat({ tab: "filled0", page: `${SITE}/y` }, undefined, full.publicKey);
     expect(Number(await valkey.zscore(order, "filled0"))).toBeGreaterThan(later);
+  });
+
+  test("beats at once never take a workspace past its cap", async () => {
+    const full = await createWorkspace(db, "Nearly full", [SITE]);
+    const order = `dinghy:live:${full.id}`;
+    const batch = valkey.multi();
+    for (let index = 1; index < LIVE_TAB_CAP; index += 1)
+      batch.zadd(order, Date.now() + 60_000, `filled${index}`);
+    await batch.exec();
+    const visitors = createLiveVisitors(valkey, logger);
+    const admitted = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        visitors.beat(full.id, {
+          tab: tab(),
+          page: `${SITE}/x`,
+          title: null,
+          referrer: null,
+          country: null,
+          timeZone: null,
+          device: null,
+          visitorId: null,
+          conversationId: null,
+        }),
+      ),
+    );
+    expect(admitted.filter(Boolean)).toHaveLength(1);
+    expect(await valkey.zcard(order)).toBe(LIVE_TAB_CAP);
   });
 
   test("another workspace's operators never see these tabs", async () => {
