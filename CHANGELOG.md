@@ -29,6 +29,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Changed
 
 - The panel on the right of a conversation replaces the **Visitor details** fold above the messages.
+- An invite for an email that already has an account says, before the click, that a sign-in link comes by email first, and its button says **Email me a sign-in link**. That email is titled "Join <workspace> on Dinghy" and names who invited. A signed-in invitee still joins in one click.
+- The widget's header is one compact row with a one-line status, and its message box holds the attach, emoji and send buttons. The thread's header is one slim row; the visitor's email, user ID, device and page are in the panel, where the user ID has a copy button. The Inbox search says only **Search**. A sent invite shows a centered confirmation.
 - An operator's first reply in an unassigned conversation assigns it to them, with the usual `conversation.assigned` event. A reply from an API key never assigns, and a conversation that has an assignee keeps it.
 - The inbox's **Open** and **Closed** choice fills the list's width, and **Open** shows how many conversations are open. The sidebar and the conversation list are narrower, so the conversation gets more room.
 - The empty Analytics page centers its boat in the card.

@@ -170,8 +170,17 @@ test("an existing account joins by an emailed link, which works once", async ({ 
   const page = await (await browser.newContext()).newPage();
   await page.goto(url);
   await expect(page.getByLabel("Your name")).toHaveCount(0);
-  await page.getByRole("button", { name: /^Join / }).click();
+  // Before the click, the page says an email comes first, since the link may have been forwarded.
+  await expect(
+    page.getByText(
+      "You already have a Dinghy account. We'll email you a sign-in link to confirm it's you, then you join E2E.",
+    ),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText(
+    "We sent a sign-in link to eve@example.com. Open it within 15 minutes to join E2E.",
+  );
   const link = await server.linkTo("eve@example.com", 1);
   await openLink(page, link, "Join the team");
   await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();

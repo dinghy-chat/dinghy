@@ -335,6 +335,11 @@ const en = {
     "It expired or was already used. Ask the person who invited you for a new link.",
   inviteOpenApp: "Open Dinghy",
   inviteJoin: "Join {workspace}",
+  inviteHasAccount:
+    "You already have a Dinghy account. We'll email you a sign-in link to confirm it's you, then you join {workspace}.",
+  inviteEmailLink: "Email me a sign-in link",
+  inviteCheckEmail:
+    "We sent a sign-in link to {email}. Open it within 15 minutes to join {workspace}.",
   inviteByMember: "{inviter} invited {email} to join as a member.",
   inviteByAdmin: "{inviter} invited {email} to join as an admin.",
   inviteForMember: "{email} is invited to join as a member.",

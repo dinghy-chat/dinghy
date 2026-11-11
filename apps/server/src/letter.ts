@@ -25,9 +25,10 @@ const text = {
     signupUrl,
     "Didn't ask? You can ignore this email.",
   ],
-  joinSubject: "Your link to join your team on Dinghy",
-  joinBody: (url: string) => [
-    "Here's your link to finish joining your team on Dinghy:",
+  joinSubject: (workspace: string) => `Join ${workspace} on Dinghy`,
+  joinBody: (url: string, workspace: string, inviter: string) => [
+    ...(inviter === "" ? [] : [`${inviter} invited you to ${workspace}.`]),
+    `Open this link to sign in and join ${workspace}:`,
     url,
     text.linkLasts,
     "Didn't ask to join? You can ignore this email, and nothing happens.",
@@ -107,11 +108,18 @@ export const noAccountMail = (signupUrl: string) => ({
   body: letter(text.noAccountBody(signupUrl)),
 });
 
-/** The link that joins an existing account to a workspace, from an invite that was emailed to it. */
-export const joinMail = (url: string) => ({
-  subject: text.joinSubject,
-  body: letter(text.joinBody(url)),
-});
+/**
+ * The link that joins an existing account to a workspace, from an invite that was emailed to it. It
+ * names the workspace and who invited, as the invite did.
+ */
+export function joinMail(url: string, workspaceName: string, inviterName: string) {
+  const workspace = (oneLine(workspaceName) ?? "").slice(0, WORKSPACE_NAME_MAX);
+  const inviter = (oneLine(inviterName) ?? "").slice(0, WORKSPACE_NAME_MAX);
+  return {
+    subject: text.joinSubject(workspace),
+    body: letter(text.joinBody(url, workspace, inviter)),
+  };
+}
 
 /** The link that deletes the account, which its operator asked for in the app. */
 export const deleteAccountMail = (url: string) => ({

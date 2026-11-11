@@ -64,7 +64,14 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
     }
   };
 
-  if (sentTo !== null) return <CheckEmail text={t("checkEmail")} email={sentTo} />;
+  if (sentTo !== null) {
+    return (
+      <CheckEmail
+        text={t("inviteCheckEmail", { workspace: offer?.workspaceName ?? "" })}
+        email={sentTo}
+      />
+    );
+  }
   if (invalid) {
     return (
       <AuthPage time="morning">
@@ -127,9 +134,12 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
       </AuthPage>
     );
   }
+  // A forwarded link must not sign in to an account that may hold other workspaces, so an existing
+  // account proves its mailbox first.
   return (
     <AuthPage time="morning" onSubmit={join}>
       {heading}
+      {offer.hasAccount && <p className="note">{t("inviteHasAccount", words)}</p>}
       {offer.needsName && (
         <Field
           label={t("yourName")}
@@ -144,7 +154,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
       )}
       <ErrorNote text={error} />
       <button type="submit" className="btn primary large">
-        {t("inviteJoin", words)}
+        {offer.hasAccount ? t("inviteEmailLink") : t("inviteJoin", words)}
       </button>
     </AuthPage>
   );

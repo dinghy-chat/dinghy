@@ -1062,7 +1062,11 @@ export function registerTeamRoutes(
       value: JSON.stringify(pending),
       expiresAt: new Date(Date.now() + LINK_MINUTES * 60_000),
     });
-    const mail = joinMail(confirmUrl(publicUrl, "join", linkToken));
+    const mail = joinMail(
+      confirmUrl(publicUrl, "join", linkToken),
+      offer.workspaceName,
+      offer.inviterName,
+    );
     mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {
       logger.error(safeErrorFields(err), "could not send a join link");
     });
