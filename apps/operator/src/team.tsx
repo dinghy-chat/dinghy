@@ -14,6 +14,7 @@ import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   Avatar,
+  Choices,
   CopyField,
   DocLink,
   ErrorNote,
@@ -249,23 +250,20 @@ function RolePicker({
   value: "admin" | "member";
   onChange(role: "admin" | "member"): void;
 }) {
+  const hintId = useId();
   const picked = INVITED_ROLES.find((one) => one.value === value) ?? INVITED_ROLES[0];
   return (
     <>
-      <fieldset className="choices" aria-label={t("inviteRole")}>
-        {INVITED_ROLES.map((choice) => (
-          <label key={choice.value}>
-            <input
-              type="radio"
-              name="invite-role"
-              checked={value === choice.value}
-              onChange={() => onChange(choice.value)}
-            />
-            {t(choice.label)}
-          </label>
-        ))}
-      </fieldset>
-      <p className="hint">{t(picked.help)}</p>
+      <Choices
+        label={t("inviteRole")}
+        describedBy={hintId}
+        value={value}
+        options={INVITED_ROLES}
+        onChange={onChange}
+      />
+      <p className="hint" id={hintId}>
+        {t(picked.help)}
+      </p>
     </>
   );
 }

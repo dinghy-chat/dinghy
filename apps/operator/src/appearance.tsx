@@ -132,11 +132,13 @@ function FormSection({
 /** A color picker and its hex code in one box. Null keeps the widget's own color. */
 function ColorField({
   label,
+  describedBy,
   value,
   fallback,
   onChange,
 }: {
   label: string;
+  describedBy: string | undefined;
   value: string | null;
   fallback: string;
   onChange(value: string | null): void;
@@ -151,12 +153,14 @@ function ColorField({
         <input
           type="color"
           aria-label={label}
+          aria-describedby={describedBy}
           value={shown}
           onChange={(event) => onChange(event.target.value.toLowerCase())}
         />
         <input
           className="mono"
           aria-label={t("widgetColorHex", { color: label })}
+          aria-describedby={describedBy}
           spellCheck={false}
           value={typed}
           onChange={(event) => {
@@ -194,16 +198,22 @@ function LookRow({
   doc?: { path: string; text: TextId } | undefined;
   /** The control goes under the label, for a control too wide to share the line. */
   stacked?: boolean;
-  children: ReactNode;
+  /** The control, which names the hint with this ID, so a screen reader reads it too. */
+  children(hintId: string | undefined): ReactNode;
 }) {
+  const hintId = useId();
   return (
     <div className={stacked ? "look-row look-stacked" : "look-row"}>
       <div className="look-label">
         <span aria-hidden="true">{label}</span>
-        {hint !== undefined && <small className="hint">{hint}</small>}
+        {hint !== undefined && (
+          <small className="hint" id={hintId}>
+            {hint}
+          </small>
+        )}
         {doc !== undefined && <DocLink path={doc.path} text={doc.text} />}
       </div>
-      {children}
+      {children(hint === undefined ? undefined : hintId)}
     </div>
   );
 }
@@ -297,71 +307,85 @@ function LookFields({
   return (
     <div className="look-rows">
       <LookRow label={t("widgetColorPrimary")} hint={t("widgetColorPrimaryHelp")}>
-        <ColorField
-          label={t("widgetColorPrimary")}
-          value={settings.primary}
-          fallback={DEFAULT_COLORS.primary}
-          onChange={(primary) => onChange({ primary })}
-        />
+        {(hintId) => (
+          <ColorField
+            describedBy={hintId}
+            label={t("widgetColorPrimary")}
+            value={settings.primary}
+            fallback={DEFAULT_COLORS.primary}
+            onChange={(primary) => onChange({ primary })}
+          />
+        )}
       </LookRow>
       <LookRow
         label={t("widgetColorAccent")}
         hint={t("widgetColorAccentHelp")}
         doc={{ path: "add-to-your-site#change-how-it-looks", text: "appearanceDocsLink" }}
       >
-        <ColorField
-          label={t("widgetColorAccent")}
-          value={settings.accent}
-          fallback={DEFAULT_COLORS.accent}
-          onChange={(accent) => onChange({ accent })}
-        />
+        {(hintId) => (
+          <ColorField
+            describedBy={hintId}
+            label={t("widgetColorAccent")}
+            value={settings.accent}
+            fallback={DEFAULT_COLORS.accent}
+            onChange={(accent) => onChange({ accent })}
+          />
+        )}
       </LookRow>
       <LookRow label={t("widgetSide")}>
-        <Choices
-          className="widget-field"
-          label={t("widgetSide")}
-          hideLabel
-          value={settings.position}
-          options={SIDES}
-          onChange={(position) => onChange({ position })}
-        />
+        {(hintId) => (
+          <Choices
+            describedBy={hintId}
+            label={t("widgetSide")}
+            variant="outlined"
+            value={settings.position}
+            options={SIDES}
+            onChange={(position) => onChange({ position })}
+          />
+        )}
       </LookRow>
       <LookRow label={t("widgetTheme")} hint={t("widgetThemeHelp")}>
-        <Choices
-          className="widget-field"
-          label={t("widgetTheme")}
-          hideLabel
-          value={settings.theme}
-          options={THEMES}
-          onChange={(theme) => onChange({ theme })}
-        />
+        {(hintId) => (
+          <Choices
+            describedBy={hintId}
+            label={t("widgetTheme")}
+            variant="outlined"
+            value={settings.theme}
+            options={THEMES}
+            onChange={(theme) => onChange({ theme })}
+          />
+        )}
       </LookRow>
       <LookRow
         label={t("widgetLauncher")}
         hint={settings.launcher === "hidden" ? t("widgetLauncherHiddenHelp") : undefined}
         doc={settings.launcher === "hidden" ? HIDDEN_BUTTON_DOC : undefined}
       >
-        <Choices
-          className="widget-field"
-          label={t("widgetLauncher")}
-          hideLabel
-          value={settings.launcher}
-          options={LAUNCHERS}
-          onChange={(launcher) => onChange({ launcher })}
-        />
+        {(hintId) => (
+          <Choices
+            describedBy={hintId}
+            label={t("widgetLauncher")}
+            variant="outlined"
+            value={settings.launcher}
+            options={LAUNCHERS}
+            onChange={(launcher) => onChange({ launcher })}
+          />
+        )}
       </LookRow>
       <LookRow label={t("widgetRadius")}>
-        <div className="radius-field">
-          <input
-            type="range"
-            aria-label={t("widgetRadius")}
-            min={0}
-            max={RADIUS_MAX_PX}
-            value={settings.radius}
-            onChange={(event) => onChange({ radius: Number(event.target.value) })}
-          />
-          <output>{t("widgetRadiusValue", { radius: String(settings.radius) })}</output>
-        </div>
+        {() => (
+          <div className="radius-field">
+            <input
+              type="range"
+              aria-label={t("widgetRadius")}
+              min={0}
+              max={RADIUS_MAX_PX}
+              value={settings.radius}
+              onChange={(event) => onChange({ radius: Number(event.target.value) })}
+            />
+            <output>{t("widgetRadiusValue", { radius: String(settings.radius) })}</output>
+          </div>
+        )}
       </LookRow>
       <div className="look-row look-switch">
         <Switch
@@ -423,9 +447,7 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
       <div className="preview-body">
         {appearance.theme === "auto" && (
           <Choices
-            className="widget-field"
             label={t("previewDevice")}
-            hideLabel
             value={device}
             options={DEVICES}
             onChange={(next) => setDevice(next)}
@@ -543,14 +565,16 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
                 doc={{ path: "add-to-your-site#what-visitors-can-do", text: "emailAskDocsLink" }}
                 stacked
               >
-                <Choices
-                  className="widget-field"
-                  label={t("widgetEmailAsk")}
-                  hideLabel
-                  value={draft.emailAsk}
-                  options={EMAIL_ASKS}
-                  onChange={(emailAsk) => change({ emailAsk })}
-                />
+                {(hintId) => (
+                  <Choices
+                    describedBy={hintId}
+                    label={t("widgetEmailAsk")}
+                    variant="outlined"
+                    value={draft.emailAsk}
+                    options={EMAIL_ASKS}
+                    onChange={(emailAsk) => change({ emailAsk })}
+                  />
+                )}
               </LookRow>
               <div className="look-row look-switch">
                 <Switch

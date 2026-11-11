@@ -1,17 +1,19 @@
 /** @jsxImportSource react */
 import { type FormEvent, useId, useState } from "react";
 import { type Me, removePicture, requestAccountDelete, setPicture, updateName } from "./api.ts";
-import { Icon, type IconName } from "./icons.tsx";
+import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
 import type { OwnerStep } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 import { savedTheme, setTheme, type Theme } from "./theme.ts";
 import {
+  Choices,
   DocLink,
   ErrorNote,
   failureText,
   ImageUpload,
   type Note,
+  type Option,
   Page,
   PageRow,
   SaveNote,
@@ -27,7 +29,7 @@ const PICTURE_TEXT: UploadText = {
   tooLarge: "pictureTooLarge",
 };
 
-const THEMES: { value: Theme; label: TextId; icon: IconName }[] = [
+const THEMES: Option<Theme>[] = [
   { value: "system", label: "themeSystem", icon: "monitor" },
   { value: "light", label: "themeLight", icon: "sun" },
   { value: "dark", label: "themeDark", icon: "moon" },
@@ -37,23 +39,15 @@ const THEMES: { value: Theme; label: TextId; icon: IconName }[] = [
 function ThemeChoice() {
   const [theme, setThemeState] = useState(savedTheme);
   return (
-    <fieldset className="choices" aria-label={t("theme")}>
-      {THEMES.map((choice) => (
-        <label key={choice.value}>
-          <input
-            type="radio"
-            name="theme"
-            checked={theme === choice.value}
-            onChange={() => {
-              setTheme(choice.value);
-              setThemeState(choice.value);
-            }}
-          />
-          <Icon name={choice.icon} size={16} />
-          {t(choice.label)}
-        </label>
-      ))}
-    </fieldset>
+    <Choices
+      label={t("theme")}
+      value={theme}
+      options={THEMES}
+      onChange={(next) => {
+        setTheme(next);
+        setThemeState(next);
+      }}
+    />
   );
 }
 

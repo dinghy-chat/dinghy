@@ -574,18 +574,16 @@ export function Inbox({
                 />
                 <div className="list-filters">
                   <Choices
-                    className="list-status"
                     label={t("listStatus")}
-                    hideLabel
+                    variant="outlined"
                     value={status}
                     options={STATUS_OPTIONS}
                     onChange={(next) => showFilter(next, who)}
                   />
                   {isTeam && (
                     <Choices
-                      className="list-who"
                       label={t("listAssignee")}
-                      hideLabel
+                      variant="quiet"
                       value={who}
                       options={WHO_OPTIONS}
                       onChange={(next) => showFilter(status, next)}

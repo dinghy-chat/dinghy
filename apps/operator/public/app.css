@@ -150,6 +150,12 @@ textarea {
   font: inherit;
   color: inherit;
 }
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 button {
   padding: 0;
   border: 0;
@@ -349,8 +355,6 @@ textarea {
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(8, 36px);
-  min-width: 0;
-  margin: 0;
   gap: 2px;
   padding: 6px;
   border: 1px solid var(--line);
@@ -2201,9 +2205,9 @@ img.ws-tile {
   }
 }
 
-/* What cannot be undone: a red outline and a red button. */
-/* Outset by its padding, so its columns line up with the rows above it. No wider than those
-   rows' content, so its outline does not run on far past it. */
+/* What cannot be undone: a red outline and a red button. Outset by its padding, so its columns
+   line up with the rows above it, and no wider than those rows' content, so its outline does not
+   run on far past it. */
 .danger-zone {
   max-width: calc(960px + 49px);
   margin: 16px -24px 0;
@@ -2575,14 +2579,11 @@ img.ws-tile {
   justify-content: space-between;
 }
 
-/* The theme on the Profile page: radio buttons drawn as pills, with an icon on each. */
+/* Radio buttons drawn as pills, such as the theme on the Profile page. */
 .choices {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 0;
-  padding: 0;
-  border: 0;
 }
 .choices label {
   position: relative;
@@ -2624,34 +2625,30 @@ img.ws-tile {
   gap: 6px;
   margin: 0 24px 12px;
 }
-.list-filters fieldset {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.list-filters .choices {
+/* One segmented control in an outline, such as Open or Closed. */
+.choices.outlined,
+.choices.quiet {
   flex-wrap: nowrap;
   gap: 2px;
 }
-.list-status .choices {
+.choices.outlined {
   padding: 3px;
   border-radius: 999px;
   box-shadow: inset 0 0 0 1.5px var(--field-line);
 }
-.list-status .choices label {
+.choices.outlined label {
   min-height: 32px;
-  padding: 0 16px;
+  padding: 0 14px;
   font-size: 14px;
 }
-/* Quieter than the switch above it: small text, and no outline around the group. */
-.list-who .choices label {
+/* Quieter than an outlined one: small words, and no outline around the group. */
+.choices.quiet label {
   min-height: 28px;
   padding: 0 10px;
   color: var(--text);
   font-size: 13px;
 }
-.list-who .choices label:has(:checked) {
+.choices.quiet label:has(:checked) {
   box-shadow: none;
 }
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
@@ -2682,9 +2679,6 @@ img.ws-tile {
 .widget-sections {
   display: grid;
   gap: 28px;
-  margin: 0;
-  padding: 0;
-  border: 0;
 }
 .widget-section {
   display: grid;
@@ -2696,18 +2690,6 @@ img.ws-tile {
 }
 .widget-section h3 {
   font: 650 15.5px / 1.3 var(--body);
-}
-.widget-field {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.widget-field legend {
-  margin-bottom: 6px;
-  padding: 0;
-  color: var(--navy);
-  font-size: 14.5px;
-  font-weight: 600;
 }
 /* Appearance: the preview goes above the form once both no longer fit side by side. */
 @container (max-width: 860px) {
@@ -2755,24 +2737,11 @@ img.ws-tile {
   gap: 10px;
   padding: 12px 0;
 }
-/* The choices as one segmented control. */
-.look-row .widget-field {
+.look-row > .choices {
   justify-self: end;
 }
-.look-stacked .widget-field {
+.look-stacked > .choices {
   justify-self: start;
-}
-.look-row .choices {
-  flex-wrap: nowrap;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1.5px var(--field-line);
-}
-.look-row .choices label {
-  min-height: 32px;
-  padding: 0 13px;
-  font-size: 14px;
 }
 .color-field,
 .radius-field {
@@ -2846,7 +2815,7 @@ img.ws-tile {
   .look-row {
     grid-template-columns: minmax(0, 1fr);
   }
-  .look-row .widget-field,
+  .look-row > .choices,
   .color-field,
   .radius-field {
     justify-self: start;
@@ -3111,9 +3080,6 @@ img.ws-tile {
 .events {
   display: grid;
   gap: 2px;
-  margin: 0;
-  padding: 0;
-  border: 0;
 }
 .events legend {
   margin-bottom: 6px;

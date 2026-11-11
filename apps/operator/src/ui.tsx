@@ -11,7 +11,7 @@ import {
 } from "react";
 import { EMOJIS, insertEmoji } from "../../../packages/widget/src/emoji.ts";
 import { ApiError, type Role } from "./api.ts";
-import { Icon } from "./icons.tsx";
+import { Icon, type IconName } from "./icons.tsx";
 import { navigate } from "./nav.ts";
 import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
@@ -623,46 +623,53 @@ export function Page({
   );
 }
 
-/** The title, its line of context and the actions, at the top of a page or of the inbox list. */
-export type Option<T> = { value: T; label: TextId };
+/** One choice of a Choices control, with an icon before its words if it has one. */
+export type Option<T> = { value: T; label: TextId; icon?: IconName };
 
-/** Radio buttons drawn as pills, under a label that can be for screen readers only. */
+/**
+ * Radio buttons drawn as pills, named by a legend for screen readers. Outlined draws them as one
+ * segmented control, and quiet as small words.
+ */
 export function Choices<T extends string>({
-  className,
   label,
-  hideLabel = false,
+  variant,
+  describedBy,
   value,
   options,
   onChange,
 }: {
-  className: string;
   label: string;
-  hideLabel?: boolean;
+  variant?: "outlined" | "quiet";
+  /** The ID of a hint that says more about the choice. */
+  describedBy?: string | undefined;
   value: T;
-  options: Option<T>[];
+  options: readonly Option<T>[];
   onChange(value: T): void;
 }) {
   const name = useId();
   return (
-    <fieldset className={className}>
-      <legend className={hideLabel ? "visually-hidden" : undefined}>{label}</legend>
-      <div className="choices">
-        {options.map((option) => (
-          <label key={option.value}>
-            <input
-              type="radio"
-              name={name}
-              checked={value === option.value}
-              onChange={() => onChange(option.value)}
-            />
-            {t(option.label)}
-          </label>
-        ))}
-      </div>
+    <fieldset
+      className={variant === undefined ? "choices" : `choices ${variant}`}
+      aria-describedby={describedBy}
+    >
+      <legend className="visually-hidden">{label}</legend>
+      {options.map((option) => (
+        <label key={option.value}>
+          <input
+            type="radio"
+            name={name}
+            checked={value === option.value}
+            onChange={() => onChange(option.value)}
+          />
+          {option.icon !== undefined && <Icon name={option.icon} size={16} />}
+          {t(option.label)}
+        </label>
+      ))}
     </fieldset>
   );
 }
 
+/** The title, its line of context and the actions, at the top of a page or of the inbox list. */
 export function PageHead({
   title,
   context,

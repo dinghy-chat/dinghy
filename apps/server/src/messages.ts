@@ -508,7 +508,6 @@ interface ConversationSummary extends ConversationRow {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null;
 }
 
-/** A page of conversations, newest activity first. */
 /** Whose conversations a list holds: everyone's, one operator's, or no one's. */
 export type AssigneeFilter =
   | { kind: "all" }
@@ -521,6 +520,7 @@ function assigneeCondition(assignee: AssigneeFilter) {
   return eq(conversation.assigneeOperatorId, assignee.operatorId);
 }
 
+/** A page of conversations, newest activity first. */
 export async function listConversations(
   tx: Transaction,
   workspaceId: string,
