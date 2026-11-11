@@ -1,6 +1,8 @@
+import { Redis } from "iovalkey";
 import pg from "pg";
 import { ensureRoles } from "../src/db/roles.ts";
-import { DATABASE_URL } from "./env.ts";
+import { DATABASE_URL, VALKEY_URL } from "./env.ts";
+import { clearLimits } from "./limits.ts";
 
 export default async function setup(): Promise<void> {
   const admin = new pg.Client({ connectionString: DATABASE_URL });
@@ -29,5 +31,12 @@ export default async function setup(): Promise<void> {
       END $$`);
   } finally {
     await admin.end();
+  }
+  const valkey = new Redis(VALKEY_URL, { lazyConnect: true });
+  try {
+    await valkey.connect();
+    await clearLimits(valkey);
+  } finally {
+    valkey.disconnect();
   }
 }

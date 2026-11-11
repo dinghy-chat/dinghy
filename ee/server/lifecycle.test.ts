@@ -294,7 +294,8 @@ const sentKinds = async (workspaceId: string) =>
       .select({ kind: lifecycleEmail.kind })
       .from(lifecycleEmail)
       .where(and(eq(lifecycleEmail.workspaceId, workspaceId), isNotNull(lifecycleEmail.sentAt)))
-      .orderBy(lifecycleEmail.sentAt)
+      // Emails sent in one pass share the test clock's time, so the time each was due breaks ties.
+      .orderBy(lifecycleEmail.sentAt, lifecycleEmail.dueAt)
   ).map((one) => one.kind);
 
 const workspaceRow = async (workspaceId: string) =>
