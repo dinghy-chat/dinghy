@@ -1373,6 +1373,73 @@ describe("the owner's delete", () => {
     expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("active");
   });
 
+  // This server has no mail server, so the typed email confirms an account's delete at once.
+  const deleteAccount = (paid: { cookie: string; email: string }) =>
+    request(app, "POST", "/v1/operator/account/delete", {
+      cookie: paid.cookie,
+      body: { email: paid.email },
+    });
+
+  test("an account delete ends the subscription of a workspace nobody else is in", async () => {
+    const paid = await paidWorkspace();
+    expect((await deleteAccount(paid)).status).toBe(200);
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("canceled");
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).not.toBeNull();
+  });
+
+  test("an account delete deletes nothing when Stripe cannot cancel", async () => {
+    const paid = await paidWorkspace();
+    stripe.failures.cancel = 1;
+    const refused = await deleteAccount(paid);
+    expect(refused.status).toBe(502);
+    expect(await refused.json()).toMatchObject({ error: { code: "billing_unavailable" } });
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toBeNull();
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("active");
+    expect((await request(app, "GET", "/v1/operator/me", { cookie: paid.cookie })).status).toBe(
+      200,
+    );
+  });
+
+  test("an account delete stops when a workspace's last other member left during the cancel", async () => {
+    const paid = await paidWorkspace();
+    // A second workspace with one member, which would pass to them.
+    const created = await request(app, "POST", "/v1/operator/workspaces", {
+      cookie: paid.cookie,
+      body: { name: "Owner", workspaceName: `Team ${randomUUID().slice(0, 8)}` },
+    });
+    const { workspaceId: shared } = (await created.json()) as { workspaceId: string };
+    const helperCookie = await signIn(app, auth, `helper-${randomUUID()}@example.com`);
+    const helperMe = await request(app, "GET", "/v1/operator/me", { cookie: helperCookie });
+    const { id: helperId } = (await helperMe.json()) as { id: string };
+    await owner
+      .insert(workspaceMember)
+      .values({ workspaceId: shared, operatorId: helperId, role: "member" });
+
+    // The member leaves while Stripe cancels the paid workspace's subscription.
+    const webhook = stripe.hooks.afterCancel;
+    stripe.hooks.afterCancel = async (ended) => {
+      stripe.hooks.afterCancel = webhook;
+      await owner
+        .update(workspaceMember)
+        .set({ removedAt: new Date() })
+        .where(eq(workspaceMember.operatorId, helperId));
+      await webhook?.(ended);
+    };
+    const refused = await deleteAccount(paid);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ error: { code: "team_changed" } });
+    expect((await workspaceRow(shared))?.deletedAt).toBeNull();
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toBeNull();
+
+    // Again: both workspaces now go with the account.
+    expect((await deleteAccount(paid)).status).toBe(200);
+    expect((await workspaceRow(shared))?.deletedAt).not.toBeNull();
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).not.toBeNull();
+    // Gone, so the purge counts in the tests below start from nothing.
+    await purgeUntilGone(paid.workspaceId);
+    await purgeUntilGone(shared);
+  });
+
   test("a Checkout made after the deletion commits is expired before the purge", async () => {
     const paid = await paidWorkspace();
     const customer = (await row(paid.workspaceId))?.stripeCustomerId ?? "";

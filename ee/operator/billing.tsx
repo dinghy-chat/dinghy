@@ -8,7 +8,7 @@ import {
 } from "../../apps/operator/src/api.ts";
 import { useLoad } from "../../apps/operator/src/load.ts";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
-import { DocLink, ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
+import { ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
 
 // The states come from the server's leaf module, which has no Node code, so the app can name them.
 export type { BillingStateName } from "../server/billing-states.ts";
@@ -184,7 +184,11 @@ export function BillingRow({
   // Neither has a Stripe customer, so the portal has nothing to show.
   const noPortal = billing.state === "pending" || billing.state === "free";
   return (
-    <PageRow title={t("billingTitle")} {...(!noPortal && { help: t("billingHelp") })}>
+    <PageRow
+      title={t("billingTitle")}
+      {...(!noPortal && { help: t("billingHelp") })}
+      docs={[{ path: "operator-guide#billing", text: "billingDocsLink" }]}
+    >
       <p>{withDate(STATE_TEXT[billing.state], billing.date)}</p>
       {!noPortal && (
         <div className="actions">
@@ -197,7 +201,6 @@ export function BillingRow({
           />
         </div>
       )}
-      <DocLink path="operator-guide#billing" text="billingDocsLink" />
     </PageRow>
   );
 }

@@ -855,6 +855,7 @@ describe("invites", () => {
         waiting: false,
         suspended: false,
         soleOwner: false,
+        heir: null,
       },
     ]);
 

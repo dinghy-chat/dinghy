@@ -466,12 +466,13 @@ export function TeamPage({
     <Page
       title={t("pageTeam")}
       context={
-        usage === null
-          ? undefined
-          : t("teamUsage", {
-              used: usage.operators.used,
-              limit: usage.operators.limit,
-            })
+        usage === null && !manages ? undefined : (
+          <>
+            {usage !== null &&
+              `${t("teamUsage", { used: usage.operators.used, limit: usage.operators.limit })} `}
+            {manages && <DocLink path="operator-guide#set-up-your-team" text="teamRolesLink" />}
+          </>
+        )
       }
       actions={manages ? <InviteButton onClick={() => setInviting(true)} /> : undefined}
     >
@@ -513,7 +514,6 @@ export function TeamPage({
         </p>
       )}
       <ErrorNote text={team.note} />
-      {manages && <DocLink path="operator-guide#set-up-your-team" text="teamRolesLink" />}
       {revoking !== null && (
         <Confirm
           title={t("inviteRevokeTitle", { email: revoking.email })}

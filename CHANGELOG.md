@@ -4,6 +4,21 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- **Delete my account** works at once for a workspace's only owner. A workspace with other people in it passes to the admin who joined first, or else to the member who joined first. A workspace with nobody else in it is deleted with the account, and on Dinghy Cloud its subscription ends. The dialog lists what happens to each one. A self-hosted server still keeps its last workspace.
+- Docs links in Settings sit under each section's description, with a book icon.
+- "Saved." and other confirmations show as a short message at the bottom of the screen. A failure still shows next to its field.
+- **Allowed sites** lists each site as a card. **Add a site** opens the field, and each add or remove saves at once.
+- The picture and the logo have smaller buttons. The image itself picks a new one.
+- The preview in **Settings > Appearance** shows a dark chat on a light page, so it stands out.
+- API: `GET /v1/operator/me` answers each workspace's `heir`. `POST /v1/operator/account/delete` no longer answers `sole_owner`. It answers `last_workspace` on a self-hosted server whose last workspace has only this operator, and `billing_unavailable` when a subscription could not be canceled.
+
+### Fixed
+
+- `Dinghy.open({ message })` keeps words the visitor already typed in the message box.
+- The tip on a blocked leave button shows all its words.
+
 ## [0.18.0] - 2026-11-11
 
 ### Added

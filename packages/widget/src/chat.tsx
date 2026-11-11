@@ -251,8 +251,18 @@ function Chat({
     };
   }, [identity, renewing, renewAttempt, visible]);
 
+  // The page's message fills an empty box, or takes the place of the page's last message. A draft
+  // the visitor typed or changed stays.
+  const pageMessage = useRef<string | null>(null);
   useEffect(() => {
-    if (prefill !== null) setDraft(prefill.text);
+    if (prefill === null) return;
+    setDraft((current) => {
+      if (current.trim() !== "" && current !== pageMessage.current) return current;
+      // Only a message that filled the box counts as the page's, so one it ignored never makes
+      // the visitor's words replaceable.
+      pageMessage.current = prefill.text;
+      return prefill.text;
+    });
   }, [prefill]);
 
   // Only a visitor with a token has the flag, so one who never chatted stores nothing.

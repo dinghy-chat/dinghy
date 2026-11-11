@@ -5,7 +5,6 @@ import { DevelopersPage } from "./developers.tsx";
 import { Icon } from "./icons.tsx";
 import { InstallPage } from "./install.tsx";
 import { useLoad } from "./load.ts";
-import { navigate } from "./nav.ts";
 import { NotificationsPage } from "./notifications.tsx";
 import { ProfilePage } from "./profile.tsx";
 import { TeamPage, useTeam } from "./team.tsx";
@@ -64,25 +63,6 @@ export function settingsInAddress(): SettingsPage | null | undefined {
   const [first, second, ...rest] = location.pathname.split("/").filter((part) => part !== "");
   if (first !== "settings") return undefined;
   return second !== undefined && rest.length === 0 && isSettingsPage(second) ? second : null;
-}
-
-/** Where the account's delete sends a sole owner: a workspace's Team page or its delete dialog. */
-export type OwnerStep = "team" | "delete";
-
-/** The page each step opens: the Team page, or the Workspace page with its delete dialog. */
-export const ownerStepPage = (step: OwnerStep): SettingsPage =>
-  step === "delete" ? "workspace" : "team";
-
-/** Opens another workspace on the page of this step. */
-export const openOwnerStep = (workspaceId: string, step: OwnerStep) =>
-  navigate(
-    `${settingsAddress(ownerStepPage(step), workspaceId)}${step === "delete" ? "&delete=1" : ""}`,
-  );
-
-/** True when `openOwnerStep` asked to open this workspace's delete dialog. */
-export function wantsDelete(workspaceId: string): boolean {
-  const params = new URLSearchParams(location.search);
-  return params.get("workspace") === workspaceId && params.get("delete") === "1";
 }
 
 /** The grouped list. Each page is a link, so it opens in a new tab too. */
@@ -146,14 +126,11 @@ export function Settings({
   billing,
   waiting,
   emailAvailable,
-  keepsLastWorkspace,
   page,
-  openDelete,
   onPage,
   onLeft,
   onWorkspaceDeleted,
   onProfileChanged,
-  onOpenWorkspace,
   onAccountDeleted,
 }: {
   api: WorkspaceApi;
@@ -171,18 +148,13 @@ export function Settings({
   waiting: boolean;
   /** The server sends email, so invites and the account's delete go by email. */
   emailAvailable: boolean;
-  /** A self-hosted server, which keeps its last workspace. */
-  keepsLastWorkspace: boolean;
   /** The page in the address. Null shows the list on a phone, and the first page beside it. */
   page: SettingsPage | null;
-  /** Opens the delete dialog at once, for the account's delete. */
-  openDelete: boolean;
   onPage(page: SettingsPage | null): void;
   onLeft(): void;
   onWorkspaceDeleted(name: string): void;
   /** The operator's name or picture changed. */
   onProfileChanged(): void;
-  onOpenWorkspace(workspaceId: string, step: OwnerStep): void;
   onAccountDeleted(): void;
 }) {
   const team = useTeam(api, role, members, onMembersChanged);
@@ -209,9 +181,7 @@ export function Settings({
           <ProfilePage
             me={me}
             emailAvailable={emailAvailable}
-            keepsLastWorkspace={keepsLastWorkspace}
             onChanged={onProfileChanged}
-            onOpenWorkspace={onOpenWorkspace}
             onAccountDeleted={onAccountDeleted}
           />
         );
@@ -230,7 +200,6 @@ export function Settings({
             billing={billing}
             workspaceId={workspaceId}
             team={team}
-            openDelete={openDelete}
             onDeleted={() => onWorkspaceDeleted(workspaceName)}
           />
         );

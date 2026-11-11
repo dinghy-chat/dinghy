@@ -109,40 +109,42 @@ test("an owner changes the allowed sites and replaces the secret", async ({ brow
   await openSettings(boss, "Install");
   await expect(boss.locator(".page pre").first()).toContainText("data-key=");
 
-  const first = boss.getByRole("textbox", { name: "Site 1" });
-  const original = await first.inputValue();
-  const save = boss.getByRole("button", { name: "Save", exact: true });
+  // Each saved site is a card, and the field shows only after "Add a site".
+  const cards = boss.locator(".site-card");
+  await expect(cards).toHaveCount(1);
+  const field = boss.getByRole("textbox", { name: "Website address" });
+  await expect(field).toHaveCount(0);
 
-  // Add a site: a new empty row, with the focus in it. A bad one is named under its own row.
+  // A bad site is refused, and Cancel closes the field.
   await boss.getByRole("button", { name: "Add a site" }).click();
-  const second = boss.getByRole("textbox", { name: "Site 2" });
-  await expect(second).toBeFocused();
-  await second.fill("not a site");
-  await save.click();
-  await expect(second).toHaveAttribute("aria-invalid", "true");
-  await expect(second).toHaveAccessibleDescription(
+  await expect(field).toBeFocused();
+  await field.fill("not a site");
+  await boss.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(boss.getByRole("alert")).toHaveText(
     "Enter a site like https://example.com, with no path after it.",
   );
-  await expect(first).toHaveAttribute("aria-invalid", "false");
-  await second.fill("https://second.example.com");
-  await expect(boss.getByText("with no path after it")).toHaveCount(0);
-  await save.click();
-  await expect(boss.getByRole("status")).toHaveText("Saved.");
+  await boss.getByRole("button", { name: "Cancel" }).click();
+  await expect(field).toHaveCount(0);
+
+  // A good one saves at once and becomes a card.
+  await boss.getByRole("button", { name: "Add a site" }).click();
+  await field.fill("https://second.example.com");
+  await field.press("Enter");
+  await expect(boss.locator(".toast")).toHaveText("Site added.");
+  await expect(field).toHaveCount(0);
+  await expect(cards).toHaveCount(2);
   await boss.reload();
   await expect(boss).toHaveURL(/\/settings\/install\?workspace=/);
-  await expect(boss.getByRole("textbox", { name: "Site 1" })).toHaveValue(original);
-  await expect(boss.getByRole("textbox", { name: "Site 2" })).toHaveValue(
-    "https://second.example.com",
-  );
+  await expect(cards.nth(1)).toHaveText("https://second.example.com");
 
   // Remove a site.
   await boss.getByRole("button", { name: "Remove https://second.example.com" }).click();
-  await expect(boss.getByRole("textbox", { name: "Site 2" })).toHaveCount(0);
-  await save.click();
-  await expect(boss.getByRole("status")).toHaveText("Saved.");
+  await expect(boss.locator(".toast")).toHaveText("Site removed.");
+  await expect(cards).toHaveCount(1);
   await boss.reload();
   await expect(boss).toHaveURL(/\/settings\/install\?workspace=/);
-  await expect(boss.getByRole("textbox", { name: /^Site/ })).toHaveCount(1);
+  await expect(cards).toHaveCount(1);
 
   // The secret is masked until the eye shows it, and replacing it asks first.
   const secret = boss.getByRole("textbox", { name: "Identity signing secret" });
@@ -393,22 +395,19 @@ test("the last owner cannot lower their role or leave, and the app says why", as
   await page.context().close();
 });
 
-test("a sole owner's account delete names each workspace, and waits until none is left", async ({
-  browser,
-}) => {
+test("a sole owner's account delete says what happens to each workspace", async ({ browser }) => {
   const lone = `sole-${Date.now()}@example.com`;
   const { id } = await server.createSecondWorkspace("Harbor", lone);
   const page = await signedIn(browser, server, lone);
   await page.goto(`${server.apiOrigin}/?workspace=${id}`);
   await page.getByRole("button", { name: "Your account" }).click();
   await page.getByRole("menuitem", { name: "Profile" }).click();
-  const row = page.locator(".blocker-list li", { hasText: "Harbor" });
-  await expect(row.getByText("Only owner", { exact: true })).toBeVisible();
-  await expect(row.getByRole("button", { name: "Make someone an owner" })).toBeVisible();
-  await expect(row.getByRole("button", { name: "Delete workspace" })).toBeVisible();
-  const remove = page.getByRole("button", { name: "Delete my account" });
-  await expect(remove).toBeDisabled();
-  await expect(remove).toHaveAccessibleDescription(/You are the only owner of these workspaces/);
+  await page.getByRole("button", { name: "Delete my account" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog.locator(".outcome")).toHaveText([
+    "Harbor is deleted with all its conversations, because nobody else is in it.",
+  ]);
+  await expect(dialog.getByRole("button", { name: "Email me the link" })).toBeEnabled();
   await page.context().close();
 });
 

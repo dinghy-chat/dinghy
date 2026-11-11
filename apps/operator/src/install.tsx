@@ -5,17 +5,8 @@ import type { WorkspaceApi, WorkspaceSettings } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import {
-  CopyButton,
-  DocLink,
-  ErrorNote,
-  failureText,
-  type Note,
-  Page,
-  PageRow,
-  SaveNote,
-  StatusNote,
-} from "./ui.tsx";
+import { toast } from "./toast.tsx";
+import { CopyButton, ErrorNote, failureText, Page, PageRow } from "./ui.tsx";
 
 /** The code's lines as text and colored spans. Each span's key is where it starts in the code. */
 function codeNodes(value: string, language: CodeLanguage): ReactNode[] {
@@ -77,10 +68,16 @@ function SnippetRow({ publicKey, waiting }: { publicKey: string; waiting: boolea
   // One line, as a developer pastes it. It scrolls sideways in its box instead of breaking.
   const snippet = `<script src="${location.origin}/widget/loader.js" data-key="${publicKey}" async></script>`;
   return (
-    <PageRow title={t("snippetTitle")} help={t("snippetHelp")}>
+    <PageRow
+      title={t("snippetTitle")}
+      help={t("snippetHelp")}
+      docs={[
+        { path: "add-to-your-site#add-the-tag", text: "installDocsLink" },
+        { path: "add-to-your-site#change-how-it-looks", text: "appearanceDocsLink" },
+      ]}
+    >
       <CodeBlock value={snippet} language="html" title={t("codeHtml")} />
       <p className="hint">{t("snippetOverride")}</p>
-      <DocLink path="add-to-your-site#change-how-it-looks" text="appearanceDocsLink" />
     </PageRow>
   );
 }
@@ -102,11 +99,10 @@ function isOrigin(value: string): boolean {
   }
 }
 
-interface SiteRow {
-  key: number;
-  value: string;
-}
-
+/**
+ * The sites that may show the chat, as cards. Each add or remove saves at once. The field to add
+ * one shows only after "Add a site".
+ */
 function OriginsRow({
   api,
   settings,
@@ -116,121 +112,112 @@ function OriginsRow({
   settings: WorkspaceSettings;
   onSaved(saved: WorkspaceSettings): void;
 }) {
-  const next = useRef(0);
-  const toRows = (origins: string[]): SiteRow[] =>
-    (origins.length === 0 ? [""] : origins).map((value) => ({ key: next.current++, value }));
-  const [rows, setRows] = useState(() => toRows(settings.allowedOrigins));
-  // Rows are checked once the operator tries to save, and then on every change.
-  const [checked, setChecked] = useState(false);
-  const [note, setNote] = useState<Note>(null);
-  const [focusKey, setFocusKey] = useState<number | null>(null);
-  const inputs = useRef(new Map<number, HTMLInputElement>());
-
+  const sites = settings.allowedOrigins;
+  const [adding, setAdding] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [error, setError] = useState<TextId | null>(null);
+  const [busy, setBusy] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
+  // The operator asked for the field, so it takes the focus.
   useEffect(() => {
-    if (focusKey === null) return;
-    inputs.current.get(focusKey)?.focus();
-    setFocusKey(null);
-  }, [focusKey]);
+    if (adding) field.current?.focus();
+  }, [adding]);
 
-  const wrong = (row: SiteRow) => row.value.trim() !== "" && !isOrigin(row.value.trim());
-  const change = (update: (current: SiteRow[]) => SiteRow[]) => {
-    setRows(update);
-    setNote(null);
+  const save = async (list: string[], done: TextId) => {
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await api.setOrigins(list));
+      toast(done);
+      return true;
+    } catch (failure) {
+      setError(failureText(failure, { 400: "originsBad" }));
+      return false;
+    } finally {
+      setBusy(false);
+    }
   };
-  const add = () => {
-    const key = next.current++;
-    change((current) => [...current, { key, value: "" }]);
-    setFocusKey(key);
-  };
-  const remove = (index: number) => {
-    const after = rows.filter((_, at) => at !== index);
-    const keep = after.length === 0 ? [{ key: next.current++, value: "" }] : after;
-    change(() => keep);
-    // The focus moves to the row that took this one's place.
-    setFocusKey(keep[Math.min(index, keep.length - 1)]?.key ?? null);
-  };
-
-  const save = async (event: FormEvent) => {
+  const add = async (event: FormEvent) => {
     event.preventDefault();
-    setChecked(true);
-    const firstWrong = rows.find(wrong);
-    if (firstWrong !== undefined) {
-      inputs.current.get(firstWrong.key)?.focus();
+    const site = typed.trim();
+    if (!isOrigin(site)) {
+      setError("originsBadRow");
       return;
     }
-    const list = rows.map((row) => row.value.trim()).filter((value) => value !== "");
-    try {
-      const saved = await api.setOrigins(list);
-      onSaved(saved);
-      setRows(toRows(saved.allowedOrigins));
-      setChecked(false);
-      setNote({ ok: true, text: "saved" });
-    } catch (failure) {
-      setNote({ ok: false, text: failureText(failure, { 400: "originsBad" }) });
+    if (await save([...sites, site], "originsAdded")) {
+      setTyped("");
+      setAdding(false);
     }
+  };
+  const close = () => {
+    setTyped("");
+    setError(null);
+    setAdding(false);
   };
 
   return (
     <PageRow title={t("originsTitle")} help={t("originsHelp")}>
-      <form className="stack" onSubmit={save} noValidate>
+      {sites.length === 0 && !adding && <p className="quiet">{t("originsNone")}</p>}
+      {sites.length > 0 && (
         <ul className="sites">
-          {rows.map((row, index) => {
-            const shown = checked && wrong(row);
-            const errorId = `site-error-${row.key}`;
-            const name = t("originsSite", { number: String(index + 1) });
-            return (
-              <li key={row.key}>
-                <div className="site">
-                  <input
-                    ref={(element) => {
-                      if (element === null) inputs.current.delete(row.key);
-                      else inputs.current.set(row.key, element);
-                    }}
-                    type="url"
-                    inputMode="url"
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="https://example.com"
-                    aria-label={name}
-                    aria-invalid={shown}
-                    aria-describedby={shown ? errorId : undefined}
-                    value={row.value}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      change((current) =>
-                        current.map((one) => (one.key === row.key ? { ...one, value } : one)),
-                      );
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={t("originsRemove", { site: row.value.trim() || name })}
-                    onClick={() => remove(index)}
-                  >
-                    <Icon name="close" size={16} />
-                  </button>
-                </div>
-                {shown && (
-                  <p id={errorId} className="field-error">
-                    {t("originsBadRow")}
-                  </p>
-                )}
-              </li>
-            );
-          })}
+          {sites.map((site) => (
+            <li key={site} className="site-card">
+              <span>{site}</span>
+              <button
+                type="button"
+                className="icon-button quiet-danger"
+                aria-label={t("originsRemove", { site })}
+                title={t("originsRemove", { site })}
+                disabled={busy}
+                onClick={() =>
+                  void save(
+                    sites.filter((one) => one !== site),
+                    "originsRemoved",
+                  )
+                }
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </li>
+          ))}
         </ul>
-        <div className="actions spread">
-          <button type="button" className="text-button" onClick={add}>
-            <Icon name="plusBold" size={14} />
-            {t("originsAdd")}
-          </button>
-          <button type="submit" className="pill dark">
-            {t("save")}
-          </button>
-        </div>
-        <SaveNote note={note} />
-      </form>
+      )}
+      {adding ? (
+        <form className="site-add" onSubmit={add} noValidate>
+          <input
+            ref={field}
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="https://example.com"
+            aria-label={t("originsNew")}
+            aria-invalid={error === "originsBadRow"}
+            value={typed}
+            onChange={(event) => {
+              setTyped(event.target.value);
+              setError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") close();
+            }}
+          />
+          <div className="actions">
+            <button type="submit" className="pill dark" disabled={busy || typed.trim() === ""}>
+              {t("originsAddButton")}
+            </button>
+            <button type="button" className="pill" onClick={close}>
+              {t("cancel")}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" className="text-button" onClick={() => setAdding(true)}>
+          <Icon name="plusBold" size={14} />
+          {t("originsAdd")}
+        </button>
+      )}
+      <ErrorNote text={error} />
     </PageRow>
   );
 }
@@ -248,14 +235,13 @@ function SecretRow({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<TextId | null>(null);
-  const [replaced, setReplaced] = useState(false);
   const rotate = async () => {
     setError(null);
     setBusy(true);
     try {
       onSaved(await api.rotateSecret());
       setShown(true);
-      setReplaced(true);
+      toast("secretReplaced");
       setConfirming(false);
     } catch (failure) {
       setError(failureText(failure, {}));
@@ -264,7 +250,11 @@ function SecretRow({
     }
   };
   return (
-    <PageRow title={t("secretTitle")} help={t("secretHelp")}>
+    <PageRow
+      title={t("secretTitle")}
+      help={t("secretHelp")}
+      docs={[{ path: "add-to-your-site#show-who-is-chatting", text: "secretDocsLink" }]}
+    >
       <div className="copy-field">
         <input
           className="mono"
@@ -286,7 +276,6 @@ function SecretRow({
         </button>
         <CopyButton value={settings.signingSecret} label={t("secretCopy")} />
       </div>
-      {replaced && <StatusNote text="secretReplaced" />}
       <button
         type="button"
         className="pill danger-soft"
@@ -297,7 +286,6 @@ function SecretRow({
       >
         {t("secretRotate")}
       </button>
-      <DocLink path="add-to-your-site#show-who-is-chatting" text="secretDocsLink" />
       {confirming && (
         <Confirm
           title={t("secretConfirmTitle")}
@@ -328,15 +316,7 @@ export function InstallPage({
   onSaved(saved: WorkspaceSettings): void;
 }) {
   return (
-    <Page
-      title={t("pageInstall")}
-      context={
-        <>
-          {t("installContext")}{" "}
-          <DocLink path="add-to-your-site#add-the-tag" text="installDocsLink" />
-        </>
-      }
-    >
+    <Page title={t("pageInstall")} context={t("installContext")}>
       <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
       <OriginsRow api={api} settings={settings} onSaved={onSaved} />
       <SecretRow api={api} settings={settings} onSaved={onSaved} />

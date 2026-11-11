@@ -16,6 +16,7 @@ import { Icon, type IconName } from "./icons.tsx";
 import { navigate } from "./nav.ts";
 import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
+import { toast } from "./toast.tsx";
 
 export const ROLE_TEXT: Record<Role, TextId> = {
   owner: "roleOwner",
@@ -31,7 +32,8 @@ const BY_CODE: Record<string, TextId> = {
   read_only: "readOnlyRefused",
   payment_required: "paymentRequiredRefused",
   last_workspace: "deleteWorkspaceOnly",
-  sole_owner: "deleteAccountSoleOwner",
+  billing_unavailable: "billingUnavailable",
+  team_changed: "teamChanged",
   email_mismatch: "emailMismatch",
 };
 
@@ -80,14 +82,6 @@ export function StatusNote({ text }: { text: TextId | null }) {
   );
 }
 
-/** The outcome of a save: a status when it worked, an alert when it failed. */
-export type Note = { ok: boolean; text: TextId } | null;
-
-export function SaveNote({ note }: { note: Note }) {
-  if (note === null) return null;
-  return note.ok ? <StatusNote text={note.text} /> : <ErrorNote text={note.text} />;
-}
-
 const IMAGE_TYPES = "image/png,image/jpeg,image/webp";
 
 /** The words of one image upload, such as the logo's. */
@@ -116,38 +110,25 @@ export function ImageUpload({
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<Note>(null);
+  const [error, setError] = useState<TextId | null>(null);
   const change = async (save: () => Promise<unknown>) => {
     setBusy(true);
-    setNote(null);
+    setError(null);
     try {
       await save();
     } catch (failure) {
-      setNote({
-        ok: false,
-        text: failureText(failure, { 400: "uploadWrongType", 413: text.tooLarge }),
-      });
+      setError(failureText(failure, { 400: "uploadWrongType", 413: text.tooLarge }));
     } finally {
       setBusy(false);
     }
   };
+  const pick = () => picker.current?.click();
   return (
     <>
-      <div className="logo-row">
-        {url !== null && (
-          <span className="logo-frame">
-            <img className="logo-preview" src={url} alt={t(text.preview)} />
-            <button
-              type="button"
-              className="logo-remove"
-              aria-label={t(text.remove)}
-              disabled={busy}
-              onClick={() => void change(onRemove)}
-            >
-              <Icon name="close" size={14} />
-            </button>
-          </span>
-        )}
+      <div className="image-upload">
+        <span className={url === null ? "image-slot empty" : "image-slot"}>
+          {url !== null && <img src={url} alt={t(text.preview)} />}
+        </span>
         <input
           ref={picker}
           type="file"
@@ -161,16 +142,26 @@ export function ImageUpload({
             if (file !== undefined) void change(() => onUpload(file));
           }}
         />
-        <button
-          type="button"
-          className="pill dark"
-          disabled={busy}
-          onClick={() => picker.current?.click()}
-        >
-          {t(url === null ? text.upload : text.replace)}
-        </button>
+        <div className="image-side">
+          <div className="actions">
+            <button type="button" className="pill small" disabled={busy} onClick={pick}>
+              {t(url === null ? text.upload : text.replace)}
+            </button>
+            {url !== null && (
+              <button
+                type="button"
+                className="pill small quiet-danger"
+                disabled={busy}
+                onClick={() => void change(onRemove)}
+              >
+                {t(text.remove)}
+              </button>
+            )}
+          </div>
+          <small className="image-rule">{t("imageRule")}</small>
+        </div>
       </div>
-      <SaveNote note={note} />
+      <ErrorNote text={error} />
     </>
   );
 }
@@ -237,18 +228,19 @@ export function NameField({
   onSave(name: string): Promise<unknown>;
 }) {
   const [typed, setTyped] = useState(name);
-  const [note, setNote] = useState<Note>(null);
+  const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   const trimmed = typed.trim();
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
+    setError(null);
     try {
       await onSave(trimmed);
       setTyped(trimmed);
-      setNote({ ok: true, text: "saved" });
+      toast("saved");
     } catch (failure) {
-      setNote({ ok: false, text: failureText(failure, {}) });
+      setError(failureText(failure, {}));
     } finally {
       setBusy(false);
     }
@@ -261,7 +253,7 @@ export function NameField({
           value={typed}
           onChange={(event) => {
             setTyped(event.target.value);
-            setNote(null);
+            setError(null);
           }}
           required
           maxLength={NAME_MAX_LENGTH}
@@ -275,7 +267,7 @@ export function NameField({
           {t("save")}
         </button>
       </div>
-      <SaveNote note={note} />
+      <ErrorNote text={error} />
     </form>
   );
 }
@@ -369,15 +361,14 @@ export function AddForm({
 /** Where the docs live. Each link names a page and, often, a section on it. */
 const DOCS_URL = "https://dinghy.chat/docs/";
 
-/** A link to the docs, in a new tab, such as `api#webhooks`. */
-export function DocLink({ path, text }: { path: string; text: TextId }) {
+/** A section of the docs, such as `api#webhooks`, and the words of its link. */
+export type Doc = { path: string; text: TextId };
+
+/** A link to the docs, in a new tab, with a book so it reads as documentation. */
+export function DocLink({ path, text }: Doc) {
   return (
-    <a
-      className="text-button doc-link"
-      href={`${DOCS_URL}${path}`}
-      target="_blank"
-      rel="noopener noreferrer"
-    >
+    <a className="doc-link" href={`${DOCS_URL}${path}`} target="_blank" rel="noopener noreferrer">
+      <Icon name="book" size={15} />
       {t(text)}
     </a>
   );
@@ -757,17 +748,20 @@ export function PageHead({
 }
 
 /**
- * One row of a page: a title and its help on the left, the controls on the right, and a thin line
- * between rows. A danger row, for what cannot be undone, has a red outline.
+ * One row of a page: a title, its help and its docs on the left, the controls on the right, and a
+ * thin line between rows. A danger row, for what cannot be undone, has a red outline.
  */
 export function PageRow({
   title,
   help,
+  docs = [],
   danger = false,
   children,
 }: {
   title: ReactNode;
   help?: string | undefined;
+  /** The docs sections that explain the row, as links under its help. */
+  docs?: Doc[];
   danger?: boolean;
   children: ReactNode;
 }) {
@@ -776,6 +770,9 @@ export function PageRow({
       <div className="page-about">
         <h3>{title}</h3>
         {help !== undefined && <p className="hint">{help}</p>}
+        {docs.map((doc) => (
+          <DocLink key={doc.path} {...doc} />
+        ))}
       </div>
       <div className="page-controls">{children}</div>
     </section>

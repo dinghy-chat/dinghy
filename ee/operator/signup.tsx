@@ -14,7 +14,6 @@ import { CheckEmail } from "../../apps/operator/src/auth.tsx";
 import { navigate } from "../../apps/operator/src/nav.ts";
 import { DeleteAccount } from "../../apps/operator/src/profile.tsx";
 import { AuthPage } from "../../apps/operator/src/scene.tsx";
-import { openOwnerStep, wantsDelete } from "../../apps/operator/src/settings.tsx";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
 import { DeleteWorkspaceDialog } from "../../apps/operator/src/workspace.tsx";
@@ -175,13 +174,7 @@ export function Onboarding({
       {/* An account that has been in a workspace has a name, and with no workspace it has no
           Profile page, so its delete is here. A new account, still without a name, sees none. */}
       {me.name !== "" && me.workspaces.length === 0 && (
-        <DeleteAccount
-          me={me}
-          emailAvailable={emailAvailable}
-          keepsLastWorkspace={false}
-          onOpen={openOwnerStep}
-          onDeleted={onAccountDeleted}
-        />
+        <DeleteAccount me={me} emailAvailable={emailAvailable} onDeleted={onAccountDeleted} />
       )}
     </AuthPage>
   );
@@ -210,8 +203,7 @@ export function FinishPayment({
 }) {
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
-  // The account's delete, on another workspace's Profile page, opens this one to delete it.
-  const [deleting, setDeleting] = useState(() => wantsDelete(workspace.workspaceId));
+  const [deleting, setDeleting] = useState(false);
   const isOwner = workspace.role === "owner";
   const pay = async () => {
     setError(null);
@@ -260,22 +252,12 @@ export function FinishPayment({
       >
         {t("signOut")}
       </button>
-      {/* A sole owner finds the same button in the account's delete, below. */}
-      {isOwner && !workspace.soleOwner && (
+      {isOwner && (
         <button type="button" className="pill danger-soft" onClick={() => setDeleting(true)}>
           {t("deleteWorkspaceOpen")}
         </button>
       )}
-      <DeleteAccount
-        me={me}
-        emailAvailable={emailAvailable}
-        keepsLastWorkspace={false}
-        onOpen={(id, step) => {
-          if (id === workspace.workspaceId) setDeleting(true);
-          else openOwnerStep(id, step);
-        }}
-        onDeleted={onAccountDeleted}
-      />
+      <DeleteAccount me={me} emailAvailable={emailAvailable} onDeleted={onAccountDeleted} />
       {deleting && (
         // Nothing was paid, so no subscription ends, and the workspace shows no counts and has no
         // export until it is paid.

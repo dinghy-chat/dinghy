@@ -324,6 +324,8 @@ textarea {
   padding: 6px 10px;
   border-radius: 8px;
   background: var(--fill);
+  /* A table cell can set nowrap, which would push the words out of the tip. */
+  white-space: normal;
   color: var(--on-fill);
   font-size: 13px;
   font-weight: 500;
@@ -402,62 +404,44 @@ textarea {
   align-items: center;
   gap: 6px;
 }
-.logo-row {
+/* An uploaded image, with small buttons and the file rule beside it. */
+.image-upload {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
-/* The image, with its remove button on its top-right corner. */
-.logo-frame {
-  position: relative;
-  display: inline-flex;
-  margin: 10px 10px 0 0;
-}
-/* 28px to see, with a 44px target on a touch screen. */
-.logo-remove {
-  position: absolute;
-  top: -10px;
-  right: -10px;
+.image-slot {
   display: grid;
+  flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1.5px solid var(--line);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--navy);
-  box-shadow: 0 1px 3px rgb(11 34 57 / 0.16);
-  cursor: pointer;
-}
-.logo-remove::before {
-  content: "";
-  position: absolute;
-  inset: -8px;
-}
-.logo-remove:hover:not(:disabled) {
-  background: var(--bad-soft);
-  color: var(--bad);
-}
-.logo-remove:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
-}
-.logo-remove:disabled {
-  color: var(--mute);
-  cursor: default;
-}
-/* White behind it, as in the chat's header, so a transparent logo looks the same in both. */
-.logo-preview {
   width: 64px;
   height: 64px;
+  overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  object-fit: contain;
+  border-radius: 12px;
   background: #fff;
+  color: var(--mute);
 }
-
+.image-slot.empty {
+  border: 1.5px dashed var(--line);
+  background: var(--soft);
+}
+/* White behind it, as in the chat's header, so a transparent logo looks the same in both. */
+.image-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.image-side {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.image-rule {
+  color: var(--mute);
+  font-size: 13px;
+  line-height: 1.4;
+}
 /* Small shared parts */
 .logo {
   display: inline-flex;
@@ -2056,17 +2040,35 @@ img.ws-tile {
 .page-controls > .text-button {
   justify-self: start;
 }
-/* A docs link in a page's line of context reads as part of the sentence. */
-.page-head p .doc-link {
-  display: inline;
-  min-height: 0;
-  padding: 0;
-  font-size: inherit;
+/* A docs link: a book and a few words, under a row's help or after a page's line of context. */
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--blue-deep);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
 }
-.doc-links {
+.doc-link svg {
+  flex: none;
+  opacity: 0.8;
+}
+.doc-link:hover {
+  text-decoration: underline;
+}
+.page-head .doc-link {
+  margin-left: 2px;
+  font-size: inherit;
+  vertical-align: baseline;
+}
+.page-about .doc-link {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
+  width: fit-content;
+  margin-top: 10px;
+}
+.page-about .doc-link + .doc-link {
+  margin-top: 6px;
 }
 
 /* Settings: the grouped list on the left, the open page beside it. */
@@ -2202,48 +2204,6 @@ img.ws-tile {
 }
 .danger-zone h3 {
   color: var(--bad);
-}
-/* The workspaces that keep an account's delete waiting: why, then each one with its two ways
-   out, between hairlines. */
-.blockers {
-  display: grid;
-  gap: 12px;
-}
-.blockers-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--warn-soft);
-  color: var(--warn-ink);
-  font-size: 14.5px;
-  line-height: 1.45;
-}
-.blockers-warning svg {
-  flex: none;
-  margin-top: 1px;
-}
-.blocker-list {
-  border-bottom: 1px solid var(--line);
-}
-.blocker-list > li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 16px;
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
-}
-.blocker-name {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  min-width: 0;
-  color: var(--navy);
-  overflow-wrap: anywhere;
 }
 /* Analytics: the headline numbers, then one row per chart. Bars and cells use the brand's navy
    and blue on the cream track, as the usage meters do. */
@@ -2528,8 +2488,7 @@ img.ws-tile {
 .inline-field .pill {
   min-height: 44px;
 }
-.copy-field .icon-button,
-.site .icon-button {
+.copy-field .icon-button {
   width: 44px;
   height: 44px;
   background: var(--soft);
@@ -2537,26 +2496,39 @@ img.ws-tile {
 .copy-field .icon-button:hover {
   background: var(--soft-hover);
 }
-.site .icon-button:not(:hover) {
-  background: transparent;
-}
+/* Each allowed site as a card, and the field that adds one. */
 .sites {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
-.site {
+.site-card {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 48px;
+  padding: 4px 4px 4px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--navy);
+  font-weight: 550;
 }
-.site input {
-  flex: 1;
+.site-card span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.site-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.site-add input {
+  flex: 1 1 240px;
   min-width: 0;
 }
-.field-error {
-  margin-top: 5px;
-  color: var(--bad);
-  font-size: 13.5px;
+.site-add .pill {
+  min-height: 44px;
 }
 .actions.spread {
   justify-content: space-between;
@@ -2835,10 +2807,8 @@ img.ws-tile {
   padding: 16px;
   border-radius: 18px;
   background: var(--sky);
+  /* Light in every theme, as most sites are, so a dark chat stands out from it. */
   color-scheme: light;
-}
-.preview-stage[data-dark="true"] {
-  color-scheme: dark;
 }
 .preview-fold {
   display: none;
@@ -3426,10 +3396,6 @@ img.ws-tile {
     margin-inline: 0;
     padding: 18px;
   }
-  .blocker-list > li {
-    flex-direction: column;
-    align-items: flex-start;
-  }
   .app .pill,
   .dialog .pill,
   .app .select-button {
@@ -3535,4 +3501,64 @@ img.ws-tile {
   .about-visitor > summary svg {
     transition: none;
   }
+}
+
+/* Toasts: one short message at the bottom center, over everything, which goes by itself. */
+.toasts {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 1000;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--on-fill);
+  font-size: 14.5px;
+  font-weight: 550;
+  box-shadow: 0 10px 28px rgb(11 34 57 / 0.22);
+  animation: toast-in 0.18s ease-out;
+}
+.bad-toast {
+  background: var(--bad);
+  color: #fff;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+/* What an account's delete does to each workspace its operator alone owns. */
+.delete-outcomes {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--soft);
+  color: var(--navy);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+.outcome {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }

@@ -371,11 +371,17 @@ test("a site that is not allowed shows Not sent, never the text for a block", as
   const operator = await signedIn(browser, server, "anna@example.com");
   const widget = await visitor(browser, "Before the change");
   await openSettings(operator, "Install");
-  const sites = operator.getByRole("textbox", { name: "Site 1" });
-  const original = await sites.inputValue();
-  await sites.fill("https://elsewhere.example.com");
-  await operator.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(operator.getByRole("status")).toHaveText("Saved.");
+  const original = (await operator.locator(".site-card").textContent()) ?? "";
+  const swap = async (from: string, to: string) => {
+    await operator.getByRole("button", { name: "Add a site" }).click();
+    await operator.getByRole("textbox", { name: "Website address" }).fill(to);
+    await operator.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(operator.locator(".toast")).toHaveText("Site added.");
+    await operator.getByRole("button", { name: `Remove ${from}` }).click();
+    await expect(operator.locator(".toast")).toHaveText("Site removed.");
+    await expect(operator.locator(".site-card")).toHaveText([to]);
+  };
+  await swap(original, "https://elsewhere.example.com");
 
   // The refusal carries no CORS headers, so the browser hides it, and the send reads as failed.
   await widget.getByRole("textbox", { name: "Your message" }).fill("After the change");
@@ -385,9 +391,7 @@ test("a site that is not allowed shows Not sent, never the text for a block", as
   ).toBeVisible();
   await expect(widget.getByRole("alert")).toHaveCount(0);
 
-  await sites.fill(original);
-  await operator.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(operator.getByRole("status")).toHaveText("Saved.");
+  await swap("https://elsewhere.example.com", original);
 });
 
 test("an operator blocks a visitor, who then sees why they cannot send", async ({ browser }) => {

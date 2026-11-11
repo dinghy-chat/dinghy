@@ -109,8 +109,7 @@ test.describe("with billing on", () => {
     await page.goto(server.apiOrigin);
     await expect(page.getByRole("heading", { name: "Activate your workspace" })).toBeVisible();
 
-    // The only owner: the account's delete names the workspace, which has no Team page to hand over.
-    await expect(page.getByRole("button", { name: "Make someone an owner" })).toHaveCount(0);
+    // The owner deletes the workspace here, before it was ever paid.
     await page.getByRole("button", { name: "Delete workspace" }).click();
     const dialog = page.getByRole("alertdialog");
     await dialog.getByLabel("Type Never Paid to confirm").fill("Never Paid");
