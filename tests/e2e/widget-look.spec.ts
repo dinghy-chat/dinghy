@@ -55,8 +55,13 @@ const hostStyle = (visitor: Page, name: string) =>
   visitor.locator("dinghy-chat").evaluate((host, property) => {
     return (host as HTMLElement).style.getPropertyValue(property);
   }, name);
-const background = (visitor: Page, selector: string) =>
-  visitor.locator(selector).evaluate((element) => getComputedStyle(element).backgroundColor);
+/** The panel's paper, under its header's color: the last stop of its background's gradient. */
+const paper = (visitor: Page) =>
+  visitor.locator(".panel").evaluate((element) =>
+    getComputedStyle(element)
+      .backgroundImage.match(/rgb\([^)]*\)/g)
+      ?.at(-1),
+  );
 
 test("the loader draws the launcher with the saved look", async ({ browser }) => {
   await server.setWidgetSettings({
@@ -147,20 +152,20 @@ test.describe("the theme", () => {
     const visitor = await visit(browser, "/plain", { colorScheme: "light" });
     await launcher(visitor).click();
     await expect(visitor.locator("dinghy-chat")).toHaveAttribute("data-theme", "dark");
-    expect(await background(visitor, ".panel")).toBe(PAPER_DARK);
+    expect(await paper(visitor)).toBe(PAPER_DARK);
     await visitor.context().close();
   });
 
   test("auto follows the device, and light stays light on a dark one", async ({ browser }) => {
     const dark = await visit(browser, "/plain", { colorScheme: "dark" });
     await launcher(dark).click();
-    expect(await background(dark, ".panel")).toBe(PAPER_DARK);
+    expect(await paper(dark)).toBe(PAPER_DARK);
     await dark.context().close();
 
     await server.setWidgetSettings({ theme: "light" });
     const light = await visit(browser, "/plain", { colorScheme: "dark" });
     await launcher(light).click();
-    expect(await background(light, ".panel")).toBe(PAPER_LIGHT);
+    expect(await paper(light)).toBe(PAPER_LIGHT);
     await light.context().close();
   });
 });
