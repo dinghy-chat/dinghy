@@ -1864,7 +1864,7 @@ describe("transcripts", () => {
   });
 
   test("an operator sends one by hand, even while the conversation is open", async () => {
-    const { conversationId } = await chat();
+    const { anna, conversationId } = await chat();
     expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
     // A second click while the first waits adds nothing.
     expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
@@ -1873,6 +1873,17 @@ describe("transcripts", () => {
     runWorker({ mail: true });
     await until(async () => (await transcripts())[0]?.outcome === "sent", "it");
     // A retry of the click after it went sends nothing new.
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await until(async () => (await eventsToFanOut()) === 0, "the fan-out");
+    expect(await transcripts()).toHaveLength(1);
+    // A reply written and deleted since then adds nothing to send either.
+    const gone = await operatorWrites(anna, conversationId, "Wrong chat");
+    await withWorkspace(app, space.id, (tx) =>
+      deleteMessage(tx, space.id, conversationId, gone.message.id, {
+        operatorId: anna,
+        mayDeleteAnyone: false,
+      }),
+    );
     expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
     await until(async () => (await eventsToFanOut()) === 0, "the fan-out");
     expect(await transcripts()).toHaveLength(1);

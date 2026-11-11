@@ -1090,7 +1090,8 @@ export async function setConversationStatus(
 
 /**
  * Asks the worker to email the visitor this conversation now, through the event table, so it goes
- * at least once. The payload names the newest message. False with no message to send.
+ * at least once. The payload names the newest message that is not deleted, as a transcript carries.
+ * False with no message to send.
  */
 export async function requestTranscript(
   tx: Transaction,
@@ -1105,6 +1106,7 @@ export async function requestTranscript(
         eq(message.workspaceId, workspaceId),
         eq(message.conversationId, conversationId),
         isChat(),
+        isNull(message.deletedAt),
       ),
     )
     .orderBy(desc(message.seq))
