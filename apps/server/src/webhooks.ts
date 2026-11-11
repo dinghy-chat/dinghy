@@ -94,8 +94,9 @@ export function isPrivateAddress(address: string): boolean {
   return PRIVATE_RANGES.check(address, family === 4 ? "ipv4" : "ipv6");
 }
 
-const REFUSED_ADDRESS = "The address is private, so this server does not send to it.";
-const WRONG_SCHEME = "Use an https address.";
+const REFUSED_ADDRESS =
+  "Dinghy cannot send to this private address. Use a public HTTPS address for the receiving app.";
+const WRONG_SCHEME = "Dinghy cannot use this webhook URL. Use an HTTPS address.";
 
 /** Why this address cannot take webhooks, from the address alone, or null. */
 function endpointProblem(url: URL, policy: WebhookPolicy): string | null {
@@ -196,7 +197,12 @@ function sendWebhook(
         const status = response.statusCode ?? null;
         response.destroy();
         const ok = status !== null && status >= 200 && status < 300;
-        resolve({ status, error: ok ? null : `The answer was HTTP ${status}.` });
+        resolve({
+          status,
+          error: ok
+            ? null
+            : `The receiving server returned HTTP ${status}. Check its logs and webhook settings.`,
+        });
       },
     );
     request.on("error", (error: Error & { code?: unknown }) => {
@@ -204,8 +210,8 @@ function sendWebhook(
         error.message === REFUSED_ADDRESS
           ? REFUSED_ADDRESS
           : error.name === "AbortError" || error.name === "TimeoutError"
-            ? "No answer within 10 seconds."
-            : `${typeof error.code === "string" ? `${error.code}: ` : ""}${error.message}`;
+            ? "The receiving server did not respond within 10 seconds. Ask your developer to check its response time."
+            : `Dinghy could not connect to the receiving server. Ask your developer to check the address, HTTPS certificate, and server availability. Details: ${typeof error.code === "string" ? `${error.code}: ` : ""}${error.message}`;
       resolve({ status: null, error: reason.slice(0, ERROR_MAX) });
     });
     request.end(body);
@@ -708,7 +714,9 @@ async function planWebhook(
       )
       .where(and(eq(webhookDelivery.workspaceId, row.workspaceId), eq(webhookDelivery.id, row.id)));
     if (delivery === undefined) return "The webhook was deleted.";
-    if (!delivery.enabled) return "The webhook was turned off.";
+    if (!delivery.enabled) {
+      return "Dinghy stopped this delivery because the webhook is off. Turn it on to receive future events.";
+    }
     const found = await findConversation(tx, row.workspaceId, delivery.conversationId);
     if (found === null) return "The conversation was deleted.";
     const data: Record<string, unknown> = { conversation: conversationView(found, null) };
@@ -798,6 +806,7 @@ export async function deliverWebhook(
 export async function abandonWebhook(db: Database, row: ClaimedWebhook): Promise<void> {
   await finishWebhook(db, row, "failed", {
     status: null,
-    error: "The worker stopped while sending.",
+    error:
+      "Dinghy stopped retrying after repeated interruptions. Check whether the receiving app processed the event before sending it again.",
   });
 }
