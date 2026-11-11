@@ -85,7 +85,7 @@ if (script && publicKey) {
   shadow.append(launcher);
 
   const appearance = loadAppearance(base, publicKey);
-  const state = { ready: false, open: false, unread: 0 };
+  const state = { ready: false, open: false, unread: 0, conversation: false };
   const listeners: Listeners = {};
   const context: WidgetContext = {
     version: CONTEXT_VERSION,
@@ -173,8 +173,10 @@ if (script && publicKey) {
       set.add(callback);
       // Right away, as a badge needs the count now. In a microtask, so a throw cannot stop the
       // queue below.
-      if (event === "unread")
-        queueMicrotask(() => callback(state.unread as DinghyEvents[typeof event]));
+      if (event === "unread" || event === "conversation")
+        queueMicrotask(() =>
+          callback((state as Record<string, unknown>)[event] as DinghyEvents[typeof event]),
+        );
       return () => set.delete(callback);
     },
     get state() {

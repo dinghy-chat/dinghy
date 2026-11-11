@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- `Dinghy.on("conversation", (open) => ...)` and `Dinghy.state.conversation` say whether the visitor has an open conversation. With `data-launcher="hidden"`, a page can show the chat's button only during a conversation, on every device of a signed-in user.
+
 ## [0.19.0] - 2026-11-11
 
 ### Changed

@@ -63,7 +63,12 @@ test("open({ message }) fills the composer without sending, and the events follo
   page,
 }) => {
   await page.goto(`${server.hostOrigin}/watched`);
-  expect(await dinghy(page, (api) => api.state)).toEqual({ ready: false, open: false, unread: 0 });
+  expect(await dinghy(page, (api) => api.state)).toEqual({
+    ready: false,
+    open: false,
+    unread: 0,
+    conversation: false,
+  });
   const sends: string[] = [];
   page.on("request", (request) => {
     if (request.url().endsWith("/messages") && request.method() === "POST")
@@ -73,7 +78,12 @@ test("open({ message }) fills the composer without sending, and the events follo
   await dinghy(page, (api) => api.open({ message: "I need help with my order" }));
   await expect(input(page)).toHaveValue("I need help with my order");
   expect(sends).toEqual([]);
-  expect(await dinghy(page, (api) => api.state)).toEqual({ ready: true, open: true, unread: 0 });
+  expect(await dinghy(page, (api) => api.state)).toEqual({
+    ready: true,
+    open: true,
+    unread: 0,
+    conversation: false,
+  });
 
   await sendMessage(page, "I need help with my order");
   await server.reply("Which order?");
@@ -119,6 +129,38 @@ test("a queued open({ message }) fills the composer, keeps a typed draft, and re
   await expect(input(page)).toHaveCount(0);
   expect(await dinghy(page, (api) => api.state.open)).toBe(false);
   await expect.poll(() => events(page)).toEqual(["open", "close"]);
+});
+
+test('on("conversation") follows the open conversation, after a reload and a reset', async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const watch = () =>
+    page.evaluate(() => {
+      const win = window as unknown as Win & { heard: boolean[] };
+      win.heard = [];
+      win.Dinghy.on("conversation", (open) => win.heard.push(open));
+    });
+  const heard = () => page.evaluate(() => (window as unknown as { heard: boolean[] }).heard);
+
+  await page.goto(`${server.hostOrigin}/watched`);
+  await watch();
+  await expect.poll(heard).toEqual([false]);
+  await launcher(page).click();
+  await sendMessage(page, "Show my button");
+  await expect.poll(heard).toEqual([false, true]);
+  expect(await dinghy(page, (api) => api.state.conversation)).toBe(true);
+
+  // A page that hides its own button learns it once the chat has asked the server.
+  await dinghy(page, (api) => api.close());
+  await page.reload();
+  await watch();
+  await expect.poll(heard).toEqual([false, true]);
+
+  await dinghy(page, (api) => api.reset());
+  await expect.poll(heard).toEqual([false, true, false]);
+  await context.close();
 });
 
 test("a callback that throws does not stop the others, and on() returns a way to stop", async ({

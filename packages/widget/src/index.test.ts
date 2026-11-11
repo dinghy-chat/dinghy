@@ -63,7 +63,7 @@ test("calls before the loader runs wait in its queue, and an early on() can stil
   dinghy.open({ message: "Hi" });
   const heard: number[] = [];
   const stop = dinghy.on("unread", (count) => heard.push(count));
-  expect(dinghy.state).toEqual({ ready: false, open: false, unread: 0 });
+  expect(dinghy.state).toEqual({ ready: false, open: false, unread: 0, conversation: false });
 
   const queue = (globalThis as Slot).Dinghy as { q: QueuedCall[] };
   expect(queue.q.map(([method]) => method)).toEqual(["open", "on"]);

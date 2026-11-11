@@ -63,7 +63,7 @@ The tag adds a `Dinghy` object to the page:
 | `Dinghy.setContext(data)` | Tells operators about the page, such as a plan or a cart. See below |
 | `Dinghy.configure(options)` | Changes the colors, the side, the offsets and the z-index now |
 | `Dinghy.on(event, callback)` | Calls `callback` on each event, and returns a function that stops it |
-| `Dinghy.state` | `{ ready, open, unread }`, read only |
+| `Dinghy.state` | `{ ready, open, unread, conversation }`, read only |
 
 ### Use your own button
 
@@ -94,6 +94,16 @@ Dinghy.on("close", () => helpButton.setAttribute("aria-expanded", "false"));
 
 You do not need to reopen the chat after a reload. If the visitor has a conversation, or your page called `identify()`, and the chat was open when the tab reloaded, it opens again by itself. A closed chat stays closed, and a new tab starts closed. The `open` event fires when it opens again.
 
+### Show your button only during a conversation
+
+`Dinghy.on("conversation")` tells your page whether the visitor has an open conversation. With `data-launcher="hidden"`, this shows the chat's button only while one is going, and your own Help menu opens the chat the rest of the time:
+
+```js
+Dinghy.on("conversation", (open) => (open ? Dinghy.show() : Dinghy.hide()));
+```
+
+It runs at once with `false`, then with `true` once the chat has asked Dinghy, on each page load and when the tab comes back. A signed-in user who chatted on another device sees the button too, because `identify()` loads their conversations. After `reset()`, it runs with `false`. A conversation an operator closes still counts until the next page load, or until the tab comes back.
+
 ### Listen to events
 
 ```js
@@ -112,6 +122,7 @@ Dinghy.on("message:sent", ({ body }) => analytics.track("chat message sent"));
 | `ready` | The full chat has loaded | Nothing |
 | `open`, `close` | The chat opens or closes | Nothing |
 | `unread` | The unread count changes, and once at once | The count |
+| `conversation` | The visitor starts or ends having an open conversation, and once at once | `true` or `false` |
 | `message:sent` | The visitor's message reached Dinghy | `{ body }`, with `body` null for an image |
 | `message:received` | A reply arrives while the page is open | `{ body }`, with `body` null for an image |
 | `conversation:started` | The visitor's message started a new conversation | Nothing |

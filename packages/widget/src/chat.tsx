@@ -57,6 +57,13 @@ function reportUnread(context: WidgetContext, count: number) {
   emit(context, "unread", count);
 }
 
+/** The page's `conversation` event, once for each change. */
+function reportConversation(context: WidgetContext, open: boolean) {
+  if (open === context.state.conversation) return;
+  context.state.conversation = open;
+  emit(context, "conversation", open);
+}
+
 /** The launcher's count, in its badge and its label. The full-page chat has no launcher. */
 function drawBadge(shadow: ShadowRoot, count: number) {
   const launcher = shadow.querySelector(".launcher");
@@ -354,6 +361,8 @@ function Chat({
         ? 0
         : serverRead.unread;
   useEffect(() => reportUnread(context, unread), [context, unread]);
+  // A new session after reset() starts with none, so the page hears false at once.
+  useEffect(() => reportConversation(context, openConversation), [context, openConversation]);
   // After the saved look arrives, because the loader draws the launcher only then, and a returning
   // visitor's count can come first.
   useEffect(() => {

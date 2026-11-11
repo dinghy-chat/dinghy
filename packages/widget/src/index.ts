@@ -58,7 +58,7 @@ function forward<M extends Exclude<keyof DinghyApi, "on" | "state">>(
   else (api[method] as (...values: unknown[]) => void)(...args);
 }
 
-const NOT_READY: DinghyState = { ready: false, open: false, unread: 0 };
+const NOT_READY: DinghyState = { ready: false, open: false, unread: 0, conversation: false };
 
 /** The same `Dinghy` as the loader's, usable before the loader runs. */
 export const Dinghy: DinghyApi = {

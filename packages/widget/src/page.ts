@@ -42,7 +42,7 @@ if (script !== null && publicKey !== null && publicKey !== undefined) {
     pageContext: null,
     // There is no launcher: the chat is open from the start.
     wanted: [undefined],
-    state: { ready: false, open: false, unread: 0 },
+    state: { ready: false, open: false, unread: 0, conversation: false },
     listeners: {},
   };
   globalThis.__dinghy = context;
