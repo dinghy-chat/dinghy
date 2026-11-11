@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../test/database.ts";
 import { MIGRATIONS, migrationsBefore } from "../../test/migrations.ts";
 import { pgDumpWorks } from "../../test/pg-dump.ts";
+import { editMessage, emailedAt } from "../message-changes.ts";
 import {
   newGeneration,
   restoreDatabase,
@@ -14,6 +15,7 @@ import {
   runMigrations,
   UnsupportedVersionError,
 } from "./migrate.ts";
+import { withWorkspace } from "./tenant.ts";
 
 let database: TestDatabase;
 let backups: number;
@@ -279,6 +281,53 @@ describe("chat migrate", () => {
       { from: false },
       { from: null },
     ]);
+  });
+
+  test("a reply emailed before ranges were recorded stays sent by email, and cannot change", async () => {
+    await run(await migrationsBefore("0082_"));
+    const workspace = "00000000-0000-4000-8000-0000000000f1";
+    const visitor = "00000000-0000-4000-8000-0000000000f2";
+    const conversation = "00000000-0000-4000-8000-0000000000f3";
+    const reply = "00000000-0000-4000-8000-0000000000f4";
+    const anna = "00000000-0000-4000-8000-0000000000f5";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret, event_seq)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000003', 'secret', 2)`,
+    );
+    await query(
+      `insert into operator (id, name, email, email_verified)
+       values ('${anna}', 'Anna', 'anna-f5@example.com', true)`,
+    );
+    await query(
+      `insert into workspace_member (workspace_id, operator_id, role)
+       values ('${workspace}', '${anna}', 'member')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, id, token_hash, email)
+       values ('${workspace}', '${visitor}', 'h', 'v@example.com')`,
+    );
+    await query(
+      `insert into conversation (workspace_id, id, visitor_id)
+       values ('${workspace}', '${conversation}', '${visitor}')`,
+    );
+    await query(
+      `insert into message (workspace_id, id, conversation_id, seq, kind, author_operator_id, client_id, body)
+       values ('${workspace}', '${reply}', '${conversation}', 2, 'text', '${anna}', 'c2', 'Answer')`,
+    );
+    await query(
+      `insert into alert_delivery (workspace_id, event_seq, conversation_id, message_id, visitor_id,
+         channel, finished_at, outcome)
+       values ('${workspace}', 2, '${conversation}', '${reply}', '${visitor}', 'email', now(), 'sent')`,
+    );
+    await run();
+    const app = database.connect("app").db;
+    const line = { conversationId: conversation, seq: 2n };
+    const after = await withWorkspace(app, workspace, async (tx) => ({
+      sentAt: await emailedAt(tx, workspace, visitor, line),
+      edit: await editMessage(tx, workspace, conversation, reply, anna, "Changed"),
+    }));
+    expect(after.sentAt).toBeInstanceOf(Date);
+    expect(after.edit.kind).toBe("seen");
   });
 
   test("page addresses longer than 2,000 characters are shortened", async () => {
