@@ -133,6 +133,9 @@
           {
             "type": "object",
             "properties": {
+              "typingPreview": {
+                "type": "boolean"
+              },
               "logoUrl": {
                 "type": ["string", "null"]
               },
@@ -155,7 +158,7 @@
                 }
               }
             },
-            "required": ["logoUrl", "team"]
+            "required": ["typingPreview", "logoUrl", "team"]
           }
         ]
       },
@@ -2194,6 +2197,114 @@
         "responses": {
           "200": {
             "description": "Noted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: the browser token or host token is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/widget/{key}/typing": {
+      "post": {
+        "security": [
+          {
+            "visitorToken": []
+          }
+        ],
+        "summary": "Show operators what the visitor is typing, before they send it",
+        "description": "The widget sends the message box's text at most every 500 ms while a visitor who has an open conversation types, and an empty draft when the box is cleared or the message is sent. Nothing stores it: the server passes it to the workspace's open operator apps and forgets it. It does nothing when the workspace turned the preview off, for a blocked visitor, or for a visitor with no open conversation.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^wk_[0-9a-f]{32}$"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "draft": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": ["draft"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Passed on, or dropped",
             "content": {
               "application/json": {
                 "schema": {
@@ -8176,6 +8287,125 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/WidgetSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The widget's settings, with its logo and the members it shows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetAppearance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/widget/typing-preview": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Turn on or off whether operators see what visitors type before they send it. Sites follow within 5 minutes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["enabled"]
               }
             }
           }

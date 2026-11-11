@@ -4,7 +4,7 @@ import { ApiError, type ChatMessage, createClient } from "./client.ts";
 import { imageProblem, inCommitOrder, newClientId, REFRESH_LIMIT_MS, REFUSED } from "./compose.ts";
 import { cleanContext } from "./context.ts";
 import "./globals.ts";
-import { usePageReports } from "./page-reports.ts";
+import { useDraftPreview, usePageReports } from "./page-reports.ts";
 import {
   Branding,
   ChatHead,
@@ -296,6 +296,8 @@ function Chat({
 
   const { online, emailReplies } = usePresence(client, fullPage ? token : null, open && visible);
   usePageReports(client, token, chatted && !fullPage);
+  // Only into an open conversation, and only when the workspace shows drafts.
+  useDraftPreview(client, token, openConversation && saved?.typingPreview === true, draft);
 
   // Like the pages, the page's context goes only for a visitor who has chatted: after the first
   // message, on each load after that, and on each setContext().

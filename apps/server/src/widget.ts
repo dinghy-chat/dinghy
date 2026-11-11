@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
@@ -8,8 +8,8 @@ import { firstName } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
-import { conversation, visitor, workspace } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import { conversation, visitor, widgetSettings, workspace } from "./db/schema.ts";
+import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { deviceLine } from "./device.ts";
 import {
   BUSY,
@@ -223,6 +223,31 @@ const contextRoute = createRoute({
   },
   responses: {
     200: { description: "Noted", content: okContent },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
+
+/** The longest draft the widget sends, in characters. */
+const DRAFT_MAX = 2000;
+
+const typingRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/typing",
+  security: VISITOR_TOKEN,
+  summary: "Show operators what the visitor is typing, before they send it",
+  description:
+    "The widget sends the message box's text at most every 500 ms while a visitor who has an open conversation types, and an empty draft when the box is cleared or the message is sent. Nothing stores it: the server passes it to the workspace's open operator apps and forgets it. It does nothing when the workspace turned the preview off, for a blocked visitor, or for a visitor with no open conversation.",
+  request: {
+    params,
+    body: {
+      required: true,
+      content: {
+        "application/json": { schema: z.object({ draft: z.string().max(DRAFT_MAX) }) },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Passed on, or dropped", content: okContent },
     ...WIDGET_WRITE_ERRORS,
   },
 });
@@ -737,6 +762,39 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
 
 const BLOCKED = failure("blocked", "You cannot send messages in this chat.");
 
+/**
+ * The open conversation a visitor's draft belongs to, or null when the workspace turned the preview
+ * off, the visitor is blocked, or they have no open conversation. One statement.
+ */
+async function typingConversation(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .innerJoin(
+      visitor,
+      and(
+        eq(visitor.workspaceId, conversation.workspaceId),
+        eq(visitor.id, conversation.visitorId),
+      ),
+    )
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        eq(conversation.visitorId, visitorId),
+        eq(conversation.status, "open"),
+        isNull(visitor.blockedAt),
+        sql`exists (select 1 from ${widgetSettings} where ${widgetSettings.workspaceId} = ${workspaceId} and ${widgetSettings.typingPreview})`,
+      ),
+    )
+    .orderBy(desc(conversation.createdAt))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 // name, largest count and window in seconds. Each is per workspace and client address, so a busy
 // office shares one count and another site's visitors never share it.
 function limitFor(method: string, path: string): [string, number, number] {
@@ -747,6 +805,8 @@ function limitFor(method: string, path: string): [string, number, number] {
   // A single-page site reports each change of address, and a page should not need more.
   if (path.endsWith("/page")) return ["widget-page", 30, 60];
   if (path.endsWith("/context")) return ["widget-context", 30, 60];
+  // Two drafts a second while typing, with room for a few tabs.
+  if (path.endsWith("/typing")) return ["widget-typing", 150, 60];
   return ["widget-write", 120, 60];
 }
 
@@ -1087,6 +1147,26 @@ export function registerWidgetRoutes(
         device: deviceLine(c.req.header("user-agent")),
       }),
     );
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(typingRoute, async (c) => {
+    const found = c.get("workspace");
+    const token = c.get("widgetToken");
+    // Never creates a visitor: someone who has not chatted has no conversation to type in.
+    const visitorId =
+      token.kind === "link"
+        ? (await identify(c))?.visitorId
+        : await knownVisitor(db, found, c.req.param("key"), token);
+    if (visitorId === undefined) return c.json(UNAUTHORIZED, 401);
+    if (visitorId === null) return c.json({ ok: true as const }, 200);
+    const conversationId = await withWorkspace(db, found.id, (tx) =>
+      typingConversation(tx, found.id, visitorId),
+    );
+    if (conversationId !== null) {
+      const { draft } = c.req.valid("json");
+      live.tell(found.id, { kind: "typing", conversationId, visitorId, draft });
+    }
     return c.json({ ok: true as const }, 200);
   });
 

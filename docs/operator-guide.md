@@ -16,7 +16,9 @@ If a message shows "Not sent", select it to try again. A retry cannot create a s
 
 Under your team's last reply, a small line says how far it got: **Sent** when Dinghy stored it, **Sent by email** when a reply email carried it to the visitor, **Email failed** when that email could not go, and **Read in chat** once the visitor has seen it in the widget. Point at an earlier reply to see its line. The line changes by itself when the visitor reads.
 
-If two of you open the same conversation, each sees "… has this conversation open", so you do not answer twice. It means only that the conversation is open on their screen. Dinghy does not detect typing.
+If two of you open the same conversation, each sees "… has this conversation open", so you do not answer twice. It means only that the conversation is open on their screen.
+
+While a visitor with an open conversation types in the widget, the thread shows their words in a faded bubble with moving dots, and the Inbox shows **typing…** in place of the last message. It goes when they send, empty the box, or stop for 6 seconds. Dinghy does not store these words. An owner or admin turns this off with **Show what visitors type before they send** in **Settings > Workspace**, and then the widget sends nothing until the visitor sends.
 
 To find a conversation, type at least three characters in the search box above the list. It searches open and closed conversations by the visitor's name, email or user ID, and by what anyone wrote, and shows the matching message under each one. Press Escape or empty the box to go back to the list.
 

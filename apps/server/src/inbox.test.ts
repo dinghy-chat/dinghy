@@ -1089,3 +1089,76 @@ describe("reply receipts", () => {
     });
   });
 });
+
+describe("the typing preview", () => {
+  const typing = (key: string, token: string, draft: string) =>
+    app.request(`/v1/widget/${key}/typing`, {
+      method: "POST",
+      headers: {
+        origin: WIDGET_ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ draft }),
+    });
+  const setPreview = (enabled: boolean, as = cookie) =>
+    write("PUT", inA("/widget/typing-preview"), { enabled }, as);
+
+  test("a visitor's draft reaches the operators, and stores nothing", async () => {
+    const { token, conversationId } = await visitorSends(a.publicKey, "First");
+    const before = await owner.execute<{ count: number }>(
+      sql`select count(*)::int as count from message where workspace_id = ${a.id}`,
+    );
+    tells.length = 0;
+    expect((await typing(a.publicKey, token, "Second, half writ")).status).toBe(200);
+    expect(tells).toEqual([
+      [
+        a.id,
+        {
+          kind: "typing",
+          conversationId,
+          visitorId: expect.any(String),
+          draft: "Second, half writ",
+        },
+      ],
+    ]);
+    expect((await typing(a.publicKey, token, "")).status).toBe(200);
+    expect(tells.at(-1)?.[1]).toMatchObject({ kind: "typing", draft: "" });
+    const after = await owner.execute<{ count: number }>(
+      sql`select count(*)::int as count from message where workspace_id = ${a.id}`,
+    );
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+  });
+
+  test("the workspace setting turns it off, and the widget reads the setting", async () => {
+    const { token } = await visitorSends(a.publicKey, "Hello");
+    expect((await setPreview(false)).status).toBe(200);
+    const look = await app.request(`/v1/widget/${a.publicKey}/appearance`);
+    expect(await look.json()).toMatchObject({ typingPreview: false });
+    tells.length = 0;
+    expect((await typing(a.publicKey, token, "secret")).status).toBe(200);
+    expect(tells).toEqual([]);
+    expect((await setPreview(true)).status).toBe(200);
+    expect((await typing(a.publicKey, token, "now")).status).toBe(200);
+    expect(tells).toHaveLength(1);
+  });
+
+  test("only an owner or an admin changes the setting", async () => {
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const member = await signedInOperator({ app, auth, owner, workspaceId: a.id, role: "member" });
+    expect((await setPreview(false, member.cookie)).status).toBe(403);
+  });
+
+  test("a visitor with no open conversation, a long draft and no token send nothing", async () => {
+    const created = await app.request(`/v1/widget/${a.publicKey}/visitors`, {
+      method: "POST",
+      headers: { origin: WIDGET_ORIGIN },
+    });
+    const { token } = (await created.json()) as { token: string };
+    tells.length = 0;
+    expect((await typing(a.publicKey, token, "hi")).status).toBe(200);
+    expect(tells).toEqual([]);
+    expect((await typing(a.publicKey, token, "x".repeat(2001))).status).toBe(400);
+    expect((await typing(a.publicKey, "vt_nothing", "hi")).status).toBe(401);
+  });
+});

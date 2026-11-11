@@ -9,6 +9,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Messages show a small Markdown: bold, italic, code, code blocks, links, bare web addresses and lists, in the widget, in the operator app and in the HTML part of reply emails. HTML, images and headings stay text, and links work only for `http`, `https` and `mailto`.
 - Under the last reply, the thread shows **Sent**, **Sent by email**, **Email failed** or **Read in chat**, and it changes live when the visitor reads. Point at an earlier reply to see its own.
 - API: `GET /v1/operator/workspaces/{id}/conversations/{conversationId}/messages` answers `receipts`, and the operator stream sends `notice` events, which carry no cursor and may be lost.
+- Operators see what a visitor types before they send it, live, in the thread and in the Inbox list. Nothing stores it. **Settings > Workspace** turns it off, and the widget then sends nothing. API: `POST /v1/widget/{key}/typing` and `PUT /v1/operator/workspaces/{id}/widget/typing-preview`, and the appearance answers `typingPreview`.
 - The reply box has a row of tools: attach, emoji, then bold, italic, code, link, bulleted and numbered lists, with Cmd or Ctrl with B, I, E and K.
 
 ### Changed

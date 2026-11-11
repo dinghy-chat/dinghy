@@ -77,6 +77,9 @@ export const WidgetSettingsSchema = z
   .openapi("WidgetSettings") satisfies z.ZodType<WidgetSettings>;
 
 const SavedAppearanceSchema = WidgetSettingsSchema.extend({
+  // The chat sends the visitor's unsent words, so operators see them as they type. Workspace
+  // settings change it, not this tab's save.
+  typingPreview: z.boolean(),
   // The logo's address, which changes with each upload. Null with no logo.
   logoUrl: z.string().nullable(),
   // Up to 3 members, the ones who sent the latest replies. Who is on the team, not who is online.
@@ -123,6 +126,22 @@ const setLogoRoute = createRoute({
     400: errorAnswer("not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels"),
     413: errorAnswer("too_large: the logo is over 2 MB"),
   },
+});
+
+const typingPreviewRoute = createRoute({
+  method: "put",
+  path: `${PREFIX}/typing-preview`,
+  security: SESSION,
+  summary:
+    "Turn on or off whether operators see what visitors type before they send it. Sites follow within 5 minutes.",
+  request: {
+    params: workspaceParams,
+    body: {
+      required: true,
+      content: { "application/json": { schema: z.object({ enabled: z.boolean() }) } },
+    },
+  },
+  responses: { 200: appearanceAnswer, ...ROLE_WRITE_ERRORS },
 });
 
 const removeLogoRoute = createRoute({
@@ -207,7 +226,11 @@ export function registerWidgetSettingsRoutes(
 ): void {
   // Every change takes an owner or an admin. Before the routes, so a member's logo upload is
   // refused before it is read.
-  for (const path of [putRoute.getRoutingPath(), setLogoRoute.getRoutingPath()]) {
+  for (const path of [
+    putRoute.getRoutingPath(),
+    setLogoRoute.getRoutingPath(),
+    typingPreviewRoute.getRoutingPath(),
+  ]) {
     app.use(path, async (c, next) => {
       if (c.req.method !== "GET" && !allowed.settings(c.get("memberRole"))) {
         return c.json(FORBIDDEN, 403);
@@ -245,6 +268,18 @@ export function registerWidgetSettingsRoutes(
     const id = c.get("memberWorkspaceId");
     const saved = await change(id, (tx) =>
       tx.update(widgetSettings).set(c.req.valid("json")).where(eq(widgetSettings.workspaceId, id)),
+    );
+    return c.json(saved, 200);
+  });
+
+  app.openapi(typingPreviewRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { enabled } = c.req.valid("json");
+    const saved = await change(id, (tx) =>
+      tx
+        .update(widgetSettings)
+        .set({ typingPreview: enabled })
+        .where(eq(widgetSettings.workspaceId, id)),
     );
     return c.json(saved, 200);
   });

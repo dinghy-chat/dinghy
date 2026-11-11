@@ -944,6 +944,8 @@ export const widgetSettings = pgTable(
     emailAsk: widgetEmailAsk("email_ask").notNull().default(WIDGET_DEFAULTS.emailAsk),
     // The "Powered by Dinghy" line.
     branding: boolean("branding").notNull().default(WIDGET_DEFAULTS.branding),
+    // Operators see what a visitor types before they send it. Nothing stores the draft.
+    typingPreview: boolean("typing_preview").notNull().default(WIDGET_DEFAULTS.typingPreview),
   },
   (table) => [
     check("widget_settings_primary_color", sql`${table.primary} ~ '^#[0-9a-f]{6}$'`),

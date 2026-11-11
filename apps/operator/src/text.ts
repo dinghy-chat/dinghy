@@ -645,6 +645,10 @@ const en = {
   receiptEmailFailed: "Email failed",
   visitorTyping: "typing…",
   visitorTypingLabel: "The visitor is typing",
+  typingPreviewTitle: "Typing preview",
+  typingPreviewHelp:
+    "Operators see a visitor's message as they type it, before they send it. Dinghy does not store it.",
+  typingPreviewToggle: "Show what visitors type before they send",
 };
 
 export type TextId = keyof typeof en;

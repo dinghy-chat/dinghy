@@ -121,6 +121,9 @@ export function createClient(
     /** The page's setContext() data. It replaces what the server kept before. */
     reportContext: (token: string, context: PageContext) =>
       call<{ ok: true }>("context", token, { method: "POST", body: JSON.stringify({ context }) }),
+    /** The message box's text, for operators to see before it is sent. Empty when it is gone. */
+    typing: (token: string, draft: string) =>
+      call<{ ok: true }>("typing", token, { method: "POST", body: JSON.stringify({ draft }) }),
     saveEmail: (token: string, email: string) =>
       call<Me>("me", token, { method: "PATCH", body: JSON.stringify({ email }) }),
     markRead: (token: string, seq: string) =>

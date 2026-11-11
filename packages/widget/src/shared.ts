@@ -52,6 +52,8 @@ export interface TeamFace {
 
 /** The saved settings, as the widget's appearance route answers them. */
 export interface SavedAppearance extends WidgetSettings {
+  /** The chat sends the visitor's unsent words, so operators see them as they type. */
+  typingPreview: boolean;
   logoUrl: string | null;
   /** Up to 3 members, the ones who sent the latest replies. */
   team: TeamFace[];
@@ -81,6 +83,7 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   radius: 16,
   emailAsk: "after_first",
   branding: true,
+  typingPreview: true,
   logoUrl: null,
   team: [],
 };

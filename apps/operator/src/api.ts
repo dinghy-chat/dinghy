@@ -414,6 +414,11 @@ export function workspaceApi(workspaceId: string) {
       call<SavedAppearance>(`${base}/widget`, { method: "PUT", body: JSON.stringify(settings) }),
     setLogo: (file: Blob) => putImage<SavedAppearance>(`${base}/widget/logo`, file),
     removeLogo: () => call<SavedAppearance>(`${base}/widget/logo`, { method: "DELETE" }),
+    setTypingPreview: (enabled: boolean) =>
+      call<SavedAppearance>(`${base}/widget/typing-preview`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled }),
+      }),
     exportUrl: `${base}/export`,
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
     createApiKey: (name: string) => post<ApiKey & { token: string }>(`${base}/api-keys`, { name }),

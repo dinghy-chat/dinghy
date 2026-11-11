@@ -1,4 +1,4 @@
-import { useEffect } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import { type Client, pageAddress, pageTitle } from "./client.ts";
 
 const TITLE_WAIT_MS = 500;
@@ -53,4 +53,37 @@ export function usePageReports(client: Client, token: string | null, active: boo
       removeEventListener("popstate", navigated);
     };
   }, [active, client, token]);
+}
+
+/** The longest draft the server takes. */
+const DRAFT_MAX = 2000;
+/** At most one draft in this time while the visitor types. */
+const DRAFT_EVERY_MS = 500;
+
+/**
+ * Sends the message box's text while `active`, so operators see it before it is sent: at most
+ * every 500 ms, and an empty draft at once when the box empties, as a send does.
+ */
+export function useDraftPreview(
+  client: Client,
+  token: string | null,
+  active: boolean,
+  draft: string,
+) {
+  const sent = useRef("");
+  const sentAt = useRef(0);
+  useEffect(() => {
+    const text = active ? draft.slice(0, DRAFT_MAX) : "";
+    if (token === null || text === sent.current) return;
+    const send = () => {
+      sent.current = text;
+      sentAt.current = Date.now();
+      // Only a preview: the next keystroke sends again.
+      client.typing(token, text).catch(() => {});
+    };
+    const wait = text === "" ? 0 : sentAt.current + DRAFT_EVERY_MS - Date.now();
+    if (wait <= 0) return send();
+    const timer = setTimeout(send, wait);
+    return () => clearTimeout(timer);
+  }, [active, client, draft, token]);
 }
