@@ -9,6 +9,7 @@ import type {
   Usage,
   WorkspaceApi,
 } from "./api.ts";
+import { shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -29,8 +30,6 @@ import {
 import { visitorName } from "./visitor.ts";
 
 const teamFailure = (failure: unknown) => failureText(failure, { 409: "lastOwner" });
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
 /**
  * The team, its invites and blocked visitors, which load together, and any change to one reloads

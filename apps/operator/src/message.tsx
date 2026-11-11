@@ -1,6 +1,8 @@
 /** @jsxImportSource react */
 import { useEffect, useId, useState } from "react";
+import { quoteStandIn } from "../../../packages/widget/src/quote.ts";
 import type { Quote, WorkspaceApi } from "./api.ts";
+import { timeOrDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -12,8 +14,8 @@ const quoteAuthor = (quote: Quote, visitorName: string) =>
 
 /** The quoted words, or what stands in for them. */
 function quoteText(quote: Quote): string {
-  if (quote.id === null) return t("quoteDeleted");
-  return quote.excerpt === "" && quote.hasImage ? t("quoteImage") : quote.excerpt;
+  const standIn = quoteStandIn(quote);
+  return standIn === null ? quote.excerpt : t(standIn);
 }
 
 /**
@@ -93,9 +95,6 @@ export function MessageMenu({ items, side }: { items: MenuItem[]; side: "start" 
   );
 }
 
-const timeOf = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-
 /** What a message's info says about its receipt, once the times arrive. */
 function receiptLines(
   receipt: { readAt: string | null; emailedAt: string | null },
@@ -103,8 +102,8 @@ function receiptLines(
 ): string[] {
   const lines: string[] = [];
   if (receipt.emailedAt !== null)
-    lines.push(t("infoEmailedAt", { time: timeOf(receipt.emailedAt) }));
-  if (receipt.readAt !== null) lines.push(t("infoReadAt", { time: timeOf(receipt.readAt) }));
+    lines.push(t("infoEmailedAt", { time: timeOrDate(receipt.emailedAt) }));
+  if (receipt.readAt !== null) lines.push(t("infoReadAt", { time: timeOrDate(receipt.readAt) }));
   else if (isRead) lines.push(t("infoRead"));
   return lines.length === 0 ? [t("infoNotSeen")] : lines;
 }
@@ -160,14 +159,23 @@ export function MessageInfo({
       <div className="dialog-body">
         <h2 id={titleId}>{t("infoTitle")}</h2>
         <dl>
-          <dd>
+          <dt>{t("infoSentLabel")}</dt>
+          <dd className="info-time">
             {new Date(line.createdAt).toLocaleString([], {
               dateStyle: "full",
               timeStyle: "short",
             })}
           </dd>
+          <dt>{t("infoAuthorLabel")}</dt>
           <dd>{via === null ? line.author : t(via, { name: line.author })}</dd>
-          {wantsReceipt && (receipt ?? [t("loading")]).map((text) => <dd key={text}>{text}</dd>)}
+          {wantsReceipt && (
+            <>
+              <dt>{t("infoSeenLabel")}</dt>
+              {(receipt ?? [t("loading")]).map((text) => (
+                <dd key={text}>{text}</dd>
+              ))}
+            </>
+          )}
         </dl>
         <div className="dialog-actions">
           <button type="button" className="pill dark" onClick={() => dialog.current?.close()}>

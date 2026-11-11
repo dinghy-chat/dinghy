@@ -601,7 +601,6 @@ export function workspaceApi(workspaceId: string) {
     ) {
       const conversations: Conversation[] = [];
       let waiting = 0;
-      let open = 0;
       let openBy: OpenCounts | null = null;
       const whose = assignee === null ? "" : `&assignee=${assignee}`;
       for (;;) {
@@ -615,18 +614,16 @@ export function workspaceApi(workspaceId: string) {
           conversations: Conversation[];
           hasMore: boolean;
           waiting: number;
-          open: number;
           openBy: OpenCounts;
         }>(`${base}/conversations?status=${status}${whose}&limit=${size}${before}`);
         conversations.push(...page.conversations);
         // From the first page, so the count matches the rows on screen.
         if (last === undefined) {
           waiting = page.waiting;
-          open = page.open;
           openBy = page.openBy;
         }
         if (!page.hasMore || conversations.length >= limit || cancelled()) {
-          return { conversations, hasMore: page.hasMore, waiting, open, openBy };
+          return { conversations, hasMore: page.hasMore, waiting, openBy };
         }
       }
     },

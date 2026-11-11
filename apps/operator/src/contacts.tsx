@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type FormEvent, useEffect, useState } from "react";
 import type { Contact, ContactDetail, ContactSort, Role, WorkspaceApi } from "./api.ts";
+import { shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import { countryName, flag } from "./place.ts";
@@ -17,9 +18,6 @@ const SORTS: { value: ContactSort; label: TextId }[] = [
   { value: "lastSeen", label: "sortLastSeen" },
   { value: "firstSeen", label: "sortFirstSeen" },
 ];
-
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 
 /** A country as a flag and its name, or nothing. */
 function CountryCell({ country }: { country: string | null }) {

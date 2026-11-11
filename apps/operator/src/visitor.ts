@@ -1,4 +1,5 @@
 import type { Conversation, VisitorIdentity } from "./api.ts";
+import { MINUTE_MS } from "./format.ts";
 import { t } from "./text.ts";
 
 // Crockford's base32: no I, L, O or U, so a code read aloud is not mistaken for another.
@@ -87,8 +88,6 @@ export function replyAuthor(
 
 /** A page as the header shows it: with no scheme, as in "acme.example/pricing". */
 export const bare = (page: string) => page.replace(/^https?:\/\//, "");
-
-const MINUTE_MS = 60_000;
 
 /** "5 minutes ago", "yesterday", in the browser's words. Narrow is "5m ago" in English. */
 export function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "long"): string {

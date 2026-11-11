@@ -2477,11 +2477,16 @@ button.quote:hover {
   gap: 6px;
   margin: 0;
 }
+.message-info dt {
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 12px;
+}
 .message-info dd {
   margin: 0;
   color: var(--text);
 }
-.message-info dd:first-child {
+.message-info .info-time {
   color: var(--navy);
   font-weight: 600;
 }

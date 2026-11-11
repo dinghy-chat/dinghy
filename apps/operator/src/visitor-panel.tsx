@@ -4,6 +4,7 @@
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Contact, ContactDetail, Conversation, Member, PageView } from "./api.ts";
+import { MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { countryName, flag, localTime } from "./place.ts";
 import { Select } from "./popup.tsx";
@@ -21,7 +22,6 @@ import {
   webLink,
 } from "./visitor.ts";
 
-const MINUTE_MS = 60_000;
 const PAGES_FIRST = 5;
 
 /** A fold, open or closed as this device last left it. */

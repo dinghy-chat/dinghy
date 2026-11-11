@@ -1,5 +1,5 @@
-// The composer's formatting: each one changes the text around the selection into the Markdown that
-// messages use, and says what to select after.
+// The composer's formatting, which changes the text around the selection into the Markdown that
+// messages use and says what to select after, and the times and dates the app shows.
 
 /** The new text, and the selection in it. */
 export interface Edit {
@@ -77,4 +77,23 @@ export function list(value: string, start: number, end: number, ordered: boolean
     start: from,
     end: from + block.length,
   };
+}
+
+export const MINUTE_MS = 60_000;
+
+const CLOCK: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
+const SHORT_DATE: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
+
+/** "3:07 PM", in this browser's time zone or in the one given. */
+export const clockTime = (at: string | Date, timeZone?: string) =>
+  new Date(at).toLocaleTimeString([], timeZone === undefined ? CLOCK : { ...CLOCK, timeZone });
+
+/** "Nov 11, 2026". */
+export const shortDate = (iso: string) => new Date(iso).toLocaleDateString([], SHORT_DATE);
+
+/** The time today, and the date with the time before today: "Nov 10, 2026, 3:07 PM". */
+export function timeOrDate(iso: string): string {
+  const at = new Date(iso);
+  if (at.toDateString() === new Date().toDateString()) return clockTime(at);
+  return at.toLocaleString([], { ...SHORT_DATE, ...CLOCK });
 }

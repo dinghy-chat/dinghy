@@ -5,9 +5,7 @@ import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import { AnalyticsPage } from "./analytics.tsx";
 import {
   ApiError,
-  type Assignee,
   type Conversation,
-  getWaiting,
   type Me,
   type Member,
   type OpenCounts,
@@ -15,9 +13,20 @@ import {
   workspaceApi,
 } from "./api.ts";
 import { ContactsPage } from "./contacts.tsx";
+import { clockTime } from "./format.ts";
 import { GetStarted } from "./get-started.tsx";
 import { Icon } from "./icons.tsx";
+import {
+  emptyLook,
+  filterAddress,
+  filterInAddress,
+  ListFilters,
+  type Status,
+  WHO_ASSIGNEE,
+  type Who,
+} from "./inbox-filters.tsx";
 import { useChanges, usePresence, useTabVisible } from "./live.ts";
+import { useLiveCount, useWaitingBy } from "./live-counts.ts";
 import { useLatestLoad } from "./load.ts";
 import { leave, NAVIGATE_EVENT, navigate, pushAddress, replaceAddress } from "./nav.ts";
 import { useDeviceSync } from "./notifications.tsx";
@@ -26,9 +35,9 @@ import { Settings, type SettingsPage, settingsAddress, settingsInAddress } from 
 import { Sidebar, type View } from "./sidebar.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { readStored, store } from "./stored.ts";
-import { type TextId, t } from "./text.ts";
+import { t } from "./text.ts";
 import { Thread } from "./thread.tsx";
-import { Avatar, Choices, type Option, PageHead } from "./ui.tsx";
+import { Avatar, PageHead } from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
 import { VisitorsPage } from "./visitors.tsx";
 
@@ -36,61 +45,11 @@ const PAGE_SIZE = 50;
 const SEARCH_WAIT_MS = 250;
 const SEARCH_MIN = 3;
 
-type Status = "open" | "closed";
-/** Whose conversations the Inbox lists. */
-type Who = "all" | "mine" | "unassigned";
-
-const STATUS_EMPTY: Record<Status, { empty: TextId; hint: TextId }> = {
-  open: { empty: "noOpen", hint: "emptyHint" },
-  closed: { empty: "noClosed", hint: "closedHint" },
-};
-
-const STATUS_OPTIONS: Option<Status>[] = [
-  { value: "open", label: "open" },
-  { value: "closed", label: "closed" },
-];
-const WHO_OPTIONS: Option<Who>[] = [
-  { value: "all", label: "filterAll" },
-  { value: "mine", label: "filterMine" },
-  { value: "unassigned", label: "unassigned" },
-];
-const WHO_ASSIGNEE: Record<Who, Assignee | null> = { all: null, mine: "me", unassigned: "none" };
-
-/** What the Inbox lists. */
-type Filter = { status: Status; who: Who };
-
-/** What the Inbox shows, from the address: `?view=closed` and `&who=mine` or `&who=unassigned`. */
-function filterInAddress(): Filter {
-  const params = new URLSearchParams(location.search);
-  const who = params.get("who");
-  return {
-    status: params.get("view") === "closed" ? "closed" : "open",
-    who: who === "mine" || who === "unassigned" ? who : "all",
-  };
-}
-
-/** The Inbox's address with this choice, keeping the rest of `from`, such as a conversation. */
-function filterAddress(status: Status, who: Who, from = location.href): string {
-  const url = new URL(from);
-  if (status === "closed") url.searchParams.set("view", "closed");
-  else url.searchParams.delete("view");
-  if (who === "all") url.searchParams.delete("who");
-  else url.searchParams.set("who", who);
-  return `${url.pathname}${url.search}`;
-}
-
-/** The empty list's words: a filter's own, or the status's. */
-function emptyLook(status: Status, who: Who): { empty: TextId; hint: TextId | null } {
-  if (who === "mine") return { empty: "noMine", hint: null };
-  if (who === "unassigned" && status === "open") return { empty: "noUnassigned", hint: null };
-  return STATUS_EMPTY[status];
-}
-
 /** The time today, and the date before today. */
 function shortTime(iso: string): string {
   const when = new Date(iso);
   return when.toDateString() === new Date().toDateString()
-    ? when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    ? clockTime(when)
     : when.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
@@ -314,8 +273,6 @@ export function Inbox({
     setListed(false);
   }
   const [waiting, setWaiting] = useState(0);
-  // Open conversations for the chosen assignee filter, for the Open choice.
-  const [openCount, setOpenCount] = useState<number | null>(null);
   const [openBy, setOpenBy] = useState<OpenCounts | null>(null);
   // In memory only, so a reload or a sign-out clears them.
   const drafts = useRef(new Map<string, string>()).current;
@@ -356,7 +313,7 @@ export function Inbox({
     accountVersion,
   } = useChanges(api, visible, onSignedOut, onVisitorMessage);
   const liveCount = useLiveCount(api, visible);
-  const waitingBy = useWaitingBy(version);
+  const waitingElsewhere = useWaitingBy(visible);
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
   const name = membership?.name ?? t("appName");
@@ -416,7 +373,6 @@ export function Inbox({
       setListed(true);
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
-      setOpenCount(page.open);
       setOpenBy(page.openBy);
       if (firstList.current && wanted.status === "open" && wanted.assignee === null) {
         firstList.current = false;
@@ -509,7 +465,7 @@ export function Inbox({
           view={view}
           onProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
-          waitingBy={waitingBy}
+          waitingBy={{ ...waitingElsewhere, [workspaceId]: waiting }}
           liveCount={liveCount}
           steps={
             role === "member" ? null : (
@@ -609,35 +565,13 @@ export function Inbox({
                     found === null ? listContext(status, waiting) : foundContext(found.length)
                   }
                 />
-                <div className="list-filters">
-                  <Choices
-                    label={t("listStatus")}
-                    variant="outlined"
-                    full
-                    value={status}
-                    options={STATUS_OPTIONS.map((option) =>
-                      option.value === "open" && openCount !== null
-                        ? { ...option, count: openCount }
-                        : option,
-                    )}
-                    onChange={(next) => showFilter(next, who)}
-                  />
-                  {isTeam && (
-                    <Choices
-                      label={t("listAssignee")}
-                      variant="quiet"
-                      full
-                      value={who}
-                      // Counts of open conversations, so they show only on the Open list.
-                      options={WHO_OPTIONS.map((option) =>
-                        status === "open" && openBy !== null
-                          ? { ...option, count: openBy[option.value] }
-                          : option,
-                      )}
-                      onChange={(next) => showFilter(status, next)}
-                    />
-                  )}
-                </div>
+                <ListFilters
+                  status={status}
+                  who={who}
+                  isTeam={isTeam}
+                  openBy={openBy}
+                  onChange={showFilter}
+                />
                 <SearchField value={query} searching={searching} onChange={setQuery} />
                 {(searchTooShort || searchFailed) && (
                   <p
@@ -721,57 +655,4 @@ export function Inbox({
       </div>
     </div>
   );
-}
-
-/** How often the sidebar asks how many people are on the site. */
-const LIVE_COUNT_EVERY_MS = 30_000;
-
-/** The tabs of the site open now, read every 30 seconds while this tab shows. Null when unknown. */
-/** How often the other workspaces' waiting counts load again, besides on focus. */
-const WAITING_EVERY_MS = 60_000;
-
-/**
- * Each workspace's waiting count, for the switcher. It loads again on this workspace's events, and
- * every minute and on focus for the others, which have no stream here.
- */
-function useWaitingBy(version: number): Record<string, number> {
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const load = useLatestLoad(async () => {
-    const { workspaces } = await getWaiting();
-    setCounts(Object.fromEntries(workspaces.map((one) => [one.workspaceId, one.waiting])));
-  });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: each version asks for a load.
-  useEffect(load, [load, version]);
-  useEffect(() => {
-    const timer = setInterval(load, WAITING_EVERY_MS);
-    addEventListener("focus", load);
-    return () => {
-      clearInterval(timer);
-      removeEventListener("focus", load);
-    };
-  }, [load]);
-  return counts;
-}
-
-function useLiveCount(api: WorkspaceApi, visible: boolean): number | null {
-  const [count, setCount] = useState<number | null>(null);
-  useEffect(() => {
-    if (!visible) return;
-    let stopped = false;
-    const read = () => {
-      api.liveCount().then(
-        (answer) => {
-          if (!stopped) setCount(answer.count);
-        },
-        () => {},
-      );
-    };
-    read();
-    const timer = setInterval(read, LIVE_COUNT_EVERY_MS);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [api, visible]);
-  return count;
 }

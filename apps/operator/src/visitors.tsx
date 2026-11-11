@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { LiveVisitor, WorkspaceApi } from "./api.ts";
 import { COUNTRY_POINTS } from "./countries.ts";
+import { MINUTE_MS } from "./format.ts";
 import { useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
 import { countryName, flag, localTime } from "./place.ts";
@@ -12,7 +13,6 @@ import { bare, visitorName, webLink } from "./visitor.ts";
 
 /** The live list loads again this often while the page shows. */
 const REFRESH_MS = 15_000;
-const MINUTE_MS = 60_000;
 const HOUR_MINUTES = 60;
 /** The smallest and largest dot on the map, in pixels, by how many people are in the country. */
 const DOT_MIN_PX = 10;
