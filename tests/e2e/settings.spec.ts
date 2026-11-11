@@ -202,7 +202,7 @@ test("a Settings link names its workspace, which wins over the one remembered", 
   await page.context().close();
 });
 
-test("Back and Forward bring back the Inbox's filters with their list", async ({ browser }) => {
+test("Back brings back the Inbox's filters with their list", async ({ browser }) => {
   const page = await signedIn(browser, server, "owner@example.com");
   const status = page.getByRole("group", { name: "Conversations to show" });
   const whose = page.getByRole("group", { name: "Whose conversations" });

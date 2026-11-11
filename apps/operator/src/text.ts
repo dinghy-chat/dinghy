@@ -126,6 +126,7 @@ const en = {
   moreActions: "More actions",
   cancel: "Cancel",
   save: "Save",
+  saved: "Saved.",
   back: "Back",
   close: "Close",
   reopen: "Reopen",
@@ -234,7 +235,6 @@ const en = {
   originsRemove: "Remove {site}",
   originsAdd: "Add a site",
   originsBadRow: "Enter a site like https://example.com, with no path after it.",
-  saved: "Saved.",
   originsBad:
     "Check each website address. Use a full address such as https://example.com without a page path.",
   secretTitle: "Identify signed-in users (optional)",

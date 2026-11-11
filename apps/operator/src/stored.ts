@@ -1,11 +1,13 @@
 // Per-browser choices in localStorage. Storage throws in some private windows and with blocked site
-// data, so a read then gives null and a write is skipped: the choice lasts until the page reloads.
+// data. Then the choice lives in memory, so it lasts until the page reloads.
+
+const memory = new Map<string, string>();
 
 export function readStored(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
-    return null;
+    return memory.get(key) ?? null;
   }
 }
 
@@ -15,6 +17,7 @@ export function store(key: string, value: string | null): void {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
   } catch {
-    // See the note at the top.
+    if (value === null) memory.delete(key);
+    else memory.set(key, value);
   }
 }
