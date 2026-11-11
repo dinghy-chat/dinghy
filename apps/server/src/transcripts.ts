@@ -14,6 +14,7 @@ import { chatLinkUrl, createChatLink } from "./chat-link.ts";
 import {
   alertDelivery,
   conversation,
+  event,
   message,
   visitor,
   widgetSettings,
@@ -28,7 +29,8 @@ import {
   type MessageAuthor,
   messageAuthors,
   messageColumns,
-  requestTranscript,
+  nextSeq,
+  type StatusPayload,
   visitorQuote,
 } from "./messages.ts";
 import { imageUrls } from "./public-images.ts";
@@ -272,4 +274,39 @@ export async function transcriptPlan(
     stopUrl,
     carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
   };
+}
+
+/**
+ * Asks the worker to email the visitor this conversation now, through the event table, so it goes
+ * at least once. The payload names the newest message that is not deleted, as a transcript carries.
+ * False with no message to send.
+ */
+async function requestTranscript(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+): Promise<boolean> {
+  const [newest] = await tx
+    .select({ id: message.id })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversationId),
+        isChat(),
+        isNull(message.deletedAt),
+      ),
+    )
+    .orderBy(desc(message.seq))
+    .limit(1);
+  if (newest === undefined) return false;
+  const seq = await nextSeq(tx, workspaceId);
+  await tx.insert(event).values({
+    workspaceId,
+    seq,
+    kind: "transcript.requested",
+    payload: { conversationId, messageId: newest.id } satisfies StatusPayload,
+    needsAlert: true,
+  });
+  return true;
 }

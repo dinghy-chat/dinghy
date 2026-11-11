@@ -1089,41 +1089,9 @@ export async function setConversationStatus(
 }
 
 /**
- * Asks the worker to email the visitor this conversation now, through the event table, so it goes
- * at least once. The payload names the newest message that is not deleted, as a transcript carries.
- * False with no message to send.
+ * The payload of a close, a reopen or a transcript request: the conversation, and its status line,
+ * or for a request the newest message that is not deleted.
  */
-export async function requestTranscript(
-  tx: Transaction,
-  workspaceId: string,
-  conversationId: string,
-): Promise<boolean> {
-  const [newest] = await tx
-    .select({ id: message.id })
-    .from(message)
-    .where(
-      and(
-        eq(message.workspaceId, workspaceId),
-        eq(message.conversationId, conversationId),
-        isChat(),
-        isNull(message.deletedAt),
-      ),
-    )
-    .orderBy(desc(message.seq))
-    .limit(1);
-  if (newest === undefined) return false;
-  const seq = await nextSeq(tx, workspaceId);
-  await tx.insert(event).values({
-    workspaceId,
-    seq,
-    kind: "transcript.requested",
-    payload: { conversationId, messageId: newest.id } satisfies StatusPayload,
-    needsAlert: true,
-  });
-  return true;
-}
-
-/** The payload of a close or a reopen: the conversation, and its status line. */
 export interface StatusPayload {
   conversationId: string;
   messageId: string;
