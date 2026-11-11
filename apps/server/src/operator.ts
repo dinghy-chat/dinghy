@@ -4,7 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
-import { isSoleOwner } from "./account-delete.ts";
+import { heirOf, isSoleOwner } from "./account-delete.ts";
 import {
   type Actor,
   apiKeyToken,
@@ -86,9 +86,11 @@ const meRoute = createRoute({
                   // True while the server's admin has suspended it: nobody can send, the widget
                   // is off, and operators can read.
                   suspended: z.boolean(),
-                  // True when the operator is its only owner, so they cannot leave it or delete
-                  // their account until they delete it or make someone else an owner.
+                  // True when the operator is its only owner, so they cannot leave it.
                   soleOwner: z.boolean(),
+                  // For an only owner: who becomes the owner if they delete their account. Null
+                  // when nobody else is in the workspace, which is then deleted with the account.
+                  heir: z.string().nullable(),
                 }),
               ),
               billing: z.boolean(),
@@ -381,16 +383,21 @@ export function registerOperatorRoutes(
         workspaces: await Promise.all(
           (await operatorWorkspaces(db, id)).map(async ({ access, ...membership }) => {
             const { workspaceId, role } = membership;
-            const { face, soleOwner } = await withWorkspace(db, workspaceId, async (tx) => ({
-              face: await readWorkspaceFace(tx, imageUrls, workspaceId),
-              soleOwner: await isSoleOwner(tx, workspaceId, role),
-            }));
+            const { face, soleOwner, heir } = await withWorkspace(db, workspaceId, async (tx) => {
+              const sole = await isSoleOwner(tx, workspaceId, role);
+              return {
+                face: await readWorkspaceFace(tx, imageUrls, workspaceId),
+                soleOwner: sole,
+                heir: sole ? ((await heirOf(tx, workspaceId, id))?.name ?? null) : null,
+              };
+            });
             return {
               ...membership,
               ...accessFlags(access),
               name: face?.name ?? "",
               logoUrl: face?.logoUrl ?? null,
               soleOwner,
+              heir,
             };
           }),
         ),

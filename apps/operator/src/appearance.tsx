@@ -19,17 +19,17 @@ import { setLeaveGuard } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
 import { settingsAddress } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
+import { toast } from "./toast.tsx";
 import {
   AppLink,
   Choices,
   DocLink,
+  ErrorNote,
   Field,
   failureText,
   Loading,
-  type Note,
   type Option,
   Page,
-  SaveNote,
 } from "./ui.tsx";
 
 const HIDDEN_BUTTON_DOC = {
@@ -458,7 +458,7 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
             onChange={(next) => setDevice(next)}
           />
         )}
-        <div className="preview-stage" data-dark={theme === "dark"}>
+        <div className="preview-stage">
           {/* A picture of the widget: its sample buttons do nothing, so nothing can reach them. */}
           <div ref={host} inert />
           {appearance.launcher === "hidden" && <p className="hint">{t("previewLauncherHidden")}</p>}
@@ -513,7 +513,7 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
   const saved = loaded.data;
   // Null until the first change, so the form shows what is saved until then.
   const [edited, setEdited] = useState<WidgetSettings | null>(null);
-  const [note, setNote] = useState<Note>(null);
+  const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   const unsaved = saved !== null && edited !== null && !sameSettings(editable(saved), edited);
 
@@ -522,7 +522,7 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
 
   const change = (next: Partial<WidgetSettings>) => {
     setEdited({ ...draft, ...next });
-    setNote(null);
+    setError(null);
   };
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -530,9 +530,9 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
     try {
       loaded.setData(await api.setWidget(draft));
       setEdited(null);
-      setNote({ ok: true, text: "widgetSaved" });
+      toast("widgetSaved");
     } catch (failure) {
-      setNote({ ok: false, text: failureText(failure, {}) });
+      setError(failureText(failure, {}));
     } finally {
       setBusy(false);
     }
@@ -589,7 +589,7 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
             <button type="submit" className="pill dark" disabled={busy || !unsaved}>
               {t("save")}
             </button>
-            <SaveNote note={note} />
+            <ErrorNote text={error} />
           </div>
         )}
       </form>

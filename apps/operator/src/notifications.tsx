@@ -4,7 +4,8 @@ import { deleteDevice, saveDevice, testPush, type WorkspaceApi } from "./api.ts"
 import { useLoad } from "./load.ts";
 import { setSoundOn, soundOn } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
-import { DocLink, ErrorNote, failureText, Loading, Page, PageRow, StatusNote } from "./ui.tsx";
+import { toast } from "./toast.tsx";
+import { ErrorNote, failureText, Loading, Page, PageRow } from "./ui.tsx";
 
 const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window;
 
@@ -43,7 +44,8 @@ function PushRow({ pushKey }: { pushKey: string | null }) {
 
   const sendTest = async () => {
     const result = await testPush().catch(() => null);
-    setNote(result !== null && result.sent > 0 ? "pushTestSent" : "pushTestFailed");
+    if (result !== null && result.sent > 0) toast("pushTestSent");
+    else setNote("pushTestFailed");
   };
 
   const turnOn = async (key: string) => {
@@ -74,7 +76,11 @@ function PushRow({ pushKey }: { pushKey: string | null }) {
   };
 
   return (
-    <PageRow title={t("pushThisDevice")} help={`${t("pushHelp")} ${t("pushNote")}`}>
+    <PageRow
+      title={t("pushThisDevice")}
+      help={`${t("pushHelp")} ${t("pushNote")}`}
+      docs={[{ path: "troubleshooting#alerts", text: "pushDocsLink" }]}
+    >
       {pushKey === null ? (
         <p className="note">{t("pushNoKeys")}</p>
       ) : !pushSupported() ? (
@@ -94,8 +100,7 @@ function PushRow({ pushKey }: { pushKey: string | null }) {
           </button>
         </div>
       )}
-      <StatusNote text={note} />
-      <DocLink path="troubleshooting#alerts" text="pushDocsLink" />
+      <ErrorNote text={note} />
     </PageRow>
   );
 }
@@ -126,6 +131,11 @@ export function NotificationsPage({ api }: { api: WorkspaceApi }) {
           <PageRow
             title={t("email")}
             help={t(settings.emailAvailable ? "emailAlertsHelp" : "emailUnavailable")}
+            docs={
+              settings.emailAvailable
+                ? []
+                : [{ path: "self-hosting#settings", text: "emailDocsLink" }]
+            }
           >
             {settings.emailAvailable && (
               <label className="check">
@@ -137,12 +147,13 @@ export function NotificationsPage({ api }: { api: WorkspaceApi }) {
                 />
               </label>
             )}
-            {!settings.emailAvailable && (
-              <DocLink path="self-hosting#settings" text="emailDocsLink" />
-            )}
             <ErrorNote text={failure} />
           </PageRow>
-          <PageRow title={t("soundTitle")} help={t("soundHelp")}>
+          <PageRow
+            title={t("soundTitle")}
+            help={t("soundHelp")}
+            docs={[{ path: "operator-guide#get-alerts", text: "notificationsDocsLink" }]}
+          >
             <label className="check">
               {t("soundToggle")}
               <input
@@ -155,7 +166,6 @@ export function NotificationsPage({ api }: { api: WorkspaceApi }) {
               />
             </label>
             <p className="hint">{t("soundNote")}</p>
-            <DocLink path="operator-guide#get-alerts" text="notificationsDocsLink" />
           </PageRow>
         </>
       )}

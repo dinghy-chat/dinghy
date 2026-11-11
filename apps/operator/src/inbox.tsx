@@ -17,15 +17,7 @@ import { useLatestLoad } from "./load.ts";
 import { leave, NAVIGATE_EVENT, navigate, pushAddress, replaceAddress } from "./nav.ts";
 import { useDeviceSync } from "./notifications.tsx";
 import { EmptyArt, Harbor } from "./scene.tsx";
-import {
-  openOwnerStep,
-  ownerStepPage,
-  Settings,
-  type SettingsPage,
-  settingsAddress,
-  settingsInAddress,
-  wantsDelete,
-} from "./settings.tsx";
+import { Settings, type SettingsPage, settingsAddress, settingsInAddress } from "./settings.tsx";
 import { Sidebar, type View } from "./sidebar.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
@@ -310,11 +302,10 @@ export function Inbox({
     const params = new URLSearchParams(location.search);
     return params.get("workspace") === workspaceId ? params.get("conversation") : null;
   });
-  // The address can open Settings, as the account's delete does for its Team page or delete dialog.
+  // The address can open Settings, as a reload or a link does.
   const [initialPage] = useState(settingsInAddress);
   const [view, setView] = useState<View>(initialPage === undefined ? "inbox" : "settings");
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(initialPage ?? null);
-  const [openDelete, setOpenDelete] = useState(() => wantsDelete(workspaceId));
   const visible = useTabVisible();
   const [query, setQuery] = useState("");
   const { found, searching, failed: searchFailed } = useSearch(api, query);
@@ -419,9 +410,8 @@ export function Inbox({
   }, [waiting]);
 
   /** Shows a view, and a Settings page in it, and puts it in the address for Back and reloads. */
-  const showView = (next: View, page: SettingsPage | null = null, deleting = false) => {
+  const showView = (next: View, page: SettingsPage | null = null) => {
     setSettingsPage(page);
-    setOpenDelete(deleting);
     // The account's delete reads who owns what, which can change in Settings.
     if (page === "profile") onAccountChanged();
     setView(next);
@@ -437,7 +427,6 @@ export function Inbox({
   useEffect(() => {
     const moved = () => {
       const page = settingsInAddress();
-      setOpenDelete(false);
       if (page === undefined) {
         setView((current) => (current === "settings" ? "inbox" : current));
         const next = filterInAddress();
@@ -532,9 +521,7 @@ export function Inbox({
                 billing={billing}
                 waiting={waitsForCloud}
                 emailAvailable={emailAvailable}
-                keepsLastWorkspace={!canCreate}
                 page={settingsPage}
-                openDelete={openDelete}
                 onPage={openSettings}
                 onLeft={() => navigate("/")}
                 onWorkspaceDeleted={onWorkspaceDeleted}
@@ -542,11 +529,6 @@ export function Inbox({
                   // The name shows on assignments and in the dropdown too, which read the members.
                   onAccountChanged();
                   loadMembers();
-                }}
-                onOpenWorkspace={(id, step) => {
-                  if (id === workspaceId)
-                    showView("settings", ownerStepPage(step), step === "delete");
-                  else openOwnerStep(id, step);
                 }}
                 onAccountDeleted={onAccountDeleted}
               />

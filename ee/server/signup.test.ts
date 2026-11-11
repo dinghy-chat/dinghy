@@ -727,23 +727,10 @@ describe("once Stripe keys are set", () => {
     expect(inbox.status).toBe(402);
   });
 
-  test("an owner who never paid deletes the workspace, then the account", async () => {
+  test("an owner who never paid deletes the account, and the workspace goes with it", async () => {
     const created = await signup(paying);
     const deleteAccount = () =>
       request(paying, "POST", "/v1/operator/account/delete", { cookie: created.cookie, body: {} });
-    expect((await deleteAccount()).status).toBe(409);
-    const deleted = await request(
-      paying,
-      "DELETE",
-      `/v1/operator/workspaces/${created.workspaceId}`,
-      {
-        cookie: created.cookie,
-        body: { name: "Acme" },
-      },
-    );
-    expect(deleted.status).toBe(200);
-    expect((await workspaceRow(created.workspaceId)).deletedAt).not.toBeNull();
-
     expect((await deleteAccount()).status).toBe(200);
     const link = await linkFor(
       created.email,
@@ -752,6 +739,7 @@ describe("once Stripe keys are set", () => {
     expect((await pressLinkButton(paying, link)).status).toBe(200);
     const [row] = await owner.select().from(operator).where(eq(operator.email, created.email));
     expect(row).toBeUndefined();
+    expect((await workspaceRow(created.workspaceId)).deletedAt).not.toBeNull();
   });
 
   test("a waiting workspace keeps its dashboard, pays through Checkout, and its widget goes live", async () => {

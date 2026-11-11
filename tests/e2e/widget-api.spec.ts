@@ -14,6 +14,17 @@ const WATCHED = `<!doctype html><title>Watched</title><h1>Watched</h1>
     .map((name) => ["on", name, record(name)]) };
 </script>
 ${SNIPPET}`;
+// A page that opens the chat with a message before the loader runs, as an "Ask support" button does.
+const QUEUED = `<!doctype html><title>Queued</title>
+<script>
+  window.events = [];
+  window.Dinghy = { q: [
+    ["on", "open", () => window.events.push("open")],
+    ["on", "close", () => window.events.push("close")],
+    ["open", { message: "From the queue" }],
+  ] };
+</script>
+${SNIPPET}`;
 const LEFT = `<!doctype html><title>Left</title>${SNIPPET.replace(
   "async>",
   'data-position="left" data-offset-x="40" data-offset-y="80" async>',
@@ -22,7 +33,11 @@ const LEFT = `<!doctype html><title>Left</title>${SNIPPET.replace(
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
 test.beforeAll(async () => {
-  server = await startE2EServer({ "/watched": { html: WATCHED }, "/left": { html: LEFT } });
+  server = await startE2EServer({
+    "/watched": { html: WATCHED },
+    "/queued": { html: QUEUED },
+    "/left": { html: LEFT },
+  });
 });
 
 test.afterAll(async () => {
@@ -79,6 +94,28 @@ test("open({ message }) fills the composer without sending, and the events follo
       "close",
       "open",
     ]);
+});
+
+test("a queued open({ message }) fills the composer, keeps a typed draft, and reports a close from the chat", async ({
+  page,
+}) => {
+  await page.goto(`${server.hostOrigin}/queued`);
+  await expect(input(page)).toHaveValue("From the queue");
+
+  // The visitor's own words stay when the page asks again.
+  await input(page).fill("My own words");
+  await dinghy(page, (api) => api.open({ message: "Another question" }));
+  await expect(input(page)).toHaveValue("My own words");
+  // An empty box takes the page's message.
+  await input(page).fill("");
+  await dinghy(page, (api) => api.open({ message: "Another question" }));
+  await expect(input(page)).toHaveValue("Another question");
+
+  // The visitor closes the chat from inside it, and the page hears it.
+  await page.getByRole("button", { name: "Close chat" }).click();
+  await expect(input(page)).toHaveCount(0);
+  expect(await dinghy(page, (api) => api.state.open)).toBe(false);
+  await expect.poll(() => events(page)).toEqual(["open", "close"]);
 });
 
 test("a callback that throws does not stop the others, and on() returns a way to stop", async ({

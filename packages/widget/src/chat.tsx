@@ -251,8 +251,9 @@ function Chat({
     };
   }, [identity, renewing, renewAttempt, visible]);
 
+  // The page's message fills an empty box only, so a draft the visitor typed stays.
   useEffect(() => {
-    if (prefill !== null) setDraft(prefill.text);
+    if (prefill !== null) setDraft((current) => (current.trim() === "" ? prefill.text : current));
   }, [prefill]);
 
   // Only a visitor with a token has the flag, so one who never chatted stores nothing.

@@ -137,6 +137,9 @@ export interface Me {
     suspended: boolean;
     /** This operator is its only owner, so they cannot delete their account yet. */
     soleOwner: boolean;
+    /** For an only owner: who becomes the owner if they delete their account, or null when the
+     * workspace goes with it. */
+    heir: string | null;
   }[];
   /** True on the cloud plan, where a workspace waits for payment. */
   billing: boolean;

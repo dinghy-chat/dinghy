@@ -75,9 +75,13 @@ Select your name at the bottom of the sidebar, then **Profile**. This opens **Se
 
 **Theme** picks light, dark or **Use device setting** for the operator app. It applies only to this browser.
 
+### Delete your account
+
 **Delete my account** is in **Profile** too, on the payment screen, on the screen that asks for an invite, and on the workspace setup once you have been in a workspace. It takes you out of every workspace, ends your sessions, and erases your name and email. The workspaces keep their conversations, and your old replies show as from "Former team member".
 
-A workspace where you are the only owner blocks the delete. The dialog lists each one, with a way to delete it or to make someone else its owner. A workspace that waits for its first payment can only be deleted. A self-hosted server keeps its last workspace, so if it is one of these, make someone else its owner.
+A workspace where you are the only owner does not stop the delete. If other people are in it, the admin who joined first becomes its owner, or, with no admin, the member who joined first. If nobody else is in it, it is deleted with your account, with all its conversations, and on Dinghy Cloud its subscription ends. The dialog lists what happens to each of these workspaces before you confirm.
+
+A self-hosted server keeps its last workspace. If you are the only person in it, your account stays. To delete your workspaces one by one instead, use **Delete workspace** on each workspace's **Workspace** page.
 
 With a mail server, Dinghy emails you a confirmation link. Open it within 15 minutes, then select **Delete my account**. Opening the link deletes nothing. Without a mail server, you type your email to confirm, and the account goes at once.
 

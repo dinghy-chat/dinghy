@@ -6,7 +6,6 @@ import { Confirm } from "./popup.tsx";
 import { BlockedRow, type Team } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
 import {
-  DocLink,
   ErrorNote,
   failureText,
   ImageUpload,
@@ -84,7 +83,10 @@ const imagesText = (usage: Usage) =>
 /** The plan's limits and how much of each is used, on Dinghy Cloud. */
 function PlanRow({ usage }: { usage: Usage }) {
   return (
-    <PageRow title={t("usageTitle")}>
+    <PageRow
+      title={t("usageTitle")}
+      docs={[{ path: "operator-guide#plan-and-usage", text: "usageDocsLink" }]}
+    >
       <div className="meters">
         <Meter
           label={t("usageOperators")}
@@ -103,7 +105,6 @@ function PlanRow({ usage }: { usage: Usage }) {
           full="usageFullImages"
         />
       </div>
-      <DocLink path="operator-guide#plan-and-usage" text="usageDocsLink" />
     </PageRow>
   );
 }
@@ -127,7 +128,6 @@ function DeleteRow({
   name,
   endsSubscription,
   deletion,
-  startOpen,
   onDeleted,
 }: {
   api: WorkspaceApi;
@@ -135,21 +135,23 @@ function DeleteRow({
   endsSubscription: boolean;
   /** What the delete removes, once the settings have loaded. */
   deletion: Deletion | null;
-  /** The account's delete opened this workspace to delete it. */
-  startOpen: boolean;
   onDeleted(): void;
 }) {
-  const [open, setOpen] = useState(startOpen);
+  const [open, setOpen] = useState(false);
   const help = endsSubscription
     ? `${t("deleteWorkspaceHelp")} ${t("deleteWorkspaceCloud")}`
     : t("deleteWorkspaceHelp");
   return (
-    <PageRow title={t("deleteWorkspaceTitle")} help={help} danger>
+    <PageRow
+      title={t("deleteWorkspaceTitle")}
+      help={help}
+      docs={[{ path: "self-hosting#deleting-a-workspace", text: "deleteWorkspaceDocsLink" }]}
+      danger
+    >
       {/* An outline, as for replacing the secret. The filled red is for the confirm step. */}
       <button type="button" className="pill danger-soft" onClick={() => setOpen(true)}>
         {t("deleteWorkspaceOpen")}
       </button>
-      <DocLink path="self-hosting#deleting-a-workspace" text="deleteWorkspaceDocsLink" />
       {open && (
         <DeleteWorkspaceDialog
           api={api}
@@ -254,7 +256,6 @@ export function WorkspacePage({
   billing,
   workspaceId,
   team,
-  openDelete,
   onDeleted,
 }: {
   api: WorkspaceApi;
@@ -270,8 +271,6 @@ export function WorkspacePage({
   billing: BillingState | null;
   workspaceId: string;
   team: Team;
-  /** The account's delete opened this workspace to delete it. */
-  openDelete: boolean;
   onDeleted(): void;
 }) {
   return (
@@ -297,11 +296,14 @@ export function WorkspacePage({
       {isOwner && <BillingRow api={api} workspaceId={workspaceId} billing={billing} />}
       {team.blocked.length > 0 && <BlockedRow api={api} team={team} />}
       {isOwner && (
-        <PageRow title={t("exportTitle")} help={t("exportHelp")}>
+        <PageRow
+          title={t("exportTitle")}
+          help={t("exportHelp")}
+          docs={[{ path: "self-hosting#moving-a-workspace", text: "exportDocsLink" }]}
+        >
           <a className="pill" href={api.exportUrl} download>
             {t("exportDownload")}
           </a>
-          <DocLink path="self-hosting#moving-a-workspace" text="exportDocsLink" />
         </PageRow>
       )}
       {isOwner && (
@@ -310,7 +312,6 @@ export function WorkspacePage({
           name={name}
           endsSubscription={endsSubscription}
           deletion={deletion}
-          startOpen={openDelete}
           onDeleted={onDeleted}
         />
       )}

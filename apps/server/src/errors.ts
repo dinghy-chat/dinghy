@@ -95,7 +95,6 @@ export const ERROR_CODES = [
   "push_unavailable",
   "read_only",
   "signed_in",
-  "sole_owner",
   "storage_full",
   "suspended",
   "too_large",

@@ -1373,6 +1373,33 @@ describe("the owner's delete", () => {
     expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("active");
   });
 
+  // This server has no mail server, so the typed email confirms an account's delete at once.
+  const deleteAccount = (paid: { cookie: string; email: string }) =>
+    request(app, "POST", "/v1/operator/account/delete", {
+      cookie: paid.cookie,
+      body: { email: paid.email },
+    });
+
+  test("an account delete ends the subscription of a workspace nobody else is in", async () => {
+    const paid = await paidWorkspace();
+    expect((await deleteAccount(paid)).status).toBe(200);
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("canceled");
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).not.toBeNull();
+  });
+
+  test("an account delete deletes nothing when Stripe cannot cancel", async () => {
+    const paid = await paidWorkspace();
+    stripe.failures.cancel = 1;
+    const refused = await deleteAccount(paid);
+    expect(refused.status).toBe(502);
+    expect(await refused.json()).toMatchObject({ error: { code: "billing_unavailable" } });
+    expect((await workspaceRow(paid.workspaceId))?.deletedAt).toBeNull();
+    expect(stripe.subscriptions.get(paid.subscriptionId)?.status).toBe("active");
+    expect((await request(app, "GET", "/v1/operator/me", { cookie: paid.cookie })).status).toBe(
+      200,
+    );
+  });
+
   test("a Checkout made after the deletion commits is expired before the purge", async () => {
     const paid = await paidWorkspace();
     const customer = (await row(paid.workspaceId))?.stripeCustomerId ?? "";

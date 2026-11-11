@@ -9,10 +9,10 @@ import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate, replaceAddress } from "./nav.ts";
 import { DeleteAccount } from "./profile.tsx";
 import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./scene.tsx";
-import { openOwnerStep } from "./settings.tsx";
 import { readStored, store } from "./stored.ts";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
+import { Toaster } from "./toast.tsx";
 
 applyTheme(savedTheme());
 
@@ -146,13 +146,7 @@ function App() {
           {t("signOut")}
         </button>
         {/* With no workspace there is no Profile page, so the account's delete is here. */}
-        <DeleteAccount
-          me={me}
-          emailAvailable={meta.email}
-          keepsLastWorkspace
-          onOpen={openOwnerStep}
-          onDeleted={accountGone}
-        />
+        <DeleteAccount me={me} emailAvailable={meta.email} onDeleted={accountGone} />
       </AuthPage>
     );
   }
@@ -198,6 +192,7 @@ if (root !== null) {
   createRoot(root).render(
     <Scene>
       <App />
+      <Toaster />
     </Scene>,
   );
 }

@@ -15,7 +15,6 @@ import { type TextId, t } from "./text.ts";
 import {
   AddForm,
   CopyField,
-  DocLink,
   ErrorNote,
   Field,
   failureText,
@@ -102,7 +101,14 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
 
   const list = keys.data?.apiKeys ?? [];
   return (
-    <PageRow title={t("apiKeysTitle")} help={t("apiKeysHelp")}>
+    <PageRow
+      title={t("apiKeysTitle")}
+      help={t("apiKeysHelp")}
+      docs={[
+        { path: "api#api-keys", text: "apiDocsLink" },
+        { path: "api#mcp", text: "mcpDocsLink" },
+      ]}
+    >
       {list.length > 0 && (
         <ul className="item-list">
           {list.map((key) => (
@@ -158,10 +164,6 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
         />
       </AddForm>
       <ErrorNote text={failure ?? keys.failure} />
-      <div className="doc-links">
-        <DocLink path="api#api-keys" text="apiDocsLink" />
-        <DocLink path="api#mcp" text="mcpDocsLink" />
-      </div>
       {revoking !== null && (
         <Confirm
           title={t("apiKeyRevokeTitle", { name: revoking.name })}
@@ -413,7 +415,11 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
     });
 
   return (
-    <PageRow title={t("webhooksTitle")} help={t("webhooksHelp")}>
+    <PageRow
+      title={t("webhooksTitle")}
+      help={t("webhooksHelp")}
+      docs={[{ path: "api#webhooks", text: "webhookDocsLink" }]}
+    >
       {hooks.length > 0 && (
         <ul className="item-list">
           {hooks.map((hook) => (
@@ -479,7 +485,6 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
       )}
       <ErrorNote text={failure ?? loaded.failure} />
       <p className="hint">{t("webhookVerifyNote")}</p>
-      <DocLink path="api#webhooks" text="webhookDocsLink" />
       {asking !== null && (
         <Confirm
           title={t(asking.kind === "rotate" ? "webhookRotateTitle" : "webhookDeleteTitle", {

@@ -154,7 +154,7 @@ const en = {
   snippetTitle: "Install code",
   logoTitle: "Logo",
   logoHelp:
-    "Your logo appears in the workspace menu and at the top of the chat. Use a square PNG, JPEG, or WebP up to 2 MB. Logo changes save immediately.",
+    "Your logo appears in the workspace menu and at the top of the chat. A square image looks best. Changes save at once.",
   logoUpload: "Upload logo",
   logoReplace: "Replace logo",
   logoRemove: "Remove logo",
@@ -220,6 +220,7 @@ const en = {
   pictureReplace: "Replace picture",
   pictureRemove: "Remove picture",
   picturePreview: "Your picture",
+  imageRule: "PNG, JPEG or WebP, up to 2 MB.",
   pictureTooLarge: "This picture is larger than 2 MB. Choose a smaller image.",
   snippetHelp:
     "Add this code before the closing </body> tag on each page where you want chat. Your developer can do this for you.",
@@ -231,9 +232,13 @@ const en = {
   originsTitle: "Allowed sites",
   originsHelp:
     "Add each website address where you want chat, including https://. Add addresses with and without www separately if you use both.",
-  originsSite: "Site {number}",
+  originsNone: "No site yet. The chat works only on the sites you add.",
+  originsNew: "Website address",
   originsRemove: "Remove {site}",
   originsAdd: "Add a site",
+  originsAddButton: "Add",
+  originsAdded: "Site added.",
+  originsRemoved: "Site removed.",
   originsBadRow: "Enter a site like https://example.com, with no path after it.",
   originsBad:
     "Check each website address. Use a full address such as https://example.com without a page path.",
@@ -418,6 +423,7 @@ const en = {
   reload: "Reload",
   billingTitle: "Billing",
   billingActive: "Active. Renews on {date}.",
+  billingUnavailable: "The subscription could not be canceled, so nothing was deleted. Try again.",
   billingEnding: "Subscription canceled. Chat stays available until {date}.",
   billingFailed:
     "The last payment failed. Update your payment method before {date} to keep visitor chat available.",
@@ -542,15 +548,13 @@ const en = {
   workspaceDeleted: "{name} was deleted.",
   deleteAccountTitle: "Delete my account",
   deleteAccountHelp:
-    'Deleting your account removes your workspace access, name, and email. Your old replies stay under "Former team member".',
+    'Your name and email are erased, and your old replies show as from "Former team member". A workspace you alone own passes to a teammate, or is deleted if nobody else is in it.',
   deleteAccountOpen: "Delete my account",
-  deleteAccountBlocked:
-    "You are the only owner of these workspaces. Delete each one, or make someone else an owner, first.",
-  deleteAccountOnlyServer:
-    "You cannot delete the last workspace on this server. Make someone else its owner before deleting your account.",
-  deleteAccountOnlyOwner: "Only owner",
-  deleteAccountWorkspace: "Delete workspace",
-  deleteAccountMakeOwner: "Make someone an owner",
+  deleteAccountWorkspaceGoes:
+    "{name} is deleted with all its conversations, because nobody else is in it.",
+  deleteAccountWorkspacePasses: "{name} passes to {heir}, who becomes its owner.",
+  deleteAccountLastWorkspace:
+    "You are the only member of this server's last workspace, so you cannot delete your account.",
   deleteAccountConfirmTitle: "Delete your account?",
   deleteAccountConfirmEmail:
     'We\'ll email you a confirmation link. Open it, then select "Delete my account" to permanently delete your account.',
@@ -561,8 +565,6 @@ const en = {
   deleteAccountSent:
     'We sent a confirmation link to {email}. Open it within 15 minutes, then select "Delete my account".',
   deleteAccountFailed: "Your account could not be deleted. Try again.",
-  deleteAccountSoleOwner:
-    "You are the only owner of a workspace. Delete it, or make someone else an owner, first.",
   emailMismatch: "That email does not match your account. Enter the email you use to sign in.",
   linkDeleteAccountTitle: "Delete your account",
   linkDeleteAccountHelp: "This deletes your Dinghy account for good. It can't be undone.",

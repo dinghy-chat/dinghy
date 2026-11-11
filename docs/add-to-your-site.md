@@ -56,7 +56,7 @@ The tag adds a `Dinghy` object to the page:
 | Call | What it does |
 |---|---|
 | `Dinghy.open()` | Opens the chat |
-| `Dinghy.open({ message })` | Opens the chat with `message` in the message box. The visitor still sends it |
+| `Dinghy.open({ message })` | Opens the chat with `message` in the message box, unless the visitor already typed something there. The visitor still sends it |
 | `Dinghy.close()`, `Dinghy.toggle()` | Closes the chat, or opens it if it is closed |
 | `Dinghy.show()`, `Dinghy.hide()` | Shows or hides the chat button. `data-launcher="hidden"` only sets how it starts |
 | `Dinghy.identify(token)`, `Dinghy.reset()` | Signs a user in and out. See [Show who is chatting](#show-who-is-chatting) |
@@ -73,13 +73,26 @@ Hide the chat's button with `data-launcher="hidden"`, then open the chat from yo
 <button onclick="Dinghy.open()">Chat with us</button>
 ```
 
-To start the visitor's message for them, pass it. It waits in the message box, and nothing is sent until the visitor sends it:
+To start the visitor's message for them, pass it. It waits in the message box, and nothing is sent until the visitor sends it. The visitor can change it first. If the box already holds words the visitor typed, they stay, and `message` is dropped. Dinghy stores the message nowhere, so a reload empties the box:
 
 ```html
 <button onclick="Dinghy.open({ message: 'I have a question about my invoice' })">
   Ask about billing
 </button>
 ```
+
+This also works before the tag loads, from the queue in [Call it before it loads](#call-it-before-it-loads): `["open", { message: "..." }]`.
+
+### Keep your page in step with the chat
+
+The chat tells your page when it opens and when it closes, also when the visitor closes it from inside the chat. `Dinghy.state.open` says whether it is open now:
+
+```js
+Dinghy.on("open", () => helpButton.setAttribute("aria-expanded", "true"));
+Dinghy.on("close", () => helpButton.setAttribute("aria-expanded", "false"));
+```
+
+You do not need to reopen the chat after a reload. If the visitor has a conversation, or your page called `identify()`, and the chat was open when the tab reloaded, it opens again by itself. A closed chat stays closed, and a new tab starts closed. The `open` event fires when it opens again.
 
 ### Listen to events
 

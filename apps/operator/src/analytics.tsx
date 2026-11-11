@@ -289,7 +289,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
   return (
     <Page
       title={t("analytics")}
-      context={t("analyticsContext", { days, zone })}
+      context={<>{t("analyticsContext", { days, zone })} </>}
       actions={
         <Select<Period>
           label={t("period")}

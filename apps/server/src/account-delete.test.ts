@@ -25,6 +25,7 @@ import {
   pushSubscription,
   session,
   verification,
+  workspace,
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
@@ -127,42 +128,79 @@ async function team() {
   return { space, first: await person(space.id, "owner"), second: await person(space.id, "owner") };
 }
 
+type MeAnswer = { workspaces: { workspaceId: string; soleOwner: boolean; heir: string | null }[] };
+
+const workspaceRow = async (id: string) =>
+  (await owner.select().from(workspace).where(eq(workspace.id, id)))[0];
+
+const roleOf = async (workspaceId: string, operatorId: string) =>
+  (
+    await owner
+      .select({ role: workspaceMember.role })
+      .from(workspaceMember)
+      .where(
+        and(
+          eq(workspaceMember.workspaceId, workspaceId),
+          eq(workspaceMember.operatorId, operatorId),
+        ),
+      )
+  )[0]?.role;
+
 describe("a sole owner", () => {
-  test("cannot delete their account until someone else is an owner", async () => {
+  // First in the file, while the database holds no other workspace.
+  test("deletes their account and the workspace nobody else is in, unless it is the last", async () => {
     const space = await createWorkspace(db, "Solo", []);
     const solo = await person(space.id, "owner");
-    const mine = (await (await me(solo)).json()) as { workspaces: { soleOwner: boolean }[] };
-    expect(mine.workspaces).toMatchObject([{ soleOwner: true }]);
+    const mine = (await (await me(solo)).json()) as MeAnswer;
+    expect(mine.workspaces).toMatchObject([{ soleOwner: true, heir: null }]);
+    // A self-hosted server keeps its last workspace, so its only member stays.
     const refused = await askDelete(solo);
     expect(refused.status).toBe(409);
-    expect(await refused.json()).toMatchObject({
-      error: { code: "sole_owner", workspaceIds: [space.id] },
-    });
+    expect(await refused.json()).toMatchObject({ error: { code: "last_workspace" } });
     expect(mail.countTo(solo.email)).toBe(0);
 
-    const helper = await person(space.id, "member");
-    await owner
-      .update(workspaceMember)
-      .set({ role: "owner" })
-      .where(eq(workspaceMember.operatorId, helper.id));
-    const after = (await (await me(solo)).json()) as { workspaces: { soleOwner: boolean }[] };
-    expect(after.workspaces).toMatchObject([{ soleOwner: false }]);
-    expect((await askDelete(solo)).status).toBe(200);
+    await createWorkspace(db, "Another", []);
+    expect((await pressLinkButton(app, await deleteLink(solo))).status).toBe(200);
+    expect(await operatorRow(solo.id)).toMatchObject({ name: FORMER_MEMBER_NAME });
+    expect((await workspaceRow(space.id))?.deletedAt).toBeInstanceOf(Date);
+    expect(wakes).toContain(space.id);
   });
 
-  test("whose co-owner left after the email cannot use the link until they hand over", async () => {
+  test("hands the workspace to the admin who joined first, before any member", async () => {
+    const space = await createWorkspace(db, "Handover", []);
+    const solo = await person(space.id, "owner");
+    const member = await person(space.id, "member");
+    const admin = await person(space.id, "admin");
+    const later = await person(space.id, "admin");
+    const mine = (await (await me(solo)).json()) as MeAnswer;
+    expect(mine.workspaces).toMatchObject([{ soleOwner: true, heir: "Robin" }]);
+    expect((await pressLinkButton(app, await deleteLink(solo))).status).toBe(200);
+    expect(await roleOf(space.id, admin.id)).toBe("owner");
+    expect(await roleOf(space.id, later.id)).toBe("admin");
+    expect(await roleOf(space.id, member.id)).toBe("member");
+    expect((await workspaceRow(space.id))?.deletedAt).toBeNull();
+  });
+
+  test("with only members, hands it to the member who joined first", async () => {
+    const space = await createWorkspace(db, "Members", []);
+    const solo = await person(space.id, "owner");
+    const first = await person(space.id, "member");
+    const second = await person(space.id, "member");
+    const done = await askDelete(solo, { email: solo.email }, noMailApp);
+    expect(done.status).toBe(200);
+    expect(await roleOf(space.id, first.id)).toBe("owner");
+    expect(await roleOf(space.id, second.id)).toBe("member");
+  });
+
+  test("whose co-owner left after the email deletes the workspace they are alone in", async () => {
     const { space, first, second } = await team();
     const link = await deleteLink(first);
     await owner
       .update(workspaceMember)
       .set({ removedAt: new Date() })
       .where(eq(workspaceMember.operatorId, second.id));
-    const refused = await pressLinkButton(app, link);
-    expect(refused.status).toBe(409);
-    expect(await refused.json()).toMatchObject({ error: { workspaceIds: [space.id] } });
-    expect(await operatorRow(first.id)).toMatchObject({ deletedAt: null, email: first.email });
-    // Nothing changed, so the workspace still has its owner.
-    expect((await me(first)).status).toBe(200);
+    expect((await pressLinkButton(app, link)).status).toBe(200);
+    expect((await workspaceRow(space.id))?.deletedAt).toBeInstanceOf(Date);
   });
 });
 
