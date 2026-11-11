@@ -35,7 +35,8 @@ interface EmailCoverage {
  * The reply emails and transcripts that carried messages of this conversation, from the range each
  * one recorded when it was planned. A reply email carries replies from every conversation of the
  * visitor, and a transcript its own conversation's. Receipts, the edit lock and a message's info
- * all read this one source.
+ * all read this one source. A range is exact: `nextSeq` holds the workspace row until commit, so
+ * every message below the newest one a plan read had committed before it, and the plan saw it.
  */
 async function emailCoverage(
   tx: Transaction,
@@ -235,8 +236,8 @@ type DeleteOutcome =
 
 /**
  * Clears a message's body and image, and keeps its row, so positions, receipts and quotes still
- * work. The worker deletes the image's file, as for a deleted conversation. `mayDeleteAnyone` is set for an
- * owner or an admin; others delete their own.
+ * work. The worker deletes the image's file, as for a deleted conversation. `mayDeleteAnyone` is
+ * set for an owner or an admin; others delete their own.
  */
 export async function deleteMessage(
   tx: Transaction,

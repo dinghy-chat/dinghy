@@ -631,7 +631,6 @@ const visitorConversations = (tx: Transaction, workspaceId: string, visitorId: s
     .from(conversation)
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)));
 
-/** A reply email or a transcript, and the positions of the first and last message it carried. */
 export interface Cursor {
   generation: number;
   seq: bigint;
