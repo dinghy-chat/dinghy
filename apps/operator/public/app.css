@@ -24,6 +24,9 @@
   --fill-hover: light-dark(#17335c, #ffffff);
   --on-fill: light-dark(#fff, #0b2239);
   --blue: #1f6bff;
+  /* Focus: the navy (off-white at night) for the line, and the warm sand for a field's halo. */
+  --focus: var(--navy);
+  --focus-halo: light-dark(#e8e6e0, #243344);
   --blue-deep: light-dark(#1457d6, #8ab8ff);
   --red: #e5352b;
   --red-deep: #bf241b;
@@ -161,7 +164,7 @@ a {
   color: inherit;
 }
 :focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 input:not([type="checkbox"]),
@@ -189,8 +192,8 @@ input[aria-invalid="true"] {
 }
 input:focus-visible,
 textarea:focus-visible {
-  border-color: var(--blue);
-  outline: 3px solid rgb(31 107 255 / 0.18);
+  border-color: var(--focus);
+  outline: 4px solid var(--focus-halo);
   outline-offset: 0;
 }
 textarea {
@@ -431,7 +434,7 @@ textarea {
   opacity: 0.8;
 }
 .logo-home:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--focus);
   outline-offset: 4px;
 }
 .avatar {
@@ -812,9 +815,6 @@ textarea {
   padding: 2px 8px 12px;
 }
 /* In the sidebar, a focus ring in navy, like its labels. */
-.side :focus-visible {
-  outline-color: var(--navy);
-}
 .workspace,
 .me {
   display: flex;
@@ -1182,7 +1182,7 @@ button.workspace[aria-expanded="true"],
 }
 /* Only a keyboard user needs to see which item the arrows are on, beyond the tint. */
 .popup:focus-visible .item.active {
-  box-shadow: inset 0 0 0 2px var(--blue);
+  box-shadow: inset 0 0 0 2px var(--focus);
 }
 .item-label {
   flex: 1;
@@ -1861,7 +1861,8 @@ img.ws-tile {
 }
 .box:focus-within {
   box-shadow:
-    0 0 0 1.5px var(--blue),
+    0 0 0 1.5px var(--focus),
+    0 0 0 5.5px var(--focus-halo),
     0 6px 18px rgb(11 34 57 / 0.05);
 }
 .box textarea {
@@ -2408,7 +2409,7 @@ img.ws-tile {
   background: var(--row-hover);
 }
 .choices label:has(:focus-visible) {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 .tabs [aria-selected="true"],
@@ -2550,7 +2551,8 @@ img.ws-tile {
   background: var(--surface);
 }
 .color-box:focus-within {
-  border-color: var(--blue);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 4px var(--focus-halo);
 }
 .color-box input[type="color"] {
   width: 26px;
