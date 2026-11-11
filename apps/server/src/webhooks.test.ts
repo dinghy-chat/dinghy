@@ -302,11 +302,13 @@ describe("delivery", () => {
     await asBoss("POST", `${path}/messages`, { clientId: "r1", body: "Yes, three left." });
     await asBoss("PATCH", path, { status: "closed" });
     await asBoss("PATCH", path, { status: "open" });
-    await asBoss("PUT", `${path}/assignee`, { operatorId: boss.id });
-    expect(await runWorker()).toBe(6);
+    await asBoss("PUT", `${path}/assignee`, { operatorId: null });
+    // The first reply assigned the conversation to its sender, and the last change unassigned it.
+    expect(await runWorker()).toBe(7);
 
     const events = received.map((request) => verified(request, hook.secret));
     expect(events.map((one) => one.type).sort()).toEqual([
+      "conversation.assigned",
       "conversation.assigned",
       "conversation.closed",
       "conversation.created",

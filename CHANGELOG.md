@@ -6,6 +6,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Changed
 
+- An operator's first reply in an unassigned conversation assigns it to them, with the usual `conversation.assigned` event. A reply from an API key never assigns, and a conversation that has an assignee keeps it.
 - The inbox's **Open** and **Closed** choice fills the list's width, and **Open** shows how many conversations are open. The sidebar and the conversation list are narrower, so the conversation gets more room.
 - The empty Analytics page centers its boat in the card.
 - API: `GET /v1/operator/workspaces/{id}/conversations` answers `open`, the open conversations for its assignee filter.

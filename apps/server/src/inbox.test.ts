@@ -492,6 +492,50 @@ describe("replies", () => {
     expect(response.status).toBe(400);
   });
 
+  test("the first operator reply assigns an unassigned conversation, with its event", async () => {
+    const { conversationId } = await visitorSends(a.publicKey, "Who answers?");
+    const path = inA(`/conversations/${conversationId}`);
+    const assignee = async () =>
+      ((await (await get(`${path}/messages`)).json()) as {
+        conversation: { assigneeOperatorId: string | null };
+      }).conversation.assigneeOperatorId;
+    const events = () =>
+      owner.execute<{ count: number }>(
+        sql`select count(*)::int as count from event
+            where workspace_id = ${a.id} and kind = 'conversation.assigned'
+              and payload->>'conversationId' = ${conversationId}`,
+      );
+    expect(await assignee()).toBeNull();
+    await write("POST", `${path}/messages`, { clientId: "first-reply", body: "Me" });
+    const [replier] = await owner
+      .select({ id: schema.operator.id })
+      .from(schema.operator)
+      .where(eq(schema.operator.email, "a@example.com"));
+    expect(await assignee()).toBe(replier?.id);
+    expect((await events()).rows[0]?.count).toBe(1);
+    // An unassign later is kept: only the first reply assigns.
+    await write("PUT", `${path}/assignee`, { operatorId: null });
+    await write("POST", `${path}/messages`, { clientId: "second-reply", body: "Again" });
+    expect(await assignee()).toBeNull();
+  });
+
+  test("a reply keeps the assignee the conversation already has", async () => {
+    const own = await createWorkspace(db, "Kept", [WIDGET_ORIGIN]);
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const ann = await signedInOperator({ app, auth, owner, name: "Ann", workspaceId: own.id });
+    const bo = await signedInOperator({ app, auth, owner, name: "Bo", workspaceId: own.id });
+    const { conversationId } = await visitorSends(own.publicKey, "Hello");
+    const path = `/v1/operator/workspaces/${own.id}/conversations/${conversationId}`;
+    await write("PUT", `${path}/assignee`, { operatorId: ann.id }, ann.cookie);
+    expect(
+      (await write("POST", `${path}/messages`, { clientId: "bo", body: "Hi" }, bo.cookie)).status,
+    ).toBe(201);
+    const read = (await (await get(`${path}/messages`, bo.cookie)).json()) as {
+      conversation: { assigneeOperatorId: string | null };
+    };
+    expect(read.conversation.assigneeOperatorId).toBe(ann.id);
+  });
+
   test("a closed conversation refuses a reply, until it reopens", async () => {
     const { conversationId } = await visitorSends(a.publicKey, "Question");
     const path = inA(`/conversations/${conversationId}`);

@@ -3224,7 +3224,8 @@
                     }
                   ],
                   "hasMore": false,
-                  "waiting": 1
+                  "waiting": 1,
+                  "open": 1
                 },
                 "schema": {
                   "type": "object",
@@ -3240,9 +3241,12 @@
                     },
                     "waiting": {
                       "type": "integer"
+                    },
+                    "open": {
+                      "type": "integer"
                     }
                   },
-                  "required": ["conversations", "hasMore", "waiting"]
+                  "required": ["conversations", "hasMore", "waiting", "open"]
                 }
               }
             }

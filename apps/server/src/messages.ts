@@ -1,4 +1,18 @@
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   apiKey,
   attachment,
@@ -244,14 +258,19 @@ export async function appendMessage(
 
   // After the retry lookup, and under the lock, so a close cannot slip in before this reply and a
   // retry of a reply that already committed still gets its original message.
+  let assignsReplier = false;
   if (author.kind !== "visitor") {
     const [target] = await tx
-      .select({ status: conversation.status })
+      .select({ status: conversation.status, assignee: conversation.assigneeOperatorId })
       .from(conversation)
       .where(
         and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, author.conversationId)),
       );
     if (target?.status !== "open") throw new ConversationClosedError();
+    assignsReplier =
+      author.kind === "operator" &&
+      target.assignee === null &&
+      !(await hasOperatorReply(tx, workspaceId, author.conversationId));
   }
   if (
     input.image !== undefined &&
@@ -323,7 +342,27 @@ export async function appendMessage(
     .update(conversation)
     .set({ updatedAt: sql`now()` })
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  // The operator who answers an unassigned conversation first takes it. A key's reply never does.
+  if (assignsReplier && author.kind === "operator") {
+    await assignConversation(tx, workspaceId, conversationId, author.operatorId);
+  }
   return { message: stored(row), created: true, conversationStarted: target.created };
+}
+
+/** Whether an operator has replied in this conversation. */
+async function hasOperatorReply(tx: Transaction, workspaceId: string, conversationId: string) {
+  const [found] = await tx
+    .select({ id: message.id })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversationId),
+        isNotNull(message.authorOperatorId),
+      ),
+    )
+    .limit(1);
+  return found !== undefined;
 }
 
 interface ReadState {
