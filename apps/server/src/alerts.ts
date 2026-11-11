@@ -21,6 +21,7 @@ import {
   conversationVisitor,
   isChat,
   messageColumns,
+  type Quote,
   type StatusPayload,
   visitorQuote,
 } from "./messages.ts";
@@ -571,44 +572,50 @@ async function replyEmailPlan(
   if (earliest > Date.now()) return { channel: "later", until: new Date(earliest) };
   replies.reverse();
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, target.email);
-  const written = replies.map((reply) => ({
-    body: messageText(reply.body),
-    quote: visitorQuote(reply.replyTo),
-  }));
   // A new link for each email. Older ones keep working until they expire.
   const chatUrl = chatLinkUrl(
     publicUrl,
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
+  const written = replies.map((reply) => ({
+    body: reply.body,
+    quote: visitorQuote(reply.replyTo),
+  }));
   return {
     channel: "email",
     to: target.email,
+    ...replyLetter(placeName, written, { chatUrl, stopUrl }),
+    stopUrl,
+    carries: { fromSeq: replies[0]?.seq ?? 0n, toSeq: replies.at(-1)?.seq ?? 0n },
+  };
+}
+
+/**
+ * The reply email's words: each reply under its quote. The visitor typed this address, and nobody
+ * proved it, so it greets no name.
+ */
+export function replyLetter(
+  placeName: string,
+  replies: { body: string | null; quote: Quote | null }[],
+  links: { chatUrl: string; stopUrl: string },
+): { subject: string; text: string; html: string } {
+  const body = <Replies>(written: Replies) =>
+    text.replyBody(placeName, written, links.chatUrl, links.stopUrl);
+  const written = replies.map((reply) => ({ ...reply, body: messageText(reply.body) }));
+  return {
     subject: text.replySubject(placeName),
-    // The visitor typed this address, and nobody proved it, so it greets no name.
     text: letter(
-      text.replyBody(
-        placeName,
-        written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n"),
-        chatUrl,
-        stopUrl,
-      ),
+      body(written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n")),
       undefined,
       placeName,
     ),
     // The replies' Markdown shows as formatting here, and stays as typed in the text version.
     html: letterHtml(
-      text.replyBody(
-        placeName,
-        {
-          html: written.map((reply) => quotedHtml(reply.quote, markdownHtml(reply.body))).join(""),
-        },
-        chatUrl,
-        stopUrl,
-      ),
+      body({
+        html: written.map((reply) => quotedHtml(reply.quote, markdownHtml(reply.body))).join(""),
+      }),
       placeName,
     ),
-    stopUrl,
-    carries: { fromSeq: replies[0]?.seq ?? 0n, toSeq: replies.at(-1)?.seq ?? 0n },
   };
 }
 

@@ -81,7 +81,7 @@ export const QuoteSchema = z
   .openapi("Quote");
 
 /** The quote as the database reads it, before the excerpt is cut. */
-interface QuoteRow {
+export interface QuoteRow {
   id: string;
   deleted: boolean;
   fromVisitor: boolean;

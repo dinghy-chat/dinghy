@@ -30,6 +30,7 @@ import {
   messageAuthors,
   messageColumns,
   nextSeq,
+  type QuoteRow,
   type StatusPayload,
   visitorQuote,
 } from "./messages.ts";
@@ -241,6 +242,35 @@ export async function transcriptPlan(
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, state.email);
+  const logoUrl = imageUrls(imageOrigin).logo(state.publicKey, state.logoUpdatedAt);
+  return {
+    channel: "email",
+    to: state.email,
+    ...transcriptLetter(placeName, lines, authors, { chatUrl, stopUrl, logoUrl }),
+    stopUrl,
+    carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
+  };
+}
+
+/** A message as a transcript shows it. */
+interface TranscriptLine {
+  body: string | null;
+  kind: (typeof message.$inferSelect)["kind"];
+  authorVisitorId: string | null;
+  authorOperatorId: string | null;
+  authorApiKeyId: string | null;
+  replyTo: QuoteRow | null;
+  createdAt: Date;
+}
+
+/** The transcript's words: each message under its author and time, as text and as HTML. */
+export function transcriptLetter(
+  placeName: string,
+  lines: TranscriptLine[],
+  authors: Map<string, MessageAuthor>,
+  links: { chatUrl: string; stopUrl: string; logoUrl: string | null },
+): { subject: string; text: string; html: string } {
+  const { chatUrl, stopUrl, logoUrl } = links;
   const heads = lines.map((line) =>
     text.line(transcriptAuthor(line, authors), utcTime(line.createdAt)),
   );
@@ -250,7 +280,6 @@ export async function transcriptPlan(
         `${heads[index]}:\n${quotedText(visitorQuote(line.replyTo), line.kind === "image" ? text.image : (line.body ?? ""))}`,
     )
     .join("\n\n");
-  const logoUrl = imageUrls(imageOrigin).logo(state.publicKey, state.logoUpdatedAt);
   const html = [
     logoUrl === null
       ? ""
@@ -267,13 +296,9 @@ export async function transcriptPlan(
     ),
   ].join("");
   return {
-    channel: "email",
-    to: state.email,
     subject: text.subject(placeName),
     text: letter(text.body(placeName, plain, chatUrl, stopUrl), undefined, placeName),
     html: letterHtml(text.body(placeName, { html }, chatUrl, stopUrl), placeName),
-    stopUrl,
-    carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
   };
 }
 
