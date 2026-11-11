@@ -122,10 +122,11 @@ test("the operator sees the visitor online, their device and the page they moved
   await reported;
   const owner = await signedIn(browser, server, "owner@example.com");
   await owner.locator(".row", { hasText: "Where is billing?" }).click();
-  const visit = owner.locator(".thread-head .visit");
-  await expect(visit).toContainText("Chat is open");
-  await expect(visit).toContainText("Chrome");
-  const page = visit.getByRole("link");
+  // The header says only that the chat is open. The device and the page are in the panel.
+  await expect(owner.locator(".thread-head .visit")).toHaveText("Chat is open");
+  const facts = owner.locator(".visitor-panel .facts", { hasText: "Chrome" });
+  await expect(facts).toBeVisible();
+  const page = facts.getByRole("link");
   await expect(page).toHaveText(/\/app\/settings$/);
   await expect(page).toHaveAttribute("target", "_blank");
   await expect(page).toHaveAttribute("rel", "noopener noreferrer");

@@ -43,7 +43,6 @@ const en = {
   waitingNone: "Nobody is waiting for a reply.",
   waitingOne: "1 person is waiting for a reply.",
   waitingMany: "{count} people are waiting for a reply.",
-  startedOn: "started on {page}",
   onlineNow: "Chat is open",
   lastSeen: "Last seen {time}",
   pagesVisited: "Pages visited",
@@ -221,6 +220,8 @@ const en = {
     "Visitor chat is not available for this workspace yet. The install code will appear when you can activate it.",
   copy: "Copy",
   copied: "Copied",
+  copyValue: "Copy the {name}",
+  userIdLabel: "user ID",
   originsTitle: "Allowed sites",
   originsHelp:
     "Add each website address where you want chat, including https://. Add addresses with and without www separately if you use both.",

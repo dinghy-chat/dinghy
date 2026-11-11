@@ -10,8 +10,16 @@ import { Select } from "./popup.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Avatar, DocLink, ErrorNote, failureText } from "./ui.tsx";
-import { ago, avatarLetters, bare, detailRows, visitorName, webLink } from "./visitor.ts";
+import { Avatar, CopyId, DocLink, ErrorNote, failureText } from "./ui.tsx";
+import {
+  ago,
+  avatarLetters,
+  bare,
+  detailRows,
+  presenceLine,
+  visitorName,
+  webLink,
+} from "./visitor.ts";
 
 const MINUTE_MS = 60_000;
 const PAGES_FIRST = 5;
@@ -321,12 +329,6 @@ export function ContactFolds({
   );
 }
 
-/** Online now, or when the visitor was last seen, or nothing when unknown. */
-function presenceLine(lastSeenAt: string | null, online: boolean | null): string | null {
-  if (online === true) return t("onlineNow");
-  return lastSeenAt === null ? null : t("lastSeen", { time: ago(lastSeenAt) });
-}
-
 /** The right side of a conversation: who the visitor is, and everything the team knows. */
 export function VisitorPanel({
   conversation,
@@ -367,6 +369,7 @@ export function VisitorPanel({
         <div className="panel-who">
           <h3>{name}</h3>
           {visitor.email !== null && visitor.email !== name && <p>{visitor.email}</p>}
+          {visitor.externalId !== null && <CopyId value={visitor.externalId} label="userIdLabel" />}
           {presence !== null && (
             <p className={online === true ? "online" : undefined}>{presence}</p>
           )}

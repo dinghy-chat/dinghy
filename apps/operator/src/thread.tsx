@@ -35,7 +35,7 @@ import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { Avatar, EmojiButton, ErrorNote, failureText, Loading, useModal } from "./ui.tsx";
-import { ago, avatarLetters, bare, otherIdentity, replyAuthor, title, webLink } from "./visitor.ts";
+import { avatarLetters, presenceLine, replyAuthor, title } from "./visitor.ts";
 import { VisitorPanel } from "./visitor-panel.tsx";
 
 interface Line {
@@ -80,66 +80,7 @@ function merge(lines: Line[], message: Message): Line[] {
   return inCommitOrder(others, line);
 }
 
-/** Who the visitor is and where they came from: the quiet line under their name. */
-function origin(conversation: Conversation): string | null {
-  // The header shows the last page on a line of its own, so the same page is not said twice.
-  const page =
-    conversation.startedPage === null || conversation.startedPage === conversation.visitor.lastPage
-      ? null
-      : t("startedOn", { page: bare(conversation.startedPage) });
-  // A welcome chat's visitor ID is internal, so its header shows only the welcome line.
-  const identity = conversation.welcome ? [] : otherIdentity(conversation.visitor);
-  const parts = [...identity, page].filter((part) => part !== null);
-  return parts.length === 0 ? null : parts.join(SEPARATOR);
-}
-
-/** A no-break space after the dot keeps it with the next part, so a line never ends with a dot. */
-const SEPARATOR = " ·\u00a0";
-
 const ONLINE_EVERY_MS = 30_000;
-
-/**
- * The visit, under who the visitor is: online now or when last seen, the device, and the page the
- * widget last reported, as a link. Unknown parts are left out, never guessed.
- */
-function Visit({ visitor, online }: { visitor: Conversation["visitor"]; online: boolean | null }) {
-  const seen =
-    online === true ? null : visitor.lastSeenAt === null ? null : ago(visitor.lastSeenAt);
-  const page = visitor.lastPage === null ? null : webLink(visitor.lastPage);
-  if (online !== true && seen === null && visitor.device === null && page === null) return null;
-  const parts = [
-    online === true ? (
-      <span key="online" className="online">
-        {t("onlineNow")}
-      </span>
-    ) : seen === null ? null : (
-      <span key="seen">{t("lastSeen", { time: seen })}</span>
-    ),
-    visitor.device === null ? null : <span key="device">{visitor.device}</span>,
-  ].filter((part) => part !== null);
-  return (
-    <p className="visit">
-      {parts.map((part, index) => (
-        <Fragment key={part.key}>
-          {index > 0 && SEPARATOR}
-          {part}
-        </Fragment>
-      ))}
-      {/* A line of its own, as an address is long and would wrap after a dot. */}
-      {page !== null && (
-        <a
-          className="visit-page"
-          href={page}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={page}
-        >
-          {bare(page)}
-        </a>
-      )}
-    </p>
-  );
-}
 
 type WelcomeAccess = Extract<WelcomeChat, { with: "workspace" }>["access"];
 
@@ -168,10 +109,13 @@ function welcomeLines(welcome: WelcomeChat): [string, { text: string; delivered:
 function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
   const [label, note] = welcomeLines(welcome);
   return (
-    <p className="visit">
-      {label}
-      {note !== null && (
-        <span className={note.delivered ? "welcome-state" : "welcome-off"}>{note.text}</span>
+    <p>
+      {note === null ? (
+        label
+      ) : (
+        <span className={note.delivered ? undefined : "welcome-off"} title={label}>
+          {note.text}
+        </span>
       )}
     </p>
   );
@@ -225,21 +169,26 @@ function ThreadHead({
       onSelect: onDelete,
     });
   }
-  const from = origin(conversation);
+  // The email, the user ID, the device and the pages live in the panel, so the header stays one row.
+  const presence = presenceLine(conversation.visitor.lastSeenAt, online);
   return (
     <header className="thread-head">
       <div className="who-is">
         <button type="button" className="icon-button back" aria-label={t("back")} onClick={onBack}>
           <Icon name="back" />
         </button>
-        <Avatar name={title(conversation)} letters={avatarLetters(conversation.visitor)} />
+        <span className="avatar-wrap">
+          <Avatar name={title(conversation)} letters={avatarLetters(conversation.visitor)} />
+          {online === true && <i className="presence-dot" />}
+        </span>
         <div className="who-text">
           <h2>{title(conversation)}</h2>
-          {from !== null && <p title={from}>{from}</p>}
-          {welcome === null ? (
-            <Visit visitor={conversation.visitor} online={online} />
-          ) : (
+          {welcome !== null ? (
             <WelcomeNote welcome={welcome} />
+          ) : (
+            presence !== null && (
+              <p className={online === true ? "visit online" : "visit"}>{presence}</p>
+            )
           )}
         </div>
       </div>
@@ -263,7 +212,7 @@ function ThreadHead({
         )}
         <button
           type="button"
-          className="pill dark"
+          className={closed ? "pill" : "pill dark"}
           onClick={() => onStatus(closed ? "open" : "closed")}
         >
           <Icon name={closed ? "inbox" : "done"} size={18} />

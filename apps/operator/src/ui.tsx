@@ -196,6 +196,25 @@ function CopyText({ value }: { value: string }) {
   );
 }
 
+/** An ID, such as the site's user ID: monospace, cut to its line, with a button that copies it. */
+export function CopyId({ value, label }: { value: string; label: TextId }) {
+  const [done, copy] = useCopy(value);
+  return (
+    <p className="copy-id">
+      <code title={value}>{value}</code>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={done ? t("copied") : t("copyValue", { name: t(label) })}
+        title={done ? t("copied") : t("copy")}
+        onClick={copy}
+      >
+        <Icon name={done ? "check" : "copy"} size={14} />
+      </button>
+    </p>
+  );
+}
+
 export function CopyButton({ value, label = t("copy") }: { value: string; label?: string }) {
   const [done, copy] = useCopy(value);
   return (

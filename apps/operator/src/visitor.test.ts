@@ -3,7 +3,7 @@ import type { Conversation } from "./api.ts";
 import {
   detailRows,
   isWaiting,
-  otherIdentity,
+  presenceLine,
   replyAuthor,
   visitorLabel,
   visitorName,
@@ -103,17 +103,10 @@ describe("names and links", () => {
 });
 
 describe("the line under the visitor's name", () => {
-  test("keeps the email and the user ID that the title does not show", () => {
-    expect(otherIdentity({ name: "Ana", email: "ana@example.com", externalId: "u-1" })).toEqual([
-      "ana@example.com",
-      "u-1",
-    ]);
-    expect(otherIdentity({ name: null, email: "ana@example.com", externalId: "u-1" })).toEqual([
-      "u-1",
-    ]);
-    expect(otherIdentity({ name: "Ana", email: null, externalId: "u-1" })).toEqual(["u-1"]);
-    expect(otherIdentity({ name: null, email: null, externalId: "u-1" })).toEqual([]);
-    expect(otherIdentity({ name: null, email: null, externalId: null })).toEqual([]);
+  test("says the chat is open, or when the visitor was last seen, or nothing", () => {
+    expect(presenceLine(null, true)).toBe("Chat is open");
+    expect(presenceLine(new Date().toISOString(), false)).toMatch(/^Last seen /);
+    expect(presenceLine(null, null)).toBeNull();
   });
 });
 

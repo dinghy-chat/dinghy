@@ -31,12 +31,10 @@ function shownName(visitor: Omit<VisitorIdentity, "id">): string | null {
   return visitor.name ?? visitor.email ?? visitor.externalId;
 }
 
-/** The email and user ID the title does not already show, so an operator can find the account. */
-export function otherIdentity(visitor: Omit<VisitorIdentity, "id">): string[] {
-  const shown = shownName(visitor);
-  return [visitor.email, visitor.externalId].filter(
-    (part): part is string => part !== null && part !== shown,
-  );
+/** Online now, or when the visitor was last seen, or nothing when unknown. */
+export function presenceLine(lastSeenAt: string | null, online: boolean | null): string | null {
+  if (online === true) return t("onlineNow");
+  return lastSeenAt === null ? null : t("lastSeen", { time: ago(lastSeenAt) });
 }
 
 export function title(conversation: Conversation): string {

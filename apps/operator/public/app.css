@@ -1710,45 +1710,85 @@ img.ws-tile {
   outline: 3px dashed var(--blue);
   outline-offset: -10px;
 }
+/* One slim row: who, and what the operator can do. The rest of the visitor is in the panel. */
 .thread-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding: 18px 28px;
+  min-height: 64px;
+  padding: 11px 20px 11px 24px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
 .who-is {
   display: flex;
-  flex: 1 1 220px;
+  flex: 1 1 200px;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
+.avatar-wrap {
+  position: relative;
+  flex: none;
+  display: grid;
+}
 .who-is .avatar {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   font-size: 14px;
+}
+.presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2.5px var(--surface);
 }
 .who-text {
   min-width: 0;
 }
 .who-text h2 {
   overflow: hidden;
-  font-size: 19px;
-  line-height: 1.25;
+  font-size: 16px;
+  line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The lines under the name wrap, so the page where the chat started is never cut off. */
 .who-text p {
+  overflow: hidden;
   color: var(--mute);
-  font-size: 13.5px;
-  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.who-text .online {
+  font-weight: 500;
+}
+.who-text .online::before {
+  display: none;
 }
 .thread-head .actions {
-  gap: 10px;
+  gap: 8px;
+}
+.thread-head .pill,
+.thread-head .assignee .select-button {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+.thread-head .pill svg {
+  width: 16px;
+  height: 16px;
+}
+.thread-head .round {
+  width: 36px;
+  height: 36px;
 }
 .assignee .select-button {
   min-height: 40px;
@@ -1823,6 +1863,28 @@ img.ws-tile {
   font-size: 13.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* An ID to copy: monospace, cut to its line. */
+.copy-id {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.copy-id code {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--mute);
+  font: 12.5px / 18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.copy-id .icon-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  border-radius: 6px;
 }
 .panel-head .panel-contact {
   grid-column: 1 / -1;
@@ -1960,22 +2022,8 @@ img.ws-tile {
   resize: vertical;
   font-size: 14px;
 }
-.context a,
-.who-text .visit a {
+.context a {
   color: var(--blue-deep);
-}
-.who-text .visit {
-  color: var(--mute);
-  /* It wraps, so the last page's link never hides behind an ellipsis. */
-  white-space: normal;
-}
-.who-text .visit-page {
-  display: block;
-  width: fit-content;
-}
-.who-text .welcome-state,
-.who-text .welcome-off {
-  display: block;
 }
 .who-text .welcome-off {
   color: var(--warn-ink);
@@ -3794,7 +3842,7 @@ img.ws-tile {
     flex-basis: 100%;
     gap: 8px;
   }
-  .who-is .avatar {
+  .avatar-wrap {
     display: none;
   }
   .thread-head .actions {
@@ -3860,6 +3908,10 @@ img.ws-tile {
   }
   .nav button {
     min-height: 44px;
+  }
+  .thread-head .round {
+    width: 44px;
+    height: 44px;
   }
   .thread-head .icon-button,
   .back,
