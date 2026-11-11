@@ -53,7 +53,8 @@ const TRANSCRIPT_MESSAGES = 500;
 
 // Every string a person reads has a key, so a locale can be added later.
 const text = {
-  someone: "A visitor",
+  // A team reply whose author's account or key is gone.
+  team: (name: string) => `The ${name} team`,
   subject: (name: string) => `Your conversation with ${name}`,
   intro: (name: string) => `Here is your conversation with ${name}, for your records.`,
   image: "Sent an image. Open the chat to see it.",
@@ -161,7 +162,10 @@ export async function requestedTranscriptRows(
 /** "2026-11-11 20:20 UTC": the date and time, so the transcript reads the same anywhere. */
 const utcTime = (at: Date) => `${at.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
-/** Who wrote a message, as the visitor knows them: themself, a first name, or a key's name. */
+/**
+ * Who wrote a message, as the visitor knows them: themself, a first name, a key's name, or the team
+ * when the author is gone.
+ */
 function transcriptAuthor(
   line: {
     authorVisitorId: string | null;
@@ -169,11 +173,12 @@ function transcriptAuthor(
     authorApiKeyId: string | null;
   },
   authors: Map<string, MessageAuthor>,
+  placeName: string,
 ): string {
   if (line.authorVisitorId !== null) return visitorEmailText.you;
   const id = line.authorOperatorId ?? line.authorApiKeyId ?? "";
   const author = authors.get(id);
-  if (author === undefined) return text.someone;
+  if (author === undefined) return text.team(placeName);
   return line.authorApiKeyId !== null || author.isDeleted ? author.name : firstName(author.name);
 }
 
@@ -272,7 +277,7 @@ export function transcriptLetter(
 ): { subject: string; text: string; html: string } {
   const { chatUrl, stopUrl, logoUrl } = links;
   const heads = lines.map((line) =>
-    text.line(transcriptAuthor(line, authors), utcTime(line.createdAt)),
+    text.line(transcriptAuthor(line, authors, placeName), utcTime(line.createdAt)),
   );
   const plain = lines
     .map(

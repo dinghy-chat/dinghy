@@ -64,4 +64,14 @@ describe("the transcript", () => {
     expect(letter.html).toContain("<strong>Export</strong>");
     expect(letter.html).not.toContain("<img");
   });
+
+  test("a team reply whose author is gone is the team's, never a visitor's", () => {
+    const letter = transcriptLetter("Acme", [{ ...line, authorOperatorId: "gone" }], new Map(), {
+      ...links,
+      logoUrl: "https://chat.example.com/logo.png",
+    });
+    expect(letter.text).not.toContain("A visitor");
+    expect(letter.text).toContain("The Acme team, 2026-11-11 20:20 UTC:\nHello");
+    expect(letter.html).toContain('<img src="https://chat.example.com/logo.png"');
+  });
 });
