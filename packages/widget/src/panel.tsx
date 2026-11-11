@@ -2,7 +2,7 @@
 // The chat's panel, as pieces that hold no state of their own. The chat puts them together, and so
 // does the operator app's preview of the Widget tab, so both show the same widget.
 import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
 import type { ChatMessage } from "./client.ts";
 import { IMAGE_TYPES, isComposing } from "./compose.ts";
@@ -34,12 +34,15 @@ const { primary: PRIMARY, accent: ACCENT } = DEFAULT_COLORS;
 export const CSS = `
 *{box-sizing:border-box}
 .panel{--primary:var(--d-primary,${PRIMARY});--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:linear-gradient(var(--primary) 0 40px,var(--paper) 40px);color:var(--ink);font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);border-radius:var(--dinghy-radius,var(--d-radius,16px));overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
-.head{display:flex;align-items:center;gap:8px;padding:16px 10px 16px 16px;background:var(--primary);color:var(--d-primary-text,#fff)}
-.scene{flex:1;min-width:0;display:flex;align-items:center;gap:12px}
-.scene b{display:block;min-height:21px;font-size:17px;font-weight:700;line-height:21px;letter-spacing:-.01em}
-.scene small{display:block;font-size:13px;line-height:17px;opacity:.85}
-.waiting small::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:#2fd08a;vertical-align:1px}
-.sea,.port{position:relative;flex:none;width:46px;height:46px;overflow:hidden;background:#ffc917;border-radius:50%}
+.head{display:flex;align-items:center;gap:8px;padding:10px 8px 10px 14px;background:var(--primary);color:var(--d-primary-text,#fff)}
+.scene{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+.scene>div{min-width:0}
+.scene b,.scene small{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.scene b{font-size:15px;font-weight:650;line-height:20px}
+.scene small{font-size:12.5px;line-height:17px;opacity:.8}
+.scene small::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:currentColor;opacity:.55;vertical-align:1px}
+.on small::before{background:#2fd08a;opacity:1}
+.sea,.port{position:relative;flex:none;width:36px;height:36px;overflow:hidden;background:#ffc917;border-radius:50%}
 .logo{flex:none;width:36px;height:36px;border-radius:10px;object-fit:contain;background:#fff}
 .sea canvas,.port canvas{position:absolute;left:0;top:0;width:100%;height:100%}
 .float{position:absolute;left:0;top:0;z-index:1;transform-origin:50% 88%}
@@ -68,18 +71,23 @@ export const CSS = `
 .action{display:grid;place-items:center;font:inherit;font-weight:600;flex:none;min-height:44px;min-width:44px;padding:0 14px;border:0;border-radius:22px;cursor:pointer;background:var(--d-accent,${ACCENT});color:var(--d-accent-text,#fff)}
 .action:hover{filter:brightness(.92)}
 .duo{fill:var(--d-accent,${ACCENT});opacity:.3}
-.head .duo{fill:#ffc917;opacity:.45}
-.head .icon .duo{fill:currentColor;opacity:.25}
-[type=submit] .duo{fill:#ffc917;opacity:1}
-.icon{background:transparent;color:inherit;padding:0}
-.icon:hover{filter:none;background:rgb(127 127 127/.25)}
+.x{display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:none;color:inherit;cursor:pointer;opacity:.85}
+.x:hover{opacity:1;background:rgb(255 255 255/.16)}
 .retry{font:inherit;border:0;padding:0;background:transparent;cursor:pointer;color:var(--bad);font-size:12.5px;line-height:16px;text-decoration:underline;align-self:flex-end}
 button:focus-visible{outline:2px solid var(--d-accent,${ACCENT});outline-offset:1px}
-textarea:focus-visible,input:focus-visible{outline:2px solid #1f6bff;outline-offset:-1px}
+input:focus-visible{outline:2px solid #1f6bff;outline-offset:-1px}
 .head button:focus-visible{outline-color:currentColor}
 form{display:flex;align-items:flex-end;gap:10px;padding:10px 12px 12px;border-top:1px solid var(--line)}
-textarea,input{flex:1;min-width:0;font:inherit;color:inherit;background:var(--fog);border:1px solid transparent;border-radius:22px;padding:11px 16px}
-textarea{resize:none;height:44px}
+input{flex:1;min-width:0;font:inherit;color:inherit;background:var(--fog);border:1px solid transparent;border-radius:22px;padding:11px 16px}
+.compose{display:block;padding:8px 12px;border:0}
+.box{display:flex;align-items:flex-end;gap:4px;padding:5px;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:0 1px 2px rgb(13 34 64/.05)}
+.box:focus-within{border-color:var(--d-accent,${ACCENT});box-shadow:0 0 0 3px color-mix(in srgb,var(--d-accent,${ACCENT}) 22%,transparent)}
+textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inherit;color:inherit;background:none;border:0;outline:0;resize:none}
+.tool{display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:0;border-radius:9px;background:none;color:var(--mute);cursor:pointer}
+.tool:hover{background:var(--fog);color:var(--ink)}
+.tool .duo{fill:currentColor;opacity:.2}
+.send.on{background:var(--d-accent,${ACCENT});color:var(--d-accent-text,#fff)}
+.send.on:hover{filter:brightness(.92)}
 .shot{display:block;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
 .shot.mine{align-self:flex-end}
 .shot img{display:block;max-width:100%;height:auto}
@@ -87,18 +95,16 @@ dialog{padding:0;border:0;background:transparent;max-width:95vw;max-height:95vh;
 dialog::backdrop{background:rgb(11 34 57/.85)}
 dialog img{display:block;max-width:none}
 .panel.page{inset:0;margin:auto;width:100%;max-width:720px;height:auto;max-height:none;border-radius:0}
-@media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}.panel:not(.page) .head{padding-top:max(16px,env(safe-area-inset-top))}.panel:not(.page)>:last-child{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
+@media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}.panel:not(.page) .head{padding-top:max(10px,env(safe-area-inset-top))}.panel:not(.page)>:last-child{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
 .panel:focus{outline:none}
 :host([data-side=left]) .panel{right:auto;left:0}
 .opened{display:none!important}
 .badge{position:absolute;top:-3px;right:-3px;min-width:22px;height:22px;padding:0 4px;box-sizing:border-box;border-radius:11px;background:#e5352b;color:#fff;box-shadow:0 0 0 2px #fff;font:700 12px/22px system-ui,sans-serif;text-align:center}
 .panel.drop{outline:3px dashed var(--d-accent,${ACCENT});outline-offset:-6px}
-.pick{background:transparent;color:inherit;padding:0}
 .compose{position:relative}
 .emojis{position:absolute;left:8px;right:8px;bottom:100%;margin:0;min-width:0;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:6px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgb(13 34 64/.18)}
 .emojis button{height:36px;padding:0;border:0;border-radius:8px;background:none;font-size:20px;cursor:pointer}
 .emojis button:hover{background:var(--fog)}
-.pick:hover{filter:none;background:var(--fog)}
 .file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
 .email{flex-wrap:wrap;align-items:center}
 .email label{width:100%;font-size:12.5px;line-height:16px;color:var(--mute)}
@@ -106,10 +112,10 @@ dialog img{display:block;max-width:none}
 .notice.bad{color:var(--bad)}
 .who{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12.5px;line-height:16px;color:var(--mute)}
 .face{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--fog);color:var(--mute);font-size:11px;font-weight:700}
-.faces{display:flex;flex:none;padding-left:8px}
-.faces .face{width:28px;height:28px;margin-left:-8px;box-shadow:0 0 0 2px var(--primary)}
-.brand{display:block;padding:0 12px 10px;font-size:11.5px;line-height:15px;color:var(--mute);text-align:center;text-decoration:none}
-.brand:hover{text-decoration:underline}
+.faces{display:flex;flex:none;padding-left:6px}
+.faces .face{width:26px;height:26px;margin-left:-6px;box-shadow:0 0 0 2px var(--primary)}
+.brand{display:block;padding:0 12px 8px;font-size:11px;line-height:14px;color:var(--mute);opacity:.75;text-align:center;text-decoration:none}
+.brand:hover{opacity:1}
 :host([data-theme=dark]) .panel{${DARK}}
 @media (prefers-color-scheme:dark){:host([data-theme=auto]) .panel{${DARK}}}
 ${BOAT_CSS}
@@ -131,10 +137,6 @@ function Icon({ paths: [light, main], size = 20 }: { paths: Paths; size?: number
 /** The light layer of the round icons. */
 const CIRCLE = "M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z";
 
-const CLOSE_ICON: Paths = [
-  CIRCLE,
-  "M165.66,101.66,139.31,128l26.35,26.34a8,8,0,0,1-11.32,11.32L128,139.31l-26.34,26.35a8,8,0,0,1-11.32-11.32L116.69,128,90.34,101.66a8,8,0,0,1,11.32-11.32L128,116.69l26.34-26.35a8,8,0,0,1,11.32,11.32ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z",
-];
 const ATTACH_ICON: Paths = [
   "M180.75,104.75,204,128l-82.06,81.94a48,48,0,0,1-67.88-67.88L153.37,41.37a32,32,0,0,1,45.26,45.26Z",
   "M209.66,122.34a8,8,0,0,1,0,11.32l-82.05,82a56,56,0,0,1-79.2-79.21L147.67,35.73a40,40,0,1,1,56.61,56.55L105,193A24,24,0,1,1,71,159L154.3,74.38A8,8,0,1,1,165.7,85.6L82.39,170.31a8,8,0,1,0,11.27,11.36L192.93,81A24,24,0,1,0,159,47L59.76,147.68a40,40,0,1,0,56.53,56.62l82.06-82A8,8,0,0,1,209.66,122.34Z",
@@ -175,7 +177,8 @@ const SCENES: Record<SceneState, { boat: BoatKind; text: TextId }> = {
   reply: { boat: "flag", text: "newReply" },
   away: { boat: "sail", text: "teamAway" },
   lost: { boat: "sail", text: "reconnecting" },
-  empty: { boat: "sail", text: "empty" },
+  // The greeting shows in the chat itself, so the header keeps to one short line.
+  empty: { boat: "sail", text: "waiting" },
 };
 
 // The landing page's three swells, in the header's round window and in the empty chat.
@@ -316,9 +319,11 @@ export function ChatHead({
   /** Missing on the full-page chat, which has nothing to close. */
   onClose?: () => void;
 }) {
+  const isOnline = scene === "waiting" && online === true;
+  const status = say(isOnline ? "teamOnline" : SCENES[scene].text);
   return (
     <div class="head">
-      <div class={`scene ${scene === "empty" ? "empty-state" : scene}`}>
+      <div class={`scene ${scene === "empty" ? "empty-state" : scene}${isOnline ? " on" : ""}`}>
         {/* The title beside it names the company, so the logo needs no text of its own. */}
         {logoUrl !== null ? (
           <img class="logo" src={logoUrl} alt="" />
@@ -327,7 +332,7 @@ export function ChatHead({
             <Sea
               class="sea"
               options={HEAD_SEA}
-              boat={boatSvg(SCENES[scene].boat, 32)}
+              boat={boatSvg(SCENES[scene].boat, 26)}
               boatClass="ship"
             >
               {scene === "away" && <i class="moon" />}
@@ -337,8 +342,9 @@ export function ChatHead({
         )}
         <div>
           <b>{say("title")}</b>
-          <small role="status">
-            {say(scene === "waiting" && online === true ? "teamOnline" : SCENES[scene].text)}
+          {/* An owner's own away text can be long, so the whole of it is in the title. */}
+          <small role="status" title={status}>
+            {status}
           </small>
         </div>
       </div>
@@ -350,8 +356,15 @@ export function ChatHead({
         </span>
       )}
       {onClose !== undefined && (
-        <button type="button" class="action icon" aria-label={t("close")} onClick={onClose}>
-          <Icon paths={CLOSE_ICON} size={24} />
+        <button type="button" class="x" aria-label={t("close")} onClick={onClose}>
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M18 6 6 18M6 6l12 12"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
         </button>
       )}
     </div>
@@ -415,7 +428,7 @@ export function ChatLine({
 }
 
 /** An empty chat: the boat in port, and the greeting. */
-export function EmptyLog({ mascot, greeting }: { mascot: boolean; greeting: string | null }) {
+export function EmptyLog({ mascot, greeting }: { mascot: boolean; greeting: string }) {
   return (
     <div class="empty">
       {mascot && (
@@ -423,7 +436,7 @@ export function EmptyLog({ mascot, greeting }: { mascot: boolean; greeting: stri
           <i class="sun" />
         </Sea>
       )}
-      {greeting !== null && <p>{greeting}</p>}
+      <p>{greeting}</p>
     </div>
   );
 }
@@ -477,6 +490,14 @@ export function Composer({
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const [emojis, setEmojis] = useState(false);
+  // The box grows with the text, up to its CSS max-height, and shrinks again after a send.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each new draft asks for a new height.
+  useLayoutEffect(() => {
+    const field = inputRef.current;
+    if (field === null) return;
+    field.style.height = "auto";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [draft, inputRef]);
   return (
     <form class="compose" onSubmit={onSubmit}>
       {emojis && (
@@ -513,44 +534,52 @@ export function Composer({
           event.currentTarget.value = "";
         }}
       />
-      <button
-        type="button"
-        class="action pick"
-        aria-label={t("attach")}
-        onClick={() => picker.current?.click()}
-      >
-        <Icon paths={ATTACH_ICON} />
-      </button>
-      <button
-        type="button"
-        class="action pick"
-        aria-label={t("emoji")}
-        aria-expanded={emojis}
-        onClick={() => setEmojis(!emojis)}
-      >
-        <Icon paths={[CIRCLE, SMILEY_ICON]} />
-      </button>
-      <textarea
-        onPaste={(event) => {
-          // A copy from Word or Excel holds its text and a picture of it. The text is what is meant.
-          const data = event.clipboardData;
-          if (data === null || data.files.length === 0 || data.getData("text/plain") !== "") return;
-          event.preventDefault();
-          onFiles(data.files);
-        }}
-        ref={inputRef}
-        aria-label={t("inputLabel")}
-        placeholder={t("inputPlaceholder")}
-        maxLength={MESSAGE_MAX}
-        value={draft}
-        onInput={(event) => onDraft(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey && !isComposing(event)) onSubmit(event);
-        }}
-      />
-      <button type="submit" class="action" aria-label={t("send")}>
-        <Icon paths={SEND_ICON} size={18} />
-      </button>
+      <div class="box">
+        <button
+          type="button"
+          class="tool"
+          aria-label={t("attach")}
+          onClick={() => picker.current?.click()}
+        >
+          <Icon paths={ATTACH_ICON} />
+        </button>
+        <button
+          type="button"
+          class="tool"
+          aria-label={t("emoji")}
+          aria-expanded={emojis}
+          onClick={() => setEmojis(!emojis)}
+        >
+          <Icon paths={[CIRCLE, SMILEY_ICON]} />
+        </button>
+        <textarea
+          rows={1}
+          onPaste={(event) => {
+            // A copy from Word or Excel holds its text and a picture of it. The text is what is meant.
+            const data = event.clipboardData;
+            if (data === null || data.files.length === 0 || data.getData("text/plain") !== "")
+              return;
+            event.preventDefault();
+            onFiles(data.files);
+          }}
+          ref={inputRef}
+          aria-label={t("inputLabel")}
+          placeholder={t("inputPlaceholder")}
+          maxLength={MESSAGE_MAX}
+          value={draft}
+          onInput={(event) => onDraft(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !isComposing(event)) onSubmit(event);
+          }}
+        />
+        <button
+          type="submit"
+          class={draft.trim() === "" ? "tool send" : "tool send on"}
+          aria-label={t("send")}
+        >
+          <Icon paths={SEND_ICON} size={18} />
+        </button>
+      </div>
     </form>
   );
 }

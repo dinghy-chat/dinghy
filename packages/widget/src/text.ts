@@ -7,10 +7,10 @@ export const DEFAULT_TITLE = "Chat with us";
 
 const en = {
   title: DEFAULT_TITLE,
-  teamOnline: "We are online",
-  teamAway: "We are away. Leave a message and we will reply here.",
-  waiting: "We will reply here.",
-  sceneSending: "Sending your message",
+  teamOnline: "Online",
+  teamAway: "Away, we reply here and by email",
+  waiting: "We will reply here",
+  sceneSending: "Sending...",
   newReply: "New reply",
   close: "Close chat",
   blocked: "You cannot send messages in this chat.",
@@ -21,7 +21,7 @@ const en = {
   send: "Send",
   sending: "Sending...",
   failed: "Not sent. Select to try again.",
-  reconnecting: "Connection lost. Trying again...",
+  reconnecting: "Reconnecting...",
   attach: "Attach an image",
   emoji: "Add an emoji",
   imageAlt: "An image in this conversation",

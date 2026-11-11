@@ -689,13 +689,7 @@ function Chat({
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />
       <div class="log" role="log" aria-live="polite" ref={log}>
-        {lines.length === 0 && (
-          <EmptyLog
-            mascot={mascot}
-            // Away, the header already asks for a message.
-            greeting={sceneState !== "empty" && sceneState !== "away" ? say("empty") : null}
-          />
-        )}
+        {lines.length === 0 && <EmptyLog mascot={mascot} greeting={say("empty")} />}
         {lines.map((line, index) => (
           <ChatLine
             key={line.id}
