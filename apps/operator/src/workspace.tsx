@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type FormEvent, useState } from "react";
+import { useState } from "react";
 import { BillingRow } from "../../../ee/operator/billing.tsx";
 import type { BillingState, Usage, WorkspaceApi, WorkspaceSettings } from "./api.ts";
 import { Confirm } from "./popup.tsx";
@@ -10,10 +10,9 @@ import {
   ErrorNote,
   failureText,
   ImageUpload,
-  type Note,
+  NameField,
   Page,
   PageRow,
-  SaveNote,
   TypeToConfirm,
   type UploadText,
 } from "./ui.tsx";
@@ -25,81 +24,6 @@ const LOGO_TEXT: UploadText = {
   preview: "logoPreview",
   tooLarge: "logoTooLarge",
 };
-
-/** The workspace's name, which an owner or an admin changes. The sidebar shows it at once. */
-function NameRow({ api, name, onChanged }: { api: WorkspaceApi; name: string; onChanged(): void }) {
-  const [typed, setTyped] = useState(name);
-  const [note, setNote] = useState<Note>(null);
-  const [busy, setBusy] = useState(false);
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    try {
-      const saved = await api.rename(typed.trim());
-      setTyped(saved.name);
-      setNote({ ok: true, text: "workspaceNameSaved" });
-      onChanged();
-    } catch (failure) {
-      setNote({ ok: false, text: failureText(failure, {}) });
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <PageRow title={t("workspaceNameLabel")}>
-      <form className="stack" onSubmit={save}>
-        <div className="inline-field">
-          <input
-            aria-label={t("workspaceNameLabel")}
-            value={typed}
-            onChange={(event) => {
-              setTyped(event.target.value);
-              setNote(null);
-            }}
-            required
-            maxLength={100}
-            autoComplete="organization"
-          />
-          <button
-            type="submit"
-            className="pill dark"
-            disabled={busy || typed.trim() === "" || typed.trim() === name}
-          >
-            {t("save")}
-          </button>
-        </div>
-        <SaveNote note={note} />
-      </form>
-    </PageRow>
-  );
-}
-
-/** The logo, for the workspace menu and the chat. It saves at once. */
-function LogoRow({
-  api,
-  logoUrl,
-  onChanged,
-}: {
-  api: WorkspaceApi;
-  logoUrl: string | null;
-  onChanged(): void;
-}) {
-  const [url, setUrl] = useState(logoUrl);
-  const saved = (answer: { logoUrl: string | null }) => {
-    setUrl(answer.logoUrl);
-    onChanged();
-  };
-  return (
-    <PageRow title={t("logoTitle")} help={t("logoHelp")}>
-      <ImageUpload
-        url={url}
-        text={LOGO_TEXT}
-        onUpload={async (file) => saved(await api.setLogo(file))}
-        onRemove={async () => saved(await api.removeLogo())}
-      />
-    </PageRow>
-  );
-}
 
 /** Bytes in the decimal units the plan uses, such as 12.3 MB or 1 GB. */
 function formatBytes(bytes: number): string {
@@ -331,7 +255,6 @@ export function WorkspacePage({
   workspaceId,
   team,
   openDelete,
-  onChanged,
   onDeleted,
 }: {
   api: WorkspaceApi;
@@ -349,14 +272,28 @@ export function WorkspacePage({
   team: Team;
   /** The account's delete opened this workspace to delete it. */
   openDelete: boolean;
-  /** The name or the logo changed, so the account loads again. */
-  onChanged(): void;
   onDeleted(): void;
 }) {
   return (
     <Page title={t("pageWorkspace")} context={t("workspaceContext")}>
-      <NameRow api={api} name={name} onChanged={onChanged} />
-      <LogoRow api={api} logoUrl={logoUrl} onChanged={onChanged} />
+      {/* The server's workspace.changed event loads the account again, here and in other apps. */}
+      <PageRow title={t("workspaceNameLabel")}>
+        <NameField
+          label={t("workspaceNameLabel")}
+          name={name}
+          autoComplete="organization"
+          saved="workspaceNameSaved"
+          onSave={api.rename}
+        />
+      </PageRow>
+      <PageRow title={t("logoTitle")} help={t("logoHelp")}>
+        <ImageUpload
+          url={logoUrl}
+          text={LOGO_TEXT}
+          onUpload={api.setLogo}
+          onRemove={api.removeLogo}
+        />
+      </PageRow>
       {usage !== null && <PlanRow usage={usage} />}
       {isOwner && <BillingRow api={api} workspaceId={workspaceId} billing={billing} />}
       {team.blocked.length > 0 && <BlockedRow api={api} team={team} />}

@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import {
+  type FormEvent,
   type InputHTMLAttributes,
   type MouseEvent,
   type ReactNode,
@@ -216,6 +217,69 @@ export function CopyButton({ value, label = t("copy") }: { value: string; label?
       <Icon name={done ? "check" : "copy"} size={16} />
       {done ? t("copied") : t("copy")}
     </button>
+  );
+}
+
+/** The longest name the server takes, for a workspace or an operator. */
+const NAME_MAX_LENGTH = 100;
+
+/** A name with its own Save, such as the workspace's or the operator's. */
+export function NameField({
+  label,
+  name,
+  autoComplete,
+  saved,
+  onSave,
+}: {
+  label: string;
+  /** The saved name, which Save stays off for. */
+  name: string;
+  autoComplete: "name" | "organization";
+  /** What the note says once the name is saved. */
+  saved: TextId;
+  onSave(name: string): Promise<unknown>;
+}) {
+  const [typed, setTyped] = useState(name);
+  const [note, setNote] = useState<Note>(null);
+  const [busy, setBusy] = useState(false);
+  const trimmed = typed.trim();
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await onSave(trimmed);
+      setTyped(trimmed);
+      setNote({ ok: true, text: saved });
+    } catch (failure) {
+      setNote({ ok: false, text: failureText(failure, {}) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="stack" onSubmit={save}>
+      <div className="inline-field">
+        <input
+          aria-label={label}
+          value={typed}
+          onChange={(event) => {
+            setTyped(event.target.value);
+            setNote(null);
+          }}
+          required
+          maxLength={NAME_MAX_LENGTH}
+          autoComplete={autoComplete}
+        />
+        <button
+          type="submit"
+          className="pill dark"
+          disabled={busy || trimmed === "" || trimmed === name}
+        >
+          {t("save")}
+        </button>
+      </div>
+      <SaveNote note={note} />
+    </form>
   );
 }
 

@@ -8,9 +8,10 @@ import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
-import { workspace, workspaceLogo, workspaceMember } from "./db/schema.ts";
-import type { Database } from "./db/tenant.ts";
+import { event, workspace, workspaceLogo, workspaceMember } from "./db/schema.ts";
+import { type Database, withWorkspace } from "./db/tenant.ts";
 import { createImages, PUBLIC_IMAGE_MAX_BYTES } from "./images.ts";
+import type { Live } from "./live.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -76,6 +77,19 @@ const widgetLogoUrl = async () => {
   return ((await response.json()) as { logoUrl: string | null }).logoUrl;
 };
 
+/** The subscribers each change woke, so a test can see that open apps hear of it. */
+const wakes: string[] = [];
+const live: Live = {
+  wake(_workspaceId, subscriber) {
+    wakes.push(subscriber);
+  },
+  revoke() {},
+  async subscribe() {
+    return () => {};
+  },
+  stop() {},
+};
+
 const errorCode = async (response: Response) =>
   ((await response.json()) as { error: { code: string } }).error.code;
 
@@ -85,7 +99,7 @@ beforeAll(async () => {
   db = database.connect("app", 10).db;
   owner = database.connect("migrator").db;
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
-  const options = { auth, db, logger, checks: { postgres: ok, valkey: ok } };
+  const options = { auth, db, logger, live, checks: { postgres: ok, valkey: ok } };
   app = createApp(options);
   filesApp = createApp({
     ...options,
@@ -107,6 +121,18 @@ beforeEach(async () => {
 });
 
 describe("uploading a logo", () => {
+  test("setting or removing the logo tells open apps, which show it in the workspace menu", async () => {
+    const boss = await person("owner");
+    wakes.length = 0;
+    expect((await upload(boss, await png(64, 64))).status).toBe(200);
+    expect((await removeLogo(boss)).status).toBe(200);
+    expect(wakes).toEqual(["operators", "operators"]);
+    const changes = await withWorkspace(db, space.id, (tx) =>
+      tx.select().from(event).where(eq(event.kind, "workspace.changed")),
+    );
+    expect(changes).toHaveLength(2);
+  });
+
   test("an owner's logo is shrunk to fit 256 pixels, stored as WebP and named everywhere", async () => {
     const boss = await person("owner");
     const response = await upload(boss, await png(600, 300));

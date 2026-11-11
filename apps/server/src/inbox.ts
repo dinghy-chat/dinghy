@@ -1,10 +1,10 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { session, widgetSettings, workspace } from "./db/schema.ts";
+import { session } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
@@ -52,6 +52,7 @@ import {
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
+import { readWorkspaceFace } from "./workspaces.ts";
 
 const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
 const KEY_HAS_NO_ASSIGNMENTS = failure(
@@ -747,23 +748,9 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
 
   app.openapi(workspaceRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
-    const [row] = await withWorkspace(db, id, (tx) =>
-      tx
-        .select({
-          id: workspace.id,
-          name: workspace.name,
-          publicKey: workspace.publicKey,
-          logoUpdatedAt: widgetSettings.logoUpdatedAt,
-        })
-        .from(workspace)
-        .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
-        .where(eq(workspace.id, id)),
-    );
-    if (row === undefined) return c.json(NOT_FOUND, 404);
-    return c.json(
-      { id: row.id, name: row.name, logoUrl: imageUrls.logo(row.publicKey, row.logoUpdatedAt) },
-      200,
-    );
+    const face = await withWorkspace(db, id, (tx) => readWorkspaceFace(tx, imageUrls, id));
+    if (face === undefined) return c.json(NOT_FOUND, 404);
+    return c.json({ id, ...face }, 200);
   });
 
   app.openapi(listRoute, async (c) => {

@@ -549,7 +549,6 @@ export function Inbox({
                 onPage={openSettings}
                 onLeft={() => navigate("/")}
                 onWorkspaceDeleted={onWorkspaceDeleted}
-                onAccountChanged={onAccountChanged}
                 onProfileChanged={() => {
                   // The name shows on assignments and in the dropdown too, which read the members.
                   onAccountChanged();

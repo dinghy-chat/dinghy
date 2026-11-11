@@ -156,7 +156,6 @@ export function Settings({
   onPage,
   onLeft,
   onWorkspaceDeleted,
-  onAccountChanged,
   onProfileChanged,
   onOpenWorkspace,
   onAccountDeleted,
@@ -185,8 +184,6 @@ export function Settings({
   onPage(page: SettingsPage | null): void;
   onLeft(): void;
   onWorkspaceDeleted(name: string): void;
-  /** The workspace's name or logo changed, so the account loads again. */
-  onAccountChanged(): void;
   /** The operator's name or picture changed. */
   onProfileChanged(): void;
   onOpenWorkspace(workspaceId: string, step: OwnerStep): void;
@@ -238,7 +235,6 @@ export function Settings({
             workspaceId={workspaceId}
             team={team}
             openDelete={openDelete}
-            onChanged={onAccountChanged}
             onDeleted={() => onWorkspaceDeleted(workspaceName)}
           />
         );

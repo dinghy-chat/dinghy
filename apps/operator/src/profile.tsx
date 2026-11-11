@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type FormEvent, useId, useState } from "react";
+import { useId, useState } from "react";
 import { type Me, removePicture, requestAccountDelete, setPicture, updateName } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
@@ -12,11 +12,10 @@ import {
   ErrorNote,
   failureText,
   ImageUpload,
-  type Note,
+  NameField,
   type Option,
   Page,
   PageRow,
-  SaveNote,
   TypeToConfirm,
   type UploadText,
 } from "./ui.tsx";
@@ -193,50 +192,20 @@ export function ProfilePage({
   onOpenWorkspace(workspaceId: string, step: OwnerStep): void;
   onAccountDeleted(): void;
 }) {
-  const [name, setName] = useState(me.name);
-  const [note, setNote] = useState<Note>(null);
-  const [busy, setBusy] = useState(false);
-
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    try {
-      await updateName(name.trim());
-      setName(name.trim());
-      setNote({ ok: true, text: "accountNameSaved" });
-      onChanged();
-    } catch (failure) {
-      setNote({ ok: false, text: failureText(failure, {}) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <Page title={t("pageProfile")} context={t("profileContext")}>
-      <form className="profile" onSubmit={save}>
+      <div className="profile">
         <PageRow title={t("accountName")} help={t("accountHelp")}>
-          <div className="inline-field">
-            <input
-              aria-label={t("accountName")}
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-                setNote(null);
-              }}
-              required
-              maxLength={100}
-              autoComplete="name"
-            />
-            <button
-              type="submit"
-              className="pill dark"
-              disabled={busy || name.trim() === "" || name.trim() === me.name}
-            >
-              {t("accountNameSave")}
-            </button>
-          </div>
-          <SaveNote note={note} />
+          <NameField
+            label={t("accountName")}
+            name={me.name}
+            autoComplete="name"
+            saved="accountNameSaved"
+            onSave={async (name) => {
+              await updateName(name);
+              onChanged();
+            }}
+          />
         </PageRow>
         <PageRow title={t("email")} help={t("accountEmailHelp")}>
           <input aria-label={t("email")} value={me.email} readOnly />
@@ -258,7 +227,7 @@ export function ProfilePage({
         <PageRow title={t("theme")} help={t("themeHelp")}>
           <ThemeChoice />
         </PageRow>
-      </form>
+      </div>
       {/* Outside the form, because its dialog has a form of its own. */}
       <PageRow title={t("deleteAccountTitle")} help={t("deleteAccountHelp")} danger>
         <DeleteAccount

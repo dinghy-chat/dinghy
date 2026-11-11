@@ -119,7 +119,6 @@ const en = {
   themeSystem: "Use device setting",
   themeLight: "Light",
   themeDark: "Dark",
-  accountNameSave: "Save",
   accountNameSaved: "Saved.",
   pageProfile: "Profile",
   userMenu: "Your account",

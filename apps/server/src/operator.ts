@@ -16,7 +16,7 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, deliverLinks, redeemSignInToken } from "./auth.ts";
-import { operator, operatorPicture, widgetSettings, workspace } from "./db/schema.ts";
+import { operator, operatorPicture } from "./db/schema.ts";
 import { accessFlags, type Database, operatorWorkspaces, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -42,6 +42,7 @@ import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
+import { readWorkspaceFace } from "./workspaces.ts";
 
 const AccountName = z.strictObject({
   name: z
@@ -380,25 +381,15 @@ export function registerOperatorRoutes(
         workspaces: await Promise.all(
           (await operatorWorkspaces(db, id)).map(async ({ access, ...membership }) => {
             const { workspaceId, role } = membership;
-            const { row, soleOwner } = await withWorkspace(db, workspaceId, async (tx) => ({
-              row: (
-                await tx
-                  .select({
-                    name: workspace.name,
-                    publicKey: workspace.publicKey,
-                    logoUpdatedAt: widgetSettings.logoUpdatedAt,
-                  })
-                  .from(workspace)
-                  .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
-                  .where(eq(workspace.id, workspaceId))
-              )[0],
+            const { face, soleOwner } = await withWorkspace(db, workspaceId, async (tx) => ({
+              face: await readWorkspaceFace(tx, imageUrls, workspaceId),
               soleOwner: await isSoleOwner(tx, workspaceId, role),
             }));
             return {
               ...membership,
               ...accessFlags(access),
-              name: row?.name ?? "",
-              logoUrl: row === undefined ? null : imageUrls.logo(row.publicKey, row.logoUpdatedAt),
+              name: face?.name ?? "",
+              logoUrl: face?.logoUrl ?? null,
               soleOwner,
             };
           }),
