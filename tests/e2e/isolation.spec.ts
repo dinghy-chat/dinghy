@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink, signOut } from "./links.ts";
+import { signInOn, signOut } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -37,11 +37,6 @@ const identify = (page: Page, token: string) =>
     win.Dinghy.identify(value);
     win.Dinghy.open();
   }, token);
-
-async function signIn(page: Page, email: string) {
-  await openLink(page, await server.signInLink(email));
-  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
-}
 
 async function freshPage(browser: Browser): Promise<Page> {
   return (await browser.newContext()).newPage();
@@ -103,7 +98,7 @@ test("the next operator on a shared browser sees only their own workspace", asyn
   await server.seedConversations(1, "anna's customer");
   const page = await freshPage(browser);
   await page.goto(server.apiOrigin);
-  await signIn(page, "anna@example.com");
+  await signInOn(page, server, "anna@example.com");
   await page.locator(".row", { hasText: "anna's customer" }).click();
   await expect(page.getByRole("textbox", { name: "Your reply" })).toBeVisible();
   const target = await page.evaluate(async () => {
@@ -117,7 +112,7 @@ test("the next operator on a shared browser sees only their own workspace", asyn
   await expect(page.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
   await expect(page.getByText("anna's customer")).toHaveCount(0);
 
-  await signIn(page, "bea@example.com");
+  await signInOn(page, server, "bea@example.com");
   await expect(page.getByRole("heading", { name: "Elsewhere" })).toBeVisible();
   await expect(page.getByText("anna's customer")).toHaveCount(0);
 

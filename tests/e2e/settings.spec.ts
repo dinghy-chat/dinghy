@@ -1,6 +1,6 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { signedIn } from "./links.ts";
 import { openSettings, settingsList } from "./settings.ts";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
@@ -27,19 +27,12 @@ test.afterAll(async () => {
   await server.stop();
 });
 
-async function signedIn(browser: Browser, email = "owner@example.com"): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await openLink(page, await server.signInLink(email));
-  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
-  return page;
-}
-
 /** The open page's title, which is the panel's second heading after "Settings". */
 const pageTitle = (page: Page, name: string) =>
   page.locator(".settings-pane").getByRole("heading", { name, exact: true, level: 2 });
 
 test("the grouped list opens each page, by a click and by its address", async ({ browser }) => {
-  const page = await signedIn(browser);
+  const page = await signedIn(browser, server, "owner@example.com");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const list = settingsList(page);
   await expect(list.getByRole("heading", { level: 3 })).toHaveText([
@@ -54,7 +47,7 @@ test("the grouped list opens each page, by a click and by its address", async ({
 
   for (const one of PAGES) {
     await list.getByRole("link", { name: one.name, exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/settings/${one.path}$`));
+    await expect(page).toHaveURL(new RegExp(`/settings/${one.path}\\?workspace=`));
     await expect(pageTitle(page, one.heading)).toBeVisible();
     await expect(list.locator('[aria-current="page"]')).toHaveText(one.name);
   }
@@ -83,7 +76,7 @@ test("the grouped list opens each page, by a click and by its address", async ({
 test("the sidebar keeps Inbox, Analytics and Settings, and Profile opens from the user menu", async ({
   browser,
 }) => {
-  const page = await signedIn(browser);
+  const page = await signedIn(browser, server, "owner@example.com");
   await expect(page.getByRole("navigation", { name: "Main menu" }).getByRole("button")).toHaveText([
     "Inbox",
     "Analytics",
@@ -91,7 +84,7 @@ test("the sidebar keeps Inbox, Analytics and Settings, and Profile opens from th
   ]);
   await page.getByRole("button", { name: "Your account" }).click();
   await page.getByRole("menuitem", { name: "Profile" }).click();
-  await expect(page).toHaveURL(/\/settings\/profile$/);
+  await expect(page).toHaveURL(/\/settings\/profile\?workspace=/);
   await expect(pageTitle(page, "Profile")).toBeVisible();
   await page.context().close();
 });
@@ -99,7 +92,7 @@ test("the sidebar keeps Inbox, Analytics and Settings, and Profile opens from th
 test("a member sees only their own pages, and the team and the widget read-only", async ({
   browser,
 }) => {
-  const page = await signedIn(browser, "member@example.com");
+  const page = await signedIn(browser, server, "member@example.com");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const list = settingsList(page);
   await expect(list.getByRole("link")).toHaveText(MEMBER_PAGES);
@@ -120,7 +113,7 @@ test("a member sees only their own pages, and the team and the widget read-only"
 });
 
 test("the Team page has the Invite button, and no other page does", async ({ browser }) => {
-  const page = await signedIn(browser);
+  const page = await signedIn(browser, server, "owner@example.com");
   await openSettings(page, "Team");
   const invite = page.locator(".page-head").getByRole("button", { name: "Invite someone" });
   await expect(invite).toBeVisible();
@@ -137,7 +130,7 @@ test("the Team page has the Invite button, and no other page does", async ({ bro
 test("renaming the workspace shows the new name in the sidebar, here and in another tab", async ({
   browser,
 }) => {
-  const page = await signedIn(browser);
+  const page = await signedIn(browser, server, "owner@example.com");
   const other = await page.context().newPage();
   await other.goto(server.apiOrigin);
   const otherHeading = other.getByRole("heading", { name: "Harbor Labs", level: 1 });
@@ -165,7 +158,7 @@ test("renaming the workspace shows the new name in the sidebar, here and in anot
 test("on a phone the list is its own screen, and each page opens with a way back", async ({
   browser,
 }) => {
-  const page = await signedIn(browser);
+  const page = await signedIn(browser, server, "owner@example.com");
   await page.setViewportSize({ width: 390, height: 780 });
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const list = settingsList(page);
@@ -176,14 +169,58 @@ test("on a phone the list is its own screen, and each page opens with a way back
     await list.getByRole("link", { name: one.name, exact: true }).click();
     await expect(pageTitle(page, one.heading)).toBeVisible();
     await expect(list).toBeHidden();
-    // Nothing on the page scrolls sideways.
-    const overflow = await page
-      .locator(".settings-pane .page")
-      .evaluate((element) => element.scrollWidth > element.clientWidth);
-    expect(overflow, one.name).toBe(false);
+    // Nothing on the page scrolls sideways, once a page that loads its form has it.
+    const overflows = () =>
+      page
+        .locator(".settings-pane .page")
+        .evaluate((element) => element.scrollWidth > element.clientWidth);
+    await expect.poll(overflows, { message: one.name }).toBe(false);
     await back.click();
     await expect(list).toBeVisible();
-    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page).toHaveURL(/\/settings\?workspace=/);
   }
+  await page.context().close();
+});
+
+test("a Settings link names its workspace, which wins over the one remembered", async ({
+  browser,
+}) => {
+  await server.createOperator("links@example.com");
+  const other = await server.createSecondWorkspace("Harbor", "links@example.com");
+  const page = await signedIn(browser, server, "links@example.com");
+  const switcher = page.getByRole("button", { name: /^Workspace:/ });
+  // The last workspace in use is E2E, so an address with no workspace would open it.
+  await page.goto(`${server.apiOrigin}/?workspace=${server.workspaceId()}`);
+  await expect(switcher).toHaveAccessibleName("Workspace: E2E");
+
+  await page.goto(`${server.apiOrigin}/settings/team?workspace=${other.id}`);
+  await expect(switcher).toHaveAccessibleName("Workspace: Harbor");
+  await expect(pageTitle(page, "Team")).toBeVisible();
+  await settingsList(page).getByRole("link", { name: "Install", exact: true }).click();
+  await expect(page).toHaveURL(`${server.apiOrigin}/settings/install?workspace=${other.id}`);
+  await page.context().close();
+});
+
+test("Back and Forward bring back the Inbox's filters with their list", async ({ browser }) => {
+  const page = await signedIn(browser, server, "owner@example.com");
+  const status = page.getByRole("group", { name: "Conversations to show" });
+  const whose = page.getByRole("group", { name: "Whose conversations" });
+  await page.goto(`${server.apiOrigin}/?view=closed&who=mine`);
+  await expect(status.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(whose.getByRole("radio", { name: "Mine" })).toBeChecked();
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Inbox", exact: true }).click();
+  await status.getByRole("radio", { name: "Open" }).check();
+  await whose.getByRole("radio", { name: "All" }).check();
+  await expect(page).toHaveURL(`${server.apiOrigin}/`);
+
+  await page.goBack();
+  await expect(settingsList(page)).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(`${server.apiOrigin}/?view=closed&who=mine`);
+  await expect(status.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(whose.getByRole("radio", { name: "Mine" })).toBeChecked();
+  await expect(page.getByText("Nothing is assigned to you.")).toBeVisible();
   await page.context().close();
 });

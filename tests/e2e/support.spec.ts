@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 // A single-page site, which changes its address with the History API and never reloads.
@@ -26,13 +26,6 @@ test.beforeEach(async () => {
   await server.closeConversations();
   await server.setWidgetSettings({ title: null, greeting: null, away: null, primary: null });
 });
-
-async function signedIn(browser: Browser): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await openLink(page, await server.signInLink("owner@example.com"));
-  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
-  return page;
-}
 
 async function say(page: Page, text: string) {
   await page.getByRole("textbox", { name: "Your message" }).fill(text);
@@ -82,7 +75,7 @@ test("the reply email's link opens the conversation on its own page, to read and
   await expect(page.locator(".msg", { hasText: "Done!" })).toBeVisible();
   expect(problems).toEqual([]);
 
-  const owner = await signedIn(browser);
+  const owner = await signedIn(browser, server, "owner@example.com");
   await owner.locator(".row", { hasText: "Done!" }).click();
   await expect(
     owner.locator(".thread .msg.visitor", { hasText: "Great, I'll take it." }),
@@ -127,7 +120,7 @@ test("the operator sees the visitor online, their device and the page they moved
   );
   await customer.locator("#go").click();
   await reported;
-  const owner = await signedIn(browser);
+  const owner = await signedIn(browser, server, "owner@example.com");
   await owner.locator(".row", { hasText: "Where is billing?" }).click();
   const visit = owner.locator(".thread-head .visit");
   await expect(visit).toContainText("Chat is open");
@@ -143,7 +136,7 @@ test("search finds a conversation by its text, and Escape returns to the list", 
 }) => {
   await visitor(browser, "/pricing", "My invoice number is 4417");
   await visitor(browser, "/pricing", "Something unrelated");
-  const owner = await signedIn(browser);
+  const owner = await signedIn(browser, server, "owner@example.com");
   const field = owner.getByRole("searchbox", { name: "Search conversations" });
   await field.fill("invoice number");
   await expect(owner.locator(".row")).toHaveCount(1);
@@ -187,7 +180,7 @@ test("the operator sees the pages the visitor went through, newest first", async
   );
   await customer.locator("#go").click();
   await reported;
-  const owner = await signedIn(browser);
+  const owner = await signedIn(browser, server, "owner@example.com");
   await owner.locator(".row", { hasText: "Which plan do I have?" }).click();
   const journey = owner.getByRole("region", { name: "Pages visited" });
   await expect(journey.getByRole("link")).toHaveText(["Billing settings", "App"]);
@@ -203,7 +196,7 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
 }) => {
   await visitor(browser, "/pricing", "Counting this one");
   await server.reply("Answered.");
-  const owner = await signedIn(browser);
+  const owner = await signedIn(browser, server, "owner@example.com");
   await owner.getByRole("button", { name: "Analytics" }).click();
   const page = owner.getByRole("region", { name: "Analytics" });
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
@@ -229,7 +222,7 @@ test("a message in the open conversation chimes while another page hides it", as
   browser,
 }) => {
   const customer = await visitor(browser, "/pricing", "First question");
-  const owner = await signedIn(browser);
+  const owner = await signedIn(browser, server, "owner@example.com");
   // Counts each chime, which starts its notes with an oscillator.
   await owner.evaluate(() => {
     const counted = globalThis as { chimes?: number };

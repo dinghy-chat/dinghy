@@ -253,13 +253,20 @@ export async function startE2EServer(
         .where(eq(visitor.workspaceId, workspace.id));
     },
     wakeOperators: () => live.wake(workspace.id, OPERATORS),
-    /** A second workspace, owned by a new operator, for tests of one login across workspaces. */
+    /**
+     * A second workspace, owned by the operator with this email, who is new unless
+     * `createOperator` made them. For tests of one login across workspaces.
+     */
     async createSecondWorkspace(name: string, email: string) {
       const created = await createWorkspace(db, name, []);
-      const [row] = await owner
+      await owner
         .insert(operator)
         .values({ name: email, email, emailVerified: true })
-        .returning({ id: operator.id });
+        .onConflictDoNothing();
+      const [row] = await owner
+        .select({ id: operator.id })
+        .from(operator)
+        .where(eq(operator.email, email));
       const id = row?.id ?? "";
       await owner
         .insert(workspaceMember)

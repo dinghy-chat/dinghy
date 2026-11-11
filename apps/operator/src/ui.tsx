@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import {
   type InputHTMLAttributes,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
   useEffect,
@@ -413,6 +414,10 @@ export function EmojiButton({
   );
 }
 
+/** A click that moves in place: not one that asks for a new tab with a modifier key or button. */
+export const isPlainClick = (event: MouseEvent<HTMLAnchorElement>) =>
+  event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+
 /**
  * A link to another screen of the app. It moves in place, as the app's buttons do, and still
  * opens a new tab with a modifier key or the middle button.
@@ -431,15 +436,7 @@ export function AppLink({
       className={className}
       href={href}
       onClick={(event) => {
-        if (
-          event.button !== 0 ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.shiftKey ||
-          event.altKey
-        ) {
-          return;
-        }
+        if (!isPlainClick(event)) return;
         event.preventDefault();
         navigate(href);
       }}

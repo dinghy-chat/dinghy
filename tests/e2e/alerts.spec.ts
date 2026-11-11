@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink, signOut } from "./links.ts";
+import { signInOn, signOut } from "./links.ts";
 import { openSettings } from "./settings.ts";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
@@ -40,11 +40,6 @@ const FAKE_PUSH = () => {
   PushManager.prototype.getSubscription = async () => current as PushSubscription | null;
 };
 
-async function signedIn(page: Page) {
-  await openLink(page, await server.signInLink("anna@example.com"));
-  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
-}
-
 test("an operator turns on notifications and receives a test, and sign-out ends them @smoke", async ({
   browser,
   browserName,
@@ -54,7 +49,7 @@ test("an operator turns on notifications and receives a test, and sign-out ends 
   const page = await context.newPage();
   await context.grantPermissions(["notifications"], { origin: server.apiOrigin });
   await page.addInitScript(FAKE_PUSH);
-  await signedIn(page);
+  await signInOn(page, server, "anna@example.com");
 
   const before = server.pushed.length;
   await openSettings(page, "Notifications");
@@ -98,7 +93,7 @@ test("a link from a notification opens its conversation", async ({ browser }) =>
   const context = await browser.newContext();
   const page = await context.newPage();
   await server.seedConversations(1, "deep link");
-  await signedIn(page);
+  await signInOn(page, server, "anna@example.com");
   await expect(page.locator(".row", { hasText: "deep link" })).toBeVisible();
   await page.locator(".row", { hasText: "deep link" }).click();
   await expect(page.getByRole("textbox", { name: "Your reply" })).toBeVisible();

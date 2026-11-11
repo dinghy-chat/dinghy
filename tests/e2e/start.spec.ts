@@ -32,7 +32,7 @@ test("a new workspace shows its first steps, which open settings and can be hidd
   await page.getByRole("button", { name: "Inbox" }).click();
   await steps.getByRole("button", { name: "Invite teammates (optional)" }).click();
   await expect(list.getByRole("link", { name: "Team" })).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/\/settings\/team$/);
+  await expect(page).toHaveURL(/\/settings\/team\?workspace=/);
 
   await page.getByRole("button", { name: "Inbox" }).click();
   await steps.getByRole("button", { name: "Hide these steps" }).click();

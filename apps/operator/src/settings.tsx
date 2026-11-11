@@ -10,7 +10,7 @@ import { NotificationsPage } from "./notifications.tsx";
 import { ProfilePage } from "./profile.tsx";
 import { TeamPage, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
-import { failureText, Loading } from "./ui.tsx";
+import { failureText, isPlainClick, Loading } from "./ui.tsx";
 import { WorkspacePage } from "./workspace.tsx";
 
 const PAGES = [
@@ -49,9 +49,12 @@ const MEMBER_PAGES: readonly SettingsPage[] = ["profile", "notifications", "team
 const isSettingsPage = (value: string): value is SettingsPage =>
   PAGES.some((page) => page === value);
 
-/** The address of a page, or of the list alone, which is what a phone shows first. */
-export const settingsAddress = (page: SettingsPage | null) =>
-  page === null ? "/settings" : `/settings/${page}`;
+/**
+ * The address of a page, or of the list alone, which is what a phone shows first. It names the
+ * workspace, so a copied link or a bookmark opens the same one.
+ */
+export const settingsAddress = (page: SettingsPage | null, workspaceId: string) =>
+  `${page === null ? "/settings" : `/settings/${page}`}?workspace=${workspaceId}`;
 
 /** The page in the address: undefined outside Settings, and null for the list or an unknown page. */
 export function settingsInAddress(): SettingsPage | null | undefined {
@@ -63,27 +66,31 @@ export function settingsInAddress(): SettingsPage | null | undefined {
 /** Where the account's delete sends a sole owner: a workspace's Team page or its delete dialog. */
 export type OwnerStep = "team" | "delete";
 
-/** Opens another workspace on its Team page, or on its Workspace page with the delete dialog. */
+/** The page each step opens: the Team page, or the Workspace page with its delete dialog. */
+export const ownerStepPage = (step: OwnerStep): SettingsPage =>
+  step === "delete" ? "workspace" : "team";
+
+/** Opens another workspace on the page of this step. */
 export const openOwnerStep = (workspaceId: string, step: OwnerStep) =>
   navigate(
-    `${settingsAddress(step === "delete" ? "workspace" : "team")}?workspace=${workspaceId}&settings=${step}`,
+    `${settingsAddress(ownerStepPage(step), workspaceId)}${step === "delete" ? "&delete=1" : ""}`,
   );
 
-/** The step that `openOwnerStep` put in the address for this workspace, or null. */
-export function ownerStepIn(workspaceId: string): OwnerStep | null {
+/** True when `openOwnerStep` asked to open this workspace's delete dialog. */
+export function wantsDelete(workspaceId: string): boolean {
   const params = new URLSearchParams(location.search);
-  if (params.get("workspace") !== workspaceId) return null;
-  const step = params.get("settings");
-  return step === "team" || step === "delete" ? step : null;
+  return params.get("workspace") === workspaceId && params.get("delete") === "1";
 }
 
 /** The grouped list. Each page is a link, so it opens in a new tab too. */
 function SettingsNav({
   pages,
   current,
+  workspaceId,
   onPick,
 }: {
   pages: readonly SettingsPage[];
+  workspaceId: string;
   current: SettingsPage;
   onPick(page: SettingsPage): void;
 }) {
@@ -101,10 +108,10 @@ function SettingsNav({
                 <li key={page}>
                   <a
                     className="settings-link"
-                    href={settingsAddress(page)}
+                    href={settingsAddress(page, workspaceId)}
                     aria-current={page === current ? "page" : undefined}
                     onClick={(event) => {
-                      if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                      if (!isPlainClick(event)) return;
                       event.preventDefault();
                       onPick(page);
                     }}
@@ -266,6 +273,7 @@ export function Settings({
           <AppearancePage
             api={api}
             me={me}
+            workspaceId={workspaceId}
             canEdit={role !== "member"}
             onOpenWorkspace={() => onPage("workspace")}
           />
@@ -283,7 +291,7 @@ export function Settings({
 
   return (
     <div className={current === null ? "settings listing" : "settings"}>
-      <SettingsNav pages={pages} current={shown} onPick={onPage} />
+      <SettingsNav pages={pages} current={shown} workspaceId={workspaceId} onPick={onPage} />
       <div className="settings-pane">
         <button type="button" className="text-button settings-back" onClick={() => onPage(null)}>
           <Icon name="back" size={14} />

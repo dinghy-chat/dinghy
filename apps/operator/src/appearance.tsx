@@ -16,12 +16,14 @@ import type { Me, WorkspaceApi } from "./api.ts";
 import { hexColor } from "./hex-color.ts";
 import { setLeaveGuard } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
+import { settingsAddress } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   Choices,
   DocLink,
   Field,
   failureText,
+  isPlainClick,
   Loading,
   type Note,
   type Option,
@@ -75,19 +77,18 @@ const sameSettings = (one: WidgetSettings, other: WidgetSettings) =>
  * this dialog before the app moves to another page, view or workspace.
  */
 function LeaveGuard({ unsaved }: { unsaved: boolean }) {
-  const [move, setMove] = useState<(() => void) | null>(null);
+  const [asked, setAsked] = useState<{ move(): void; stay(): void } | null>(null);
   useEffect(() => {
     if (!unsaved) return;
     const guard = (event: BeforeUnloadEvent) => event.preventDefault();
     addEventListener("beforeunload", guard);
-    // A function in state must be wrapped, or React calls it as an updater.
-    setLeaveGuard((next) => setMove(() => next));
+    setLeaveGuard((move, stay) => setAsked({ move, stay }));
     return () => {
       removeEventListener("beforeunload", guard);
       setLeaveGuard(null);
     };
   }, [unsaved]);
-  if (move === null) return null;
+  if (asked === null) return null;
   return (
     <Confirm
       title={t("widgetLeaveTitle")}
@@ -95,10 +96,13 @@ function LeaveGuard({ unsaved }: { unsaved: boolean }) {
       confirm={t("widgetLeaveYes")}
       cancel={t("widgetStay")}
       onConfirm={() => {
-        setMove(null);
-        move();
+        setAsked(null);
+        asked.move();
       }}
-      onCancel={() => setMove(null)}
+      onCancel={() => {
+        setAsked(null);
+        asked.stay();
+      }}
     />
   );
 }
@@ -437,14 +441,21 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
 }
 
 /** Where the logo was: it belongs to the workspace now, and its page changes it. */
-function LogoNote({ onOpenWorkspace }: { onOpenWorkspace(): void }) {
+function LogoNote({
+  workspaceId,
+  onOpenWorkspace,
+}: {
+  workspaceId: string;
+  onOpenWorkspace(): void;
+}) {
   const [before, after] = t("appearanceLogoNote").split("{workspace}");
   return (
     <p className="hint">
       {before}
       <a
-        href="/settings/workspace"
+        href={settingsAddress("workspace", workspaceId)}
         onClick={(event) => {
+          if (!isPlainClick(event)) return;
           event.preventDefault();
           onOpenWorkspace();
         }}
@@ -460,35 +471,23 @@ function LogoNote({ onOpenWorkspace }: { onOpenWorkspace(): void }) {
  * The widget's look, words and behavior, with a live preview. Every member sees it, and only an
  * owner or an admin changes it. One Save sends the form.
  */
-export function AppearancePage({
-  api,
-  me,
-  canEdit,
-  onOpenWorkspace,
-}: {
-  api: WorkspaceApi;
-  me: Me;
-  canEdit: boolean;
-  onOpenWorkspace(): void;
-}) {
+export function AppearancePage(props: AppearanceProps) {
   return (
     <Page title={t("pageAppearance")}>
-      <AppearanceForm api={api} me={me} canEdit={canEdit} onOpenWorkspace={onOpenWorkspace} />
+      <AppearanceForm {...props} />
     </Page>
   );
 }
 
-function AppearanceForm({
-  api,
-  me,
-  canEdit,
-  onOpenWorkspace,
-}: {
+interface AppearanceProps {
   api: WorkspaceApi;
   me: Me;
+  workspaceId: string;
   canEdit: boolean;
   onOpenWorkspace(): void;
-}) {
+}
+
+function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: AppearanceProps) {
   const [saved, setSaved] = useState<SavedAppearance | null>(null);
   const [draft, setDraft] = useState<WidgetSettings | null>(null);
   const [loadFailure, setLoadFailure] = useState<TextId | null>(null);
@@ -542,7 +541,7 @@ function AppearanceForm({
         <fieldset className="widget-sections" disabled={!canEdit}>
           {canEdit && (
             <FormSection title="logoTitle">
-              <LogoNote onOpenWorkspace={onOpenWorkspace} />
+              <LogoNote workspaceId={workspaceId} onOpenWorkspace={onOpenWorkspace} />
             </FormSection>
           )}
           <FormSection title="widgetTextsTitle" help="widgetTextsHelp">

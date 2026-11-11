@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink, signOut } from "./links.ts";
+import { openLink, signedIn, signOut } from "./links.ts";
 import { openSettings } from "./settings.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -17,14 +17,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await server.stop();
 });
-
-async function signedIn(browser: Browser): Promise<Page> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await openLink(page, await server.signInLink("anna@example.com"));
-  await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
-  return page;
-}
 
 async function visitor(browser: Browser, text: string): Promise<Page> {
   const context = await browser.newContext();
@@ -54,7 +46,7 @@ function setVisibility(page: Page, state: "hidden" | "visible") {
 }
 
 test("a full conversation between the widget and the operator app @smoke", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   const errors: string[] = [];
   operator.on("pageerror", (error) => errors.push(error.message));
   operator.on("console", (message) => {
@@ -93,7 +85,7 @@ test("a full conversation between the widget and the operator app @smoke", async
 });
 
 test("a message in another conversation does not reload the open thread", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   const open = await visitor(browser, "The open one");
   await row(operator, "The open one").click();
   await expect(operator.locator(".msg.visitor", { hasText: "The open one" })).toBeVisible();
@@ -118,7 +110,7 @@ test("a message in another conversation does not reload the open thread", async 
 
 test("a draft survives closing and reopening the conversation", async ({ browser }) => {
   const customer = await visitor(browser, "Keep my draft");
-  const page = await signedIn(browser);
+  const page = await signedIn(browser, server, "anna@example.com");
   await page.locator(".row", { hasText: "Keep my draft" }).click();
   const reply = page.getByRole("textbox", { name: "Your reply" });
   await reply.fill("Half a sentence");
@@ -131,7 +123,7 @@ test("a draft survives closing and reopening the conversation", async ({ browser
 });
 
 test("messages that arrive together all reach the open thread", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Start of a burst");
   await row(operator, "Start of a burst").click();
   await expect(reply(operator)).toBeVisible();
@@ -166,7 +158,7 @@ test("a refused stream waits for Retry-After before it tries again", async ({ br
 });
 
 test("a steady stream of events does not keep a thread from loading", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Busy workspace");
   // The list must show this conversation first, or the click below could pick an older one.
   await expect(operator.locator(".row").first()).toContainText("Busy workspace");
@@ -193,7 +185,7 @@ test("a steady stream of events does not keep a thread from loading", async ({ b
 });
 
 test("a slow response cannot fill the wrong tab", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "An open conversation");
   await expect(row(operator, "An open conversation")).toBeVisible();
   let releaseOpen = () => {};
@@ -226,7 +218,7 @@ test("a slow response cannot fill the wrong tab", async ({ browser }) => {
 
 test("an operator can reach conversations past the first page", async ({ browser }) => {
   await server.seedConversations(55, "paged");
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await expect(row(operator, "paged message 54")).toBeVisible();
   await expect(row(operator, "paged message 0")).toHaveCount(0);
   await operator.getByRole("button", { name: "Load more" }).click();
@@ -235,7 +227,7 @@ test("an operator can reach conversations past the first page", async ({ browser
 });
 
 test("a refresh keeps the session and the conversations", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Still here after a refresh");
   await expect(row(operator, "Still here after a refresh")).toBeVisible();
   await operator.reload();
@@ -243,7 +235,7 @@ test("a refresh keeps the session and the conversations", async ({ browser }) =>
 });
 
 test("an operator who was disconnected catches up", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Before the disconnect");
   await row(operator, "Before the disconnect").click();
   await expect(reply(operator)).toBeVisible();
@@ -262,7 +254,7 @@ test("an operator who was disconnected catches up", async ({ browser }) => {
 });
 
 test("a revoked session returns to the sign-in page", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Before the revoke");
   await server.revokeSessions();
   // The next wake checks the session again.
@@ -271,7 +263,7 @@ test("a revoked session returns to the sign-in page", async ({ browser }) => {
 });
 
 test("signing out returns to the sign-in page, and a reload stays there", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await signOut(operator);
   await expect(operator.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
   await operator.reload();
@@ -359,7 +351,7 @@ test("with no mail server, the sign-in page says to ask the admin for a link", a
 });
 
 test("on a phone, the list and the thread take turns", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await operator.setViewportSize({ width: 390, height: 780 });
   await visitor(browser, "From a phone test");
   await row(operator, "From a phone test").click();
@@ -376,7 +368,7 @@ test("on a phone, the list and the thread take turns", async ({ browser }) => {
 test("a site that is not allowed shows Not sent, never the text for a block", async ({
   browser,
 }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   const widget = await visitor(browser, "Before the change");
   await openSettings(operator, "Install");
   const sites = operator.getByRole("textbox", { name: "Site 1" });
@@ -399,7 +391,7 @@ test("a site that is not allowed shows Not sent, never the text for a block", as
 });
 
 test("an operator blocks a visitor, who then sees why they cannot send", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   const widget = await visitor(browser, "Please block me");
   await row(operator, "Please block me").click();
   await moreAction(operator, "Block");
@@ -433,7 +425,7 @@ test("an operator blocks a visitor, who then sees why they cannot send", async (
 });
 
 test("a block shows in another open thread of the same visitor", async ({ browser }) => {
-  const first = await signedIn(browser);
+  const first = await signedIn(browser, server, "anna@example.com");
   const widget = await visitor(browser, "My first visit");
   await row(first, "My first visit").click();
   await first.getByRole("button", { name: "Close", exact: true }).click();
@@ -442,7 +434,7 @@ test("a block shows in another open thread of the same visitor", async ({ browse
   await widget.getByRole("textbox", { name: "Your message" }).fill("My second visit");
   await widget.getByRole("textbox", { name: "Your message" }).press("Enter");
 
-  const second = await signedIn(browser);
+  const second = await signedIn(browser, server, "anna@example.com");
   await row(second, "My second visit").click();
   await moreAction(second, "Block");
   await expect(second.getByText("This visitor is blocked")).toBeVisible();
@@ -456,7 +448,7 @@ test("clicking Load more twice in the blocked list still reaches every visitor",
   browser,
 }) => {
   await server.blockVisitors(120);
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await openSettings(operator, "Workspace");
   const rows = operator.locator(".page .blocked li", { hasText: "Blocked " });
   await expect(rows).toHaveCount(50);
@@ -473,7 +465,7 @@ test("clicking Load more twice in the blocked list still reaches every visitor",
 });
 
 test("an owner deletes a conversation, and the list and the thread go too", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Please delete this");
   await row(operator, "Please delete this").click();
   await moreAction(operator, "Delete");
@@ -538,7 +530,7 @@ test("a sign-in link opens the inbox in place, with no page load", async ({ brow
 });
 
 test("the assignee dropdown works with the keyboard", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Keyboard assignment");
   await row(operator, "Keyboard assignment").click();
   const button = operator.getByRole("button", { name: /^Assign to/ });
@@ -589,7 +581,7 @@ test("the assignee dropdown works with the keyboard", async ({ browser }) => {
 });
 
 test("the … menu blocks with the keyboard too", async ({ browser }) => {
-  const operator = await signedIn(browser);
+  const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Menu by keyboard");
   await row(operator, "Menu by keyboard").click();
   const more = operator.getByRole("button", { name: "More actions" });
@@ -608,7 +600,7 @@ test("the … menu blocks with the keyboard too", async ({ browser }) => {
 test("the install code is one colored line, and a webhook's events are checkboxes", async ({
   browser,
 }) => {
-  const page = await signedIn(browser);
+  const page = await signedIn(browser, server, "anna@example.com");
   await openSettings(page, "Install");
   const code = page.locator(".code-block code");
   await expect(code).toHaveText(

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -18,14 +18,6 @@ test.afterAll(async () => {
   await server.stop();
 });
 
-async function signedIn(browser: import("@playwright/test").Browser, email: string) {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await openLink(page, await server.signInLink(email));
-  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
-  return page;
-}
-
 test("the widget says when the team is online, and names nobody", async ({ browser }) => {
   const context = await browser.newContext();
   const visitor = await context.newPage();
@@ -34,7 +26,7 @@ test("the widget says when the team is online, and names nobody", async ({ brows
   await expect(visitor.getByText("We are away.")).toBeVisible();
   await expect(visitor.getByText("We are online")).toHaveCount(0);
 
-  const anna = await signedIn(browser, "anna@example.com");
+  const anna = await signedIn(browser, server, "anna@example.com");
   await expect(anna.getByRole("button", { name: "Analytics" })).toBeVisible();
   await visitor.reload();
   await visitor.getByRole("button", { name: "Open chat" }).click();
@@ -50,8 +42,8 @@ test("an operator sees who has a conversation open, and it clears when they leav
 }) => {
   test.setTimeout(90_000);
   await server.seedConversations(1, "shared");
-  const anna = await signedIn(browser, "anna@example.com");
-  const ben = await signedIn(browser, "ben@example.com");
+  const anna = await signedIn(browser, server, "anna@example.com");
+  const ben = await signedIn(browser, server, "ben@example.com");
   await anna.locator(".row", { hasText: "shared" }).click();
   await ben.locator(".row", { hasText: "shared" }).click();
 

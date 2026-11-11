@@ -6,7 +6,7 @@ import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
 import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
-import { NAVIGATE_EVENT, navigate } from "./nav.ts";
+import { NAVIGATE_EVENT, navigate, replaceAddress } from "./nav.ts";
 import { DeleteAccount } from "./profile.tsx";
 import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./scene.tsx";
 import { openOwnerStep } from "./settings.tsx";
@@ -62,11 +62,7 @@ function App() {
       getMe().then(show, () => show(null));
     };
     addEventListener(NAVIGATE_EVENT, moved);
-    addEventListener("popstate", moved);
-    return () => {
-      removeEventListener(NAVIGATE_EVENT, moved);
-      removeEventListener("popstate", moved);
-    };
+    return () => removeEventListener(NAVIGATE_EVENT, moved);
   }, []);
   const signedOut = useCallback(() => setMe(null), []);
   // The workspace this operator just deleted, for a note in the next one.
@@ -133,7 +129,7 @@ function App() {
     setDeletedName(null);
     rememberWorkspace(id);
     // The conversation in the address belongs to the old workspace.
-    history.replaceState(null, "", "/");
+    replaceAddress("/");
     setAt("/");
     setPicked(id);
   };

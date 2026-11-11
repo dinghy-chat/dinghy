@@ -14,7 +14,7 @@ import { CheckEmail } from "../../apps/operator/src/auth.tsx";
 import { navigate } from "../../apps/operator/src/nav.ts";
 import { DeleteAccount } from "../../apps/operator/src/profile.tsx";
 import { AuthPage } from "../../apps/operator/src/scene.tsx";
-import { openOwnerStep, ownerStepIn } from "../../apps/operator/src/settings.tsx";
+import { openOwnerStep, wantsDelete } from "../../apps/operator/src/settings.tsx";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
 import { DeleteWorkspaceDialog } from "../../apps/operator/src/workspace.tsx";
@@ -211,7 +211,7 @@ export function FinishPayment({
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   // The account's delete, on another workspace's Profile page, opens this one to delete it.
-  const [deleting, setDeleting] = useState(() => ownerStepIn(workspace.workspaceId) === "delete");
+  const [deleting, setDeleting] = useState(() => wantsDelete(workspace.workspaceId));
   const isOwner = workspace.role === "owner";
   const pay = async () => {
     setError(null);

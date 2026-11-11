@@ -14,16 +14,17 @@ import {
 import { Icon } from "./icons.tsx";
 import { useChanges, usePresence, useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
-import { leave, NAVIGATE_EVENT, navigate } from "./nav.ts";
+import { leave, NAVIGATE_EVENT, navigate, pushAddress, replaceAddress } from "./nav.ts";
 import { useDeviceSync } from "./notifications.tsx";
 import { EmptyArt, Harbor } from "./scene.tsx";
 import {
   openOwnerStep,
-  ownerStepIn,
+  ownerStepPage,
   Settings,
   type SettingsPage,
   settingsAddress,
   settingsInAddress,
+  wantsDelete,
 } from "./settings.tsx";
 import { Sidebar, type View } from "./sidebar.tsx";
 import { chime, prepareSound } from "./sound.ts";
@@ -57,8 +58,11 @@ const WHO_OPTIONS: Option<Who>[] = [
 ];
 const WHO_ASSIGNEE: Record<Who, Assignee | null> = { all: null, mine: "me", unassigned: "none" };
 
+/** What the Inbox lists. */
+type Filter = { status: Status; who: Who };
+
 /** What the Inbox shows, from the address: `?view=closed` and `&who=mine` or `&who=unassigned`. */
-function filterInAddress(): { status: Status; who: Who } {
+function filterInAddress(): Filter {
   const params = new URLSearchParams(location.search);
   const who = params.get("who");
   return {
@@ -75,11 +79,6 @@ function filterAddress(status: Status, who: Who, from = location.href): string {
   if (who === "all") url.searchParams.delete("who");
   else url.searchParams.set("who", who);
   return `${url.pathname}${url.search}`;
-}
-
-/** Puts the Inbox's choice in the address, so a reload or a shared link keeps it. */
-function writeFilter(status: Status, who: Who) {
-  history.replaceState(history.state, "", filterAddress(status, who));
 }
 
 /** The empty list's words: a filter's own, or the status's. */
@@ -301,12 +300,20 @@ export function Inbox({
 }) {
   const api = useMemo(() => workspaceApi(workspaceId), [workspaceId]);
   useDeviceSync();
-  const [initialFilter] = useState(filterInAddress);
-  const [status, setStatus] = useState<Status>(initialFilter.status);
-  const [chosenWho, setChosenWho] = useState<Who>(initialFilter.who);
+  const [filter, setFilter] = useState(filterInAddress);
+  const { status, who: chosenWho } = filter;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   // The first page has arrived, so an empty list means an empty inbox and not one still loading.
   const [listed, setListed] = useState(false);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  // A new filter starts at its first page, and the old filter's rows must not show while it loads.
+  const [listedFilter, setListedFilter] = useState(filter);
+  if (listedFilter !== filter) {
+    setListedFilter(filter);
+    setLimit(PAGE_SIZE);
+    setConversations([]);
+    setListed(false);
+  }
   const [waiting, setWaiting] = useState(0);
   // In memory only, so a reload or a sign-out clears them.
   const drafts = useRef(new Map<string, string>()).current;
@@ -319,7 +326,7 @@ export function Inbox({
   const [initialPage] = useState(settingsInAddress);
   const [view, setView] = useState<View>(initialPage === undefined ? "inbox" : "settings");
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(initialPage ?? null);
-  const [openDelete, setOpenDelete] = useState(() => ownerStepIn(workspaceId) === "delete");
+  const [openDelete, setOpenDelete] = useState(() => wantsDelete(workspaceId));
   const visible = useTabVisible();
   const [query, setQuery] = useState("");
   const { found, searching, failed: searchFailed } = useSearch(api, query);
@@ -363,7 +370,6 @@ export function Inbox({
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: teamVersion asks for a load.
   useEffect(loadMembers, [loadMembers, teamVersion]);
-  const [limit, setLimit] = useState(PAGE_SIZE);
   const [hasMore, setHasMore] = useState(false);
   const viewers = usePresence(api, selected, visible);
   /** Who else has this conversation open, by name. Someone who left the team has no name here. */
@@ -434,9 +440,9 @@ export function Inbox({
     setView(next);
     const address =
       next === "settings"
-        ? settingsAddress(page)
+        ? settingsAddress(page, workspaceId)
         : filterAddress(status, who, new URL("/", location.origin).href);
-    if (address !== `${location.pathname}${location.search}`) history.pushState(null, "", address);
+    if (address !== `${location.pathname}${location.search}`) pushAddress(address);
   };
   const openSettings = (page: SettingsPage | null) => leave(() => showView("settings", page));
 
@@ -447,28 +453,24 @@ export function Inbox({
       setOpenDelete(false);
       if (page === undefined) {
         setView((current) => (current === "settings" ? "inbox" : current));
+        const next = filterInAddress();
+        setFilter((current) =>
+          current.status === next.status && current.who === next.who ? current : next,
+        );
         return;
       }
       setView("settings");
       setSettingsPage(page);
     };
-    addEventListener("popstate", moved);
     addEventListener(NAVIGATE_EVENT, moved);
-    return () => {
-      removeEventListener("popstate", moved);
-      removeEventListener(NAVIGATE_EVENT, moved);
-    };
+    return () => removeEventListener(NAVIGATE_EVENT, moved);
   }, []);
 
+  /** Shows another filter, and puts it in the address, so a reload or a shared link keeps it. */
   const showFilter = (nextStatus: Status, nextWho: Who) => {
     if (nextStatus === status && nextWho === who) return;
-    writeFilter(nextStatus, nextWho);
-    setStatus(nextStatus);
-    setChosenWho(nextWho);
-    setLimit(PAGE_SIZE);
-    // The old filter's rows must not show under this one while it loads.
-    setConversations([]);
-    setListed(false);
+    replaceAddress(filterAddress(nextStatus, nextWho));
+    setFilter({ status: nextStatus, who: nextWho });
   };
   const empty = emptyLook(status, who);
 
@@ -554,15 +556,9 @@ export function Inbox({
                   loadMembers();
                 }}
                 onOpenWorkspace={(id, step) => {
-                  if (id === workspaceId) {
-                    showView(
-                      "settings",
-                      step === "delete" ? "workspace" : "team",
-                      step === "delete",
-                    );
-                  } else {
-                    openOwnerStep(id, step);
-                  }
+                  if (id === workspaceId)
+                    showView("settings", ownerStepPage(step), step === "delete");
+                  else openOwnerStep(id, step);
                 }}
                 onAccountDeleted={onAccountDeleted}
               />

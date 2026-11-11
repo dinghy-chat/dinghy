@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink } from "./links.ts";
+import { openLink, signedIn } from "./links.ts";
 import { openSettings, settingsList } from "./settings.ts";
 
 const tag = (attributes = "") =>
@@ -364,6 +364,31 @@ test("an owner changes the color, theme and launcher in Appearance, and the site
   await expect(visitor.locator("dinghy-chat")).toHaveAttribute("data-theme", "dark");
   await visitor.context().close();
   await context.close();
+});
+
+test("Back with unsaved Appearance changes asks first, and Stay keeps them and the address", async ({
+  browser,
+}) => {
+  const owner = await signedIn(browser, server, "owner@example.com");
+  await openSettings(owner, "Team");
+  await settingsList(owner).getByRole("link", { name: "Appearance" }).click();
+  const title = owner.locator(".widget-form").getByRole("textbox", { name: "Chat title" });
+  await title.fill("Unsaved");
+  const dialog = owner.getByRole("alertdialog", { name: "Leave without saving?" });
+
+  await owner.goBack();
+  await dialog.getByRole("button", { name: "Stay" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(owner).toHaveURL(/\/settings\/appearance\?/);
+  await expect(title).toHaveValue("Unsaved");
+
+  await owner.goBack();
+  await dialog.getByRole("button", { name: "Leave" }).click();
+  await expect(owner).toHaveURL(/\/settings\/team\?/);
+  await expect(
+    owner.locator(".settings-pane").getByRole("heading", { name: "Team" }),
+  ).toBeVisible();
+  await owner.context().close();
 });
 
 test("Appearance asks before another page or view drops unsaved changes", async ({ browser }) => {

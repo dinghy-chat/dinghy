@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
-import { openLink, signOut } from "./links.ts";
+import { openLink, signedIn, signOut } from "./links.ts";
 import { openSettings, settingsList } from "./settings.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -17,18 +17,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await server.stop();
 });
-
-async function signedIn(browser: Browser, email = "owner@example.com"): Promise<Page> {
-  const context = await browser.newContext();
-  // Only Chromium has this permission. In WebKit, asking for it breaks the next new page.
-  if (browser.browserType().name() === "chromium") {
-    await context.grantPermissions(["clipboard-write"]);
-  }
-  const page = await context.newPage();
-  await openLink(page, await server.signInLink(email));
-  await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
-  return page;
-}
 
 /** Picks a choice in one of the app's dropdowns, by the dropdown's label. */
 async function pick(page: Page, label: string, choice: string) {
@@ -76,7 +64,7 @@ async function joinAsNew(browser: Browser, url: string, name: string): Promise<P
 test("an owner invites a member, assigns a chat to them, then removes them @smoke", async ({
   browser,
 }) => {
-  const boss = await signedIn(browser);
+  const boss = await signedIn(browser, server, "owner@example.com");
   const url = await invite(boss, "ben@example.com");
   const member = await joinAsNew(browser, url, "Ben");
 
@@ -117,7 +105,7 @@ test("an owner invites a member, assigns a chat to them, then removes them @smok
 });
 
 test("an owner changes the allowed sites and replaces the secret", async ({ browser }) => {
-  const boss = await signedIn(browser);
+  const boss = await signedIn(browser, server, "owner@example.com");
   await openSettings(boss, "Install");
   await expect(boss.locator(".page pre").first()).toContainText("data-key=");
 
@@ -141,7 +129,7 @@ test("an owner changes the allowed sites and replaces the secret", async ({ brow
   await save.click();
   await expect(boss.getByRole("status")).toHaveText("Saved.");
   await boss.reload();
-  await expect(boss).toHaveURL(/\/settings\/install$/);
+  await expect(boss).toHaveURL(/\/settings\/install\?workspace=/);
   await expect(boss.getByRole("textbox", { name: "Site 1" })).toHaveValue(original);
   await expect(boss.getByRole("textbox", { name: "Site 2" })).toHaveValue(
     "https://second.example.com",
@@ -153,7 +141,7 @@ test("an owner changes the allowed sites and replaces the secret", async ({ brow
   await save.click();
   await expect(boss.getByRole("status")).toHaveText("Saved.");
   await boss.reload();
-  await expect(boss).toHaveURL(/\/settings\/install$/);
+  await expect(boss).toHaveURL(/\/settings\/install\?workspace=/);
   await expect(boss.getByRole("textbox", { name: /^Site/ })).toHaveCount(1);
 
   // The secret is masked until the eye shows it, and replacing it asks first.
@@ -176,7 +164,7 @@ test("an owner changes the allowed sites and replaces the secret", async ({ brow
 });
 
 test("an existing account joins by an emailed link, which works once", async ({ browser }) => {
-  const boss = await signedIn(browser);
+  const boss = await signedIn(browser, server, "owner@example.com");
   await server.createOperator("eve@example.com", { member: false });
   const url = await invite(boss, "eve@example.com");
   const page = await (await browser.newContext()).newPage();
@@ -201,9 +189,9 @@ test("an existing account joins by an emailed link, which works once", async ({ 
 test("revoking an invite asks first, and someone signed in as another email cannot use it", async ({
   browser,
 }) => {
-  const boss = await signedIn(browser);
+  const boss = await signedIn(browser, server, "owner@example.com");
   const url = await invite(boss, "rex@example.com");
-  const other = await signedIn(browser, "owner@example.com");
+  const other = await signedIn(browser, server, "owner@example.com");
   await other.goto(url);
   await expect(
     other.getByText(
@@ -232,10 +220,10 @@ test("revoking an invite asks first, and someone signed in as another email cann
 test("someone with an account joins a second workspace and switches between them", async ({
   browser,
 }) => {
-  const boss = await signedIn(browser);
+  const boss = await signedIn(browser, server, "owner@example.com");
   const url = await invite(boss, "multi@example.com");
   const other = await server.createSecondWorkspace("Other", "multi@example.com");
-  const page = await signedIn(browser, "multi@example.com");
+  const page = await signedIn(browser, server, "multi@example.com");
   await page.goto(url);
   await expect(
     page.getByText("invited multi@example.com to join as", { exact: false }),
@@ -268,11 +256,11 @@ test("someone with an account joins a second workspace and switches between them
 test("an open app sees team changes, and a removal opens the other workspace", async ({
   browser,
 }) => {
-  const boss = await signedIn(browser);
+  const boss = await signedIn(browser, server, "owner@example.com");
   const url = await invite(boss, "two@example.com");
   const laterUrl = await invite(boss, "cara@example.com");
   await server.createSecondWorkspace("Elsewhere", "two@example.com");
-  const person = await signedIn(browser, "two@example.com");
+  const person = await signedIn(browser, server, "two@example.com");
   await person.goto(url);
   await person.getByRole("button", { name: /^Join / }).click();
   await expect(person.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
@@ -326,7 +314,7 @@ test("an open app sees team changes, and a removal opens the other workspace", a
 });
 
 test("a window whose session ended elsewhere reconnects with the new one", async ({ browser }) => {
-  const first = await signedIn(browser);
+  const first = await signedIn(browser, server, "owner@example.com");
   const second = await first.context().newPage();
   await second.goto(server.apiOrigin);
   await signOut(second);
@@ -352,7 +340,7 @@ test("a window whose session ended elsewhere reconnects with the new one", async
 test("an owner downloads an export from Settings, and a member sees no link", async ({
   browser,
 }) => {
-  const boss = await signedIn(browser);
+  const boss = await signedIn(browser, server, "owner@example.com");
   await openSettings(boss, "Workspace");
   const [download] = await Promise.all([
     boss.waitForEvent("download"),
@@ -377,7 +365,7 @@ test("the last owner cannot lower their role or leave, and the app says why", as
 }) => {
   const lone = `lone-${Date.now()}@example.com`;
   const { id } = await server.createSecondWorkspace("Solo", lone);
-  const page = await signedIn(browser, lone);
+  const page = await signedIn(browser, server, lone);
   await page.goto(`${server.apiOrigin}/?workspace=${id}`);
   await expect(page.getByRole("heading", { name: "Solo" })).toBeVisible();
   await openSettings(page, "Team");
@@ -411,7 +399,7 @@ test("a sole owner's account delete names each workspace, and waits until none i
 }) => {
   const lone = `sole-${Date.now()}@example.com`;
   const { id } = await server.createSecondWorkspace("Harbor", lone);
-  const page = await signedIn(browser, lone);
+  const page = await signedIn(browser, server, lone);
   await page.goto(`${server.apiOrigin}/?workspace=${id}`);
   await page.getByRole("button", { name: "Your account" }).click();
   await page.getByRole("menuitem", { name: "Profile" }).click();
@@ -431,7 +419,7 @@ async function myId(page: Page): Promise<string> {
 }
 
 test("the user menu opens the profile, which saves a new name", async ({ browser }) => {
-  const page = await signedIn(browser);
+  const page = await signedIn(browser, server, "owner@example.com");
   const account = page.getByRole("button", { name: "Your account" });
   await expect(account).toHaveAttribute("aria-haspopup", "menu");
   await account.click();
