@@ -44,7 +44,7 @@ If the platform's proxy sits behind Cloudflare's proxy too, set `TRUSTED_PROXY_H
 ## Things to check after the first start
 
 - `https://chat.example.com/readyz` answers.
-- You can sign in, and the snippet in Settings uses your domain, not `localhost`.
+- You can sign in, and the install code in **Settings > Install** uses your domain, not `localhost`.
 - A message from the widget on your site reaches the operator app at once. If it arrives late or only after a reload, the proxy buffers the live stream. See [the proxy rules](self-hosting.md#behind-your-own-reverse-proxy).
 - An image of a few MB sends.
 

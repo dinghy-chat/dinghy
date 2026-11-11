@@ -94,7 +94,7 @@ Pass the last cursor when you reconnect, and the stream replays what you missed.
 
 ## API keys
 
-An API key lets a script or an AI agent work in one workspace without a person's session. An owner or admin creates one in **Settings > API**, and gives it a name, such as "Support bot". The token, which starts with `dk_`, shows once. Store it like a password. Dinghy keeps only its hash.
+An API key lets a script or an AI agent work in one workspace without a person's session. An owner or admin creates one in **Settings > API & webhooks**, and gives it a name, such as "Support bot". The token, which starts with `dk_`, shows once. Store it like a password. Dinghy keeps only its hash.
 
 Send it as a bearer token. It needs no `Origin`, because a browser never sends this header on its own:
 
@@ -117,7 +117,7 @@ A token names its workspace: it is `dk_`, the workspace's ID, a dot, and a rando
 
 ## Webhooks
 
-A webhook sends a signed `POST` to your server when something changes in a workspace. An owner or admin adds one in **Settings > API**, with its address and the events it wants. A workspace has at most 5. The signing secret shows once, and **Replace secret** makes a new one. **Send test** sends a `webhook.test` event at once and shows the answer.
+A webhook sends a signed `POST` to your server when something changes in a workspace. An owner or admin adds one in **Settings > API & webhooks**, with its address and the events it wants. A workspace has at most 5. The signing secret shows once, and **Replace secret** makes a new one. **Send test** sends a `webhook.test` event at once and shows the answer.
 
 | Event | When |
 |---|---|

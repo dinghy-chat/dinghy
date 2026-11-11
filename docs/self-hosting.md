@@ -193,16 +193,18 @@ A suspended workspace cannot send messages or images, its widget answers as if i
 
 An export holds a workspace's conversations, visitors, team, settings and images. It moves a workspace from one Dinghy server to another, such as from the cloud to your own server.
 
-1. On the old server, an owner selects **Download an export** in Settings. Or run the export command from the table above.
+1. On the old server, an owner selects **Download an export** in **Settings > Workspace**. Or run the export command from the table above.
 2. Install the new server. If you sign up there with the same email as on the old one, your account joins the imported workspace.
 3. Import the file with the import command above. It refuses a workspace that is already on this server.
 4. The import names the operators who had no account on this server. They sign in with a link sent to their email, or, with no mail server, one from `docker compose exec app chat sign-in-link <email>`.
 5. Change the widget tag on your site to load from the new server's address. The public key and the allowed sites stay the same.
-6. The workspace gets a new signing secret. If your site signs users in with a host token, copy the new secret from **Settings** to your site's server, because tokens signed with the old one fail.
+6. The workspace gets a new signing secret. If your site signs users in with a host token, copy the new secret from **Settings > Install** to your site's server, because tokens signed with the old one fail.
+7. API keys come in revoked, because their tokens never leave the old server. Create new keys in **Settings > API & webhooks**, and give them to your scripts and AI assistants.
+8. An export does not hold webhooks. Add them again in **Settings > API & webhooks**, and give each receiving app its new signing secret.
 
 ## Deleting a workspace
 
-An owner deletes a workspace in Settings, under **Data**, with **Delete workspace**. The dialog lists what goes: the workspace's conversations, images and team members, with their numbers. It offers **Download an export first**, then asks for the workspace's name. A self-hosted server keeps its last workspace, so the delete is refused when only one is left, and the dialog says why. The workspace is gone for its team and its widget at once. Within a few minutes, the worker deletes its conversations, visitors, settings and images, then the workspace itself. Operator accounts stay, because one login can belong to other workspaces. The nightly backups on this disk still hold the workspace until the newest 7 have replaced them, and a backup bucket keeps it until its own lifecycle rule expires it.
+An owner deletes a workspace in **Settings > Workspace**, with **Delete workspace**. The dialog gives the number of conversations and images it deletes, and the number of team members who lose access. Their Dinghy accounts stay. It offers **Download an export first**, then asks for the workspace's name. A self-hosted server keeps its last workspace, so the delete is refused when only one is left, and the dialog says why. The workspace is gone for its team and its widget at once. Within a few minutes, the worker deletes its conversations, visitors, settings and images, then the workspace itself. Operator accounts stay, because one login can belong to other workspaces. The nightly backups on this disk still hold the workspace until the newest 7 have replaced them, and a backup bucket keeps it until its own lifecycle rule expires it.
 
 ## Backups
 
