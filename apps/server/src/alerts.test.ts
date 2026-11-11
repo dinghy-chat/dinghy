@@ -1213,23 +1213,25 @@ describe("email", () => {
     }
     await fanOutAll();
     // The mail server holds the email, so a reply written during the send is not in it.
-    let release = () => {};
+    const sending = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     const holding: Mailer = {
       async send(to, subject, text) {
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        sending.resolve();
+        await release.promise;
         mails.push({ to, subject, text });
       },
     };
     runWorker({ mailer: holding });
     await makeDue();
-    await until(
-      async () => (await replyRows())[0]?.coveredToSeq != null,
-      "the email to be planned",
-    );
-    const during = (await operatorWrites(anna, conversationId, "Answer 7")).message;
-    release();
+    let during: Awaited<ReturnType<typeof operatorWrites>>["message"];
+    try {
+      // The plan, with its range, commits before the send starts.
+      await sending.promise;
+      during = (await operatorWrites(anna, conversationId, "Answer 7")).message;
+    } finally {
+      release.resolve();
+    }
     await until(async () => (await replyRows())[0]?.outcome === "sent", "the email");
     expect(mails[0]?.text).toContain("Answer 6");
     expect(mails[0]?.text).not.toContain("Answer 1");
