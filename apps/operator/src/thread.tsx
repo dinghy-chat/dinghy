@@ -191,7 +191,7 @@ function ThreadHead({
             <WelcomeNote welcome={welcome} />
           ) : (
             presence !== null && (
-              <p className={online === true ? "visit online" : "visit"}>{presence}</p>
+              <p className={online === true ? "visit live" : "visit"}>{presence}</p>
             )
           )}
         </div>
@@ -219,7 +219,7 @@ function ThreadHead({
           className={closed ? "pill" : "pill dark"}
           onClick={() => onStatus(closed ? "open" : "closed")}
         >
-          <Icon name={closed ? "inbox" : "done"} size={18} />
+          <Icon name={closed ? "inbox" : "done"} size={16} />
           {closed ? t("reopen") : t("close")}
         </button>
         <Menu label={t("moreActions")} items={more} buttonClass="round">

@@ -123,14 +123,52 @@ export function ImageUpload({
     }
   };
   const pick = () => picker.current?.click();
+  const [dropping, setDropping] = useState(false);
+  const fieldId = useId();
   return (
     <>
       <div className="image-upload">
-        <span className={url === null ? "image-slot empty" : "image-slot"}>
-          {url !== null && <img src={url} alt={t(text.preview)} />}
+        <span className="image-tile">
+          {/* A label of the file field, so a click on the tile picks a file too. It takes a drop. */}
+          <label
+            htmlFor={fieldId}
+            className={`image-slot${url === null ? " empty" : ""}${dropping ? " drop" : ""}`}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault();
+              setDropping(true);
+            }}
+            onDragLeave={() => setDropping(false)}
+            onDrop={(event) => {
+              setDropping(false);
+              const file = event.dataTransfer.files[0];
+              if (file === undefined) return;
+              event.preventDefault();
+              void change(() => onUpload(file));
+            }}
+          >
+            {url === null ? (
+              <Icon name="image" size={24} />
+            ) : (
+              <img src={url} alt={t(text.preview)} />
+            )}
+          </label>
+          {url !== null && (
+            <button
+              type="button"
+              className="image-remove"
+              aria-label={t(text.remove)}
+              title={t(text.remove)}
+              disabled={busy}
+              onClick={() => void change(onRemove)}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          )}
         </span>
         <input
           ref={picker}
+          id={fieldId}
           type="file"
           accept={IMAGE_TYPES}
           hidden
@@ -143,21 +181,9 @@ export function ImageUpload({
           }}
         />
         <div className="image-side">
-          <div className="actions">
-            <button type="button" className="pill small" disabled={busy} onClick={pick}>
-              {t(url === null ? text.upload : text.replace)}
-            </button>
-            {url !== null && (
-              <button
-                type="button"
-                className="pill small quiet-danger"
-                disabled={busy}
-                onClick={() => void change(onRemove)}
-              >
-                {t(text.remove)}
-              </button>
-            )}
-          </div>
+          <button type="button" className="pill small" disabled={busy} onClick={pick}>
+            {t(url === null ? text.upload : text.replace)}
+          </button>
           <small className="image-rule">{t("imageRule")}</small>
         </div>
       </div>
