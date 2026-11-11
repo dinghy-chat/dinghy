@@ -296,8 +296,8 @@ describe("what a key can do", () => {
     expect(read.messages.at(-1)?.authorName).toBe("Retired bot");
   });
 
-  test("the visitor gets a key's reply as a reply, unread, without its name or ID", async () => {
-    const key = await makeKey("Secret name");
+  test("the visitor gets a key's reply as a bot's, unread, with its name and without its ID", async () => {
+    const key = await makeKey("Helper bot");
     const { token, conversationId } = await visitorSends(a.publicKey, "Anyone?");
     await withKey(key.token, "POST", inA(`/conversations/${conversationId}/messages`), {
       clientId: "w1",
@@ -307,7 +307,7 @@ describe("what a key can do", () => {
     const listed = await app.request(`/v1/widget/${a.publicKey}/messages`, { headers });
     const text = await listed.text();
     expect(text).toContain("Yes, here.");
-    expect(text).not.toContain("Secret name");
+    expect(text).toContain('"fromBot":true,"authorName":"Helper bot","authorPictureUrl":null');
     expect(text).not.toContain(key.id);
     const me = (await (await app.request(`/v1/widget/${a.publicKey}/me`, { headers })).json()) as {
       unread: number;

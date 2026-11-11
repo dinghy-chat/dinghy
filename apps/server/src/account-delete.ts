@@ -10,6 +10,7 @@ import { confirmUrl, LINK_MINUTES } from "./auth.ts";
 import {
   account,
   operator,
+  operatorPicture,
   pushSubscription,
   session,
   verification,
@@ -196,6 +197,7 @@ async function deleteAccount(db: Database, operatorId: string): Promise<Deletion
       await tx.delete(session).where(eq(session.userId, operatorId));
       await tx.delete(account).where(eq(account.userId, operatorId));
       await tx.delete(pushSubscription).where(eq(pushSubscription.operatorId, operatorId));
+      await tx.delete(operatorPicture).where(eq(operatorPicture.operatorId, operatorId));
       // Sign-in and join links name the email, so a link sent before cannot make a new account.
       await tx.delete(verification).where(
         sql`case when pg_input_is_valid(${verification.value}, 'jsonb')
@@ -207,6 +209,7 @@ async function deleteAccount(db: Database, operatorId: string): Promise<Deletion
           name: FORMER_MEMBER_NAME,
           email: erasedEmail(operatorId),
           image: null,
+          pictureUpdatedAt: null,
           deletedAt: new Date(),
         })
         .where(eq(operator.id, operatorId));

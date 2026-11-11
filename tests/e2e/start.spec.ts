@@ -42,13 +42,13 @@ test("a new workspace shows its first steps, which open settings and can be hidd
   await expect(steps).toHaveCount(0);
 });
 
-test("a logo uploaded in Settings shows there, in the sidebar and in the chat's header", async ({
+test("a logo uploaded in the Widget tab shows there, in the sidebar and in the chat's header", async ({
   page,
 }) => {
   await server.createOperator("logo@example.com");
   await openLink(page, await server.signInLink("logo@example.com"));
   await page.getByRole("region", { name: "Get started" }).getByText("Add your logo").click();
-  await expect(page.getByRole("tab", { name: "Install" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Widget" })).toHaveAttribute("aria-selected", "true");
 
   await page.getByLabel("Upload logo").setInputFiles(pngFile("logo.png"));
   await expect(page.getByText("Logo saved.")).toBeVisible();

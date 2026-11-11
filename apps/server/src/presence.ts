@@ -5,7 +5,6 @@ import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { MEMBER_ERRORS, OPERATOR_WRITE_ERRORS, okContent, WIDGET_ERRORS } from "./errors.ts";
-import type { LogoUrl } from "./logo.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 
 // A client that stops sending, because of a crash or a lost network, expires after this long.
@@ -219,14 +218,6 @@ const widgetRoute = createRoute({
           schema: z.object({
             online: z.boolean().nullable(),
             emailReplies: z.boolean(),
-            // The workspace's own widget text. Null means the widget's default.
-            texts: z.object({
-              title: z.string().nullable(),
-              greeting: z.string().nullable(),
-              away: z.string().nullable(),
-            }),
-            // The workspace's logo, which the widget shows in place of its boat. Null with none.
-            logoUrl: z.string().nullable(),
           }),
         },
       },
@@ -254,23 +245,9 @@ export function registerOperatorPresence(app: App, presence: Presence): void {
   });
 }
 
-export function registerWidgetPresence(
-  app: App,
-  presence: Presence,
-  emailReplies: boolean,
-  logoUrl: LogoUrl,
-): void {
+export function registerWidgetPresence(app: App, presence: Presence, emailReplies: boolean): void {
   app.openapi(widgetRoute, async (c) => {
-    const { id, texts, logoUpdatedAt } = c.get("workspace");
-    const key = c.req.valid("param").key;
-    return c.json(
-      {
-        online: await presence.online(id),
-        emailReplies,
-        texts,
-        logoUrl: logoUrl(key, logoUpdatedAt),
-      },
-      200,
-    );
+    const online = await presence.online(c.get("workspace").id);
+    return c.json({ online, emailReplies }, 200);
   });
 }

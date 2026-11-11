@@ -186,6 +186,7 @@ describe("migrations", () => {
       "account",
       "instance_setting",
       "operator",
+      "operator_picture",
       "push_subscription",
       "session",
       "verification",

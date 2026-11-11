@@ -89,6 +89,13 @@ export function sha256Hex(value: string): string {
 }
 
 /**
+ * An operator's or an API key's ID as a visitor gets it: enough of a hash to tell a conversation's
+ * authors apart. A key's ID must not reach a visitor, and the header's team faces use the same
+ * value, so a face and a reply from one person match.
+ */
+export const visitorAuthorId = (authorId: string) => sha256Hex(authorId).slice(0, 16);
+
+/**
  * An email address as a hash, the same however it is typed. The login limit, the audit lines and
  * the stop links use it, so all three agree about who someone is.
  */

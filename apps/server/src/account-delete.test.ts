@@ -21,6 +21,7 @@ import {
   event,
   invite,
   operator,
+  operatorPicture,
   pushSubscription,
   session,
   verification,
@@ -166,7 +167,7 @@ describe("a sole owner", () => {
 });
 
 describe("the email link", () => {
-  test("deletes the account once, and keeps the history it wrote", async () => {
+  test("deletes the account once, with its picture, and keeps the history it wrote", async () => {
     const { space, first, second } = await team();
     const visitorId = randomUUID();
     await owner.execute(
@@ -194,6 +195,11 @@ describe("the email link", () => {
       p256dh: "key",
       auth: "secret",
     });
+    await owner.insert(operatorPicture).values({ operatorId: first.id, data: Buffer.from("face") });
+    await owner
+      .update(operator)
+      .set({ pictureUpdatedAt: new Date() })
+      .where(eq(operator.id, first.id));
     // A sign-in link sent before the delete, which must not make a new account after it.
     const oldSignIn = await signInLink(auth, first.email, "sign-in", "email");
 
@@ -211,7 +217,11 @@ describe("the email link", () => {
       name: FORMER_MEMBER_NAME,
       email: `deleted-${first.id}@invalid`,
       image: null,
+      pictureUpdatedAt: null,
     });
+    expect(
+      await owner.select().from(operatorPicture).where(eq(operatorPicture.operatorId, first.id)),
+    ).toEqual([]);
     expect(row?.deletedAt).toBeInstanceOf(Date);
     expect(await owner.select().from(session).where(eq(session.userId, first.id))).toEqual([]);
     expect(await owner.select().from(account).where(eq(account.userId, first.id))).toEqual([]);

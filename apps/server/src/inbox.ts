@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { session, workspace, workspaceLogo } from "./db/schema.ts";
+import { session, widgetSettings, workspace } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
@@ -27,7 +27,6 @@ import { ImageSchema, type Images, imageView, lostConnection, refuseImage } from
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
-import type { LogoUrl } from "./logo.ts";
 import { closedFailure, OPEN_TO_WELCOME, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import {
   type Author,
@@ -50,6 +49,7 @@ import {
   WorkspaceClosedError,
 } from "./messages.ts";
 import type { VisitorPresence } from "./presence.ts";
+import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 
 const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
@@ -731,8 +731,8 @@ async function keyStillHolds(db: Database, actor: KeyActor) {
   if (!(await keyStillValid(db, actor))) throw new AccessEndedError();
 }
 
-export function registerInboxRoutes(app: App, options: InboxOptions & { logoUrl: LogoUrl }) {
-  const { db, images, limits, live, logger, logoUrl, stream } = options;
+export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrls: ImageUrls }) {
+  const { db, images, imageUrls, limits, live, logger, stream } = options;
   const inbox = createInbox(options);
 
   app.openapi(workspaceRoute, async (c) => {
@@ -743,15 +743,15 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { logoUrl:
           id: workspace.id,
           name: workspace.name,
           publicKey: workspace.publicKey,
-          logoUpdatedAt: workspaceLogo.updatedAt,
+          logoUpdatedAt: widgetSettings.logoUpdatedAt,
         })
         .from(workspace)
-        .leftJoin(workspaceLogo, eq(workspaceLogo.workspaceId, workspace.id))
+        .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
         .where(eq(workspace.id, id)),
     );
     if (row === undefined) return c.json(NOT_FOUND, 404);
     return c.json(
-      { id: row.id, name: row.name, logoUrl: logoUrl(row.publicKey, row.logoUpdatedAt) },
+      { id: row.id, name: row.name, logoUrl: imageUrls.logo(row.publicKey, row.logoUpdatedAt) },
       200,
     );
   });

@@ -4,7 +4,7 @@
 
 ## Add the tag
 
-The installer prints your tag. You can also copy it from **Settings > Widget snippet** in the operator app. It looks like this:
+The installer prints your tag. You can also copy it from **Settings > Install** in the operator app. It looks like this:
 
 ```html
 <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
@@ -20,27 +20,32 @@ Put the chat on your own site, not on a page served from the same address as Din
 
 ## Change how it looks
 
-Add these attributes to the tag:
+The easiest way needs no code: **Settings > Widget** in the operator app sets the colors, the side, the theme, the chat button, the corners, the boat, the words, when to ask for an email and the "Powered by Dinghy" line. The [operator guide](operator-guide.md#change-the-widget) explains it. Your site shows a saved change within 5 minutes.
+
+You can also set the look in the tag. These attributes win over the saved settings, and `Dinghy.configure()` wins too:
 
 | Attribute | Value | Effect |
 |---|---|---|
 | `data-primary` | A full hex color, such as `#112233` | The color of the header, the visitor's messages and the boat's hull |
 | `data-accent` | A full hex color | The color of the buttons and the boat's sail |
-| `data-mascot` | `false` | Removes the boat. Each state still shows its text |
-| `data-launcher` | `hidden` | Hides the chat button, so you can open the chat from your own button |
-| `data-position` | `left` or `right` | The corner for the button and the chat. The default is `right` |
+| `data-mascot` | `false` or `true` | Hides or shows the boat in the open chat. Each state still shows its text |
+| `data-launcher` | `boat`, `bubble` or `hidden` | The chat button. `hidden` lets you open the chat from your own button |
+| `data-position` | `left` or `right` | The corner for the button and the chat |
 | `data-offset-x` | Pixels, such as `24` | The distance from the side of the window. The default is `16` |
 | `data-offset-y` | Pixels, such as `80` | The distance from the bottom of the window. The default is `16` |
+| `data-branding` | `false` or `true` | Hides or shows the "Powered by Dinghy" line |
 
 A color in any other form, such as `red` or `#123`, is ignored. So is an offset that is not a whole number of 0 or more.
 
-To match your fonts and corners, set these CSS variables on the `dinghy-chat` element. Each one falls back to Dinghy's own value:
+So the order is: the tag's attributes and `Dinghy.configure()`, then the saved settings, then Dinghy's defaults. The loader asks your Dinghy server for the saved settings and draws the chat button once they arrive, so the button never changes shape. If your server cannot answer, the button draws from the tag and the defaults. If the workspace's widget is off, such as for a suspended workspace, nothing shows.
+
+To match your fonts and corners, set these CSS variables on the `dinghy-chat` element. They win over the corners in the saved settings, and each one falls back to them:
 
 ```css
 dinghy-chat {
   --dinghy-font: "Inter", system-ui, sans-serif; /* the chat's text */
-  --dinghy-radius: 12px; /* the chat panel's corners, 22px by default */
-  --dinghy-launcher-radius: 16px; /* the chat button's corners, 30px by default */
+  --dinghy-radius: 12px; /* the chat panel's corners, 16px by default */
+  --dinghy-launcher-radius: 12px; /* the boat button's corners, 16px by default. The bubble is round */
 }
 ```
 
@@ -159,7 +164,7 @@ dinghy.on("unread", (count) => setBadge(count));
 dinghy.open({ message: "I need help with my order" });
 ```
 
-`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
+`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `branding`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
 
 ### Ask a coding agent to install it
 
@@ -270,10 +275,10 @@ If your Dinghy serves images from a separate origin (`IMAGES_ORIGIN`), allow tha
 
 Once a visitor has chatted, the widget tells your Dinghy server the page they are on: when it loads, and when the address changes, also in a single-page app. It sends the page's address without its query string or `#` part, so a token or a search in the address never reaches Dinghy, and the page's title. The server also keeps a short line about the browser, such as "Chrome on macOS", and not the browser's full description. Operators see whether the visitor has the chat open now, or when they were last seen, and the pages the visitor went through. Dinghy keeps a visitor's newest 100 pages, for 90 days at most, and deletes them with the visitor's last conversation.
 
-A visitor who never used the chat sends nothing, and the widget stores nothing in their browser: no cookie, nothing in `localStorage` and nothing in `sessionStorage`. It stores its own token in `localStorage` only once the visitor sends a message, and a signed-in user's token is never stored. For a visitor who has a token or is signed in, it also notes in `sessionStorage` that the chat is open, so the chat opens again after a reload in the same tab. That note goes when the chat closes or the tab closes. So the chat needs no cookie banner.
+A visitor who never used the chat sends nothing about themselves, and the widget stores nothing in their browser: no cookie, nothing in `localStorage` and nothing in `sessionStorage`. The only request on a page load asks for the chat's saved look, with no token and no cookie, and the browser keeps the answer for 5 minutes. It stores its own token in `localStorage` only once the visitor sends a message, and a signed-in user's token is never stored. For a visitor who has a token or is signed in, it also notes in `sessionStorage` that the chat is open, so the chat opens again after a reload in the same tab. That note goes when the chat closes or the tab closes. So the chat needs no cookie banner.
 
 ## Change the chat's words
 
-An owner or admin can change the chat's title, its greeting in an empty chat, and the line it shows when nobody is online, in **Settings > Install**. An empty box keeps Dinghy's own words.
+An owner or admin can change the chat's title, its greeting in an empty chat, and the line it shows when nobody is online, in **Settings > Widget**. An empty box keeps Dinghy's own words.
 
 The widget lives in its own Shadow DOM, so your site's styles do not change it, and its styles do not change your site.

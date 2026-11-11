@@ -151,7 +151,9 @@ test("the widget works under the strictest CSP it documents", async ({ page }) =
   expect(violations).toEqual([]);
 });
 
-test("a page load with no conversation opens no stream and writes no row", async ({ browser }) => {
+test("a page load with no conversation asks only for the look, and writes no row", async ({
+  browser,
+}) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const requests: string[] = [];
@@ -159,7 +161,10 @@ test("a page load with no conversation opens no stream and writes no row", async
   const before = await server.visitorCount();
   await page.goto(`${server.hostOrigin}/plain`);
   await expect(launcher(page)).toBeVisible();
-  expect(requests.filter((url) => url.includes("/v1/"))).toEqual([]);
+  // Only the saved look, which carries no token and no cookie.
+  const api = requests.filter((url) => url.includes("/v1/"));
+  expect(api).toHaveLength(1);
+  expect(new URL(api[0] ?? "").pathname).toMatch(/^\/v1\/widget\/wk_\w+\/appearance$/);
   expect(requests.filter((url) => url.endsWith("/widget/widget.js"))).toEqual([]);
   expect(await server.visitorCount()).toBe(before);
   await context.close();
@@ -813,6 +818,40 @@ test("a failed bundle load does not disable the launcher", async ({ browser }) =
   await launcher(page).click();
   await expect(input(page)).toBeVisible();
   await context.close();
+});
+
+test("a loader from before a release still opens the chat, with the page's state", async ({
+  page,
+}) => {
+  type Win = Window & {
+    __dinghy: { version?: number };
+    Dinghy: {
+      open(options: { message: string }): void;
+      on(event: "open", callback: () => void): void;
+    };
+    opened: number;
+  };
+  const loaders: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/widget/loader.js")) loaders.push(request.url());
+  });
+  await page.goto(`${server.hostOrigin}/plain`);
+  await expect(launcher(page)).toBeVisible();
+  // What a tab holds when it loaded the loader before a release: a context with another version.
+  await page.evaluate(() => {
+    const win = window as unknown as Win;
+    win.__dinghy.version = 0;
+    win.opened = 0;
+    win.Dinghy.on("open", () => {
+      win.opened += 1;
+    });
+    win.Dinghy.open({ message: "From the old loader" });
+  });
+  await expect(input(page)).toHaveValue("From the old loader");
+  await expect(page.locator("dinghy-chat")).toHaveCount(1);
+  expect(loaders).toHaveLength(2);
+  expect(loaders[1]).toMatch(/loader\.js\?v=\d+$/);
+  expect(await page.evaluate(() => (window as unknown as Win).opened)).toBe(1);
 });
 
 for (const [name, init] of [

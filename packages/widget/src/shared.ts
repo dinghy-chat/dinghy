@@ -21,6 +21,91 @@ export interface Appearance {
   zIndex?: number;
 }
 
+/** What an owner saves in the operator app's Widget tab. Null texts and colors mean the widget's own. */
+export interface WidgetSettings {
+  title: string | null;
+  greeting: string | null;
+  away: string | null;
+  /** A full hex color, as `primary` in configure(). */
+  primary: string | null;
+  accent: string | null;
+  position: "left" | "right";
+  theme: "light" | "dark" | "auto";
+  launcher: "boat" | "bubble" | "hidden";
+  /** The boat in the open chat. */
+  mascot: boolean;
+  /** Pixels, for the chat's corners and the launcher's. */
+  radius: number;
+  emailAsk: "off" | "after_first" | "before_first";
+  /** The "Powered by Dinghy" line. */
+  branding: boolean;
+}
+
+/** A member the widget's header shows: a first name and a picture, never an email. */
+export interface TeamFace {
+  /** A hash of the operator's ID, the same as `authorId` on their replies. It tells two members
+   * with one first name apart. */
+  id: string;
+  name: string;
+  pictureUrl: string | null;
+}
+
+/** The saved settings, as the widget's appearance route answers them. */
+export interface SavedAppearance extends WidgetSettings {
+  logoUrl: string | null;
+  /** Up to 3 members, the ones who sent the latest replies. */
+  team: TeamFace[];
+}
+
+/** The longest title an owner can save. */
+export const TITLE_MAX = 40;
+/** The longest greeting or away text. */
+export const TEXT_MAX = 200;
+/** The roundest corners an owner can save. */
+export const RADIUS_MAX_PX = 24;
+
+/** The widget's own colors, which a null color in the settings keeps. */
+export const DEFAULT_COLORS = { primary: "#0b2239", accent: "#e5352b" };
+
+/** What a new workspace saves, and what the widget shows when the server cannot answer. */
+export const WIDGET_DEFAULTS: SavedAppearance = {
+  title: null,
+  greeting: null,
+  away: null,
+  primary: null,
+  accent: null,
+  position: "right",
+  theme: "auto",
+  launcher: "boat",
+  mascot: true,
+  radius: 16,
+  emailAsk: "after_first",
+  branding: true,
+  logoUrl: null,
+  team: [],
+};
+
+/**
+ * The first word of a name, which is all a visitor learns of an operator. It stops at an @ too, so
+ * a name typed as an email never shows one.
+ */
+export const firstName = (name: string) => name.trim().split(/[\s@]+/)[0] ?? "";
+
+/**
+ * Asks for the saved settings, once a page. Null means the workspace serves no widget, and
+ * undefined that the server gave no answer, so WIDGET_DEFAULTS apply. The loader has no bytes for
+ * that object, so it leaves those values to its CSS, which holds the same ones.
+ */
+export const loadAppearance = (
+  base: string,
+  publicKey: string,
+): Promise<SavedAppearance | null | undefined> =>
+  fetch(`${base}../v1/widget/${publicKey}/appearance`)
+    .then((response) =>
+      response.ok ? response.json() : response.status === 404 ? null : undefined,
+    )
+    .catch(() => undefined);
+
 export interface DinghyState {
   /** The chat bundle has loaded. */
   ready: boolean;
@@ -76,13 +161,24 @@ interface ChatHandlers {
 /** Each event's callbacks. The loader keeps them, and the chat bundle calls them. */
 export type Listeners = { [E in DinghyEvent]?: Set<(data: DinghyEvents[E]) => void> };
 
+/**
+ * The shape of WidgetContext. Bump it in any change to what the loader or page.js hands the chat
+ * bundle: a tab keeps the loader it started with for days, and the chat bundle replaces a loader
+ * with another number instead of reading a context it does not know.
+ */
+export const CONTEXT_VERSION = 1;
+
 /** What the loader hands to the chat bundle. */
 export interface WidgetContext {
+  /** CONTEXT_VERSION, as the loader knew it. Loaders before it set none. */
+  version: number;
   publicKey: string;
   base: string;
   shadow: ShadowRoot;
-  /** False when the page set data-mascot="false". Every state still has its text. */
-  mascot: boolean;
+  /** The saved settings, which the loader asked for. See loadAppearance. */
+  appearance: Promise<SavedAppearance | null | undefined>;
+  /** Reads the tag's data attributes by dataset name, such as `mascot`. They win over the saved settings. */
+  attribute(name: string): string | undefined;
   /** The full-page chat that a reply email opens, on the Dinghy server's own origin. */
   page?: boolean;
   /** Set by identify() and cleared by reset(). */
@@ -139,11 +235,13 @@ export function rememberOpen(publicKey: string, open: boolean): void {
 }
 
 /**
- * Tells other tabs of this site to start again. A storage event fires only in other tabs. The key
- * goes at once, so nothing stays stored for a visitor who never chatted.
+ * Clears this browser's token, and tells other tabs of this site to start again. A storage event
+ * fires only in other tabs. The key goes at once, so nothing stays stored for a visitor who never
+ * chatted.
  */
-export function broadcastReset(publicKey: string): void {
+export function forgetVisitor(publicKey: string): void {
   try {
+    localStorage.removeItem(TOKEN_PREFIX + publicKey);
     // The key is always gone before this, so each signal is a change that fires the event.
     localStorage.setItem(RESET_PREFIX + publicKey, "1");
     localStorage.removeItem(RESET_PREFIX + publicKey);

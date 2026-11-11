@@ -1149,8 +1149,6 @@ describe("settings", () => {
       publicKey: space.publicKey,
       allowedOrigins: [SITE],
       signingSecret: space.signingSecret,
-      widgetTexts: { title: null, greeting: null, away: null },
-      logoUrl: null,
       // A self-hosted install has no limits.
       usage: null,
       // workspace-delete.test.ts checks these numbers.
@@ -1251,8 +1249,6 @@ describe("presence routes", () => {
     expect(await widget.json()).toEqual({
       online: null,
       emailReplies: false,
-      texts: { title: null, greeting: null, away: null },
-      logoUrl: null,
     });
   });
 

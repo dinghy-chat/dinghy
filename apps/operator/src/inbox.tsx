@@ -15,7 +15,7 @@ import {
   workspaceApi,
 } from "./api.ts";
 import { useLatestLoad } from "./load.ts";
-import { navigate } from "./nav.ts";
+import { leave, navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
 import {
   openOwnerStep,
@@ -315,7 +315,7 @@ function WorkspaceSwitcher({
     lead: <WorkspaceTile name={one.name} />,
     checked: one.workspaceId === workspaceId,
     onSelect: () => {
-      if (one.workspaceId !== workspaceId) onSwitch(one.workspaceId);
+      if (one.workspaceId !== workspaceId) leave(() => onSwitch(one.workspaceId));
     },
   }));
   if (canCreate) {
@@ -369,13 +369,17 @@ function UserMenu({
           divider: true,
           label: t("signOut"),
           lead: <Icon name="exit" size={18} />,
-          onSelect: () => void leaveDevice().then(signOut).finally(onSignedOut),
+          onSelect: () => leave(() => void leaveDevice().then(signOut).finally(onSignedOut)),
         },
       ]}
     >
-      <span className="me-avatar" aria-hidden="true">
-        {initials(me.name)}
-      </span>
+      {me.pictureUrl === null ? (
+        <span className="me-avatar" aria-hidden="true">
+          {initials(me.name)}
+        </span>
+      ) : (
+        <img className="me-avatar" src={me.pictureUrl} alt="" />
+      )}
       <span className="me-text">
         <b>{me.name}</b>
         <small>{t(ROLE_TEXT[role])}</small>
@@ -800,7 +804,9 @@ export function Inbox({
           canCreate={canCreate}
           view={view}
           waiting={waiting}
-          onView={showView}
+          onView={(next) => {
+            if (next !== view) leave(() => showView(next));
+          }}
           onSwitch={onSwitch}
           onSignedOut={onSignedOut}
         />

@@ -281,10 +281,27 @@ describe("browser tokens", () => {
       signedIn: false,
       openConversation: false,
       chatted: false,
+      hasEmail: false,
       lastReadSeq: "0",
       unread: 0,
       readCursor: expect.stringMatching(/^\d+\.0$/),
     });
+  });
+
+  test("says when the visitor gave an email, so the widget does not ask again", async () => {
+    const { token } = (await (await newVisitor()).json()) as { token: string };
+    expect(((await (await me(token)).json()) as { hasEmail: boolean }).hasEmail).toBe(false);
+    const saved = await app.request(`/v1/widget/${a.publicKey}/me`, {
+      method: "PATCH",
+      headers: {
+        origin: ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ email: "ana@example.com" }),
+    });
+    expect(saved.status).toBe(200);
+    expect(((await (await me(token)).json()) as { hasEmail: boolean }).hasEmail).toBe(true);
   });
 
   test("the database stores only a hash of the token", async () => {

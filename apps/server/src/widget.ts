@@ -4,6 +4,7 @@ import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
+import { firstName } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
@@ -27,6 +28,7 @@ import {
   newBrowserToken,
   sha256Hex,
   verifyHostToken,
+  visitorAuthorId,
 } from "./identity.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
 import {
@@ -41,10 +43,13 @@ import { type Live, wakeConversation } from "./live.ts";
 import {
   appendMessage,
   CURSOR_PATTERN,
+  type Cursor,
   catchClosed,
   formatCursor,
   listVisitorMessages,
+  type MessageAuthor,
   markRead,
+  messageAuthors,
   parseCursor,
   readState,
   type StoredMessage,
@@ -52,12 +57,11 @@ import {
 } from "./messages.ts";
 import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moderation.ts";
 import type { VisitorPresence } from "./presence.ts";
+import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
-import { type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
+import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
-// Checked before the lookup, because Postgres rejects some bytes that a URL can decode to.
-const PUBLIC_KEY = /^wk_[0-9a-f]{32}$/;
 const CLIENT_ID = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
 
@@ -91,6 +95,8 @@ const VisitorSchema = z
     openConversation: z.boolean(),
     // The visitor has a conversation, open or closed. Only then does the widget report pages.
     chatted: z.boolean(),
+    // The visitor gave an email, so the widget does not ask again.
+    hasEmail: z.boolean(),
     lastReadSeq: z.string(),
     unread: z.number(),
     // A stream from here reads only what follows the read position, as a closed panel needs.
@@ -245,6 +251,15 @@ const MessageSchema = z
     image: ImageSchema.nullable(),
     // The image was deleted after 12 months, on Dinghy Cloud.
     imageRemoved: z.boolean(),
+    // A reply from a workspace API key, such as the customer's own bot.
+    fromBot: z.boolean(),
+    // A reply's author: an operator's first name, or a key's name. Null for the visitor's own.
+    authorName: z.string().nullable(),
+    // The operator's picture, or null with none or for a key.
+    authorPictureUrl: z.string().nullable(),
+    // A hash of the operator's or the key's ID, so a widget can tell two authors with one name
+    // apart. It names neither. Null for the visitor's own.
+    authorId: z.string().nullable(),
     createdAt: z.string(),
   })
   .openapi("Message", {
@@ -258,6 +273,10 @@ const MessageSchema = z
       body: "Do you have a yearly plan?",
       image: null,
       imageRemoved: false,
+      fromBot: false,
+      authorName: null,
+      authorPictureUrl: null,
+      authorId: null,
       createdAt: "2026-11-08T09:30:00.000Z",
     },
   });
@@ -399,25 +418,37 @@ const streamRoute = createRoute({
   },
 });
 
+/**
+ * A reply author's name as a visitor reads it: a key's whole name, the placeholder of a deleted
+ * account, or an operator's first name.
+ */
+const shownName = (author: MessageAuthor, isKey: boolean) =>
+  isKey || author.isDeleted ? author.name : firstName(author.name);
+
+/** A message as the widget shows it. `authors` holds the reply authors by operator or key ID. */
 function messageView(
   images: Images | undefined,
+  urls: ImageUrls,
   workspaceId: string,
-  // A visitor never learns which operator or API key sent a reply, or its ID.
-  {
-    seq,
-    createdAt,
-    clientId,
-    image,
-    authorOperatorId: _operator,
-    authorApiKeyId: _key,
-    ...message
-  }: StoredMessage,
+  authors: Map<string, MessageAuthor>,
+  // A visitor learns a reply author's first name and picture, never an email. Only the picture's
+  // address names the operator, as an <img> needs one.
+  { seq, createdAt, clientId, image, authorOperatorId, authorApiKeyId, ...message }: StoredMessage,
 ) {
+  const authorId = authorOperatorId ?? authorApiKeyId;
+  const author = authorId === null ? undefined : authors.get(authorId);
   return {
     ...message,
     // A visitor gets only its own client IDs, to match a stream copy to a pending line.
     clientId: message.fromVisitor ? clientId : null,
     seq: seq.toString(),
+    fromBot: authorApiKeyId !== null,
+    authorName: author === undefined ? null : shownName(author, authorApiKeyId !== null),
+    authorPictureUrl:
+      authorOperatorId === null
+        ? null
+        : urls.picture(authorOperatorId, author?.pictureUpdatedAt ?? null),
+    authorId: authorId === null || author === undefined ? null : visitorAuthorId(authorId),
     createdAt: createdAt.toISOString(),
     image: imageView(images, workspaceId, image),
   };
@@ -682,6 +713,10 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
       .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
       .orderBy(sql`${conversation.status} = 'open' desc`)
       .limit(1);
+    const [saved] = await tx
+      .select({ email: visitor.email })
+      .from(visitor)
+      .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
     const { lastReadSeq, unread } = await readState(tx, workspaceId, visitorId);
     const [current] = await tx
       .select({ generation: workspace.feedGeneration })
@@ -692,6 +727,7 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
       signedIn,
       openConversation: newest?.status === "open",
       chatted: newest !== undefined,
+      hasEmail: saved?.email != null,
       lastReadSeq: lastReadSeq.toString(),
       unread,
       readCursor: formatCursor({ generation: current?.generation ?? 0, seq: lastReadSeq }),
@@ -714,9 +750,13 @@ function limitFor(method: string, path: string): [string, number, number] {
   return ["widget-write", 120, 60];
 }
 
+/** A visitor's own message has no author to look up. */
+const NO_AUTHORS = new Map<string, MessageAuthor>();
+
 interface WidgetOptions {
   db: Database;
   images: Images | undefined;
+  imageUrls: ImageUrls;
   ipSecret: string;
   limits: Limits;
   live: Live;
@@ -746,6 +786,7 @@ export function registerWidgetRoutes(
   {
     db,
     images,
+    imageUrls: urls,
     ipSecret,
     limits,
     live,
@@ -757,8 +798,20 @@ export function registerWidgetRoutes(
     ownOrigin,
   }: WidgetOptions,
 ): void {
-  const view = (workspaceId: string, message: StoredMessage) =>
-    messageView(images, workspaceId, message);
+  const view = (workspaceId: string, message: StoredMessage, authors = NO_AUTHORS) =>
+    messageView(images, urls, workspaceId, authors, message);
+
+  /** A page of the visitor's messages, with the authors of its replies. */
+  const readPage = (
+    workspaceId: string,
+    visitorId: string,
+    after: Cursor | undefined,
+    limit: number,
+  ) =>
+    withWorkspace(db, workspaceId, async (tx) => {
+      const page = await listVisitorMessages(tx, workspaceId, visitorId, after, limit);
+      return { ...page, authors: await messageAuthors(tx, workspaceId, page.messages) };
+    });
 
   /**
    * The visitor behind the request's token, or null, which each route answers with its own 401.
@@ -903,15 +956,13 @@ export function registerWidgetRoutes(
         return stillValid(db, current, key, token);
       },
       read: async (position) => {
-        const page = await withWorkspace(db, found.id, (tx) =>
-          listVisitorMessages(tx, found.id, visitorId, position, 100),
-        );
+        const page = await readPage(found.id, visitorId, position, 100);
         return {
           ...page,
           items: page.messages.map((message) => ({
             event: "message",
             seq: message.seq,
-            data: view(found.id, message),
+            data: view(found.id, message, page.authors),
           })),
         };
       },
@@ -923,18 +974,15 @@ export function registerWidgetRoutes(
     const identified = await identify(c);
     if (identified === null) return c.json(UNAUTHORIZED, 401);
     const { after, limit } = c.req.valid("query");
-    const page = await withWorkspace(db, found.id, (tx) =>
-      listVisitorMessages(
-        tx,
-        found.id,
-        identified.visitorId,
-        after === undefined ? undefined : parseCursor(after),
-        limit,
-      ),
+    const page = await readPage(
+      found.id,
+      identified.visitorId,
+      after === undefined ? undefined : parseCursor(after),
+      limit,
     );
     return c.json(
       {
-        messages: page.messages.map((message) => view(found.id, message)),
+        messages: page.messages.map((message) => view(found.id, message, page.authors)),
         cursor: formatCursor(page.cursor),
         hasMore: page.hasMore,
         resync: page.resync,

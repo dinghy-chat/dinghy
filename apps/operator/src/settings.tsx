@@ -1,19 +1,20 @@
 /** @jsxImportSource react */
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { type CodeLanguage, highlight } from "../../../packages/widget/src/highlight.ts";
-import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import {
   type BillingState,
   type Me,
   type Role,
+  removePicture,
   requestAccountDelete,
+  setPicture,
   type Usage,
   updateName,
   type WorkspaceApi,
   type WorkspaceSettings,
 } from "./api.ts";
 import { ApiKeysRow, WebhooksRow } from "./integrations.tsx";
-import { navigate } from "./nav.ts";
+import { leave, navigate } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, InviteDialog, imagesText, operatorsText, TeamTab, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
@@ -26,12 +27,25 @@ import {
   failureText,
   Icon,
   type IconName,
+  ImageUpload,
   type Note,
   Page,
   PageRow,
   SaveNote,
   StatusNote,
+  type UploadText,
 } from "./ui.tsx";
+import { WidgetTab } from "./widget-tab.tsx";
+
+const PICTURE_TEXT: UploadText = {
+  upload: "pictureUpload",
+  replace: "pictureReplace",
+  remove: "pictureRemove",
+  preview: "picturePreview",
+  saved: "pictureSaved",
+  removed: "pictureRemoved",
+  tooLarge: "pictureTooLarge",
+};
 
 /** The code's lines as text and colored spans. Each span's key is where it starts in the code. */
 function codeNodes(value: string, language: CodeLanguage): ReactNode[] {
@@ -95,149 +109,6 @@ function SnippetRow({ publicKey, waiting }: { publicKey: string; waiting: boolea
   return (
     <PageRow title={t("snippetTitle")} help={t("snippetHelp")}>
       <CodeBlock value={snippet} language="html" title={t("codeHtml")} />
-    </PageRow>
-  );
-}
-
-const LOGO_TYPES = "image/png,image/jpeg,image/webp";
-
-/** The logo at the top of the chat, in place of the boat. */
-function LogoRow({
-  api,
-  logoUrl,
-  onSaved,
-}: {
-  api: WorkspaceApi;
-  logoUrl: string | null;
-  onSaved(saved: WorkspaceSettings): void;
-}) {
-  const picker = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<Note>(null);
-  const change = async (save: () => Promise<WorkspaceSettings>, done: TextId) => {
-    setBusy(true);
-    setNote(null);
-    try {
-      onSaved(await save());
-      setNote({ ok: true, text: done });
-    } catch (failure) {
-      setNote({
-        ok: false,
-        text: failureText(failure, { 400: "logoWrongType", 413: "logoTooLarge" }),
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <PageRow title={t("logoTitle")} help={t("logoHelp")}>
-      <div className="logo-row">
-        {logoUrl !== null && <img className="logo-preview" src={logoUrl} alt={t("logoPreview")} />}
-        <input
-          ref={picker}
-          type="file"
-          accept={LOGO_TYPES}
-          hidden
-          aria-label={t("logoUpload")}
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0];
-            // Cleared, so picking the same file again uploads it again.
-            event.currentTarget.value = "";
-            if (file !== undefined) void change(() => api.setLogo(file), "logoSaved");
-          }}
-        />
-        <button
-          type="button"
-          className="pill dark"
-          disabled={busy}
-          onClick={() => picker.current?.click()}
-        >
-          {t(logoUrl === null ? "logoUpload" : "logoReplace")}
-        </button>
-        {logoUrl !== null && (
-          <button
-            type="button"
-            className="pill"
-            disabled={busy}
-            onClick={() => void change(api.removeLogo, "logoRemoved")}
-          >
-            {t("logoRemove")}
-          </button>
-        )}
-      </div>
-      <SaveNote note={note} />
-    </PageRow>
-  );
-}
-
-/** The widget's title, greeting and away text. An empty box means the widget's own default. */
-function WidgetTextsRow({
-  api,
-  settings,
-  onSaved,
-}: {
-  api: WorkspaceApi;
-  settings: WorkspaceSettings;
-  onSaved(saved: WorkspaceSettings): void;
-}) {
-  const [texts, setTexts] = useState(() => ({
-    title: settings.widgetTexts.title ?? "",
-    greeting: settings.widgetTexts.greeting ?? "",
-    away: settings.widgetTexts.away ?? "",
-  }));
-  const [note, setNote] = useState<Note>(null);
-  const field = (name: keyof typeof texts) => ({
-    value: texts[name],
-    onChange: (value: string) => {
-      setTexts((current) => ({ ...current, [name]: value }));
-      setNote(null);
-    },
-  });
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
-    const blank = (value: string) => (value.trim() === "" ? null : value.trim());
-    try {
-      const saved = await api.setWidgetTexts({
-        title: blank(texts.title),
-        greeting: blank(texts.greeting),
-        away: blank(texts.away),
-      });
-      onSaved(saved);
-      setNote({ ok: true, text: "widgetTextsSaved" });
-    } catch (failure) {
-      setNote({ ok: false, text: failureText(failure, {}) });
-    }
-  };
-  return (
-    <PageRow title={t("widgetTextsTitle")} help={t("widgetTextsHelp")}>
-      <form className="stack" onSubmit={save}>
-        <Field
-          label={t("widgetTitleLabel")}
-          placeholder={widgetText("title")}
-          maxLength={40}
-          {...field("title")}
-        />
-        <Field
-          label={t("widgetGreetingLabel")}
-          multiline
-          placeholder={widgetText("empty")}
-          maxLength={200}
-          {...field("greeting")}
-        />
-        <Field
-          label={t("widgetAwayLabel")}
-          multiline
-          placeholder={widgetText("teamAway")}
-          maxLength={200}
-          {...field("away")}
-        />
-        <div className="actions">
-          <button type="submit" className="pill dark">
-            {t("save")}
-          </button>
-        </div>
-        <SaveNote note={note} />
-      </form>
     </PageRow>
   );
 }
@@ -733,6 +604,20 @@ export function ProfilePage({
         <PageRow title={t("email")} help={t("accountEmailHelp")}>
           <input aria-label={t("email")} value={me.email} readOnly />
         </PageRow>
+        <PageRow title={t("pictureTitle")} help={t("pictureHelp")}>
+          <ImageUpload
+            url={me.pictureUrl}
+            text={PICTURE_TEXT}
+            onUpload={async (file) => {
+              await setPicture(file);
+              onChanged();
+            }}
+            onRemove={async () => {
+              await removePicture();
+              onChanged();
+            }}
+          />
+        </PageRow>
         <PageRow title={t("theme")} help={t("themeHelp")}>
           <ThemeChoice />
         </PageRow>
@@ -751,11 +636,12 @@ export function ProfilePage({
   );
 }
 
-export type SettingsTab = "team" | "install" | "sites" | "secret" | "api" | "data";
+export type SettingsTab = "team" | "widget" | "install" | "sites" | "secret" | "api" | "data";
 type Tab = SettingsTab;
 
 const TAB_TEXT: Record<Tab, TextId> = {
   team: "tabTeam",
+  widget: "tabWidget",
   install: "tabInstall",
   sites: "originsTitle",
   secret: "secretTitle",
@@ -895,7 +781,8 @@ export function SettingsPage({
             used: counted.operators.used + team.invites.length,
           },
         };
-  const tabs: Tab[] = ["team"];
+  // Every member reads the widget's settings. The rest are for owners and admins.
+  const tabs: Tab[] = ["team", "widget"];
   if (settings !== null) tabs.push("install", "sites", "secret", "api");
   if (role === "owner" || team.blocked.length > 0) tabs.push("data");
   const tab = tabs.includes(picked) ? picked : "team";
@@ -923,8 +810,11 @@ export function SettingsPage({
         tabs={tabs}
         current={tab}
         onPick={(next) => {
-          setPicked(next);
-          setDeleteOpening(false);
+          if (next === tab) return;
+          leave(() => {
+            setPicked(next);
+            setDeleteOpening(false);
+          });
         }}
       />
       <div className="tab-panel" id="tab-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
@@ -942,19 +832,11 @@ export function SettingsPage({
             onLeft={onLeft}
           />
         )}
+        {tab === "widget" && (
+          <WidgetTab api={api} me={me} canEdit={role !== "member"} onLogoChanged={onLogoChanged} />
+        )}
         {tab === "install" && settings !== null && (
-          <>
-            <LogoRow
-              api={api}
-              logoUrl={settings.logoUrl}
-              onSaved={(saved) => {
-                setSettings(saved);
-                onLogoChanged(saved.logoUrl);
-              }}
-            />
-            <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
-            <WidgetTextsRow api={api} settings={settings} onSaved={setSettings} />
-          </>
+          <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
         )}
         {tab === "sites" && settings !== null && (
           <OriginsRow api={api} settings={settings} onSaved={setSettings} />

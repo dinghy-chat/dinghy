@@ -10,7 +10,7 @@ import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { workspace, workspaceLogo } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages, LOGO_MAX_BYTES } from "./images.ts";
+import { createImages, PUBLIC_IMAGE_MAX_BYTES } from "./images.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -48,7 +48,7 @@ const png = (width: number, height: number) =>
     .png()
     .toBuffer();
 
-const logoPath = () => `/v1/operator/workspaces/${space.id}/logo`;
+const logoPath = () => `/v1/operator/workspaces/${space.id}/widget/logo`;
 
 const upload = (as: Person, body: BodyInit, contentType = "image/png", server = app) =>
   server.request(logoPath(), {
@@ -62,14 +62,14 @@ const removeLogo = (as: Person) =>
 
 const settingsOf = async (as: Person) =>
   (await (
-    await app.request(`/v1/operator/workspaces/${space.id}/settings`, {
+    await app.request(`/v1/operator/workspaces/${space.id}/widget`, {
       headers: { cookie: as.cookie },
     })
   ).json()) as { logoUrl: string | null };
 
-/** The widget's presence answer, which carries the logo's address. */
+/** The widget's appearance, which carries the logo's address. */
 const widgetLogoUrl = async () => {
-  const response = await app.request(`/v1/widget/${space.publicKey}/presence`, {
+  const response = await app.request(`/v1/widget/${space.publicKey}/appearance`, {
     headers: { origin: SITE },
   });
   return ((await response.json()) as { logoUrl: string | null }).logoUrl;
@@ -153,7 +153,7 @@ describe("uploading a logo", () => {
   test("a body over 2 MB is refused, and the logo stays as it was", async () => {
     const boss = await person("owner");
     const kept = (await (await upload(boss, await png(10, 10))).json()) as { logoUrl: string };
-    const response = await upload(boss, new Uint8Array(LOGO_MAX_BYTES + 1));
+    const response = await upload(boss, new Uint8Array(PUBLIC_IMAGE_MAX_BYTES + 1));
     expect(response.status).toBe(413);
     expect(await errorCode(response)).toBe("too_large");
     expect((await settingsOf(boss)).logoUrl).toBe(kept.logoUrl);
@@ -231,5 +231,74 @@ describe("the public logo route", () => {
     expect((await filesApp.request(logoUrl)).status).toBe(200);
     const onAppOrigin = logoUrl.replace(FILES_ORIGIN, PUBLIC_URL);
     expect((await filesApp.request(onAppOrigin)).status).toBe(404);
+  });
+});
+
+describe("an operator's picture", () => {
+  const picturePath = "/v1/operator/me/picture";
+  const setPicture = (as: Person, body: BodyInit, contentType = "image/png") =>
+    app.request(picturePath, {
+      method: "PUT",
+      headers: { cookie: as.cookie, origin: ORIGIN, "content-type": contentType },
+      body,
+    });
+  const meOf = async (as: Person) =>
+    (await (await app.request("/v1/operator/me", { headers: { cookie: as.cookie } })).json()) as {
+      id: string;
+      pictureUrl: string | null;
+    };
+
+  test("is cut to a 128-pixel WebP square, and the profile and the team list name it", async () => {
+    const boss = await person("owner");
+    const response = await setPicture(boss, await png(600, 300));
+    expect(response.status).toBe(200);
+    const { pictureUrl } = (await response.json()) as { pictureUrl: string };
+    const me = await meOf(boss);
+    expect(pictureUrl).toMatch(new RegExp(`^${PUBLIC_URL}/v1/pictures/${me.id}\\?v=\\d+$`));
+    expect(me.pictureUrl).toBe(pictureUrl);
+    const team = await app.request(`/v1/operator/workspaces/${space.id}/members`, {
+      headers: { cookie: boss.cookie },
+    });
+    const { members } = (await team.json()) as { members: { id: string; pictureUrl: unknown }[] };
+    expect(members.find((member) => member.id === me.id)?.pictureUrl).toBe(pictureUrl);
+
+    const served = await app.request(pictureUrl);
+    expect(served.status).toBe(200);
+    expect(served.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    const { format, width, height } = await sharp(
+      new Uint8Array(await served.arrayBuffer()),
+    ).metadata();
+    expect({ format, width, height }).toEqual({ format: "webp", width: 128, height: 128 });
+  });
+
+  test("a file that is not an image, or one over 2 MB, is refused", async () => {
+    const boss = await person("member");
+    const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>');
+    expect(await errorCode(await setPicture(boss, svg))).toBe("not_an_image");
+    const large = await setPicture(boss, new Uint8Array(PUBLIC_IMAGE_MAX_BYTES + 1));
+    expect(large.status).toBe(413);
+    expect((await meOf(boss)).pictureUrl).toBeNull();
+  });
+
+  test("removing it clears its address and stops serving it", async () => {
+    const boss = await person("member");
+    const { pictureUrl } = (await (await setPicture(boss, await png(10, 10))).json()) as {
+      pictureUrl: string;
+    };
+    const response = await app.request(picturePath, {
+      method: "DELETE",
+      headers: { cookie: boss.cookie, origin: ORIGIN },
+    });
+    expect(await response.json()).toEqual({ pictureUrl: null });
+    expect((await meOf(boss)).pictureUrl).toBeNull();
+    expect((await app.request(pictureUrl)).status).toBe(404);
+  });
+
+  test("needs a session, and an unknown operator has none", async () => {
+    expect(
+      (await app.request(picturePath, { method: "DELETE", headers: { origin: ORIGIN } })).status,
+    ).toBe(401);
+    const unknown = `/v1/pictures/00000000-0000-4000-8000-000000000000`;
+    expect((await app.request(unknown)).status).toBe(404);
   });
 });

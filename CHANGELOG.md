@@ -4,6 +4,27 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- A **Widget** tab in Settings changes the chat with no code: the logo, the words, the main and accent colors, the side, a light, dark or auto theme, the chat button (boat, bubble or hidden), the corners, the boat in the open chat, when to ask for an email, and the "Powered by Dinghy" line. A live preview shows each change before you save, open or closed, light or dark. Your site shows a saved change within 5 minutes. Every member sees the tab, and owners and admins change it.
+- Each operator can set a picture in **Profile**. Visitors see it, with the operator's first name, on each reply and at the top of the chat. Your team sees it in place of initials. A reply from an API key shows the key's name and a bot icon.
+- The chat can ask for an email before the first message, in place of the message box, and has a dark theme.
+- A "Powered by Dinghy" line under the chat, on by default. The Widget tab or `data-branding="off"` hides it.
+- API: `GET` and `PUT /v1/operator/workspaces/{workspaceId}/widget`, `GET /v1/widget/{key}/appearance`, `PUT` and `DELETE /v1/operator/me/picture`, and `GET /v1/pictures/{operatorId}`. Widget messages have `fromBot`, `authorName` and `authorPictureUrl`. `GET /v1/operator/me` and the members list answer `pictureUrl`.
+
+### Changed
+
+- The loader asks for the saved look on each page view, and draws the chat button once it arrives. The browser keeps the answer for 5 minutes.
+- `data-launcher` takes `boat`, `bubble` or `hidden`. `data-mascot="false"` now hides only the boat in the open chat, and no longer changes the chat button: use `data-launcher="bubble"` for that.
+- The chat's corners and the boat button's are 16 pixels by default, and the Widget tab sets them.
+- Visitors see the replying operator's first name.
+- The logo, the title, the greeting and the away text moved from **Install** to **Widget**. Install keeps the tag.
+- An export holds all the widget's settings, so an export from an earlier release no longer imports.
+
+### Removed
+
+- API: `GET /v1/widget/{key}/presence` no longer answers `texts` and `logoUrl`, and the settings no longer take or answer `widgetTexts` and `logoUrl`. The logo routes moved to `/v1/operator/workspaces/{workspaceId}/widget/logo`.
+
 ## [0.16.0] - 2026-11-10
 
 ### Changed

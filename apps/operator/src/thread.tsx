@@ -306,7 +306,7 @@ function ThreadHead({
             ...members.map((member) => ({
               value: member.id,
               label: member.name,
-              lead: <Avatar name={member.name} />,
+              lead: <Avatar name={member.name} pictureUrl={member.pictureUrl} />,
             })),
           ]}
           onChange={(value) => onAssign(value === "" ? null : value)}

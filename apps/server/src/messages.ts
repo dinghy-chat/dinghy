@@ -587,18 +587,33 @@ export async function countWaiting(tx: Transaction, workspaceId: string): Promis
   return result.rows[0]?.count ?? 0;
 }
 
-/** The names of these operators, by ID. A removed member keeps a name, so old replies keep it. */
-async function operatorNames(
+/** A reply's author: its operator's or API key's name, and an operator picture's time. */
+export interface MessageAuthor {
+  name: string;
+  pictureUpdatedAt: Date | null;
+  /** A deleted account, whose name is the placeholder for a former team member. */
+  isDeleted: boolean;
+}
+
+/** These operators, by ID. A removed member keeps a name, so old replies keep it. */
+async function operatorAuthors(
   tx: Transaction,
   ids: Iterable<string | null>,
-): Promise<Map<string, string>> {
+): Promise<Map<string, MessageAuthor>> {
   const wanted = [...new Set([...ids].filter((id) => id !== null))];
   if (wanted.length === 0) return new Map();
   const rows = await tx
-    .select({ id: operator.id, name: operator.name })
+    .select({
+      id: operator.id,
+      name: operator.name,
+      pictureUpdatedAt: operator.pictureUpdatedAt,
+      deletedAt: operator.deletedAt,
+    })
     .from(operator)
     .where(inArray(operator.id, wanted));
-  return new Map(rows.map((row) => [row.id, row.name]));
+  return new Map(
+    rows.map(({ id, deletedAt, ...author }) => [id, { ...author, isDeleted: deletedAt !== null }]),
+  );
 }
 
 /** The names of these API keys, by ID. A revoked key keeps its row, so old replies keep its name. */
@@ -616,13 +631,13 @@ async function apiKeyNames(
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
-/** Each message's author name, by the operator's or the key's ID. Both are random UUIDs. */
-export async function authorNames(
+/** Each message's author, by the operator's or the key's ID. Both are random UUIDs. */
+export async function messageAuthors(
   tx: Transaction,
   workspaceId: string,
   messages: Pick<StoredMessage, "authorOperatorId" | "authorApiKeyId">[],
-): Promise<Map<string, string>> {
-  const operators = await operatorNames(
+): Promise<Map<string, MessageAuthor>> {
+  const operators = await operatorAuthors(
     tx,
     messages.map((one) => one.authorOperatorId),
   );
@@ -631,7 +646,20 @@ export async function authorNames(
     workspaceId,
     messages.map((one) => one.authorApiKeyId),
   );
-  return new Map([...operators, ...keys]);
+  const keyAuthors = [...keys].map(
+    ([id, name]) => [id, { name, pictureUpdatedAt: null, isDeleted: false }] as const,
+  );
+  return new Map([...operators, ...keyAuthors]);
+}
+
+/** Each message's author name, by the operator's or the key's ID. */
+export async function authorNames(
+  tx: Transaction,
+  workspaceId: string,
+  messages: Pick<StoredMessage, "authorOperatorId" | "authorApiKeyId">[],
+): Promise<Map<string, string>> {
+  const authors = await messageAuthors(tx, workspaceId, messages);
+  return new Map([...authors].map(([id, author]) => [id, author.name]));
 }
 
 /** One message, or null when it was deleted. */

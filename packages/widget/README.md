@@ -21,7 +21,7 @@ const dinghy = init({ url: "https://chat.example.com", key: "YOUR_PUBLIC_KEY" })
 dinghy.on("unread", (count) => console.log(count));
 ```
 
-`init` adds the tag once and returns the typed `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key`, and `primary`, `accent`, `mascot`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`.
+`init` adds the tag once and returns the typed `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key`, and `primary`, `accent`, `mascot`, `branding`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`.
 
 ## Attributes
 

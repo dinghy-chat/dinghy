@@ -12,6 +12,13 @@ export interface ChatMessage {
   image: { url: string; width: number; height: number } | null;
   /** The image was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
+  /** A reply from a workspace API key, such as the site's own bot. */
+  fromBot: boolean;
+  /** A hash of the operator's or the key's ID, which tells two authors with one name apart. */
+  authorId: string | null;
+  /** A reply's author: an operator's first name or a key's name. Null for the visitor's own. */
+  authorName: string | null;
+  authorPictureUrl: string | null;
   createdAt: string;
 }
 
@@ -47,6 +54,8 @@ interface Me {
   openConversation: boolean;
   /** Has a conversation, open or closed. Only then does the widget report pages. */
   chatted: boolean;
+  /** The visitor gave an email, so the widget does not ask again. */
+  hasEmail: boolean;
   lastReadSeq: string;
   unread: number;
   /** A stream from here reads only what follows the read position. */
@@ -67,13 +76,6 @@ export const pageAddress = () => (location.origin + location.pathname).slice(0, 
 
 /** The page's title on one line, as the server keeps it. */
 export const pageTitle = () => document.title.replace(/\s+/g, " ").trim().slice(0, 200);
-
-/** The workspace's own widget text. Null means the default. */
-export interface Texts {
-  title: string | null;
-  greeting: string | null;
-  away: string | null;
-}
 
 /**
  * `hostPage` is false on the chat page that a reply email opens, whose address holds its token and
@@ -110,10 +112,7 @@ export function createClient(
     me: (token: string) => call<Me>("me", token),
     /** The token only on the chat page, where it is what lets the request in. */
     presence: (token: string | null) =>
-      call<{ online: boolean | null; emailReplies: boolean; texts: Texts; logoUrl: string | null }>(
-        "presence",
-        token,
-      ),
+      call<{ online: boolean | null; emailReplies: boolean }>("presence", token),
     reportPage: (token: string, address: string, title: string) =>
       call<{ ok: true }>("page", token, {
         method: "POST",

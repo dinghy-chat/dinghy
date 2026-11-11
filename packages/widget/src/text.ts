@@ -34,6 +34,7 @@ const en = {
   emailSaved: "Thanks. We will use this email if you leave.",
   emailInvalid: "Enter a valid email.",
   emailFailed: "Not saved. Try again.",
+  poweredBy: "Powered by Dinghy",
 };
 
 export type TextId = keyof typeof en;

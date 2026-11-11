@@ -96,6 +96,90 @@ export function SaveNote({ note }: { note: Note }) {
   return note.ok ? <StatusNote text={note.text} /> : <ErrorNote text={note.text} />;
 }
 
+const IMAGE_TYPES = "image/png,image/jpeg,image/webp";
+
+/** The words of one image upload, such as the logo's. */
+export interface UploadText {
+  upload: TextId;
+  replace: TextId;
+  remove: TextId;
+  preview: TextId;
+  saved: TextId;
+  removed: TextId;
+  tooLarge: TextId;
+}
+
+/** An image that saves as soon as it is picked or removed: the logo, or an operator's picture. */
+export function ImageUpload({
+  url,
+  text,
+  onUpload,
+  onRemove,
+}: {
+  url: string | null;
+  text: UploadText;
+  onUpload(file: File): Promise<unknown>;
+  onRemove(): Promise<unknown>;
+}) {
+  const picker = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<Note>(null);
+  const change = async (save: () => Promise<unknown>, done: TextId) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await save();
+      setNote({ ok: true, text: done });
+    } catch (failure) {
+      setNote({
+        ok: false,
+        text: failureText(failure, { 400: "uploadWrongType", 413: text.tooLarge }),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <div className="logo-row">
+        {url !== null && <img className="logo-preview" src={url} alt={t(text.preview)} />}
+        <input
+          ref={picker}
+          type="file"
+          accept={IMAGE_TYPES}
+          hidden
+          aria-label={t(text.upload)}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            // Cleared, so picking the same file again uploads it again.
+            event.currentTarget.value = "";
+            if (file !== undefined) void change(() => onUpload(file), text.saved);
+          }}
+        />
+        <button
+          type="button"
+          className="pill dark"
+          disabled={busy}
+          onClick={() => picker.current?.click()}
+        >
+          {t(url === null ? text.upload : text.replace)}
+        </button>
+        {url !== null && (
+          <button
+            type="button"
+            className="pill"
+            disabled={busy}
+            onClick={() => void change(onRemove, text.removed)}
+          >
+            {t(text.remove)}
+          </button>
+        )}
+      </div>
+      <SaveNote note={note} />
+    </>
+  );
+}
+
 /** How long a copy control says it copied. */
 const COPIED_MS = 2000;
 
@@ -417,8 +501,17 @@ export function initials(name: string): string {
     .toUpperCase();
 }
 
-/** A round tile with initials. The same name always gets the same tint. */
-export function Avatar({ name, letters }: { name: string; letters?: string | undefined }) {
+/** A round tile with a picture, or with initials. The same name always gets the same tint. */
+export function Avatar({
+  name,
+  letters,
+  pictureUrl = null,
+}: {
+  name: string;
+  letters?: string | undefined;
+  pictureUrl?: string | null;
+}) {
+  if (pictureUrl !== null) return <img className="avatar" src={pictureUrl} alt="" />;
   const sum = [...name].reduce((total, character) => total + (character.codePointAt(0) ?? 0), 0);
   return (
     <span className={`avatar tint-${sum % TINT_COUNT}`} aria-hidden="true">
