@@ -34,6 +34,7 @@ import {
   visitorQuote,
 } from "./messages.ts";
 import { imageUrls } from "./public-images.ts";
+import { MINUTE_MS } from "./time.ts";
 import {
   emailStopped,
   emailStopUrl,
@@ -45,7 +46,7 @@ import {
 } from "./visitor-email.ts";
 
 // The transcript waits, so a quick reopen cancels it.
-export const TRANSCRIPT_DELAY_MS = 5 * 60_000;
+export const TRANSCRIPT_DELAY_MS = 5 * MINUTE_MS;
 // The most messages a transcript holds, the newest ones. The chat link has the rest.
 const TRANSCRIPT_MESSAGES = 500;
 

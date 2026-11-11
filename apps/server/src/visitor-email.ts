@@ -12,8 +12,8 @@ import type { Transaction } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
 import { EMAIL_COLORS } from "./letter.ts";
 import type { Quote } from "./messages.ts";
+import { DAY_MS } from "./time.ts";
 
-export const DAY_MS = 24 * 60 * 60_000;
 // The emails a visitor gets in a day, reply emails and transcripts together, because anyone can
 // type someone else's address into the widget.
 export const VISITOR_EMAILS_PER_DAY = 5;

@@ -26,9 +26,9 @@ import {
 } from "./messages.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
+import { DAY_MS, MINUTE_MS } from "./time.ts";
 import { requestedTranscriptRows, transcriptPlan, transcriptRows } from "./transcripts.ts";
 import {
-  DAY_MS,
   emailStopped,
   emailStopUrl,
   quotedHtml,
@@ -41,7 +41,6 @@ import {
 
 // A failed send retries after 30 seconds, doubling each time, and stops after this many attempts.
 export const MAX_ATTEMPTS = 6;
-const MINUTE_MS = 60_000;
 // An email to an operator per conversation, so a burst of messages sends one.
 const OPERATOR_EMAIL_GAP_MS = 15 * MINUTE_MS;
 // The reply email waits, because a visitor who is still on the page reads the reply there.

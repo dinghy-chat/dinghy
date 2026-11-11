@@ -37,6 +37,7 @@ import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { authorNames, findConversation, findMessage } from "./messages.ts";
 import { retryDelayMs } from "./retry.ts";
 import { allowed } from "./team.ts";
+import { DAY_MS } from "./time.ts";
 
 /** At most this many webhooks per workspace. */
 const WEBHOOK_LIMIT = 5;
@@ -44,7 +45,6 @@ const WEBHOOK_LIMIT = 5;
 const REQUEST_TIMEOUT_MS = 10_000;
 /** The first retry waits 30 seconds, doubling to an hour: 30 attempts last about a day. */
 export const WEBHOOK_MAX_ATTEMPTS = 30;
-const DAY_MS = 24 * 60 * 60_000;
 const DELIVERIES_SHOWN = 20;
 const ERROR_MAX = 200;
 /** The type of the event that "Send test" sends. It is never stored. */

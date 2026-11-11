@@ -6,13 +6,13 @@ import { chatLink, visitor, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace, workspaceAccess } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
+import { DAY_MS } from "./time.ts";
 
 // A token names its workspace, so a lookup needs no query across workspaces, and 32 random bytes
 // make it unguessable. Only its hash is stored.
 const PREFIX = "dcl_";
 const TOKEN = /^dcl_([0-9a-f]{32})[A-Za-z0-9_-]{43}$/;
 export const CHAT_LINK_DAYS = 30;
-const DAY_MS = 24 * 60 * 60_000;
 
 // Every string a person reads has a key, so a locale can be added later.
 const CHAT_PAGE_TEXT = {
