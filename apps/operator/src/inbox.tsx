@@ -5,6 +5,7 @@ import { AlertsPage, leaveDevice, useDeviceSync } from "./alerts.tsx";
 import { AnalyticsPage } from "./analytics.tsx";
 import {
   ApiError,
+  type Assignee,
   type Conversation,
   type Me,
   type Member,
@@ -30,12 +31,14 @@ import { type TextId, t } from "./text.ts";
 import { Thread } from "./thread.tsx";
 import {
   Avatar,
+  Choices,
   EmptyArt,
   Harbor,
   Icon,
   type IconName,
   initials,
   Logo,
+  type Option,
   PageHead,
   ROLE_TEXT,
 } from "./ui.tsx";
@@ -48,14 +51,51 @@ const SEARCH_MIN = 3;
 const PRESENCE_EVERY_MS = 10_000;
 
 type Status = "open" | "closed";
+/** Whose conversations the Inbox lists. */
+type Who = "all" | "mine" | "unassigned";
 
-const STATUS_LOOK: Record<
-  Status,
-  { label: TextId; empty: TextId; hint: TextId; icon: "inbox" | "done" }
-> = {
-  open: { label: "inbox", empty: "noOpen", hint: "emptyHint", icon: "inbox" },
-  closed: { label: "closed", empty: "noClosed", hint: "closedHint", icon: "done" },
+const STATUS_LOOK: Record<Status, { empty: TextId; hint: TextId }> = {
+  open: { empty: "noOpen", hint: "emptyHint" },
+  closed: { empty: "noClosed", hint: "closedHint" },
 };
+
+const STATUS_OPTIONS: Option<Status>[] = [
+  { value: "open", label: "open" },
+  { value: "closed", label: "closed" },
+];
+const WHO_OPTIONS: Option<Who>[] = [
+  { value: "all", label: "filterAll" },
+  { value: "mine", label: "filterMine" },
+  { value: "unassigned", label: "unassigned" },
+];
+const WHO_ASSIGNEE: Record<Who, Assignee | null> = { all: null, mine: "me", unassigned: "none" };
+
+/** What the Inbox shows, from the address: `?view=closed` and `&who=mine` or `&who=unassigned`. */
+function filterInAddress(): { status: Status; who: Who } {
+  const params = new URLSearchParams(location.search);
+  const who = params.get("who");
+  return {
+    status: params.get("view") === "closed" ? "closed" : "open",
+    who: who === "mine" || who === "unassigned" ? who : "all",
+  };
+}
+
+/** Puts the Inbox's choice in the address, so a reload or a shared link keeps it. */
+function writeFilter(status: Status, who: Who) {
+  const url = new URL(location.href);
+  if (status === "closed") url.searchParams.set("view", "closed");
+  else url.searchParams.delete("view");
+  if (who === "all") url.searchParams.delete("who");
+  else url.searchParams.set("who", who);
+  history.replaceState(history.state, "", `${url.pathname}${url.search}`);
+}
+
+/** The empty list's words: a filter's own, or the status's. */
+function emptyLook(status: Status, who: Who): { empty: TextId; hint: TextId | null } {
+  if (who === "mine") return { empty: "noMine", hint: null };
+  if (who === "unassigned" && status === "open") return { empty: "noUnassigned", hint: null };
+  return STATUS_LOOK[status];
+}
 
 /** The time today, and the date before today. */
 function shortTime(iso: string): string {
@@ -255,12 +295,11 @@ function SuspendedBanner({ contact }: { contact: string | null }) {
   );
 }
 
-/** What the panel shows: one of the two lists, or a page. */
-type View = Status | "analytics" | "settings" | "alerts" | "profile";
+/** What the panel shows: the Inbox, or a page. */
+type View = "inbox" | "analytics" | "settings" | "alerts" | "profile";
 
 const NAV: { view: Exclude<View, "profile">; label: TextId; icon: IconName }[] = [
-  { view: "open", label: "inbox", icon: STATUS_LOOK.open.icon },
-  { view: "closed", label: "closed", icon: STATUS_LOOK.closed.icon },
+  { view: "inbox", label: "inbox", icon: "inbox" },
   { view: "analytics", label: "analytics", icon: "chart" },
   { view: "alerts", label: "alerts", icon: "bell" },
   { view: "settings", label: "settings", icon: "gear" },
@@ -433,7 +472,7 @@ function Sidebar({
       />
       <nav className="nav" aria-label={t("mainMenu")}>
         {NAV.map((item) => {
-          const counted = item.view === "open" && waiting > 0;
+          const counted = item.view === "inbox" && waiting > 0;
           return (
             <button
               type="button"
@@ -650,7 +689,9 @@ export function Inbox({
   useDeviceSync();
   const [name, setName] = useState(t("appName"));
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status>("open");
+  const [initialFilter] = useState(filterInAddress);
+  const [status, setStatus] = useState<Status>(initialFilter.status);
+  const [chosenWho, setChosenWho] = useState<Who>(initialFilter.who);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   // The first page has arrived, so an empty list means an empty inbox and not one still loading.
   const [listed, setListed] = useState(false);
@@ -664,7 +705,7 @@ export function Inbox({
   });
   // The account's delete can open this workspace on its Team tab or its delete dialog.
   const [ownerStep] = useState(() => ownerStepIn(workspaceId));
-  const [view, setView] = useState<View>(ownerStep === null ? "open" : "settings");
+  const [view, setView] = useState<View>(ownerStep === null ? "inbox" : "settings");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>(
     ownerStep === "delete" ? "data" : "team",
   );
@@ -676,7 +717,7 @@ export function Inbox({
   const shownConversation = useRef(selected);
   useLayoutEffect(() => {
     // A page such as Analytics hides the thread, so its conversation is not in view then.
-    shownConversation.current = view === "open" || view === "closed" ? selected : null;
+    shownConversation.current = view === "inbox" ? selected : null;
   });
   // A sound only when the operator is not already looking at that conversation.
   const onVisitorMessage = useCallback((conversationId: string | null) => {
@@ -720,10 +761,16 @@ export function Inbox({
     if (names.length === 0) return null;
     return t(names.length === 1 ? "isReplying" : "areReplying", { names: names.join(", ") });
   };
-  const shown = useRef({ status, limit });
+  // A team of one has nothing to filter. The roster is empty only until it loads.
+  const isTeam = members.length > 1;
+  const who: Who = members.length === 1 ? "all" : chosenWho;
+  const assignee = WHO_ASSIGNEE[who];
+  const shown = useRef({ status, assignee, limit });
   useLayoutEffect(() => {
-    shown.current = { status, limit };
+    shown.current = { status, assignee, limit };
   });
+  // The conversation a link opened, whose status picks Open or Closed once it loads.
+  const linked = useRef(selected);
 
   // A new workspace's first open list holds only the welcome chat, which opens by itself, once.
   const firstList = useRef(true);
@@ -731,18 +778,16 @@ export function Inbox({
   const reload = useLatestLoad(async () => {
     const wanted = shown.current;
     try {
-      const page = await api.list(
-        wanted.status,
-        wanted.limit,
-        () => wanted.status !== shown.current.status,
-      );
-      // The operator may have switched tabs while this was on its way.
-      if (wanted.status !== shown.current.status) return;
+      const moved = () =>
+        wanted.status !== shown.current.status || wanted.assignee !== shown.current.assignee;
+      const page = await api.list(wanted.status, wanted.assignee, wanted.limit, moved);
+      // The operator may have picked another filter while this was on its way.
+      if (moved()) return;
       setConversations(page.conversations);
       setListed(true);
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
-      if (firstList.current && wanted.status === "open") {
+      if (firstList.current && wanted.status === "open" && wanted.assignee === null) {
         firstList.current = false;
         const [only, ...rest] = page.conversations;
         if (only?.welcome && rest.length === 0 && !remembered(welcomeKey)) {
@@ -755,7 +800,7 @@ export function Inbox({
     }
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: each of these asks for a load.
-  useEffect(reload, [reload, status, limit, version]);
+  useEffect(reload, [reload, status, assignee, limit, version]);
 
   // A count in the tab's title, so a waiting visitor shows from another tab.
   useEffect(() => {
@@ -783,18 +828,23 @@ export function Inbox({
     // Settings can change the team, so the names in the list load again after it.
     if (view === "settings" && next !== "settings") loadMembers();
     setView(next);
-    // The list reloads only when the tab changes, so the open tab must keep its rows.
-    if (next !== "open" && next !== "closed") return;
-    if (next === status) return;
-    setStatus(next);
-    setLimit(PAGE_SIZE);
-    // The old tab's rows must not show under this one while it loads.
-    setConversations([]);
   };
+
+  const showFilter = (nextStatus: Status, nextWho: Who) => {
+    if (nextStatus === status && nextWho === who) return;
+    writeFilter(nextStatus, nextWho);
+    setStatus(nextStatus);
+    setChosenWho(nextWho);
+    setLimit(PAGE_SIZE);
+    // The old filter's rows must not show under this one while it loads.
+    setConversations([]);
+    setListed(false);
+  };
+  const empty = emptyLook(status, who);
 
   return (
     <div className="shell">
-      <div className={view !== status ? "app paging" : selected === null ? "app" : "app showing"}>
+      <div className={view !== "inbox" ? "app paging" : selected === null ? "app" : "app showing"}>
         <Sidebar
           me={me}
           role={role}
@@ -889,20 +939,40 @@ export function Inbox({
               />
             )}
             <div className="split">
-              <section className="list" aria-label={t(STATUS_LOOK[status].label)}>
+              <section className="list" aria-label={t("inbox")}>
                 <PageHead
-                  title={t(STATUS_LOOK[status].label)}
+                  title={t("inbox")}
                   context={
                     found === null ? listContext(status, waiting) : foundContext(found.length)
                   }
                 />
+                <div className="list-filters">
+                  <Choices
+                    className="list-status"
+                    label={t("listStatus")}
+                    hideLabel
+                    value={status}
+                    options={STATUS_OPTIONS}
+                    onChange={(next) => showFilter(next, who)}
+                  />
+                  {isTeam && (
+                    <Choices
+                      className="list-who"
+                      label={t("listAssignee")}
+                      hideLabel
+                      value={who}
+                      options={WHO_OPTIONS}
+                      onChange={(next) => showFilter(status, next)}
+                    />
+                  )}
+                </div>
                 <SearchField value={query} searching={searching} onChange={setQuery} />
                 <ul className="rows" aria-busy={searching}>
-                  {found === null && conversations.length === 0 && (
+                  {found === null && listed && conversations.length === 0 && (
                     <li className="list-empty">
                       <EmptyArt scene={status === "open" ? "day" : "evening"} />
-                      <b>{t(STATUS_LOOK[status].empty)}</b>
-                      {t(STATUS_LOOK[status].hint)}
+                      <b>{t(empty.empty)}</b>
+                      {empty.hint !== null && t(empty.hint)}
                     </li>
                   )}
                   {found !== null && found.length === 0 && !searching && (
@@ -917,20 +987,24 @@ export function Inbox({
                       selected={conversation.id === selected}
                       members={members}
                       replying={replying(conversation.id)}
-                      showClosed={found !== null && status === "open"}
+                      showClosed={found !== null}
                       onSelect={() => setSelected(conversation.id)}
                     />
                   ))}
                 </ul>
-                {status === "open" && listed && found === null && role !== "member" && (
-                  <StartHint
-                    api={api}
-                    workspaceId={workspaceId}
-                    hasConversations={conversations.length > 0}
-                    version={version}
-                    onOpen={(tab) => showView("settings", tab)}
-                  />
-                )}
+                {status === "open" &&
+                  who === "all" &&
+                  listed &&
+                  found === null &&
+                  role !== "member" && (
+                    <StartHint
+                      api={api}
+                      workspaceId={workspaceId}
+                      hasConversations={conversations.length > 0}
+                      version={version}
+                      onOpen={(tab) => showView("settings", tab)}
+                    />
+                  )}
                 {hasMore && found === null && (
                   <button
                     type="button"
@@ -960,6 +1034,11 @@ export function Inbox({
                   version={threadVersion(selected)}
                   onBack={() => setSelected(null)}
                   onChanged={reload}
+                  onLoaded={(conversation) => {
+                    if (linked.current !== conversation.id) return;
+                    linked.current = null;
+                    showFilter(conversation.status, who);
+                  }}
                 />
               )}
             </div>

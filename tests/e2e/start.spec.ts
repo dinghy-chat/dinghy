@@ -80,9 +80,9 @@ test("a workspace whose conversations are all closed shows no first steps", asyn
   await server.createOperator("closed@example.com");
   await openLink(page, await server.signInLink("closed@example.com"));
   await expect(page.getByText("No open conversations.")).toBeVisible();
-  await page.getByRole("button", { name: "Closed" }).click();
+  await page.getByRole("radio", { name: "Closed" }).click();
   await expect(page.getByText("Earlier", { exact: false }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Inbox" }).click();
+  await page.getByRole("radio", { name: "Open" }).click();
   await expect(page.getByText("No open conversations.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Get started" })).toHaveCount(0);
 });

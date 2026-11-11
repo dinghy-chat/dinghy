@@ -83,7 +83,7 @@ test("a full conversation between the widget and the operator app @smoke", async
   await operator.getByRole("button", { name: "Close", exact: true }).click();
   await expect(operator.getByText("This conversation is closed.")).toBeVisible();
   await expect(reply(operator)).toHaveCount(0);
-  await operator.getByRole("button", { name: "Closed", exact: true }).click();
+  await operator.getByRole("radio", { name: "Closed" }).click();
   await expect(row(operator, "Tuesday")).toBeVisible();
   await operator.getByRole("button", { name: "Reopen" }).click();
   await expect(reply(operator)).toBeVisible();
@@ -214,7 +214,7 @@ test("a slow response cannot fill the wrong tab", async ({ browser }) => {
     await route.fulfill({ response }).catch(() => {});
   });
   await operator.reload();
-  await operator.getByRole("button", { name: "Closed", exact: true }).click();
+  await operator.getByRole("radio", { name: "Closed" }).click();
   // The open response arrives while the Closed tab is showing, and its own is still on its way.
   releaseOpen();
   await operator.waitForTimeout(200);

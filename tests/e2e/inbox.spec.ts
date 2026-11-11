@@ -190,3 +190,88 @@ test("an operator changes their name in Profile, which has no password", async (
   await expect(again.locator(".me")).toContainText("Carol King");
   for (const one of [page, again]) await one.context().close();
 });
+
+test("the Closed switch lists closed conversations, by keyboard too, and a reload keeps it", async ({
+  browser,
+}) => {
+  const customer = await visitor(browser, "Close this one");
+  const page = await signedIn(browser, "alice@example.com");
+  await row(page, "Close this one").click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  // A conversation that stops matching leaves the list.
+  await expect(row(page, "Close this one")).toHaveCount(0);
+
+  const open = page.getByRole("radio", { name: "Open" });
+  await open.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(row(page, "Close this one")).toBeVisible();
+  await expect(page).toHaveURL(/[?&]view=closed/);
+
+  await page.reload();
+  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(row(page, "Close this one")).toBeVisible();
+  for (const one of [customer, page]) await one.context().close();
+});
+
+test("Mine and Unassigned follow assignments as they change", async ({ browser }) => {
+  const customers = [await visitor(browser, "For Alice"), await visitor(browser, "For Bob")];
+  const alice = await signedIn(browser, "alice@example.com");
+  const bob = await signedIn(browser, "bob@example.com");
+  const assign = async (text: string, name: string) => {
+    await row(alice, text).click();
+    await alice.getByRole("button", { name: /^Assign to/ }).click();
+    await alice.getByRole("option", { name }).click();
+  };
+
+  await bob.getByRole("radio", { name: "Unassigned" }).click();
+  await expect(row(bob, "For Alice")).toBeVisible();
+  await expect(row(bob, "For Bob")).toBeVisible();
+  await bob.getByRole("radio", { name: "Mine" }).click();
+  await expect(bob.getByText("Nothing is assigned to you.")).toBeVisible();
+  await expect(bob).toHaveURL(/[?&]who=mine/);
+
+  await assign("For Alice", "alice@example.com");
+  await assign("For Bob", "bob@example.com");
+  // One that starts matching enters the list, and another operator's never shows.
+  await expect(row(bob, "For Bob")).toBeVisible();
+  await expect(row(bob, "For Alice")).toHaveCount(0);
+
+  // Reassigned away, it leaves.
+  await assign("For Bob", "alice@example.com");
+  await expect(row(bob, "For Bob")).toHaveCount(0);
+  await bob.getByRole("radio", { name: "Unassigned" }).click();
+  await expect(bob.getByText("Every open conversation has someone on it.")).toBeVisible();
+
+  await bob.reload();
+  await expect(bob.getByRole("radio", { name: "Unassigned" })).toBeChecked();
+  for (const one of [...customers, alice, bob]) await one.context().close();
+});
+
+test("an old Closed link opens the Inbox with Closed picked, and a conversation link its state", async ({
+  browser,
+}) => {
+  const customer = await visitor(browser, "Linked and closed");
+  const page = await signedIn(browser, "alice@example.com");
+  await row(page, "Linked and closed").click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(row(page, "Linked and closed")).toHaveCount(0);
+
+  await page.goto(`${server.apiOrigin}/?view=closed`);
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(row(page, "Linked and closed")).toBeVisible();
+
+  const workspaceId = server.workspaceId();
+  const listed = await page.request.get(
+    `${server.apiOrigin}/v1/operator/workspaces/${workspaceId}/conversations?status=closed`,
+  );
+  const { conversations } = (await listed.json()) as {
+    conversations: { id: string; lastMessage: { body: string } | null }[];
+  };
+  const linked = conversations.find((one) => one.lastMessage?.body === "Linked and closed");
+  await page.goto(`${server.apiOrigin}/?workspace=${workspaceId}&conversation=${linked?.id}`);
+  await expect(page.getByText("This conversation is closed.")).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  for (const one of [customer, page]) await one.context().close();
+});

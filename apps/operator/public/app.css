@@ -2493,6 +2493,43 @@ img.ws-tile {
   box-shadow: inset 0 0 0 1.5px var(--soft-edge);
   color: var(--navy);
 }
+/* Open or Closed, and below it, in a team, whose: All, Mine or Unassigned. */
+.list-filters {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin: 0 24px 12px;
+}
+.list-filters fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.list-filters .choices {
+  flex-wrap: nowrap;
+  gap: 2px;
+}
+.list-status .choices {
+  padding: 3px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+}
+.list-status .choices label {
+  min-height: 32px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+/* Quieter than the switch above it: small text, and no outline around the group. */
+.list-who .choices label {
+  min-height: 28px;
+  padding: 0 10px;
+  color: var(--text);
+  font-size: 13px;
+}
+.list-who .choices label:has(:checked) {
+  box-shadow: none;
+}
 .tab-panel {
   display: grid;
   align-content: start;

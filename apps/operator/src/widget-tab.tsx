@@ -18,11 +18,13 @@ import { setLeaveGuard } from "./nav.ts";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
+  Choices,
   Field,
   failureText,
   ImageUpload,
   Loading,
   type Note,
+  type Option,
   SaveNote,
   type UploadText,
 } from "./ui.tsx";
@@ -34,8 +36,6 @@ const LOGO_TEXT: UploadText = {
   preview: "logoPreview",
   tooLarge: "logoTooLarge",
 };
-
-type Option<T> = { value: T; label: TextId };
 
 const SIDES: Option<WidgetSettings["position"]>[] = [
   { value: "left", label: "widgetSideLeft" },
@@ -124,41 +124,6 @@ function FormSection({
       </div>
       {children}
     </section>
-  );
-}
-
-/** Radio buttons drawn as pills, under a label that can be for screen readers only. */
-function Choices<T extends string>({
-  label,
-  hideLabel = false,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  hideLabel?: boolean;
-  value: T;
-  options: Option<T>[];
-  onChange(value: T): void;
-}) {
-  const name = useId();
-  return (
-    <fieldset className="widget-field">
-      <legend className={hideLabel ? "visually-hidden" : undefined}>{label}</legend>
-      <div className="choices">
-        {options.map((option) => (
-          <label key={option.value}>
-            <input
-              type="radio"
-              name={name}
-              checked={value === option.value}
-              onChange={() => onChange(option.value)}
-            />
-            {t(option.label)}
-          </label>
-        ))}
-      </div>
-    </fieldset>
   );
 }
 
@@ -343,6 +308,7 @@ function LookFields({
       </LookRow>
       <LookRow label={t("widgetSide")}>
         <Choices
+          className="widget-field"
           label={t("widgetSide")}
           hideLabel
           value={settings.position}
@@ -352,6 +318,7 @@ function LookFields({
       </LookRow>
       <LookRow label={t("widgetTheme")} hint={t("widgetThemeHelp")}>
         <Choices
+          className="widget-field"
           label={t("widgetTheme")}
           hideLabel
           value={settings.theme}
@@ -364,6 +331,7 @@ function LookFields({
         hint={settings.launcher === "hidden" ? t("widgetLauncherHiddenHelp") : undefined}
       >
         <Choices
+          className="widget-field"
           label={t("widgetLauncher")}
           hideLabel
           value={settings.launcher}
@@ -444,6 +412,7 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
       <div className="preview-body">
         {appearance.theme === "auto" && (
           <Choices
+            className="widget-field"
             label={t("previewDevice")}
             hideLabel
             value={device}
@@ -550,6 +519,7 @@ export function WidgetTab({
             <div className="look-rows">
               <LookRow label={t("widgetEmailAsk")} hint={t("widgetEmailAskHelp")} stacked>
                 <Choices
+                  className="widget-field"
                   label={t("widgetEmailAsk")}
                   hideLabel
                   value={draft.emailAsk}

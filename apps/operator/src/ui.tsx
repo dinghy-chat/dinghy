@@ -716,6 +716,45 @@ export function Page({
 }
 
 /** The title, its line of context and the actions, at the top of a page or of the inbox list. */
+export type Option<T> = { value: T; label: TextId };
+
+/** Radio buttons drawn as pills, under a label that can be for screen readers only. */
+export function Choices<T extends string>({
+  className,
+  label,
+  hideLabel = false,
+  value,
+  options,
+  onChange,
+}: {
+  className: string;
+  label: string;
+  hideLabel?: boolean;
+  value: T;
+  options: Option<T>[];
+  onChange(value: T): void;
+}) {
+  const name = useId();
+  return (
+    <fieldset className={className}>
+      <legend className={hideLabel ? "visually-hidden" : undefined}>{label}</legend>
+      <div className="choices">
+        {options.map((option) => (
+          <label key={option.value}>
+            <input
+              type="radio"
+              name={name}
+              checked={value === option.value}
+              onChange={() => onChange(option.value)}
+            />
+            {t(option.label)}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 export function PageHead({
   title,
   context,

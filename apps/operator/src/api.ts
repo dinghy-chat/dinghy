@@ -2,6 +2,9 @@ import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/s
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
 
+/** A list's assignee filter: the caller's conversations, or no one's. Null lists everyone's. */
+export type Assignee = "me" | "none";
+
 /** Who a visitor is, as the host site signed it. Every list that names a visitor holds this. */
 export interface VisitorIdentity {
   id: string;
@@ -451,9 +454,15 @@ export function workspaceApi(workspaceId: string) {
     setAlerts: (change: { email: boolean }) =>
       call<AlertSettings>(`${base}/alerts`, { method: "PATCH", body: JSON.stringify(change) }),
     /** Reads pages from the server's cursor until it has this many conversations. */
-    async list(status: "open" | "closed", limit: number, cancelled: () => boolean) {
+    async list(
+      status: "open" | "closed",
+      assignee: Assignee | null,
+      limit: number,
+      cancelled: () => boolean,
+    ) {
       const conversations: Conversation[] = [];
       let waiting = 0;
+      const whose = assignee === null ? "" : `&assignee=${assignee}`;
       for (;;) {
         const last = conversations.at(-1);
         const before =
@@ -465,7 +474,7 @@ export function workspaceApi(workspaceId: string) {
           conversations: Conversation[];
           hasMore: boolean;
           waiting: number;
-        }>(`${base}/conversations?status=${status}&limit=${size}${before}`);
+        }>(`${base}/conversations?status=${status}${whose}&limit=${size}${before}`);
         conversations.push(...page.conversations);
         // From the first page, so the count matches the rows on screen.
         if (last === undefined) waiting = page.waiting;

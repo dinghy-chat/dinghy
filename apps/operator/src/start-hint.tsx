@@ -63,7 +63,7 @@ export function StartHint({
     }
     let current = true;
     api
-      .list("closed", 1, () => !current)
+      .list("closed", null, 1, () => !current)
       .then(
         (page) => {
           if (!current) return;

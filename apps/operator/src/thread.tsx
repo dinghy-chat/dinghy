@@ -611,6 +611,7 @@ export function Thread({
   drafts,
   onBack,
   onChanged,
+  onLoaded,
 }: {
   api: WorkspaceApi;
   meId: string;
@@ -627,6 +628,8 @@ export function Thread({
   version: number;
   onBack(): void;
   onChanged(): void;
+  /** The conversation as each load finds it. */
+  onLoaded(conversation: Conversation): void;
 }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
@@ -667,6 +670,7 @@ export function Thread({
       });
       setLoadFailure(null);
       setConversation(page.conversation);
+      onLoaded(page.conversation);
       setOnline(page.visitorOnline);
       setPages(page.visitorPages);
       setWelcome(page.welcome);
