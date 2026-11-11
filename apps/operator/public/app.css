@@ -624,6 +624,10 @@ textarea {
 .signin .card {
   animation: card-in 0.24s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
+/* The form's main button stands apart from the last field, which the card's gap alone does not do. */
+.card button[type="submit"].primary {
+  margin-top: 8px;
+}
 .card .link {
   justify-self: center;
   width: auto;
