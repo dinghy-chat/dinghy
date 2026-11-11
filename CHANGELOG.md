@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-11
+
 ### Added
 
 - Settings is one page: a list grouped into **You**, **Workspace**, **Chat widget** and **Developers**, with the open page beside it. Each page has its own address, such as `/settings/team?workspace=<id>`, so a link or a bookmark opens the same page of the same workspace. On a phone the list is its own screen, and each page has a way back.
@@ -321,7 +323,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/dinghy-chat/dinghy/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/dinghy-chat/dinghy/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/dinghy-chat/dinghy/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/dinghy-chat/dinghy/compare/v0.14.0...v0.15.0
