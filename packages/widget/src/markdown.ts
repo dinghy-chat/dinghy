@@ -186,13 +186,6 @@ export function markdownHtml(source: string): string {
 
 const QUOTE_EXCERPT_CHARACTERS = 140;
 
-/** A quoted message's start as plain text, on one line: links keep their words, marks go. */
-export function quoteExcerpt(body: string): string {
-  const plain = body
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, "")
-    .replace(/\*+|`+|~~|(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return Array.from(plain).slice(0, QUOTE_EXCERPT_CHARACTERS).join("");
-}
+/** A quoted message's start as plain text, on one line, cut by code points so no emoji breaks. */
+export const quoteExcerpt = (body: string): string =>
+  Array.from(markdownText(body)).slice(0, QUOTE_EXCERPT_CHARACTERS).join("");

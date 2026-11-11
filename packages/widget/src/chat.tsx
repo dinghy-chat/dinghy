@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preac
 import { ApiError, type ChatMessage, createClient } from "./client.ts";
 import { imageProblem, inCommitOrder, newClientId, REFRESH_LIMIT_MS, REFUSED } from "./compose.ts";
 import { cleanContext } from "./context.ts";
+import { quoteExcerpt } from "./markdown.ts";
 import "./globals.ts";
 import { useDraftPreview, usePageReports } from "./page-reports.ts";
 import {
@@ -22,6 +23,7 @@ import {
   startsRun,
 } from "./panel.tsx";
 import { usePresence } from "./presence.ts";
+import type { Quote } from "./quote.ts";
 import {
   CONTEXT_VERSION,
   type DinghyEvent,
@@ -194,7 +196,8 @@ function Chat({
   const alive = useRef(true);
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
-  const [quoting, setQuoting] = useState<Line | null>(null);
+  // The quote the next message carries. It shows at once, and the server's copy replaces it.
+  const [quoting, setQuoting] = useState<Quote | null>(null);
   const [lost, setLost] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
@@ -387,7 +390,12 @@ function Chat({
   const unread =
     loaded && (open || openConversation)
       ? lines.filter(
-          (line) => !line.fromVisitor && !line.note && line.seq !== null && line.seq > lastRead,
+          (line) =>
+            !line.fromVisitor &&
+            !line.note &&
+            !line.gone &&
+            line.seq !== null &&
+            line.seq > lastRead,
         ).length
       : lastRead > serverRead.position
         ? 0
@@ -615,13 +623,7 @@ function Chat({
     setDraft("");
     clearPrefill(null);
     const id = newClientId();
-    // The quote shows at once, and the server's copy brings its excerpt.
-    const quote = quoting && {
-      id: quoting.id,
-      authorName: quoting.author?.name ?? null,
-      fromVisitor: false,
-      excerpt: quoting.body,
-    };
+    const quote = quoting;
     setQuoting(null);
     setLines((current) => [
       ...current,
@@ -768,7 +770,13 @@ function Chat({
                 line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
                   ? undefined
                   : () => {
-                      setQuoting(line);
+                      setQuoting({
+                        id: line.id,
+                        authorName: line.author?.name ?? null,
+                        fromVisitor: false,
+                        excerpt: quoteExcerpt(line.body),
+                        hasImage: line.image !== null,
+                      });
                       input.current?.focus();
                     }
               }

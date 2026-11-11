@@ -361,7 +361,8 @@ function Composer({
     event.preventDefault();
     const body = draft.trim();
     if (body === "") return;
-    setDraft("");
+    // An edit keeps its text until the server takes it, so a failed save loses nothing.
+    if (!editing) setDraft("");
     onSend(body);
   };
 
@@ -585,11 +586,11 @@ const RECEIPTS: Record<Receipt, { text: TextId; icon: IconName }> = {
 /** How far the visitor has seen a stored reply at this position. */
 function receiptOf(seq: bigint, receipts: ReplyReceipts): Receipt {
   if (seq <= BigInt(receipts.readSeq)) return "read";
-  if (receipts.emailedSeq !== null && seq <= BigInt(receipts.emailedSeq)) return "emailed";
-  if (receipts.emailFailedSeq !== null && seq <= BigInt(receipts.emailFailedSeq)) {
-    return "emailFailed";
-  }
-  return "sent";
+  const carried = receipts.emails.filter(
+    (email) => BigInt(email.fromSeq) <= seq && seq <= BigInt(email.toSeq),
+  );
+  if (carried.some((email) => email.sent)) return "emailed";
+  return carried.length > 0 ? "emailFailed" : "sent";
 }
 
 /**
@@ -740,11 +741,9 @@ const quoteOf = (line: Line, author: string): Quote => ({
 /** Why the visitor may have seen this reply, so it can no longer change, or null. */
 function seenReason(line: Line, receipts: ReplyReceipts | null): TextId | null {
   if (receipts === null || line.seq === null) return null;
-  if (line.seq <= BigInt(receipts.readSeq)) return "messageAlreadyRead";
-  if (receipts.emailedSeq !== null && line.seq <= BigInt(receipts.emailedSeq)) {
-    return "messageAlreadyEmailed";
-  }
-  return null;
+  const receipt = receiptOf(line.seq, receipts);
+  if (receipt === "read") return "messageAlreadyRead";
+  return receipt === "emailed" ? "messageAlreadyEmailed" : null;
 }
 
 interface LineActions {
@@ -881,7 +880,11 @@ export function Thread({
   const [confirming, setConfirming] = useState(false);
   // The message the next reply quotes, the reply being edited, and the dialogs about one message.
   const [quoting, setQuoting] = useState<Line | null>(null);
-  const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    id: string;
+    draft: string;
+    problem: TextId | null;
+  } | null>(null);
   const [info, setInfo] = useState<Line | null>(null);
   const [deleting, setDeleting] = useState<Line | null>(null);
   const lastRefresh = useRef(0);
@@ -1019,14 +1022,21 @@ export function Thread({
     }
   };
 
-  /** Runs a change, and tells the operator when it fails, so a click never just does nothing. */
-  const act = async (work: () => Promise<unknown>): Promise<boolean> => {
+  /**
+   * Runs a change, and tells the operator when it fails, so a click never just does nothing. The
+   * failure shows below the thread, or where `report` puts it.
+   */
+  const act = async (
+    work: () => Promise<unknown>,
+    fallback: TextId = "actionFailed",
+    report: (text: TextId) => void = setProblem,
+  ): Promise<boolean> => {
     setProblem(null);
     try {
       await work();
       return true;
     } catch (failure) {
-      setProblem(failureText(failure, {}, "actionFailed"));
+      report(failureText(failure, {}, fallback));
       return false;
     }
   };
@@ -1041,26 +1051,24 @@ export function Thread({
     onChanged();
   };
 
-  const saveEdit = async (body: string) => {
-    const target = editing;
-    setEditing(null);
-    if (target === null) return;
-    setProblem(null);
-    try {
-      const saved = await api.editMessage(conversationId, target.id, body);
-      setLines((current) => merge(current, saved));
-    } catch (failure) {
-      setProblem(failureText(failure, {}, "actionFailed"));
-    }
+  /** Saves an edit. The editor and its text stay until it is saved, and a failure shows in it. */
+  const saveEdit = async (id: string, body: string) => {
+    const report = (problem: TextId) =>
+      setEditing((current) => (current?.id === id ? { ...current, problem } : current));
+    const saved = await act(
+      async () => {
+        const edited = await api.editMessage(conversationId, id, body);
+        setLines((current) => merge(current, edited));
+      },
+      "actionFailed",
+      report,
+    );
+    if (saved) setEditing((current) => (current?.id === id ? null : current));
   };
 
   const removeMessage = async (line: Line) => {
     setDeleting(null);
-    setProblem(null);
-    try {
-      await api.deleteMessage(conversationId, line.id);
-    } catch (failure) {
-      setProblem(failureText(failure, {}, "messageDeleteFailed"));
+    if (!(await act(() => api.deleteMessage(conversationId, line.id), "messageDeleteFailed"))) {
       return;
     }
     // Every quote of it changes too, so the whole thread loads again.
@@ -1081,7 +1089,7 @@ export function Thread({
     copyText: () => void copy(line.body, "copied"),
     edit: () => {
       setQuoting(null);
-      setEditing({ id: line.id, draft: line.body });
+      setEditing({ id: line.id, draft: line.body, problem: null });
     },
     info: () => setInfo(line),
     copyLink: () => {
@@ -1095,10 +1103,7 @@ export function Thread({
   });
 
   const remove = async () => {
-    try {
-      await api.remove(conversationId);
-    } catch (failure) {
-      setProblem(failureText(failure, {}, "deleteFailed"));
+    if (!(await act(() => api.remove(conversationId), "deleteFailed"))) {
       setConfirming(false);
       return;
     }
@@ -1157,7 +1162,7 @@ export function Thread({
           receipt:
             info.fromVisitor || receipts === null || info.seq === null
               ? null
-              : { isRead: info.seq <= BigInt(receipts.readSeq) },
+              : { isRead: receiptOf(info.seq, receipts) === "read" },
         };
   return (
     <div className="conversation-view">
@@ -1276,10 +1281,11 @@ export function Thread({
                           <Composer
                             editing
                             draft={editing.draft}
-                            setDraft={(draft) => setEditing({ id: line.id, draft })}
-                            onSend={(body) => void saveEdit(body)}
+                            setDraft={(draft) => setEditing({ ...editing, draft })}
+                            onSend={(body) => void saveEdit(line.id, body)}
                             onFiles={undefined}
                             onEscape={() => setEditing(null)}
+                            above={<ErrorNote text={editing.problem} />}
                           />
                         ) : null
                       }

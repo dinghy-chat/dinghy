@@ -8,6 +8,7 @@ import type { ChatMessage } from "./client.ts";
 import { IMAGE_TYPES, isComposing } from "./compose.ts";
 import { EMOJIS, insertEmoji, SMILEY_ICON } from "./emoji.ts";
 import { renderMarkdown } from "./markdown.ts";
+import { type Quote, quoteStandIn } from "./quote.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
 import {
   DEFAULT_COLORS,
@@ -185,7 +186,7 @@ export interface Line {
   /** A status line: the team closed or reopened the conversation. */
   note?: "closed" | "reopened";
   status: "sent" | "sending" | "failed";
-  quote?: ChatMessage["replyTo"];
+  quote?: Quote | null;
   /** Deleted by the team: its body is the placeholder, and it cannot be quoted. */
   gone?: boolean;
 }
@@ -393,20 +394,21 @@ export function ChatHead({
   );
 }
 
-/**
- * One message in the log, with its sending state or a retry button. The first reply of a run shows
- * who sent it.
- */
 /** A quoted message: who wrote it, and its first words. */
-function Quote({ quote }: { quote: NonNullable<Line["quote"]> }) {
+function Quoted({ quote }: { quote: Quote }) {
+  const standIn = quoteStandIn(quote);
   return (
     <span class="quote">
       <b>{quote.fromVisitor ? t("you") : quote.authorName}</b>
-      {quote.id === null ? t("quoteDeleted") : quote.excerpt || t("quoteImage")}
+      {standIn === null ? quote.excerpt : t(standIn)}
     </span>
   );
 }
 
+/**
+ * One message in the log, with its sending state or a retry button. The first reply of a run shows
+ * who sent it.
+ */
 export function ChatLine({
   line,
   showAuthor,
@@ -452,7 +454,7 @@ export function ChatLine({
         <div class="msg mine">{t("imageSending")}</div>
       ) : (
         <div class={line.fromVisitor ? "msg mine" : "msg"}>
-          {line.quote && <Quote quote={line.quote} />}
+          {line.quote && <Quoted quote={line.quote} />}
           {renderMarkdown(line.body, h)}
           {onReply && (
             <button type="button" class="tool re" aria-label={t("reply")} onClick={onReply}>
@@ -569,8 +571,8 @@ export function Composer({
   onDraft(draft: string): void;
   onSubmit(event: Event): void;
   onFiles(files: Iterable<File>): void;
-  /** The team's message the next one quotes. */
-  quoting?: Line | null;
+  /** The quote of the team's message that the next one quotes. */
+  quoting?: Quote | null;
   onUnquote?: () => void;
 }) {
   const picker = useRef<HTMLInputElement>(null);
@@ -621,10 +623,7 @@ export function Composer({
       />
       {quoting && (
         <div class="chip">
-          <span class="quote">
-            <b>{quoting.author?.name}</b>
-            {quoting.body}
-          </span>
+          <Quoted quote={quoting} />
           <button type="button" class="tool" aria-label={t("cancelReply")} onClick={onUnquote}>
             ×
           </button>

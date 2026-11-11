@@ -1,8 +1,11 @@
 import type { BillingStateName } from "../../../ee/operator/billing.tsx";
+import type { Quote } from "../../../packages/widget/src/quote.ts";
 import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
 import type { OperatorNotice } from "../../server/src/live.ts";
+
+export type { Quote };
 
 /** A list's assignee filter: the caller's conversations, or no one's. Null lists everyone's. */
 export type Assignee = "me" | "none";
@@ -139,15 +142,6 @@ export interface Message {
   createdAt: string;
 }
 
-export interface Quote {
-  id: string | null;
-  /** The operator's or the key's name, or the visitor's. Null for a visitor with no name. */
-  authorName: string | null;
-  fromVisitor: boolean;
-  excerpt: string;
-  hasImage: boolean;
-}
-
 /** Which first steps are done, for the signed-in member. */
 export interface GetStarted {
   install: boolean;
@@ -208,11 +202,10 @@ export interface ContactDetail extends Contact {
   pages: PageView[];
 }
 
-/** How far the visitor has seen the replies, by message position. */
+/** How far the visitor has seen the replies: read up to a position, and the ranges emails carried. */
 export interface ReplyReceipts {
   readSeq: string;
-  emailedSeq: string | null;
-  emailFailedSeq: string | null;
+  emails: { fromSeq: string; toSeq: string; sent: boolean }[];
 }
 
 export interface Me {

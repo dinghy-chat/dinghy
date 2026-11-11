@@ -1,3 +1,4 @@
+import type { Quote } from "./quote.ts";
 import type { PageContext } from "./shared.ts";
 import { readStream, retryAfterMs } from "./stream.ts";
 
@@ -20,14 +21,8 @@ export interface ChatMessage {
   /** A reply's author: an operator's first name or a key's name. Null for the visitor's own. */
   authorName: string | null;
   authorPictureUrl: string | null;
-  /** The message this one quotes. Its `id` is null when that message was deleted. */
-  replyTo: {
-    id: string | null;
-    /** An operator's first name or a key's name. Null for the visitor's own. */
-    authorName: string | null;
-    fromVisitor: boolean;
-    excerpt: string;
-  } | null;
+  /** The message this one quotes. Its author is an operator's first name or a key's name. */
+  replyTo: Quote | null;
   /** The team deleted it, so it shows a placeholder. */
   deleted: boolean;
   createdAt: string;
