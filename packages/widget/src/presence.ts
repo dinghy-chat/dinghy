@@ -5,7 +5,8 @@ const PRESENCE_EVERY_MS = 30_000;
 
 /**
  * Whether the team is online and whether this server sends reply emails, asked again every 30
- * seconds while `asking`. Only an open panel asks, so a page view costs the server nothing more. `token` goes only on the chat page, where it is what lets the request in.
+ * seconds while `asking`. Only an open panel asks, so a page view costs the server nothing more.
+ * `token` goes only on the chat page, where it is what lets the request in.
  */
 export function usePresence(client: Client, token: string | null, asking: boolean) {
   // Null means unknown, and then the panel says nothing about the team.

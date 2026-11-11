@@ -3,8 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preac
 import { ApiError, type ChatMessage, createClient } from "./client.ts";
 import { imageProblem, inCommitOrder, newClientId, REFRESH_LIMIT_MS, REFUSED } from "./compose.ts";
 import { cleanContext } from "./context.ts";
-import { quoteExcerpt } from "./markdown.ts";
 import "./globals.ts";
+import { emit, reportConversation } from "./page-events.ts";
 import { useDraftPreview, usePageReports } from "./page-reports.ts";
 import {
   Branding,
@@ -17,7 +17,6 @@ import {
   EmptyLog,
   emailLayout,
   type Line,
-  MESSAGE_MAX,
   type SceneState,
   sayer,
   startsRun,
@@ -26,8 +25,7 @@ import { usePresence } from "./presence.ts";
 import type { Quote } from "./quote.ts";
 import {
   CONTEXT_VERSION,
-  type DinghyEvent,
-  type DinghyEvents,
+  MESSAGE_MAX,
   type QueuedCall,
   readToken,
   rememberOpen,
@@ -38,50 +36,11 @@ import {
   writeToken,
 } from "./shared.ts";
 import { chime, prepareSound } from "./sound.ts";
-import { LAUNCHER_LABEL, t } from "./text.ts";
+import { t } from "./text.ts";
+import { larger, useUnread } from "./use-unread.ts";
 
 const NEW_REPLY_SHOWN_MS = 5000;
 const RETRY_LIMIT_MS = 30_000;
-
-/** Calls the page's callbacks. One that throws is reported, and the others still run. */
-function emit<E extends DinghyEvent>(context: WidgetContext, event: E, data: DinghyEvents[E]) {
-  for (const callback of context.listeners[event] ?? []) {
-    try {
-      callback(data);
-    } catch (error) {
-      reportError(error);
-    }
-  }
-}
-
-/** The page's `unread` event, once for each new count. */
-function reportUnread(context: WidgetContext, count: number) {
-  if (count === context.state.unread) return;
-  context.state.unread = count;
-  emit(context, "unread", count);
-}
-
-/** The page's `conversation` event, once for each change. */
-function reportConversation(context: WidgetContext, open: boolean) {
-  if (open === context.state.conversation) return;
-  context.state.conversation = open;
-  emit(context, "conversation", open);
-}
-
-/** The launcher's count, in its badge and its label. The full-page chat has no launcher. */
-function drawBadge(shadow: ShadowRoot, count: number) {
-  const launcher = shadow.querySelector(".launcher");
-  if (launcher === null) return;
-  let badge = launcher.querySelector<HTMLElement>(".badge");
-  if (badge === null) {
-    badge = document.createElement("span");
-    badge.className = "badge";
-    launcher.append(badge);
-  }
-  badge.hidden = count === 0;
-  badge.textContent = count > 99 ? "99+" : String(count);
-  launcher.setAttribute("aria-label", count ? `${LAUNCHER_LABEL} (${count})` : LAUNCHER_LABEL);
-}
 
 /**
  * Adds a confirmed message in commit order. A pending line with the same client ID becomes this
@@ -117,11 +76,6 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
   };
   const others = lines.filter((other) => other.id !== message.id && other.id !== message.clientId);
   return inCommitOrder(others, line);
-}
-
-/** Math.max does not accept a bigint. */
-function larger(a: bigint, b: bigint): bigint {
-  return a > b ? a : b;
 }
 
 /** The page's data attribute when it has one, as data-mascot="false", or else the saved setting. */
@@ -176,9 +130,6 @@ function Chat({
   const [chatted, setChatted] = useState(false);
   // Whether the visitor gave an email, from the server. Undefined until it answers.
   const [hasEmail, setHasEmail] = useState<boolean>();
-  const [lastRead, setLastRead] = useState(0n);
-  // The server's count, with the read position it was computed from.
-  const [serverRead, setServerRead] = useState({ unread: 0, position: 0n });
   const [loaded, setLoaded] = useState(false);
   // The newest position the stream has delivered. A send's own response does not move this, so a
   // reply that has not arrived yet cannot be marked as read.
@@ -338,6 +289,17 @@ function Chat({
     });
   }, [chatted, client, context, contextVersion, fullPage, token]);
 
+  const serverSaid = useUnread(
+    context,
+    client,
+    token,
+    lines,
+    loaded && (open || openConversation),
+    shown && visible && loaded,
+    delivered,
+    saved,
+  );
+
   // One request when a visible tab has a token gives the unread count and says whether a stream is
   // needed. A visitor with only closed conversations holds no stream. It runs again when a tab
   // becomes visible, because another tab may have read messages or started a conversation.
@@ -359,10 +321,7 @@ function Chat({
         if (restoring) restored(hasOpenConversation || !me.chatted);
         setChatted((current) => current || me.chatted);
         setHasEmail(me.hasEmail);
-        // The larger one, because this response can be older than a read in this tab.
-        const position = BigInt(me.lastReadSeq);
-        setLastRead((current) => larger(current, position));
-        setServerRead({ unread: me.unread, position });
+        serverSaid(me.unread, BigInt(me.lastReadSeq));
         readCursor.current = me.readCursor;
       })
       .catch((error: unknown) => {
@@ -385,38 +344,8 @@ function Chat({
     };
   }, [client, identity, publicKey, restored, restoring, token, tokenEpoch, visible]);
 
-  // Before the stream replays history, the server's count is the only one available.
-  // With no stream, as after an operator closes the conversation, the lines can be behind too.
-  const unread =
-    loaded && (open || openConversation)
-      ? lines.filter(
-          (line) =>
-            !line.fromVisitor &&
-            !line.note &&
-            !line.gone &&
-            line.seq !== null &&
-            line.seq > lastRead,
-        ).length
-      : lastRead > serverRead.position
-        ? 0
-        : serverRead.unread;
-  useEffect(() => reportUnread(context, unread), [context, unread]);
   // A new session after reset() starts with none, so the page hears false at once.
   useEffect(() => reportConversation(context, openConversation), [context, openConversation]);
-  // After the saved look arrives, because the loader draws the launcher only then, and a returning
-  // visitor's count can come first.
-  useEffect(() => {
-    if (saved !== undefined) drawBadge(context.shadow, unread);
-  }, [context, saved, unread]);
-
-  // A message counts as read only when the visitor can see it.
-  useEffect(() => {
-    if (!shown || !visible || !loaded || token === null || delivered <= lastRead) return;
-    setLastRead(delivered);
-    client.markRead(token, delivered.toString()).catch(() => {
-      // The count returns on the next page load, and a later read moves the position past it.
-    });
-  }, [client, delivered, lastRead, loaded, shown, token, visible]);
 
   // Only the visible tab holds a stream, because browsers allow about six HTTP/1.1 connections per
   // origin across all tabs. A tab catches up from its cursor when it becomes visible again.
@@ -554,11 +483,12 @@ function Chat({
     return creatingVisitor.current;
   };
 
+  const markLine = (lineId: string, status: Line["status"]) =>
+    setLines((current) => current.map((line) => (line.id === lineId ? { ...line, status } : line)));
+
   // The line's first ID is its client ID, so a manual retry cannot create a duplicate.
   const deliver = async (lineId: string, body: string, file?: File, quoteId?: string | null) => {
-    setLines((current) =>
-      current.map((line) => (line.id === lineId ? { ...line, status: "sending" } : line)),
-    );
+    markLine(lineId, "sending");
     try {
       const first = await ensureToken();
       const post = (token: string) =>
@@ -598,10 +528,27 @@ function Chat({
       if (error instanceof ApiError && error.status === 403) {
         setProblem(t(error.code === "origin_not_allowed" ? "notHere" : "blocked"));
       }
-      setLines((current) =>
-        current.map((line) => (line.id === lineId ? { ...line, status: "failed" } : line)),
-      );
+      markLine(lineId, "failed");
     }
+  };
+
+  /** Shows the visitor's new line at once, before the server confirms it, and sends it. */
+  const sendLine = (body: string, extra: Pick<Line, "file" | "quote">) => {
+    const id = newClientId();
+    setLines((current) => [
+      ...current,
+      {
+        id,
+        seq: null,
+        body,
+        image: null,
+        fromVisitor: true,
+        author: null,
+        status: "sending",
+        ...extra,
+      },
+    ]);
+    void deliver(id, body, extra.file, extra.quote?.id);
   };
 
   // An image's URL expires after 15 minutes. Replaying from the start gives every line a new one.
@@ -622,23 +569,8 @@ function Chat({
     if (body === "") return;
     setDraft("");
     clearPrefill(null);
-    const id = newClientId();
-    const quote = quoting;
+    sendLine(body, { quote: quoting });
     setQuoting(null);
-    setLines((current) => [
-      ...current,
-      {
-        id,
-        seq: null,
-        body,
-        image: null,
-        fromVisitor: true,
-        author: null,
-        status: "sending",
-        quote,
-      },
-    ]);
-    void deliver(id, body, undefined, quote?.id);
   };
 
   const sendFiles = (files: Iterable<File>) => {
@@ -650,21 +582,7 @@ function Chat({
         setProblem(t(problem));
         continue;
       }
-      const id = newClientId();
-      setLines((current) => [
-        ...current,
-        {
-          id,
-          seq: null,
-          body: "",
-          image: null,
-          file,
-          fromVisitor: true,
-          author: null,
-          status: "sending",
-        },
-      ]);
-      void deliver(id, "", file);
+      sendLine("", { file });
     }
   };
 
@@ -774,8 +692,11 @@ function Chat({
                         id: line.id,
                         authorName: line.author?.name ?? null,
                         fromVisitor: false,
-                        excerpt: quoteExcerpt(line.body),
-                        hasImage: line.image !== null,
+                        // The words as written until the server's copy brings the excerpt: the
+                        // shared excerpt would cost the widget 66 bytes it does not have.
+                        excerpt: line.body,
+                        // Only a text bubble has the reply button.
+                        hasImage: false,
                       });
                       input.current?.focus();
                     }

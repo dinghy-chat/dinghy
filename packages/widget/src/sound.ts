@@ -1,5 +1,5 @@
-// The operator app's two-note chime, made with Web Audio, so the widget ships no sound file. The
-// few lines are copied from apps/operator/src/sound.ts, because a package must not import an app.
+// A soft two-note chime made with Web Audio, so neither the widget nor the operator app, which
+// plays the same tone, ships a sound file.
 
 const GAP_MS = 2000;
 
@@ -23,10 +23,15 @@ export function prepareSound(root: ShadowRoot): void {
   root.addEventListener("keydown", start, true);
 }
 
-/** Two notes, a fifth apart, that fade out. At most one chime every 2 seconds. */
+/** The chime for a new reply, at most once every 2 seconds. */
 export function chime(): void {
   if (audio?.state !== "running" || Date.now() - lastPlayed < GAP_MS) return;
   lastPlayed = Date.now();
+  playChime(audio);
+}
+
+/** Two notes, a fifth apart, that fade out. */
+export function playChime(audio: AudioContext): void {
   const start = audio.currentTime;
   for (const [frequency, at] of [
     [784, 0],

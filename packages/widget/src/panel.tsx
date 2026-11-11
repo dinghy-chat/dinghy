@@ -12,14 +12,12 @@ import { type Quote, quoteStandIn } from "./quote.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
 import {
   DEFAULT_COLORS,
+  MESSAGE_MAX,
   type SavedAppearance,
   type TeamFace,
   type WidgetSettings,
 } from "./shared.ts";
 import { type TextId, t } from "./text.ts";
-
-/** The composer's limit, which the server shares. */
-export const MESSAGE_MAX = 10_000;
 
 /**
  * The panel's colors at night, for a dark theme and for auto on a dark device. A site's own main
@@ -400,7 +398,7 @@ function Quoted({ quote }: { quote: Quote }) {
   return (
     <span class="quote">
       <b>{quote.fromVisitor ? t("you") : quote.authorName}</b>
-      {standIn === null ? quote.excerpt : t(standIn)}
+      {standIn ? t(standIn) : quote.excerpt}
     </span>
   );
 }

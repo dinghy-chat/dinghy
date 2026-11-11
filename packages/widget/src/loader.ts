@@ -17,9 +17,12 @@ import {
 import { DEFAULT_TITLE, LAUNCHER_LABEL } from "./text.ts";
 
 // This file runs on every page of the host site, so it stays small. It asks once for the saved
-// look, which the browser caches for 5 minutes, and sends a small beat a minute for the live view. The chat bundle loads when the visitor opens
-// the chat, the page calls identify(), or the visitor already has a token. Everything else lives
-// in the chat bundle.
+// look, which the browser caches for 5 minutes, and sends a small beat a minute for the live view.
+// The chat bundle loads when the visitor opens the chat, the page calls identify(), or the visitor
+// already has a token. Everything else lives in the chat bundle.
+
+// How often a tab that shows tells the live view it is still there.
+const BEAT_EVERY_MS = 60_000;
 
 type Color = "primary" | "accent";
 
@@ -234,7 +237,7 @@ if (script && publicKey) {
     // At once, as on() calls back right away, and again when a chat starts, so the operators see
     // who is chatting without waiting a minute.
     api.on("conversation", beat);
-    setInterval(beat, 6e4);
+    setInterval(beat, BEAT_EVERY_MS);
     addEventListener("visibilitychange", beat);
     addEventListener("pagehide", () => navigator.sendBeacon(`${url}leave?tab=${tab}`));
   });

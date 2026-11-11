@@ -262,3 +262,6 @@ export function forgetVisitor(publicKey: string): void {
     // Other tabs keep their session until their next page load.
   }
 }
+
+/** The longest message, in characters: the composers' limit, which the server checks too. */
+export const MESSAGE_MAX = 10_000;
