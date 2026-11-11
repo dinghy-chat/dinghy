@@ -7,6 +7,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { untilWaiting } from "../test/locks.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { readTar } from "./archive.ts";
@@ -404,34 +405,30 @@ describe("edits and reads at once", () => {
   test("a visitor's read and an edit that wait for the same visitor both finish", async () => {
     const { token, visitorId, conversationId } = await visitorStarts("Hi");
     const sent = await reply(ana.cookie, conversationId, "Teh answer");
-    const waiting = async () =>
-      (
-        await owner.execute<{ count: number }>(
-          sql`select count(*)::int as count from pg_locks where not granted`,
-        )
-      ).rows[0]?.count ?? 0;
-    const until = async (count: number) => {
-      while ((await waiting()) < count) await new Promise((resolve) => setTimeout(resolve, 10));
-    };
-    let release = () => {};
+    const held = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     // Another read holds the visitor's row, so the read and the edit below line up behind it.
     const holder = owner.transaction(async (tx) => {
       await tx.execute(sql`select 1 from visitor where id = ${visitorId} for update`);
-      await new Promise<void>((resolve) => {
-        release = resolve;
+      held.resolve();
+      await release.promise;
+    });
+    try {
+      await held.promise;
+      const read = widget(token, "POST", "read", { seq: sent.seq });
+      await untilWaiting(owner, 1);
+      const edit = send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
+        body: "The answer",
       });
-    });
-    const read = widget(token, "POST", "read", { seq: sent.seq });
-    await until(1);
-    const edit = send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
-      body: "The answer",
-    });
-    await until(2);
-    release();
-    await holder;
-    // The read goes first, so the visitor saw the old text and the edit is refused, not stuck.
-    expect((await read).status).toBe(200);
-    expect((await edit).status).toBe(409);
+      await untilWaiting(owner, 2);
+      release.resolve();
+      await holder;
+      // The read goes first, so the visitor saw the old text and the edit is refused, not stuck.
+      expect((await read).status).toBe(200);
+      expect((await edit).status).toBe(409);
+    } finally {
+      release.resolve();
+    }
   });
 });
 
