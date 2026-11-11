@@ -301,7 +301,7 @@ test.describe("the host's options", () => {
     await page.getByRole("button", { name: "Open chat" }).click();
     await expect(page.locator(".ship svg")).toBeVisible();
     // The computed width, because the boat's rocking tilts its bounding box.
-    await expect(page.locator(".ship svg")).toHaveCSS("width", "32px");
+    await expect(page.locator(".ship svg")).toHaveCSS("width", "26px");
     expect(violations).toEqual([]);
     await context.close();
   });

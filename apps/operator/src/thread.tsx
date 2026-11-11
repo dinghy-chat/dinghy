@@ -171,15 +171,15 @@ function ThreadHead({
       : undefined;
   const more: MenuItem[] = [
     {
+      label: blocked ? t("unblockVisitor") : t("blockVisitor"),
+      lead: <Icon name="prohibit" size={18} />,
+      onSelect: () => onBlocked(!blocked),
+    },
+    {
       label: t("sendTranscript"),
       lead: <Icon name="download" size={18} />,
       ...(noEmail === undefined ? {} : { unavailable: noEmail }),
       onSelect: onTranscript,
-    },
-    {
-      label: blocked ? t("unblockVisitor") : t("blockVisitor"),
-      lead: <Icon name="prohibit" size={18} />,
-      onSelect: () => onBlocked(!blocked),
     },
   ];
   if (canDelete) {

@@ -124,7 +124,8 @@ test("the host page's CSS does not change the widget", async ({ page }) => {
   await expect(launcher(page)).toBeVisible();
   await launcher(page).click();
   const box = await input(page).boundingBox();
-  expect(box?.height).toBe(44);
+  // One line of 21px and 5px above and below, inside the message box.
+  expect(box?.height).toBe(31);
   const style = await input(page).evaluate((element) => {
     const computed = getComputedStyle(element);
     return { fontSize: computed.fontSize, color: computed.color };

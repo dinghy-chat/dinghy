@@ -10,8 +10,8 @@ const LIMITS: Record<string, number> = {
   "loader.js": 2700,
   "page.js": 1000,
   // 22,200 since the new composer and header, the closed line and the reply chime, which the
-  // owner asked for on 2026-11-11 (22,156 with them, from 21,585). Markdown in messages and the typing preview took it to 21,600 the
-  // same day, and the emoji picker before them to 20,500.
+  // owner asked for on 2026-11-11 (22,162 with them, from 21,585). Markdown in messages and the
+  // typing preview took it to 21,600 the same day, and the emoji picker before them to 20,500.
   "widget.js": 22_200,
 };
 
