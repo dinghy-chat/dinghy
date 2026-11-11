@@ -4,6 +4,12 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The inbox's **Open** and **Closed** choice fills the list's width, and **Open** shows how many conversations are open. The sidebar and the conversation list are narrower, so the conversation gets more room.
+- The empty Analytics page centers its boat in the card.
+- API: `GET /v1/operator/workspaces/{id}/conversations` answers `open`, the open conversations for its assignee filter.
+
 ## [0.20.0] - 2026-11-11
 
 ### Added

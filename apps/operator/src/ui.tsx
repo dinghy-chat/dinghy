@@ -681,7 +681,13 @@ export function Page({
 }
 
 /** One choice of a Choices control, with an icon before its words if it has one. */
-export type Option<T> = { value: T; label: TextId; icon?: IconName };
+export type Option<T> = {
+  value: T;
+  label: TextId;
+  icon?: IconName;
+  /** A number after the words, such as the open conversations. */
+  count?: number;
+};
 
 /**
  * Radio buttons drawn as pills, named by a legend for screen readers. Outlined draws them as one
@@ -690,6 +696,7 @@ export type Option<T> = { value: T; label: TextId; icon?: IconName };
 export function Choices<T extends string>({
   label,
   variant,
+  full = false,
   describedBy,
   value,
   options,
@@ -697,6 +704,8 @@ export function Choices<T extends string>({
 }: {
   label: string;
   variant?: "outlined" | "quiet";
+  /** Fills the width, in equal parts. */
+  full?: boolean;
   /** The ID of a hint that says more about the choice. */
   describedBy?: string | undefined;
   value: T;
@@ -706,7 +715,7 @@ export function Choices<T extends string>({
   const name = useId();
   return (
     <fieldset
-      className={variant === undefined ? "choices" : `choices ${variant}`}
+      className={["choices", variant, full && "full"].filter(Boolean).join(" ")}
       aria-describedby={describedBy}
     >
       <legend className="visually-hidden">{label}</legend>
@@ -720,6 +729,7 @@ export function Choices<T extends string>({
           />
           {option.icon !== undefined && <Icon name={option.icon} size={16} />}
           {t(option.label)}
+          {option.count !== undefined && <span className="choice-count">{option.count}</span>}
         </label>
       ))}
     </fieldset>

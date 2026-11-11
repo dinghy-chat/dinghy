@@ -582,6 +582,22 @@ export async function listConversations(
   };
 }
 
+/** How many open conversations the list's assignee filter holds, across all pages. */
+export async function countOpen(
+  tx: Transaction,
+  workspaceId: string,
+  assignee: AssigneeFilter,
+): Promise<number> {
+  return tx.$count(
+    conversation,
+    and(
+      eq(conversation.workspaceId, workspaceId),
+      eq(conversation.status, "open"),
+      assigneeCondition(assignee),
+    ),
+  );
+}
+
 /**
  * How many open conversations wait for a reply: their newest message is from the visitor. It is
  * one number for the whole workspace, not a per-operator read state.

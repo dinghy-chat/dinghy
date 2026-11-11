@@ -47,7 +47,7 @@
   --display: "Gabarito", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --rail: 232px;
+  --rail: 200px;
   /* Around the panel: warm paper grey, or the night. */
   --sky: light-dark(#f3f2ee, #0b141d);
   /* The panel, cards, menus and fields. */
@@ -1004,7 +1004,7 @@ button.workspace[aria-expanded="true"],
 .split {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   min-height: 0;
 }
 .app.paging .split {
@@ -1490,7 +1490,12 @@ img.ws-tile {
   font-weight: 600;
 }
 .empty-boat {
-  padding-top: 48px;
+  /* Centered, a little above the middle, in a page body that fills the card. */
+  padding-bottom: 12vh;
+}
+.page-body:has(> .empty-boat) {
+  flex: 1;
+  align-content: stretch;
 }
 /* An empty list: a small drawing, a line that says the list is empty, and a hint. */
 .list-empty {
@@ -2576,7 +2581,7 @@ img.ws-tile {
 /* Open or Closed, and below it, in a team, whose: All, Mine or Unassigned. */
 .list-filters {
   display: grid;
-  justify-items: start;
+  justify-items: stretch;
   gap: 6px;
   margin: 0 24px 12px;
 }
@@ -2605,6 +2610,18 @@ img.ws-tile {
 }
 .choices.quiet label:has(:checked) {
   box-shadow: none;
+}
+.list-filters > .choices.quiet {
+  justify-self: start;
+}
+/* Open and Closed, as two equal halves as wide as the search field. */
+.choices.full label {
+  flex: 1;
+  justify-content: center;
+}
+.choice-count {
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
 }
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
    preview comes first, so on a narrow screen it sits above the form. */

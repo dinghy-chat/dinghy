@@ -37,6 +37,7 @@ import {
   type ConversationRow,
   CURSOR_PATTERN,
   catchClosed,
+  countOpen,
   countWaiting,
   findConversation,
   listConversationMessages,
@@ -191,6 +192,8 @@ const listRoute = createRoute({
             hasMore: z.boolean(),
             // Open conversations whose newest message is from the visitor, across all pages.
             waiting: z.number().int(),
+            // Open conversations for this assignee filter, across all pages.
+            open: z.number().int(),
           }),
           example: {
             conversations: [
@@ -221,6 +224,7 @@ const listRoute = createRoute({
             ],
             hasMore: false,
             waiting: 1,
+            open: 1,
           },
         },
       },
@@ -637,11 +641,13 @@ export function createInbox({
       const page = await withWorkspace(db, workspaceId, async (tx) => ({
         ...(await listConversations(tx, workspaceId, status, assignee, before, limit)),
         waiting: await countWaiting(tx, workspaceId),
+        open: await countOpen(tx, workspaceId, assignee),
       }));
       return {
         conversations: page.conversations.map((row) => conversationView(row, row.lastMessage)),
         hasMore: page.hasMore,
         waiting: page.waiting,
+        open: page.open,
       };
     },
 

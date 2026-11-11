@@ -295,6 +295,8 @@ export function Inbox({
     setListed(false);
   }
   const [waiting, setWaiting] = useState(0);
+  // Open conversations for the chosen assignee filter, for the Open choice.
+  const [openCount, setOpenCount] = useState<number | null>(null);
   // In memory only, so a reload or a sign-out clears them.
   const drafts = useRef(new Map<string, string>()).current;
   // A notification opens the app on its conversation.
@@ -386,6 +388,7 @@ export function Inbox({
       setListed(true);
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
+      setOpenCount(page.open);
       if (firstList.current && wanted.status === "open" && wanted.assignee === null) {
         firstList.current = false;
         const [only, ...rest] = page.conversations;
@@ -546,8 +549,13 @@ export function Inbox({
                   <Choices
                     label={t("listStatus")}
                     variant="outlined"
+                    full
                     value={status}
-                    options={STATUS_OPTIONS}
+                    options={STATUS_OPTIONS.map((option) =>
+                      option.value === "open" && openCount !== null
+                        ? { ...option, count: openCount }
+                        : option,
+                    )}
                     onChange={(next) => showFilter(next, who)}
                   />
                   {isTeam && (
