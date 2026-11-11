@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { createElement, type ReactNode } from "react";
 import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
-import { clockTime } from "./format.ts";
+import { clockTime, isToday } from "./format.ts";
 import { t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
 import { replyAuthor } from "./visitor.ts";
@@ -164,7 +164,7 @@ export function dayLabel(iso: string): string {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  if (day.toDateString() === today.toDateString()) return t("today");
+  if (isToday(day)) return t("today");
   if (day.toDateString() === yesterday.toDateString()) return t("yesterday");
   return day.toLocaleDateString([], {
     weekday: "long",

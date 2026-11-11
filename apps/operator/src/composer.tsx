@@ -2,8 +2,8 @@
 import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { IMAGE_TYPES, isComposing } from "../../../packages/widget/src/compose.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
-import { code, type Edit, link, list, wrap } from "./format.ts";
 import { Icon, type IconName } from "./icons.tsx";
+import { code, type Edit, link, list, wrap } from "./markdown-edit.ts";
 import { type TextId, t } from "./text.ts";
 import { EmojiButton } from "./ui.tsx";
 

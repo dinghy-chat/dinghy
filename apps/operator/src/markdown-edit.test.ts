@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { code, link, list, wrap } from "./format.ts";
+import { code, link, list, wrap } from "./markdown-edit.ts";
 
 test("wrap adds the mark around the selection, and a second time takes it away", () => {
   const bold = wrap("say hi now", 4, 6, "**");

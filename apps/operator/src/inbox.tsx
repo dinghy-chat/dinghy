@@ -13,7 +13,7 @@ import {
   workspaceApi,
 } from "./api.ts";
 import { ContactsPage } from "./contacts.tsx";
-import { clockTime } from "./format.ts";
+import { shortTime } from "./format.ts";
 import { GetStarted } from "./get-started.tsx";
 import { Icon } from "./icons.tsx";
 import {
@@ -44,14 +44,6 @@ import { VisitorsPage } from "./visitors.tsx";
 const PAGE_SIZE = 50;
 const SEARCH_WAIT_MS = 250;
 const SEARCH_MIN = 3;
-
-/** The time today, and the date before today. */
-function shortTime(iso: string): string {
-  const when = new Date(iso);
-  return when.toDateString() === new Date().toDateString()
-    ? clockTime(when)
-    : when.toLocaleDateString([], { month: "short", day: "numeric" });
-}
 
 /** Above every page of a suspended workspace, with whom to write to. */
 function SuspendedBanner({ contact }: { contact: string | null }) {
