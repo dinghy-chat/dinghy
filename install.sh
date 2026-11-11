@@ -17,7 +17,7 @@ set -euo pipefail
 # In a function, so that bash has read the whole file before any command runs. From a pipe, a command
 # that reads standard input would otherwise take the rest of this script.
 main() {
-version="0.16.0"
+version="0.17.0"
 repository="https://github.com/dinghy-chat/dinghy.git"
 default_directory="${DINGHY_DIR:-/opt/dinghy}"
 
