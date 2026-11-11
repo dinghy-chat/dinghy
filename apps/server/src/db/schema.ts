@@ -20,6 +20,7 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { RADIUS_MAX_PX, WIDGET_DEFAULTS } from "../../../../packages/widget/src/shared.ts";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const id = () => uuid("id").notNull().default(sql`gen_random_uuid()`);
@@ -919,21 +920,24 @@ export const widgetSettings = pgTable(
     // Full hex colors, as the snippet's data-primary and data-accent take them.
     primary: text("primary_color"),
     accent: text("accent_color"),
-    position: widgetPosition("position").notNull().default("right"),
-    theme: widgetTheme("theme").notNull().default("auto"),
-    launcher: widgetLauncher("launcher").notNull().default("boat"),
+    position: widgetPosition("position").notNull().default(WIDGET_DEFAULTS.position),
+    theme: widgetTheme("theme").notNull().default(WIDGET_DEFAULTS.theme),
+    launcher: widgetLauncher("launcher").notNull().default(WIDGET_DEFAULTS.launcher),
     // The boat in the open chat. A logo takes its place in the header either way.
-    mascot: boolean("mascot").notNull().default(true),
+    mascot: boolean("mascot").notNull().default(WIDGET_DEFAULTS.mascot),
     // Pixels, for the chat's corners and the launcher's.
-    radius: smallint("radius").notNull().default(16),
-    emailAsk: widgetEmailAsk("email_ask").notNull().default("after_first"),
+    radius: smallint("radius").notNull().default(WIDGET_DEFAULTS.radius),
+    emailAsk: widgetEmailAsk("email_ask").notNull().default(WIDGET_DEFAULTS.emailAsk),
     // The "Powered by Dinghy" line.
-    branding: boolean("branding").notNull().default(true),
+    branding: boolean("branding").notNull().default(WIDGET_DEFAULTS.branding),
   },
   (table) => [
     check("widget_settings_primary_color", sql`${table.primary} ~ '^#[0-9a-f]{6}$'`),
     check("widget_settings_accent_color", sql`${table.accent} ~ '^#[0-9a-f]{6}$'`),
-    check("widget_settings_radius", sql`${table.radius} between 0 and 24`),
+    check(
+      "widget_settings_radius",
+      sql`${table.radius} between 0 and ${sql.raw(String(RADIUS_MAX_PX))}`,
+    ),
   ],
 );
 

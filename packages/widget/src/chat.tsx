@@ -13,6 +13,7 @@ import {
   CSS,
   EmailForm,
   EmptyLog,
+  emailMode,
   type Line,
   MESSAGE_MAX,
   type SceneState,
@@ -25,7 +26,8 @@ import {
   type DinghyEvents,
   readToken,
   rememberOpen,
-  type Saved,
+  type SavedAppearance,
+  WIDGET_DEFAULTS,
   type WidgetContext,
   wasOpen,
   writeToken,
@@ -46,23 +48,26 @@ function emit<E extends DinghyEvent>(context: WidgetContext, event: E, data: Din
   }
 }
 
-/** The launcher's count, in its badge and its label, and the page's `unread` event. */
-function showUnread(context: WidgetContext, count: number) {
+/** The page's `unread` event, once for each new count. */
+function reportUnread(context: WidgetContext, count: number) {
   if (count === context.state.unread) return;
   context.state.unread = count;
-  const launcher = context.shadow.querySelector(".launcher");
-  if (launcher !== null) {
-    let badge = launcher.querySelector<HTMLElement>(".badge");
-    if (badge === null) {
-      badge = document.createElement("span");
-      badge.className = "badge";
-      launcher.append(badge);
-    }
-    badge.hidden = count === 0;
-    badge.textContent = count > 99 ? "99+" : String(count);
-    launcher.setAttribute("aria-label", count ? `${LAUNCHER_LABEL} (${count})` : LAUNCHER_LABEL);
-  }
   emit(context, "unread", count);
+}
+
+/** The launcher's count, in its badge and its label. The full-page chat has no launcher. */
+function drawBadge(shadow: ShadowRoot, count: number) {
+  const launcher = shadow.querySelector(".launcher");
+  if (launcher === null) return;
+  let badge = launcher.querySelector<HTMLElement>(".badge");
+  if (badge === null) {
+    badge = document.createElement("span");
+    badge.className = "badge";
+    launcher.append(badge);
+  }
+  badge.hidden = count === 0;
+  badge.textContent = count > 99 ? "99+" : String(count);
+  launcher.setAttribute("aria-label", count ? `${LAUNCHER_LABEL} (${count})` : LAUNCHER_LABEL);
 }
 
 /**
@@ -78,9 +83,14 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
     image: message.image,
     fromVisitor: message.fromVisitor,
     author:
-      message.authorName === null
+      message.authorId === null || message.authorName === null
         ? null
-        : { name: message.authorName, pictureUrl: message.authorPictureUrl, bot: message.fromBot },
+        : {
+            id: message.authorId,
+            name: message.authorName,
+            pictureUrl: message.authorPictureUrl,
+            bot: message.fromBot,
+          },
     status: "sent",
   };
   const others = lines.filter((other) => other.id !== message.id && other.id !== message.clientId);
@@ -92,9 +102,9 @@ function larger(a: bigint, b: bigint): bigint {
   return a > b ? a : b;
 }
 
-/** The page's data attribute when it has one, or else the saved setting, which is on by default. */
-const pageOr = (attribute: string | undefined, off: string, saved: boolean | undefined) =>
-  attribute === undefined ? (saved ?? true) : attribute !== off;
+/** The page's data attribute when it has one, as data-mascot="false", or else the saved setting. */
+const pageOr = (attribute: string | undefined, saved: boolean) =>
+  attribute === undefined ? saved : attribute !== "false";
 
 interface ChatProps {
   context: WidgetContext;
@@ -109,7 +119,7 @@ interface ChatProps {
   /** Grows with each setContext(). */
   contextVersion: number;
   /** Undefined until the loader's request for it ends. */
-  saved: Saved | undefined;
+  saved: SavedAppearance | undefined;
 }
 
 /**
@@ -163,7 +173,7 @@ function Chat({
   const [viewing, setViewing] = useState<string | null>(null);
   const viewer = useRef<HTMLDialogElement>(null);
   const lastRefresh = useRef(0);
-  const [email, setEmail] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
   // Or why the last save failed.
   const [emailState, setEmailState] = useState<"idle" | "saved" | "emailInvalid" | "emailFailed">(
     "idle",
@@ -246,13 +256,16 @@ function Chat({
     if (!fullPage) rememberOpen(publicKey, open && token !== null);
   }, [fullPage, open, publicKey, token]);
 
+  // The panel waits for the saved look, so its words never change after it shows.
+  const shown = open && saved !== undefined;
+
   useEffect(() => {
-    if (!open || quiet) return;
+    if (!shown || quiet) return;
     // On a touch screen the keyboard would cover the panel before the visitor reads it, so focus
     // goes to the panel, and a tap on the field opens the keyboard.
     if (matchMedia("(pointer: fine)").matches) input.current?.focus();
     else panel.current?.focus();
-  }, [open, quiet]);
+  }, [shown, quiet]);
 
   useEffect(() => {
     if (!newReply) return;
@@ -261,8 +274,6 @@ function Chat({
   }, [newReply]);
 
   const { online, emailReplies } = usePresence(client, fullPage ? token : null, open && visible);
-  const say = sayer(saved);
-  const mascot = pageOr(context.attribute("mascot"), "false", saved?.mascot);
   usePageReports(client, token, chatted && !fullPage);
 
   // Like the pages, the page's context goes only for a visitor who has chatted: after the first
@@ -322,7 +333,12 @@ function Chat({
       : lastRead > serverRead.position
         ? 0
         : serverRead.unread;
-  useEffect(() => showUnread(context, unread), [context, unread]);
+  useEffect(() => reportUnread(context, unread), [context, unread]);
+  // After the saved look arrives, because the loader draws the launcher only then, and a returning
+  // visitor's count can come first.
+  useEffect(() => {
+    if (saved !== undefined) drawBadge(context.shadow, unread);
+  }, [context, saved, unread]);
 
   // A message counts as read only when the visitor can see it.
   useEffect(() => {
@@ -424,10 +440,10 @@ function Chat({
   }, [open]);
 
   // Only a new line scrolls down, because a refresh of the image URLs must not move the view.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new line or an opened chat asks for a scroll.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new line or a shown chat asks for a scroll.
   useEffect(() => {
     if (log.current !== null) log.current.scrollTop = log.current.scrollHeight;
-  }, [lines.length, open]);
+  }, [lines.length, shown]);
 
   const ensureToken = async (): Promise<string> => {
     if (identity !== null) {
@@ -564,7 +580,7 @@ function Chat({
   const saveEmail = async (event: Event) => {
     event.preventDefault();
     try {
-      await client.saveEmail(await ensureToken(), email.trim());
+      await client.saveEmail(await ensureToken(), emailDraft.trim());
       setEmailState("saved");
     } catch (error) {
       // The server checked the address, so only a 400 means it is wrong.
@@ -574,7 +590,7 @@ function Chat({
     }
   };
 
-  if (!open) return null;
+  if (!shown) return null;
   // In this order, because a lost connection matters most and an empty chat matters least.
   const sceneState: SceneState = lost
     ? "lost"
@@ -587,14 +603,14 @@ function Chat({
           : lines.length === 0 && online === null
             ? "empty"
             : "waiting";
-  // Only a visitor the host site did not sign in, and only when this server sends email.
-  const mayAskEmail = emailReplies && identity === null && emailState !== "saved";
-  const emailAsk = saved?.emailAsk ?? "after_first";
-  // It takes the message box's place until the visitor gives it. A visitor with a token gave one,
-  // or chatted before the setting changed.
-  const emailFirst = mayAskEmail && emailAsk === "before_first" && token === null;
-  // After the first message, so it takes no space from someone who is only looking.
-  const emailAfter = mayAskEmail && emailAsk === "after_first" && lines.length > 0;
+  const say = sayer(saved);
+  const mascot = pageOr(context.attribute("mascot"), saved.mascot);
+  // Only a visitor the host site did not sign in, and only when this server sends email. A failed
+  // save keeps the form and its error, even when it made the visitor.
+  const email = emailMode(saved.emailAsk, {
+    mayAsk: emailReplies && identity === null && emailState !== "saved",
+    chatted: chatted || lines.length > 0,
+  });
 
   return (
     <section
@@ -623,8 +639,8 @@ function Chat({
         scene={sceneState}
         online={online}
         mascot={mascot}
-        logoUrl={saved?.logoUrl ?? null}
-        team={saved?.team ?? []}
+        logoUrl={saved.logoUrl}
+        team={saved.team}
         say={say}
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />
@@ -671,15 +687,15 @@ function Chat({
           {t("emailSaved")}
         </div>
       )}
-      {(emailFirst || emailAfter) && (
+      {email !== "none" && (
         <EmailForm
-          email={email}
-          bad={emailState === "idle" ? null : emailState}
-          onInput={setEmail}
+          email={emailDraft}
+          bad={emailState === "idle" || emailState === "saved" ? null : emailState}
+          onInput={setEmailDraft}
           onSubmit={saveEmail}
         />
       )}
-      {!emailFirst && (
+      {email !== "first" && (
         <Composer
           draft={draft}
           inputRef={input}
@@ -688,9 +704,7 @@ function Chat({
           onFiles={sendFiles}
         />
       )}
-      {saved !== undefined && pageOr(context.attribute("branding"), "off", saved.branding) && (
-        <Branding />
-      )}
+      {pageOr(context.attribute("branding"), saved.branding) && <Branding />}
     </section>
   );
 }
@@ -714,12 +728,14 @@ function Root({ context }: { context: WidgetContext }) {
   const [session, setSession] = useState(0);
   const [prefill, setPrefill] = useState<{ text: string } | null>(null);
   const [contextVersion, setContextVersion] = useState(0);
-  const [saved, setSaved] = useState<Saved>();
+  const [saved, setSaved] = useState<SavedAppearance>();
   // The loader's answer, which also gave the launcher its look. The theme is the panel's alone.
+  // With no answer the defaults apply, as on the launcher. A workspace that serves no widget has
+  // no launcher, but its chat link's page still needs words.
   useEffect(() => {
     context.appearance.then((answer) => {
-      const found = answer ?? {};
-      context.shadow.host.setAttribute("data-theme", found.theme ?? "auto");
+      const found = answer ?? WIDGET_DEFAULTS;
+      context.shadow.host.setAttribute("data-theme", found.theme);
       setSaved(found);
     });
   }, [context]);

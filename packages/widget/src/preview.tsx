@@ -3,7 +3,7 @@
 // request to any server. It changes with each edit, before a save.
 import { render } from "preact";
 import { useRef } from "preact/hooks";
-import { LAUNCHER_CSS, LAUNCHER_ICONS, textOn } from "./launcher.ts";
+import { LAUNCHER_CSS, LAUNCHER_ICONS, paintColors } from "./launcher.ts";
 import {
   Branding,
   ChatHead,
@@ -12,6 +12,7 @@ import {
   CSS,
   EmailForm,
   EmptyLog,
+  emailMode,
   type Line,
   sayer,
   startsRun,
@@ -19,9 +20,9 @@ import {
 import type { SavedAppearance, TeamFace } from "./shared.ts";
 
 // The panel stays in its box, where on a phone it would fill the screen, and the launcher keeps
-// to its side.
+// to its side. `.stage .panel` is as specific as the phone's rule, and this sheet comes after.
 const PREVIEW_CSS =
-  ":host{display:block}.stage{display:flex;justify-content:flex-end;align-items:flex-end;min-height:120px}:host([data-side=left]) .stage{justify-content:flex-start}.stage .panel{position:relative!important;inset:auto!important;width:100%!important;max-width:370px!important;height:520px!important;max-height:none!important;border-radius:var(--dinghy-radius,var(--d-radius,16px))!important}";
+  ":host{display:block}.stage{display:flex;justify-content:flex-end;align-items:flex-end;min-height:120px}:host([data-side=left]) .stage{justify-content:flex-start}.stage .panel{position:relative;inset:auto;width:100%;max-width:370px;height:520px;max-height:none;border-radius:var(--dinghy-radius,var(--d-radius,16px))}";
 
 /** The sample conversation, in the operator app's words. */
 interface PreviewSample {
@@ -34,12 +35,13 @@ interface PreviewSample {
 export interface PreviewProps {
   appearance: SavedAppearance;
   open: boolean;
-  dark: boolean;
+  /** The colors the panel shows: the saved theme, or for auto, the visitor's device. */
+  theme: "light" | "dark";
   sample: PreviewSample;
 }
 
 const ignore = () => {};
-const keep = (event: Event) => event.preventDefault();
+const preventSubmit = (event: Event) => event.preventDefault();
 
 function sampleLines({ question, answer, author }: PreviewSample): Line[] {
   const line = { seq: null, image: null, status: "sent" } as const;
@@ -67,9 +69,9 @@ function Preview({ appearance, open, sample }: PreviewProps) {
       </div>
     );
   }
-  // Before the first message, the email takes the message box's place.
-  const emailFirst = emailAsk === "before_first";
-  const lines = emailFirst ? [] : sampleLines(sample);
+  // The sample visitor has written, unless the email comes first.
+  const email = emailMode(emailAsk, { mayAsk: true, chatted: emailAsk !== "before_first" });
+  const lines = email === "first" ? [] : sampleLines(sample);
   return (
     <div class="stage">
       <section class="panel">
@@ -83,7 +85,7 @@ function Preview({ appearance, open, sample }: PreviewProps) {
           onClose={ignore}
         />
         <div class="log">
-          {emailFirst && <EmptyLog mascot={mascot} greeting={say("empty")} />}
+          {lines.length === 0 && <EmptyLog mascot={mascot} greeting={say("empty")} />}
           {lines.map((line, index) => (
             <ChatLine
               key={line.id}
@@ -95,25 +97,22 @@ function Preview({ appearance, open, sample }: PreviewProps) {
             />
           ))}
         </div>
-        {emailAsk !== "off" && <EmailForm email="" bad={null} onInput={ignore} onSubmit={keep} />}
-        {!emailFirst && (
-          <Composer draft="" inputRef={input} onDraft={ignore} onSubmit={keep} onFiles={ignore} />
+        {email !== "none" && (
+          <EmailForm email="" bad={null} onInput={ignore} onSubmit={preventSubmit} />
+        )}
+        {email !== "first" && (
+          <Composer
+            draft=""
+            inputRef={input}
+            onDraft={ignore}
+            onSubmit={preventSubmit}
+            onFiles={ignore}
+          />
         )}
         {appearance.branding && <Branding />}
       </section>
     </div>
   );
-}
-
-/** Sets a color and the text that reads on it, or leaves the widget's own. */
-function paintColor(host: HTMLElement, name: "primary" | "accent", color: string | null) {
-  for (const [property, value] of [
-    [`--d-${name}`, color],
-    [`--d-${name}-text`, color === null ? null : textOn(color)],
-  ] as const) {
-    if (value === null) host.style.removeProperty(property);
-    else host.style.setProperty(property, value);
-  }
 }
 
 /** Draws the preview in `shadow`, again on each call. */
@@ -127,10 +126,14 @@ export function renderPreview(shadow: ShadowRoot, props: PreviewProps): void {
   }
   const host = shadow.host as HTMLElement;
   const { appearance } = props;
-  paintColor(host, "primary", appearance.primary);
-  paintColor(host, "accent", appearance.accent);
+  paintColors(host.style, appearance);
   host.style.setProperty("--d-radius", `${appearance.radius}px`);
   host.setAttribute("data-side", appearance.position);
-  host.setAttribute("data-theme", props.dark ? "dark" : "light");
+  host.setAttribute("data-theme", props.theme);
   render(<Preview {...props} />, shadow);
+}
+
+/** Removes the preview from `shadow`, which stops its animations. */
+export function clearPreview(shadow: ShadowRoot): void {
+  render(null, shadow);
 }

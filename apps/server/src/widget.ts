@@ -4,6 +4,7 @@ import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
+import { firstName } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
@@ -58,7 +59,6 @@ import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
-import { firstName } from "./widget-settings.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
 const CLIENT_ID = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
@@ -254,6 +254,9 @@ const MessageSchema = z
     authorName: z.string().nullable(),
     // The operator's picture, or null with none or for a key.
     authorPictureUrl: z.string().nullable(),
+    // A hash of the operator's or the key's ID, so a widget can tell two authors with one name
+    // apart. It names neither. Null for the visitor's own.
+    authorId: z.string().nullable(),
     createdAt: z.string(),
   })
   .openapi("Message", {
@@ -270,6 +273,7 @@ const MessageSchema = z
       fromBot: false,
       authorName: null,
       authorPictureUrl: null,
+      authorId: null,
       createdAt: "2026-11-08T09:30:00.000Z",
     },
   });
@@ -411,6 +415,19 @@ const streamRoute = createRoute({
   },
 });
 
+/** How much of the hash a widget gets: enough to tell a conversation's authors apart. */
+const AUTHOR_HASH_LENGTH = 16;
+
+/** An author's ID as a visitor gets it. A key's ID must not reach a visitor. */
+const authorHash = (authorId: string) => sha256Hex(authorId).slice(0, AUTHOR_HASH_LENGTH);
+
+/**
+ * A reply author's name as a visitor reads it: a key's whole name, the placeholder of a deleted
+ * account, or an operator's first name.
+ */
+const shownName = (author: MessageAuthor, isKey: boolean) =>
+  isKey || author.isDeleted ? author.name : firstName(author.name);
+
 /** A message as the widget shows it. `authors` holds the reply authors by operator or key ID. */
 function messageView(
   images: Images | undefined,
@@ -429,12 +446,12 @@ function messageView(
     clientId: message.fromVisitor ? clientId : null,
     seq: seq.toString(),
     fromBot: authorApiKeyId !== null,
-    authorName:
-      author === undefined ? null : authorApiKeyId !== null ? author.name : firstName(author.name),
+    authorName: author === undefined ? null : shownName(author, authorApiKeyId !== null),
     authorPictureUrl:
       authorOperatorId === null
         ? null
         : urls.picture(authorOperatorId, author?.pictureUpdatedAt ?? null),
+    authorId: authorId === null || author === undefined ? null : authorHash(authorId),
     createdAt: createdAt.toISOString(),
     image: imageView(images, workspaceId, image),
   };

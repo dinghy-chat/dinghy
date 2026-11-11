@@ -27,7 +27,7 @@ test.beforeAll(async () => {
     {
       "/plain": page(),
       "/tagged": page('data-accent="#ff0000" data-position="right" data-launcher="boat"'),
-      "/no-branding": page('data-branding="off"'),
+      "/no-branding": page('data-branding="false"'),
     },
     { emailAvailable: true },
   );
@@ -89,7 +89,10 @@ test("with no answer, the launcher draws from the tag and the defaults", async (
   await visitor.route("**/appearance", (route) => route.abort());
   await visitor.goto(`${server.hostOrigin}/plain`);
   await expect(launcher(visitor)).toHaveClass("launcher boat");
-  expect(await hostStyle(visitor, "--d-radius")).toBe("16px");
+  const radius = await launcher(visitor).evaluate(
+    (button) => getComputedStyle(button).borderRadius,
+  );
+  expect(radius).toBe("16px");
   await launcher(visitor).click();
   await expect(visitor.locator(".head b")).toHaveText("Chat with us");
   await context.close();
@@ -157,6 +160,76 @@ test("before the first message, the email takes the message box's place until it
   await visitor.context().close();
 });
 
+test("before the first message, a failed save keeps the email form and its error", async ({
+  browser,
+}) => {
+  await server.setWidgetSettings({ emailAsk: "before_first" });
+  const visitor = await visit(browser);
+  // The first save makes the visitor, and then the server refuses the email.
+  await visitor.route("**/me", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const refused = await route.fetch({ postData: JSON.stringify({ email: "not an email" }) });
+    await route.fulfill({ response: refused });
+  });
+  await launcher(visitor).click();
+  // By its type, as an error takes the label's place.
+  const email = visitor.locator("input[type=email]");
+  await email.fill("visitor@example.com");
+  await visitor.getByRole("button", { name: "Save" }).click();
+  await expect(visitor.getByText("Enter a valid email.")).toBeVisible();
+  await expect(email).toBeVisible();
+  await expect(visitor.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
+
+  // A lost answer keeps it too, and the next save opens the message box.
+  await visitor.unroute("**/me");
+  await visitor.route("**/me", (route) =>
+    route.request().method() === "PATCH" ? route.abort() : route.continue(),
+  );
+  await visitor.getByRole("button", { name: "Save" }).click();
+  await expect(visitor.getByText("Not saved. Try again.")).toBeVisible();
+  await expect(email).toBeVisible();
+  await visitor.unroute("**/me");
+  await visitor.getByRole("button", { name: "Save" }).click();
+  await expect(visitor.getByRole("textbox", { name: "Your message" })).toBeVisible();
+  await expect(email).toHaveCount(0);
+  await visitor.context().close();
+});
+
+test("a returning visitor's unread count shows on the launcher, even before the look arrives", async ({
+  browser,
+}) => {
+  const visitor = await visit(browser);
+  await launcher(visitor).click();
+  const message = visitor.getByRole("textbox", { name: "Your message" });
+  await message.fill("Anyone there?");
+  await message.press("Enter");
+  await expect(visitor.locator(".state", { hasText: "Sending" })).toHaveCount(0);
+  await visitor.keyboard.press("Escape");
+  await server.reply("We are here.");
+
+  // The look waits until the chat knows the count.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await visitor.route("**/appearance", async (route) => {
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  await visitor.reload();
+  await expect
+    .poll(() =>
+      visitor.evaluate(
+        () => (globalThis as { Dinghy?: { state: { unread: number } } }).Dinghy?.state.unread,
+      ),
+    )
+    .toBe(1);
+  release();
+  await expect(visitor.getByRole("button", { name: "Open chat (1)" })).toBeVisible();
+  await visitor.context().close();
+});
+
 test.describe("the Powered by Dinghy line", () => {
   const branding = (visitor: Page) => visitor.getByRole("link", { name: "Powered by Dinghy" });
 
@@ -199,6 +272,13 @@ test("an owner changes the color, theme and launcher in the Widget tab, and the 
   await expect(save).toBeDisabled();
 
   await form.getByRole("textbox", { name: "Accent color as a hex code" }).fill("#1f6bff");
+  // An auto theme shows the visitor's device, which the operator picks.
+  const device = owner.getByRole("group", { name: "Show the chat on a light or dark device" });
+  await device.getByRole("radio", { name: "Dark" }).check();
+  await expect(owner.locator(".preview-stage > div")).toHaveAttribute("data-theme", "dark");
+  await form.getByRole("group", { name: "Theme" }).getByRole("radio", { name: "Light" }).check();
+  await expect(device).toHaveCount(0);
+  await expect(owner.locator(".preview-stage > div")).toHaveAttribute("data-theme", "light");
   await form.getByRole("group", { name: "Theme" }).getByRole("radio", { name: "Dark" }).check();
   await form.getByRole("radio", { name: "Bubble" }).check();
   // The preview changes before the save.

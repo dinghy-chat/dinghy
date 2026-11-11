@@ -1,8 +1,12 @@
 // The chat button, which the loader draws on every page of the host site and the operator app's
 // preview draws too. Plain strings, because the loader must stay small. The drawings need no
 // aria-hidden: a button's label is its name, and its content is presentation.
+import type { WidgetSettings } from "./shared.ts";
 
-/** The bubble is a circle. The boat takes the saved corner radius, as the panel does. */
+/**
+ * The bubble is a circle. The boat takes the saved corner radius, as the panel does. The colors are
+ * DEFAULT_COLORS from shared.ts, written out, because esbuild would not fold them into the string.
+ */
 export const LAUNCHER_CSS =
   ".launcher{all:initial;position:relative;display:grid;place-items:center;width:60px;height:60px;border-radius:50%;background:var(--d-accent,#e5352b);color:var(--d-accent-text,#fff);cursor:pointer;box-shadow:0 8px 24px #0d224042}.launcher:focus-visible{outline:3px solid var(--d-primary,#0b2239);outline-offset:2px}.boat{background:#fff;border-radius:var(--dinghy-launcher-radius,var(--d-radius,16px))}.s{fill:var(--d-accent,#e5352b)}.h{fill:var(--d-primary,#0b2239)}@media (prefers-reduced-motion:no-preference){.boat svg{animation:b 3.2s ease-in-out infinite}}@keyframes b{50%{translate:0 -2px}}";
 
@@ -23,3 +27,23 @@ export function textOn(color: string): string {
 
 /** A launcher the page or the saved settings can draw. `hidden` draws none. */
 export type LauncherKind = keyof typeof LAUNCHER_ICONS;
+
+/**
+ * Sets each saved color, and the text that reads on it, in the chat host's style. Null keeps the
+ * widget's own. The loader has its own copy, which also checks a page's values, for its size.
+ */
+export function paintColors(
+  style: CSSStyleDeclaration,
+  colors: Pick<WidgetSettings, "primary" | "accent">,
+): void {
+  for (const name of ["primary", "accent"] as const) {
+    const color = colors[name];
+    if (color === null) {
+      style.removeProperty(`--d-${name}`);
+      style.removeProperty(`--d-${name}-text`);
+    } else {
+      style.setProperty(`--d-${name}`, color);
+      style.setProperty(`--d-${name}-text`, textOn(color));
+    }
+  }
+}

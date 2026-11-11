@@ -1,9 +1,13 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { etag } from "hono/etag";
-import type {
-  SavedAppearance,
-  WidgetSettings as WidgetSettingsType,
+import {
+  firstName,
+  RADIUS_MAX_PX,
+  type SavedAppearance,
+  TEXT_MAX,
+  TITLE_MAX,
+  type WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
@@ -28,7 +32,6 @@ import { allowed } from "./team.ts";
 import { PUBLIC_KEY, widgetWorkspace } from "./workspaces.ts";
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}/widget";
-const RADIUS_MAX_PX = 24;
 /** How long a site keeps the appearance, so a saved change reaches it within 5 minutes. */
 const APPEARANCE_CACHE = "public, max-age=300";
 /** The members the widget's header shows. */
@@ -53,11 +56,11 @@ const color = z
   .nullable();
 
 /** What an owner or an admin saves. The widget and the operator app share its type. */
-export const WidgetSettings = z
+export const WidgetSettingsSchema = z
   .object({
-    title: widgetText(40),
-    greeting: widgetText(200),
-    away: widgetText(200),
+    title: widgetText(TITLE_MAX),
+    greeting: widgetText(TEXT_MAX),
+    away: widgetText(TEXT_MAX),
     primary: color,
     accent: color,
     position: z.enum(widgetPosition.enumValues),
@@ -68,19 +71,19 @@ export const WidgetSettings = z
     emailAsk: z.enum(widgetEmailAsk.enumValues),
     branding: z.boolean(),
   })
-  .openapi("WidgetSettings") satisfies z.ZodType<WidgetSettingsType>;
+  .openapi("WidgetSettings") satisfies z.ZodType<WidgetSettings>;
 
-const Appearance = WidgetSettings.extend({
+const SavedAppearanceSchema = WidgetSettingsSchema.extend({
   // The logo's address, which changes with each upload. Null with no logo.
   logoUrl: z.string().nullable(),
   // Up to 3 members, the ones who sent the latest replies. Who is on the team, not who is online.
-  team: z.array(z.object({ name: z.string(), pictureUrl: z.string().nullable() })),
+  team: z.array(z.object({ id: z.string(), name: z.string(), pictureUrl: z.string().nullable() })),
 }).openapi("WidgetAppearance") satisfies z.ZodType<SavedAppearance>;
 
 const workspaceParams = z.object({ workspaceId: z.uuid() });
 const appearanceAnswer = {
   description: "The widget's settings, with its logo and the members it shows",
-  content: { "application/json": { schema: Appearance } },
+  content: { "application/json": { schema: SavedAppearanceSchema } },
 };
 
 const getRoute = createRoute({
@@ -99,7 +102,7 @@ const putRoute = createRoute({
   summary: "Replace the widget's look, words and behavior. Sites show it within 5 minutes.",
   request: {
     params: workspaceParams,
-    body: { required: true, content: { "application/json": { schema: WidgetSettings } } },
+    body: { required: true, content: { "application/json": { schema: WidgetSettingsSchema } } },
   },
   responses: { 200: appearanceAnswer, ...ROLE_WRITE_ERRORS },
 });
@@ -146,12 +149,6 @@ const appearanceRoute = createRoute({
   },
 });
 
-/**
- * The first word of a name, which is all a visitor learns of an operator. It stops at an @ too, so
- * a name typed as an email never shows one.
- */
-export const firstName = (name: string) => name.trim().split(/[\s@]+/)[0] ?? "";
-
 /** The members who replied last, newest first. Each needs one short read of an index. */
 function recentRepliers(tx: Transaction, workspaceId: string) {
   const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId})`;
@@ -188,6 +185,7 @@ async function readAppearance(
     ...settings,
     logoUrl: urls.logo(row.publicKey, logoUpdatedAt),
     team: team.map((member) => ({
+      id: member.id,
       name: firstName(member.name),
       pictureUrl: urls.picture(member.id, member.pictureUpdatedAt),
     })),
@@ -199,7 +197,18 @@ async function readAppearance(
  * admin changes them. An API key and MCP cannot reach them: the routes take a session only.
  */
 export function registerWidgetSettingsRoutes(app: App, db: Database, urls: ImageUrls): void {
-  /** Runs a change, if this role may, and answers with the settings after it. */
+  // Every change takes an owner or an admin. Before the routes, so a member's logo upload is
+  // refused before it is read.
+  for (const path of [putRoute.getRoutingPath(), setLogoRoute.getRoutingPath()]) {
+    app.use(path, async (c, next) => {
+      if (c.req.method !== "GET" && !allowed.settings(c.get("memberRole"))) {
+        return c.json(FORBIDDEN, 403);
+      }
+      await next();
+    });
+  }
+
+  /** Runs a change, and answers with the settings after it. */
   const change = (workspaceId: string, write: (tx: Transaction) => Promise<unknown>) =>
     withWorkspace(db, workspaceId, async (tx) => {
       await write(tx);
@@ -212,7 +221,6 @@ export function registerWidgetSettingsRoutes(app: App, db: Database, urls: Image
   });
 
   app.openapi(putRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const saved = await change(id, (tx) =>
       tx.update(widgetSettings).set(c.req.valid("json")).where(eq(widgetSettings.workspaceId, id)),
@@ -221,7 +229,6 @@ export function registerWidgetSettingsRoutes(app: App, db: Database, urls: Image
   });
 
   app.openapi(setLogoRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const logo = await processLogo(new Uint8Array(await c.req.arrayBuffer()));
     if (typeof logo === "string") return refuseImage(c, logo);
@@ -239,7 +246,6 @@ export function registerWidgetSettingsRoutes(app: App, db: Database, urls: Image
   });
 
   app.openapi(removeLogoRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const saved = await change(id, async (tx) => {
       await tx.delete(workspaceLogo).where(eq(workspaceLogo.workspaceId, id));
@@ -263,7 +269,7 @@ export function registerWidgetAppearance(
   urls: ImageUrls,
   rateLimit: RateLimit,
 ) {
-  const path = "/v1/widget/:key/appearance";
+  const path = appearanceRoute.getRoutingPath();
   app.use(path, async (c, next) => {
     await next();
     // After the answer, so a 304 and a refusal carry it too. A closed workspace's 404 must reach

@@ -1,10 +1,15 @@
 /** @jsxImportSource react */
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { renderPreview } from "../../../packages/widget/src/preview.tsx";
-import type {
-  SavedAppearance,
-  TeamFace,
-  WidgetSettings,
+import { clearPreview, renderPreview } from "../../../packages/widget/src/preview.tsx";
+import {
+  DEFAULT_COLORS,
+  firstName,
+  RADIUS_MAX_PX,
+  type SavedAppearance,
+  TEXT_MAX,
+  type TeamFace,
+  TITLE_MAX,
+  type WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
 import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import type { Me, WorkspaceApi } from "./api.ts";
@@ -19,10 +24,7 @@ import {
   type UploadText,
 } from "./ui.tsx";
 
-/** The widget's own colors, which a null color keeps. */
-const DEFAULT_COLORS = { primary: "#0b2239", accent: "#e5352b" };
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
-const RADIUS_MAX_PX = 24;
 
 const LOGO_TEXT: UploadText = {
   upload: "logoUpload",
@@ -45,6 +47,11 @@ const THEMES: Option<WidgetSettings["theme"]>[] = [
   { value: "light", label: "themeLight" },
   { value: "dark", label: "themeDark" },
 ];
+/** The visitor's device, which an auto theme follows in the preview. */
+const DEVICES: Option<"light" | "dark">[] = [
+  { value: "light", label: "themeLight" },
+  { value: "dark", label: "themeDark" },
+];
 const LAUNCHERS: Option<WidgetSettings["launcher"]>[] = [
   { value: "boat", label: "widgetLauncherBoat" },
   { value: "bubble", label: "widgetLauncherBubble" },
@@ -61,9 +68,9 @@ function editable({ logoUrl: _logo, team: _team, ...settings }: SavedAppearance)
   return settings;
 }
 
-// The draft keeps the saved answer's keys in their order, so the two serialize alike.
+// Every value is a string, a number, a boolean or null, so === compares each one whole.
 const sameSettings = (one: WidgetSettings, other: WidgetSettings) =>
-  JSON.stringify(one) === JSON.stringify(other);
+  (Object.keys(one) as (keyof WidgetSettings)[]).every((key) => one[key] === other[key]);
 
 /** The browser asks before it leaves the page while a change is not saved. */
 function useLeaveGuard(unsaved: boolean) {
@@ -226,21 +233,21 @@ function TextFields({
       <Field
         label={t("widgetTitleLabel")}
         placeholder={widgetText("title")}
-        maxLength={40}
+        maxLength={TITLE_MAX}
         {...field("title")}
       />
       <Field
         label={t("widgetGreetingLabel")}
         multiline
         placeholder={widgetText("empty")}
-        maxLength={200}
+        maxLength={TEXT_MAX}
         {...field("greeting")}
       />
       <Field
         label={t("widgetAwayLabel")}
         multiline
         placeholder={widgetText("teamAway")}
-        maxLength={200}
+        maxLength={TEXT_MAX}
         {...field("away")}
       />
     </>
@@ -317,13 +324,16 @@ function LookFields({
 function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me }) {
   const host = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(true);
-  const [dark, setDark] = useState(false);
+  // An auto theme follows the visitor's device, which the operator picks here.
+  const [device, setDevice] = useState<"light" | "dark">("light");
+  const theme = appearance.theme === "auto" ? device : appearance.theme;
   // On a phone the preview sits above the form, and folds away.
   const [folded, setFolded] = useState(false);
   // A member who replied lately, or the operator who looks, answers the sample question. Visitors
   // see the first word of a name, as the server sends it.
   const author: TeamFace = appearance.team[0] ?? {
-    name: me.name.split(/[\s@]+/)[0] ?? me.name,
+    id: me.id,
+    name: firstName(me.name),
     pictureUrl: me.pictureUrl,
   };
   // On every render, so each change in the form shows at once.
@@ -334,10 +344,17 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
     renderPreview(shadow, {
       appearance,
       open,
-      dark,
+      theme,
       sample: { question: t("previewQuestion"), answer: t("previewAnswer"), author },
     });
   });
+  // With the tab, so the sea's animation frames and listeners stop.
+  useEffect(() => {
+    const shadow = host.current?.shadowRoot;
+    return () => {
+      if (shadow) clearPreview(shadow);
+    };
+  }, []);
   return (
     <section className="widget-preview" aria-label={t("previewTitle")} data-folded={folded}>
       <div className="preview-bar">
@@ -362,18 +379,17 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
             ]}
             onChange={(next) => setOpen(next === "open")}
           />
-          <Choices
-            label={t("previewColors")}
-            hideLabel
-            value={dark ? "dark" : "light"}
-            options={[
-              { value: "light", label: "themeLight" },
-              { value: "dark", label: "themeDark" },
-            ]}
-            onChange={(next) => setDark(next === "dark")}
-          />
+          {appearance.theme === "auto" && (
+            <Choices
+              label={t("previewDevice")}
+              hideLabel
+              value={device}
+              options={DEVICES}
+              onChange={(next) => setDevice(next)}
+            />
+          )}
         </div>
-        <div className="preview-stage" data-dark={dark}>
+        <div className="preview-stage" data-dark={theme === "dark"}>
           {/* A picture of the widget: its sample buttons do nothing, so nothing can reach them. */}
           <div ref={host} inert />
           {!open && appearance.launcher === "hidden" && (

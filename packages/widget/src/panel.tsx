@@ -7,7 +7,12 @@ import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
 import type { ChatMessage } from "./client.ts";
 import { IMAGE_TYPES, isComposing } from "./compose.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
-import type { Saved, TeamFace } from "./shared.ts";
+import {
+  DEFAULT_COLORS,
+  type SavedAppearance,
+  type TeamFace,
+  type WidgetSettings,
+} from "./shared.ts";
 import { type TextId, t } from "./text.ts";
 
 /** The composer's limit, which the server shares. */
@@ -20,9 +25,11 @@ export const MESSAGE_MAX = 10_000;
 const DARK =
   "color-scheme:dark;--primary:var(--d-primary,#24456e);--paper:#14263b;--ink:#e8eef5;--fog:#1d3350;--sand:#0e1d2f;--line:#253a55;--mute:#9db0c6;--bad:#ff8077";
 
+const { primary: PRIMARY, accent: ACCENT } = DEFAULT_COLORS;
+
 export const CSS = `
 *{box-sizing:border-box}
-.panel{--primary:var(--d-primary,#0b2239);--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:var(--paper);color:var(--ink);font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);border-radius:var(--dinghy-radius,var(--d-radius,16px));overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
+.panel{--primary:var(--d-primary,${PRIMARY});--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:var(--paper);color:var(--ink);font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);border-radius:var(--dinghy-radius,var(--d-radius,16px));overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
 .head{display:flex;align-items:center;gap:8px;padding:16px 10px 16px 16px;background:var(--primary);color:var(--d-primary-text,#fff)}
 .scene{flex:1;min-width:0;display:flex;align-items:center;gap:12px}
 .scene b{display:block;min-height:21px;font-size:17px;font-weight:700;line-height:21px;letter-spacing:-.01em}
@@ -52,16 +59,16 @@ export const CSS = `
 .mine{align-self:flex-end;border-radius:18px 18px 5px 18px;background:var(--primary);color:var(--d-primary-text,#fff);box-shadow:none}
 .state{font-size:12.5px;line-height:16px;color:var(--mute);align-self:flex-end}
 .bad{color:var(--bad)}
-.action{display:grid;place-items:center;font:inherit;font-weight:600;flex:none;min-height:44px;min-width:44px;padding:0 14px;border:0;border-radius:22px;cursor:pointer;background:var(--d-accent,#e5352b);color:var(--d-accent-text,#fff)}
+.action{display:grid;place-items:center;font:inherit;font-weight:600;flex:none;min-height:44px;min-width:44px;padding:0 14px;border:0;border-radius:22px;cursor:pointer;background:var(--d-accent,${ACCENT});color:var(--d-accent-text,#fff)}
 .action:hover{filter:brightness(.92)}
-.duo{fill:var(--d-accent,#e5352b);opacity:.3}
+.duo{fill:var(--d-accent,${ACCENT});opacity:.3}
 .head .duo{fill:#ffc917;opacity:.45}
 .head .icon .duo{fill:currentColor;opacity:.25}
 [type=submit] .duo{fill:#ffc917;opacity:1}
 .icon{background:transparent;color:inherit;padding:0}
 .icon:hover{filter:none;background:rgb(127 127 127/.25)}
 .retry{font:inherit;border:0;padding:0;background:transparent;cursor:pointer;color:var(--bad);font-size:12.5px;line-height:16px;text-decoration:underline;align-self:flex-end}
-button:focus-visible{outline:2px solid var(--d-accent,#e5352b);outline-offset:1px}
+button:focus-visible{outline:2px solid var(--d-accent,${ACCENT});outline-offset:1px}
 textarea:focus-visible,input:focus-visible{outline:2px solid #1f6bff;outline-offset:-1px}
 .head button:focus-visible{outline-color:currentColor}
 form{display:flex;align-items:flex-end;gap:10px;padding:10px 12px 12px;border-top:1px solid var(--line)}
@@ -79,7 +86,7 @@ dialog img{display:block;max-width:none}
 :host([data-side=left]) .panel{right:auto;left:0}
 .opened{display:none!important}
 .badge{position:absolute;top:-3px;right:-3px;min-width:22px;height:22px;padding:0 4px;box-sizing:border-box;border-radius:11px;background:#e5352b;color:#fff;box-shadow:0 0 0 2px #fff;font:700 12px/22px system-ui,sans-serif;text-align:center}
-.panel.drop{outline:3px dashed var(--d-accent,#e5352b);outline-offset:-6px}
+.panel.drop{outline:3px dashed var(--d-accent,${ACCENT});outline-offset:-6px}
 .pick{background:transparent;color:inherit;padding:0}
 .pick:hover{filter:none;background:var(--fog)}
 .file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
@@ -127,10 +134,8 @@ const SEND_ICON: Paths = [
   "M231.87,114l-168-95.89A16,16,0,0,0,40.92,37.34L71.55,128,40.92,218.67A16,16,0,0,0,56,240a16.15,16.15,0,0,0,7.93-2.1l167.92-96.05a16,16,0,0,0,.05-27.89ZM56,224a.56.56,0,0,0,0-.12L85.74,136H144a8,8,0,0,0,0-16H85.74L56.06,32.16A.46.46,0,0,0,56,32l168,95.83Z",
 ];
 
-/** Who sent a reply, as the widget shows it. */
-interface Author {
-  name: string;
-  pictureUrl: string | null;
+/** Who sent a reply, as the widget shows it. Its ID is the server's hash of the author's. */
+interface Author extends TeamFace {
   bot: boolean;
 }
 
@@ -218,23 +223,40 @@ const OWN_TEXTS: Partial<Record<TextId, "title" | "greeting" | "away">> = {
   teamAway: "away",
 };
 
-/** Before the server answers, a text the workspace can set is empty rather than Dinghy's. */
+/** The texts of a workspace's saved settings. */
 export const sayer =
-  (saved: Saved | undefined): Say =>
+  (saved: SavedAppearance): Say =>
   (id) => {
     const own = OWN_TEXTS[id];
-    if (own === undefined) return t(id);
-    return saved === undefined ? "" : (saved[own] ?? t(id));
+    return own === undefined ? t(id) : (saved[own] ?? t(id));
   };
 
 /** Whether this line is a reply that follows the visitor or another author, so it names who. */
 export function startsRun(lines: Line[], index: number): boolean {
   const author = lines[index]?.author ?? null;
   const before = lines[index - 1]?.author ?? null;
-  return (
-    author !== null &&
-    (before === null || before.name !== author.name || before.pictureUrl !== author.pictureUrl)
-  );
+  return author !== null && author.id !== before?.id;
+}
+
+/**
+ * Where the panel asks for an email: in place of the message box until the visitor gives one,
+ * under the log once the visitor has written, or nowhere.
+ */
+export type EmailMode = "first" | "after" | "none";
+
+/**
+ * The email rule that the chat and the preview share. `mayAsk` is false once the email is saved,
+ * for a visitor the site signed in, and on a server that sends no email.
+ */
+export function emailMode(
+  ask: WidgetSettings["emailAsk"],
+  { mayAsk, chatted }: { mayAsk: boolean; chatted: boolean },
+): EmailMode {
+  if (!mayAsk) return "none";
+  // A visitor who chatted before the setting changed is not stopped now.
+  if (ask === "before_first") return chatted ? "none" : "first";
+  // After the first message, so it takes no space from someone who is only looking.
+  return ask === "after_first" && chatted ? "after" : "none";
 }
 
 /** A person's picture, a bot's icon, or an initial. */
@@ -305,7 +327,7 @@ export function ChatHead({
       {team.length > 0 && (
         <span class="faces" aria-hidden="true">
           {team.map((face) => (
-            <Face key={face.name} {...face} />
+            <Face key={face.id} {...face} />
           ))}
         </span>
       )}

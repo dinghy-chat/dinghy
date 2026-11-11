@@ -141,6 +141,9 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "id": {
+                      "type": "string"
+                    },
                     "name": {
                       "type": "string"
                     },
@@ -148,7 +151,7 @@
                       "type": ["string", "null"]
                     }
                   },
-                  "required": ["name", "pictureUrl"]
+                  "required": ["id", "name", "pictureUrl"]
                 }
               }
             },
@@ -299,6 +302,9 @@
           "authorPictureUrl": {
             "type": ["string", "null"]
           },
+          "authorId": {
+            "type": ["string", "null"]
+          },
           "createdAt": {
             "type": "string"
           }
@@ -316,6 +322,7 @@
           "fromBot",
           "authorName",
           "authorPictureUrl",
+          "authorId",
           "createdAt"
         ],
         "example": {
@@ -331,6 +338,7 @@
           "fromBot": false,
           "authorName": null,
           "authorPictureUrl": null,
+          "authorId": null,
           "createdAt": "2026-11-08T09:30:00.000Z"
         }
       },
@@ -1364,6 +1372,7 @@
                     "fromBot": false,
                     "authorName": null,
                     "authorPictureUrl": null,
+                    "authorId": null,
                     "createdAt": "2026-11-08T09:30:00.000Z"
                   }
                 }
@@ -1402,6 +1411,7 @@
                     "fromBot": false,
                     "authorName": null,
                     "authorPictureUrl": null,
+                    "authorId": null,
                     "createdAt": "2026-11-08T09:30:00.000Z"
                   }
                 }
@@ -1715,6 +1725,7 @@
                     "fromBot": false,
                     "authorName": null,
                     "authorPictureUrl": null,
+                    "authorId": null,
                     "createdAt": "2026-11-08T09:30:00.000Z"
                   }
                 }
@@ -1753,6 +1764,7 @@
                     "fromBot": false,
                     "authorName": null,
                     "authorPictureUrl": null,
+                    "authorId": null,
                     "createdAt": "2026-11-08T09:30:00.000Z"
                   }
                 }

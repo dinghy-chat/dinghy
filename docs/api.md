@@ -73,11 +73,11 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 | `emailAsk` | `off`, `after_first` or `before_first`: when a signed-out visitor is asked for an email |
 | `branding` | Whether the chat shows "Powered by Dinghy" |
 
-Both answer the settings with `logoUrl` and `team`: up to 3 members who sent the latest replies, each with a first name and a picture's address. `PUT .../widget/logo` sets the logo from the raw body, a PNG, JPEG or WebP of at most 2 MB, and `DELETE .../widget/logo` removes it. An API key and MCP cannot reach these routes.
+Both answer the settings with `logoUrl` and `team`: up to 3 members who sent the latest replies, each with the operator's ID, a first name and a picture's address. `PUT .../widget/logo` sets the logo from the raw body, a PNG, JPEG or WebP of at most 2 MB, and `DELETE .../widget/logo` removes it. An API key and MCP cannot reach these routes.
 
 `GET /v1/widget/{key}/appearance` answers the same, with no `Origin` check, because the widget shows all of it. Any site may read it. It caches for 5 minutes, so a saved change reaches sites within 5 minutes, and it answers 304 to a matching `If-None-Match`. A workspace whose widget is off, or an unknown key, answers 404. `GET /v1/widget/{key}/presence` answers only `online` and `emailReplies`.
 
-A message in the widget API has `fromBot`, true for a reply sent with an API key, `authorName`, the operator's first name or the key's name, and `authorPictureUrl`. They are null for the visitor's own messages.
+A message in the widget API has `fromBot`, true for a reply sent with an API key, `authorId`, a hash that tells authors apart and names none, `authorName`, the operator's first name or the key's name, and `authorPictureUrl`. A deleted account's replies keep the name "Former team member" and have no picture. These fields are null for the visitor's own messages.
 
 An operator sets their picture with `PUT /v1/operator/me/picture` and the raw body, a PNG, JPEG or WebP of at most 2 MB, and removes it with `DELETE`. The server cuts it to a 128-pixel square. `GET /v1/operator/me` and the members list answer `pictureUrl`, and `GET /v1/pictures/{operatorId}` serves it to anyone.
 

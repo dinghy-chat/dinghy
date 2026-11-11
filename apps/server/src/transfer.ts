@@ -27,7 +27,7 @@ import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
-import { WidgetSettings } from "./widget-settings.ts";
+import { WidgetSettingsSchema } from "./widget-settings.ts";
 
 const VERSION = 1;
 const JSON_NAME = "export.json";
@@ -51,7 +51,7 @@ const ExportFile = z.strictObject({
     allowedOrigins: z.array(z.string().max(300)).max(200),
     eventSeq: seq,
     feedGeneration: z.number().int().min(1).max(999_999_999),
-    widget: WidgetSettings,
+    widget: WidgetSettingsSchema,
     // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z
       .base64()

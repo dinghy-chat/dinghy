@@ -591,6 +591,8 @@ export async function countWaiting(tx: Transaction, workspaceId: string): Promis
 export interface MessageAuthor {
   name: string;
   pictureUpdatedAt: Date | null;
+  /** A deleted account, whose name is the placeholder for a former team member. */
+  isDeleted: boolean;
 }
 
 /** These operators, by ID. A removed member keeps a name, so old replies keep it. */
@@ -601,10 +603,17 @@ async function operatorAuthors(
   const wanted = [...new Set([...ids].filter((id) => id !== null))];
   if (wanted.length === 0) return new Map();
   const rows = await tx
-    .select({ id: operator.id, name: operator.name, pictureUpdatedAt: operator.pictureUpdatedAt })
+    .select({
+      id: operator.id,
+      name: operator.name,
+      pictureUpdatedAt: operator.pictureUpdatedAt,
+      deletedAt: operator.deletedAt,
+    })
     .from(operator)
     .where(inArray(operator.id, wanted));
-  return new Map(rows.map(({ id, ...author }) => [id, author]));
+  return new Map(
+    rows.map(({ id, deletedAt, ...author }) => [id, { ...author, isDeleted: deletedAt !== null }]),
+  );
 }
 
 /** The names of these API keys, by ID. A revoked key keeps its row, so old replies keep its name. */
@@ -637,7 +646,9 @@ export async function messageAuthors(
     workspaceId,
     messages.map((one) => one.authorApiKeyId),
   );
-  const keyAuthors = [...keys].map(([id, name]) => [id, { name, pictureUpdatedAt: null }] as const);
+  const keyAuthors = [...keys].map(
+    ([id, name]) => [id, { name, pictureUpdatedAt: null, isDeleted: false }] as const,
+  );
   return new Map([...operators, ...keyAuthors]);
 }
 

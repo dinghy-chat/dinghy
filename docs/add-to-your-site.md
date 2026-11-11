@@ -33,7 +33,7 @@ You can also set the look in the tag. These attributes win over the saved settin
 | `data-position` | `left` or `right` | The corner for the button and the chat |
 | `data-offset-x` | Pixels, such as `24` | The distance from the side of the window. The default is `16` |
 | `data-offset-y` | Pixels, such as `80` | The distance from the bottom of the window. The default is `16` |
-| `data-branding` | `off` | Hides the "Powered by Dinghy" line |
+| `data-branding` | `false` or `true` | Hides or shows the "Powered by Dinghy" line |
 
 A color in any other form, such as `red` or `#123`, is ignored. So is an offset that is not a whole number of 0 or more.
 
@@ -164,7 +164,7 @@ dinghy.on("unread", (count) => setBadge(count));
 dinghy.open({ message: "I need help with my order" });
 ```
 
-`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
+`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `branding`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
 
 ### Ask a coding agent to install it
 

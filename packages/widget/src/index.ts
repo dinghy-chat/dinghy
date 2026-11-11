@@ -27,6 +27,8 @@ export interface InitOptions extends Appearance {
   key: string;
   /** Hides or shows the boat in the open chat, over the saved setting. Every state keeps its text. */
   mascot?: boolean;
+  /** Hides or shows the "Powered by Dinghy" line, over the saved setting. */
+  branding?: boolean;
   /** False hides the launcher, so your own button opens the chat. */
   launcher?: boolean;
 }
@@ -110,6 +112,7 @@ export function init(options: InitOptions): DinghyApi {
     ["offset-x", options.offsetX],
     ["offset-y", options.offsetY],
     ["mascot", options.mascot === undefined ? undefined : String(options.mascot)],
+    ["branding", options.branding === undefined ? undefined : String(options.branding)],
     ["launcher", options.launcher === false ? "hidden" : undefined],
   ];
   for (const [name, value] of attributes) {

@@ -55,6 +55,9 @@ COPY --from=production /repo/ee/node_modules ee/node_modules
 COPY apps/server/package.json apps/server/
 COPY apps/server/drizzle apps/server/drizzle
 COPY apps/server/src apps/server/src
+# The server shares the widget's limits, defaults and firstName from its shared.ts.
+COPY packages/widget/package.json packages/widget/
+COPY packages/widget/src packages/widget/src
 # Dinghy Cloud's code, under ee/LICENSE. It stays inactive unless the cloud's settings are set.
 COPY ee/package.json ee/LICENSE ee/
 COPY ee/server ee/server

@@ -11,6 +11,7 @@ import {
   RESET_PREFIX,
   readToken,
   type WidgetContext,
+  type WidgetSettings,
 } from "./shared.ts";
 import { LAUNCHER_LABEL } from "./text.ts";
 
@@ -19,12 +20,14 @@ import { LAUNCHER_LABEL } from "./text.ts";
 // the chat, the page calls identify(), or the visitor already has a token. Everything else lives
 // in the chat bundle.
 
+type Color = "primary" | "accent";
+
 const script = document.currentScript as HTMLScriptElement | null;
 const publicKey = script?.dataset.key;
 if (script && publicKey) {
   // By its dataset name: data-offset-x is offsetX.
   const attribute = (name: string) => script.dataset[name];
-  const number = (name: string) => Number(attribute(name) || Number.NaN);
+  const number = (name: string) => Number(attribute(name) || NaN);
   const base = new URL(".", script.src).href;
   const host = document.createElement("dinghy-chat");
   // Inline and important, because a rule on the host page beats :host. This uses the CSSOM,
@@ -41,7 +44,8 @@ if (script && publicKey) {
   // A whole number of pixels, or a z-index, from 0 up. Anything else keeps the current value.
   const whole = (value: unknown, current: number) =>
     Number.isInteger(value) && (value as number) >= 0 ? (value as number) : current;
-  const paint = (options: Appearance) => {
+  // The saved colors can be null, which keeps the widget's own.
+  const paint = (options: Omit<Appearance, Color> & Partial<Pick<WidgetSettings, Color>>) => {
     // Only a full hex color, because this value goes into the page's CSS. A value that is not a
     // string turns into one, such as "null", which fails the test.
     for (const name of ["primary", "accent"] as const) {
@@ -79,24 +83,7 @@ if (script && publicKey) {
   launcher.setAttribute("aria-label", LAUNCHER_LABEL);
   shadow.append(launcher);
 
-  // The chat goes on the page once the saved look arrives, so the launcher never changes shape.
   const appearance = loadAppearance(base, publicKey);
-  appearance.then((saved) => {
-    // The workspace serves no widget, so the page shows nothing.
-    if (!saved) return;
-    paint(saved as Appearance);
-    paint(own);
-    // The CSS reads the page's own --dinghy-radius first, so that still wins.
-    style("--d-radius", `${saved.radius ?? 16}px`, "");
-    const kind = attribute("launcher") ?? saved.launcher;
-    // A hidden launcher still has a drawing, for show().
-    const drawn: LauncherKind = kind === "bubble" ? kind : "boat";
-    launcher.className = `launcher ${drawn}`;
-    launcher.innerHTML = LAUNCHER_ICONS[drawn];
-    if (kind === "hidden") api.hide();
-    (document.body ?? document.documentElement).append(host);
-  });
-
   const state = { ready: false, open: false, unread: 0 };
   const listeners: Listeners = {};
   const context: WidgetContext = {
@@ -193,6 +180,25 @@ if (script && publicKey) {
     },
   };
   launcher.onclick = () => api.open();
+
+  // The chat goes on the page once the saved look arrives, so the launcher never changes shape.
+  appearance.then((saved) => {
+    // The workspace serves no widget, so the page shows nothing.
+    if (saved === null) return;
+    if (saved) {
+      paint(saved);
+      // The CSS reads the page's own --dinghy-radius first, so that still wins.
+      style("--d-radius", `${saved.radius}px`, "");
+    }
+    paint(own);
+    const kind = attribute("launcher") ?? saved?.launcher;
+    // A hidden launcher still has a drawing, for show().
+    const drawn: LauncherKind = kind === "bubble" ? kind : "boat";
+    launcher.className = `launcher ${drawn}`;
+    launcher.innerHTML = LAUNCHER_ICONS[drawn];
+    if (kind === "hidden") api.hide();
+    (document.body ?? document.documentElement).append(host);
+  });
 
   const queued = (globalThis.Dinghy as { q?: QueuedCall[] } | undefined)?.q;
   globalThis.Dinghy = api;

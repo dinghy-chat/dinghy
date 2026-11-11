@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { WIDGET_DEFAULTS } from "../../../packages/widget/src/shared.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { sendOperatorMessage } from "../test/messages.ts";
 import { addOperator, signedInOperator } from "../test/operators.ts";
+import { FORMER_MEMBER_NAME } from "./account-delete.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import {
@@ -22,20 +24,8 @@ const SITE = "https://app.example.com";
 const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 
-const DEFAULTS = {
-  title: null,
-  greeting: null,
-  away: null,
-  primary: null,
-  accent: null,
-  position: "right",
-  theme: "auto",
-  launcher: "boat",
-  mascot: true,
-  radius: 16,
-  emailAsk: "after_first",
-  branding: true,
-};
+// What the form saves: the widget's defaults without the logo and the team.
+const { logoUrl: _logo, team: _team, ...DEFAULTS } = WIDGET_DEFAULTS;
 
 const CHANGED = {
   title: "Ask Acme",
@@ -111,7 +101,8 @@ describe("the widget's settings", () => {
     });
     const response = await app.request(settingsPath(space), { headers: { cookie: member.cookie } });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ...DEFAULTS, logoUrl: null, team: [] });
+    // The database's defaults are the ones the widget falls back to with no answer.
+    expect(await response.json()).toEqual(WIDGET_DEFAULTS);
   });
 
   test("an owner saves every value, and a color is kept in lower case", async () => {
@@ -150,7 +141,7 @@ describe("the widget's settings", () => {
     expect(row?.radius).toBe(16);
   });
 
-  test("a member cannot change them", async () => {
+  test("a member cannot change them, nor the logo", async () => {
     const { space } = await workspaceWithOwner();
     const member = await signedInOperator({
       app,
@@ -160,6 +151,14 @@ describe("the widget's settings", () => {
       role: "member",
     });
     expect((await saveSettings(space, member.cookie, CHANGED)).status).toBe(403);
+    for (const method of ["PUT", "DELETE"]) {
+      const logo = await app.request(`${settingsPath(space)}/logo`, {
+        method,
+        headers: { cookie: member.cookie, origin: ORIGIN },
+        body: method === "PUT" ? new Uint8Array([1, 2, 3]) : null,
+      });
+      expect(logo.status).toBe(403);
+    }
     const read = await app.request(settingsPath(space), { headers: { cookie: member.cookie } });
     expect(await read.json()).toMatchObject(DEFAULTS);
   });
@@ -206,7 +205,7 @@ describe("the widget's appearance", () => {
     expect(first.status).toBe(200);
     expect(first.headers.get("access-control-allow-origin")).toBe("*");
     expect(first.headers.get("cache-control")).toBe("public, max-age=300");
-    expect(await first.json()).toEqual({ ...DEFAULTS, logoUrl: null, team: [] });
+    expect(await first.json()).toEqual(WIDGET_DEFAULTS);
     const tag = first.headers.get("etag") ?? "";
     expect(tag).not.toBe("");
 
@@ -270,9 +269,13 @@ describe("the widget's appearance", () => {
     const response = await appearance(space);
     const text = await response.text();
     expect(JSON.parse(text).team).toEqual([
-      { name: "Maya", pictureUrl: null },
-      { name: "Ana", pictureUrl: `${PUBLIC_URL}/v1/pictures/${ana.id}?v=1800000000000` },
-      { name: "Sam", pictureUrl: null },
+      { id: maya.id, name: "Maya", pictureUrl: null },
+      {
+        id: ana.id,
+        name: "Ana",
+        pictureUrl: `${PUBLIC_URL}/v1/pictures/${ana.id}?v=1800000000000`,
+      },
+      { id: sam.id, name: "Sam", pictureUrl: null },
     ]);
     expect(text).not.toContain("@");
   });
@@ -294,7 +297,7 @@ describe("a reply in the widget", () => {
       headers: { cookie: boss.cookie, origin: ORIGIN, "content-type": "application/json" },
       body: JSON.stringify({ name: "Helper bot" }),
     });
-    const key = (await made.json()) as { token: string };
+    const key = (await made.json()) as { id: string; token: string };
     await app.request(
       `/v1/operator/workspaces/${space.id}/conversations/${conversationId}/messages`,
       {
@@ -322,6 +325,34 @@ describe("a reply in the widget", () => {
       },
       { fromBot: true, authorName: "Helper bot", authorPictureUrl: null },
     ]);
+    // Each author has an ID of its own, which names neither the operator nor the key.
+    const [visitorId, mayaId, botId] = messages.map((one) => one.authorId);
+    expect(visitorId).toBeNull();
+    expect(mayaId).toMatch(/^[0-9a-f]{16}$/);
+    expect(botId).toMatch(/^[0-9a-f]{16}$/);
+    expect(botId).not.toBe(mayaId);
+    expect(JSON.stringify(messages)).not.toContain(key.id);
+  });
+
+  test("from a deleted account names a former team member in full, with no picture", async () => {
+    const { space } = await workspaceWithOwner();
+    const maya = await addOperator({ auth, owner, name: "Maya Chen", workspaceId: space.id });
+    const { token, conversationId } = await visitorWrites(space);
+    await reply(space, maya.id, conversationId);
+    // What deleting the account leaves of the operator's row.
+    await owner
+      .update(operator)
+      .set({ name: FORMER_MEMBER_NAME, pictureUpdatedAt: null, deletedAt: new Date() })
+      .where(eq(operator.id, maya.id));
+
+    const response = await app.request(`/v1/widget/${space.publicKey}/messages`, {
+      headers: { origin: SITE, authorization: `Bearer ${token}` },
+    });
+    const { messages } = (await response.json()) as { messages: Record<string, unknown>[] };
+    expect(messages.at(-1)).toMatchObject({
+      authorName: FORMER_MEMBER_NAME,
+      authorPictureUrl: null,
+    });
   });
 });
 

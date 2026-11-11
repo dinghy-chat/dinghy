@@ -14,6 +14,8 @@ export interface ChatMessage {
   imageRemoved: boolean;
   /** A reply from a workspace API key, such as the site's own bot. */
   fromBot: boolean;
+  /** A hash of the operator's or the key's ID, which tells two authors with one name apart. */
+  authorId: string | null;
   /** A reply's author: an operator's first name or a key's name. Null for the visitor's own. */
   authorName: string | null;
   authorPictureUrl: string | null;

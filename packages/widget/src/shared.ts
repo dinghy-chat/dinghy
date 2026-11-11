@@ -43,6 +43,8 @@ export interface WidgetSettings {
 
 /** A member the widget's header shows: a first name and a picture, never an email. */
 export interface TeamFace {
+  /** The operator's ID, which tells two members with one first name apart. */
+  id: string;
   name: string;
   pictureUrl: string | null;
 }
@@ -54,17 +56,54 @@ export interface SavedAppearance extends WidgetSettings {
   team: TeamFace[];
 }
 
-/** What the widget knows of the saved settings. Empty when the server could not answer. */
-export type Saved = Partial<SavedAppearance>;
+/** The longest title an owner can save. */
+export const TITLE_MAX = 40;
+/** The longest greeting or away text. */
+export const TEXT_MAX = 200;
+/** The roundest corners an owner can save. */
+export const RADIUS_MAX_PX = 24;
+
+/** The widget's own colors, which a null color in the settings keeps. */
+export const DEFAULT_COLORS = { primary: "#0b2239", accent: "#e5352b" };
+
+/** What a new workspace saves, and what the widget shows when the server cannot answer. */
+export const WIDGET_DEFAULTS: SavedAppearance = {
+  title: null,
+  greeting: null,
+  away: null,
+  primary: null,
+  accent: null,
+  position: "right",
+  theme: "auto",
+  launcher: "boat",
+  mascot: true,
+  radius: 16,
+  emailAsk: "after_first",
+  branding: true,
+  logoUrl: null,
+  team: [],
+};
 
 /**
- * Asks for the saved settings, once a page. Null means the workspace serves no widget. An answer
- * with an error, or none, leaves every value to the defaults.
+ * The first word of a name, which is all a visitor learns of an operator. It stops at an @ too, so
+ * a name typed as an email never shows one.
  */
-export const loadAppearance = (base: string, publicKey: string): Promise<Saved | null> =>
+export const firstName = (name: string) => name.trim().split(/[\s@]+/)[0] ?? "";
+
+/**
+ * Asks for the saved settings, once a page. Null means the workspace serves no widget, and
+ * undefined that the server gave no answer, so WIDGET_DEFAULTS apply. The loader has no bytes for
+ * that object, so it leaves those values to its CSS, which holds the same ones.
+ */
+export const loadAppearance = (
+  base: string,
+  publicKey: string,
+): Promise<SavedAppearance | null | undefined> =>
   fetch(`${base}../v1/widget/${publicKey}/appearance`)
-    .then((response) => (response.status === 404 ? null : response.json()))
-    .catch(() => ({}));
+    .then((response) =>
+      response.ok ? response.json() : response.status === 404 ? null : undefined,
+    )
+    .catch(() => undefined);
 
 export interface DinghyState {
   /** The chat bundle has loaded. */
@@ -126,8 +165,8 @@ export interface WidgetContext {
   publicKey: string;
   base: string;
   shadow: ShadowRoot;
-  /** The saved settings, which the loader asked for. */
-  appearance: Promise<Saved | null>;
+  /** The saved settings, which the loader asked for. See loadAppearance. */
+  appearance: Promise<SavedAppearance | null | undefined>;
   /** Reads the tag's data attributes by dataset name, such as `mascot`. They win over the saved settings. */
   attribute(name: string): string | undefined;
   /** The full-page chat that a reply email opens, on the Dinghy server's own origin. */

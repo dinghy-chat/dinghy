@@ -1,4 +1,5 @@
 import "./globals.ts";
+import { paintColors } from "./launcher.ts";
 import { loadAppearance, type WidgetContext } from "./shared.ts";
 
 // The full-page chat that a reply email opens, on the Dinghy server's own origin. It sets up what
@@ -23,11 +24,16 @@ if (script !== null && publicKey !== null && publicKey !== undefined) {
   }
   const shadow = host.attachShadow({ mode: "open" });
   const base = new URL(".", script.src).href;
+  const appearance = loadAppearance(base, publicKey);
+  // The colors the loader paints on a host site. With no answer, the widget keeps its own.
+  appearance.then((saved) => {
+    if (saved) paintColors(host.style, saved);
+  });
   const context: WidgetContext = {
     publicKey,
     base,
     shadow,
-    appearance: loadAppearance(base, publicKey),
+    appearance,
     // This page has no tag of the host site's, so only the saved settings count.
     attribute: () => undefined,
     page: true,

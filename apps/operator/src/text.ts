@@ -194,7 +194,7 @@ const en = {
   widgetMemberNote: "Only owners and admins can change the widget.",
   previewTitle: "Preview",
   previewState: "Show the chat open or closed",
-  previewColors: "Show light or dark colors",
+  previewDevice: "Show the chat on a light or dark device",
   previewShow: "Show the preview",
   previewHide: "Hide the preview",
   previewOpen: "Open",

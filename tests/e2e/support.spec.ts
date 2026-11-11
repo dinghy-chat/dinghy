@@ -24,7 +24,7 @@ test.afterAll(async () => {
 
 test.beforeEach(async () => {
   await server.closeConversations();
-  await server.setWidgetSettings({ title: null, greeting: null, away: null });
+  await server.setWidgetSettings({ title: null, greeting: null, away: null, primary: null });
 });
 
 async function signedIn(browser: Browser): Promise<Page> {
@@ -53,7 +53,7 @@ test("the reply email's link opens the conversation on its own page, to read and
 }) => {
   await visitor(browser, "/pricing", "Is there a yearly plan?");
   await server.reply("Yes, two months free.");
-  await server.setWidgetSettings({ title: "Talk to E2E" });
+  await server.setWidgetSettings({ title: "Talk to E2E", primary: "#1f6bff" });
   const link = await server.chatLink();
 
   const page = await (await browser.newContext()).newPage();
@@ -68,6 +68,11 @@ test("the reply email's link opens the conversation on its own page, to read and
   await expect(page.locator(".msg", { hasText: "Yes, two months free." })).toBeVisible();
   await expect(page.locator(".msg.mine", { hasText: "Is there a yearly plan?" })).toBeVisible();
   await expect(page.locator(".head b")).toHaveText("Talk to E2E");
+  // The saved colors, as on the site.
+  const primary = await page
+    .locator("dinghy-chat")
+    .evaluate((host) => (host as HTMLElement).style.getPropertyValue("--d-primary"));
+  expect(primary).toBe("#1f6bff");
   // Nothing to close on a page of its own.
   await expect(page.getByRole("button", { name: "Close chat" })).toHaveCount(0);
   await say(page, "Great, I'll take it.");
