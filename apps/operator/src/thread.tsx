@@ -3,6 +3,7 @@ import {
   createElement,
   Fragment,
   type ReactNode,
+  type RefObject,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -17,13 +18,14 @@ import {
   REFRESH_LIMIT_MS,
   REFUSED,
 } from "../../../packages/widget/src/compose.ts";
-import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
+import { quoteExcerpt, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import {
   ApiError,
   type Conversation,
   type Member,
   type Message,
   type PageView,
+  type Quote,
   type ReplyReceipts,
   type WelcomeChat,
   type WorkspaceApi,
@@ -31,6 +33,7 @@ import {
 import { code, type Edit, link, list, wrap } from "./format.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { useLatestLoad, useLoad } from "./load.ts";
+import { type InfoLine, MessageInfo, MessageMenu, QuoteBlock, QuoteChip } from "./message.tsx";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
@@ -60,6 +63,11 @@ interface Line {
   status: "sent" | "sending" | "failed";
   /** A status line: someone closed or reopened the conversation. */
   note?: "closed" | "reopened";
+  /** The message this one quotes. */
+  replyTo: Quote | null;
+  editedAt: string | null;
+  deleted: boolean;
+  via: Message["via"];
 }
 
 /** Adds a confirmed message in commit order, and replaces its pending line if it has one. */
@@ -78,6 +86,10 @@ function merge(lines: Line[], message: Message): Line[] {
     authorApiKeyId: message.authorApiKeyId,
     authorName: message.authorName,
     status: "sent",
+    replyTo: message.replyTo,
+    editedAt: message.editedAt,
+    deleted: message.deleted,
+    via: message.via,
   };
   const others = lines.filter(
     (other) => other.id !== message.id && !(other.seq === null && other.id === message.clientId),
@@ -317,12 +329,21 @@ function Composer({
   setDraft,
   onSend,
   onFiles,
+  onEscape,
+  above,
+  editing = false,
 }: {
   draft: string;
   setDraft(draft: string): void;
   onSend(body: string): void;
   /** Undefined when only text can go, as in a read-only workspace's welcome chat. */
   onFiles: ((files: Iterable<File>) => void) | undefined;
+  /** Escape in the box: cancels a quote or an edit. */
+  onEscape?: (() => void) | undefined;
+  /** Above the text, such as the quote a reply carries. */
+  above?: ReactNode;
+  /** It edits a sent reply, in place of its bubble. */
+  editing?: boolean;
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -353,11 +374,14 @@ function Composer({
   };
 
   return (
-    <form className="compose" onSubmit={submit}>
+    <form className={editing ? "compose editing" : "compose"} onSubmit={submit}>
       <div className="box">
+        {above}
         <textarea
           ref={input}
           rows={1}
+          // biome-ignore lint/a11y/noAutofocus: the operator chose Edit, so the text is what they want.
+          autoFocus={editing}
           onPaste={(event) => {
             // A copy from Word or Excel holds its text and a picture of it. The text is what is meant.
             const { clipboardData: data } = event;
@@ -366,14 +390,19 @@ function Composer({
             event.preventDefault();
             onFiles(data.files);
           }}
-          aria-label={t("replyLabel")}
-          placeholder={t("replyPlaceholder")}
+          aria-label={t(editing ? "editLabel" : "replyLabel")}
+          placeholder={editing ? undefined : t("replyPlaceholder")}
           maxLength={10_000}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !isComposing(event.nativeEvent)) {
               submit(event);
+              return;
+            }
+            if (event.key === "Escape" && onEscape !== undefined) {
+              event.preventDefault();
+              onEscape();
               return;
             }
             if (!(ON_MAC ? event.metaKey : event.ctrlKey) || event.altKey || event.shiftKey) return;
@@ -431,36 +460,47 @@ function Composer({
               );
             })}
           </fieldset>
-          <button type="submit" className="send" aria-label={t("send")} title={t("send")}>
-            <Icon name="arrowUp" size={16} />
-          </button>
+          {editing ? (
+            <span className="edit-actions">
+              <button type="button" className="pill" onClick={onEscape}>
+                {t("cancel")}
+              </button>
+              <button type="submit" className="pill dark">
+                {t("saveEdit")}
+              </button>
+            </span>
+          ) : (
+            <button type="submit" className="send" aria-label={t("send")} title={t("send")}>
+              <Icon name="arrowUp" size={16} />
+            </button>
+          )}
         </div>
       </div>
     </form>
   );
 }
 
-/** One message in the log. */
-function ThreadLine({
+/** A message's bubble: its quote and text, its image, or what stands in for them. */
+function Bubble({
   line,
-  receipt,
+  quote,
   onView,
   onImageError,
-  onRetry,
 }: {
   line: Line;
-  /** How far the visitor has seen this reply, under its bubble. */
-  receipt: ReactNode;
+  quote: ReactNode;
   onView(): void;
   onImageError(): void;
-  onRetry(): void;
 }) {
-  return (
-    <>
-      {line.image !== null ? (
+  const side = line.fromVisitor ? " visitor" : "";
+  if (line.deleted) return <div className={`msg${side} removed`}>{t("messageDeleted")}</div>;
+  if (line.image !== null) {
+    return (
+      <div className="shot-stack">
+        {quote !== null && <div className={`msg${side} quote-only`}>{quote}</div>}
         <button
           type="button"
-          className={line.fromVisitor ? "shot visitor" : "shot"}
+          className={`shot${side}`}
           aria-label={t("imageView")}
           onClick={onView}
         >
@@ -473,18 +513,54 @@ function ThreadLine({
             onError={onImageError}
           />
         </button>
-      ) : line.imageRemoved ? (
-        <div className={line.fromVisitor ? "msg visitor removed" : "msg removed"}>
-          {t("imageRemoved")}
+      </div>
+    );
+  }
+  if (line.imageRemoved) return <div className={`msg${side} removed`}>{t("imageRemoved")}</div>;
+  if (line.file !== undefined) return <div className="msg">{t("imageSending")}</div>;
+  return createElement(
+    "div",
+    { className: `msg${side}` },
+    quote,
+    ...renderMarkdown(line.body, createElement),
+  );
+}
+
+/** One message in the log: its bubble and its "…", or the editor that replaces them. */
+function ThreadLine({
+  line,
+  quote,
+  menu,
+  editor,
+  flash,
+  receipt,
+  onView,
+  onImageError,
+  onRetry,
+}: {
+  line: Line;
+  quote: ReactNode;
+  menu: ReactNode;
+  /** The inline editor while the operator edits this reply. */
+  editor: ReactNode;
+  /** Highlighted for a moment, after a click on a quote of it or a link to it. */
+  flash: boolean;
+  /** How far the visitor has seen this reply, under its bubble. */
+  receipt: ReactNode;
+  onView(): void;
+  onImageError(): void;
+  onRetry(): void;
+}) {
+  const row = ["bubble-row", line.fromVisitor && "visitor", flash && "flash"]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <>
+      {editor ?? (
+        <div className={row} id={`message-${line.id}`}>
+          <Bubble line={line} quote={quote} onView={onView} onImageError={onImageError} />
+          {menu}
         </div>
-      ) : line.file !== undefined ? (
-        <div className="msg">{t("imageSending")}</div>
-      ) : (
-        createElement(
-          "div",
-          { className: line.fromVisitor ? "msg visitor" : "msg" },
-          ...renderMarkdown(line.body, createElement),
-        )
       )}
       {receipt}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}
@@ -617,17 +693,109 @@ function groupMeta(lines: Line[], index: number, meId: string): string | null {
   const line = lines[index];
   if (line === undefined || line.status !== "sent") return null;
   const after = lines[index + 1];
-  if (sameSender(line, after) && dayOf(after) === dayOf(line) && after?.status === "sent") {
-    return null;
-  }
-  const time =
+  // An edited reply always shows its time, with "edited" beside it.
+  const edited = line.editedAt !== null && !line.deleted;
+  const ends = !sameSender(line, after) || dayOf(after) !== dayOf(line) || after?.status !== "sent";
+  if (!edited && !ends) return null;
+  const at =
     line.createdAt === undefined
       ? null
       : new Date(line.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = edited ? [at, t("messageEdited")].filter(Boolean).join(" · ") : at;
   if (line.fromVisitor) return time;
   const who = replyAuthor(line, meId);
   return time === null ? who : `${who} · ${time}`;
 }
+
+const FLASH_MS = 1600;
+
+/** Scrolls the log to a message and highlights it for a moment. False when it is not loaded. */
+function useJump(log: RefObject<HTMLDivElement | null>) {
+  const [flashId, setFlashId] = useState<string | null>(null);
+  useEffect(() => {
+    if (flashId === null) return;
+    const timer = setTimeout(() => setFlashId(null), FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [flashId]);
+  const jump = (id: string) => {
+    const found = log.current?.querySelector(`#message-${CSS.escape(id)}`);
+    if (found == null) return false;
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    found.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+    setFlashId(id);
+    return true;
+  };
+  return { flashId, jump };
+}
+
+/** The quote a reply to this line carries, as the server will show it. */
+const quoteOf = (line: Line, author: string): Quote => ({
+  id: line.id,
+  authorName: line.fromVisitor ? null : author,
+  fromVisitor: line.fromVisitor,
+  excerpt: quoteExcerpt(line.body),
+  hasImage: line.image !== null,
+});
+
+/** Why the visitor may have seen this reply, so it can no longer change, or null. */
+function seenReason(line: Line, receipts: ReplyReceipts | null): TextId | null {
+  if (receipts === null || line.seq === null) return null;
+  if (line.seq <= BigInt(receipts.readSeq)) return "messageAlreadyRead";
+  if (receipts.emailedSeq !== null && line.seq <= BigInt(receipts.emailedSeq)) {
+    return "messageAlreadyEmailed";
+  }
+  return null;
+}
+
+interface LineActions {
+  reply(): void;
+  copyText(): void;
+  edit(): void;
+  info(): void;
+  copyLink(): void;
+  remove(): void;
+}
+
+/** A line's menu, in its fixed order, without the items that do not apply. */
+function lineMenu(
+  line: Line,
+  who: { meId: string; mayDeleteAny: boolean; canWrite: boolean; canReply: boolean },
+  receipts: ReplyReceipts | null,
+  act: LineActions,
+): MenuItem[] {
+  if (line.seq === null || line.note !== undefined) return [];
+  const item = (label: TextId, icon: IconName, onSelect: () => void): MenuItem => ({
+    label: t(label),
+    lead: <Icon name={icon} size={18} />,
+    onSelect,
+  });
+  const info = item("messageInfo", "info", act.info);
+  if (line.deleted) return [info];
+  const isText = line.image === null && !line.imageRemoved && line.body !== "";
+  const isMine = line.authorOperatorId === who.meId;
+  const items: MenuItem[] = [];
+  if (who.canReply) items.push(item("messageReply", "reply", act.reply));
+  if (isText) items.push(item("messageCopyText", "copy", act.copyText));
+  if (isMine && isText && who.canWrite) {
+    const seen = seenReason(line, receipts);
+    items.push({
+      ...item("messageEdit", "pencil", act.edit),
+      ...(seen !== null && { unavailable: t(seen) }),
+    });
+  }
+  items.push(info, item("messageCopyLink", "link", act.copyLink));
+  if ((isMine || who.mayDeleteAny) && who.canWrite) {
+    items.push({ ...item("messageDelete", "trash", act.remove), danger: true, divider: true });
+  }
+  return items;
+}
+
+/** Copies text, and says so. A browser that refuses says nothing, as the copy did not happen. */
+const copy = (text: string, done: TextId) =>
+  navigator.clipboard
+    ?.writeText(text)
+    .then(() => toast(done))
+    .catch(() => {});
 
 export function Thread({
   api,
@@ -642,6 +810,7 @@ export function Thread({
   suspended,
   drafts,
   receiptsVersion,
+  rewriteVersion,
   typingDraft,
   onBack,
   onChanged,
@@ -666,6 +835,8 @@ export function Thread({
   version: number;
   /** Goes up when this visitor read replies or got a reply email. */
   receiptsVersion(visitorId: string): number;
+  /** Goes up when someone edits or deletes a message here, so this loads every message again. */
+  rewriteVersion: number;
   /** What the visitor is typing and has not sent, or null. */
   typingDraft: string | null;
   onBack(): void;
@@ -708,6 +879,11 @@ export function Thread({
   const [dropping, setDropping] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // The message the next reply quotes, the reply being edited, and the dialogs about one message.
+  const [quoting, setQuoting] = useState<Line | null>(null);
+  const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
+  const [info, setInfo] = useState<Line | null>(null);
+  const [deleting, setDeleting] = useState<Line | null>(null);
   const lastRefresh = useRef(0);
   const log = useRef<HTMLDivElement>(null);
   const position = useRef("0");
@@ -736,6 +912,12 @@ export function Thread({
   const receiptsSeen = conversation === null ? 0 : receiptsVersion(conversation.visitor.id);
   // biome-ignore lint/correctness/useExhaustiveDependencies: each version asks for a load.
   useEffect(load, [load, version, receiptsSeen]);
+  // An edit or a delete keeps the message's position, so only a load from the start finds it.
+  useEffect(() => {
+    if (rewriteVersion === 0) return;
+    position.current = "0";
+    load();
+  }, [load, rewriteVersion]);
   // The visitor's online state changes with no event, so it is read again now and then.
   useEffect(() => {
     const timer = setInterval(load, ONLINE_EVERY_MS);
@@ -747,6 +929,17 @@ export function Thread({
     if (log.current !== null) log.current.scrollTop = log.current.scrollHeight;
   }, [lines.length, typingDraft !== null]);
 
+  const { flashId, jump } = useJump(log);
+  // A copied link to a message ends with #message-<id>, and this scrolls to it once it is loaded.
+  const linkedMessage = useRef(
+    location.hash.startsWith("#message-") ? location.hash.slice("#message-".length) : null,
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each new line may be the linked one.
+  useEffect(() => {
+    const id = linkedMessage.current;
+    if (id !== null && jump(id)) linkedMessage.current = null;
+  }, [lines.length]);
+
   // An image's URL expires after 15 minutes. Loading from the start gives every line a new one.
   const refreshImages = () => {
     if (Date.now() - lastRefresh.current < REFRESH_LIMIT_MS) return;
@@ -755,15 +948,15 @@ export function Thread({
     load();
   };
 
-  const deliver = async (id: string, body: string, file?: File) => {
+  const deliver = async (id: string, body: string, file?: File, replyToId?: string) => {
     setLines((current) =>
       current.map((line) => (line.id === id ? { ...line, status: "sending" } : line)),
     );
     try {
       const sent =
         file === undefined
-          ? await api.reply(conversationId, id, body)
-          : await api.replyImage(conversationId, id, file);
+          ? await api.reply(conversationId, id, body, replyToId)
+          : await api.replyImage(conversationId, id, file, replyToId);
       setLines((current) => merge(current, sent));
       onChanged();
     } catch (error) {
@@ -772,30 +965,43 @@ export function Thread({
         setLines((current) => current.filter((line) => line.id !== id));
         return;
       }
+      if (error instanceof ApiError && error.code === "invalid_reply_to")
+        setProblem("quoteInvalid");
       setLines((current) =>
         current.map((line) => (line.id === id ? { ...line, status: "failed" } : line)),
       );
     }
   };
 
+  /** A line this operator is sending, before the server confirms it. */
+  const pending = (id: string, body: string, replyTo: Quote | null): Line => ({
+    id,
+    seq: null,
+    body,
+    image: null,
+    imageRemoved: false,
+    fromVisitor: false,
+    authorOperatorId: meId,
+    authorApiKeyId: null,
+    authorName: null,
+    status: "sending",
+    replyTo,
+    editedAt: null,
+    deleted: false,
+    via: null,
+  });
+
+  /** Who wrote a line, as this thread names them. */
+  const authorOf = (line: Line) =>
+    line.fromVisitor ? (conversation === null ? "" : title(conversation)) : replyAuthor(line, meId);
+
   const sendText = (body: string) => {
     const id = newClientId();
-    setLines((current) => [
-      ...current,
-      {
-        id,
-        seq: null,
-        body,
-        image: null,
-        imageRemoved: false,
-        fromVisitor: false,
-        authorOperatorId: meId,
-        authorApiKeyId: null,
-        authorName: null,
-        status: "sending",
-      },
-    ]);
-    void deliver(id, body);
+    const quote =
+      quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting));
+    setQuoting(null);
+    setLines((current) => [...current, pending(id, body, quote)]);
+    void deliver(id, body, undefined, quote?.id ?? undefined);
   };
 
   const sendFiles = (files: Iterable<File>) => {
@@ -808,22 +1014,7 @@ export function Thread({
         continue;
       }
       const id = newClientId();
-      setLines((current) => [
-        ...current,
-        {
-          id,
-          seq: null,
-          body: "",
-          image: null,
-          imageRemoved: false,
-          file,
-          fromVisitor: false,
-          authorOperatorId: meId,
-          authorApiKeyId: null,
-          authorName: null,
-          status: "sending",
-        },
-      ]);
+      setLines((current) => [...current, { ...pending(id, "", null), file }]);
       void deliver(id, "", file);
     }
   };
@@ -849,6 +1040,59 @@ export function Thread({
     );
     onChanged();
   };
+
+  const saveEdit = async (body: string) => {
+    const target = editing;
+    setEditing(null);
+    if (target === null) return;
+    setProblem(null);
+    try {
+      const saved = await api.editMessage(conversationId, target.id, body);
+      setLines((current) => merge(current, saved));
+    } catch (failure) {
+      setProblem(failureText(failure, {}, "actionFailed"));
+    }
+  };
+
+  const removeMessage = async (line: Line) => {
+    setDeleting(null);
+    setProblem(null);
+    try {
+      await api.deleteMessage(conversationId, line.id);
+    } catch (failure) {
+      setProblem(failureText(failure, {}, "messageDeleteFailed"));
+      return;
+    }
+    // Every quote of it changes too, so the whole thread loads again.
+    position.current = "0";
+    load();
+    onChanged();
+  };
+
+  const openQuote = (id: string) => {
+    if (!jump(id)) toast("quoteMissing", false);
+  };
+
+  const actionsFor = (line: Line): LineActions => ({
+    reply: () => {
+      setEditing(null);
+      setQuoting(line);
+    },
+    copyText: () => void copy(line.body, "copied"),
+    edit: () => {
+      setQuoting(null);
+      setEditing({ id: line.id, draft: line.body });
+    },
+    info: () => setInfo(line),
+    copyLink: () => {
+      const url = new URL("/", location.origin);
+      url.searchParams.set("workspace", api.workspaceId);
+      url.searchParams.set("conversation", conversationId);
+      url.hash = `message-${line.id}`;
+      void copy(url.href, "linkCopied");
+    },
+    remove: () => setDeleting(line),
+  });
 
   const remove = async () => {
     try {
@@ -895,6 +1139,26 @@ export function Thread({
       !line.fromVisitor && line.note === undefined && line.seq !== null ? index : last,
     -1,
   );
+  const visitorName = title(conversation);
+  const who = {
+    meId,
+    mayDeleteAny: canDelete,
+    canWrite: repliesOffReason === null,
+    canReply: repliesOffReason === null && !closed,
+  };
+  const infoLine: InfoLine | null =
+    info === null || info.createdAt === undefined
+      ? null
+      : {
+          id: info.id,
+          createdAt: info.createdAt,
+          author: info.fromVisitor ? visitorName : (info.authorName ?? authorOf(info)),
+          via: info.via,
+          receipt:
+            info.fromVisitor || receipts === null || info.seq === null
+              ? null
+              : { isRead: info.seq <= BigInt(receipts.readSeq) },
+        };
   return (
     <div className="conversation-view">
       <section
@@ -938,6 +1202,23 @@ export function Thread({
             onCancel={() => setConfirming(false)}
           />
         )}
+        {deleting !== null && (
+          <Confirm
+            title={t("messageDeleteTitle")}
+            text={t("messageDeleteText")}
+            confirm={t("messageDeleteYes")}
+            onConfirm={() => void removeMessage(deleting)}
+            onCancel={() => setDeleting(null)}
+          />
+        )}
+        {infoLine !== null && (
+          <MessageInfo
+            api={api}
+            conversationId={conversationId}
+            line={infoLine}
+            onClose={() => setInfo(null)}
+          />
+        )}
         {conversation.visitor.blocked && (
           <p className="replying blocked" role="status">
             {t("blockedNote")}
@@ -975,10 +1256,40 @@ export function Thread({
                     )}
                     <ThreadLine
                       line={line}
+                      quote={
+                        line.replyTo === null ? null : (
+                          <QuoteBlock
+                            quote={line.replyTo}
+                            visitorName={visitorName}
+                            onOpen={openQuote}
+                          />
+                        )
+                      }
+                      menu={
+                        <MessageMenu
+                          items={lineMenu(line, who, receipts, actionsFor(line))}
+                          side={line.fromVisitor ? "start" : "end"}
+                        />
+                      }
+                      editor={
+                        editing?.id === line.id ? (
+                          <Composer
+                            editing
+                            draft={editing.draft}
+                            setDraft={(draft) => setEditing({ id: line.id, draft })}
+                            onSend={(body) => void saveEdit(body)}
+                            onFiles={undefined}
+                            onEscape={() => setEditing(null)}
+                          />
+                        ) : null
+                      }
+                      flash={flashId === line.id}
                       receipt={receipt}
                       onView={() => setViewing(line.id)}
                       onImageError={refreshImages}
-                      onRetry={() => void deliver(line.id, line.body, line.file)}
+                      onRetry={() =>
+                        void deliver(line.id, line.body, line.file, line.replyTo?.id ?? undefined)
+                      }
                     />
                     {meta !== null && (
                       <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>
@@ -1011,6 +1322,16 @@ export function Thread({
             setDraft={setDraft}
             onSend={sendText}
             onFiles={imagesOn ? sendFiles : undefined}
+            onEscape={quoting === null ? undefined : () => setQuoting(null)}
+            above={
+              quoting === null ? undefined : (
+                <QuoteChip
+                  quote={quoteOf(quoting, authorOf(quoting))}
+                  visitorName={visitorName}
+                  onCancel={() => setQuoting(null)}
+                />
+              )
+            }
           />
         )}
       </section>

@@ -56,6 +56,7 @@
                   "forbidden",
                   "internal_error",
                   "invalid_name",
+                  "invalid_reply_to",
                   "invalid_request",
                   "invite_invalid",
                   "invite_other_email",
@@ -63,6 +64,7 @@
                   "last_workspace",
                   "link_invalid",
                   "mail_failed",
+                  "message_seen",
                   "name_mismatch",
                   "no_customer",
                   "no_email",
@@ -279,6 +281,27 @@
         },
         "required": ["url", "width", "height"]
       },
+      "Quote": {
+        "type": ["object", "null"],
+        "properties": {
+          "id": {
+            "type": ["string", "null"]
+          },
+          "authorName": {
+            "type": ["string", "null"]
+          },
+          "fromVisitor": {
+            "type": "boolean"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "hasImage": {
+            "type": "boolean"
+          }
+        },
+        "required": ["id", "authorName", "fromVisitor", "excerpt", "hasImage"]
+      },
       "Message": {
         "type": "object",
         "properties": {
@@ -310,6 +333,12 @@
           "imageRemoved": {
             "type": "boolean"
           },
+          "replyTo": {
+            "$ref": "#/components/schemas/Quote"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
           "fromBot": {
             "type": "boolean"
           },
@@ -336,6 +365,8 @@
           "body",
           "image",
           "imageRemoved",
+          "replyTo",
+          "deleted",
           "fromBot",
           "authorName",
           "authorPictureUrl",
@@ -352,6 +383,8 @@
           "body": "Do you have a yearly plan?",
           "image": null,
           "imageRemoved": false,
+          "replyTo": null,
+          "deleted": false,
           "fromBot": false,
           "authorName": null,
           "authorPictureUrl": null,
@@ -689,6 +722,22 @@
           "imageRemoved": {
             "type": "boolean"
           },
+          "replyTo": {
+            "$ref": "#/components/schemas/Quote"
+          },
+          "editedAt": {
+            "type": ["string", "null"]
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "readAt": {
+            "type": ["string", "null"]
+          },
+          "via": {
+            "type": ["string", "null"],
+            "enum": ["api", "mcp", null]
+          },
           "createdAt": {
             "type": "string"
           }
@@ -706,6 +755,11 @@
           "body",
           "image",
           "imageRemoved",
+          "replyTo",
+          "editedAt",
+          "deleted",
+          "readAt",
+          "via",
           "createdAt"
         ],
         "example": {
@@ -721,6 +775,17 @@
           "body": "Yes, it is two months free.",
           "image": null,
           "imageRemoved": false,
+          "replyTo": {
+            "id": "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
+            "authorName": "Ada",
+            "fromVisitor": true,
+            "excerpt": "Do you have a yearly plan?",
+            "hasImage": false
+          },
+          "editedAt": null,
+          "deleted": false,
+          "readAt": null,
+          "via": null,
           "createdAt": "2026-11-08T09:31:00.000Z"
         }
       },
@@ -808,6 +873,18 @@
         },
         "required": ["readSeq", "emailedSeq", "emailFailedSeq"]
       },
+      "MessageReceipt": {
+        "type": "object",
+        "properties": {
+          "readAt": {
+            "type": ["string", "null"]
+          },
+          "emailedAt": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["readAt", "emailedAt"]
+      },
       "ApiKey": {
         "type": "object",
         "properties": {
@@ -849,6 +926,8 @@
               "enum": [
                 "conversation.created",
                 "message.created",
+                "message.updated",
+                "message.deleted",
                 "conversation.closed",
                 "conversation.reopened",
                 "conversation.assigned"
@@ -891,6 +970,8 @@
             "enum": [
               "conversation.created",
               "message.created",
+              "message.updated",
+              "message.deleted",
               "conversation.closed",
               "conversation.reopened",
               "conversation.assigned"
@@ -1627,6 +1708,11 @@
                     "type": "string",
                     "maxLength": 4096
                   },
+                  "replyToMessageId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "An earlier message of the visitor's conversation that this one quotes."
+                  },
                   "body": {
                     "type": "string",
                     "minLength": 1,
@@ -1669,6 +1755,8 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "replyTo": null,
+                    "deleted": false,
                     "fromBot": false,
                     "authorName": null,
                     "authorPictureUrl": null,
@@ -1708,6 +1796,8 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "replyTo": null,
+                    "deleted": false,
                     "fromBot": false,
                     "authorName": null,
                     "authorPictureUrl": null,
@@ -1719,7 +1809,7 @@
             }
           },
           "400": {
-            "description": "invalid_request: the request is not valid",
+            "description": "invalid_request: the request is not valid. invalid_reply_to: the quoted message is not in this conversation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1787,6 +1877,7 @@
           }
         ],
         "summary": "List the visitor's messages after a cursor, in commit order",
+        "description": "An edit or a delete sends a message again at the position of that change, with its `seq` unchanged. Replace the copy you have by its `id`, and keep sorting by `seq`.",
         "parameters": [
           {
             "schema": {
@@ -1880,7 +1971,7 @@
           }
         ],
         "summary": "Stream the visitor's messages after a cursor",
-        "description": "Server-sent events: `message` (its id is the new cursor, its data a Message), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
@@ -1990,6 +2081,17 @@
             "required": false,
             "name": "page",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "An earlier message of the visitor's conversation that this one quotes."
+            },
+            "required": false,
+            "description": "An earlier message of the visitor's conversation that this one quotes.",
+            "name": "replyToMessageId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -2022,6 +2124,8 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "replyTo": null,
+                    "deleted": false,
                     "fromBot": false,
                     "authorName": null,
                     "authorPictureUrl": null,
@@ -2061,6 +2165,8 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "replyTo": null,
+                    "deleted": false,
                     "fromBot": false,
                     "authorName": null,
                     "authorPictureUrl": null,
@@ -2072,7 +2178,7 @@
             }
           },
           "400": {
-            "description": "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels",
+            "description": "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels. invalid_reply_to: the quoted message is not in this conversation",
             "content": {
               "application/json": {
                 "schema": {
@@ -4195,6 +4301,11 @@
                     "minLength": 1,
                     "maxLength": 10000,
                     "pattern": "^[^\\0]*$"
+                  },
+                  "replyToMessageId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message."
                   }
                 },
                 "required": ["clientId", "body"]
@@ -4224,7 +4335,7 @@
             }
           },
           "400": {
-            "description": "invalid_request: the request is not valid",
+            "description": "invalid_request: the request is not valid. invalid_reply_to: the quoted message is not in this conversation",
             "content": {
               "application/json": {
                 "schema": {
@@ -4460,6 +4571,17 @@
             "required": true,
             "name": "clientId",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message."
+            },
+            "required": false,
+            "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message.",
+            "name": "replyToMessageId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -4484,7 +4606,7 @@
             }
           },
           "400": {
-            "description": "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels",
+            "description": "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels. invalid_reply_to: the quoted message is not in this conversation",
             "content": {
               "application/json": {
                 "schema": {
@@ -4585,6 +4707,378 @@
           },
           "507": {
             "description": "storage_full: the workspace has no room for more images",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}": {
+      "patch": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Change the text of your own reply, before the visitor has seen it",
+        "description": "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. API keys cannot edit.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000,
+                    "pattern": "^[^\\0]*$"
+                  }
+                },
+                "required": ["body"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The changed message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxMessage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: not your own text reply, or an API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "message_seen: the visitor read it, or an email carried it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Delete a message: its text and image go, and a placeholder stays",
+        "description": "An operator deletes their own messages. An owner or an admin deletes anyone's, a visitor's too. API keys cannot delete.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted, or it already was",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}/receipt": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "When the visitor saw a reply: read in the chat, or sent by email",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Each time, or null when it did not happen or is not known",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageReceipt"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4870,7 +5364,7 @@
           }
         ],
         "summary": "Stream the workspace's changes after a cursor",
-        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
@@ -5428,13 +5922,15 @@
                       "enum": [
                         "conversation.created",
                         "message.created",
+                        "message.updated",
+                        "message.deleted",
                         "conversation.closed",
                         "conversation.reopened",
                         "conversation.assigned"
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 5
+                    "maxItems": 7
                   },
                   "enabled": {
                     "type": "boolean",
@@ -5612,13 +6108,15 @@
                       "enum": [
                         "conversation.created",
                         "message.created",
+                        "message.updated",
+                        "message.deleted",
                         "conversation.closed",
                         "conversation.reopened",
                         "conversation.assigned"
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 5
+                    "maxItems": 7
                   },
                   "enabled": {
                     "type": "boolean"

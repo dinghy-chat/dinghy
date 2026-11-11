@@ -40,6 +40,12 @@ const en = {
   poweredBy: "Powered by Dinghy",
   closed: "This conversation is closed. Write to us again any time.",
   reopened: "Conversation reopened",
+  reply: "Reply",
+  cancelReply: "Cancel the reply",
+  you: "You",
+  quoteDeleted: "Original message deleted",
+  quoteImage: "Image",
+  messageDeleted: "Message deleted",
 };
 
 export type TextId = keyof typeof en;

@@ -629,7 +629,7 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(events).toHaveCount(0);
   await page.getByRole("button", { name: "New webhook" }).click();
-  await expect(events).toHaveCount(5);
+  await expect(events).toHaveCount(7);
   await expect(
     page.getByRole("checkbox", { name: /A message is sent\s*message\.created/ }),
   ).toBeChecked();

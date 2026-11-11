@@ -20,6 +20,16 @@ export interface ChatMessage {
   /** A reply's author: an operator's first name or a key's name. Null for the visitor's own. */
   authorName: string | null;
   authorPictureUrl: string | null;
+  /** The message this one quotes. Its `id` is null when that message was deleted. */
+  replyTo: {
+    id: string | null;
+    /** An operator's first name or a key's name. Null for the visitor's own. */
+    authorName: string | null;
+    fromVisitor: boolean;
+    excerpt: string;
+  } | null;
+  /** The team deleted it, so it shows a placeholder. */
+  deleted: boolean;
   createdAt: string;
 }
 
@@ -151,10 +161,10 @@ export function createClient(
       if (!response.ok) throw await refused(response);
       return (await response.json()) as SentMessage;
     },
-    send: (token: string, clientId: string, body: string) =>
+    send: (token: string, clientId: string, body: string, replyToMessageId?: string) =>
       call<SentMessage>("messages", token, {
         method: "POST",
-        body: JSON.stringify({ clientId, body, page: page() }),
+        body: JSON.stringify({ clientId, body, page: page(), replyToMessageId }),
       }),
 
     /** Reads the stream until it ends. See readStream. */

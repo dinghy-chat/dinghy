@@ -138,6 +138,11 @@ const ExportFile = z.strictObject({
       clientId: z.string().max(128),
       body: z.string().max(100_000).nullable(),
       metadata: z.unknown(),
+      // Missing from files made before quotes, edits and deletes.
+      replyToMessageId: id.nullable().optional(),
+      editedAt: date.nullable().optional(),
+      deletedAt: date.nullable().optional(),
+      readAt: date.nullable().optional(),
       createdAt: date,
     }),
   ),
@@ -156,6 +161,7 @@ const ExportFile = z.strictObject({
 type ExportData = z.infer<typeof ExportFile>;
 const iso = (value: Date) => value.toISOString();
 const isoOrNull = (value: Date | null) => (value === null ? null : value.toISOString());
+const dateOrNull = (value: string | null | undefined) => (value == null ? null : new Date(value));
 
 type MessageRow = typeof message.$inferSelect;
 
@@ -170,6 +176,10 @@ const messageJson = (row: MessageRow): ExportData["messages"][number] => ({
   clientId: row.clientId,
   body: row.body,
   metadata: row.metadata,
+  replyToMessageId: row.replyToMessageId,
+  editedAt: isoOrNull(row.editedAt),
+  deletedAt: isoOrNull(row.deletedAt),
+  readAt: isoOrNull(row.readAt),
   createdAt: iso(row.createdAt),
 });
 
@@ -641,6 +651,11 @@ async function insertWorkspace(
         clientId: row.clientId,
         body: row.body,
         metadata: row.metadata ?? {},
+        // Messages go in commit order, so a quoted one is always in already.
+        replyToMessageId: row.replyToMessageId ?? null,
+        editedAt: dateOrNull(row.editedAt),
+        deletedAt: dateOrNull(row.deletedAt),
+        readAt: dateOrNull(row.readAt),
         createdAt: new Date(row.createdAt),
       })),
     );

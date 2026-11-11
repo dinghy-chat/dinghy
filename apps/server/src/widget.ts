@@ -48,13 +48,16 @@ import {
   type Cursor,
   catchClosed,
   formatCursor,
+  InvalidReplyToError,
   listVisitorMessages,
   type MessageAuthor,
   markRead,
   messageAuthors,
   parseCursor,
+  QuoteSchema,
   readState,
   type StoredMessage,
+  visitorQuote,
   WorkspaceClosedError,
 } from "./messages.ts";
 import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moderation.ts";
@@ -175,6 +178,21 @@ const meRoute = createRoute({
 
 // The host page's address. Only its origin and path are kept, when a conversation starts.
 const PAGE = z.string().max(4096).optional();
+const REPLY_TO = z.uuid().optional().openapi({
+  description: "An earlier message of the visitor's conversation that this one quotes.",
+});
+const INVALID_REPLY_TO = failure(
+  "invalid_reply_to",
+  "Quote a message that people wrote in this conversation and that was not deleted.",
+);
+const INVALID_REPLY_TO_TEXT = "invalid_reply_to: the quoted message is not in this conversation";
+
+/** A send whose quote is not in the conversation answers 400, and anything else still throws. */
+const catchInvalidQuote = <T>(write: Promise<T>): Promise<T | InvalidReplyToError> =>
+  write.catch((error: unknown) => {
+    if (error instanceof InvalidReplyToError) return error;
+    throw error;
+  });
 
 const pageRoute = createRoute({
   method: "post",
@@ -343,6 +361,10 @@ const MessageSchema = z
     image: ImageSchema.nullable(),
     // The image was deleted after 12 months, on Dinghy Cloud.
     imageRemoved: z.boolean(),
+    // The message this one quotes, or null. Its author is a first name, as on replies.
+    replyTo: QuoteSchema.nullable(),
+    // An operator deleted it, so it shows as a placeholder with no body.
+    deleted: z.boolean(),
     // A reply from a workspace API key, such as the customer's own bot.
     fromBot: z.boolean(),
     // A reply's author: an operator's first name, or a key's name. Null for the visitor's own.
@@ -365,6 +387,8 @@ const MessageSchema = z
       body: "Do you have a yearly plan?",
       image: null,
       imageRemoved: false,
+      replyTo: null,
+      deleted: false,
       fromBot: false,
       authorName: null,
       authorPictureUrl: null,
@@ -397,6 +421,7 @@ const sendMessageRoute = createRoute({
           schema: z.object({
             clientId: CLIENT_ID,
             page: PAGE,
+            replyToMessageId: REPLY_TO,
             // Postgres text cannot hold a NUL byte.
             body: z
               .string()
@@ -424,6 +449,7 @@ const sendMessageRoute = createRoute({
       content: { "application/json": { schema: SentSchema } },
     },
     ...WIDGET_WRITE_ERRORS,
+    400: errorAnswer(`invalid_request: the request is not valid. ${INVALID_REPLY_TO_TEXT}`),
     ...BUSY,
     ...SEND_REFUSED,
   },
@@ -435,7 +461,10 @@ const sendImageRoute = createRoute({
   security: VISITOR_TOKEN,
   summary:
     "Send an image as the raw request body. A retry with the same clientId returns the original",
-  request: { params, query: z.object({ clientId: CLIENT_ID, page: PAGE }) },
+  request: {
+    params,
+    query: z.object({ clientId: CLIENT_ID, page: PAGE, replyToMessageId: REPLY_TO }),
+  },
   responses: {
     200: {
       description: "A retry. This is the original message",
@@ -447,6 +476,7 @@ const sendImageRoute = createRoute({
     },
     ...WIDGET_TOKEN_ERRORS,
     ...IMAGE_UPLOAD_ERRORS,
+    400: errorAnswer(`${IMAGE_UPLOAD_ERRORS[400].description}. ${INVALID_REPLY_TO_TEXT}`),
     ...SEND_REFUSED,
   },
 });
@@ -456,6 +486,8 @@ const listMessagesRoute = createRoute({
   path: "/v1/widget/{key}/messages",
   security: VISITOR_TOKEN,
   summary: "List the visitor's messages after a cursor, in commit order",
+  description:
+    "An edit or a delete sends a message again at the position of that change, with its `seq` unchanged. Replace the copy you have by its `id`, and keep sorting by `seq`.",
   request: {
     params,
     query: z.object({
@@ -491,7 +523,7 @@ const streamRoute = createRoute({
   security: VISITOR_TOKEN,
   summary: "Stream the visitor's messages after a cursor",
   description:
-    "Server-sent events: `message` (its id is the new cursor, its data a Message), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\n" +
+    "Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\n" +
     CLOSE_REASONS_TEXT,
   request: {
     params,
@@ -525,12 +557,26 @@ function messageView(
   authors: Map<string, MessageAuthor>,
   // A visitor learns a reply author's first name and picture, never an email. Only the picture's
   // address names the operator, as an <img> needs one.
-  { seq, createdAt, clientId, image, authorOperatorId, authorApiKeyId, ...message }: StoredMessage,
+  {
+    seq,
+    createdAt,
+    clientId,
+    image,
+    authorOperatorId,
+    authorApiKeyId,
+    replyTo,
+    changeSeq: _change,
+    editedAt: _edited,
+    readAt: _read,
+    via: _via,
+    ...message
+  }: StoredMessage,
 ) {
   const authorId = authorOperatorId ?? authorApiKeyId;
   const author = authorId === null ? undefined : authors.get(authorId);
   return {
     ...message,
+    replyTo: visitorQuote(replyTo),
     // A visitor gets only its own client IDs, to match a stream copy to a pending line.
     clientId: message.fromVisitor ? clientId : null,
     seq: seq.toString(),
@@ -1032,19 +1078,22 @@ export function registerWidgetRoutes(
     const identified = await identify(c);
     if (identified === null) return c.json(UNAUTHORIZED, 401);
     const ipHash = hashIp(ipSecret, found.id, c.get("clientIp"));
-    const result = await catchClosed(
-      withWorkspace(db, found.id, async (tx) => {
-        if (await isBlocked(tx, found.id, identified, ipHash)) return null;
-        await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
-        const { page, ...input } = c.req.valid("json");
-        return appendMessage(
-          tx,
-          found.id,
-          { kind: "visitor", visitorId: identified.visitorId },
-          { ...input, page: identified.link ? null : sitePage(page, c.req.header("origin")) },
-        );
-      }),
+    const result = await catchInvalidQuote(
+      catchClosed(
+        withWorkspace(db, found.id, async (tx) => {
+          if (await isBlocked(tx, found.id, identified, ipHash)) return null;
+          await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
+          const { page, ...input } = c.req.valid("json");
+          return appendMessage(
+            tx,
+            found.id,
+            { kind: "visitor", visitorId: identified.visitorId },
+            { ...input, page: identified.link ? null : sitePage(page, c.req.header("origin")) },
+          );
+        }),
+      ),
     );
+    if (result instanceof InvalidReplyToError) return c.json(INVALID_REPLY_TO, 400);
     // Closed since the check at the door: the same answer as an unknown key.
     if (result instanceof WorkspaceClosedError) return c.json(ORIGIN_NOT_ALLOWED, 403);
     if (result === null) return c.json(BLOCKED, 403);
@@ -1165,7 +1214,7 @@ export function registerWidgetRoutes(
       const found = c.get("workspace");
       const identified = await identify(c);
       if (identified === null) return c.json(UNAUTHORIZED, 401);
-      const { clientId, page } = c.req.valid("query");
+      const { clientId, page, replyToMessageId } = c.req.valid("query");
       const ipHash = hashIp(ipSecret, found.id, c.get("clientIp"));
       const blocked = await withWorkspace(db, found.id, async (tx) => {
         const refused = await isBlocked(tx, found.id, identified, ipHash);
@@ -1173,27 +1222,31 @@ export function registerWidgetRoutes(
         return refused;
       });
       if (blocked) return c.json(BLOCKED, 403);
-      const outcome = await catchClosed(
-        images.receive(
-          c.req.raw,
-          found.id,
-          (image) =>
-            withWorkspace(db, found.id, (tx) =>
-              appendMessage(
-                tx,
-                found.id,
-                { kind: "visitor", visitorId: identified.visitorId },
-                {
-                  clientId,
-                  image,
-                  page: identified.link ? null : sitePage(page, c.req.header("origin")),
-                },
-                limits,
+      const outcome = await catchInvalidQuote(
+        catchClosed(
+          images.receive(
+            c.req.raw,
+            found.id,
+            (image) =>
+              withWorkspace(db, found.id, (tx) =>
+                appendMessage(
+                  tx,
+                  found.id,
+                  { kind: "visitor", visitorId: identified.visitorId },
+                  {
+                    clientId,
+                    image,
+                    page: identified.link ? null : sitePage(page, c.req.header("origin")),
+                    replyToMessageId,
+                  },
+                  limits,
+                ),
               ),
-            ),
-          c.get("clientIp"),
+            c.get("clientIp"),
+          ),
         ),
       );
+      if (outcome instanceof InvalidReplyToError) return c.json(INVALID_REPLY_TO, 400);
       // Closed while the image arrived: the same answer as an unknown key.
       if (outcome instanceof WorkspaceClosedError) return c.json(ORIGIN_NOT_ALLOWED, 403);
       if ("refused" in outcome) return refuseImage(c, outcome.refused);

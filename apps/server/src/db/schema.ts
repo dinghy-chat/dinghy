@@ -334,6 +334,17 @@ export const message = pgTable(
     clientId: text("client_id").notNull(),
     body: text("body"),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    // The earlier message of the same conversation that this one quotes. Its foreign key, which
+    // sets only this column to null, is in a custom migration, because Drizzle cannot name the column.
+    replyToMessageId: uuid("reply_to_message_id"),
+    // When its author last changed its text, before the visitor saw it.
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    // A deleted message keeps its row, so positions, receipts and quotes still work, with no body.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    // When the visitor's read position first passed this reply. Null before it, and for older rows.
+    readAt: timestamp("read_at", { withTimezone: true }),
+    // The position of its last edit or delete, so the visitor's stream sends it again.
+    changedSeq: bigint("changed_seq", { mode: "bigint" }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -379,6 +390,8 @@ export const message = pgTable(
     ),
     unique("message_seq_key").on(table.workspaceId, table.seq),
     index("message_conversation_idx").on(table.workspaceId, table.conversationId, table.seq),
+    // Deleting a quoted row clears its replies' quote, which this finds.
+    index("message_reply_to_idx").on(table.workspaceId, table.replyToMessageId),
     // The widget's header shows the members who replied last: one short read per member.
     index("message_operator_seq_idx")
       .on(table.workspaceId, table.authorOperatorId, table.seq)
@@ -428,6 +441,9 @@ export const attachment = pgTable(
  */
 const EVENT_KINDS = [
   "message.created",
+  // An operator edited a reply, or someone deleted a message. The payload is as message.created's.
+  "message.updated",
+  "message.deleted",
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
@@ -761,6 +777,8 @@ export const apiKey = pgTable(
 export const WEBHOOK_EVENTS = [
   "conversation.created",
   "message.created",
+  "message.updated",
+  "message.deleted",
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",

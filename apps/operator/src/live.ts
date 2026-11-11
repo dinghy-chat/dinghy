@@ -88,6 +88,8 @@ export function useChanges(
   const cursor = useRef<string | null>(null);
   const { typing, notice, stopTyping } = useNotices();
   const [receipts, setReceipts] = useState<Record<string, number>>({});
+  // Edits and deletes by conversation: they keep a message's position, so a thread loads it all.
+  const [rewrites, setRewrites] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!visible) return;
@@ -131,6 +133,15 @@ export function useChanges(
                       },
                     },
               );
+              if (
+                (kind === "message.updated" || kind === "message.deleted") &&
+                conversationId !== null
+              ) {
+                setRewrites((current) => ({
+                  ...current,
+                  [conversationId]: (current[conversationId] ?? 0) + 1,
+                }));
+              }
               if (kind === "team.changed") setTeamVersion((current) => current + 1);
               // Both change `me`: the billing state, a suspension, or the workspace's name or logo.
               if (kind === "billing.changed" || kind === "workspace.changed") {
@@ -189,11 +200,14 @@ export function useChanges(
   const threadVersion = (id: string) => threads.all + (threads.by[id] ?? 0);
   /** Goes up when a visitor read replies or got a reply email. */
   const receiptsVersion = (visitorId: string) => receipts[visitorId] ?? 0;
+  /** Goes up when a message in this conversation was edited or deleted. */
+  const rewriteVersion = (conversationId: string) => rewrites[conversationId] ?? 0;
   return {
     lost,
     version,
     threadVersion,
     receiptsVersion,
+    rewriteVersion,
     typing,
     teamVersion,
     accountVersion,

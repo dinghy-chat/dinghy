@@ -109,6 +109,14 @@ const replyAnswer = (outcome: ReplyOutcome): Outcome => {
   if (outcome.kind === "closed") {
     return { error: failure("conversation_closed", "Reopen this conversation to reply.") };
   }
+  if (outcome.kind === "invalid_reply_to") {
+    return {
+      error: failure(
+        "invalid_reply_to",
+        "Quote a message that people wrote in this conversation and that was not deleted.",
+      ),
+    };
+  }
   return { error: closedFailure(outcome.access).body };
 };
 
@@ -184,7 +192,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       name: "reply",
       title: "Reply to a visitor",
       description:
-        "Sends a reply in an open conversation. The visitor sees the API key's name as its author. Pass the same `clientId` when you retry, so a retry cannot send it twice.",
+        "Sends a reply in an open conversation. The visitor sees the API key's name as its author. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message.",
       input: z.object({
         conversationId,
         body: z
@@ -199,6 +207,10 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
           .describe(
             "Your own ID for this reply, up to 64 letters, digits, - or _. Send the same one on a retry",
           ),
+        replyToMessageId: z
+          .uuid()
+          .optional()
+          .describe("An earlier message of this conversation to quote, from get_conversation"),
       }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
@@ -206,6 +218,8 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
           await inbox.reply(workspaceId, actor, input.conversationId, {
             body: input.body,
             clientId: input.clientId,
+            replyToMessageId: input.replyToMessageId,
+            via: "mcp",
           }),
         ),
     }),

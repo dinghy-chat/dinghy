@@ -35,6 +35,8 @@ const BY_CODE: Record<string, TextId> = {
   billing_unavailable: "billingUnavailable",
   team_changed: "teamChanged",
   email_mismatch: "emailMismatch",
+  message_seen: "messageSeen",
+  invalid_reply_to: "quoteInvalid",
 };
 
 /**

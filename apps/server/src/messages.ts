@@ -1,3 +1,4 @@
+import { z } from "@hono/zod-openapi";
 import {
   and,
   asc,
@@ -9,11 +10,15 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   ne,
   or,
   sql,
 } from "drizzle-orm";
+import { quoteExcerpt } from "../../../packages/widget/src/markdown.ts";
+import { firstName } from "../../../packages/widget/src/shared.ts";
 import {
+  alertDelivery,
   apiKey,
   attachment,
   CHAT_KINDS,
@@ -23,6 +28,7 @@ import {
   type MessageCreatedPayload,
   message,
   operator,
+  storageDeletion,
   visitor,
   webhook,
   workspace,
@@ -53,6 +59,84 @@ export type Author =
   | { kind: "operator"; operatorId: string; conversationId: string }
   | { kind: "key"; apiKeyId: string; conversationId: string };
 
+/** The earlier message a reply quotes, as every list shows it. */
+export type Quote = z.infer<typeof QuoteSchema>;
+
+/** A quote as the API shows it. */
+export const QuoteSchema = z
+  .object({
+    // Null when the quoted message was deleted. Show "Original message deleted" then.
+    id: z.string().nullable(),
+    // The operator's or the API key's name, or the visitor's. Null for a visitor with no name.
+    authorName: z.string().nullable(),
+    fromVisitor: z.boolean(),
+    // The first 140 characters of its text, on one line, without Markdown marks.
+    excerpt: z.string(),
+    hasImage: z.boolean(),
+  })
+  .openapi("Quote");
+
+/** The quote as the database reads it, before the excerpt is cut. */
+interface QuoteRow {
+  id: string;
+  deleted: boolean;
+  fromVisitor: boolean;
+  /** An operator who still has an account, whom the widget calls by first name. */
+  byOperator: boolean;
+  authorName: string | null;
+  body: string | null;
+  hasImage: boolean;
+}
+
+// Enough to fill the excerpt after the Markdown marks go.
+const QUOTE_BODY_CHARACTERS = 600;
+
+/**
+ * The quoted message, read in the same statement as each listed row, so a list costs one query.
+ * The outer table is named, because a RETURNING clause would otherwise read the inner one.
+ */
+const quoteColumn = sql<QuoteRow | null>`(
+  select json_build_object(
+    'id', q.id,
+    'deleted', q.deleted_at is not null,
+    'fromVisitor', q.author_visitor_id is not null,
+    'byOperator', o.id is not null and o.deleted_at is null,
+    'authorName', coalesce(o.name, k.name, v.name),
+    'body', left(q.body, ${QUOTE_BODY_CHARACTERS}),
+    'hasImage', q.kind = 'image')
+  from message as q
+  left join operator as o on o.id = q.author_operator_id
+  left join api_key as k on k.workspace_id = q.workspace_id and k.id = q.author_api_key_id
+  left join visitor as v on v.workspace_id = q.workspace_id and v.id = q.author_visitor_id
+  where q.workspace_id = "message"."workspace_id" and q.id = "message"."reply_to_message_id")`;
+
+/** The quote a client shows. `name` turns the author's name into the one this client uses. */
+export function quoteView(
+  row: QuoteRow | null,
+  name: (row: QuoteRow) => string | null = (one) => one.authorName,
+): Quote | null {
+  if (row === null) return null;
+  const shown = { authorName: name(row), fromVisitor: row.fromVisitor };
+  if (row.deleted) return { id: null, ...shown, excerpt: "", hasImage: false };
+  return { id: row.id, ...shown, excerpt: quoteExcerpt(row.body ?? ""), hasImage: row.hasImage };
+}
+
+/**
+ * The quote as the visitor reads it: an operator by first name, as on replies, and no name for the
+ * visitor's own message, which a client calls "You".
+ */
+export const visitorQuote = (row: QuoteRow | null) =>
+  quoteView(row, (quoted) =>
+    quoted.fromVisitor
+      ? null
+      : quoted.byOperator
+        ? firstName(quoted.authorName ?? "")
+        : quoted.authorName,
+  );
+
+/** How a key's reply came: through the REST API or through the MCP server. */
+type KeyChannel = "api" | "mcp";
+
 export interface StoredMessage {
   id: string;
   conversationId: string;
@@ -69,10 +153,20 @@ export interface StoredMessage {
   image: { attachmentId: string; width: number; height: number } | null;
   /** The image's file was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
+  replyTo: QuoteRow | null;
+  editedAt: Date | null;
+  /** Deleted by an operator: its body and image are gone, and it shows as a placeholder. */
+  deleted: boolean;
+  /** When the visitor's read position first passed this reply, when known. */
+  readAt: Date | null;
+  /** A key's reply: through the API or MCP. Null for an operator's or a visitor's message. */
+  via: KeyChannel | null;
+  /** Its own position, or its last edit's or delete's, for a stream that sends changes again. */
+  changeSeq: bigint;
   createdAt: Date;
 }
 
-const messageColumns = {
+export const messageColumns = {
   id: message.id,
   conversationId: message.conversationId,
   seq: message.seq,
@@ -83,6 +177,11 @@ const messageColumns = {
   clientId: message.clientId,
   body: message.body,
   metadata: message.metadata,
+  replyTo: quoteColumn,
+  editedAt: message.editedAt,
+  deletedAt: message.deletedAt,
+  readAt: message.readAt,
+  changedSeq: message.changedSeq,
   createdAt: message.createdAt,
 };
 
@@ -97,16 +196,37 @@ interface MessageRow {
   clientId: string;
   body: string | null;
   metadata: unknown;
+  replyTo: QuoteRow | null;
+  editedAt: Date | null;
+  deletedAt: Date | null;
+  readAt: Date | null;
+  changedSeq: bigint | null;
   createdAt: Date;
 }
 
-function stored({ authorVisitorId, metadata, ...row }: MessageRow): StoredMessage {
-  const meta = metadata as { image?: StoredMessage["image"]; imageRemoved?: boolean } | null;
+interface MessageMetadata {
+  image?: StoredMessage["image"];
+  imageRemoved?: boolean;
+  /** Set on a key's reply that came through MCP. */
+  via?: "mcp";
+}
+
+function stored({
+  authorVisitorId,
+  metadata,
+  deletedAt,
+  changedSeq,
+  ...row
+}: MessageRow): StoredMessage {
+  const meta = metadata as MessageMetadata | null;
   return {
     ...row,
     image: meta?.image ?? null,
     imageRemoved: meta?.imageRemoved === true,
     fromVisitor: authorVisitorId !== null,
+    deleted: deletedAt !== null,
+    via: row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
+    changeSeq: changedSeq ?? row.seq,
   };
 }
 
@@ -152,6 +272,35 @@ export interface NewImage {
   contentType: string;
   width: number;
   height: number;
+}
+
+/** The quoted message is not a message people wrote in this conversation, or it was deleted. */
+export class InvalidReplyToError extends Error {
+  constructor() {
+    super("The quoted message is not in this conversation.");
+  }
+}
+
+/** Throws InvalidReplyToError unless the quoted message is a live chat line of this conversation. */
+async function checkQuote(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<void> {
+  const [found] = await tx
+    .select({ id: message.id })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.id, messageId),
+        eq(message.conversationId, conversationId),
+        isChat(),
+        isNull(message.deletedAt),
+      ),
+    );
+  if (found === undefined) throw new InvalidReplyToError();
 }
 
 export class ConversationClosedError extends Error {
@@ -229,6 +378,10 @@ export async function appendMessage(
     page?: string | null;
     /** False for a message that nobody needs to hear about, such as the cloud's welcome. */
     alert?: boolean;
+    /** An earlier message of the same conversation that this one quotes. */
+    replyToMessageId?: string | undefined;
+    /** A key's reply that came through MCP, which the message's info names. */
+    via?: "mcp";
   },
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
@@ -296,6 +449,19 @@ export async function appendMessage(
       ? await openConversationId(tx, workspaceId, author.visitorId, input.page ?? null)
       : { id: author.conversationId, created: false };
   const conversationId = target.id;
+  if (input.replyToMessageId !== undefined) {
+    await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId);
+  }
+  const metadata: MessageMetadata = {
+    ...(input.image !== undefined && {
+      image: {
+        attachmentId: input.image.attachmentId,
+        width: input.image.width,
+        height: input.image.height,
+      },
+    }),
+    ...(input.via !== undefined && { via: input.via }),
+  };
   const [row] = await tx
     .insert(message)
     .values({
@@ -305,16 +471,8 @@ export async function appendMessage(
       kind: input.image === undefined ? "text" : "image",
       clientId: input.clientId,
       body: input.body ?? null,
-      metadata:
-        input.image === undefined
-          ? {}
-          : {
-              image: {
-                attachmentId: input.image.attachmentId,
-                width: input.image.width,
-                height: input.image.height,
-              },
-            },
+      metadata,
+      replyToMessageId: input.replyToMessageId ?? null,
       ...(author.kind === "visitor"
         ? { authorVisitorId: author.visitorId }
         : author.kind === "operator"
@@ -411,6 +569,7 @@ export async function readState(
           eq(conversation.visitorId, visitorId),
           isNull(message.authorVisitorId),
           isChat(),
+          isNull(message.deletedAt),
           gt(message.seq, row.lastReadSeq),
         ),
       ),
@@ -432,19 +591,41 @@ export async function markRead(
   const target = sql`least(${seq}::bigint, (
     select ${workspace.eventSeq} from ${workspace} where ${workspace.id} = ${workspaceId}
   ))`;
-  const moved = await tx
+  const one = and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId));
+  const [before] = await tx
+    .select({ lastReadSeq: visitor.lastReadSeq })
+    .from(visitor)
+    .where(one)
+    .for("update");
+  if (before === undefined) return false;
+  const [moved] = await tx
     .update(visitor)
     .set({ lastReadSeq: target })
+    .where(and(one, sql`${visitor.lastReadSeq} < ${target}`))
+    .returning({ lastReadSeq: visitor.lastReadSeq });
+  if (moved === undefined) return false;
+  // The replies this read passed, so their info can say when the visitor read them.
+  await tx
+    .update(message)
+    .set({ readAt: sql`now()` })
     .where(
       and(
-        eq(visitor.workspaceId, workspaceId),
-        eq(visitor.id, visitorId),
-        sql`${visitor.lastReadSeq} < ${target}`,
+        eq(message.workspaceId, workspaceId),
+        inArray(message.conversationId, visitorConversations(tx, workspaceId, visitorId)),
+        isNull(message.authorVisitorId),
+        isChat(),
+        gt(message.seq, before.lastReadSeq),
+        lte(message.seq, moved.lastReadSeq),
       ),
-    )
-    .returning({ id: visitor.id });
-  return moved.length > 0;
+    );
+  return true;
 }
+
+const visitorConversations = (tx: Transaction, workspaceId: string, visitorId: string) =>
+  tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)));
 
 /**
  * How far the visitor has seen the replies in one conversation: read in the chat up to `readSeq`,
@@ -535,6 +716,8 @@ export async function listVisitorMessages(
   }
 
   const position = after ?? start;
+  // An edit or a delete sends the message again, at its change's position.
+  const changePosition = sql<bigint>`coalesce(${message.changedSeq}, ${message.seq})`;
   const rows = await tx
     .select(messageColumns)
     .from(message)
@@ -549,16 +732,16 @@ export async function listVisitorMessages(
       and(
         eq(message.workspaceId, workspaceId),
         eq(conversation.visitorId, visitorId),
-        gt(message.seq, position.seq),
+        gt(changePosition, position.seq),
       ),
     )
-    .orderBy(asc(message.seq))
+    .orderBy(asc(changePosition))
     .limit(limit + 1);
-  const page = rows.slice(0, limit);
+  const page = rows.slice(0, limit).map(stored);
   const last = page.at(-1);
   return {
-    messages: page.map(stored),
-    cursor: { generation: current.generation, seq: last?.seq ?? position.seq },
+    messages: page,
+    cursor: { generation: current.generation, seq: last?.changeSeq ?? position.seq },
     hasMore: rows.length > limit,
     resync: false,
   };
@@ -652,6 +835,7 @@ export async function listConversations(
         eq(message.workspaceId, workspaceId),
         eq(message.conversationId, conversation.id),
         isChat(),
+        isNull(message.deletedAt),
       ),
     )
     .orderBy(desc(message.seq))
@@ -1137,6 +1321,7 @@ export async function searchConversations(
         eq(message.workspaceId, workspaceId),
         eq(message.conversationId, conversation.id),
         isChat(),
+        isNull(message.deletedAt),
       ),
     )
     .orderBy(desc(message.seq))
@@ -1169,4 +1354,209 @@ export async function searchConversations(
             createdAt: lastCreatedAt,
           },
   }));
+}
+
+/** The event of an edit or a delete, as a new message's, so the webhook fan-out reads it alike. */
+async function recordMessageChange(
+  tx: Transaction,
+  workspaceId: string,
+  seq: bigint,
+  kind: "message.updated" | "message.deleted",
+  row: { id: string; conversationId: string; authorVisitorId: string | null },
+): Promise<void> {
+  await tx.insert(event).values({
+    workspaceId,
+    seq,
+    kind,
+    payload: {
+      messageId: row.id,
+      conversationId: row.conversationId,
+      fromVisitor: row.authorVisitorId !== null,
+    } satisfies MessageCreatedPayload,
+    needsWebhook: wantsWebhook(workspaceId),
+  });
+}
+
+/** One chat line of this conversation, locked until commit, or undefined. */
+async function lockChatLine(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  messageId: string,
+) {
+  const [row] = await tx
+    .select({
+      id: message.id,
+      conversationId: message.conversationId,
+      seq: message.seq,
+      kind: message.kind,
+      authorOperatorId: message.authorOperatorId,
+      authorVisitorId: message.authorVisitorId,
+      deletedAt: message.deletedAt,
+      createdAt: message.createdAt,
+    })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.id, messageId),
+        eq(message.conversationId, conversationId),
+        isChat(),
+      ),
+    )
+    .for("update");
+  return row;
+}
+
+/**
+ * Whether the visitor may have seen a reply: read it in the chat, or got an email that may carry it,
+ * sent or being sent now. It locks the visitor's row, which a read takes too, so a read cannot slip
+ * in before the edit commits. An email row still waiting reads the body when it goes.
+ */
+async function visitorMaySee(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  line: { seq: bigint; createdAt: Date },
+): Promise<boolean> {
+  const [reader] = await tx
+    .select({ id: visitor.id, lastReadSeq: visitor.lastReadSeq })
+    .from(visitor)
+    .innerJoin(conversation, joinVisitor())
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)))
+    .for("update", { of: visitor });
+  if (reader === undefined) return true;
+  if (reader.lastReadSeq >= line.seq) return true;
+  const [email] = await tx
+    .select({ channel: alertDelivery.channel })
+    .from(alertDelivery)
+    .where(
+      and(
+        eq(alertDelivery.workspaceId, workspaceId),
+        eq(alertDelivery.visitorId, reader.id),
+        inArray(alertDelivery.channel, ["email", "transcript"]),
+        or(
+          and(
+            eq(alertDelivery.outcome, "sent"),
+            sql`${alertDelivery.finishedAt} >= ${line.createdAt.toISOString()}::timestamptz`,
+          ),
+          and(isNull(alertDelivery.finishedAt), sql`${alertDelivery.claimedUntil} > now()`),
+        ),
+      ),
+    )
+    .limit(1);
+  return email !== undefined;
+}
+
+export type EditOutcome =
+  | { kind: "edited"; message: StoredMessage; visitorId: string }
+  | { kind: "missing" }
+  | { kind: "not_yours" }
+  | { kind: "seen" };
+
+/**
+ * Changes the text of an operator's own reply while the visitor cannot have seen it. Its event tells
+ * the widget, the other operators and the webhooks, in the same transaction.
+ */
+export async function editMessage(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  messageId: string,
+  operatorId: string,
+  body: string,
+): Promise<EditOutcome> {
+  const seq = await nextSeq(tx, workspaceId);
+  const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
+  if (line === undefined || line.deletedAt !== null) return { kind: "missing" };
+  if (line.authorOperatorId !== operatorId || line.kind !== "text") return { kind: "not_yours" };
+  if (await visitorMaySee(tx, workspaceId, conversationId, line)) return { kind: "seen" };
+  const [row] = await tx
+    .update(message)
+    .set({ body, editedAt: sql`now()`, changedSeq: seq })
+    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)))
+    .returning(messageColumns);
+  if (row === undefined) throw new Error("The message update returned no row");
+  await recordMessageChange(tx, workspaceId, seq, "message.updated", line);
+  const found = await findConversation(tx, workspaceId, conversationId);
+  return { kind: "edited", message: stored(row), visitorId: found?.visitorId ?? "" };
+}
+
+export type DeleteOutcome =
+  | { kind: "deleted"; visitorId: string }
+  | { kind: "missing" }
+  | { kind: "not_yours" };
+
+/**
+ * Clears a message's body and image, and keeps its row, so positions, receipts and quotes still
+ * work. The worker deletes the image's file, as for a deleted conversation. `any` lets an owner or
+ * an admin delete anyone's message; others delete their own.
+ */
+export async function deleteMessage(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  messageId: string,
+  by: { operatorId: string; any: boolean },
+): Promise<DeleteOutcome> {
+  const seq = await nextSeq(tx, workspaceId);
+  const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
+  if (line === undefined) return { kind: "missing" };
+  if (!by.any && line.authorOperatorId !== by.operatorId) return { kind: "not_yours" };
+  const found = await findConversation(tx, workspaceId, conversationId);
+  const visitorId = found?.visitorId ?? "";
+  if (line.deletedAt !== null) return { kind: "deleted", visitorId };
+  await tx
+    .update(message)
+    .set({
+      body: null,
+      deletedAt: sql`now()`,
+      changedSeq: seq,
+      metadata: sql`${message.metadata} - 'image'`,
+    })
+    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
+  const files = await tx
+    .delete(attachment)
+    .where(and(eq(attachment.workspaceId, workspaceId), eq(attachment.messageId, messageId)))
+    .returning({ storageKey: attachment.storageKey });
+  if (files.length > 0) {
+    await tx
+      .insert(storageDeletion)
+      .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
+  }
+  await recordMessageChange(tx, workspaceId, seq, "message.deleted", line);
+  return { kind: "deleted", visitorId };
+}
+
+/**
+ * When the first email that may carry this reply went: a reply email or a transcript, sent after it
+ * was written. Null when none did, or when its row was pruned.
+ */
+export async function emailedAt(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+  line: { conversationId: string; createdAt: Date },
+): Promise<Date | null> {
+  const [first] = await tx
+    .select({ at: alertDelivery.finishedAt })
+    .from(alertDelivery)
+    .where(
+      and(
+        eq(alertDelivery.workspaceId, workspaceId),
+        eq(alertDelivery.visitorId, visitorId),
+        eq(alertDelivery.outcome, "sent"),
+        or(
+          eq(alertDelivery.channel, "email"),
+          and(
+            eq(alertDelivery.channel, "transcript"),
+            eq(alertDelivery.conversationId, line.conversationId),
+          ),
+        ),
+        sql`${alertDelivery.finishedAt} >= ${line.createdAt.toISOString()}::timestamptz`,
+      ),
+    )
+    .orderBy(asc(alertDelivery.finishedAt))
+    .limit(1);
+  return first?.at ?? null;
 }

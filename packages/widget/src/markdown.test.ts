@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { markdownHtml, markdownText, parseMarkdown } from "./markdown.ts";
+import { markdownHtml, markdownText, parseMarkdown, quoteExcerpt } from "./markdown.ts";
 
 test("bold, italic and inline code", () => {
   expect(markdownHtml("**Hi** *there* `npm i`")).toBe(
@@ -105,4 +105,11 @@ test("hostile input parses quickly and stays bounded", () => {
 test("markdownText keeps the words and drops the marks, for a preview", () => {
   expect(markdownText("Yes, **both** and `x`.\n\n- one\n- two")).toBe("Yes, both and x. one two");
   expect(markdownText("[Docs](https://a.example) <b>")).toBe("Docs <b>");
+});
+
+test("a quote's excerpt drops the marks, keeps link words and snake_case, and stops at 140 characters", () => {
+  expect(quoteExcerpt("**Bold** and *it* `code` [docs](https://x.y)\n- item_one")).toBe(
+    "Bold and it code docs item_one",
+  );
+  expect(Array.from(quoteExcerpt("é".repeat(300)))).toHaveLength(140);
 });

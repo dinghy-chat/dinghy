@@ -2235,7 +2235,7 @@ img.ws-tile {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-:is(.msg, .shot):hover + .receipt.later {
+.bubble-row:hover + .receipt.later {
   position: static;
   width: auto;
   height: auto;
@@ -2308,6 +2308,182 @@ img.ws-tile {
   display: block;
   width: 100%;
   height: auto;
+}
+/* A message and its "…": the button sits on the bubble's inner side and shows on hover or focus. */
+.bubble-row {
+  display: flex;
+  flex-direction: row-reverse;
+  align-self: flex-end;
+  align-items: center;
+  gap: 4px;
+  /* The bubble's width limit, with room for the "…" beside it. */
+  max-width: min(calc(60% + 34px), 594px);
+  scroll-margin: 24px;
+}
+.bubble-row > .msg {
+  max-width: none;
+  min-width: 0;
+}
+.bubble-row.visitor {
+  flex-direction: row;
+  align-self: flex-start;
+}
+.bubble-row .menu-wrap {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.bubble-row:is(:hover, :focus-within) .menu-wrap,
+.bubble-row .menu-wrap:has([aria-expanded="true"]) {
+  opacity: 1;
+}
+/* A touch screen has no hover, so the button always shows there, quietly. */
+@media (hover: none) {
+  .bubble-row .menu-wrap {
+    opacity: 1;
+  }
+}
+.msg-more {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--mute);
+}
+.msg-more:is(:hover, [aria-expanded="true"]) {
+  background: var(--soft);
+  color: var(--navy);
+}
+.shot-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+  max-width: 360px;
+}
+.bubble-row.visitor .shot-stack {
+  align-items: flex-start;
+}
+.shot-stack .shot {
+  max-width: 100%;
+}
+.msg.quote-only {
+  padding: 5px;
+}
+/* The quoted message inside a reply: a soft block, a shade off the bubble, with no side bar. */
+.quote {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border-radius: 11px;
+  background: rgb(255 255 255 / 0.16);
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+}
+.msg.quote-only .quote {
+  margin: 0;
+}
+button.quote:hover {
+  background: rgb(255 255 255 / 0.24);
+}
+.msg.visitor .quote {
+  background: var(--soft);
+}
+.msg.visitor button.quote:hover {
+  background: var(--soft-hover);
+}
+.quote strong {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.quote-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.quote-text.gone {
+  font-style: italic;
+  opacity: 0.85;
+}
+/* After a click on a quote or a link, the original shows where it is for a moment. */
+.bubble-row.flash :is(.msg, .shot) {
+  outline: 3px solid var(--map-dot);
+  outline-offset: 2px;
+  animation: flash-out 1.6s ease-in forwards;
+}
+@keyframes flash-out {
+  70% {
+    outline-color: var(--map-dot);
+  }
+  to {
+    outline-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble-row.flash :is(.msg, .shot) {
+    animation: none;
+  }
+}
+/* Above the message box while a reply quotes a message. */
+.quote-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 2px;
+  padding: 6px 4px 6px 10px;
+  border-radius: 12px;
+  background: var(--soft);
+  color: var(--mute);
+  font-size: 13px;
+}
+.quote-chip-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.quote-chip-text strong {
+  color: var(--navy);
+  font-weight: 600;
+}
+.quote-chip-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A reply being edited takes its bubble's place, with Cancel and Save for the send button. */
+.compose.editing {
+  align-self: flex-end;
+  width: min(100%, 640px);
+  padding: 0;
+}
+.edit-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.edit-actions .pill {
+  min-height: 34px;
+  padding: 0 14px;
+}
+.message-info dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.message-info dd {
+  margin: 0;
+  color: var(--text);
+}
+.message-info dd:first-child {
+  color: var(--navy);
+  font-weight: 600;
 }
 .thread > .bad {
   margin: 0 28px 10px;
@@ -3992,6 +4168,9 @@ img.ws-tile {
   .msg,
   .shot {
     max-width: 84%;
+  }
+  .bubble-row {
+    max-width: calc(84% + 34px);
   }
   .compose {
     padding: 0 10px 10px;

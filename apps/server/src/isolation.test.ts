@@ -155,6 +155,24 @@ const widgetSettingsOf = async (workspaceId: string) =>
 const pictureOf = async (operatorId: string) =>
   (await owner.select().from(operatorPicture).where(eq(operatorPicture.operatorId, operatorId)))[0];
 
+/** A conversation's first message, read past row-level security. */
+const firstMessageOf = async (conversationId: string) => {
+  const [row] = await owner
+    .select()
+    .from(message)
+    .where(eq(message.conversationId, conversationId))
+    .orderBy(message.seq)
+    .limit(1);
+  if (row === undefined) throw new Error("The conversation has no message");
+  return row;
+};
+
+/** Another workspace's message, through this workspace's path and through the other's. */
+const crossedMessagePaths = (mine: string, theirs: string, conversationId: string, id: string) => [
+  inWorkspace(mine, `/conversations/${conversationId}/messages/${id}`),
+  inWorkspace(theirs, `/conversations/${conversationId}/messages/${id}`),
+];
+
 /** Runs against a route as the one caller that must be refused or see only its own data. */
 const ATTACKS: Record<string, Attack> = {
   "GET /v1/meta": async ({ server, secrets }) => {
@@ -457,6 +475,41 @@ const ATTACKS: Record<string, Attack> = {
       .where(eq(message.body, "an operator crossing over"));
     expect(rows).toEqual([]);
   },
+  "PATCH /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId":
+    async ({ operator: as, anna, a, b, one, other }) => {
+      const target = await firstMessageOf(other.conversationId);
+      for (const path of crossedMessagePaths(a.id, b.id, other.conversationId, target.id)) {
+        expect((await as(anna, "PATCH", path, { body: "changed across" })).status).toBe(404);
+      }
+      // A quote cannot reach into the other workspace either.
+      const quoted = await as(
+        anna,
+        "POST",
+        inWorkspace(a.id, `/conversations/${one.conversationId}/messages`),
+        {
+          clientId: randomUUID(),
+          body: "quoting across",
+          replyToMessageId: target.id,
+        },
+      );
+      expect(quoted.status).toBe(400);
+      expect((await firstMessageOf(other.conversationId)).body).toBe(target.body);
+    },
+  "DELETE /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId":
+    async ({ operator: as, anna, a, b, other }) => {
+      const target = await firstMessageOf(other.conversationId);
+      for (const path of crossedMessagePaths(a.id, b.id, other.conversationId, target.id)) {
+        expect((await as(anna, "DELETE", path)).status).toBe(404);
+      }
+      expect((await firstMessageOf(other.conversationId)).deletedAt).toBeNull();
+    },
+  "GET /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId/receipt":
+    async ({ operator: as, anna, a, b, other }) => {
+      const target = await firstMessageOf(other.conversationId);
+      for (const path of crossedMessagePaths(a.id, b.id, other.conversationId, target.id)) {
+        expect((await as(anna, "GET", `${path}/receipt`)).status).toBe(404);
+      }
+    },
   "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/transcript": async ({
     operator: as,
     anna,

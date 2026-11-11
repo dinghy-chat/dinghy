@@ -745,7 +745,7 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
             eventId,
             type,
             conversationId: payload.conversationId,
-            messageId: type === "message.created" ? (payload.messageId ?? null) : null,
+            messageId: type.startsWith("message.") ? (payload.messageId ?? null) : null,
             createdAt: found.createdAt,
           });
         }

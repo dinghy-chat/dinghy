@@ -128,7 +128,24 @@ export interface Message {
   image: { url: string; width: number; height: number } | null;
   /** The image was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
+  /** The message this one quotes. Its `id` is null when that message was deleted. */
+  replyTo: Quote | null;
+  /** When its author last changed its text. */
+  editedAt: string | null;
+  /** Deleted: no body and no image, and the line says so. */
+  deleted: boolean;
+  /** A key's reply: through the REST API or through MCP. */
+  via: "api" | "mcp" | null;
   createdAt: string;
+}
+
+export interface Quote {
+  id: string | null;
+  /** The operator's or the key's name, or the visitor's. Null for a visitor with no name. */
+  authorName: string | null;
+  fromVisitor: boolean;
+  excerpt: string;
+  hasImage: boolean;
 }
 
 /** Which first steps are done, for the signed-in member. */
@@ -280,6 +297,8 @@ export interface ApiKey {
 export const WEBHOOK_EVENTS = [
   "conversation.created",
   "message.created",
+  "message.updated",
+  "message.deleted",
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
@@ -471,6 +490,7 @@ export function workspaceApi(workspaceId: string) {
   const base = `/v1/operator/workspaces/${workspaceId}`;
   const conversation = (id: string) => `${base}/conversations/${id}`;
   return {
+    workspaceId,
     rename: (name: string) =>
       call<{ name: string }>(base, { method: "PATCH", body: JSON.stringify({ name }) }),
     members: () => call<{ members: Member[] }>(`${base}/members`),
@@ -636,10 +656,11 @@ export function workspaceApi(workspaceId: string) {
         `${base}/conversations/search?q=${encodeURIComponent(query)}`,
         { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) },
       ),
-    reply: (id: string, clientId: string, body: string) =>
-      post<Message>(`${conversation(id)}/messages`, { clientId, body }),
-    replyImage: async (id: string, clientId: string, file: File) => {
-      const response = await fetch(`${conversation(id)}/images?clientId=${clientId}`, {
+    reply: (id: string, clientId: string, body: string, replyToMessageId?: string) =>
+      post<Message>(`${conversation(id)}/messages`, { clientId, body, replyToMessageId }),
+    replyImage: async (id: string, clientId: string, file: File, replyToMessageId?: string) => {
+      const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
+      const response = await fetch(`${conversation(id)}/images?clientId=${clientId}${quote}`, {
         method: "POST",
         cache: "no-store",
         signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
@@ -649,6 +670,18 @@ export function workspaceApi(workspaceId: string) {
       if (!response.ok) return failed(response);
       return (await response.json()) as Message;
     },
+    editMessage: (id: string, messageId: string, body: string) =>
+      call<Message>(`${conversation(id)}/messages/${messageId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ body }),
+      }),
+    deleteMessage: (id: string, messageId: string) =>
+      call<{ ok: true }>(`${conversation(id)}/messages/${messageId}`, { method: "DELETE" }),
+    /** When the visitor read a reply in the chat, and when an email first carried it. */
+    messageReceipt: (id: string, messageId: string) =>
+      call<{ readAt: string | null; emailedAt: string | null }>(
+        `${conversation(id)}/messages/${messageId}/receipt`,
+      ),
     /** Emails the visitor the whole conversation, through the worker. */
     sendTranscript: (id: string) =>
       call<{ ok: true }>(`${conversation(id)}/transcript`, { method: "POST" }),

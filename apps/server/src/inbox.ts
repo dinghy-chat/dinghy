@@ -14,6 +14,7 @@ import {
 } from "./db/tenant.ts";
 import {
   errorAnswer,
+  FORBIDDEN,
   failure,
   IMAGE_UPLOAD_ERRORS,
   INVALID,
@@ -22,6 +23,7 @@ import {
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
   okContent,
+  ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { ImageSchema, type Images, imageView, lostConnection, refuseImage } from "./images.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
@@ -39,12 +41,19 @@ import {
   catchClosed,
   countOpenByAssignee,
   countWaiting,
+  deleteMessage,
+  editMessage,
+  emailedAt,
   findConversation,
+  findMessage,
+  InvalidReplyToError,
   listConversationMessages,
   listConversations,
   listWorkspaceEvents,
   type NewImage,
   parseCursor,
+  QuoteSchema,
+  quoteView,
   replyReceipts,
   type StoredMessage,
   searchConversations,
@@ -54,17 +63,46 @@ import {
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
+import { allowed } from "./team.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
 const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
+const INVALID_REPLY_TO = failure(
+  "invalid_reply_to",
+  "Quote a message that people wrote in this conversation and that was not deleted.",
+);
+const MESSAGE_SEEN = failure(
+  "message_seen",
+  "The visitor has read this reply, or an email carried it, so it can no longer change.",
+);
+const NOT_YOURS = failure("forbidden", "You can change only your own replies.");
 const KEY_HAS_NO_ASSIGNMENTS = failure(
   "invalid_request",
   "An API key is assigned nothing. Pass assignee=none, or leave it out.",
 );
 const CLOSED_ANSWER = { 409: errorAnswer("conversation_closed: reopen it to reply") };
+const INVALID_REPLY_TO_ANSWER = {
+  400: errorAnswer(
+    "invalid_request: the request is not valid. invalid_reply_to: the quoted message is not in this conversation",
+  ),
+};
 
 const workspaceParams = z.object({ workspaceId: z.uuid() });
 const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
+const messageParams = conversationParams.extend({ messageId: z.uuid() });
+
+const REPLY_TO = z.uuid().optional().openapi({
+  description:
+    "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message.",
+});
+
+/** A message's text, as a send and an edit take it. Postgres text cannot hold a NUL byte. */
+const BODY = z
+  .string()
+  .trim()
+  .min(1)
+  .max(10_000)
+  .regex(/^[^\0]*$/);
 
 const InboxMessage = z
   .object({
@@ -85,6 +123,16 @@ const InboxMessage = z
     image: ImageSchema.nullable(),
     // The image was deleted after 12 months, on Dinghy Cloud.
     imageRemoved: z.boolean(),
+    // The message this one quotes, or null.
+    replyTo: QuoteSchema.nullable(),
+    // When its author last changed its text. Only an operator's text reply can change.
+    editedAt: z.string().nullable(),
+    // An operator deleted it: its body and image are gone, and its row stays in place.
+    deleted: z.boolean(),
+    // When the visitor first read this reply in the chat, when known.
+    readAt: z.string().nullable(),
+    // A key's reply: sent through the REST API or through MCP. Null for anyone else's.
+    via: z.enum(["api", "mcp"]).nullable(),
     createdAt: z.string(),
   })
   .openapi("InboxMessage", {
@@ -101,6 +149,17 @@ const InboxMessage = z
       body: "Yes, it is two months free.",
       image: null,
       imageRemoved: false,
+      replyTo: {
+        id: "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
+        authorName: "Ada",
+        fromVisitor: true,
+        excerpt: "Do you have a yearly plan?",
+        hasImage: false,
+      },
+      editedAt: null,
+      deleted: false,
+      readAt: null,
+      via: null,
       createdAt: "2026-11-08T09:31:00.000Z",
     },
   });
@@ -357,13 +416,8 @@ const replyRoute = createRoute({
         "application/json": {
           schema: z.object({
             clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
-            // Postgres text cannot hold a NUL byte.
-            body: z
-              .string()
-              .trim()
-              .min(1)
-              .max(10_000)
-              .regex(/^[^\0]*$/),
+            body: BODY,
+            replyToMessageId: REPLY_TO,
           }),
           example: { clientId: "r_81b3d0", body: "Yes, it is two months free." },
         },
@@ -382,6 +436,68 @@ const replyRoute = createRoute({
     },
     ...MEMBER_WRITE_ERRORS,
     ...CLOSED_ANSWER,
+    ...INVALID_REPLY_TO_ANSWER,
+  },
+});
+
+const editRoute = createRoute({
+  method: "patch",
+  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages/{messageId}`,
+  security: SESSION,
+  summary: "Change the text of your own reply, before the visitor has seen it",
+  description:
+    "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. API keys cannot edit.",
+  request: {
+    params: messageParams,
+    body: {
+      required: true,
+      content: { "application/json": { schema: z.object({ body: BODY }) } },
+    },
+  },
+  responses: {
+    200: {
+      description: "The changed message",
+      content: { "application/json": { schema: InboxMessage } },
+    },
+    ...MEMBER_WRITE_ERRORS,
+    403: errorAnswer("forbidden: not your own text reply, or an API key"),
+    409: errorAnswer("message_seen: the visitor read it, or an email carried it"),
+  },
+});
+
+const deleteMessageRoute = createRoute({
+  method: "delete",
+  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages/{messageId}`,
+  security: SESSION,
+  summary: "Delete a message: its text and image go, and a placeholder stays",
+  description:
+    "An operator deletes their own messages. An owner or an admin deletes anyone's, a visitor's too. API keys cannot delete.",
+  request: { params: messageParams },
+  responses: {
+    200: { description: "Deleted, or it already was", content: okContent },
+    ...ROLE_WRITE_ERRORS,
+  },
+});
+
+const receiptRoute = createRoute({
+  method: "get",
+  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages/{messageId}/receipt`,
+  security: SESSION_OR_KEY,
+  summary: "When the visitor saw a reply: read in the chat, or sent by email",
+  request: { params: messageParams },
+  responses: {
+    ...KEY_LIMITED,
+    200: {
+      description: "Each time, or null when it did not happen or is not known",
+      content: {
+        "application/json": {
+          schema: z
+            .object({ readAt: z.string().nullable(), emailedAt: z.string().nullable() })
+            .openapi("MessageReceipt"),
+        },
+      },
+    },
+    ...MEMBER_ERRORS,
   },
 });
 
@@ -393,7 +509,10 @@ const replyImageRoute = createRoute({
     "Reply with an image as the raw request body. A retry with the same clientId returns the original",
   request: {
     params: conversationParams,
-    query: z.object({ clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }),
+    query: z.object({
+      clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+      replyToMessageId: REPLY_TO,
+    }),
   },
   responses: {
     ...KEY_LIMITED,
@@ -407,6 +526,9 @@ const replyImageRoute = createRoute({
     },
     ...MEMBER_WRITE_ERRORS,
     ...IMAGE_UPLOAD_ERRORS,
+    400: errorAnswer(
+      `${IMAGE_UPLOAD_ERRORS[400].description}. invalid_reply_to: the quoted message is not in this conversation`,
+    ),
     ...CLOSED_ANSWER,
   },
 });
@@ -466,7 +588,7 @@ const streamRoute = createRoute({
   summary: "Stream the workspace's changes after a cursor",
   description:
     "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
-    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
     'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
@@ -491,7 +613,16 @@ export function messageView(
   images: Images | undefined,
   workspaceId: string,
   names: Map<string, string>,
-  { seq, createdAt, image, ...message }: StoredMessage,
+  {
+    seq,
+    changeSeq: _change,
+    createdAt,
+    editedAt,
+    readAt,
+    image,
+    replyTo,
+    ...message
+  }: StoredMessage,
 ) {
   const author = message.authorOperatorId ?? message.authorApiKeyId;
   return {
@@ -499,7 +630,10 @@ export function messageView(
     authorName: author === null ? null : (names.get(author) ?? null),
     seq: seq.toString(),
     createdAt: createdAt.toISOString(),
+    editedAt: editedAt?.toISOString() ?? null,
+    readAt: readAt?.toISOString() ?? null,
     image: imageView(images, workspaceId, image),
+    replyTo: quoteView(replyTo),
   };
 }
 type MessageView = ReturnType<typeof messageView>;
@@ -632,6 +766,7 @@ export type ReplyOutcome =
   | { kind: "sent"; created: boolean; message: MessageView }
   | { kind: "missing" }
   | { kind: "closed" }
+  | { kind: "invalid_reply_to" }
   | { kind: "refused"; access: WorkspaceAccess };
 
 interface InboxOptions {
@@ -686,11 +821,14 @@ export function createInbox({
         })
         .catch((error: unknown) => {
           if (error instanceof ConversationClosedError) return "closed" as const;
+          if (error instanceof InvalidReplyToError) return "invalid_reply_to" as const;
           if (lostConnection(error)) outcome = "unknown";
           throw error;
         }),
     ).finally(() => copy?.finish(outcome));
-    if (result === "missing" || result === "closed") return { kind: result };
+    if (result === "missing" || result === "closed" || result === "invalid_reply_to") {
+      return { kind: result };
+    }
     if (result instanceof WorkspaceClosedError) return { kind: "refused", access: result.access };
     // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.
     if (result.created) wakeConversation(live, workspaceId, result.visitorId);
@@ -795,7 +933,7 @@ export function createInbox({
       workspaceId: string,
       actor: Actor,
       conversationId: string,
-      input: { clientId: string; body: string },
+      input: { clientId: string; body: string; replyToMessageId?: string | undefined; via?: "mcp" },
     ) {
       return reply(workspaceId, actor, conversationId, undefined, (tx, author) =>
         appendMessage(tx, workspaceId, author, input),
@@ -810,7 +948,7 @@ export function createInbox({
       workspaceId: string,
       actor: Actor,
       conversationId: string,
-      input: { clientId: string; image: NewImage },
+      input: { clientId: string; image: NewImage; replyToMessageId?: string | undefined },
       limits: Limits,
       check: (tx: Transaction) => Promise<void>,
     ): Promise<ReplyOutcome & { created: boolean }> {
@@ -854,6 +992,7 @@ export type Inbox = ReturnType<typeof createInbox>;
 function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" }>) {
   if (outcome.kind === "missing") return { body: NOT_FOUND, status: 404 as const };
   if (outcome.kind === "closed") return { body: CLOSED, status: 409 as const };
+  if (outcome.kind === "invalid_reply_to") return { body: INVALID_REPLY_TO, status: 400 as const };
   return closedFailure(outcome.access);
 }
 
@@ -934,7 +1073,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     app.openapi(replyImageRoute, async (c) => {
       const id = c.get("memberWorkspaceId");
       const { conversationId } = c.req.valid("param");
-      const { clientId } = c.req.valid("query");
+      const { clientId, replyToMessageId } = c.req.valid("query");
       const actor = c.get("actor");
       const exists = await withWorkspace(
         db,
@@ -954,7 +1093,14 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
           c.req.raw,
           id,
           (image) =>
-            inbox.replyImage(id, actor, conversationId, { clientId, image }, limits, check),
+            inbox.replyImage(
+              id,
+              actor,
+              conversationId,
+              { clientId, image, replyToMessageId },
+              limits,
+              check,
+            ),
           c.get("clientIp"),
         )
         .catch((error: unknown) => {
@@ -969,6 +1115,57 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       return c.json(refused.body, refused.status);
     });
   }
+
+  app.openapi(editRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { conversationId, messageId } = c.req.valid("param");
+    const { body } = c.req.valid("json");
+    const outcome = await withWorkspace(db, id, async (tx) => {
+      const edited = await editMessage(
+        tx,
+        id,
+        conversationId,
+        messageId,
+        c.get("operatorId"),
+        body,
+      );
+      if (edited.kind !== "edited") return edited;
+      const names = await authorNames(tx, id, [edited.message]);
+      return { ...edited, view: messageView(images, id, names, edited.message) };
+    });
+    if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
+    if (outcome.kind === "not_yours") return c.json(NOT_YOURS, 403);
+    if (outcome.kind === "seen") return c.json(MESSAGE_SEEN, 409);
+    wakeConversation(live, id, outcome.visitorId);
+    return c.json(outcome.view, 200);
+  });
+
+  app.openapi(deleteMessageRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { conversationId, messageId } = c.req.valid("param");
+    const by = { operatorId: c.get("operatorId"), any: allowed.settings(c.get("memberRole")) };
+    const outcome = await withWorkspace(db, id, (tx) =>
+      deleteMessage(tx, id, conversationId, messageId, by),
+    );
+    if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
+    if (outcome.kind === "not_yours") return c.json(FORBIDDEN, 403);
+    wakeConversation(live, id, outcome.visitorId);
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(receiptRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { conversationId, messageId } = c.req.valid("param");
+    const receipt = await withWorkspace(db, id, async (tx) => {
+      const found = await findConversation(tx, id, conversationId);
+      const line = await findMessage(tx, id, messageId);
+      if (found === null || line === null || line.conversationId !== conversationId) return null;
+      const sent = await emailedAt(tx, id, found.visitorId, line);
+      return { readAt: line.readAt?.toISOString() ?? null, emailedAt: sent?.toISOString() ?? null };
+    });
+    if (receipt === null) return c.json(NOT_FOUND, 404);
+    return c.json(receipt, 200);
+  });
 
   app.openapi(statusRoute, async (c) => {
     const { conversationId } = c.req.valid("param");

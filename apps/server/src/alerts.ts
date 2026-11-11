@@ -27,8 +27,11 @@ import {
   joinVisitor,
   type MessageAuthor,
   messageAuthors,
+  messageColumns,
+  type Quote,
   requestTranscript,
   type StatusPayload,
+  visitorQuote,
 } from "./messages.ts";
 import { imageUrls } from "./public-images.ts";
 import type { Push, PushPayload } from "./push.ts";
@@ -73,6 +76,8 @@ const text = {
   transcriptYou: "You",
   transcriptImage: "Sent an image. Open the chat to see it.",
   transcriptLine: (who: string, when: string) => `${who}, ${when}`,
+  quoteDeleted: "Original message deleted",
+  quoteImage: "An image",
   transcriptBody: <Messages>(name: string, messages: Messages, chat: string, stop: string) => [
     text.transcriptIntro(name),
     messages,
@@ -103,6 +108,30 @@ const threadPath = (workspaceId: string, conversationId: string) =>
   `/?workspace=${workspaceId}&conversation=${conversationId}`;
 
 const messageText = (body: string | null) => body ?? text.anImage;
+
+/** A quoted message's lines above a reply: who wrote it, and its start. */
+function quoteParts(quote: Quote): [string, string] {
+  const who = quote.authorName ?? text.transcriptYou;
+  if (quote.id === null) return [who, text.quoteDeleted];
+  return [who, quote.excerpt === "" && quote.hasImage ? text.quoteImage : quote.excerpt];
+}
+
+/** A reply in an email's plain text: its quote as `> ` lines, then the text. */
+function quotedText(quote: Quote | null, body: string): string {
+  if (quote === null) return body;
+  const [who, excerpt] = quoteParts(quote);
+  return `> ${who}:\n> ${excerpt}\n\n${body}`;
+}
+
+/** A reply in an email's HTML: its quote as a short indented block with the author's name. */
+function quotedHtml(quote: Quote | null, html: string): string {
+  if (quote === null) return html;
+  const [who, excerpt] = quoteParts(quote);
+  return (
+    '<div style="margin:8px 0 4px 12px;padding:8px 12px;background:#f3efe4;border-radius:8px;color:#5f6e80;font-size:13px">' +
+    `<strong>${escapeHtml(who)}</strong><br>${escapeHtml(excerpt)}</div>${html}`
+  );
+}
 
 /** Sends to each of the operator's devices. A device that is gone is deleted. */
 export async function sendToOperator(
@@ -632,7 +661,7 @@ async function replyEmailPlan(
   if (await emailStopped(tx, workspaceId, target.email)) return null;
   // Every unread reply to this visitor, because other replies waited for this row to send.
   const replies = await tx
-    .select({ body: message.body })
+    .select({ body: message.body, replyTo: messageColumns.replyTo })
     .from(message)
     .innerJoin(
       conversation,
@@ -647,6 +676,7 @@ async function replyEmailPlan(
         eq(conversation.visitorId, visitorId),
         isNull(message.authorVisitorId),
         isChat(),
+        isNull(message.deletedAt),
         gt(message.seq, target.lastReadSeq),
       ),
     )
@@ -672,7 +702,10 @@ async function replyEmailPlan(
   const earliest = (sent[0]?.finishedAt?.getTime() ?? 0) + REPLY_EMAIL_GAP_MS;
   if (earliest > Date.now()) return { channel: "later", until: new Date(earliest) };
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, target.email);
-  const written = replies.reverse().map((reply) => messageText(reply.body));
+  const written = replies.reverse().map((reply) => ({
+    body: messageText(reply.body),
+    quote: visitorQuote(reply.replyTo),
+  }));
   // A new link for each email. Older ones keep working until they expire.
   const chatUrl = chatLinkUrl(
     publicUrl,
@@ -684,13 +717,25 @@ async function replyEmailPlan(
     subject: text.replySubject(placeName),
     // The visitor typed this address, and nobody proved it, so it greets no name.
     text: letter(
-      text.replyBody(placeName, written.join("\n\n"), chatUrl, stopUrl),
+      text.replyBody(
+        placeName,
+        written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n"),
+        chatUrl,
+        stopUrl,
+      ),
       undefined,
       placeName,
     ),
     // The replies' Markdown shows as formatting here, and stays as typed in the text version.
     html: letterHtml(
-      text.replyBody(placeName, { html: written.map(markdownHtml).join("") }, chatUrl, stopUrl),
+      text.replyBody(
+        placeName,
+        {
+          html: written.map((reply) => quotedHtml(reply.quote, markdownHtml(reply.body))).join(""),
+        },
+        chatUrl,
+        stopUrl,
+      ),
       placeName,
     ),
     stopUrl,
@@ -788,6 +833,7 @@ async function transcriptPlan(
         authorVisitorId: message.authorVisitorId,
         authorOperatorId: message.authorOperatorId,
         authorApiKeyId: message.authorApiKeyId,
+        replyTo: messageColumns.replyTo,
         createdAt: message.createdAt,
       })
       .from(message)
@@ -796,6 +842,7 @@ async function transcriptPlan(
           eq(message.workspaceId, workspaceId),
           eq(message.conversationId, conversationId),
           inArray(message.kind, [...CHAT_KINDS]),
+          isNull(message.deletedAt),
         ),
       )
       .orderBy(desc(message.seq))
@@ -815,7 +862,7 @@ async function transcriptPlan(
   const plain = lines
     .map(
       (line, index) =>
-        `${heads[index]}:\n${line.kind === "image" ? text.transcriptImage : line.body}`,
+        `${heads[index]}:\n${quotedText(visitorQuote(line.replyTo), line.kind === "image" ? text.transcriptImage : (line.body ?? ""))}`,
     )
     .join("\n\n");
   const logoUrl = imageUrls(imageOrigin).logo(state.publicKey, state.logoUpdatedAt);
@@ -826,9 +873,12 @@ async function transcriptPlan(
     ...lines.map(
       (line, index) =>
         `<p style="margin:18px 0 2px;color:#5f6e80;font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
-        (line.kind === "image"
-          ? `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(text.transcriptImage)}</a></p>`
-          : markdownHtml(line.body ?? "")),
+        quotedHtml(
+          visitorQuote(line.replyTo),
+          line.kind === "image"
+            ? `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(text.transcriptImage)}</a></p>`
+            : markdownHtml(line.body ?? ""),
+        ),
     ),
   ].join("");
   return {

@@ -38,7 +38,12 @@ import {
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
 import type { Mailer } from "./mailer.ts";
-import { appendMessage, listWorkspaceEvents, setConversationStatus } from "./messages.ts";
+import {
+  appendMessage,
+  editMessage,
+  listWorkspaceEvents,
+  setConversationStatus,
+} from "./messages.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 import { startWorker, type Worker } from "./worker.ts";
@@ -824,6 +829,38 @@ describe("email", () => {
     );
     expect(mail?.html).toContain(`<a href="${new URL(chat ?? "", PUBLIC_URL).href}">`);
     expect(mail?.html).not.toContain("<b>");
+  });
+
+  test("a reply email quotes what the reply answers, and carries an edit made while it waited", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Do you have a **yearly** plan?");
+    const conversationId = written.message.conversationId;
+    const reply = await withWorkspace(app, space.id, (tx) =>
+      appendMessage(
+        tx,
+        space.id,
+        { kind: "operator", operatorId: anna, conversationId },
+        {
+          clientId: randomUUID(),
+          body: "Yes, tw months free.",
+          replyToMessageId: written.message.id,
+        },
+      ),
+    );
+    await fanOutAll();
+    const edited = await withWorkspace(app, space.id, (tx) =>
+      editMessage(tx, space.id, conversationId, reply.message.id, anna, "Yes, two months free."),
+    );
+    expect(edited.kind).toBe("edited");
+    runWorker({ mail: true });
+    await makeDue();
+    await until(() => mails.length === 1, "the email");
+    expect(mails[0]?.text).toContain(
+      "> You:\n> Do you have a yearly plan?\n\nYes, two months free.",
+    );
+    expect(mails[0]?.text).not.toContain("tw months");
+    expect(mails[0]?.html).toContain("<strong>You</strong><br>Do you have a yearly plan?</div>");
   });
 
   test("a visitor who read the reply gets no email", async () => {

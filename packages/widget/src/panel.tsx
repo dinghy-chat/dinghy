@@ -89,6 +89,15 @@ textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inh
 .tool .duo{fill:currentColor;opacity:.2}
 .send.on{background:var(--d-accent,${ACCENT});color:var(--d-accent-text,#fff)}
 .send.on:hover{filter:brightness(.92)}
+.msg{position:relative}
+.re{position:absolute;left:100%;top:50%;margin:-16px 0 0 2px;opacity:0}
+.msg:hover .re,.re:focus-visible{opacity:1}
+@media (hover:none){.re{opacity:.7}}
+.quote{margin:0 0 6px;padding:5px 9px;border-radius:10px;background:var(--fog);font-size:13px;white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.mine .quote{background:rgb(255 255 255/.18)}
+.quote b{display:block;font-size:12px}
+.chip{display:flex;align-items:center;gap:4px;margin-bottom:6px}
+.chip .quote{flex:1;margin:0;-webkit-line-clamp:2}
 .shot{display:block;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
 .shot.mine{align-self:flex-end}
 .shot img{display:block;max-width:100%;height:auto}
@@ -145,6 +154,8 @@ const ATTACH_ICON: Paths = [
 /** A robot, for a reply from an API key. Drawn for this widget. */
 const BOT_ICON =
   "M11 2h2v3h5a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5zM9 10a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm6 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM1 10h2v5H1zm20 0h2v5h-2z";
+/** A curved arrow back, for Reply. Drawn for this widget. */
+const REPLY_ICON: Paths = ["", "M112 56 24 128l88 72v-48c56 0 96 16 120 56-8-72-48-120-120-128z"];
 const SEND_ICON: Paths = [
   "M227.91,134.86,59.93,231a8,8,0,0,1-11.44-9.67L80,128,48.49,34.72a8,8,0,0,1,11.44-9.67l168,95.85A8,8,0,0,1,227.91,134.86Z",
   "M231.87,114l-168-95.89A16,16,0,0,0,40.92,37.34L71.55,128,40.92,218.67A16,16,0,0,0,56,240a16.15,16.15,0,0,0,7.93-2.1l167.92-96.05a16,16,0,0,0,.05-27.89ZM56,224a.56.56,0,0,0,0-.12L85.74,136H144a8,8,0,0,0,0-16H85.74L56.06,32.16A.46.46,0,0,0,56,32l168,95.83Z",
@@ -169,6 +180,9 @@ export interface Line {
   /** A status line: the team closed or reopened the conversation. */
   note?: "closed" | "reopened";
   status: "sent" | "sending" | "failed";
+  quote?: ChatMessage["replyTo"];
+  /** Deleted by the team: its body is the placeholder, and it cannot be quoted. */
+  gone?: boolean;
 }
 
 export type SceneState = "waiting" | "sending" | "reply" | "away" | "lost" | "empty";
@@ -378,18 +392,31 @@ export function ChatHead({
  * One message in the log, with its sending state or a retry button. The first reply of a run shows
  * who sent it.
  */
+/** A quoted message: who wrote it, and its first words. */
+function Quote({ quote }: { quote: NonNullable<Line["quote"]> }) {
+  return (
+    <span class="quote">
+      <b>{quote.fromVisitor ? t("you") : quote.authorName}</b>
+      {quote.id === null ? t("quoteDeleted") : quote.excerpt || t("quoteImage")}
+    </span>
+  );
+}
+
 export function ChatLine({
   line,
   showAuthor,
   onView,
   onImageError,
   onRetry,
+  onReply,
 }: {
   line: Line;
   showAuthor: boolean;
   onView(): void;
   onImageError(): void;
   onRetry(): void;
+  /** Only on the team's messages: quotes this one in the next message. */
+  onReply?: (() => void) | undefined;
 }) {
   if (line.note !== undefined) return <p class="note">{t(line.note)}</p>;
   return (
@@ -419,7 +446,15 @@ export function ChatLine({
       ) : line.file !== undefined ? (
         <div class="msg mine">{t("imageSending")}</div>
       ) : (
-        <div class={line.fromVisitor ? "msg mine" : "msg"}>{renderMarkdown(line.body, h)}</div>
+        <div class={line.fromVisitor ? "msg mine" : "msg"}>
+          {line.quote && <Quote quote={line.quote} />}
+          {renderMarkdown(line.body, h)}
+          {onReply && (
+            <button type="button" class="tool re" aria-label={t("reply")} onClick={onReply}>
+              <Icon paths={REPLY_ICON} size={16} />
+            </button>
+          )}
+        </div>
       )}
       {line.status === "sending" && <div class="state">{t("sending")}</div>}
       {line.status === "failed" && (
@@ -485,12 +520,17 @@ export function Composer({
   onDraft,
   onSubmit,
   onFiles,
+  quoting,
+  onUnquote,
 }: {
   draft: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   onDraft(draft: string): void;
   onSubmit(event: Event): void;
   onFiles(files: Iterable<File>): void;
+  /** The team's message the next one quotes. */
+  quoting?: Line | null;
+  onUnquote?: () => void;
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const [emojis, setEmojis] = useState(false);
@@ -538,6 +578,17 @@ export function Composer({
           event.currentTarget.value = "";
         }}
       />
+      {quoting && (
+        <div class="chip">
+          <span class="quote">
+            <b>{quoting.author?.name}</b>
+            {quoting.body}
+          </span>
+          <button type="button" class="tool" aria-label={t("cancelReply")} onClick={onUnquote}>
+            ×
+          </button>
+        </div>
+      )}
       <div class="box">
         <button
           type="button"
@@ -574,6 +625,11 @@ export function Composer({
           onInput={(event) => onDraft(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !isComposing(event)) onSubmit(event);
+            // The first Escape drops the quote, and the next one closes the chat.
+            if (event.key === "Escape" && quoting) {
+              event.stopPropagation();
+              onUnquote?.();
+            }
           }}
         />
         <button

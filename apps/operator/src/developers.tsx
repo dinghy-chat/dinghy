@@ -34,6 +34,8 @@ const WEBHOOK_URL_MAX_LENGTH = 2000;
 const EVENT_TEXT: Record<WebhookEvent, TextId> = {
   "conversation.created": "webhookEventCreated",
   "message.created": "webhookEventMessage",
+  "message.updated": "webhookEventEdited",
+  "message.deleted": "webhookEventDeleted",
   "conversation.closed": "webhookEventClosed",
   "conversation.reopened": "webhookEventReopened",
   "conversation.assigned": "webhookEventAssigned",

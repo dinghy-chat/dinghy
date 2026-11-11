@@ -25,12 +25,12 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 
 | Status | Codes | When |
 |---|---|---|
-| 400 | `invalid_request` | The request does not match its schema |
+| 400 | `invalid_request`, `invalid_reply_to` | The request does not match its schema, or a reply quotes a message that is not in its conversation |
 | 401 | `unauthorized` | No token or session, or one that is no longer valid |
 | 402 | `payment_required`, `read_only` | On the cloud plan, a workspace that is not paid for. A self-hosted install never answers 402 |
 | 403 | `origin_not_allowed`, `suspended`, `forbidden`, `blocked` | The site is not allowed or the widget is off, the workspace is suspended, the role does not allow it, or an operator blocked the visitor |
 | 404 | `not_found` | It does not exist, or it is in another workspace |
-| 409 | `conversation_closed`, `webhook_limit` | Reopen the conversation to reply, or the workspace has 5 webhooks already |
+| 409 | `conversation_closed`, `webhook_limit`, `message_seen` | Reopen the conversation to reply, the workspace has 5 webhooks already, or the visitor has seen the reply you tried to edit |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
 | 503 | `busy` | The server is overloaded for a moment. Try again |
@@ -50,6 +50,18 @@ A message's `body` is plain text that the widget, the operator app and reply ema
 A message's `kind` is `text` or `image` for what people wrote. Closing or reopening a conversation writes a status line in the same transaction as its `conversation.closed` or `conversation.reopened` event and with the event's position, so the widget and the operator app show it in order: `kind` is `closed` or `reopened`, `body` is null, and the author is whoever made the change (an operator, an API key, or no one shown on Dinghy Cloud's welcome chat). A status line has no `message.created` event, so it raises no alert, no push and no webhook, it is never a conversation's `lastMessage`, and it counts toward neither unread replies nor first replies. A client that shows only chat skips these kinds.
 
 An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
+
+### Quotes, edits and deletes
+
+A send can quote one earlier message of the same conversation: pass its ID as `replyToMessageId` in the body of a text reply or the widget's send, in the query of an image upload, or to the MCP `reply` tool. It must be text or an image that was not deleted, or the send answers 400 `invalid_reply_to`. Every message then has `replyTo`, null or `{ id, authorName, fromVisitor, excerpt, hasImage }`. `excerpt` is the first 140 characters of the quoted text on one line, with its Markdown marks removed. When the quoted message is deleted later, `id` is null and `excerpt` is empty: show "Original message deleted". The widget API gives an operator's first name as `authorName`, and null for the visitor's own message.
+
+`PATCH /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}` with `{ "body" }` changes the text of the signed-in operator's own text reply, and sets `editedAt`. It works only while the visitor has not seen the reply: it answers 409 `message_seen` once the visitor read it in the chat, or once a reply email or a transcript carried it or is being sent. A reply email still waiting reads the text when it goes, so it carries the edit. Nobody edits a visitor's message, and API keys and MCP cannot edit.
+
+`DELETE` on the same path deletes a message: an operator deletes their own, and an owner or admin deletes anyone's, a visitor's too, such as a pasted card number. The row stays, so positions, receipts and quotes keep working: `deleted` is true, and `body` and `image` are null in every answer, webhook and export. Its image goes from storage as other deleted images do. API keys cannot delete.
+
+An edit adds a `message.updated` event and a delete a `message.deleted` event, in the same transaction. The widget's stream and message list send the message again at that event's position, with its `seq` unchanged, so a client replaces its copy by `id` and keeps sorting by `seq`.
+
+An operator message has `via`: `api` or `mcp` for a key's reply, and null otherwise. `readAt` is when the visitor's read position first passed a reply, null before that and for replies read before this field existed. `GET .../messages/{messageId}/receipt` answers `{ readAt, emailedAt }`, where `emailedAt` is when the first reply email or transcript after the reply went out.
 
 ## Visitors
 
@@ -105,7 +117,7 @@ An operator sets their picture with `PUT /v1/operator/me/picture` and the raw bo
 
 A client receives with server-sent events. `GET /v1/widget/{key}/stream` and `GET /v1/operator/workspaces/{workspaceId}/stream` send:
 
-- `message` (widget) or `change` (operator) events, whose `id` is the new cursor. A `change` for a new message has `fromVisitor`, true when the visitor wrote it,
+- `message` (widget) or `change` (operator) events, whose `id` is the new cursor. A `change` for a new message has `fromVisitor`, true when the visitor wrote it. An edited or deleted message comes again as a widget `message`, and as a `message.updated` or `message.deleted` operator `change`,
 - `ready` once the stream has caught up,
 - `resync` when the client must load everything again, such as after a restore,
 - `close`, with a reason, before the server ends the stream,
@@ -146,6 +158,8 @@ A webhook sends a signed `POST` to your server when something changes in a works
 |---|---|
 | `conversation.created` | A visitor starts a conversation. Its first message also sends `message.created` |
 | `message.created` | A visitor, an operator or an API key writes a message |
+| `message.updated` | An operator edits a reply |
+| `message.deleted` | An operator deletes a message. `data.message` has `deleted: true` and no body |
 | `conversation.closed` | A conversation is closed |
 | `conversation.reopened` | A conversation is reopened |
 | `conversation.assigned` | A conversation's assignee changes, or is cleared |
@@ -165,7 +179,7 @@ The body is JSON:
 }
 ```
 
-`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only `message.created` has `data.message`. They hold the state when the request is sent, which can be later than the change, such as after a retry.
+`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`. They hold the state when the request is sent, which can be later than the change, such as after a retry.
 
 Each request has these headers:
 
@@ -219,7 +233,7 @@ Another client that supports remote servers over HTTP takes the same address and
 | `list_conversations` | Lists open or closed conversations, newest activity first. Pass `nextCursor` back as `cursor` for the next page |
 | `search_conversations` | Finds conversations by the visitor's name, email or user ID, or by message text |
 | `get_conversation` | Reads a conversation: its messages, the visitor, `pageContext` and the pages the visitor went through |
-| `reply` | Replies in an open conversation. Pass the same `clientId` on a retry, so it is not sent twice |
+| `reply` | Replies in an open conversation, quoting an earlier message with `replyToMessageId` if you like. Pass the same `clientId` on a retry, so it is not sent twice |
 | `close_conversation`, `reopen_conversation` | Closes or reopens a conversation |
 | `assign_conversation` | Assigns a conversation to a member by operator ID, or clears it with `null` |
 | `list_webhooks` | Setup keys only. Lists the webhooks, with their events and who added them, never their secrets |

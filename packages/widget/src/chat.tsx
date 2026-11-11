@@ -91,9 +91,15 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
     ...(note && { note }),
     id: message.id,
     seq: BigInt(message.seq),
-    // A removed image reads as a note where it was.
-    body: message.imageRemoved ? t("imageRemoved") : (message.body ?? ""),
+    // A removed image or a deleted message reads as a note where it was.
+    body: message.deleted
+      ? t("messageDeleted")
+      : message.imageRemoved
+        ? t("imageRemoved")
+        : (message.body ?? ""),
     image: message.image,
+    quote: message.replyTo,
+    gone: message.deleted,
     fromVisitor: message.fromVisitor,
     author:
       note || message.authorId === null || message.authorName === null
@@ -182,9 +188,12 @@ function Chat({
   // The newest message this chat sent. A reply after it is new even inside a stream's first replay,
   // which can hold an answer to the message that started the conversation.
   const lastSent = useRef<bigint | null>(null);
+  // The highest position the stream has sent, so a message sent again for an edit is not news.
+  const highest = useRef(0n);
   const alive = useRef(true);
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
+  const [quoting, setQuoting] = useState<Line | null>(null);
   const [lost, setLost] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
@@ -426,10 +435,14 @@ function Chat({
             message(message, next) {
               if (controller.signal.aborted) return;
               cursor.current = next;
-              setDelivered((current) => larger(current, BigInt(message.seq)));
+              const seq = BigInt(message.seq);
+              // An edit or a delete sends a message again, at or below what came before.
+              const isNew = seq > highest.current;
+              if (isNew) highest.current = seq;
+              setDelivered((current) => larger(current, seq));
               const fresh =
-                replayed.current ||
-                (lastSent.current !== null && BigInt(message.seq) > lastSent.current);
+                isNew &&
+                (replayed.current || (lastSent.current !== null && seq > lastSent.current));
               const { kind } = message;
               // A close ends the conversation, and a reopen brings it back, with no notice.
               if (fresh && (kind === "closed" || kind === "reopened")) {
@@ -456,6 +469,7 @@ function Chat({
               cursor.current = next;
               // It reads from the start now, so the history is whole.
               partial.current = false;
+              highest.current = 0n;
               setLines((current) => current.filter((line) => line.seq === null));
             },
           });
@@ -532,7 +546,7 @@ function Chat({
   };
 
   // The line's first ID is its client ID, so a manual retry cannot create a duplicate.
-  const deliver = async (lineId: string, body: string, file?: File) => {
+  const deliver = async (lineId: string, body: string, file?: File, quoteId?: string | null) => {
     setLines((current) =>
       current.map((line) => (line.id === lineId ? { ...line, status: "sending" } : line)),
     );
@@ -540,7 +554,7 @@ function Chat({
       const first = await ensureToken();
       const post = (token: string) =>
         file === undefined
-          ? client.send(token, lineId, body)
+          ? client.send(token, lineId, body, quoteId ?? undefined)
           : client.sendImage(token, lineId, file);
       const sent = await post(first).catch(async (error: unknown) => {
         // A tab open past the token's expiry asks the host for a new one and tries once more.
@@ -600,11 +614,28 @@ function Chat({
     setDraft("");
     clearPrefill(null);
     const id = newClientId();
+    // The quote shows at once, and the server's copy brings its excerpt.
+    const quote = quoting && {
+      id: quoting.id,
+      authorName: quoting.author?.name ?? null,
+      fromVisitor: false,
+      excerpt: quoting.body,
+    };
+    setQuoting(null);
     setLines((current) => [
       ...current,
-      { id, seq: null, body, image: null, fromVisitor: true, author: null, status: "sending" },
+      {
+        id,
+        seq: null,
+        body,
+        image: null,
+        fromVisitor: true,
+        author: null,
+        status: "sending",
+        quote,
+      },
     ]);
-    void deliver(id, body);
+    void deliver(id, body, undefined, quote?.id);
   };
 
   const sendFiles = (files: Iterable<File>) => {
@@ -712,7 +743,15 @@ function Chat({
             showAuthor={startsRun(lines, index)}
             onView={() => setViewing(line.id)}
             onImageError={refreshImages}
-            onRetry={() => void deliver(line.id, line.body, line.file)}
+            onRetry={() => void deliver(line.id, line.body, line.file, line.quote?.id)}
+            onReply={
+              line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
+                ? undefined
+                : () => {
+                    setQuoting(line);
+                    input.current?.focus();
+                  }
+            }
           />
         ))}
       </div>
@@ -755,6 +794,8 @@ function Chat({
           onDraft={setDraft}
           onSubmit={submit}
           onFiles={sendFiles}
+          quoting={quoting}
+          onUnquote={() => setQuoting(null)}
         />
       )}
       {pageOr(context.attribute("branding"), saved.branding) && <Branding />}

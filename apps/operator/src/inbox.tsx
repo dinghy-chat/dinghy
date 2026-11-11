@@ -345,8 +345,16 @@ export function Inbox({
     const looking = document.visibilityState === "visible" && document.hasFocus();
     if (!looking || conversationId !== shownConversation.current) chime();
   }, []);
-  const { lost, version, threadVersion, receiptsVersion, typing, teamVersion, accountVersion } =
-    useChanges(api, visible, onSignedOut, onVisitorMessage);
+  const {
+    lost,
+    version,
+    threadVersion,
+    receiptsVersion,
+    rewriteVersion,
+    typing,
+    teamVersion,
+    accountVersion,
+  } = useChanges(api, visible, onSignedOut, onVisitorMessage);
   const liveCount = useLiveCount(api, visible);
   const waitingBy = useWaitingBy(version);
   const [members, setMembers] = useState<Member[]>([]);
@@ -694,6 +702,7 @@ export function Inbox({
                   conversationId={selected}
                   version={threadVersion(selected)}
                   receiptsVersion={receiptsVersion}
+                  rewriteVersion={rewriteVersion(selected)}
                   onOpenContact={openContact}
                   onOpenConversation={openConversation}
                   typingDraft={typing[selected] ?? null}
