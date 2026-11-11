@@ -105,6 +105,11 @@ export async function startE2EServer(
   // Keeps what it sends, so a test opens a link the way a person would.
   const mailer = captureMail();
   const valkey = new Redis(VALKEY_URL, { enableOfflineQueue: false, maxRetriesPerRequest: 1 });
+  // The sign-in link limits live in the shared Valkey for an hour, so a run started soon after
+  // another one would find them used up and get 429s. Each server starts with none.
+  await new Promise((resolve) => valkey.once("ready", resolve));
+  const limited = await valkey.keys("dinghy:sign-in-link*");
+  if (limited.length > 0) await valkey.del(...limited);
   const pushed: string[] = [];
   const push = createPush({ ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" }, (async (
     url: string,
