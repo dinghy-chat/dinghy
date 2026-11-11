@@ -1,0 +1,1 @@
+ALTER TABLE "widget_settings" ADD COLUMN "sound" boolean DEFAULT true NOT NULL;

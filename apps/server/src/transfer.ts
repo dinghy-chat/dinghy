@@ -52,8 +52,11 @@ const ExportFile = z.strictObject({
     allowedOrigins: z.array(z.string().max(300)).max(200),
     eventSeq: seq,
     feedGeneration: z.number().int().min(1).max(999_999_999),
-    // A file from before the typing preview has no key, and the preview starts on.
-    widget: WidgetSettingsSchema.extend({ typingPreview: z.boolean().default(true) }),
+    // A file from before the typing preview or the sound has no key, and each starts on.
+    widget: WidgetSettingsSchema.extend({
+      typingPreview: z.boolean().default(true),
+      sound: z.boolean().default(true),
+    }),
     // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z
       .base64()

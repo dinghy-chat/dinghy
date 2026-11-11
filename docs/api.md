@@ -86,6 +86,7 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 | `mascot` | Whether the open chat shows the boat |
 | `emailAsk` | `off`, `after_first` or `before_first`: when a signed-out visitor is asked for an email |
 | `branding` | Whether the chat shows "Powered by Dinghy" |
+| `sound` | Whether the widget plays a soft chime for a reply that arrives while the chat is closed or its tab is hidden |
 
 Both answer the settings with `logoUrl` and `team`: up to 3 members who sent the latest replies, each with an `id` that matches the `authorId` on their replies, a first name and a picture's address. `PUT .../widget/logo` sets the logo from the raw body, a PNG, JPEG or WebP of at most 2 MB, and `DELETE .../widget/logo` removes it. An API key and MCP cannot reach these routes.
 

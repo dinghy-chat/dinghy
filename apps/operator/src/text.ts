@@ -185,7 +185,9 @@ const en = {
   widgetMascot: "Show the boat in the chat",
   widgetMascotHelp:
     "Shown in the header when there is no logo, and above the greeting before the first message.",
-  widgetEmailTitle: "Email and branding",
+  widgetEmailTitle: "Email, sound and branding",
+  widgetSound: "Play a sound for new replies",
+  widgetSoundHelp: "A soft chime when a reply arrives and the visitor is not looking at the chat.",
   widgetEmailAsk: "Ask visitors for their email",
   widgetEmailAskHelp:
     "An email address lets visitors receive replies after they leave your site. Dinghy skips this question for signed-in users and when email is unavailable.",

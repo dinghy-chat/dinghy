@@ -41,6 +41,7 @@ const CHANGED = {
   radius: 4,
   emailAsk: "before_first",
   branding: false,
+  sound: false,
 };
 
 let database: TestDatabase;

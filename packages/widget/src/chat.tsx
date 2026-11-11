@@ -34,6 +34,7 @@ import {
   wasOpen,
   writeToken,
 } from "./shared.ts";
+import { chime, prepareSound } from "./sound.ts";
 import { LAUNCHER_LABEL, t } from "./text.ts";
 
 const NEW_REPLY_SHOWN_MS = 5000;
@@ -211,6 +212,9 @@ function Chat({
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const panel = useRef<HTMLElement>(null);
+  // Read by the stream's handler, which outlives a render: whether a live reply chimes now.
+  const wantsChime = useRef(false);
+  wantsChime.current = saved?.sound === true && (!open || !visible);
   const creatingVisitor = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
@@ -431,6 +435,8 @@ function Chat({
               if (fresh && (kind === "closed" || kind === "reopened")) {
                 setOpenConversation(kind === "reopened");
               } else if (fresh && !message.fromVisitor) {
+                // Only a reply that arrives now, as history replays before ready.
+                if (replayed.current && wantsChime.current) chime();
                 setNewReply(true);
                 emit(context, "message:received", { body: message.body });
               }
@@ -897,6 +903,7 @@ else if (context !== undefined) {
   for (const type of ["focusin", "focusout", "keydown", "keypress", "keyup"]) {
     context.shadow.host.addEventListener(type, (event) => event.stopPropagation());
   }
+  prepareSound(context.shadow);
   const mount = document.createElement("div");
   context.shadow.append(mount);
   render(<Root context={context} />, mount);

@@ -9,10 +9,10 @@ const LIMITS: Record<string, number> = {
   // from 2,291). The label and square launchers before it took it to 2,300.
   "loader.js": 2700,
   "page.js": 1000,
-  // 21,900 since the new composer and header and the closed line, which the owner asked for on
-  // 2026-11-11 (21,869 with them, from 21,585). Markdown in messages and the typing preview took it to 21,600 the
+  // 22,200 since the new composer and header, the closed line and the reply chime, which the
+  // owner asked for on 2026-11-11 (22,156 with them, from 21,585). Markdown in messages and the typing preview took it to 21,600 the
   // same day, and the emoji picker before them to 20,500.
-  "widget.js": 21_900,
+  "widget.js": 22_200,
 };
 
 test("the bundles use no API that exists only on secure pages", async () => {

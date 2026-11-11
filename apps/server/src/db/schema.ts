@@ -973,6 +973,8 @@ export const widgetSettings = pgTable(
     emailAsk: widgetEmailAsk("email_ask").notNull().default(WIDGET_DEFAULTS.emailAsk),
     // The "Powered by Dinghy" line.
     branding: boolean("branding").notNull().default(WIDGET_DEFAULTS.branding),
+    // A chime in the widget for a reply the visitor is not looking at.
+    sound: boolean("sound").notNull().default(WIDGET_DEFAULTS.sound),
     // When an owner or admin first saved these settings, for the Get started steps.
     customizedAt: timestamp("customized_at", { withTimezone: true }),
     // Operators see what a visitor types before they send it. Nothing stores the draft.

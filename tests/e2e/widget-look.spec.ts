@@ -19,6 +19,7 @@ const DEFAULTS = {
   radius: 16,
   emailAsk: "after_first",
   branding: true,
+  sound: true,
 } as const;
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
@@ -254,6 +255,8 @@ test("before the first message, a visitor with a token waits for the server, and
     await route.abort();
   });
   await visitor.reload();
+  // A reload reopens the chat only once the server answers, so the visitor opens it.
+  await launcher(visitor).click();
   await expect(visitor.getByRole("region", { name: "Chat with us" })).toBeVisible();
   await expect(visitor.locator("input[type=email]")).toHaveCount(0);
   await expect(visitor.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
@@ -423,5 +426,85 @@ test("Appearance asks before another page or view drops unsaved changes", async 
   await list.getByRole("link", { name: "Team" }).click();
   await expect(list.getByRole("link", { name: "Team" })).toHaveAttribute("aria-current", "page");
   await expect(dialog).toHaveCount(0);
+  await context.close();
+});
+
+/** Counts the chime's notes: a stand-in for Web Audio, so a test hears nothing and can count. */
+function countNotes() {
+  const page = window as unknown as { notes: number };
+  page.notes = 0;
+  class FakeAudio {
+    state = "suspended";
+    currentTime = 0;
+    destination = {};
+    resume() {
+      this.state = "running";
+      return Promise.resolve();
+    }
+    createOscillator() {
+      page.notes += 1;
+      return { frequency: { value: 0 }, connect: (node: unknown) => node, start() {}, stop() {} };
+    }
+    createGain() {
+      const ramp = () => {};
+      return {
+        gain: {
+          setValueAtTime: ramp,
+          linearRampToValueAtTime: ramp,
+          exponentialRampToValueAtTime: ramp,
+        },
+        connect() {},
+      };
+    }
+  }
+  Object.assign(window, { AudioContext: FakeAudio });
+}
+
+const notes = (visitor: Page) =>
+  visitor.evaluate(() => (window as unknown as { notes: number }).notes);
+
+test("a live reply chimes while the chat is closed, and not while it is open", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  await context.addInitScript(countNotes);
+  const visitor = await context.newPage();
+  await visitor.goto(`${server.hostOrigin}/plain`);
+  // The launcher's click starts the audio.
+  await launcher(visitor).click();
+  const box = visitor.getByRole("textbox", { name: "Your message" });
+  await box.fill("Can you hear me?");
+  await box.press("Enter");
+  await expect(visitor.locator(".state")).toHaveCount(0);
+
+  await visitor.getByRole("button", { name: "Close chat" }).click();
+  await server.reply("A reply while closed");
+  await expect.poll(() => notes(visitor)).toBe(2);
+
+  await launcher(visitor).click();
+  await expect(visitor.getByText("A reply while closed")).toBeVisible();
+  // Past the 2 seconds between chimes, so only the open chat keeps this one quiet.
+  await visitor.waitForTimeout(2100);
+  await server.reply("A reply while open");
+  await expect(visitor.getByText("A reply while open")).toBeVisible();
+  expect(await notes(visitor)).toBe(2);
+  await context.close();
+});
+
+test("with the sound off, a reply makes no chime", async ({ browser }) => {
+  await server.setWidgetSettings({ sound: false });
+  const context = await browser.newContext();
+  await context.addInitScript(countNotes);
+  const visitor = await context.newPage();
+  await visitor.goto(`${server.hostOrigin}/plain`);
+  await launcher(visitor).click();
+  const box = visitor.getByRole("textbox", { name: "Your message" });
+  await box.fill("Quiet please");
+  await box.press("Enter");
+  await expect(visitor.locator(".state")).toHaveCount(0);
+  await visitor.getByRole("button", { name: "Close chat" }).click();
+  await server.reply("A quiet reply");
+  await expect(launcher(visitor).locator(".badge")).toHaveText("1");
+  expect(await notes(visitor)).toBe(0);
   await context.close();
 });

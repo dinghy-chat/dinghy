@@ -73,6 +73,7 @@ export const WidgetSettingsSchema = z
     radius: z.number().int().min(0).max(RADIUS_MAX_PX),
     emailAsk: z.enum(widgetEmailAsk.enumValues),
     branding: z.boolean(),
+    sound: z.boolean(),
   })
   .openapi("WidgetSettings") satisfies z.ZodType<WidgetSettings>;
 

@@ -217,6 +217,9 @@
           },
           "branding": {
             "type": "boolean"
+          },
+          "sound": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -231,7 +234,8 @@
           "mascot",
           "radius",
           "emailAsk",
-          "branding"
+          "branding",
+          "sound"
         ]
       },
       "NewVisitor": {

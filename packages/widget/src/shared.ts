@@ -39,6 +39,8 @@ export interface WidgetSettings {
   emailAsk: "off" | "after_first" | "before_first";
   /** The "Powered by Dinghy" line. */
   branding: boolean;
+  /** A chime when a reply arrives and the visitor is not looking at the chat. */
+  sound: boolean;
 }
 
 /** A member the widget's header shows: a first name and a picture, never an email. */
@@ -83,6 +85,7 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   radius: 16,
   emailAsk: "after_first",
   branding: true,
+  sound: true,
   typingPreview: true,
   logoUrl: null,
   team: [],
