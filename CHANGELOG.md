@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-11
+
 ### Added
 
 - `Dinghy.on("conversation", (open) => ...)` and `Dinghy.state.conversation` say whether the visitor has an open conversation. With `data-launcher="hidden"`, a page can show the chat's button only during a conversation, on every device of a signed-in user.
@@ -344,7 +346,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/dinghy-chat/dinghy/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/dinghy-chat/dinghy/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/dinghy-chat/dinghy/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/dinghy-chat/dinghy/compare/v0.16.0...v0.17.0
