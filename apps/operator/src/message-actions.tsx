@@ -86,6 +86,13 @@ interface Editing {
 }
 
 /**
+ * The editor once `body` is saved for line `id`: closed, unless the operator typed on while it
+ * saved, so the newer text stays open to save again.
+ */
+export const editorAfterSave = (current: Editing | null, id: string, body: string) =>
+  current?.id === id && current.draft.trim() === body ? null : current;
+
+/**
  * What the operator does to one message: quote it in the next reply, edit it, read its info, copy
  * it or delete it. `act` runs a change and reports its failure.
  */
@@ -113,7 +120,7 @@ export function useMessageActions({
     const saved = await act(async () => keep(await api.editMessage(conversationId, id, body)), {
       report,
     });
-    if (saved) setEditing((current) => (current?.id === id ? null : current));
+    if (saved) setEditing((current) => editorAfterSave(current, id, body));
   };
 
   // Every quote of it changes too: the `message.deleted` event loads the whole thread again.
