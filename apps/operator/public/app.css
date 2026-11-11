@@ -1080,6 +1080,11 @@ button.workspace[aria-expanded="true"],
 .pill.danger-soft:hover:not(:disabled) {
   background: var(--bad-soft);
 }
+.pill.danger-soft:disabled {
+  background: var(--soft);
+  box-shadow: none;
+  color: var(--mute);
+}
 .pill.small {
   min-height: 34px;
   padding: 0 14px;
