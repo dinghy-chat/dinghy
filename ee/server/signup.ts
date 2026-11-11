@@ -320,14 +320,17 @@ export async function freeWorkspace(
 ): Promise<FreeResult> {
   await admin.query("BEGIN");
   try {
-    const found = await admin.query<{ subscribed: boolean }>(
-      `SELECT EXISTS (SELECT 1 FROM subscription WHERE workspace_id = w.id) AS subscribed
-       FROM workspace AS w WHERE w.id = $1 AND w.deleted_at IS NULL FOR UPDATE OF w`,
+    // The lock first, and the subscription check in its own statement, so it sees a checkout's
+    // row that committed while this waited. Checkout inserts that row under the same lock.
+    const found = await admin.query(
+      "SELECT 1 FROM workspace WHERE id = $1 AND deleted_at IS NULL FOR NO KEY UPDATE",
       [workspaceId],
     );
-    const row = found.rows[0];
+    const subscribed = await admin.query("SELECT 1 FROM subscription WHERE workspace_id = $1", [
+      workspaceId,
+    ]);
     const result: FreeResult =
-      row === undefined ? "missing" : row.subscribed ? "subscribed" : "freed";
+      found.rowCount === 0 ? "missing" : subscribed.rowCount !== 0 ? "subscribed" : "freed";
     if (result !== "freed") {
       await admin.query("ROLLBACK");
       return result;

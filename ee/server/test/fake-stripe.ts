@@ -57,9 +57,16 @@ export async function startFakeStripe() {
     afterSessionList: (() => void) | null;
     /** Runs once, before the next Checkout create is handled, and holds it until it settles. */
     beforeCheckoutCreate: (() => Promise<void>) | null;
+    /** Runs once, before the next customer create is handled, and holds it until it settles. */
+    beforeCustomerCreate: (() => Promise<void>) | null;
     /** Runs after each cancel and before its answer, as Stripe sends its webhook meanwhile. */
     afterCancel: ((subscription: FakeSubscription) => Promise<void>) | null;
-  } = { afterSessionList: null, beforeCheckoutCreate: null, afterCancel: null };
+  } = {
+    afterSessionList: null,
+    beforeCheckoutCreate: null,
+    beforeCustomerCreate: null,
+    afterCancel: null,
+  };
   /** Customers deleted in the dashboard, which Stripe still answers for, as deleted. */
   const deletedCustomers = new Set<string>();
   let origin = "";
@@ -196,6 +203,11 @@ export async function startFakeStripe() {
     if (req.method === "POST" && url.pathname === "/v1/checkout/sessions") {
       const before = hooks.beforeCheckoutCreate;
       hooks.beforeCheckoutCreate = null;
+      await before?.();
+    }
+    if (req.method === "POST" && url.pathname === "/v1/customers") {
+      const before = hooks.beforeCustomerCreate;
+      hooks.beforeCustomerCreate = null;
       await before?.();
     }
     const key = req.headers["idempotency-key"];

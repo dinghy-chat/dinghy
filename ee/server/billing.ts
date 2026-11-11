@@ -520,12 +520,22 @@ export function registerBillingRoutes(
           `dinghy-customer-${id}`,
         ),
       );
-      await withWorkspace(db, id, (tx) =>
-        tx
+      // Under the workspace row's lock, which `chat free` also takes, so a workspace it turned on
+      // while Stripe answered never gets a subscription.
+      const isFreed = await withWorkspace(db, id, async (tx) => {
+        const [locked] = await tx
+          .select({ active: workspace.active })
+          .from(workspace)
+          .where(eq(workspace.id, id))
+          .for("no key update");
+        if (locked?.active === true) return true;
+        await tx
           .insert(subscription)
           .values({ workspaceId: id, stripeCustomerId: customer.id })
-          .onConflictDoNothing(),
-      );
+          .onConflictDoNothing();
+        return false;
+      });
+      if (isFreed) return c.json(ALREADY_ACTIVE, 409);
     }
     const [stored] = await withWorkspace(db, id, (tx) =>
       tx
