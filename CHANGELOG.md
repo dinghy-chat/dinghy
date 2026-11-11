@@ -4,15 +4,17 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-11
+
 ### Changed
 
 - **Delete my account** works at once for a workspace's only owner. A workspace with other people in it passes to the admin who joined first, or else to the member who joined first. A workspace with nobody else in it is deleted with the account, and on Dinghy Cloud its subscription ends. The dialog lists what happens to each one. A self-hosted server still keeps its last workspace.
 - Docs links in Settings sit under each section's description, with a book icon.
 - "Saved." and other confirmations show as a short message at the bottom of the screen. A failure still shows next to its field.
 - **Allowed sites** lists each site as a card. **Add a site** opens the field, and each add or remove saves at once.
-- The picture and the logo have smaller buttons. The image itself picks a new one.
+- The picture and the logo have smaller buttons, with the file rule beside them.
 - The preview in **Settings > Appearance** shows a dark chat on a light page, so it stands out.
-- API: `GET /v1/operator/me` answers each workspace's `heir`. `POST /v1/operator/account/delete` no longer answers `sole_owner`. It answers `last_workspace` on a self-hosted server whose last workspace has only this operator, and `billing_unavailable` when a subscription could not be canceled.
+- API: `GET /v1/operator/me` answers each workspace's `heir`. `POST /v1/operator/account/delete` no longer answers `sole_owner`. It answers `last_workspace` on a self-hosted server whose last workspace has only this operator, `billing_unavailable` when a subscription could not be canceled, and `team_changed` when someone left a workspace during the delete.
 
 ### Fixed
 
@@ -338,7 +340,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/dinghy-chat/dinghy/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/dinghy-chat/dinghy/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/dinghy-chat/dinghy/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/dinghy-chat/dinghy/compare/v0.15.0...v0.16.0
