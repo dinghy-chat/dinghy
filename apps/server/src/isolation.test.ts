@@ -1800,9 +1800,16 @@ describe("the worker with no row-level security", () => {
       ),
     );
     while (await fanOutOne(worker, { push: true, email: false }));
-    const claims = await claimDeliveries(worker, 50, 60_000);
-    const mine = claims.find((claim) => claim.workspaceId === space.id);
-    if (mine === undefined) throw new Error("No claim for this workspace");
+    // Other tests leave due rows too, so this claims until it holds this workspace's row.
+    const claimMine = async () => {
+      for (;;) {
+        const claims = await claimDeliveries(worker, 50, 60_000);
+        const found = claims.find((claim) => claim.workspaceId === space.id);
+        if (found !== undefined) return found;
+        if (claims.length === 0) throw new Error("No claim for this workspace");
+      }
+    };
+    const mine = await claimMine();
     const plan = await planDelivery(worker, mine, {
       publicUrl: PUBLIC_URL,
       secret: AUTH_SECRET,
