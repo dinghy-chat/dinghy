@@ -34,7 +34,6 @@ import {
   quotedHtml,
   quotedText,
   sentToday,
-  VISITOR_EMAILS,
   VISITOR_EMAILS_PER_DAY,
   visitorEmailText,
 } from "./visitor-email.ts";
@@ -184,70 +183,46 @@ async function operatorAlertRows(
 /** An operator wrote: one delayed email to the visitor, within the limits on reply emails. */
 async function replyEmailRows(tx: Transaction, base: DeliveryBase): Promise<DeliveryRow[]> {
   const { workspaceId, conversationId } = base;
-  const rows: DeliveryRow[] = [];
   const target = await conversationVisitor(tx, workspaceId, conversationId);
-  if (
-    target !== undefined &&
-    target.email !== null &&
-    !(await emailStopped(tx, workspaceId, target.email))
-  ) {
-    const now = Date.now();
-    const past = await tx
-      .select({
-        channel: alertDelivery.channel,
-        createdAt: alertDelivery.createdAt,
-        finishedAt: alertDelivery.finishedAt,
-        claimedUntil: alertDelivery.claimedUntil,
-        outcome: alertDelivery.outcome,
+  if (target === undefined || target.email === null) return [];
+  if (await emailStopped(tx, workspaceId, target.email)) return [];
+  const now = Date.now();
+  const unfinished = and(
+    eq(alertDelivery.workspaceId, workspaceId),
+    eq(alertDelivery.visitorId, target.id),
+    eq(alertDelivery.channel, "email"),
+    isNull(alertDelivery.finishedAt),
+  );
+  const open = await tx
+    .select({ claimedUntil: alertDelivery.claimedUntil })
+    .from(alertDelivery)
+    .where(unfinished);
+  // A worker may already have read this row's text, so it cannot carry this reply.
+  const sending = open.filter((row) => (row.claimedUntil?.getTime() ?? 0) > now).length;
+  // A row still waiting will carry this reply too, because it reads what is unread at send. The
+  // reply that joins it gets the same wait as the first one.
+  if (sending < open.length) {
+    await tx
+      .update(alertDelivery)
+      .set({
+        nextAttemptAt: sql`greatest(${alertDelivery.nextAttemptAt}, ${new Date(now + REPLY_EMAIL_DELAY_MS).toISOString()}::timestamptz)`,
       })
-      .from(alertDelivery)
-      .where(
-        and(
-          eq(alertDelivery.workspaceId, workspaceId),
-          eq(alertDelivery.visitorId, target.id),
-          inArray(alertDelivery.channel, VISITOR_EMAILS),
-          gt(alertDelivery.createdAt, new Date(now - DAY_MS)),
-        ),
-      )
-      .orderBy(desc(alertDelivery.createdAt));
-    const replyEmails = past.filter((row) => row.channel === "email");
-    // A worker may already have read this row's text, so it cannot carry this reply.
-    const sending = replyEmails.filter(
-      (row) =>
-        row.finishedAt === null && row.claimedUntil !== null && row.claimedUntil.getTime() > now,
-    );
-    // A row still waiting will carry this reply too, because it reads what is unread at send.
-    const waiting = replyEmails.some((row) => row.finishedAt === null && !sending.includes(row));
-    // Transcripts count toward the daily limit, and only reply emails set the gap.
-    const sent = past.filter((row) => row.outcome === "sent");
-    const lastReplyEmail = replyEmails.find((row) => row.outcome === "sent");
-    // The reply that joins a waiting row gets the same wait as the first one.
-    if (waiting) {
-      await tx
-        .update(alertDelivery)
-        .set({
-          nextAttemptAt: sql`greatest(${alertDelivery.nextAttemptAt}, ${new Date(now + REPLY_EMAIL_DELAY_MS).toISOString()}::timestamptz)`,
-        })
-        .where(
-          and(
-            eq(alertDelivery.workspaceId, workspaceId),
-            eq(alertDelivery.visitorId, target.id),
-            eq(alertDelivery.channel, "email"),
-            isNull(alertDelivery.finishedAt),
-          ),
-        );
-    }
-    if (!waiting && sent.length + sending.length < VISITOR_EMAILS_PER_DAY) {
-      const last = sending.length > 0 ? now : (lastReplyEmail?.finishedAt?.getTime() ?? 0);
-      rows.push({
-        ...base,
-        visitorId: target.id,
-        channel: "email",
-        nextAttemptAt: new Date(Math.max(now + REPLY_EMAIL_DELAY_MS, last + REPLY_EMAIL_GAP_MS)),
-      });
-    }
+      .where(unfinished);
+    return [];
   }
-  return rows;
+  // Transcripts count toward the daily limit, as the planner counts them, and only reply emails
+  // set the gap.
+  const sent = await sentToday(tx, workspaceId, target.id);
+  if (sent.length + sending >= VISITOR_EMAILS_PER_DAY) return [];
+  const lastReplyEmail = sent.find((row) => row.channel === "email");
+  const last = sending > 0 ? now : (lastReplyEmail?.finishedAt.getTime() ?? 0);
+  const row: DeliveryRow = {
+    ...base,
+    visitorId: target.id,
+    channel: "email",
+    nextAttemptAt: new Date(Math.max(now + REPLY_EMAIL_DELAY_MS, last + REPLY_EMAIL_GAP_MS)),
+  };
+  return [row];
 }
 
 /**

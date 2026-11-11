@@ -17,7 +17,7 @@ import { DAY_MS } from "./time.ts";
 // The emails a visitor gets in a day, reply emails and transcripts together, because anyone can
 // type someone else's address into the widget.
 export const VISITOR_EMAILS_PER_DAY = 5;
-export const VISITOR_EMAILS: ClaimedDelivery["channel"][] = ["email", "transcript"];
+const VISITOR_EMAILS: ClaimedDelivery["channel"][] = ["email", "transcript"];
 
 // Every string a person reads has a key, so a locale can be added later.
 export const visitorEmailText = {

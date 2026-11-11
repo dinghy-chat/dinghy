@@ -1152,6 +1152,31 @@ describe("email", () => {
     expect(await replyRows()).toHaveLength(VISITOR_EMAILS_PER_DAY);
   });
 
+  test("the daily limit counts emails sent in the last day, however long ago they were queued", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const conversationId = written.message.conversationId;
+    const hours = (count: number) => new Date(Date.now() - count * 3_600_000);
+    // Each queued more than a day ago, and sent within the last day, as the planner counts them.
+    await owner.insert(alertDelivery).values(
+      Array.from({ length: VISITOR_EMAILS_PER_DAY }, (_, index) => ({
+        workspaceId: space.id,
+        eventSeq: BigInt(1000 + index),
+        conversationId,
+        messageId: written.message.id,
+        visitorId: from,
+        channel: "email" as const,
+        outcome: "sent" as const,
+        createdAt: hours(26),
+        finishedAt: hours(23),
+      })),
+    );
+    await operatorWrites(anna, conversationId, "Over the limit");
+    await fanOutAll();
+    expect(await replyRows()).toHaveLength(VISITOR_EMAILS_PER_DAY);
+  });
+
   test("transcripts count toward the daily limit", async () => {
     const anna = await addOperator(`anna-${randomUUID()}@example.com`);
     const from = await addVisitor("v@example.com");
