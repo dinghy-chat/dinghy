@@ -130,7 +130,7 @@ test("the operator sees the visitor online, their device and the page they moved
   const owner = await signedIn(browser);
   await owner.locator(".row", { hasText: "Where is billing?" }).click();
   const visit = owner.locator(".thread-head .visit");
-  await expect(visit).toContainText("Online now");
+  await expect(visit).toContainText("Chat is open");
   await expect(visit).toContainText("Chrome");
   const page = visit.getByRole("link");
   await expect(page).toHaveText(/\/app\/settings$/);
@@ -208,10 +208,15 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
   const page = owner.getByRole("region", { name: "Analytics" });
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
   const zone = await owner.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
-  await expect(page.getByText(`in your time zone (${zone})`)).toBeVisible();
-  const started = page.locator(".figures div", { hasText: "Conversations" }).locator("dd");
+  await expect(page.getByText(`use your time zone (${zone})`)).toBeVisible();
+  const started = page
+    .locator(".figures div", { hasText: /^Conversations started/ })
+    .locator("dd")
+    .first();
   await expect(started).toHaveText(/^[1-9]\d*$/);
-  await expect(page.locator(".figures div", { hasText: "Median first reply" })).toBeVisible();
+  await expect(
+    page.locator(".figures div", { hasText: "First reply time (median)" }),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Conversations per day" })).toBeVisible();
   await expect(page.locator(".bars > span")).toHaveCount(30);
   await expect(page.locator(".hours-grid .cell")).toHaveCount(7 * 24);

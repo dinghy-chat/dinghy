@@ -1,6 +1,7 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { openLink } from "./links.ts";
+import { openSettings, settingsList } from "./settings.ts";
 
 const tag = (attributes = "") =>
   `<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" ${attributes} async></script>`;
@@ -327,14 +328,13 @@ test.describe("the Powered by Dinghy line", () => {
   });
 });
 
-test("an owner changes the color, theme and launcher in the Widget tab, and the site shows them", async ({
+test("an owner changes the color, theme and launcher in Appearance, and the site shows them", async ({
   browser,
 }) => {
   const context = await browser.newContext();
   const owner = await context.newPage();
   await openLink(owner, await server.signInLink("owner@example.com"));
-  await owner.getByRole("button", { name: "Settings" }).click();
-  await owner.getByRole("tab", { name: "Widget" }).click();
+  await openSettings(owner, "Appearance");
   const form = owner.locator(".widget-form");
   const save = form.getByRole("button", { name: "Save", exact: true });
   await expect(save).toBeDisabled();
@@ -366,35 +366,35 @@ test("an owner changes the color, theme and launcher in the Widget tab, and the 
   await context.close();
 });
 
-test("the Widget tab asks before a tab or a view change drops unsaved changes", async ({
-  browser,
-}) => {
+test("Appearance asks before another page or view drops unsaved changes", async ({ browser }) => {
   const context = await browser.newContext();
   const owner = await context.newPage();
   await openLink(owner, await server.signInLink("owner@example.com"));
-  await owner.getByRole("button", { name: "Settings" }).click();
-  await owner.getByRole("tab", { name: "Widget" }).click();
-  const title = owner.locator(".widget-form").getByRole("textbox", { name: "Title" });
+  await openSettings(owner, "Appearance");
+  const list = settingsList(owner);
+  const title = owner.locator(".widget-form").getByRole("textbox", { name: "Chat title" });
   await title.fill("Unsaved");
   const dialog = owner.getByRole("alertdialog", { name: "Leave without saving?" });
 
-  await owner.getByRole("tab", { name: "Team" }).click();
+  await list.getByRole("link", { name: "Team" }).click();
   await expect(dialog).toContainText("Your widget changes will be lost.");
   await dialog.getByRole("button", { name: "Stay" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(owner.getByRole("tab", { name: "Widget" })).toHaveAttribute("aria-selected", "true");
+  await expect(list.getByRole("link", { name: "Appearance" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   await expect(title).toHaveValue("Unsaved");
 
   await owner.getByRole("button", { name: "Inbox" }).click();
   await dialog.getByRole("button", { name: "Leave" }).click();
-  await expect(owner.getByRole("tab", { name: "Widget" })).toHaveCount(0);
+  await expect(list).toHaveCount(0);
 
-  // Nothing was saved, and with no change the tabs switch without asking.
-  await owner.getByRole("button", { name: "Settings" }).click();
-  await owner.getByRole("tab", { name: "Widget" }).click();
+  // Nothing was saved, and with no change the pages switch without asking.
+  await openSettings(owner, "Appearance");
   await expect(title).toHaveValue("");
-  await owner.getByRole("tab", { name: "Team" }).click();
-  await expect(owner.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
+  await list.getByRole("link", { name: "Team" }).click();
+  await expect(list.getByRole("link", { name: "Team" })).toHaveAttribute("aria-current", "page");
   await expect(dialog).toHaveCount(0);
   await context.close();
 });

@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
 import { Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { failureText, Loading, Page, PageRow, Pond } from "./ui.tsx";
+import { DocLink, failureText, Loading, Page, PageRow, Pond } from "./ui.tsx";
 
 type Period = `${AnalyticsDays}`;
 
@@ -123,19 +123,33 @@ function Tipped({
 function Figures({ numbers }: { numbers: Analytics }) {
   const { firstReply } = numbers;
   const none = t("noReplies");
-  const items: [TextId, string][] = [
+  // Each figure, and what it counts when its name alone cannot say.
+  const items: [TextId, string, TextId?][] = [
     ["statStarted", String(numbers.started)],
-    ["statMedian", firstReply.medianSeconds === null ? none : duration(firstReply.medianSeconds)],
-    ["statP90", firstReply.p90Seconds === null ? none : duration(firstReply.p90Seconds)],
-    ["statFast", firstReply.within5Minutes === null ? none : percent(firstReply.within5Minutes)],
+    [
+      "statMedian",
+      firstReply.medianSeconds === null ? none : duration(firstReply.medianSeconds),
+      "statMedianHelp",
+    ],
+    [
+      "statP90",
+      firstReply.p90Seconds === null ? none : duration(firstReply.p90Seconds),
+      "statP90Help",
+    ],
+    [
+      "statFast",
+      firstReply.within5Minutes === null ? none : percent(firstReply.within5Minutes),
+      "statFastHelp",
+    ],
     ["statClosed", String(numbers.closed)],
   ];
   return (
     <dl className="figures">
-      {items.map(([label, value]) => (
+      {items.map(([label, value, help]) => (
         <div key={label}>
           <dt>{t(label)}</dt>
           <dd>{value}</dd>
+          {help !== undefined && <dd className="figure-help">{t(help)}</dd>}
         </div>
       ))}
     </dl>
@@ -305,6 +319,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
           <PageRow title={t("hoursTitle")} help={t("hoursHelp")}>
             <Hours hours={numbers.hours} />
           </PageRow>
+          <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
         </>
       )}
     </Page>

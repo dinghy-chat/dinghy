@@ -105,7 +105,7 @@ test("the Inbox item and the tab title count the conversations that wait for a r
   await expect(openCount(operator)).toHaveText("1");
   await expect(operator).toHaveTitle("(1) Dinghy");
   await expect(row(operator, "First question").locator(".chip.warn")).toHaveText(
-    "Waits for a reply",
+    "Waiting for a reply",
   );
 
   const second = await visitor(browser, "Second question");

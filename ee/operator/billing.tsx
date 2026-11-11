@@ -7,7 +7,7 @@ import {
   type WorkspaceApi,
 } from "../../apps/operator/src/api.ts";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
-import { ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
+import { DocLink, ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
 
 const STATE_TEXT: Record<BillingState["state"], TextId> = {
   pending: "billingPending",
@@ -51,7 +51,7 @@ export function useBilling(
 
 /** What a failed start of Checkout or the portal tells the owner, by status. */
 export const CHECKOUT_FAILURES: Partial<Record<number, TextId>> = {
-  429: "tooManyAttempts",
+  429: "tooManyRequests",
   409: "payInProgress",
   503: "checkoutRetryLater",
 };
@@ -208,6 +208,7 @@ export function BillingRow({
           />
         </div>
       )}
+      <DocLink path="operator-guide#billing" text="billingDocsLink" />
     </PageRow>
   );
 }

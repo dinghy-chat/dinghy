@@ -1,16 +1,16 @@
 /** @jsxImportSource react */
 import { useEffect, useState } from "react";
 import type { WorkspaceApi } from "./api.ts";
-import type { SettingsTab } from "./settings.tsx";
+import type { SettingsPage } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 import { Icon } from "./ui.tsx";
 
-const STEPS: { text: TextId; tab: SettingsTab }[] = [
-  { text: "startSite", tab: "sites" },
-  { text: "startInstall", tab: "install" },
-  { text: "startLogo", tab: "widget" },
-  { text: "startTexts", tab: "widget" },
-  { text: "startTeam", tab: "team" },
+const STEPS: { text: TextId; page: SettingsPage }[] = [
+  { text: "startSite", page: "install" },
+  { text: "startInstall", page: "install" },
+  { text: "startLogo", page: "workspace" },
+  { text: "startTexts", page: "appearance" },
+  { text: "startTeam", page: "team" },
 ];
 
 const key = (workspaceId: string) => `dinghy.started.${workspaceId}`;
@@ -33,7 +33,7 @@ function hide(workspaceId: string) {
 
 /**
  * The first steps, in an empty inbox of a workspace that never had a conversation, until the
- * operator hides them. Nothing is required: each step opens its settings tab. It is per device.
+ * operator hides them. Nothing is required: each step opens its Settings page. It is per device.
  */
 export function StartHint({
   api,
@@ -48,7 +48,7 @@ export function StartHint({
   hasConversations: boolean;
   /** Goes up when the inbox catches up, so a conversation closed meanwhile is found. */
   version: number;
-  onOpen(tab: SettingsTab): void;
+  onOpen(page: SettingsPage): void;
 }) {
   const [hidden, setHidden] = useState(() => wasHidden(workspaceId));
   // Null until the closed list answers: a workspace whose conversations are all closed is in use.
@@ -86,7 +86,7 @@ export function StartHint({
       <ol>
         {STEPS.map((step) => (
           <li key={step.text}>
-            <button type="button" className="text-button" onClick={() => onOpen(step.tab)}>
+            <button type="button" className="text-button" onClick={() => onOpen(step.page)}>
               {t(step.text)}
               <Icon name="chevronRight" size={14} />
             </button>

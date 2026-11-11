@@ -11,9 +11,18 @@ import {
 } from "./api.ts";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { CopyButton, ErrorNote, Field, failureText, Icon, PageRow, StatusNote } from "./ui.tsx";
+import {
+  CopyButton,
+  DocLink,
+  ErrorNote,
+  Field,
+  failureText,
+  Icon,
+  Page,
+  PageRow,
+  StatusNote,
+} from "./ui.tsx";
 
-const API_DOCS = "https://dinghy.chat/docs/api";
 const MAX_WEBHOOKS = 5;
 
 const EVENT_TEXT: Record<WebhookEvent, TextId> = {
@@ -72,7 +81,7 @@ function apiKeyLine(key: ApiKey): string {
 }
 
 /** Owners and admins make keys for scripts and AI agents, and revoke them. */
-export function ApiKeysRow({ api }: { api: WorkspaceApi }) {
+function ApiKeysRow({ api }: { api: WorkspaceApi }) {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [name, setName] = useState("");
   const [made, setMade] = useState<{ name: string; token: string } | null>(null);
@@ -190,9 +199,10 @@ export function ApiKeysRow({ api }: { api: WorkspaceApi }) {
         </div>
       )}
       <ErrorNote text={failure} />
-      <a className="text-button" href={API_DOCS} target="_blank" rel="noopener noreferrer">
-        {t("apiDocsLink")}
-      </a>
+      <div className="doc-links">
+        <DocLink path="api#api-keys" text="apiDocsLink" />
+        <DocLink path="api#mcp" text="mcpDocsLink" />
+      </div>
       {revoking !== null && (
         <Confirm
           title={t("apiKeyRevokeTitle", { name: revoking.name })}
@@ -389,13 +399,18 @@ function WebhookItem({
         </p>
       )}
       <ErrorNote text={failure} />
-      {showing && <Deliveries api={api} webhookId={hook.id} />}
+      {showing && (
+        <>
+          <Deliveries api={api} webhookId={hook.id} />
+          <p className="hint">{t("deliveriesNote")}</p>
+        </>
+      )}
     </li>
   );
 }
 
 /** Owners and admins send the workspace's events to their own servers. */
-export function WebhooksRow({ api }: { api: WorkspaceApi }) {
+function WebhooksRow({ api }: { api: WorkspaceApi }) {
   const [hooks, setHooks] = useState<Webhook[]>([]);
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<WebhookEvent[]>([...WEBHOOK_EVENTS]);
@@ -498,6 +513,7 @@ export function WebhooksRow({ api }: { api: WorkspaceApi }) {
         <form className="stack hook-form" onSubmit={add}>
           <Field
             label={t("webhookUrl")}
+            hint={t("webhookUrlHint")}
             type="url"
             inputMode="url"
             placeholder="https://example.com/dinghy"
@@ -524,9 +540,8 @@ export function WebhooksRow({ api }: { api: WorkspaceApi }) {
         </form>
       )}
       <ErrorNote text={failure} />
-      <a className="text-button" href={API_DOCS} target="_blank" rel="noopener noreferrer">
-        {t("apiDocsLink")}
-      </a>
+      <p className="hint">{t("webhookVerifyNote")}</p>
+      <DocLink path="api#webhooks" text="webhookDocsLink" />
       {asking !== null && (
         <Confirm
           title={t(asking.kind === "rotate" ? "webhookRotateTitle" : "webhookDeleteTitle", {
@@ -540,5 +555,15 @@ export function WebhooksRow({ api }: { api: WorkspaceApi }) {
         />
       )}
     </PageRow>
+  );
+}
+
+/** API & webhooks: what lets other software read and answer chats, or hear about them. */
+export function DevelopersPage({ api }: { api: WorkspaceApi }) {
+  return (
+    <Page title={t("tabApi")}>
+      <ApiKeysRow api={api} />
+      <WebhooksRow api={api} />
+    </Page>
   );
 }

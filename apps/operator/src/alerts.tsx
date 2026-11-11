@@ -9,7 +9,7 @@ import {
 } from "./api.ts";
 import { setSoundOn, soundOn } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
-import { ErrorNote, failureText, Loading, Page, PageRow, StatusNote } from "./ui.tsx";
+import { DocLink, ErrorNote, failureText, Loading, Page, PageRow, StatusNote } from "./ui.tsx";
 
 const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window;
 
@@ -41,7 +41,8 @@ function decodeKey(key: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-export function AlertsPage({ api }: { api: WorkspaceApi }) {
+/** Notifications: browser notifications for every workspace, email for this one, and sound. */
+export function NotificationsPage({ api }: { api: WorkspaceApi }) {
   const [settings, setSettings] = useState<AlertSettings | null>(null);
   const [device, setDevice] = useState<PushSubscription | null>(null);
   const [note, setNote] = useState<TextId | null>(null);
@@ -114,12 +115,12 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
   };
 
   return (
-    <Page title={t("alerts")} context={t("alertsContext")}>
+    <Page title={t("notifications")} context={t("alertsContext")}>
       {settings === null ? (
         <Loading failure={failure} />
       ) : (
         <>
-          <PageRow title={t("pushThisDevice")} help={t("pushNote")}>
+          <PageRow title={t("pushThisDevice")} help={`${t("pushHelp")} ${t("pushNote")}`}>
             {settings.pushKey === null ? (
               <p className="note">{t("pushNoKeys")}</p>
             ) : !pushSupported() ? (
@@ -143,10 +144,11 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
               </div>
             )}
             <StatusNote text={note} />
+            <DocLink path="troubleshooting#alerts" text="pushDocsLink" />
           </PageRow>
           <PageRow
             title={t("email")}
-            help={settings.emailAvailable ? undefined : t("emailUnavailable")}
+            help={t(settings.emailAvailable ? "emailAlertsHelp" : "emailUnavailable")}
           >
             {settings.emailAvailable && (
               <label className="check">
@@ -157,6 +159,9 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
                   onChange={(event) => void setEmail(event.target.checked)}
                 />
               </label>
+            )}
+            {!settings.emailAvailable && (
+              <DocLink path="self-hosting#settings" text="emailDocsLink" />
             )}
             <ErrorNote text={failure} />
           </PageRow>
@@ -172,6 +177,8 @@ export function AlertsPage({ api }: { api: WorkspaceApi }) {
                 }}
               />
             </label>
+            <p className="hint">{t("soundNote")}</p>
+            <DocLink path="operator-guide#get-alerts" text="notificationsDocsLink" />
           </PageRow>
         </>
       )}

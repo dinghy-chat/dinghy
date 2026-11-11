@@ -1,6 +1,7 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { expect, type Page, test } from "@playwright/test";
 import { openLink } from "../../tests/e2e/links.ts";
+import { openSettings } from "../../tests/e2e/settings.ts";
 import { startCloudE2EServer } from "../server/test/e2e-cloud.ts";
 
 type Server = Awaited<ReturnType<typeof startCloudE2EServer>>;
@@ -29,7 +30,8 @@ async function onboard(page: Page, workspaceName: string) {
   await expect(page.getByRole("heading", { name: "Set up your workspace" })).toBeVisible();
   await page.getByLabel("Your name").fill("Nora");
   await page.getByLabel("Workspace name").fill(workspaceName);
-  await page.getByRole("button", { name: "Continue" }).click();
+  // Early signup creates the workspace at once, and paid signup goes on to Stripe.
+  await page.getByRole("button", { name: /^(Create workspace|Continue to payment)$/ }).click();
 }
 
 async function signUp(page: Page, server: Server, workspaceName: string) {
@@ -45,7 +47,9 @@ async function signIn(page: Page, server: Server, email: string) {
 async function deleteAccount(page: Page, server: Server, email: string, index: number) {
   await page.getByRole("button", { name: "Delete my account" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Email me the link" }).click();
-  await expect(page.getByText(`We sent a link to ${email}`)).toBeVisible();
+  await expect(
+    page.getByText(`We sent a confirmation link to ${email}`, { exact: false }),
+  ).toBeVisible();
   await openLink(page, await server.linkTo(email, index), "Delete my account");
   await expect(page.getByRole("heading", { name: "Your account was deleted." })).toBeVisible();
 }
@@ -78,7 +82,7 @@ test.describe("with billing on", () => {
 
     // Stripe sends the browser back before its webhook arrives.
     await page.goto(`${server.apiOrigin}/billing/return?workspace=${workspaceId}`);
-    await expect(page.getByText("Waiting for the payment to clear...")).toBeVisible();
+    await expect(page.getByText("Waiting for Stripe to confirm your payment...")).toBeVisible();
     await server.completeCheckout(sessionId);
     await expect(page.getByRole("heading", { name: "Harbor Shop" })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe("/");
@@ -90,7 +94,7 @@ test.describe("with billing on", () => {
     await signUp(page, server, "Left Behind");
     await onCheckout(page, server);
     await page.goto(server.apiOrigin);
-    await expect(page.getByRole("heading", { name: "Finish payment" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activate your workspace" })).toBeVisible();
     await page.getByRole("button", { name: "Pay on Stripe" }).click();
     await onCheckout(page, server);
   });
@@ -103,9 +107,9 @@ test.describe("with billing on", () => {
     await onboard(page, "Never Paid");
     await onCheckout(page, server);
     await page.goto(server.apiOrigin);
-    await expect(page.getByRole("heading", { name: "Finish payment" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activate your workspace" })).toBeVisible();
 
-    // The only owner: the account's delete names the workspace, which has no Team tab to hand over.
+    // The only owner: the account's delete names the workspace, which has no Team page to hand over.
     await expect(page.getByRole("button", { name: "Make someone an owner" })).toHaveCount(0);
     await page.getByRole("button", { name: "Delete workspace" }).click();
     const dialog = page.getByRole("alertdialog");
@@ -132,7 +136,7 @@ test.describe("with billing on", () => {
     expect(second.status()).toBe(200);
     const { workspaceId } = (await second.json()) as { workspaceId: string };
     await page.goto(`${server.apiOrigin}/?workspace=${workspaceId}`);
-    await expect(page.getByRole("heading", { name: "Finish payment" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activate your workspace" })).toBeVisible();
     await page.getByRole("button", { name: "Open Paid Shop" }).click();
     // With two workspaces, the rail shows a picker instead of one name.
     const picked = page.getByRole("button", { name: /^Workspace:/ });
@@ -228,7 +232,7 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.getByRole("heading", { name: "Early Shop" })).toBeVisible();
     // A wide screen shows the long line, with the email.
     await expect(page.getByRole("status").locator(".banner-long")).toHaveText(
-      `Dinghy Cloud opens soon. We will email ${email} when you can turn it on.`,
+      `Visitor chat is not available yet. We'll email ${email} when you can activate this workspace.`,
     );
     // The welcome chat opens by itself, with no click.
     await expect(page.getByText("Welcome chat with the founder")).toBeVisible();
@@ -241,9 +245,10 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
     await expect(page.getByText("Thanks, got it!").last()).toBeVisible();
 
-    await page.getByRole("button", { name: "Settings" }).click();
-    await page.getByRole("tab", { name: "Install" }).click();
-    await expect(page.getByText("Your install code appears when the cloud opens.")).toBeVisible();
+    await openSettings(page, "Install");
+    await expect(
+      page.getByText("Visitor chat is not available for this workspace yet.", { exact: false }),
+    ).toBeVisible();
     await expect(page.getByText("/widget/loader.js", { exact: false })).toHaveCount(0);
     // The banner is on every page.
     await expect(page.getByRole("status").locator(".banner-long")).toBeVisible();

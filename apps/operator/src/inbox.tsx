@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BillingBanner, useBilling, WaitingBanner } from "../../../ee/operator/billing.tsx";
-import { AlertsPage, leaveDevice, useDeviceSync } from "./alerts.tsx";
+import { leaveDevice, useDeviceSync } from "./alerts.tsx";
 import { AnalyticsPage } from "./analytics.tsx";
 import {
   ApiError,
@@ -16,14 +16,15 @@ import {
   workspaceApi,
 } from "./api.ts";
 import { useLatestLoad } from "./load.ts";
-import { leave, navigate } from "./nav.ts";
+import { leave, NAVIGATE_EVENT, navigate } from "./nav.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
 import {
   openOwnerStep,
   ownerStepIn,
-  ProfilePage,
-  SettingsPage,
-  type SettingsTab,
+  Settings,
+  type SettingsPage,
+  settingsAddress,
+  settingsInAddress,
 } from "./settings.tsx";
 import { chime, prepareSound } from "./sound.ts";
 import { StartHint } from "./start-hint.tsx";
@@ -80,14 +81,19 @@ function filterInAddress(): { status: Status; who: Who } {
   };
 }
 
-/** Puts the Inbox's choice in the address, so a reload or a shared link keeps it. */
-function writeFilter(status: Status, who: Who) {
-  const url = new URL(location.href);
+/** The Inbox's address with this choice, keeping the rest of `from`, such as a conversation. */
+function filterAddress(status: Status, who: Who, from = location.href): string {
+  const url = new URL(from);
   if (status === "closed") url.searchParams.set("view", "closed");
   else url.searchParams.delete("view");
   if (who === "all") url.searchParams.delete("who");
   else url.searchParams.set("who", who);
-  history.replaceState(history.state, "", `${url.pathname}${url.search}`);
+  return `${url.pathname}${url.search}`;
+}
+
+/** Puts the Inbox's choice in the address, so a reload or a shared link keeps it. */
+function writeFilter(status: Status, who: Who) {
+  history.replaceState(history.state, "", filterAddress(status, who));
 }
 
 /** The empty list's words: a filter's own, or the status's. */
@@ -296,12 +302,11 @@ function SuspendedBanner({ contact }: { contact: string | null }) {
 }
 
 /** What the panel shows: the Inbox, or a page. */
-type View = "inbox" | "analytics" | "settings" | "alerts" | "profile";
+type View = "inbox" | "analytics" | "settings";
 
-const NAV: { view: Exclude<View, "profile">; label: TextId; icon: IconName }[] = [
+const NAV: { view: View; label: TextId; icon: IconName }[] = [
   { view: "inbox", label: "inbox", icon: "inbox" },
   { view: "analytics", label: "analytics", icon: "chart" },
-  { view: "alerts", label: "alerts", icon: "bell" },
   { view: "settings", label: "settings", icon: "gear" },
 ];
 
@@ -333,7 +338,6 @@ function WorkspaceSwitcher({
 }: {
   me: Me;
   name: string;
-  /** The open workspace's logo. The others in the menu show their letters. */
   logoUrl: string | null;
   workspaceId: string;
   canCreate: boolean;
@@ -351,7 +355,7 @@ function WorkspaceSwitcher({
   }
   const items: MenuItem[] = me.workspaces.map((one) => ({
     label: one.name,
-    lead: <WorkspaceTile name={one.name} />,
+    lead: <WorkspaceTile name={one.name} logoUrl={one.logoUrl} />,
     checked: one.workspaceId === workspaceId,
     onSelect: () => {
       if (one.workspaceId !== workspaceId) leave(() => onSwitch(one.workspaceId));
@@ -436,8 +440,10 @@ function Sidebar({
   workspaceId,
   canCreate,
   view,
+  onProfile: isProfile,
   waiting,
   onView,
+  onProfileOpen,
   onSwitch,
   onSignedOut,
 }: {
@@ -448,9 +454,12 @@ function Sidebar({
   workspaceId: string;
   canCreate: boolean;
   view: View;
+  /** Settings shows the Profile page, which the user menu opens. */
+  onProfile: boolean;
   /** Open conversations that wait for a reply, in the whole workspace. */
   waiting: number;
   onView(view: View): void;
+  onProfileOpen(): void;
   onSwitch(id: string): void;
   onSignedOut(): void;
 }) {
@@ -501,8 +510,8 @@ function Sidebar({
       <UserMenu
         me={me}
         role={role}
-        current={view === "profile"}
-        onProfile={() => onView("profile")}
+        current={isProfile}
+        onProfile={onProfileOpen}
         onSignedOut={onSignedOut}
       />
     </aside>
@@ -562,9 +571,11 @@ function ConversationRow({
 function useSearch(
   api: WorkspaceApi,
   query: string,
-): { found: Conversation[] | null; searching: boolean } {
+): { found: Conversation[] | null; searching: boolean; failed: boolean } {
   const [found, setFound] = useState<Conversation[] | null>(null);
   const [answered, setAnswered] = useState("");
+  // The words whose search failed, so the list says why it did not change.
+  const [failedFor, setFailedFor] = useState<string | null>(null);
   const wanted = query.trim();
   useEffect(() => {
     if (wanted.length < SEARCH_MIN) {
@@ -577,10 +588,13 @@ function useSearch(
         (result) => {
           setFound(result.conversations);
           setAnswered(wanted);
+          setFailedFor(null);
         },
         () => {
           // An aborted search has a newer one behind it, and a failed one keeps the last rows.
-          if (!controller.signal.aborted) setAnswered(wanted);
+          if (controller.signal.aborted) return;
+          setAnswered(wanted);
+          setFailedFor(wanted);
         },
       );
     }, SEARCH_WAIT_MS);
@@ -589,8 +603,8 @@ function useSearch(
       controller.abort();
     };
   }, [api, wanted]);
-  if (wanted.length < SEARCH_MIN) return { found: null, searching: false };
-  return { found, searching: answered !== wanted };
+  if (wanted.length < SEARCH_MIN) return { found: null, searching: false, failed: false };
+  return { found, searching: answered !== wanted, failed: failedFor === wanted };
 }
 
 /** The search field at the top of the list. Escape clears it. */
@@ -687,8 +701,6 @@ export function Inbox({
 }) {
   const api = useMemo(() => workspaceApi(workspaceId), [workspaceId]);
   useDeviceSync();
-  const [name, setName] = useState(t("appName"));
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [initialFilter] = useState(filterInAddress);
   const [status, setStatus] = useState<Status>(initialFilter.status);
   const [chosenWho, setChosenWho] = useState<Who>(initialFilter.who);
@@ -703,16 +715,15 @@ export function Inbox({
     const params = new URLSearchParams(location.search);
     return params.get("workspace") === workspaceId ? params.get("conversation") : null;
   });
-  // The account's delete can open this workspace on its Team tab or its delete dialog.
-  const [ownerStep] = useState(() => ownerStepIn(workspaceId));
-  const [view, setView] = useState<View>(ownerStep === null ? "inbox" : "settings");
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>(
-    ownerStep === "delete" ? "data" : "team",
-  );
-  const [openDelete, setOpenDelete] = useState(ownerStep === "delete");
+  // The address can open Settings, as the account's delete does for its Team page or delete dialog.
+  const [initialPage] = useState(settingsInAddress);
+  const [view, setView] = useState<View>(initialPage === undefined ? "inbox" : "settings");
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(initialPage ?? null);
+  const [openDelete, setOpenDelete] = useState(() => ownerStepIn(workspaceId) === "delete");
   const visible = useTabVisible();
   const [query, setQuery] = useState("");
-  const { found, searching } = useSearch(api, query);
+  const { found, searching, failed: searchFailed } = useSearch(api, query);
+  const searchTooShort = query.trim().length > 0 && query.trim().length < SEARCH_MIN;
   useEffect(prepareSound, []);
   const shownConversation = useRef(selected);
   useLayoutEffect(() => {
@@ -732,6 +743,8 @@ export function Inbox({
   );
   const [members, setMembers] = useState<Member[]>([]);
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
+  const name = membership?.name ?? t("appName");
+  const logoUrl = membership?.logoUrl ?? null;
   // The roster is newer than `me`, because a role can change while this page is open.
   const role = members.find((member) => member.id === me.id)?.role ?? membership?.role ?? "member";
   const readOnly = membership?.readOnly ?? false;
@@ -810,25 +823,42 @@ export function Inbox({
     };
   }, [waiting]);
 
-  useEffect(() => {
-    api
-      .get()
-      .then((workspace) => {
-        setName(workspace.name);
-        setLogoUrl(workspace.logoUrl);
-      })
-      .catch(() => {});
-  }, [api]);
-
-  const showView = (next: View, tab: SettingsTab = "team") => {
-    setSettingsTab(tab);
-    setOpenDelete(false);
+  /** Shows a view, and a Settings page in it, and puts it in the address for Back and reloads. */
+  const showView = (next: View, page: SettingsPage | null = null, deleting = false) => {
+    setSettingsPage(page);
+    setOpenDelete(deleting);
     // The account's delete reads who owns what, which can change in Settings.
-    if (next === "profile") onAccountChanged();
+    if (page === "profile") onAccountChanged();
     // Settings can change the team, so the names in the list load again after it.
     if (view === "settings" && next !== "settings") loadMembers();
     setView(next);
+    const address =
+      next === "settings"
+        ? settingsAddress(page)
+        : filterAddress(status, who, new URL("/", location.origin).href);
+    if (address !== `${location.pathname}${location.search}`) history.pushState(null, "", address);
   };
+  const openSettings = (page: SettingsPage | null) => leave(() => showView("settings", page));
+
+  // Back and Forward move between the pages, and a link in the app can open one.
+  useEffect(() => {
+    const moved = () => {
+      const page = settingsInAddress();
+      setOpenDelete(false);
+      if (page === undefined) {
+        setView((current) => (current === "settings" ? "inbox" : current));
+        return;
+      }
+      setView("settings");
+      setSettingsPage(page);
+    };
+    addEventListener("popstate", moved);
+    addEventListener(NAVIGATE_EVENT, moved);
+    return () => {
+      removeEventListener("popstate", moved);
+      removeEventListener(NAVIGATE_EVENT, moved);
+    };
+  }, []);
 
   const showFilter = (nextStatus: Status, nextWho: Who) => {
     if (nextStatus === status && nextWho === who) return;
@@ -853,10 +883,12 @@ export function Inbox({
           workspaceId={workspaceId}
           canCreate={canCreate}
           view={view}
+          onProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
           onView={(next) => {
             if (next !== view) leave(() => showView(next));
           }}
+          onProfileOpen={() => openSettings("profile")}
           onSwitch={onSwitch}
           onSignedOut={onSignedOut}
         />
@@ -899,45 +931,43 @@ export function Inbox({
           )}
           <main className="panel">
             {view === "settings" && (
-              <SettingsPage
+              <Settings
                 api={api}
                 me={me}
                 role={role}
                 workspaceId={workspaceId}
                 workspaceName={name}
+                logoUrl={logoUrl}
                 billing={billing}
                 waiting={waitsForCloud}
                 emailAvailable={emailAvailable}
-                initialTab={settingsTab}
-                openDelete={openDelete}
-                onLeft={() => navigate("/")}
-                onDeleted={onWorkspaceDeleted}
-                onLogoChanged={setLogoUrl}
-              />
-            )}
-            {view === "analytics" && <AnalyticsPage api={api} />}
-            {view === "alerts" && <AlertsPage api={api} />}
-            {view === "profile" && (
-              <ProfilePage
-                me={me}
-                emailAvailable={emailAvailable}
                 keepsLastWorkspace={!canCreate}
-                onOpenWorkspace={(id, step) => {
-                  if (id !== workspaceId) {
-                    openOwnerStep(id, step);
-                    return;
-                  }
-                  showView("settings", step === "delete" ? "data" : "team");
-                  setOpenDelete(step === "delete");
-                }}
-                onAccountDeleted={onAccountDeleted}
-                onChanged={() => {
+                page={settingsPage}
+                openDelete={openDelete}
+                onPage={openSettings}
+                onLeft={() => navigate("/")}
+                onWorkspaceDeleted={onWorkspaceDeleted}
+                onAccountChanged={onAccountChanged}
+                onProfileChanged={() => {
                   // The name shows on assignments and in the dropdown too, which read the members.
                   onAccountChanged();
                   loadMembers();
                 }}
+                onOpenWorkspace={(id, step) => {
+                  if (id === workspaceId) {
+                    showView(
+                      "settings",
+                      step === "delete" ? "workspace" : "team",
+                      step === "delete",
+                    );
+                  } else {
+                    openOwnerStep(id, step);
+                  }
+                }}
+                onAccountDeleted={onAccountDeleted}
               />
             )}
+            {view === "analytics" && <AnalyticsPage api={api} />}
             <div className="split">
               <section className="list" aria-label={t("inbox")}>
                 <PageHead
@@ -967,6 +997,14 @@ export function Inbox({
                   )}
                 </div>
                 <SearchField value={query} searching={searching} onChange={setQuery} />
+                {(searchTooShort || searchFailed) && (
+                  <p
+                    className={searchFailed ? "bad search-note" : "hint search-note"}
+                    role="status"
+                  >
+                    {t(searchFailed ? "searchFailed" : "searchTooShort")}
+                  </p>
+                )}
                 <ul className="rows" aria-busy={searching}>
                   {found === null && listed && conversations.length === 0 && (
                     <li className="list-empty">
@@ -1002,7 +1040,7 @@ export function Inbox({
                       workspaceId={workspaceId}
                       hasConversations={conversations.length > 0}
                       version={version}
-                      onOpen={(tab) => showView("settings", tab)}
+                      onOpen={openSettings}
                     />
                   )}
                 {hasMore && found === null && (

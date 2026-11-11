@@ -19,23 +19,20 @@ import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   Choices,
+  DocLink,
   Field,
   failureText,
-  ImageUpload,
   Loading,
   type Note,
   type Option,
+  Page,
   SaveNote,
-  type UploadText,
 } from "./ui.tsx";
 
-const LOGO_TEXT: UploadText = {
-  upload: "logoUpload",
-  replace: "logoReplace",
-  remove: "logoRemove",
-  preview: "logoPreview",
-  tooLarge: "logoTooLarge",
-};
+const HIDDEN_BUTTON_DOC = {
+  path: "add-to-your-site#use-your-own-button",
+  text: "hiddenButtonDocsLink",
+} as const;
 
 const SIDES: Option<WidgetSettings["position"]>[] = [
   { value: "left", label: "widgetSideLeft" },
@@ -182,11 +179,14 @@ function ColorField({
 function LookRow({
   label,
   hint,
+  doc,
   stacked = false,
   children,
 }: {
   label: string;
   hint?: string | undefined;
+  /** A docs section that explains the setting, as a link under the hint. */
+  doc?: { path: string; text: TextId } | undefined;
   /** The control goes under the label, for a control too wide to share the line. */
   stacked?: boolean;
   children: ReactNode;
@@ -196,6 +196,7 @@ function LookRow({
       <div className="look-label">
         <span aria-hidden="true">{label}</span>
         {hint !== undefined && <small className="hint">{hint}</small>}
+        {doc !== undefined && <DocLink path={doc.path} text={doc.text} />}
       </div>
       {children}
     </div>
@@ -298,7 +299,11 @@ function LookFields({
           onChange={(primary) => onChange({ primary })}
         />
       </LookRow>
-      <LookRow label={t("widgetColorAccent")} hint={t("widgetColorAccentHelp")}>
+      <LookRow
+        label={t("widgetColorAccent")}
+        hint={t("widgetColorAccentHelp")}
+        doc={{ path: "add-to-your-site#change-how-it-looks", text: "appearanceDocsLink" }}
+      >
         <ColorField
           label={t("widgetColorAccent")}
           value={settings.accent}
@@ -329,6 +334,7 @@ function LookFields({
       <LookRow
         label={t("widgetLauncher")}
         hint={settings.launcher === "hidden" ? t("widgetLauncherHiddenHelp") : undefined}
+        doc={settings.launcher === "hidden" ? HIDDEN_BUTTON_DOC : undefined}
       >
         <Choices
           className="widget-field"
@@ -430,20 +436,58 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
   );
 }
 
+/** Where the logo was: it belongs to the workspace now, and its page changes it. */
+function LogoNote({ onOpenWorkspace }: { onOpenWorkspace(): void }) {
+  const [before, after] = t("appearanceLogoNote").split("{workspace}");
+  return (
+    <p className="hint">
+      {before}
+      <a
+        href="/settings/workspace"
+        onClick={(event) => {
+          event.preventDefault();
+          onOpenWorkspace();
+        }}
+      >
+        {t("workspaceSettingsTitle")}
+      </a>
+      {after}
+    </p>
+  );
+}
+
 /**
  * The widget's look, words and behavior, with a live preview. Every member sees it, and only an
- * owner or an admin changes it. One Save sends the form. The logo saves on its own, at once.
+ * owner or an admin changes it. One Save sends the form.
  */
-export function WidgetTab({
+export function AppearancePage({
   api,
   me,
   canEdit,
-  onLogoChanged,
+  onOpenWorkspace,
 }: {
   api: WorkspaceApi;
   me: Me;
   canEdit: boolean;
-  onLogoChanged(logoUrl: string | null): void;
+  onOpenWorkspace(): void;
+}) {
+  return (
+    <Page title={t("tabAppearance")}>
+      <AppearanceForm api={api} me={me} canEdit={canEdit} onOpenWorkspace={onOpenWorkspace} />
+    </Page>
+  );
+}
+
+function AppearanceForm({
+  api,
+  me,
+  canEdit,
+  onOpenWorkspace,
+}: {
+  api: WorkspaceApi;
+  me: Me;
+  canEdit: boolean;
+  onOpenWorkspace(): void;
 }) {
   const [saved, setSaved] = useState<SavedAppearance | null>(null);
   const [draft, setDraft] = useState<WidgetSettings | null>(null);
@@ -475,11 +519,6 @@ export function WidgetTab({
     setDraft({ ...draft, ...next });
     setNote(null);
   };
-  /** The logo saves at once, and the form keeps its unsaved changes. */
-  const logoSaved = (answer: SavedAppearance) => {
-    setSaved(answer);
-    onLogoChanged(answer.logoUrl);
-  };
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -501,14 +540,11 @@ export function WidgetTab({
       <form className="widget-form" onSubmit={save}>
         {!canEdit && <p className="note">{t("widgetMemberNote")}</p>}
         <fieldset className="widget-sections" disabled={!canEdit}>
-          <FormSection title="logoTitle" help="logoHelp">
-            <ImageUpload
-              url={saved.logoUrl}
-              text={LOGO_TEXT}
-              onUpload={async (file) => logoSaved(await api.setLogo(file))}
-              onRemove={async () => logoSaved(await api.removeLogo())}
-            />
-          </FormSection>
+          {canEdit && (
+            <FormSection title="logoTitle">
+              <LogoNote onOpenWorkspace={onOpenWorkspace} />
+            </FormSection>
+          )}
           <FormSection title="widgetTextsTitle" help="widgetTextsHelp">
             <TextFields settings={draft} onChange={change} />
           </FormSection>
@@ -517,7 +553,12 @@ export function WidgetTab({
           </FormSection>
           <FormSection title="widgetBehaviorTitle">
             <div className="look-rows">
-              <LookRow label={t("widgetEmailAsk")} hint={t("widgetEmailAskHelp")} stacked>
+              <LookRow
+                label={t("widgetEmailAsk")}
+                hint={t("widgetEmailAskHelp")}
+                doc={{ path: "add-to-your-site#what-visitors-can-do", text: "emailAskDocsLink" }}
+                stacked
+              >
                 <Choices
                   className="widget-field"
                   label={t("widgetEmailAsk")}

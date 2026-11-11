@@ -125,6 +125,8 @@ export interface Me {
     workspaceId: string;
     role: Role;
     name: string;
+    /** The workspace's logo, for the workspace menu. Null with none. */
+    logoUrl: string | null;
     active: boolean;
     /** The subscription ended: operators can read and export, and cannot reply. */
     readOnly: boolean;
@@ -374,7 +376,8 @@ export function workspaceApi(workspaceId: string) {
   const base = `/v1/operator/workspaces/${workspaceId}`;
   const conversation = (id: string) => `${base}/conversations/${id}`;
   return {
-    get: () => call<{ id: string; name: string; logoUrl: string | null }>(base),
+    rename: (name: string) =>
+      call<{ name: string }>(base, { method: "PATCH", body: JSON.stringify({ name }) }),
     members: () => call<{ members: Member[] }>(`${base}/members`),
     setRole: (id: string, role: Role) =>
       call<{ ok: true }>(`${base}/members/${id}`, {

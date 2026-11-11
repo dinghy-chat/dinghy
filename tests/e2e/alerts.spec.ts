@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { openLink, signOut } from "./links.ts";
+import { openSettings } from "./settings.ts";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -56,7 +57,7 @@ test("an operator turns on notifications and receives a test, and sign-out ends 
   await signedIn(page);
 
   const before = server.pushed.length;
-  await page.getByRole("button", { name: "Alerts" }).click();
+  await openSettings(page, "Notifications");
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByRole("status")).toContainText("The test was sent");
   expect(server.pushed.length).toBe(before + 1);
@@ -65,7 +66,9 @@ test("an operator turns on notifications and receives a test, and sign-out ends 
   await expect.poll(() => server.pushed.length).toBe(before + 2);
 
   // With no mail server, the settings say what that means.
-  await expect(page.getByText("This server cannot send email.")).toBeVisible();
+  await expect(
+    page.getByText("Email is not set up on this server.", { exact: false }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Inbox", exact: true }).click();
   await expect(page.locator(".page")).toHaveCount(0);
 

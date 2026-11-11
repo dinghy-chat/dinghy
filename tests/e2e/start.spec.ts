@@ -24,15 +24,15 @@ test("a new workspace shows its first steps, which open settings and can be hidd
   const steps = page.getByRole("region", { name: "Get started" });
   await expect(steps).toBeVisible();
 
-  await steps.getByRole("button", { name: "Add your website" }).click();
-  await expect(page.getByRole("tab", { name: "Allowed sites" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  const list = page.getByRole("navigation", { name: "Settings" });
+  await steps.getByRole("button", { name: "Allow chat on your website" }).click();
+  await expect(list.getByRole("link", { name: "Install" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Allowed sites" })).toBeVisible();
 
   await page.getByRole("button", { name: "Inbox" }).click();
-  await steps.getByRole("button", { name: "Invite your team" }).click();
-  await expect(page.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
+  await steps.getByRole("button", { name: "Invite teammates (optional)" }).click();
+  await expect(list.getByRole("link", { name: "Team" })).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/\/settings\/team$/);
 
   await page.getByRole("button", { name: "Inbox" }).click();
   await steps.getByRole("button", { name: "Hide these steps" }).click();
@@ -42,13 +42,15 @@ test("a new workspace shows its first steps, which open settings and can be hidd
   await expect(steps).toHaveCount(0);
 });
 
-test("a logo uploaded in the Widget tab shows there, in the sidebar and in the chat's header", async ({
+test("a logo uploaded in Workspace shows there, in the sidebar and in the chat's header", async ({
   page,
 }) => {
   await server.createOperator("logo@example.com");
   await openLink(page, await server.signInLink("logo@example.com"));
   await page.getByRole("region", { name: "Get started" }).getByText("Add your logo").click();
-  await expect(page.getByRole("tab", { name: "Widget" })).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Workspace" }),
+  ).toHaveAttribute("aria-current", "page");
 
   await page.getByLabel("Upload logo").setInputFiles(pngFile("logo.png"));
   // The image shows the upload worked, with no note.

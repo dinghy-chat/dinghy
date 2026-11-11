@@ -35,7 +35,7 @@ test("the widget says when the team is online, and names nobody", async ({ brows
   await expect(visitor.getByText("We are online")).toHaveCount(0);
 
   const anna = await signedIn(browser, "anna@example.com");
-  await expect(anna.getByRole("button", { name: "Alerts" })).toBeVisible();
+  await expect(anna.getByRole("button", { name: "Analytics" })).toBeVisible();
   await visitor.reload();
   await visitor.getByRole("button", { name: "Open chat" }).click();
   await expect(visitor.getByText("We are online")).toBeVisible();
@@ -57,11 +57,16 @@ test("an operator sees who has a conversation open, and it clears when they leav
 
   // Each sees the other, and neither sees themselves. A heartbeat can take 10 seconds.
   const annaSees = anna.locator(".thread .replying");
-  await expect(annaSees).toHaveText(/ben@example\.com is replying/, { timeout: 15_000 });
-  await expect(ben.locator(".thread .replying")).toHaveText(/anna@example\.com is replying/, {
+  await expect(annaSees).toHaveText(/ben@example\.com has this conversation open/, {
     timeout: 15_000,
   });
-  await expect(anna.locator(".row em")).toHaveText(/ben@example\.com is replying/);
+  await expect(ben.locator(".thread .replying")).toHaveText(
+    /anna@example\.com has this conversation open/,
+    {
+      timeout: 15_000,
+    },
+  );
+  await expect(anna.locator(".row em")).toHaveText(/ben@example\.com has this conversation open/);
 
   // A closing page sends a leave request, but under Playwright Firefox does not clear it within 15
   // seconds. So this also allows for the 30-second expiry that covers a crash or a lost network.

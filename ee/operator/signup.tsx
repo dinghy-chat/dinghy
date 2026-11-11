@@ -12,14 +12,11 @@ import {
 } from "../../apps/operator/src/api.ts";
 import { CheckEmail } from "../../apps/operator/src/auth.tsx";
 import { navigate } from "../../apps/operator/src/nav.ts";
-import {
-  DeleteAccount,
-  DeleteWorkspaceDialog,
-  openOwnerStep,
-  ownerStepIn,
-} from "../../apps/operator/src/settings.tsx";
+import { DeleteAccount } from "../../apps/operator/src/profile.tsx";
+import { openOwnerStep, ownerStepIn } from "../../apps/operator/src/settings.tsx";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { AuthPage, ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
+import { DeleteWorkspaceDialog } from "../../apps/operator/src/workspace-page.tsx";
 import { CHECKOUT_FAILURES } from "./billing.tsx";
 
 const POLL_MS = 2000;
@@ -113,7 +110,7 @@ export function Onboarding({
       ({ workspaceId } = await createWorkspace(name.trim(), workspaceName.trim()));
     } catch (failure) {
       setBusy(false);
-      setError(failureText(failure, { 429: "tooManyAttempts" }));
+      setError(failureText(failure, { 429: "tooManyRequests" }));
       return;
     }
     if (early) {
@@ -156,7 +153,7 @@ export function Onboarding({
         />
         <ErrorNote text={error} />
         <button type="submit" className="btn primary large" disabled={busy}>
-          {t("onboardingSubmit")}
+          {t(early ? "onboardingCreate" : "onboardingPay")}
         </button>
         {/* An operator who already has a workspace came here from the workspace menu, and goes back
             to it. A new account has nowhere to go back to, so it can only sign out. */}
@@ -326,7 +323,7 @@ export function BillingReturn({ workspaceId }: { workspaceId: string }) {
 
   return (
     <AuthPage time="afternoon">
-      <h1>{t("payTitle")}</h1>
+      <h1>{t("payReturnTitle")}</h1>
       {timedOut ? (
         <>
           <p className="note" role="status">

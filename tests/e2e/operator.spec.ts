@@ -1,6 +1,7 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { openLink, signOut } from "./links.ts";
+import { openSettings } from "./settings.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -296,7 +297,7 @@ test("the sign-in page sends a link, and the answer is the same for an unknown e
     await page.context().close();
   }
   expect(answers[0]).toBe(answers[1]);
-  expect(answers[0]).toContain("If {email} has an account here");
+  expect(answers[0]).toContain("If {email} has an account, we'll send a sign-in link.");
 
   const page = await (await browser.newContext()).newPage();
   await openLink(page, await server.linkTo(known));
@@ -342,8 +343,14 @@ test("with no mail server, the sign-in page says to ask the admin for a link", a
     const page = await (await browser.newContext()).newPage();
     await page.goto(quiet.apiOrigin);
     await expect(page.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
-    await expect(page.getByText("ask its admin for a sign-in link")).toBeVisible();
-    await expect(page.getByText(/chat sign-in-link/)).toBeVisible();
+    await expect(
+      page.getByText("Ask the server administrator to create a sign-in link", { exact: false }),
+    ).toBeVisible();
+    // The command is for the server's admin, so the docs name it, and the page links there.
+    await expect(page.getByRole("link", { name: "If no sign-in link arrives" })).toHaveAttribute(
+      "href",
+      "https://dinghy.chat/docs/operator-guide#if-no-sign-in-link-arrives",
+    );
     await expect(page.getByLabel("Email")).toHaveCount(0);
     await page.context().close();
   } finally {
@@ -371,8 +378,7 @@ test("a site that is not allowed shows Not sent, never the text for a block", as
 }) => {
   const operator = await signedIn(browser);
   const widget = await visitor(browser, "Before the change");
-  await operator.getByRole("button", { name: "Settings" }).click();
-  await operator.getByRole("tab", { name: "Allowed sites" }).click();
+  await openSettings(operator, "Install");
   const sites = operator.getByRole("textbox", { name: "Site 1" });
   const original = await sites.inputValue();
   await sites.fill("https://elsewhere.example.com");
@@ -412,8 +418,7 @@ test("an operator blocks a visitor, who then sees why they cannot send", async (
   await expect(widget.getByRole("alert")).toHaveText("You cannot send messages in this chat.");
 
   // The settings list the block too, for a visitor whose conversation is gone.
-  await operator.getByRole("button", { name: "Settings" }).click();
-  await operator.getByRole("tab", { name: "Data" }).click();
+  await openSettings(operator, "Workspace");
   await expect(operator.getByText("Blocked visitors")).toBeVisible();
   await operator.getByRole("button", { name: "Inbox", exact: true }).click();
 
@@ -452,8 +457,7 @@ test("clicking Load more twice in the blocked list still reaches every visitor",
 }) => {
   await server.blockVisitors(120);
   const operator = await signedIn(browser);
-  await operator.getByRole("button", { name: "Settings" }).click();
-  await operator.getByRole("tab", { name: "Data" }).click();
+  await openSettings(operator, "Workspace");
   const rows = operator.locator(".page .blocked li", { hasText: "Blocked " });
   await expect(rows).toHaveCount(50);
   const more = operator.locator(".page").getByRole("button", { name: "Load more" });
@@ -495,7 +499,7 @@ test("each emailed link's page says what it is for", async ({ page }) => {
   for (const [purpose, heading, button] of pages) {
     await page.goto(`${server.apiOrigin}/link?for=${purpose}&token=unused`);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-    await expect(page.getByText("This signs you in on this browser.")).toBeVisible();
+    await expect(page.getByText("Continue to sign in with this browser.")).toBeVisible();
     await expect(page.getByRole("button", { name: button, exact: true })).toBeVisible();
     // The link page is midday in the account screens' day.
     await expect(page.locator(".scene")).toHaveClass(/\bnoon\b/);
@@ -605,17 +609,19 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   browser,
 }) => {
   const page = await signedIn(browser);
-  await page.getByRole("button", { name: "Settings" }).click();
-  await page.getByRole("tab", { name: "Install" }).click();
+  await openSettings(page, "Install");
   const code = page.locator(".code-block code");
   await expect(code).toHaveText(
     /^<script src="[^"]+\/widget\/loader\.js" data-key="wk_[^"]+" async><\/script>$/,
   );
   await expect(code.locator(".code-attr")).toHaveText(["src", "data-key", "async"]);
 
-  await page.getByRole("tab", { name: "Webhooks" }).click();
+  await page
+    .getByRole("navigation", { name: "Settings" })
+    .getByRole("link", { name: "API & webhooks" })
+    .click();
   const add = page.getByRole("button", { name: "Add webhook" });
-  const events = page.getByRole("group", { name: "Events" }).getByRole("checkbox");
+  const events = page.getByRole("group", { name: "Send an update when" }).getByRole("checkbox");
   // The form shows only once asked for, and Cancel puts it away.
   await expect(events).toHaveCount(0);
   await page.getByRole("button", { name: "New webhook" }).click();
@@ -628,7 +634,7 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   ).toBeChecked();
   await expect(add).toBeDisabled();
   const url = "https://hooks.example.com/dinghy/with/a/rather/long/path/for/the/row";
-  await page.getByRole("textbox", { name: "Address" }).fill(url);
+  await page.getByRole("textbox", { name: "Webhook URL" }).fill(url);
   for (const box of await events.all()) await box.uncheck();
   await expect(add).toBeDisabled();
   await events.nth(1).check();

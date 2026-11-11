@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { chromium, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { openLink } from "./links.ts";
+import { openSettings } from "./settings.ts";
 
 // Records the frames behind docs/media/demo.gif, and the pictures in the docs. It is not a test, so
 // it runs only by hand, then scripts/demo-gif.sh turns the frames into the GIF:
@@ -136,9 +137,8 @@ test("record", async () => {
   // No hover state in the pictures.
   await operator.mouse.move(0, 0);
   await operator.screenshot({ path: join(directory, "inbox.png") });
-  await operator.getByRole("button", { name: "Settings" }).click();
-  await operator.getByRole("tab", { name: "Install" }).click();
-  await operator.getByRole("heading", { name: "Install the chat" }).waitFor();
+  await openSettings(operator, "Install");
+  await operator.getByRole("heading", { name: "Install code" }).waitFor();
   // The snippet names the test server's address. A reader should see a real-looking one.
   await operator.evaluate((api) => {
     for (const code of document.querySelectorAll("pre, code")) {

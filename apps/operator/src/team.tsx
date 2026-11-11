@@ -1,8 +1,6 @@
 /** @jsxImportSource react */
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
-import { BillingRow } from "../../../ee/operator/billing.tsx";
 import type {
-  BillingState,
   BlockedVisitor,
   Me,
   Member,
@@ -16,10 +14,12 @@ import { type TextId, t } from "./text.ts";
 import {
   Avatar,
   CopyButton,
+  DocLink,
   ErrorNote,
   Field,
   failureText,
   Icon,
+  Page,
   PageRow,
   ROLE_TEXT,
   Tip,
@@ -108,7 +108,7 @@ export function useTeam(api: WorkspaceApi, role: Role) {
   return { members, invites, blocked, moreBlocked, note, setNote, load, loadMoreBlocked, act };
 }
 
-type Team = ReturnType<typeof useTeam>;
+export type Team = ReturnType<typeof useTeam>;
 
 const ROLES = ["owner", "admin", "member"] as const;
 
@@ -267,7 +267,7 @@ function RolePicker({
  * "Invite someone": an email and a role. With a mail server the invite goes by email. Without one,
  * the dialog shows a link to copy.
  */
-export function InviteDialog({
+function InviteDialog({
   api,
   role,
   emailAvailable,
@@ -400,14 +400,26 @@ export function InviteDialog({
   );
 }
 
-export function TeamTab({
+/** The button in the Team page's title row. On a phone the short label keeps it in that row. */
+function InviteButton({ onClick }: { onClick(): void }) {
+  return (
+    <button type="button" className="pill dark invite" onClick={onClick}>
+      <Icon name="plusBold" size={14} />
+      <span className="invite-long">{t("invitesTitle")}</span>
+      <span className="invite-short" aria-hidden="true">
+        {t("inviteShort")}
+      </span>
+    </button>
+  );
+}
+
+export function TeamPage({
   api,
   me,
   role,
   team,
   usage,
-  billing,
-  workspaceId,
+  emailAvailable,
   workspaceName,
   onLeft,
 }: {
@@ -415,12 +427,14 @@ export function TeamTab({
   me: Me;
   role: Role;
   team: Team;
+  /** On Dinghy Cloud, with pending invites counted. Null with no limits. */
   usage: Usage | null;
-  billing: BillingState | null;
-  workspaceId: string;
+  /** The server sends email, so invites go by email. */
+  emailAvailable: boolean;
   workspaceName: string;
   onLeft(): void;
 }) {
+  const [inviting, setInviting] = useState(false);
   const [leaving, setLeaving] = useState<Leaving | null>(null);
   const [revoking, setRevoking] = useState<PendingInvite | null>(null);
   const owners = team.members.filter((member) => member.role === "owner").length;
@@ -440,7 +454,18 @@ export function TeamTab({
   };
   const manages = role !== "member";
   return (
-    <>
+    <Page
+      title={t("tabTeam")}
+      context={
+        usage === null
+          ? undefined
+          : t("teamUsage", {
+              used: usage.operators.used,
+              limit: usage.operators.limit,
+            })
+      }
+      actions={manages ? <InviteButton onClick={() => setInviting(true)} /> : undefined}
+    >
       <table className="members">
         <thead>
           <tr>
@@ -479,13 +504,13 @@ export function TeamTab({
         </p>
       )}
       <ErrorNote text={team.note} />
-      {usage !== null && <PlanCards usage={usage} />}
-      {role === "owner" && <BillingRow api={api} workspaceId={workspaceId} billing={billing} />}
+      {manages && <DocLink path="operator-guide#set-up-your-team" text="teamRolesLink" />}
       {revoking !== null && (
         <Confirm
           title={t("inviteRevokeTitle", { email: revoking.email })}
           text={t("inviteRevokeText")}
           confirm={t("inviteRevokeYes")}
+          cancel={t("inviteKeep")}
           onConfirm={() => {
             setRevoking(null);
             void team.act(api.revokeInvite(revoking.id));
@@ -506,7 +531,18 @@ export function TeamTab({
           onCancel={() => setLeaving(null)}
         />
       )}
-    </>
+      {inviting && (
+        <InviteDialog
+          api={api}
+          role={role}
+          emailAvailable={emailAvailable}
+          onClose={() => {
+            setInviting(false);
+            team.load();
+          }}
+        />
+      )}
+    </Page>
   );
 }
 
@@ -537,80 +573,5 @@ export function BlockedRow({ api, team }: { api: WorkspaceApi; team: Team }) {
         </button>
       )}
     </PageRow>
-  );
-}
-
-/** Bytes in the decimal units the plan uses, such as 12.3 MB or 1 GB. */
-function formatBytes(bytes: number): string {
-  if (bytes >= 1e9) return `${Number((bytes / 1e9).toFixed(2))} GB`;
-  return `${Number((bytes / 1e6).toFixed(1))} MB`;
-}
-
-/** How full one limit is, as a thin bar and words. Near or at the limit, both say so. */
-function Meter({
-  label,
-  used,
-  limit,
-  text,
-  note,
-}: {
-  label: string;
-  used: number;
-  limit: number;
-  text: string;
-  note: string;
-}) {
-  const share = limit > 0 ? Math.min(used / limit, 1) : 0;
-  const level = share >= 1 ? "full" : share >= 0.8 ? "near" : "ok";
-  return (
-    <div className={`meter ${level}`}>
-      <div className="meter-top">
-        <span className="meter-label">{label}</span>
-        <span className="meter-value">{text}</span>
-      </div>
-      {/* The words above say the same, for screen readers too. */}
-      <div className="meter-bar" aria-hidden="true">
-        <span
-          className="meter-fill"
-          style={{ width: `${Math.max(share * 100, used > 0 ? 1.5 : 0)}%` }}
-        />
-      </div>
-      <p className="meter-note">
-        {level === "ok" ? note : t(level === "full" ? "usageFull" : "usageNear")}
-      </p>
-    </div>
-  );
-}
-
-export const operatorsText = (usage: Usage) =>
-  t("usageOf", {
-    used: String(usage.operators.used),
-    limit: String(usage.operators.limit),
-  });
-export const imagesText = (usage: Usage) =>
-  t("usageOf", {
-    used: formatBytes(usage.imageBytes.used),
-    limit: formatBytes(usage.imageBytes.limit),
-  });
-
-/** The plan's limits and how much of each is used, on Dinghy Cloud. */
-function PlanCards({ usage }: { usage: Usage }) {
-  return (
-    <section className="meters" aria-label={t("usageTitle")}>
-      <Meter
-        label={t("usageOperators")}
-        used={usage.operators.used}
-        limit={usage.operators.limit}
-        text={operatorsText(usage)}
-        note={t("usageOperatorsNote")}
-      />
-      <Meter
-        label={t("usageImages")}
-        used={usage.imageBytes.used}
-        limit={usage.imageBytes.limit}
-        text={imagesText(usage)}
-        note={t("usageImagesNote")}
-      />
-    </section>
   );
 }

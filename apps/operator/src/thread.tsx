@@ -21,7 +21,16 @@ import {
 import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { Avatar, EmojiButton, ErrorNote, failureText, Icon, Loading, useModal } from "./ui.tsx";
+import {
+  Avatar,
+  DocLink,
+  EmojiButton,
+  ErrorNote,
+  failureText,
+  Icon,
+  Loading,
+  useModal,
+} from "./ui.tsx";
 import {
   avatarLetters,
   detailRows,
@@ -361,6 +370,7 @@ function PageContextList({ conversation }: { conversation: Conversation }) {
     <section className="page-context" aria-label={t("pageContextTitle")}>
       <h3>{t("pageContextTitle")}</h3>
       <p className="quiet">{t("pageContextNote")}</p>
+      <DocLink path="add-to-your-site#tell-operators-about-the-page" text="pageContextDocsLink" />
       <DetailList values={conversation.pageContext} links={false} />
     </section>
   );
