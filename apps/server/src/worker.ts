@@ -137,9 +137,9 @@ function boundedMailer(mailer: Mailer, stopping: AbortSignal, timeoutMs: number)
     for (const resolve of waiters.splice(0)) resolve();
   };
   return {
-    async send(to, subject, text, headers) {
+    async send(to, subject, text, headers, html) {
       await takeConnection(deadline());
-      const sent = mailer.send(to, subject, text, headers).finally(freeConnection);
+      const sent = mailer.send(to, subject, text, headers, html).finally(freeConnection);
       // A send that fails after the worker stopped waiting must not crash the process.
       sent.catch(() => {});
       await Promise.race([sent, aborted(deadline())]);
@@ -192,7 +192,7 @@ export function startWorker({
             "list-unsubscribe": `<${plan.stopUrl}>`,
             "list-unsubscribe-post": "List-Unsubscribe=One-Click",
           };
-    await bounded.send(plan.to, plan.subject, plan.text, headers);
+    await bounded.send(plan.to, plan.subject, plan.text, headers, plan.html);
     return "sent";
   };
 

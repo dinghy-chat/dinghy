@@ -1,3 +1,5 @@
+import { escapeHtml } from "../../../packages/widget/src/markdown.ts";
+
 /** How long a sign-in link works. Every email that carries one says so. */
 export const LINK_MINUTES = 15;
 
@@ -68,6 +70,29 @@ export function letter(
   const shown = oneLine(name);
   const greeting = shown ? text.hiName(shown) : text.hi;
   return [greeting, ...paragraphs, signOff ?? text.signOff(oneLine(team) || "Dinghy")].join("\n\n");
+}
+
+/** A paragraph of HTML that its maker escaped, such as a message rendered from its Markdown. */
+export interface HtmlParagraph {
+  html: string;
+}
+
+/** A paragraph of plain text as HTML: escaped, with its web addresses as links. */
+function paragraphHtml(paragraph: string | HtmlParagraph): string {
+  if (typeof paragraph !== "string") return paragraph.html;
+  const escaped = escapeHtml(paragraph).replace(
+    /https?:\/\/[^\s<]+/g,
+    (url) => `<a href="${url}">${url}</a>`,
+  );
+  return `<p>${escaped.replace(/\n/g, "<br>")}</p>`;
+}
+
+/** The HTML version of `letter`, for an email whose paragraphs include formatted messages. */
+export function letterHtml(paragraphs: (string | HtmlParagraph)[], team = "Dinghy"): string {
+  const body = [text.hi, ...paragraphs, text.signOff(oneLine(team) || "Dinghy")]
+    .map(paragraphHtml)
+    .join("");
+  return `<!doctype html><html><body style="font:15px/1.5 -apple-system,'Segoe UI',sans-serif;color:#0b2239">${body}</body></html>`;
 }
 
 /** The sign-in link that an operator asked for on the sign-in page. */

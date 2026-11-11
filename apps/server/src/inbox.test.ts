@@ -496,9 +496,11 @@ describe("replies", () => {
     const { conversationId } = await visitorSends(a.publicKey, "Who answers?");
     const path = inA(`/conversations/${conversationId}`);
     const assignee = async () =>
-      ((await (await get(`${path}/messages`)).json()) as {
-        conversation: { assigneeOperatorId: string | null };
-      }).conversation.assigneeOperatorId;
+      (
+        (await (await get(`${path}/messages`)).json()) as {
+          conversation: { assigneeOperatorId: string | null };
+        }
+      ).conversation.assigneeOperatorId;
     const events = () =>
       owner.execute<{ count: number }>(
         sql`select count(*)::int as count from event

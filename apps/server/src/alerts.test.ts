@@ -74,10 +74,16 @@ const service = http.createServer((req, res) => {
 const serviceUrl = (path: string) =>
   `http://127.0.0.1:${(service.address() as AddressInfo).port}/${path}`;
 
-const mails: { to: string; subject: string; text: string; headers?: Record<string, string> }[] = [];
+const mails: {
+  to: string;
+  subject: string;
+  text: string;
+  headers?: Record<string, string>;
+  html?: string;
+}[] = [];
 const mailer: Mailer = {
-  async send(to, subject, text, headers) {
-    mails.push({ to, subject, text, ...(headers && { headers }) });
+  async send(to, subject, text, headers, html) {
+    mails.push({ to, subject, text, ...(headers && { headers }), ...(html && { html }) });
   },
 };
 
@@ -766,7 +772,7 @@ describe("email", () => {
     const written = await visitorWrites(from, "Help");
     const conversationId = written.message.conversationId;
     await operatorWrites(anna, conversationId, "First answer");
-    await operatorWrites(anna, conversationId, "Second answer");
+    await operatorWrites(anna, conversationId, "**Second** answer <b>");
     await fanOutAll();
     const rows = await replyRows();
     // The second reply joins the pending email.
@@ -792,7 +798,7 @@ describe("email", () => {
       [
         "Hi,",
         "Acme replied to your message:",
-        "First answer\n\nSecond answer",
+        "First answer\n\n**Second** answer <b>",
         `Read the conversation and answer here: ${new URL(chat ?? "", PUBLIC_URL).href}`,
         "The link works for 30 days. Anyone who has it can read and reply, so don't forward this email.",
         "You got this because this address was entered in a chat with Acme. If that wasn't you, " +
@@ -802,6 +808,12 @@ describe("email", () => {
     );
     expect(mail?.headers?.["list-unsubscribe"]).toBe(`<${stop}>`);
     expect(mail?.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
+    // The HTML version shows the Markdown as formatting, and escapes everything else.
+    expect(mail?.html).toContain(
+      "<p>First answer</p><p><strong>Second</strong> answer &lt;b&gt;</p>",
+    );
+    expect(mail?.html).toContain(`<a href="${new URL(chat ?? "", PUBLIC_URL).href}">`);
+    expect(mail?.html).not.toContain("<b>");
   });
 
   test("a visitor who read the reply gets no email", async () => {

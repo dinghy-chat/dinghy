@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { markdownHtml } from "../../../packages/widget/src/markdown.ts";
 import { CHAT_LINK_DAYS, chatLinkUrl, createChatLink, pruneChatLinks } from "./chat-link.ts";
 import {
   alertDelivery,
@@ -17,7 +18,7 @@ import {
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
 import { prunePageViews } from "./journey.ts";
-import { letter } from "./letter.ts";
+import { letter, letterHtml } from "./letter.ts";
 import { joinVisitor } from "./messages.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
@@ -53,7 +54,7 @@ const text = {
       "under Alerts.",
   ],
   replySubject: (name: string) => `${name} replied to your message`,
-  replyBody: (name: string, replies: string, chat: string, stop: string) => [
+  replyBody: <Replies>(name: string, replies: Replies, chat: string, stop: string) => [
     `${name} replied to your message:`,
     replies,
     `Read the conversation and answer here: ${chat}`,
@@ -433,7 +434,15 @@ export async function releaseDelivery(db: Database, row: ClaimedDelivery): Promi
 
 export type AlertPlan =
   | { channel: "push"; operatorId: string; payload: PushPayload }
-  | { channel: "email"; to: string; subject: string; text: string; stopUrl?: string }
+  | {
+      channel: "email";
+      to: string;
+      subject: string;
+      text: string;
+      /** A second version for mail apps that show HTML, with the replies' formatting. */
+      html?: string;
+      stopUrl?: string;
+    }
   | { channel: "later"; until: Date };
 
 interface PlanOptions {
@@ -520,6 +529,7 @@ async function replyEmailPlan(
   const earliest = (sent[0]?.finishedAt?.getTime() ?? 0) + REPLY_EMAIL_GAP_MS;
   if (earliest > Date.now()) return { channel: "later", until: new Date(earliest) };
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, target.email);
+  const written = replies.reverse().map((reply) => messageText(reply.body));
   // A new link for each email. Older ones keep working until they expire.
   const chatUrl = chatLinkUrl(
     publicUrl,
@@ -531,16 +541,13 @@ async function replyEmailPlan(
     subject: text.replySubject(placeName),
     // The visitor typed this address, and nobody proved it, so it greets no name.
     text: letter(
-      text.replyBody(
-        placeName,
-        replies
-          .reverse()
-          .map((reply) => messageText(reply.body))
-          .join("\n\n"),
-        chatUrl,
-        stopUrl,
-      ),
+      text.replyBody(placeName, written.join("\n\n"), chatUrl, stopUrl),
       undefined,
+      placeName,
+    ),
+    // The replies' Markdown shows as formatting here, and stays as typed in the text version.
+    html: letterHtml(
+      text.replyBody(placeName, { html: written.map(markdownHtml).join("") }, chatUrl, stopUrl),
       placeName,
     ),
     stopUrl,

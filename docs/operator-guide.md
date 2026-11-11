@@ -8,6 +8,8 @@ The operator app is where your team reads and answers chats. Open your Dinghy ad
 
 The sidebar has **Inbox**, **Analytics** and **Settings**. New conversations appear in the **Inbox** with no reload, and the red number counts the people who wait for a reply. At the top of the list, the **Open** and **Closed** switch picks which conversations it shows. In a team of more than one, **All**, **Mine** and **Unassigned** below it pick whose. The app remembers both in the address, so a reload or a shared link keeps them. Select one to read it, write in the reply box, and press Enter or the send button. If your site sends details with `setContext()`, they show under **Details from your website**. Visitors can change these details in their browser, so do not use them to verify identity or account access.
 
+Messages can carry a little formatting, written as Markdown: `**bold**`, `*italic*`, `` `code` ``, a block between two lines of three backticks, `[words](https://example.com)` for a link, and lines that start with `-` or `1.` for a list. A web address becomes a link by itself. The buttons under the reply box, and Cmd or Ctrl with B, I, E and K, add the marks around the selected words. Visitors see the formatting in the widget and in reply emails, and can type it too. Links open in a new tab, and only `http`, `https` and `mailto` links work. HTML, images and headings stay plain text.
+
 To send an image, paste it, drag it onto the chat, or select the image button. The rules are the same as for visitors: PNG, JPEG or WebP, under 5 MB and under 16 megapixels.
 
 If a message shows "Not sent", select it to try again. A retry cannot create a second copy.

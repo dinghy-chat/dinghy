@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Fragment, useEffect, useRef, useState } from "react";
+import { createElement, Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   IMAGE_TYPES,
   imageProblem,
@@ -9,6 +9,7 @@ import {
   REFRESH_LIMIT_MS,
   REFUSED,
 } from "../../../packages/widget/src/compose.ts";
+import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import {
   ApiError,
   type Conversation,
@@ -18,7 +19,8 @@ import {
   type WelcomeChat,
   type WorkspaceApi,
 } from "./api.ts";
-import { Icon } from "./icons.tsx";
+import { code, type Edit, link, list, wrap } from "./format.ts";
+import { Icon, type IconName } from "./icons.tsx";
 import { useLatestLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -423,6 +425,32 @@ function ImageViewer({
   );
 }
 
+/** Each formatting button: its text, its icon, its key with Cmd or Ctrl, and what it does. */
+const FORMATS: {
+  name: TextId;
+  icon: IconName;
+  key?: string;
+  apply(value: string, start: number, end: number): Edit;
+}[] = [
+  { name: "formatBold", icon: "textBold", key: "b", apply: (v, s, e) => wrap(v, s, e, "**") },
+  { name: "formatItalic", icon: "textItalic", key: "i", apply: (v, s, e) => wrap(v, s, e, "*") },
+  { name: "formatCode", icon: "code", key: "e", apply: code },
+  { name: "formatLink", icon: "link", key: "k", apply: (v, s, e) => link(v, s, e, t("linkWords")) },
+  { name: "formatBulleted", icon: "listBullets", apply: (v, s, e) => list(v, s, e, false) },
+  { name: "formatNumbered", icon: "listNumbers", apply: (v, s, e) => list(v, s, e, true) },
+];
+
+const ON_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** "Bold (⌘B)" on a Mac and "Bold (Ctrl+B)" elsewhere. */
+const shortcutLabel = (name: TextId, key: string | undefined) =>
+  key === undefined
+    ? t(name)
+    : t("withShortcut", {
+        name: t(name),
+        keys: ON_MAC ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`,
+      });
+
 function Composer({
   draft,
   setDraft,
@@ -437,6 +465,15 @@ function Composer({
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  // The selection a format asked for, set once the new text is on screen.
+  const selection = useRef<[number, number] | null>(null);
+  useLayoutEffect(() => {
+    const field = input.current;
+    if (selection.current === null || field === null) return;
+    field.focus();
+    field.setSelectionRange(...selection.current);
+    selection.current = null;
+  });
 
   const submit = (event: { preventDefault(): void }) => {
     event.preventDefault();
@@ -446,35 +483,17 @@ function Composer({
     onSend(body);
   };
 
+  const format = (apply: (typeof FORMATS)[number]["apply"]) => {
+    const field = input.current;
+    if (field === null) return;
+    const edit = apply(field.value, field.selectionStart, field.selectionEnd);
+    selection.current = [edit.start, edit.end];
+    setDraft(edit.value);
+  };
+
   return (
     <form className="compose" onSubmit={submit}>
       <div className="box">
-        {onFiles !== undefined && (
-          <>
-            <input
-              ref={picker}
-              className="file"
-              type="file"
-              multiple
-              accept={IMAGE_TYPES.join(",")}
-              aria-label={t("attach")}
-              tabIndex={-1}
-              onChange={(event) => {
-                onFiles(event.target.files ?? []);
-                event.target.value = "";
-              }}
-            />
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t("attach")}
-              onClick={() => picker.current?.click()}
-            >
-              <Icon name="clip" />
-            </button>
-          </>
-        )}
-        <EmojiButton field={input} onPick={setDraft} />
         <textarea
           ref={input}
           rows={1}
@@ -494,12 +513,67 @@ function Composer({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !isComposing(event.nativeEvent)) {
               submit(event);
+              return;
             }
+            if (!(ON_MAC ? event.metaKey : event.ctrlKey) || event.altKey || event.shiftKey) return;
+            const found = FORMATS.find((one) => one.key === event.key.toLowerCase());
+            if (found === undefined) return;
+            event.preventDefault();
+            format(found.apply);
           }}
         />
-        <button type="submit" className="send" aria-label={t("send")} title={t("send")}>
-          <Icon name="arrowUp" size={16} />
-        </button>
+        <div className="compose-tools">
+          {onFiles !== undefined && (
+            <>
+              <input
+                ref={picker}
+                className="file"
+                type="file"
+                multiple
+                accept={IMAGE_TYPES.join(",")}
+                aria-label={t("attach")}
+                tabIndex={-1}
+                onChange={(event) => {
+                  onFiles(event.target.files ?? []);
+                  event.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t("attach")}
+                title={t("attach")}
+                onClick={() => picker.current?.click()}
+              >
+                <Icon name="clip" size={18} />
+              </button>
+            </>
+          )}
+          <EmojiButton field={input} onPick={setDraft} />
+          <span className="tools-divider" aria-hidden="true" />
+          <fieldset className="format-tools" aria-label={t("formatTools")}>
+            {FORMATS.map((one) => {
+              const label = shortcutLabel(one.name, one.key);
+              return (
+                <button
+                  key={one.name}
+                  type="button"
+                  className="icon-button"
+                  aria-label={label}
+                  title={label}
+                  // The field keeps its selection while the button is pressed.
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => format(one.apply)}
+                >
+                  <Icon name={one.icon} size={18} />
+                </button>
+              );
+            })}
+          </fieldset>
+          <button type="submit" className="send" aria-label={t("send")} title={t("send")}>
+            <Icon name="arrowUp" size={16} />
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -542,7 +616,11 @@ function ThreadLine({
       ) : line.file !== undefined ? (
         <div className="msg">{t("imageSending")}</div>
       ) : (
-        <div className={line.fromVisitor ? "msg visitor" : "msg"}>{line.body}</div>
+        createElement(
+          "div",
+          { className: line.fromVisitor ? "msg visitor" : "msg" },
+          ...renderMarkdown(line.body, createElement),
+        )
       )}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}
       {line.status === "failed" && (

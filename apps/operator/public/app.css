@@ -1825,6 +1825,32 @@ img.ws-tile {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+/* The small Markdown a message may use. */
+.msg :where(p, ul, ol, pre) {
+  margin: 0;
+}
+.msg > * + * {
+  margin-top: 6px;
+}
+.msg :where(ul, ol) {
+  padding-left: 22px;
+}
+.msg :where(pre, code) {
+  font: 13.5px / 1.45 var(--mono);
+}
+.msg :where(code) {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: rgb(127 127 127 / 0.18);
+}
+.msg :where(pre code) {
+  display: block;
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.msg :where(a) {
+  color: inherit;
+}
 .msg.visitor {
   align-self: flex-start;
   background: var(--surface);
@@ -1876,11 +1902,11 @@ img.ws-tile {
 .compose {
   padding: 0 28px 24px;
 }
+/* The composer: one rounded box, the text on top and a row of tools under it. */
 .box {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px 8px;
   border-radius: 18px;
   background: var(--surface);
   box-shadow:
@@ -1894,10 +1920,10 @@ img.ws-tile {
     0 6px 18px rgb(11 34 57 / 0.05);
 }
 .box textarea {
-  flex: 1;
-  min-height: 40px;
-  max-height: 200px;
-  padding: 9px 4px;
+  width: 100%;
+  min-height: 44px;
+  max-height: 240px;
+  padding: 8px 6px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1908,8 +1934,36 @@ img.ws-tile {
   outline: 0;
 }
 .box .icon-button {
+  width: 34px;
+  height: 34px;
   color: var(--mute);
 }
+.box .icon-button:hover {
+  color: var(--navy);
+}
+.compose-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.format-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.tools-divider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--line);
+}
+
 .send {
   display: grid;
   flex: none;
@@ -1923,6 +1977,9 @@ img.ws-tile {
 }
 .send:hover {
   background: var(--fill-hover);
+}
+.compose-tools .send {
+  margin-left: auto;
 }
 .box input.file {
   position: absolute;

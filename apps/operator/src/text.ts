@@ -630,6 +630,15 @@ const en = {
   usageDocsLink: "About plan limits",
   billingDocsLink: "About billing",
   accountDeleted: "Your account was deleted.",
+  formatBold: "Bold",
+  formatItalic: "Italic",
+  formatCode: "Code",
+  formatLink: "Link",
+  formatBulleted: "Bulleted list",
+  formatNumbered: "Numbered list",
+  formatTools: "Formatting",
+  linkWords: "link",
+  withShortcut: "{name} ({keys})",
 };
 
 export type TextId = keyof typeof en;

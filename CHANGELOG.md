@@ -4,6 +4,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Messages show a small Markdown: bold, italic, code, code blocks, links, bare web addresses and lists, in the widget, in the operator app and in the HTML part of reply emails. HTML, images and headings stay text, and links work only for `http`, `https` and `mailto`.
+- The reply box has a row of tools: attach, emoji, then bold, italic, code, link, bulleted and numbered lists, with Cmd or Ctrl with B, I, E and K.
+
 ### Changed
 
 - An operator's first reply in an unassigned conversation assigns it to them, with the usual `conversation.assigned` event. A reply from an API key never assigns, and a conversation that has an assignee keeps it.

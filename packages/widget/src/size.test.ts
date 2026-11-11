@@ -9,8 +9,9 @@ const LIMITS: Record<string, number> = {
   // with them, from 2,096). The full page API before them took it to 2,100.
   "loader.js": 2300,
   "page.js": 1000,
-  // 20,500 since the emoji picker, which the owner asked for on 2026-11-11 (20,398 with it).
-  "widget.js": 20_500,
+  // 21,500 since Markdown in messages, which the owner asked for on 2026-11-11 (21,347 with it,
+  // from 20,320). The emoji picker before it took it to 20,500.
+  "widget.js": 21_500,
 };
 
 test("the bundles use no API that exists only on secure pages", async () => {

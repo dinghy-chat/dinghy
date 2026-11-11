@@ -1,12 +1,13 @@
 /** @jsxImportSource preact */
 // The chat's panel, as pieces that hold no state of their own. The chat puts them together, and so
 // does the operator app's preview of the Widget tab, so both show the same widget.
-import { type ComponentChildren, Fragment, type RefObject } from "preact";
+import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
 import type { ChatMessage } from "./client.ts";
 import { IMAGE_TYPES, isComposing } from "./compose.ts";
 import { EMOJIS, insertEmoji, SMILEY_ICON } from "./emoji.ts";
+import { renderMarkdown } from "./markdown.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
 import {
   DEFAULT_COLORS,
@@ -59,6 +60,8 @@ export const CSS = `
 .port{width:150px;height:100px;border-radius:26px}
 .sun{position:absolute;left:calc(78% - 12px);top:34px;width:24px;height:24px;border-radius:50%;background:#fff8df;box-shadow:0 0 0 5px rgb(255 248 223/.4)}
 .msg{align-self:flex-start;max-width:84%;padding:9px 13px;border-radius:18px 18px 18px 5px;background:var(--paper);box-shadow:0 1px 2px rgb(13 34 64/.08);overflow-wrap:anywhere;white-space:pre-wrap}
+.msg p,.msg ul,.msg ol,.msg pre{margin:0}.msg>*+*{margin-top:6px}.msg ul,.msg ol{padding-left:20px}
+.msg pre,.msg code{font:13px/1.4 ui-monospace,monospace}.msg code{padding:0 3px;border-radius:4px;background:rgb(127 127 127/.18)}.msg pre code{display:block;padding:6px 8px;overflow-x:auto}.msg a{color:inherit}
 .mine{align-self:flex-end;border-radius:18px 18px 5px 18px;background:var(--primary);color:var(--d-primary-text,#fff);box-shadow:none}
 .state{font-size:12.5px;line-height:16px;color:var(--mute);align-self:flex-end}
 .bad{color:var(--bad)}
@@ -399,7 +402,7 @@ export function ChatLine({
       ) : line.file !== undefined ? (
         <div class="msg mine">{t("imageSending")}</div>
       ) : (
-        <div class={line.fromVisitor ? "msg mine" : "msg"}>{line.body}</div>
+        <div class={line.fromVisitor ? "msg mine" : "msg"}>{renderMarkdown(line.body, h)}</div>
       )}
       {line.status === "sending" && <div class="state">{t("sending")}</div>}
       {line.status === "failed" && (
