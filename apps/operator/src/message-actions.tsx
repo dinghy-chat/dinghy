@@ -30,7 +30,7 @@ interface LineActions {
 /** A line's menu, in its fixed order, without the items that do not apply. */
 export function lineMenu(
   line: Line,
-  who: { meId: string; mayDeleteAny: boolean; canWrite: boolean; canReply: boolean },
+  who: { meId: string; mayDeleteAnyone: boolean; canWrite: boolean; canReply: boolean },
   receipts: ReplyReceipts | null,
   act: LineActions,
 ): MenuItem[] {
@@ -55,7 +55,7 @@ export function lineMenu(
     });
   }
   items.push(info, item("messageCopyLink", "link", act.copyLink));
-  if ((isMine || who.mayDeleteAny) && who.canWrite) {
+  if ((isMine || who.mayDeleteAnyone) && who.canWrite) {
     items.push({ ...item("messageDelete", "trash", act.remove), danger: true, divider: true });
   }
   return items;
@@ -67,6 +67,16 @@ const copy = (text: string, done: TextId) =>
     ?.writeText(text)
     .then(() => toast(done))
     .catch(() => {});
+
+/**
+ * Runs a change, and tells the operator when it fails, so a click never just does nothing. The
+ * failure is `fallback` when the server gives no reason, and shows where `report` puts it. True when
+ * the change worked.
+ */
+export type Act = (
+  work: () => Promise<unknown>,
+  options?: { fallback?: TextId; report?: (text: TextId) => void },
+) => Promise<boolean>;
 
 /** The line being edited, its text, and why its last save failed. */
 interface Editing {
@@ -84,19 +94,11 @@ export function useMessageActions({
   conversationId,
   act,
   keep,
-  reloadAll,
-  onChanged,
 }: {
   api: WorkspaceApi;
   conversationId: string;
-  act(
-    work: () => Promise<unknown>,
-    fallback?: TextId,
-    report?: (text: TextId) => void,
-  ): Promise<boolean>;
+  act: Act;
   keep(message: Message): void;
-  reloadAll(): void;
-  onChanged(): void;
 }) {
   // The message the next reply quotes, the reply being edited, and the dialogs about one message.
   const [quoting, setQuoting] = useState<Line | null>(null);
@@ -108,22 +110,18 @@ export function useMessageActions({
   const saveEdit = async (id: string, body: string) => {
     const report = (problem: TextId) =>
       setEditing((current) => (current?.id === id ? { ...current, problem } : current));
-    const saved = await act(
-      async () => keep(await api.editMessage(conversationId, id, body)),
-      "actionFailed",
+    const saved = await act(async () => keep(await api.editMessage(conversationId, id, body)), {
       report,
-    );
+    });
     if (saved) setEditing((current) => (current?.id === id ? null : current));
   };
 
+  // Every quote of it changes too: the `message.deleted` event loads the whole thread again.
   const removeMessage = async (line: Line) => {
     setDeleting(null);
-    if (!(await act(() => api.deleteMessage(conversationId, line.id), "messageDeleteFailed"))) {
-      return;
-    }
-    // Every quote of it changes too, so the whole thread loads again.
-    reloadAll();
-    onChanged();
+    await act(() => api.deleteMessage(conversationId, line.id), {
+      fallback: "messageDeleteFailed",
+    });
   };
 
   const actionsFor = (line: Line): LineActions => ({

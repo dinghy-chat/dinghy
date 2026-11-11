@@ -5,7 +5,7 @@ import { Composer } from "./composer.tsx";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, MessageMenu, QuoteBlock, QuoteChip } from "./message.tsx";
-import { lineMenu, quoteOf, useMessageActions } from "./message-actions.tsx";
+import { type Act, lineMenu, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
 import { ReceiptLine, receiptOf } from "./receipts.tsx";
 import { readStored, store } from "./stored.ts";
@@ -77,7 +77,7 @@ export function Thread({
   version,
   members,
   replying,
-  canDelete,
+  mayDeleteAnyone,
   emailAvailable,
   readOnly,
   suspended,
@@ -97,7 +97,8 @@ export function Thread({
   drafts: Map<string, string>;
   members: Member[];
   replying: string | null;
-  canDelete: boolean;
+  /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
+  mayDeleteAnyone: boolean;
   /** This server sends email, so a transcript can go. */
   emailAvailable: boolean;
   /** The subscription ended: replies are off, except text in the welcome chat. */
@@ -120,15 +121,8 @@ export function Thread({
   onOpenConversation(id: string, status: "open" | "closed"): void;
 }) {
   const [problem, setProblem] = useState<TextId | null>(null);
-  /**
-   * Runs a change, and tells the operator when it fails, so a click never just does nothing. The
-   * failure shows below the thread, or where `report` puts it.
-   */
-  const act = async (
-    work: () => Promise<unknown>,
-    fallback: TextId = "actionFailed",
-    report: (text: TextId) => void = setProblem,
-  ): Promise<boolean> => {
+  // A failure shows below the thread unless `report` puts it elsewhere.
+  const act: Act = async (work, { fallback = "actionFailed", report = setProblem } = {}) => {
     setProblem(null);
     try {
       await work();
@@ -147,7 +141,6 @@ export function Thread({
     receipts,
     lines,
     loadFailure,
-    reloadAll,
     refreshImages,
     retry,
     sendText,
@@ -165,7 +158,7 @@ export function Thread({
     onChanged,
     onLoaded,
   });
-  const actions = useMessageActions({ api, conversationId, act, keep, reloadAll, onChanged });
+  const actions = useMessageActions({ api, conversationId, act, keep });
   const { quoting, setQuoting, editing, setEditing, info, setInfo, deleting, setDeleting } =
     actions;
   const panel = usePanel();
@@ -237,7 +230,7 @@ export function Thread({
   };
 
   const remove = async () => {
-    if (!(await act(() => api.remove(conversationId), "deleteFailed"))) {
+    if (!(await act(() => api.remove(conversationId), { fallback: "deleteFailed" }))) {
       setConfirming(false);
       return;
     }
@@ -281,7 +274,7 @@ export function Thread({
   const visitorName = title(conversation);
   const who = {
     meId,
-    mayDeleteAny: canDelete,
+    mayDeleteAnyone,
     canWrite: repliesOffReason === null,
     canReply: repliesOffReason === null && !closed,
   };
@@ -322,7 +315,7 @@ export function Thread({
           welcome={welcome}
           online={online}
           members={members}
-          canDelete={canDelete}
+          mayDeleteAnyone={mayDeleteAnyone}
           onBack={onBack}
           onAssign={(operatorId) => void assign(operatorId)}
           onStatus={(status) => void setStatus(status)}

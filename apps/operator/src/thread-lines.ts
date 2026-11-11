@@ -237,7 +237,6 @@ export function useThreadLines({
     receipts,
     lines,
     loadFailure,
-    reloadAll,
     refreshImages,
     retry: (line: Line) =>
       void deliver(line.id, line.body, line.file, line.replyTo?.id ?? undefined),

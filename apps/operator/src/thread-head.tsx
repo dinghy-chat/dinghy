@@ -51,7 +51,7 @@ export function ThreadHead({
   welcome,
   online,
   members,
-  canDelete,
+  mayDeleteAnyone,
   onBack,
   onAssign,
   onStatus,
@@ -68,7 +68,8 @@ export function ThreadHead({
   /** A widget stream of the visitor's is open, or null when unknown. */
   online: boolean | null;
   members: Member[];
-  canDelete: boolean;
+  /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
+  mayDeleteAnyone: boolean;
   onBack(): void;
   onAssign(operatorId: string | null): void;
   onStatus(status: "open" | "closed"): void;
@@ -101,7 +102,7 @@ export function ThreadHead({
       onSelect: onTranscript,
     },
   ];
-  if (canDelete) {
+  if (mayDeleteAnyone) {
     more.push({
       label: t("deleteConversation"),
       lead: <Icon name="trash" size={18} />,

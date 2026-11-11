@@ -621,7 +621,7 @@ export function Inbox({
                   drafts={drafts}
                   members={members}
                   replying={replying(selected)}
-                  canDelete={role !== "member" && !readOnly && !suspended}
+                  mayDeleteAnyone={role !== "member" && !readOnly && !suspended}
                   emailAvailable={emailAvailable}
                   readOnly={readOnly}
                   suspended={suspended}
