@@ -3040,6 +3040,17 @@
           {
             "schema": {
               "type": "string",
+              "enum": ["me", "none"],
+              "description": "`me`: assigned to the signed-in operator. `none`: assigned to no one. Leave it out for all. An API key has no assignments, so it may pass `none` only."
+            },
+            "required": false,
+            "description": "`me`: assigned to the signed-in operator. `none`: assigned to no one. Leave it out for all. An API key has no assignments, so it may pass `none` only.",
+            "name": "assignee",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "date-time"
             },
             "required": false,

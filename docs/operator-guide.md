@@ -6,7 +6,7 @@ The operator app is where your team reads and answers chats. Open your Dinghy ad
 
 ## Answer a chat
 
-The sidebar has **Inbox**, **Closed**, **Alerts** and **Settings**. New conversations appear in the **Inbox** with no reload, and the red number counts the people who wait for a reply. Select one to read it, write in the reply box, and press Enter or the send button. If your site sends details with `setContext()`, they show under **From the page**. Your site does not sign them, so treat them as a hint.
+The sidebar has **Inbox**, **Analytics**, **Alerts** and **Settings**. New conversations appear in the **Inbox** with no reload, and the red number counts the people who wait for a reply. At the top of the list, **Open** and **Closed** pick which conversations it shows. In a team, **All**, **Mine** and **Unassigned** below them pick whose. The app remembers both in the address, so a reload or a shared link keeps them. Select one to read it, write in the reply box, and press Enter or the send button. If your site sends details with `setContext()`, they show under **From the page**. Your site does not sign them, so treat them as a hint.
 
 To send an image, paste it, drag it onto the chat, or select the image button. The rules are the same as for visitors: PNG, JPEG or WebP, under 5 MB and under 16 megapixels.
 
@@ -21,7 +21,7 @@ Under the visitor's name, the header shows their email and user ID, when the nam
 | Control | What it does |
 |---|---|
 | The assignee | A list that gives the conversation to one person on your team, or to nobody |
-| **Close** | Moves it to the **Closed** list. **Reopen** brings it back. If the visitor writes after a close, this starts a new conversation with no assignee, and the visitor sees one thread |
+| **Close** | Moves it under **Closed** in the Inbox. **Reopen** brings it back. If the visitor writes after a close, this starts a new conversation with no assignee, and the visitor sees one thread |
 | **…** then **Block** | Stops this visitor from sending messages. **Unblock** in the same place undoes it, and so does **Settings > Data > Blocked visitors** |
 | **…** then **Delete** | Deletes the conversation and its images for good, after you confirm. Owners and admins only |
 

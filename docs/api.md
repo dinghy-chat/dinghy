@@ -105,7 +105,7 @@ curl https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/conversations 
 
 A key has a member's permissions, in its own workspace only. It can:
 
-- list, search and read conversations, with the visitor and the page journey,
+- list, search and read conversations, with the visitor and the page journey (`?assignee=none` lists the unassigned ones; a key is assigned nothing, so `assignee=me` answers 400),
 - reply with text or an image,
 - close, reopen and assign a conversation.
 

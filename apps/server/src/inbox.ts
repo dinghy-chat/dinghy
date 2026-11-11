@@ -29,6 +29,7 @@ import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import { closedFailure, OPEN_TO_WELCOME, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import {
+  type AssigneeFilter,
   type Author,
   appendMessage,
   authorNames,
@@ -53,6 +54,10 @@ import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 
 const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
+const KEY_HAS_NO_ASSIGNMENTS = failure(
+  "invalid_request",
+  "An API key is assigned nothing. Pass assignee=none, or leave it out.",
+);
 const CLOSED_ANSWER = { 409: errorAnswer("conversation_closed: reopen it to reply") };
 
 const workspaceParams = z.object({ workspaceId: z.uuid() });
@@ -165,6 +170,10 @@ const listRoute = createRoute({
     params: workspaceParams,
     query: z.object({
       status: z.enum(["open", "closed"]).default("open"),
+      assignee: z.enum(["me", "none"]).optional().openapi({
+        description:
+          "`me`: assigned to the signed-in operator. `none`: assigned to no one. Leave it out for all. An API key has no assignments, so it may pass `none` only.",
+      }),
       beforeUpdatedAt: z.iso.datetime().optional(),
       beforeId: z.uuid().optional(),
       limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -620,11 +629,12 @@ export function createInbox({
     async list(
       workspaceId: string,
       status: "open" | "closed",
+      assignee: AssigneeFilter,
       before: { updatedAt: Date; id: string } | undefined,
       limit: number,
     ) {
       const page = await withWorkspace(db, workspaceId, async (tx) => ({
-        ...(await listConversations(tx, workspaceId, status, before, limit)),
+        ...(await listConversations(tx, workspaceId, status, assignee, before, limit)),
         waiting: await countWaiting(tx, workspaceId),
       }));
       return {
@@ -757,12 +767,20 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   });
 
   app.openapi(listRoute, async (c) => {
-    const { status, beforeUpdatedAt, beforeId, limit } = c.req.valid("query");
+    const { status, assignee, beforeUpdatedAt, beforeId, limit } = c.req.valid("query");
+    const actor = c.get("actor");
+    if (assignee === "me" && actor.kind === "key") return c.json(KEY_HAS_NO_ASSIGNMENTS, 400);
+    const filter: AssigneeFilter =
+      assignee === undefined
+        ? { kind: "all" }
+        : assignee === "none"
+          ? { kind: "none" }
+          : { kind: "operator", operatorId: c.get("operatorId") };
     const before =
       beforeUpdatedAt === undefined || beforeId === undefined
         ? undefined
         : { updatedAt: new Date(beforeUpdatedAt), id: beforeId };
-    return c.json(await inbox.list(c.get("memberWorkspaceId"), status, before, limit), 200);
+    return c.json(await inbox.list(c.get("memberWorkspaceId"), status, filter, before, limit), 200);
   });
 
   app.openapi(conversationRoute, async (c) => {

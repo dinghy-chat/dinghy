@@ -155,7 +155,6 @@ describe("migrations", () => {
   test("every foreign key has an index that starts with its columns, or a reason it needs none", async () => {
     // A parent's delete runs one lookup per row. With no index, each lookup reads the whole table.
     const small: Record<string, string> = {
-      conversation_assignee_fk: "a member's removal, at most 5 members per workspace",
       alert_delivery_operator_fk: "a member's removal, at most 5 members per workspace",
       invite_created_by_fk: "a member's removal, a handful of invites per workspace",
       api_key_created_by_fk: "a member's removal, a handful of keys per workspace",

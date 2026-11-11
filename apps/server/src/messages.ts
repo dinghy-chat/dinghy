@@ -509,10 +509,23 @@ interface ConversationSummary extends ConversationRow {
 }
 
 /** A page of conversations, newest activity first. */
+/** Whose conversations a list holds: everyone's, one operator's, or no one's. */
+export type AssigneeFilter =
+  | { kind: "all" }
+  | { kind: "operator"; operatorId: string }
+  | { kind: "none" };
+
+function assigneeCondition(assignee: AssigneeFilter) {
+  if (assignee.kind === "all") return undefined;
+  if (assignee.kind === "none") return isNull(conversation.assigneeOperatorId);
+  return eq(conversation.assigneeOperatorId, assignee.operatorId);
+}
+
 export async function listConversations(
   tx: Transaction,
   workspaceId: string,
   status: "open" | "closed",
+  assignee: AssigneeFilter,
   before: { updatedAt: Date; id: string } | undefined,
   limit: number,
 ): Promise<{ conversations: ConversationSummary[]; hasMore: boolean }> {
@@ -542,6 +555,7 @@ export async function listConversations(
       and(
         eq(conversation.workspaceId, workspaceId),
         eq(conversation.status, status),
+        assigneeCondition(assignee),
         // A row comparison bounds the scan of conversation_list_idx, where an OR would not.
         before === undefined
           ? undefined

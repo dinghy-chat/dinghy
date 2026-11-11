@@ -293,11 +293,13 @@ describe("conversations", () => {
       logger: { logQuery: (query, params) => queries.push({ query, params }) },
     });
     const page = await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, "open", undefined, 2),
+      listConversations(tx, own.id, "open", { kind: "all" }, undefined, 2),
     );
     const last = page.conversations.at(-1);
     queries.length = 0;
-    await withWorkspace(traced, own.id, (tx) => listConversations(tx, own.id, "open", last, 2));
+    await withWorkspace(traced, own.id, (tx) =>
+      listConversations(tx, own.id, "open", { kind: "all" }, last, 2),
+    );
     const list = queries.filter((one) => one.query.includes('from "conversation"'));
     expect(list).toHaveLength(1);
     const client = await database.connect("migrator", 1).pool.connect();
@@ -313,6 +315,124 @@ describe("conversations", () => {
       expect(text).toMatch(/Index Scan Backward using conversation_list_idx/);
       expect(text).toMatch(/Index Cond: .*ROW\(updated_at, id\) </);
       expect(text).toMatch(/Index Scan Backward using message_conversation_idx/);
+      expect(text).not.toMatch(/Sort/);
+    } finally {
+      await client.query("rollback");
+      client.release();
+    }
+  });
+});
+
+describe("the assignee filter", () => {
+  type Page = {
+    conversations: { id: string; updatedAt: string; assigneeOperatorId: string | null }[];
+    hasMore: boolean;
+  };
+
+  /** A workspace of two operators, with conversations for each, and some for no one. */
+  async function team() {
+    const own = await createWorkspace(db, "Filtered", [WIDGET_ORIGIN]);
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const ann = await signedInOperator({ app, auth, owner, name: "Ann", workspaceId: own.id });
+    const bo = await signedInOperator({ app, auth, owner, name: "Bo", workspaceId: own.id });
+    const base = `/v1/operator/workspaces/${own.id}/conversations`;
+    const start = async (body: string, assignee: string | null) => {
+      const { conversationId } = await visitorSends(own.publicKey, body);
+      if (assignee !== null) {
+        const assigned = await write(
+          "PUT",
+          `${base}/${conversationId}/assignee`,
+          { operatorId: assignee },
+          ann.cookie,
+        );
+        expect(assigned.status).toBe(200);
+      }
+      return conversationId;
+    };
+    const list = async (query: string, as = ann.cookie) => {
+      const response = await get(`${base}?${query}`, as);
+      expect(response.status).toBe(200);
+      return (await response.json()) as Page;
+    };
+    return { own, ann, bo, base, start, list };
+  }
+
+  test("me lists the caller's, none lists no one's, and no filter lists all", async () => {
+    const { ann, bo, start, list } = await team();
+    const annOne = await start("for Ann", ann.id);
+    const boOne = await start("for Bo", bo.id);
+    const nobody = await start("for no one", null);
+    const ids = (page: Page) => page.conversations.map((row) => row.id).sort();
+    expect(ids(await list("assignee=me"))).toEqual([annOne]);
+    expect(ids(await list("assignee=me", bo.cookie))).toEqual([boOne]);
+    expect(ids(await list("assignee=none"))).toEqual([nobody]);
+    expect(ids(await list(""))).toEqual([annOne, boOne, nobody].sort());
+  });
+
+  test("the filter applies to closed conversations too", async () => {
+    const { ann, base, start, list } = await team();
+    const closed = await start("closed for Ann", ann.id);
+    await start("open for Ann", ann.id);
+    await write("PATCH", `${base}/${closed}`, { status: "closed" }, ann.cookie);
+    const page = await list("status=closed&assignee=me");
+    expect(page.conversations.map((row) => row.id)).toEqual([closed]);
+    expect((await list("status=closed&assignee=none")).conversations).toEqual([]);
+  });
+
+  test("paging with a filter skips nothing and never shows another operator's", async () => {
+    const { ann, bo, start, list } = await team();
+    const mine: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      mine.push(await start(`mine ${i}`, ann.id));
+      await start(`theirs ${i}`, bo.id);
+      await start(`no one's ${i}`, null);
+    }
+    const seen: Page["conversations"] = [];
+    let query = "assignee=me&limit=2";
+    for (let more = true; more; ) {
+      const page = await list(query);
+      seen.push(...page.conversations);
+      const last = page.conversations.at(-1);
+      query = `assignee=me&limit=2&beforeUpdatedAt=${last?.updatedAt}&beforeId=${last?.id}`;
+      more = page.hasMore;
+    }
+    expect(seen.map((row) => row.id).sort()).toEqual(mine.sort());
+    expect(seen.every((row) => row.assigneeOperatorId === ann.id)).toBe(true);
+  });
+
+  test("a value it does not know is refused", async () => {
+    const { base, ann } = await team();
+    expect((await get(`${base}?assignee=everyone`, ann.cookie)).status).toBe(400);
+  });
+
+  test("a page of one operator's is one bounded scan of the assignee index, with no sort", async () => {
+    const { own, ann, start } = await team();
+    for (let i = 0; i < 3; i++) await start(`p${i}`, ann.id);
+    const queries: { query: string; params: unknown[] }[] = [];
+    const traced = drizzle(database.connect("app").pool, {
+      schema,
+      logger: { logQuery: (query, params) => queries.push({ query, params }) },
+    });
+    const mine = { kind: "operator", operatorId: ann.id } as const;
+    const page = await withWorkspace(traced, own.id, (tx) =>
+      listConversations(tx, own.id, "open", mine, undefined, 2),
+    );
+    queries.length = 0;
+    await withWorkspace(traced, own.id, (tx) =>
+      listConversations(tx, own.id, "open", mine, page.conversations.at(-1), 2),
+    );
+    const list = queries.filter((one) => one.query.includes('from "conversation"'));
+    const client = await database.connect("migrator", 1).pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("set local enable_seqscan = off");
+      const plan = await client.query<{ "QUERY PLAN": string }>(
+        `explain ${list[0]?.query}`,
+        list[0]?.params,
+      );
+      const text = plan.rows.map((row) => row["QUERY PLAN"]).join("\n");
+      expect(text).toMatch(/Index Scan Backward using conversation_assignee_list_idx/);
+      expect(text).toMatch(/Index Cond: .*ROW\(updated_at, id\) </);
       expect(text).not.toMatch(/Sort/);
     } finally {
       await client.query("rollback");
