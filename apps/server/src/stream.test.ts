@@ -14,7 +14,7 @@ import { type App, createApp } from "./app.ts";
 import { operator, visitor, workspace, workspaceMember } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { createLive, type Live, noLive } from "./live.ts";
-import { appendMessage } from "./messages.ts";
+import { appendMessage, setConversationStatus } from "./messages.ts";
 import { openLiveStream, type StreamOptions } from "./stream.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -216,6 +216,24 @@ describe("delivery", () => {
     live.wake(a.id, visitorId);
     await client.until(() => client.messages().length === 2, "the reply");
     expect(client.events.filter((e) => e.event === "message").at(-1)?.data.fromVisitor).toBe(false);
+  });
+
+  test("a close reaches the visitor as a status line, live", async () => {
+    const { app, live } = instance();
+    const { token, visitorId } = await newVisitor(app);
+    const { json } = await send(app, token, "c", "question");
+    const client = await connect(app, token);
+    await client.ready();
+    await withWorkspace(db, a.id, (tx) =>
+      setConversationStatus(tx, a.id, json.conversationId, "closed", {
+        kind: "operator",
+        operatorId: OPERATOR,
+      }),
+    );
+    live.wake(a.id, visitorId);
+    await client.until(() => client.messages().length === 2, "the status line");
+    const line = client.events.filter((e) => e.event === "message").at(-1)?.data;
+    expect(line).toMatchObject({ kind: "closed", body: null });
   });
 
   test("a signal for one visitor delivers nothing to another", async () => {
