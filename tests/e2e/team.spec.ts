@@ -34,9 +34,7 @@ async function invite(page: Page, email: string, role: "Member" | "Admin" = "Mem
   await dialog.getByLabel("Email").fill(email);
   await dialog.getByRole("radio", { name: role }).check();
   await dialog.getByRole("button", { name: "Send invite" }).click();
-  await expect(dialog.getByRole("status")).toHaveText(
-    `Invite sent to ${email}. They have 7 days to join.`,
-  );
+  await expect(dialog.getByRole("status")).toHaveText(`Invite sent${email} has 7 days to join.`);
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".members .email-cell").getByText(email)).toBeVisible();

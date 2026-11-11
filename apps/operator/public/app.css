@@ -530,7 +530,7 @@ textarea {
   color: var(--navy);
   font: inherit;
   font-weight: 800;
-  cursor: copy;
+  cursor: pointer;
 }
 .copy-text:hover {
   background: var(--soft-hover);
@@ -1883,7 +1883,11 @@ img.ws-tile {
   overflow: hidden;
   min-width: 0;
   color: var(--mute);
-  font: 12.5px / 18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    12.5px / 18px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3412,17 +3416,37 @@ img.ws-tile {
 .created .hint {
   margin: 0;
 }
-.invite-sent {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+/* A finished step in a dialog: a round check, a short title and one line, centered. */
+.success {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+.success-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+}
+.success p {
   margin: 0;
+  color: var(--mute);
   font-size: 15px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
-.invite-sent svg {
-  flex: none;
-  color: var(--green);
+.success b {
+  color: var(--navy);
+  font-weight: 600;
+}
+.dialog-actions.centered {
+  justify-content: center;
 }
 /* Plan and usage: one line and a thin bar for each limit. */
 .meters {
