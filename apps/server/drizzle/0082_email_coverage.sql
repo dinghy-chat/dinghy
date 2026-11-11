@@ -6,5 +6,7 @@ CREATE INDEX "message_changed_idx" ON "message" USING btree ("workspace_id","cha
 -- show a reply as unsent, or let one change, that the visitor already got.
 UPDATE "alert_delivery" SET "covered_from_seq" = "event_seq", "covered_to_seq" = "event_seq"
 WHERE "channel" = 'email' AND "visitor_id" IS NOT NULL AND "outcome" = 'sent';--> statement-breakpoint
+-- As text, because an upgrade from before 0078 adds 'transcript' in this same transaction, and
+-- Postgres refuses a new enum value there.
 UPDATE "alert_delivery" SET "covered_from_seq" = 0, "covered_to_seq" = "event_seq"
-WHERE "channel" = 'transcript' AND "outcome" = 'sent';
+WHERE "channel"::text = 'transcript' AND "outcome" = 'sent';

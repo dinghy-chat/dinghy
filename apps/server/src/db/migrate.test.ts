@@ -317,9 +317,18 @@ describe("chat migrate", () => {
     await query(
       `insert into alert_delivery (workspace_id, event_seq, conversation_id, message_id, visitor_id,
          channel, finished_at, outcome)
-       values ('${workspace}', 2, '${conversation}', '${reply}', '${visitor}', 'email', now(), 'sent')`,
+       values ('${workspace}', 2, '${conversation}', '${reply}', '${visitor}', 'email', now(), 'sent'),
+              ('${workspace}', 2, '${conversation}', '${reply}', '${visitor}', 'transcript', now(), 'sent')`,
     );
     await run();
+    expect(
+      await query(
+        "select channel, covered_from_seq, covered_to_seq from alert_delivery order by channel",
+      ),
+    ).toEqual([
+      { channel: "email", covered_from_seq: "2", covered_to_seq: "2" },
+      { channel: "transcript", covered_from_seq: "0", covered_to_seq: "2" },
+    ]);
     const app = database.connect("app").db;
     const line = { conversationId: conversation, seq: 2n };
     const after = await withWorkspace(app, workspace, async (tx) => ({
