@@ -430,9 +430,11 @@ const en = {
   apiKeysTitle: "API keys",
   apiKeysHelp:
     "A key lets a script or an AI agent read, search, reply to, close, reopen and assign conversations, through the API or MCP. It cannot change settings.",
-  apiKeyName: "Key name",
+  apiKeyNew: "New API key",
+  apiKeyName: "Name",
   apiKeyNamePlaceholder: "Support bot",
-  apiKeyNameHint: "Visitors and your team see this name on the key's replies.",
+  apiKeyNameHint:
+    "When a bot replies in a chat with this key, the visitor and your team see this name as the sender.",
   apiKeyCreate: "Create key",
   apiKeyCopy: "Copy the key {name}",
   apiKeyMade: "Made {date}.",

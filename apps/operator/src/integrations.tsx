@@ -79,6 +79,8 @@ export function ApiKeysRow({ api }: { api: WorkspaceApi }) {
   const [failure, setFailure] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
+  // The new key's form shows only once the owner asks for it.
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(() => {
     api.apiKeys().then(
@@ -96,6 +98,7 @@ export function ApiKeysRow({ api }: { api: WorkspaceApi }) {
       const { token, ...key } = await api.createApiKey(name.trim());
       setMade({ name: key.name, token });
       setName("");
+      setAdding(false);
       load();
     } catch (error) {
       setFailure(failureText(error, {}));
@@ -119,25 +122,6 @@ export function ApiKeysRow({ api }: { api: WorkspaceApi }) {
 
   return (
     <PageRow title={t("apiKeysTitle")} help={t("apiKeysHelp")}>
-      <form className="inline-field" onSubmit={create}>
-        <input
-          aria-label={t("apiKeyName")}
-          placeholder={t("apiKeyNamePlaceholder")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          maxLength={60}
-          required
-          autoComplete="off"
-        />
-        <button type="submit" className="pill dark" disabled={busy || name.trim() === ""}>
-          {t("apiKeyCreate")}
-        </button>
-      </form>
-      <p className="hint">{t("apiKeyNameHint")}</p>
-      {made !== null && (
-        <ShownOnce label={t("apiKeyCopy", { name: made.name })} value={made.token} />
-      )}
-      <ErrorNote text={failure} />
       {keys.length > 0 && (
         <ul className="item-list">
           {keys.map((key) => (
@@ -158,6 +142,54 @@ export function ApiKeysRow({ api }: { api: WorkspaceApi }) {
           ))}
         </ul>
       )}
+      {made !== null && (
+        <ShownOnce label={t("apiKeyCopy", { name: made.name })} value={made.token} />
+      )}
+      {adding ? (
+        <form className="stack" onSubmit={create}>
+          <Field
+            label={t("apiKeyName")}
+            hint={t("apiKeyNameHint")}
+            placeholder={t("apiKeyNamePlaceholder")}
+            maxLength={60}
+            required
+            autoComplete="off"
+            value={name}
+            onChange={setName}
+          />
+          <div className="actions">
+            <button type="submit" className="pill dark" disabled={busy || name.trim() === ""}>
+              {t("apiKeyCreate")}
+            </button>
+            <button
+              type="button"
+              className="pill"
+              onClick={() => {
+                setAdding(false);
+                setName("");
+                setFailure(null);
+              }}
+            >
+              {t("cancel")}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="actions">
+          <button
+            type="button"
+            className="pill dark"
+            onClick={() => {
+              setMade(null);
+              setAdding(true);
+            }}
+          >
+            <Icon name="plusBold" size={14} />
+            {t("apiKeyNew")}
+          </button>
+        </div>
+      )}
+      <ErrorNote text={failure} />
       <a className="text-button" href={API_DOCS} target="_blank" rel="noopener noreferrer">
         {t("apiDocsLink")}
       </a>
