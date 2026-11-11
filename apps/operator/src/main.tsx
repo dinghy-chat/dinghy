@@ -171,6 +171,9 @@ function App() {
       </AuthPage>
     );
   }
+  // The workspace on screen is the one to come back to, also when a link opened it, so that
+  // leaving the workspace setup with Cancel returns here. It writes only on a change.
+  if (rememberedWorkspace() !== first.workspaceId) rememberWorkspace(first.workspaceId);
   // A workspace that waits for the cloud keeps its dashboard, with a banner.
   if (!opens(first)) {
     return (

@@ -158,13 +158,21 @@ export function Onboarding({
         <button type="submit" className="btn primary large" disabled={busy}>
           {t("onboardingSubmit")}
         </button>
-        <button
-          type="button"
-          className="btn link"
-          onClick={() => void signOut().finally(onSignedOut)}
-        >
-          {t("signOut")}
-        </button>
+        {/* An operator who already has a workspace came here from the workspace menu, and goes back
+            to it. A new account has nowhere to go back to, so it can only sign out. */}
+        {me.workspaces.length > 0 ? (
+          <button type="button" className="btn link" onClick={() => navigate("/")}>
+            {t("cancel")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn link"
+            onClick={() => void signOut().finally(onSignedOut)}
+          >
+            {t("signOut")}
+          </button>
+        )}
       </form>
       {/* An account that has been in a workspace has a name, and with no workspace it has no
           Profile page, so its delete is here. A new account, still without a name, sees none. */}

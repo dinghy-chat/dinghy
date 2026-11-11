@@ -303,5 +303,9 @@ test.describe("with early signup and no Stripe keys", () => {
     await page.getByRole("menuitem", { name: "Create a workspace" }).click();
     await expect(page.getByRole("heading", { name: "Set up your workspace" })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe("/signup");
+    // With a workspace already, the setup has Cancel, which goes back to it, and no sign-out.
+    await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("button", { name: "Workspace: Second Shop" })).toBeVisible();
   });
 });
