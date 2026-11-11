@@ -1,11 +1,10 @@
-// The widget's chime for a visitor's new message. The setting is per device, and on until someone
-// turns it off.
+// The chime for a visitor's new message: the widget's tone and its 2-second gap, on this app's own
+// audio. The setting is per device, and on until someone turns it off.
 
-import { playChime } from "../../../packages/widget/src/sound.ts";
+import { chime as playChime } from "../../../packages/widget/src/sound.ts";
 import { readStored, store } from "./stored.ts";
 
 const KEY = "dinghy:sound";
-const GAP_MS = 2000;
 
 /** Without storage, the sound stays on. */
 export function soundOn(): boolean {
@@ -17,7 +16,6 @@ export function setSoundOn(on: boolean): void {
 }
 
 let audio: AudioContext | null = null;
-let lastPlayed = 0;
 
 /**
  * Browsers start audio only after the person clicks or types on the page, so the context starts on
@@ -42,10 +40,7 @@ export function prepareSound(): () => void {
   return stop;
 }
 
-/** The chime, while the setting is on, at most once every 2 seconds. */
+/** The chime, while the setting is on. */
 export function chime(): void {
-  if (!soundOn() || audio === null || audio.state !== "running") return;
-  if (Date.now() - lastPlayed < GAP_MS) return;
-  lastPlayed = Date.now();
-  playChime(audio);
+  if (soundOn()) playChime(audio);
 }

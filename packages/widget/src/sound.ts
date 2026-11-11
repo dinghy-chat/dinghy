@@ -23,15 +23,18 @@ export function prepareSound(root: ShadowRoot): void {
   root.addEventListener("keydown", start, true);
 }
 
-/** The chime for a new reply, at most once every 2 seconds. */
-export function chime(): void {
-  if (audio?.state !== "running" || Date.now() - lastPlayed < GAP_MS) return;
+/**
+ * The chime, at most once every 2 seconds, on the widget's audio or on the context given: the
+ * operator app starts its own, and shares this gap.
+ */
+export function chime(context: AudioContext | null | undefined = audio): void {
+  if (context?.state !== "running" || Date.now() - lastPlayed < GAP_MS) return;
   lastPlayed = Date.now();
-  playChime(audio);
+  playChime(context);
 }
 
 /** Two notes, a fifth apart, that fade out. */
-export function playChime(audio: AudioContext): void {
+function playChime(audio: AudioContext): void {
   const start = audio.currentTime;
   for (const [frequency, at] of [
     [784, 0],
