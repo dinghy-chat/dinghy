@@ -22,8 +22,10 @@ import {
 } from "./panel.tsx";
 import { usePresence } from "./presence.ts";
 import {
+  CONTEXT_VERSION,
   type DinghyEvent,
   type DinghyEvents,
+  type QueuedCall,
   readToken,
   rememberOpen,
   type SavedAppearance,
@@ -802,8 +804,41 @@ function Root({ context }: { context: WidgetContext }) {
   );
 }
 
+/** What every released loader puts on its context, and all that replaceLoader reads. */
+type OlderContext = Pick<
+  WidgetContext,
+  "publicKey" | "base" | "shadow" | "identity" | "pageContext" | "wanted" | "listeners"
+>;
+
+/**
+ * A tab that stayed open through a release still runs the loader it started with, and its context
+ * may not fit this bundle. The current loader takes its place, with the page's identity, page
+ * context, callbacks and pending open, and loads this bundle again. A configure() or hide() call
+ * the page made is lost until the page makes it again.
+ */
+function replaceLoader(old: OlderContext) {
+  // A loader that adds its host once the saved look arrives may still add it, so it goes empty.
+  old.shadow.replaceChildren();
+  old.shadow.host.remove();
+  const calls: QueuedCall[] = [];
+  if (old.identity !== null) calls.push(["identify", old.identity]);
+  if (old.pageContext !== null) calls.push(["setContext", old.pageContext]);
+  for (const [event, callbacks] of Object.entries(old.listeners)) {
+    for (const callback of callbacks ?? []) calls.push(["on", event, callback]);
+  }
+  if (old.wanted !== undefined) calls.push(["open", { message: old.wanted[0] }]);
+  globalThis.Dinghy = { q: calls };
+  const original = [...document.scripts].find((script) => script.dataset.key === old.publicKey);
+  const script = document.createElement("script");
+  Object.assign(script.dataset, original?.dataset, { key: old.publicKey });
+  // An address of its own, so the browser cannot answer with the old loader from its cache.
+  script.src = `${old.base}loader.js?v=${CONTEXT_VERSION}`;
+  document.head.append(script);
+}
+
 const context = globalThis.__dinghy;
-if (context !== undefined) {
+if (context !== undefined && context.version !== CONTEXT_VERSION) replaceLoader(context);
+else if (context !== undefined) {
   const sheet = new CSSStyleSheet();
   sheet.replaceSync(CSS);
   context.shadow.adoptedStyleSheets = [...context.shadow.adoptedStyleSheets, sheet];

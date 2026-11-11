@@ -1,6 +1,6 @@
 import "./globals.ts";
 import { paintColors } from "./launcher.ts";
-import { loadAppearance, type WidgetContext } from "./shared.ts";
+import { CONTEXT_VERSION, loadAppearance, type WidgetContext } from "./shared.ts";
 
 // The full-page chat that a reply email opens, on the Dinghy server's own origin. It sets up what
 // the loader sets up on a host site, and widget.js, loaded after this, renders the same chat. The
@@ -30,6 +30,7 @@ if (script !== null && publicKey !== null && publicKey !== undefined) {
     if (saved) paintColors(host.style, saved);
   });
   const context: WidgetContext = {
+    version: CONTEXT_VERSION,
     publicKey,
     base,
     shadow,

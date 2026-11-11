@@ -2,6 +2,7 @@ import "./globals.ts";
 import { LAUNCHER_CSS, LAUNCHER_ICONS, type LauncherKind, textOn } from "./launcher.ts";
 import {
   type Appearance,
+  CONTEXT_VERSION,
   type DinghyApi,
   type DinghyEvents,
   forgetVisitor,
@@ -27,7 +28,7 @@ const publicKey = script?.dataset.key;
 if (script && publicKey) {
   // By its dataset name: data-offset-x is offsetX.
   const attribute = (name: string) => script.dataset[name];
-  const number = (name: string) => Number(attribute(name) || NaN);
+  const number = (name: string) => +(attribute(name) || NaN);
   const base = new URL(".", script.src).href;
   const host = document.createElement("dinghy-chat");
   // Inline and important, because a rule on the host page beats :host. This uses the CSSOM,
@@ -60,7 +61,7 @@ if (script && publicKey) {
     y = whole(options.offsetY, y);
     z = whole(options.zIndex, z);
     // The chat's panel opens on the same side. --d-x and --d-y keep it inside the window.
-    host.setAttribute("data-side", side);
+    host.dataset.side = side;
     style("inset", side === "left" ? `auto auto ${y}px ${x}px` : `auto ${x}px ${y}px auto`);
     style("z-index", `${z}`);
     style("--d-x", `${x}px`, "");
@@ -87,6 +88,7 @@ if (script && publicKey) {
   const state = { ready: false, open: false, unread: 0 };
   const listeners: Listeners = {};
   const context: WidgetContext = {
+    version: CONTEXT_VERSION,
     publicKey,
     base,
     shadow,
@@ -104,8 +106,8 @@ if (script && publicKey) {
     if (loading) return;
     loading = true;
     const bundle = document.createElement("script");
+    // A script added this way is async already.
     bundle.src = `${base}widget.js`;
-    bundle.async = true;
     // A brief network failure must not disable the launcher until a reload.
     bundle.onerror = () => {
       loading = false;

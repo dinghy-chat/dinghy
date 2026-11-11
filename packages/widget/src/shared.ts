@@ -161,8 +161,17 @@ interface ChatHandlers {
 /** Each event's callbacks. The loader keeps them, and the chat bundle calls them. */
 export type Listeners = { [E in DinghyEvent]?: Set<(data: DinghyEvents[E]) => void> };
 
+/**
+ * The shape of WidgetContext. Bump it in any change to what the loader or page.js hands the chat
+ * bundle: a tab keeps the loader it started with for days, and the chat bundle replaces a loader
+ * with another number instead of reading a context it does not know.
+ */
+export const CONTEXT_VERSION = 1;
+
 /** What the loader hands to the chat bundle. */
 export interface WidgetContext {
+  /** CONTEXT_VERSION, as the loader knew it. Loaders before it set none. */
+  version: number;
   publicKey: string;
   base: string;
   shadow: ShadowRoot;
