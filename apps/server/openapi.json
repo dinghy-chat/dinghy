@@ -1278,6 +1278,9 @@
           "replayOf": {
             "type": ["string", "null"]
           },
+          "replayedAt": {
+            "type": ["string", "null"]
+          },
           "createdAt": {
             "type": "string"
           },
@@ -1295,6 +1298,7 @@
           "lastError",
           "responseExcerpt",
           "replayOf",
+          "replayedAt",
           "createdAt",
           "finishedAt"
         ]

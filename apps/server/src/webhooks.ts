@@ -327,6 +327,9 @@ const Delivery = z
     responseExcerpt: z.string().nullable(),
     // The delivery this one sends again, when it is a replay.
     replayOf: z.string().nullable(),
+    // When someone replayed it, or null. Settings shows this time for a replay.
+    replayedAt: z.string().nullable(),
+    // When the change happened, as the payload says.
     createdAt: z.string(),
     finishedAt: z.string().nullable(),
   })
@@ -496,6 +499,7 @@ const deliveryView = (row: DeliveryRow) => ({
   lastError: row.lastError,
   responseExcerpt: row.responseExcerpt,
   replayOf: row.replayOf,
+  replayedAt: row.replayedAt?.toISOString() ?? null,
   createdAt: row.createdAt.toISOString(),
   finishedAt: row.finishedAt?.toISOString() ?? null,
 });
@@ -680,7 +684,7 @@ export function createWebhooks({
               eq(webhookDelivery.webhookId, webhookId),
             ),
           )
-          .orderBy(desc(webhookDelivery.createdAt))
+          .orderBy(desc(sql`coalesce(${webhookDelivery.replayedAt}, ${webhookDelivery.createdAt})`))
           .limit(DELIVERIES_SHOWN),
       );
       return rows.map(deliveryView);
@@ -714,6 +718,9 @@ export function createWebhooks({
             conversationId,
             messageId,
             replayOf: deliveryId,
+            // The change keeps its own time in the payload. The replay's retries count from now.
+            createdAt: found.createdAt,
+            replayedAt: new Date(),
           })
           .returning();
       });
@@ -990,7 +997,7 @@ async function planWebhook(
   images: Images | undefined,
   row: ClaimedWebhook,
 ): Promise<
-  { url: string; secret: string; eventId: string; body: string; createdAt: Date } | string
+  { url: string; secret: string; eventId: string; body: string; retryFrom: Date } | string
 > {
   return withWorkspace(db, row.workspaceId, async (tx) => {
     const [delivery] = await tx
@@ -1000,6 +1007,7 @@ async function planWebhook(
         conversationId: webhookDelivery.conversationId,
         messageId: webhookDelivery.messageId,
         createdAt: webhookDelivery.createdAt,
+        replayedAt: webhookDelivery.replayedAt,
         url: webhook.url,
         secret: webhook.secret,
         enabled: webhook.enabled,
@@ -1025,7 +1033,7 @@ async function planWebhook(
       url: delivery.url,
       secret: delivery.secret,
       eventId: delivery.eventId,
-      createdAt: delivery.createdAt,
+      retryFrom: delivery.replayedAt ?? delivery.createdAt,
       body: webhookBody(delivery.eventId, delivery.type, delivery.createdAt, row.workspaceId, data),
     };
   });
@@ -1082,7 +1090,7 @@ export async function deliverWebhook(
     return;
   }
   const wait = retryDelayMs(retryMs, row.attempts);
-  const expired = Date.now() + wait - plan.createdAt.getTime() > DAY_MS;
+  const expired = Date.now() + wait - plan.retryFrom.getTime() > DAY_MS;
   if (row.attempts >= WEBHOOK_MAX_ATTEMPTS || expired) {
     await finishWebhook(db, row, "failed", result);
     return;

@@ -309,7 +309,7 @@ function testResultText(result: WebhookTest): { ok: boolean; text: string } {
 /** When a delivery went, its attempts, and the last answer's status or error. */
 function deliveryLine(row: WebhookDelivery): string {
   return [
-    when(row.createdAt),
+    when(row.replayedAt ?? row.createdAt),
     t(row.attempts === 1 ? "deliveryAttemptOne" : "deliveryAttempts", { count: row.attempts }),
     row.lastStatus === null ? null : `HTTP ${row.lastStatus}`,
     row.lastError,
@@ -332,7 +332,10 @@ function DeliveryItem({ row, onReplay }: { row: WebhookDelivery; onReplay(): voi
         <button
           type="button"
           className="pill small delivery-replay"
-          aria-label={t("deliveryReplayLabel", { type: row.type, date: when(row.createdAt) })}
+          aria-label={t("deliveryReplayLabel", {
+            type: row.type,
+            date: when(row.replayedAt ?? row.createdAt),
+          })}
           onClick={onReplay}
         >
           {t("deliveryReplay")}

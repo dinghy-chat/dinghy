@@ -1089,6 +1089,9 @@ export const webhookDelivery = pgTable(
     // The delivery this one sends again. Not a foreign key: the worker prunes old deliveries in any
     // order.
     replayOf: uuid("replay_of"),
+    // When someone replayed it. Its day of retries counts from here, while createdAt stays the
+    // change's own time, which the payload carries.
+    replayedAt: timestamp("replayed_at", { withTimezone: true }),
     // When the change happened.
     createdAt: createdAt(),
   },

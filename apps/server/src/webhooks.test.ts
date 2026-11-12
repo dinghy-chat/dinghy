@@ -546,6 +546,7 @@ describe("replays and refusals", () => {
           status: string;
           responseExcerpt: string | null;
           replayOf: string | null;
+          replayedAt: string | null;
         }[];
       }
     ).deliveries;
@@ -600,6 +601,12 @@ describe("replays and refusals", () => {
       first?.eventId,
     ]);
     expect((await deliveries(hook.id)).map((one) => one.status)).toEqual(["sent", "sent"]);
+    // Both say when the change happened, and the replay lists first, by when it was replayed.
+    const [original, again] = received.slice(-2).map((one) => JSON.parse(one.body).createdAt);
+    expect(again).toBe(original);
+    const listed = await deliveries(hook.id);
+    expect(listed[0]?.replayOf).toBe(first?.id);
+    expect(listed[0]?.replayedAt).not.toBeNull();
     const unknown = await asOperator(
       app,
       boss.cookie,
@@ -608,6 +615,32 @@ describe("replays and refusals", () => {
       {},
     );
     expect(unknown.status).toBe(404);
+  });
+
+  test("a replay of an old event still gets its day of retries", async () => {
+    const hook = await addWebhook(["message.created"]);
+    await visitorStarts(app, space.publicKey, "Old news");
+    await runWorker();
+    const [first] = await deliveriesOf(hook.id);
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await owner
+      .update(webhookDelivery)
+      .set({ createdAt: twoDaysAgo })
+      .where(eq(webhookDelivery.id, first?.id ?? ""));
+    await asOperator(
+      app,
+      boss.cookie,
+      "POST",
+      inSpace(`/webhooks/${hook.id}/deliveries/${first?.id}/replay`),
+      {},
+    );
+    answers.push(500);
+    await runWorker();
+    const replay = (await deliveriesOf(hook.id)).find((one) => one.replayOf === first?.id);
+    expect(replay?.createdAt).toEqual(twoDaysAgo);
+    expect(replay?.attempts).toBe(1);
+    // Refused once, and due again: the day counts from the replay, not from the change.
+    expect(replay?.finishedAt).toBeNull();
   });
 
   test("a Setup key lists and replays deliveries through MCP", async () => {

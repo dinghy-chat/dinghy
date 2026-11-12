@@ -58,6 +58,7 @@ ALTER TABLE "conversation" ADD COLUMN "handoff_by_api_key_id" uuid;--> statement
 ALTER TABLE "visitor" ADD COLUMN "is_test" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "webhook_delivery" ADD COLUMN "response_excerpt" text;--> statement-breakpoint
 ALTER TABLE "webhook_delivery" ADD COLUMN "replay_of" uuid;--> statement-breakpoint
+ALTER TABLE "webhook_delivery" ADD COLUMN "replayed_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "workspace" ADD COLUMN "bots_paused_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "workspace" ADD COLUMN "bots_paused_by" uuid;--> statement-breakpoint
 ALTER TABLE "api_key_credential" ADD CONSTRAINT "api_key_credential_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

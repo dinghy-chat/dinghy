@@ -389,6 +389,7 @@ export interface WebhookDelivery {
   responseExcerpt: string | null;
   /** The delivery this one sends again, when it is a replay. */
   replayOf: string | null;
+  replayedAt: string | null;
   createdAt: string;
   finishedAt: string | null;
 }
