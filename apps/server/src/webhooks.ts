@@ -859,7 +859,7 @@ async function planWebhook(
     const found = await findConversation(tx, row.workspaceId, delivery.conversationId);
     if (found === null) return "The conversation was deleted.";
     const data: Record<string, unknown> = {
-      conversation: conversationView({ ...found, unread: false }, null),
+      conversation: conversationView(found, null),
     };
     if (delivery.messageId !== null) {
       const stored = await findMessage(tx, row.workspaceId, delivery.messageId);

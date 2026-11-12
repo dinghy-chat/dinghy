@@ -45,6 +45,7 @@ import {
   authorNames,
   ConversationClosedError,
   type ConversationRow,
+  type ConversationSummary,
   CURSOR_PATTERN,
   catchClosed,
   countOpenByAssignee,
@@ -704,9 +705,9 @@ async function welcomePictures(
   return url === null ? new Map() : new Map(ours.map((one) => [one.id, url]));
 }
 
-/** A conversation as the operator API shows it. */
+/** A conversation as the operator API and webhooks show it. */
 export function conversationView(
-  row: ConversationRow & { unread: boolean },
+  row: ConversationRow,
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null,
   pictureUrl: string | null = null,
 ) {
@@ -736,9 +737,14 @@ export function conversationView(
       lastMessage === null
         ? null
         : { ...lastMessage, createdAt: lastMessage.createdAt.toISOString() },
-    unread: row.unread,
   };
 }
+
+/** A conversation in a list, with whether the signed-in operator has read it. */
+const listedView = (row: ConversationSummary, pictureUrl: string | null) => ({
+  ...conversationView(row, row.lastMessage, pictureUrl),
+  unread: row.unread,
+});
 
 /** The session ended or the operator left the workspace during an upload. Its transaction rolls back. */
 class AccessEndedError extends Error {}
@@ -769,6 +775,9 @@ const replyAuthor = (actor: Actor, conversationId: string): Author =>
     : { kind: "key", apiKeyId: actor.apiKeyId, conversationId };
 
 const actorId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : actor.apiKeyId);
+
+/** The operator whose read positions apply, or null for an API key, which has none. */
+const readerId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : null);
 
 type Appended = Awaited<ReturnType<typeof appendMessage>>;
 
@@ -911,7 +920,7 @@ export function createInbox({
       });
       return {
         conversations: page.conversations.map((row) =>
-          conversationView(row, row.lastMessage, page.pictures.get(row.id) ?? null),
+          listedView(row, page.pictures.get(row.id) ?? null),
         ),
         hasMore: page.hasMore,
         waiting: page.waiting,
@@ -931,10 +940,9 @@ export function createInbox({
       limit: number,
     ) {
       const result = await withWorkspace(db, workspaceId, async (tx) => {
-        const conversationRow = await findConversation(tx, workspaceId, conversationId);
-        if (conversationRow === null) return null;
+        const found = await findConversation(tx, workspaceId, conversationId);
+        if (found === null) return null;
         const unread = await isUnread(tx, workspaceId, conversationId, operatorId);
-        const found = { ...conversationRow, unread };
         const page = await listConversationMessages(tx, workspaceId, conversationId, after, limit);
         const names = await authorNames(tx, workspaceId, page.messages);
         const pages = await visitorPages(tx, workspaceId, found.visitorId);
@@ -942,15 +950,18 @@ export function createInbox({
           ? await welcomeChat(tx, conversationId, founderPicture)
           : null;
         const receipts = await replyReceipts(tx, workspaceId, conversationId, found.visitorId);
-        return { found, page, names, pages, welcome, receipts };
+        return { found, unread, page, names, pages, welcome, receipts };
       });
       if (result === null) return null;
       return {
-        conversation: conversationView(
-          result.found,
-          null,
-          result.welcome?.with === "founder" ? result.welcome.pictureUrl : null,
-        ),
+        conversation: {
+          ...conversationView(
+            result.found,
+            null,
+            result.welcome?.with === "founder" ? result.welcome.pictureUrl : null,
+          ),
+          unread: result.unread,
+        },
         messages: result.page.messages.map((message) =>
           messageView(images, workspaceId, result.names, message),
         ),
@@ -982,9 +993,7 @@ export function createInbox({
         };
       });
       return {
-        conversations: rows.map((row) =>
-          conversationView(row, row.lastMessage, pictures.get(row.id) ?? null),
-        ),
+        conversations: rows.map((row) => listedView(row, pictures.get(row.id) ?? null)),
       };
     },
 
@@ -1085,10 +1094,9 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       beforeUpdatedAt === undefined || beforeId === undefined
         ? undefined
         : { updatedAt: new Date(beforeUpdatedAt), id: beforeId };
-    const operatorId = actor.kind === "operator" ? actor.operatorId : null;
     const page = await inbox.list(
       c.get("memberWorkspaceId"),
-      operatorId,
+      readerId(actor),
       status,
       filter,
       before,
@@ -1100,10 +1108,9 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   app.openapi(conversationRoute, async (c) => {
     const { conversationId } = c.req.valid("param");
     const { after, limit } = c.req.valid("query");
-    const actor = c.get("actor");
     const result = await inbox.read(
       c.get("memberWorkspaceId"),
-      actor.kind === "operator" ? actor.operatorId : null,
+      readerId(c.get("actor")),
       conversationId,
       BigInt(after),
       limit,
@@ -1114,9 +1121,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
 
   app.openapi(searchRoute, async (c) => {
     const { q } = c.req.valid("query");
-    const actor = c.get("actor");
-    const operatorId = actor.kind === "operator" ? actor.operatorId : null;
-    return c.json(await inbox.search(c.get("memberWorkspaceId"), operatorId, q), 200);
+    return c.json(await inbox.search(c.get("memberWorkspaceId"), readerId(c.get("actor")), q), 200);
   });
 
   app.openapi(replyRoute, async (c) => {

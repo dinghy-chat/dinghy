@@ -1123,7 +1123,6 @@ export const conversationRead = pgTable(
     conversationId: uuid("conversation_id").notNull(),
     operatorId: uuid("operator_id").notNull(),
     readSeq: bigint("read_seq", { mode: "bigint" }).notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.conversationId, table.operatorId] }),

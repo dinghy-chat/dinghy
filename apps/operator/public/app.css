@@ -2645,7 +2645,7 @@ img.ws-tile {
     transform: translateY(-3px);
   }
 }
-.preview .draft {
+.preview .draft-label {
   color: var(--bad);
   font-weight: 600;
 }
@@ -3022,8 +3022,11 @@ button.quote:hover {
   font: 700 22px / 1.2 var(--display);
   letter-spacing: -0.02em;
 }
-/* The image at full size, scaled down to fit the screen whole. */
+/* The image at full size, scaled down to fit the screen whole. The dialog drops a browser's own
+   size limits, which are smaller than the image's on a phone. */
 .viewer {
+  max-width: none;
+  max-height: none;
   padding: 0;
   overflow: hidden;
   border: 0;

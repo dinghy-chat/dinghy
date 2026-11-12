@@ -245,7 +245,6 @@ export function Inbox({
             )}
             <div className="split">
               <InboxList
-                drafts={drafts}
                 api={api}
                 status={status}
                 who={who}
@@ -258,6 +257,8 @@ export function Inbox({
                 members={members}
                 selected={selected}
                 typing={data.typing}
+                drafts={drafts}
+                reads={data.reads}
                 replying={data.replying}
                 onFilter={showFilter}
                 onSelect={setSelected}
@@ -272,8 +273,8 @@ export function Inbox({
                   key={selected}
                   api={api}
                   meId={me.id}
-                  savedDraft={drafts[selected] ?? ""}
-                  onDraft={(text) => setDraft(selected, text)}
+                  draft={drafts[selected] ?? ""}
+                  setDraft={(text) => setDraft(selected, text)}
                   members={members}
                   replying={data.replying(selected)}
                   mayDeleteAnyone={role !== "member" && !readOnly && !suspended}

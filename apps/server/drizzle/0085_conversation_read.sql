@@ -3,7 +3,6 @@ CREATE TABLE "conversation_read" (
 	"conversation_id" uuid NOT NULL,
 	"operator_id" uuid NOT NULL,
 	"read_seq" bigint NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "conversation_read_workspace_id_conversation_id_operator_id_pk" PRIMARY KEY("workspace_id","conversation_id","operator_id")
 );
 --> statement-breakpoint

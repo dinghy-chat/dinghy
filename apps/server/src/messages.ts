@@ -34,6 +34,7 @@ import {
   visitor,
   webhook,
   workspace,
+  workspaceMember,
 } from "./db/schema.ts";
 import {
   type Transaction,
@@ -783,7 +784,7 @@ export async function conversationVisitor(
   return row;
 }
 
-interface ConversationSummary extends ConversationRow {
+export interface ConversationSummary extends ConversationRow {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null;
   unread: boolean;
 }
@@ -843,9 +844,33 @@ export async function markConversationRead(
     from ${conversation} as c
     where c.workspace_id = ${workspaceId} and c.id = ${conversationId}
     on conflict (workspace_id, conversation_id, operator_id) do update
-      set read_seq = greatest(${conversationRead}.read_seq, excluded.read_seq), updated_at = now()
+      set read_seq = greatest(${conversationRead}.read_seq, excluded.read_seq)
     returning 1`);
   return result.rows.length > 0;
+}
+
+/**
+ * Marks every conversation read up to its newest message, for one member or for every current one,
+ * so a teammate who joins or a workspace that arrives by import does not start with all its
+ * history unread. A position never moves back.
+ */
+export async function markHistoryRead(
+  tx: Transaction,
+  workspaceId: string,
+  operatorId?: string,
+): Promise<void> {
+  await tx.execute(sql`
+    insert into ${conversationRead} (workspace_id, conversation_id, operator_id, read_seq)
+    select ${workspaceId}, newest.conversation_id, member.operator_id, newest.seq
+    from (
+      select m.conversation_id, max(m.seq) as seq from ${message} as m
+      where m.workspace_id = ${workspaceId} group by m.conversation_id
+    ) as newest
+    join ${workspaceMember} as member
+      on member.workspace_id = ${workspaceId} and member.removed_at is null
+      ${operatorId === undefined ? sql`` : sql`and member.operator_id = ${operatorId}`}
+    on conflict (workspace_id, conversation_id, operator_id) do update
+      set read_seq = greatest(${conversationRead}.read_seq, excluded.read_seq)`);
 }
 
 /** Whose conversations a list holds: everyone's, one operator's, or no one's. */

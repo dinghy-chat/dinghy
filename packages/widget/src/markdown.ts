@@ -10,7 +10,8 @@ type Inline =
   | { tag: "a"; href: string; children: Inline[] };
 
 export type Block =
-  | { tag: "p" | "blockquote"; children: Inline[] }
+  | { tag: "p"; children: Inline[] }
+  | { tag: "blockquote"; children: Inline[] }
   | { tag: "pre"; text: string }
   | { tag: "ul" | "ol"; items: Inline[][]; start: number };
 

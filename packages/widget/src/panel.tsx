@@ -100,7 +100,7 @@ textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inh
 .shot{flex:none;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
 .shot.mine{align-self:flex-end}
 .shot img{display:block;max-width:100%;height:auto}
-dialog{padding:0;border:0;background:transparent;overflow:hidden}
+dialog{max-width:none;max-height:none;padding:0;border:0;background:transparent;overflow:hidden}
 dialog::backdrop{background:rgb(11 34 57/.85)}
 dialog img{display:block;max-width:95vw;max-height:95vh}
 .panel.page{inset:0;margin:auto;width:100%;max-width:720px;height:auto;max-height:none;border-radius:0}

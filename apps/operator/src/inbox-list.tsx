@@ -29,7 +29,7 @@ function ConversationRow({
   replying: string | null;
   /** The visitor is typing now. */
   typing: boolean;
-  /** The operator's unsent reply, shown while another conversation is open. */
+  /** The operator's unsent reply here. */
   draft: string | undefined;
   /** Search results mix open and closed conversations, so a closed one says so. */
   showClosed: boolean;
@@ -41,6 +41,8 @@ function ConversationRow({
     body != null ? markdownText(body) : conversation.lastMessage === null ? "" : t("image");
   const waits = isWaiting(conversation);
   const closed = showClosed && conversation.status === "closed";
+  // The open conversation shows its draft in the composer, and is read. A blank draft is no draft.
+  const shownDraft = selected || draft?.trim() === "" ? undefined : draft;
   const unread = conversation.unread && !selected;
   return (
     <li>
@@ -68,9 +70,9 @@ function ConversationRow({
           </span>
           {typing ? (
             <span className="preview typing">{t("visitorTyping")}</span>
-          ) : draft !== undefined ? (
+          ) : shownDraft !== undefined ? (
             <span className="preview">
-              <b className="draft">{t("draft")}</b> {markdownText(draft)}
+              <b className="draft-label">{t("draft")}</b> {markdownText(shownDraft)}
             </span>
           ) : (
             <span className="preview">{preview}</span>
@@ -97,12 +99,15 @@ function ConversationRow({
 function useSearch(
   api: WorkspaceApi,
   query: string,
+  /** Grows when the results may have changed, such as after a read. */
+  version: number,
 ): { found: Conversation[] | null; searching: boolean; failed: boolean } {
   const [found, setFound] = useState<Conversation[] | null>(null);
   const [answered, setAnswered] = useState("");
   // The words whose search failed, so the list says why it did not change.
   const [failedFor, setFailedFor] = useState<string | null>(null);
   const wanted = query.trim();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a new search.
   useEffect(() => {
     if (wanted.length < SEARCH_MIN) {
       setFound(null);
@@ -128,7 +133,7 @@ function useSearch(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [api, wanted]);
+  }, [api, wanted, version]);
   if (wanted.length < SEARCH_MIN) return { found: null, searching: false, failed: false };
   return { found, searching: answered !== wanted, failed: failedFor === wanted };
 }
@@ -196,6 +201,7 @@ export function InboxList({
   selected,
   typing,
   drafts,
+  reads,
   replying,
   onFilter,
   onSelect,
@@ -217,13 +223,15 @@ export function InboxList({
   typing: Record<string, string>;
   /** The operator's unsent replies, by conversation. */
   drafts: Record<string, string>;
+  /** Grows with each conversation the operator reads. */
+  reads: number;
   replying(conversationId: string): string | null;
   onFilter(status: Status, who: Who): void;
   onSelect(conversationId: string): void;
   onMore(): void;
 }) {
   const [query, setQuery] = useState("");
-  const { found, searching, failed: searchFailed } = useSearch(api, query);
+  const { found, searching, failed: searchFailed } = useSearch(api, query, reads);
   const searchTooShort = query.trim().length > 0 && query.trim().length < SEARCH_MIN;
   const empty = emptyLook(status, who);
   return (
@@ -268,7 +276,7 @@ export function InboxList({
             members={members}
             replying={replying(conversation.id)}
             typing={conversation.id in typing}
-            draft={conversation.id === selected ? undefined : drafts[conversation.id]}
+            draft={drafts[conversation.id]}
             showClosed={found !== null}
             onSelect={() => onSelect(conversation.id)}
           />

@@ -19,6 +19,7 @@ import {
   apiKey,
   attachment,
   conversation,
+  conversationRead,
   emailStop,
   event,
   message,
@@ -358,6 +359,26 @@ describe("a round trip onto a fresh install", () => {
     expect(result.newOperators).toHaveLength(3);
     keptInstalls = installs.length;
   }, 30_000);
+
+  test("starts every current member with the history read", async () => {
+    const reads = await target.owner
+      .select()
+      .from(conversationRead)
+      .where(eq(conversationRead.conversationId, source.conversationId));
+    const [newest] = await target.owner
+      .select({ seq: sql<string>`max(${message.seq})` })
+      .from(message)
+      .where(eq(message.conversationId, source.conversationId));
+    const members = await target.owner
+      .select()
+      .from(workspaceMember)
+      .where(eq(workspaceMember.workspaceId, source.space.id));
+    const current = members.filter((member) => member.removedAt === null);
+    expect(reads.map((read) => read.operatorId).sort()).toEqual(
+      current.map((member) => member.operatorId).sort(),
+    );
+    expect(reads.every((read) => read.readSeq === BigInt(newest?.seq ?? 0))).toBe(true);
+  });
 
   test("keeps the conversation, its status, its authors and its assignee", async () => {
     const [row] = await target.owner

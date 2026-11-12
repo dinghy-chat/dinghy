@@ -18,17 +18,6 @@ import { ErrorNote, failureText, Loading } from "./ui.tsx";
 import { replyAuthor, title } from "./visitor.ts";
 import { usePanel, VisitorPanel } from "./visitor-panel.tsx";
 
-/** The unsent reply. The inbox keeps a copy, for its list and for when the operator comes back. */
-function useDraft(saved: string, onDraft: (text: string) => void) {
-  // Here and not in the composer, which unmounts while the conversation is closed.
-  const [draft, setDraftState] = useState(saved);
-  const setDraft = (next: string) => {
-    setDraftState(next);
-    onDraft(next);
-  };
-  return [draft, setDraft] as const;
-}
-
 /**
  * Marks the conversation read up to its newest saved line while the operator can see it, and
  * again for each newer line. A failure is silent: the next line or visit tries again.
@@ -87,8 +76,8 @@ export function Thread({
   emailAvailable,
   readOnly,
   suspended,
-  savedDraft,
-  onDraft,
+  draft,
+  setDraft,
   receiptsVersion,
   rewriteVersion,
   typingDraft,
@@ -102,9 +91,9 @@ export function Thread({
 }: {
   api: WorkspaceApi;
   meId: string;
-  /** The reply the operator left unsent here, or "". */
-  savedDraft: string;
-  onDraft(text: string): void;
+  /** The operator's unsent reply here, or "". The inbox keeps it, so it outlives this thread. */
+  draft: string;
+  setDraft(text: string): void;
   members: Member[];
   replying: string | null;
   /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
@@ -184,7 +173,6 @@ export function Thread({
       ? "readOnlyHelp"
       : null;
   const imagesOn = !readOnly && !suspended;
-  const [draft, setDraft] = useDraft(savedDraft, onDraft);
   const [dropping, setDropping] = useState(false);
 
   if (conversation === null) {
