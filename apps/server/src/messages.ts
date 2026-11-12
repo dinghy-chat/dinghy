@@ -1370,7 +1370,8 @@ export async function searchConversations(
     )
     .orderBy(desc(conversation.updatedAt), desc(conversation.id))
     .limit(limit);
-  // The newest matching message of each conversation.
+  // The newest matching message of each conversation. A note matches the search, but the preview
+  // shows chat only.
   const hit = tx
     .select({ body: message.body })
     .from(message)
@@ -1378,6 +1379,7 @@ export async function searchConversations(
       and(
         eq(message.workspaceId, workspaceId),
         eq(message.conversationId, conversation.id),
+        isChat(),
         ilike(message.body, pattern),
       ),
     )

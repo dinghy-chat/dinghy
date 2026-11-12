@@ -60,8 +60,8 @@ export function Composer({
   onEscape?: (() => void) | undefined;
   /** Above the text, such as the quote a reply carries. */
   above?: ReactNode;
-  /** Reply or Note, for a new message. An edit has no choice. */
-  mode?: { value: ComposeMode; onChange(mode: ComposeMode): void } | undefined;
+  /** Reply or Note, for a new message. With no onChange it is fixed, as in a closed conversation. */
+  mode?: { value: ComposeMode; onChange?(mode: ComposeMode): void } | undefined;
   /** It edits a sent reply, in place of its bubble. */
   editing?: boolean;
 }) {
@@ -105,7 +105,7 @@ export function Composer({
         .join(" ")}
       onSubmit={submit}
     >
-      {mode !== undefined && (
+      {mode?.onChange !== undefined && (
         <Choices
           label={t("composeMode")}
           variant="tabs"

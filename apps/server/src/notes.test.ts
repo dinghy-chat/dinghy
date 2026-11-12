@@ -378,6 +378,21 @@ describe("what a note never reaches", () => {
     });
   });
 
+  test("search finds a conversation by its note, and shows its chat as the preview", async () => {
+    const { fresh, lead } = await ownSpace("Search");
+    const { conversationId } = await visitorStarts("Where is my order?", fresh);
+    await addNote(lead.cookie, conversationId, "Refund pending with finance", fresh);
+    const found = await send(lead.cookie, "GET", inSpace("/conversations/search?q=refund", fresh));
+    const { conversations } = (await found.json()) as {
+      conversations: { id: string; lastMessage: { body: string; fromVisitor: boolean } }[];
+    };
+    expect(conversations.map(({ id }) => id)).toEqual([conversationId]);
+    expect(conversations[0]?.lastMessage).toMatchObject({
+      body: "Where is my order?",
+      fromVisitor: true,
+    });
+  });
+
   test("a note does not move the conversation up the inbox", async () => {
     const { conversationId } = await visitorStarts("Hello");
     const updatedAt = async () =>

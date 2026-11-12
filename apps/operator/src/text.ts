@@ -144,7 +144,7 @@ const en = {
   send: "Send",
   sending: "Sending...",
   failed: "Not sent. Select to try again.",
-  closedHelp: "This conversation is closed. Reopen it to reply.",
+  closedHelp: "This conversation is closed. Reopen it to reply, or add a note.",
   reconnecting: "Connection lost. Trying again...",
   attach: "Attach an image",
   emoji: "Add an emoji",
