@@ -337,7 +337,8 @@ export function Select<V extends string>({
 
 export interface MenuItem {
   label: string;
-  onSelect(): void;
+  /** What choosing it does. An item with a submenu opens it instead. */
+  onSelect?(): void;
   /** A picture before the label: an icon's name, or any node such as initials. */
   lead?: ReactNode;
   /** For a choice among items, such as the current workspace: a check, read as checked. */
@@ -351,6 +352,8 @@ export interface MenuItem {
   trail?: ReactNode;
   /** Why it cannot be chosen now, shown under its label. */
   unavailable?: string;
+  /** Choices that take the menu's place when this item is chosen, under a row that goes back. */
+  submenu?: MenuItem[];
 }
 
 /** A button that opens a menu of actions. */
@@ -373,17 +376,48 @@ export function Menu({
   placement?: Placement;
   className?: string;
 }) {
+  // The item whose submenu shows in place of the items, with a row that goes back first.
+  const [opened, setOpened] = useState<number | null>(null);
+  const submenu = opened === null ? undefined : items[opened];
+  const shown = submenu?.submenu ?? items;
+  const offset = submenu === undefined ? 0 : 1;
   const popup = usePopup(
-    items.map((item) => item.label),
+    [...(offset === 1 ? [t("back")] : []), ...shown.map((item) => item.label)],
     () => 0,
   );
   const floating = placement === "floating";
   useFloating(floating && popup.open, popup.button, popup.popup, side, popup.close);
+  useEffect(() => {
+    if (!popup.open) setOpened(null);
+  }, [popup.open]);
+  const back = () => {
+    popup.setActive(opened ?? 0);
+    setOpened(null);
+  };
   const choose = (index: number) => {
-    const item = items[index];
-    if (item?.unavailable !== undefined) return;
+    if (offset === 1 && index === 0) return back();
+    const item = shown[index - offset];
+    if (item === undefined || item.unavailable !== undefined) return;
+    if (item.submenu !== undefined) {
+      setOpened(index);
+      popup.setActive(1);
+      return;
+    }
     popup.hide(true);
-    item?.onSelect();
+    item.onSelect?.();
+  };
+  const onKey = (event: KeyboardEvent) => {
+    const item = shown[popup.active - offset];
+    if (event.key === "ArrowRight" && item?.submenu !== undefined) {
+      event.preventDefault();
+      choose(popup.active);
+    } else if (offset === 1 && (event.key === "ArrowLeft" || event.key === "Escape")) {
+      event.preventDefault();
+      event.stopPropagation();
+      back();
+    } else {
+      popup.onPopupKey(event, choose);
+    }
   };
   return (
     <div className={`popup-wrap ${className}`} ref={popup.wrap}>
@@ -407,53 +441,73 @@ export function Menu({
           tabIndex={-1}
           aria-label={label}
           aria-activedescendant={popup.itemId(popup.active)}
-          onKeyDown={(event) => popup.onPopupKey(event, choose)}
+          onKeyDown={onKey}
         >
-          {items.map((item, index) => (
+          {submenu !== undefined && (
             // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
-            // biome-ignore lint/a11y/noStaticElementInteractions: the role is a menu item's.
-            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on the radio and checkbox items only.
             <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: two workspaces can share a name.
-              key={index}
-              id={popup.itemId(index)}
-              data-index={index}
-              role={
-                item.switched !== undefined
-                  ? "menuitemcheckbox"
-                  : item.checked === undefined
-                    ? "menuitem"
-                    : "menuitemradio"
-              }
+              id={popup.itemId(0)}
+              data-index={0}
+              role="menuitem"
               tabIndex={-1}
-              aria-checked={item.checked ?? item.switched}
-              aria-disabled={item.unavailable === undefined ? undefined : true}
-              className={[
-                "item",
-                index === popup.active && "active",
-                item.danger === true && "danger",
-                item.divider === true && "divided",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onPointerMove={() => popup.setActive(index)}
-              onClick={() => choose(index)}
+              aria-label={t("back")}
+              className={popup.active === 0 ? "item submenu-back active" : "item submenu-back"}
+              onPointerMove={() => popup.setActive(0)}
+              onClick={back}
             >
-              {item.lead}
-              <span className="item-label">
-                {item.label}
-                {item.unavailable !== undefined && <small>{item.unavailable}</small>}
-              </span>
-              {item.trail}
-              {item.switched !== undefined && (
-                <i
-                  className={item.switched ? "mini-switch on" : "mini-switch"}
-                  aria-hidden="true"
-                />
-              )}
-              {item.checked === true && <Icon name="check" size={16} />}
+              <Icon name="back" size={16} />
+              <span className="item-label">{submenu.label}</span>
             </div>
-          ))}
+          )}
+          {shown.map((item, at) => {
+            const index = at + offset;
+            return (
+              // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
+              // biome-ignore lint/a11y/noStaticElementInteractions: the role is a menu item's.
+              // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on the radio and checkbox items only.
+              <div
+                key={`${opened}-${index}`}
+                id={popup.itemId(index)}
+                data-index={index}
+                role={
+                  item.switched !== undefined
+                    ? "menuitemcheckbox"
+                    : item.checked === undefined
+                      ? "menuitem"
+                      : "menuitemradio"
+                }
+                tabIndex={-1}
+                aria-checked={item.checked ?? item.switched}
+                aria-disabled={item.unavailable === undefined ? undefined : true}
+                aria-haspopup={item.submenu === undefined ? undefined : "menu"}
+                className={[
+                  "item",
+                  index === popup.active && "active",
+                  item.danger === true && "danger",
+                  item.divider === true && "divided",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onPointerMove={() => popup.setActive(index)}
+                onClick={() => choose(index)}
+              >
+                {item.lead}
+                <span className="item-label">
+                  {item.label}
+                  {item.unavailable !== undefined && <small>{item.unavailable}</small>}
+                </span>
+                {item.trail}
+                {item.switched !== undefined && (
+                  <i
+                    className={item.switched ? "mini-switch on" : "mini-switch"}
+                    aria-hidden="true"
+                  />
+                )}
+                {item.checked === true && <Icon name="check" size={16} />}
+                {item.submenu !== undefined && <Icon name="chevronRight" size={14} />}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -94,6 +94,18 @@ export function replyAuthor(
 /** An address with no scheme, as in "acme.example/pricing". */
 export const bare = (page: string) => page.replace(/^https?:\/\//, "");
 
+/** An ID at the end of a path: one word of letters, digits, _ or -, with a digit in it. */
+const ID_SEGMENT = /^(?=.*\d)[\w-]{6,}$/;
+
+/**
+ * What a link in the details shows: the ID it ends with, as in "org_8f2k1" for an admin page of
+ * the customer's own app, or else the address with no scheme.
+ */
+export function linkText(link: string): string {
+  const last = new URL(link).pathname.split("/").filter(Boolean).at(-1);
+  return last !== undefined && ID_SEGMENT.test(last) ? decodeURIComponent(last) : bare(link);
+}
+
 /**
  * A page of the customer's own site, which the operator already knows: its path, as in
  * "/docs/pricing", or the address with no scheme when it is not a web address.

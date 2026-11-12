@@ -3,6 +3,7 @@ import type { Conversation } from "./api.ts";
 import {
   detailRows,
   isWaiting,
+  linkText,
   pageName,
   pagePath,
   presenceLine,
@@ -156,6 +157,17 @@ describe("details and authors", () => {
       ["site", "https://a.example/x", "https://a.example/x"],
     ]);
     expect(detailRows(null)).toEqual([]);
+  });
+
+  test("a link that ends with an ID shows the ID, and any other link its address", () => {
+    expect(linkText("https://shipmail.to/admin/organizations/C1Eb8pl0ox0Fjf/")).toBe(
+      "C1Eb8pl0ox0Fjf",
+    );
+    expect(linkText("https://a.example/users/42?tab=billing")).toBe(
+      "a.example/users/42?tab=billing",
+    );
+    expect(linkText("https://a.example/docs/pricing")).toBe("a.example/docs/pricing");
+    expect(linkText("https://a.example/")).toBe("a.example/");
   });
 
   test("a reply from an API key shows its name, never You", () => {
