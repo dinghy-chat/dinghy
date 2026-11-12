@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-12
+
 ### Added
 
 - An MCP client such as Claude Code connects with OAuth in the browser: `claude mcp add --transport http dinghy https://chat.example.com/v1/mcp`, then an owner or admin approves it on one page and picks the workspace, the access (**Chats** or **Full access**) and the reply mode. The agent never sees a secret. A connected app shows in **Settings > API & webhooks** beside the keys, and can be disconnected there. OAuth is on when `PUBLIC_URL` is `https` or `localhost`. API: OAuth discovery at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/v1/oauth/token`, `/v1/oauth/register` and `/v1/oauth/revoke`, with Client ID Metadata Documents and Dynamic Client Registration.
@@ -451,7 +453,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/dinghy-chat/dinghy/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/dinghy-chat/dinghy/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/dinghy-chat/dinghy/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/dinghy-chat/dinghy/compare/v0.20.0...v0.21.0
