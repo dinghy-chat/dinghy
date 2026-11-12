@@ -134,6 +134,7 @@ describe("an empty workspace", () => {
       closed: 0,
       answered: 0,
       firstReply: { medianSeconds: null, p90Seconds: null, within5Minutes: null },
+      previous: { started: 0, firstReply: { medianSeconds: null, within5Minutes: null } },
       operators: [],
     });
     expect(body.perDay).toHaveLength(7);
@@ -177,7 +178,17 @@ describe("a workspace with conversations", () => {
       reply: { by: lea.id, afterMs: 30_000 },
       status: "closed",
     });
-    // In no period.
+    // In the 7-day period just before the last 7 days.
+    await seed(space.id, {
+      startedAt: new Date(now - 10 * DAY),
+      reply: { by: sam.id, afterMs: 4 * MINUTE },
+    });
+    // In no period, nor in the 90 days before the 90-day one.
+    await seed(space.id, {
+      startedAt: new Date(now - 200 * DAY),
+      reply: { by: sam.id, afterMs: 30 * MINUTE },
+    });
+    // In the 90 days before the 90-day period only.
     await seed(space.id, {
       startedAt: new Date(now - 100 * DAY),
       reply: { by: sam.id, afterMs: 1000 },
@@ -188,9 +199,27 @@ describe("a workspace with conversations", () => {
     const week = (await analytics(space.id, sam.cookie, "days=7&tz=UTC")).body;
     expect([week.started, week.closed, week.answered]).toEqual([4, 2, 3]);
     const month = (await analytics(space.id, sam.cookie, "days=30&tz=UTC")).body;
-    expect([month.started, month.closed, month.answered]).toEqual([5, 3, 4]);
+    expect([month.started, month.closed, month.answered]).toEqual([6, 3, 5]);
     const quarter = (await analytics(space.id, sam.cookie, "days=90&tz=UTC")).body;
-    expect(quarter.started).toBe(5);
+    expect(quarter.started).toBe(6);
+  });
+
+  test("gives the same numbers for the period just before, to compare with", async () => {
+    const week = (await analytics(space.id, sam.cookie, "days=7&tz=UTC")).body;
+    expect(week.previous).toEqual({
+      started: 1,
+      firstReply: { medianSeconds: 240, within5Minutes: 1 },
+    });
+    const month = (await analytics(space.id, sam.cookie, "days=30&tz=UTC")).body;
+    expect(month.previous).toEqual({
+      started: 0,
+      firstReply: { medianSeconds: null, within5Minutes: null },
+    });
+    const quarter = (await analytics(space.id, sam.cookie, "days=90&tz=UTC")).body;
+    expect(quarter.previous).toEqual({
+      started: 1,
+      firstReply: { medianSeconds: 1, within5Minutes: 1 },
+    });
   });
 
   test("gives the median and 90th percentile of the first reply, and the share within 5 minutes", async () => {
@@ -213,7 +242,7 @@ describe("a workspace with conversations", () => {
   test("puts each conversation on its day in the period", async () => {
     const { perDay } = (await analytics(space.id, sam.cookie, "days=30&tz=UTC")).body;
     expect(perDay).toHaveLength(30);
-    expect(perDay.reduce((sum, day) => sum + day.conversations, 0)).toBe(5);
+    expect(perDay.reduce((sum, day) => sum + day.conversations, 0)).toBe(6);
     const counts = new Map(perDay.map((day) => [day.date, day.conversations]));
     expect(counts.get(localDate(new Date(now - 20 * DAY), "UTC"))).toBe(1);
     expect(counts.get(localDate(new Date(now - 4 * DAY), "UTC"))).toBe(1);

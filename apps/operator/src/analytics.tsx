@@ -1,14 +1,13 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
-import { Select } from "./popup.tsx";
 import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { DocLink, failureText, Loading, Page, PageRow } from "./ui.tsx";
+import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
 
 type Period = `${AnalyticsDays}`;
 
-const PERIODS: { value: Period; label: TextId }[] = [
+const PERIODS: readonly Option<Period>[] = [
   { value: "7", label: "period7" },
   { value: "30", label: "period30" },
   { value: "90", label: "period90" },
@@ -34,6 +33,9 @@ function duration(seconds: number): string {
 const percent = (share: number) =>
   new Intl.NumberFormat([], { style: "percent", maximumFractionDigits: 0 }).format(share);
 
+/** A part of a total, from 0 to 1; 0 when the total is 0. */
+const shareOf = (count: number, total: number) => (total === 0 ? 0 : count / total);
+
 /** A date of the period, "2026-11-08", as "Nov 8". */
 function dayName(
   date: string,
@@ -56,27 +58,32 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hourName(hour));
 
 const conversations = (count: number) => (count === 1 ? t("chartOne") : t("chartMany", { count }));
 
-interface Tip {
-  value: string;
-  label: string;
-  x: number;
-  y: number;
+/** A number with its label, or the words behind an "i" button. */
+type TipContent = { value: string; label: string } | { text: string };
+
+type Tip = TipContent & { x: number; y: number };
+
+/** The card for the part of `area` at `target`, placed above it, or null off every part. */
+function tipAt(area: HTMLElement | null, target: EventTarget | null): Tip | null {
+  const part =
+    target instanceof Element ? target.closest<HTMLElement>("[data-value], [data-tip]") : null;
+  if (part === null || area === null) return null;
+  const outer = area.getBoundingClientRect();
+  const inner = part.getBoundingClientRect();
+  const { tip, value, label } = part.dataset;
+  return {
+    ...(tip === undefined ? { value: value ?? "", label: label ?? "" } : { text: tip }),
+    x: inner.left + inner.width / 2 - outer.left,
+    y: inner.top - outer.top,
+  };
 }
 
 /**
- * A chart whose parts carry data-value and data-label. The pointer over a part shows both in a
- * card above it, kept inside the chart. The words for screen readers are in each figure's caption.
+ * An area whose parts carry data-value and data-label, or data-tip. The pointer over a part, or
+ * the focus on it, shows them in a card above it, kept inside the area. Escape hides the card.
+ * The words for screen readers are in each figure's caption, or in each button's label.
  */
-function Tipped({
-  className,
-  hidden = false,
-  children,
-}: {
-  className: string;
-  /** The chart's caption already says it in words. */
-  hidden?: boolean;
-  children: ReactNode;
-}) {
+function Tipped({ className, children }: { className: string; children: ReactNode }) {
   const [tip, setTip] = useState<Tip | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -87,178 +94,410 @@ function Tipped({
     const half = element.offsetWidth / 2;
     element.style.left = `${Math.min(Math.max(tip.x, half), width - half)}px`;
   }, [tip]);
+  // Focus and Escape, for the keys. Listened to here, as the area itself takes no focus.
+  useEffect(() => {
+    const area = box.current;
+    if (area === null) return;
+    const focus = (event: FocusEvent) => setTip(tipAt(area, event.target));
+    const hide = () => setTip(null);
+    const hideOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hide();
+    };
+    area.addEventListener("focusin", focus);
+    area.addEventListener("focusout", hide);
+    document.addEventListener("keydown", hideOnEscape);
+    return () => {
+      area.removeEventListener("focusin", focus);
+      area.removeEventListener("focusout", hide);
+      document.removeEventListener("keydown", hideOnEscape);
+    };
+  }, []);
   return (
     <div
       ref={box}
       className={`tipped ${className}`}
-      aria-hidden={hidden || undefined}
-      onPointerOver={(event) => {
-        const part = (event.target as Element).closest<HTMLElement>("[data-value]");
-        const area = box.current;
-        if (part === null || area === null) {
-          setTip(null);
-          return;
-        }
-        const outer = area.getBoundingClientRect();
-        const inner = part.getBoundingClientRect();
-        setTip({
-          value: part.dataset.value ?? "",
-          label: part.dataset.label ?? "",
-          x: inner.left + inner.width / 2 - outer.left,
-          y: inner.top - outer.top,
-        });
-      }}
+      onPointerOver={(event) => setTip(tipAt(box.current, event.target))}
       onPointerLeave={() => setTip(null)}
     >
       {children}
       {tip !== null && (
-        <div ref={card} className="chart-tip" style={{ top: tip.y }} aria-hidden="true">
-          <b>{tip.value}</b>
-          <span>{tip.label}</span>
+        <div
+          ref={card}
+          className={"text" in tip ? "chart-tip words" : "chart-tip"}
+          style={{ top: tip.y }}
+          aria-hidden="true"
+        >
+          {"text" in tip ? (
+            tip.text
+          ) : (
+            <>
+              <b>{tip.value}</b>
+              <span>{tip.label}</span>
+            </>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function Figures({ numbers }: { numbers: Analytics }) {
-  const { firstReply } = numbers;
-  const none = t("noReplies");
-  // Each figure, and what it counts when its name alone cannot say.
-  const items: [TextId, string, TextId?][] = [
-    ["statStarted", String(numbers.started)],
-    [
-      "statMedian",
-      firstReply.medianSeconds === null ? none : duration(firstReply.medianSeconds),
-      "statMedianHelp",
-    ],
-    [
-      "statP90",
-      firstReply.p90Seconds === null ? none : duration(firstReply.p90Seconds),
-      "statP90Help",
-    ],
-    [
-      "statFast",
-      firstReply.within5Minutes === null ? none : percent(firstReply.within5Minutes),
-      "statFastHelp",
-    ],
-    ["statClosed", String(numbers.closed)],
-  ];
+/** A small "i" whose words show in the Tipped card. Screen readers read them as its label. */
+function Info({ text }: { text: TextId }) {
   return (
-    <dl className="figures">
-      {items.map(([label, value, help]) => (
-        <div key={label}>
-          <dt>{t(label)}</dt>
-          <dd>{value}</dd>
-          {help !== undefined && <dd className="figure-help">{t(help)}</dd>}
-        </div>
-      ))}
-    </dl>
+    <button type="button" className="info-tip" aria-label={t(text)} data-tip={t(text)}>
+      i
+    </button>
   );
 }
 
-/** One bar per day. The busiest day sets the height. */
-function PerDay({ days }: { days: Analytics["perDay"] }) {
+/** Better, worse, or neither, as the change's color says. */
+type Direction = "better" | "worse" | "neutral";
+
+/** A change against the previous period, and which period that is. */
+function Change({ words, direction, days }: { words: string; direction: Direction; days: Period }) {
+  return (
+    <p className={`stat-change ${direction}`}>
+      {words} <span>{t("vsPrevious", { days })}</span>
+    </p>
+  );
+}
+
+function StartedChange({ numbers, days }: { numbers: Analytics; days: Period }) {
+  const before = numbers.previous.started;
+  if (before === 0) return null;
+  const change = numbers.started / before - 1;
+  const words =
+    numbers.started === before
+      ? t("changeSame")
+      : t(change > 0 ? "changeUp" : "changeDown", { change: percent(Math.abs(change)) });
+  return <Change words={words} direction="neutral" days={days} />;
+}
+
+function MedianChange({ numbers, days }: { numbers: Analytics; days: Period }) {
+  const now = numbers.firstReply.medianSeconds;
+  const before = numbers.previous.firstReply.medianSeconds;
+  if (now === null || before === null) return null;
+  const words = duration(Math.abs(before - now));
+  if (Math.round(now) === Math.round(before)) {
+    return <Change words={t("changeSame")} direction="neutral" days={days} />;
+  }
+  return now < before ? (
+    <Change words={t("replyFaster", { time: words })} direction="better" days={days} />
+  ) : (
+    <Change words={t("replySlower", { time: words })} direction="worse" days={days} />
+  );
+}
+
+function FastChange({ numbers, days }: { numbers: Analytics; days: Period }) {
+  const now = numbers.firstReply.within5Minutes;
+  const before = numbers.previous.firstReply.within5Minutes;
+  if (now === null || before === null) return null;
+  const points = Math.round((now - before) * 100);
+  if (points === 0) return <Change words={t("changeSame")} direction="neutral" days={days} />;
+  return (
+    <Change
+      words={t(points > 0 ? "pointsUp" : "pointsDown", { points: Math.abs(points) })}
+      direction={points > 0 ? "better" : "worse"}
+      days={days}
+    />
+  );
+}
+
+const SPARK_WIDTH = 120;
+const SPARK_HEIGHT = 32;
+
+/** The days of the period as a small line, under its own area. */
+function Sparkline({ days }: { days: Analytics["perDay"] }) {
   const most = Math.max(1, ...days.map((day) => day.conversations));
+  const last = Math.max(1, days.length - 1);
+  const line = `M${days
+    .map((day, index) => {
+      const x = (index / last) * SPARK_WIDTH;
+      const y = SPARK_HEIGHT - (day.conversations / most) * (SPARK_HEIGHT - 2);
+      return `${x},${y}`;
+    })
+    .join("L")}`;
+  return (
+    <svg
+      className="spark"
+      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <path
+        className="spark-area"
+        d={`${line}L${SPARK_WIDTH},${SPARK_HEIGHT}L0,${SPARK_HEIGHT}Z`}
+      />
+      <path className="spark-line" d={line} />
+    </svg>
+  );
+}
+
+const RING_RADIUS = 18;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+function Ring({ share }: { share: number }) {
+  return (
+    <svg className="ring" viewBox="0 0 44 44" aria-hidden="true">
+      <circle cx="22" cy="22" r={RING_RADIUS} className="ring-back" />
+      {share > 0 && (
+        <circle
+          cx="22"
+          cy="22"
+          r={RING_RADIUS}
+          className="ring-front"
+          strokeDasharray={`${share * RING_LENGTH} ${RING_LENGTH}`}
+        />
+      )}
+    </svg>
+  );
+}
+
+function Stat({ title, help, children }: { title: TextId; help?: TextId; children: ReactNode }) {
+  return (
+    <article className="stat">
+      <h3>
+        {t(title)}
+        {help !== undefined && <Info text={help} />}
+      </h3>
+      {children}
+    </article>
+  );
+}
+
+function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
+  const { started, answered, firstReply } = numbers;
+  const fast = firstReply.within5Minutes ?? 0;
+  const answeredShare = shareOf(answered, started);
+  return (
+    <section className="stats" aria-label={t("statsTitle")}>
+      <Stat title="statStarted">
+        <p className="stat-value">{started}</p>
+        <StartedChange numbers={numbers} days={days} />
+        <Sparkline days={numbers.perDay} />
+      </Stat>
+      <Stat title="statMedian" help="statMedianHelp">
+        {firstReply.medianSeconds === null ? (
+          <p className="stat-value none">{t("noReplies")}</p>
+        ) : (
+          <p className="stat-value">{duration(firstReply.medianSeconds)}</p>
+        )}
+        <MedianChange numbers={numbers} days={days} />
+        {firstReply.p90Seconds !== null && (
+          <p className="stat-note">{t("statP90", { time: duration(firstReply.p90Seconds) })}</p>
+        )}
+      </Stat>
+      <Stat title="statFast" help="statFastHelp">
+        <div className="stat-ring">
+          <Ring share={fast} />
+          <p className="stat-value">{percent(fast)}</p>
+        </div>
+        <FastChange numbers={numbers} days={days} />
+      </Stat>
+      <Stat title="statAnswered">
+        <p className="stat-value">{percent(answeredShare)}</p>
+        <p className="stat-note">{t("statAnsweredOf", { answered, started })}</p>
+        <span className="stat-meter" aria-hidden="true">
+          <span style={{ width: `${answeredShare * 100}%` }} />
+        </span>
+      </Stat>
+    </section>
+  );
+}
+
+function Card({ title, hint, children }: { title: TextId; hint?: string; children: ReactNode }) {
+  return (
+    <section className="chart-card">
+      <div className="chart-head">
+        <h3>{t(title)}</h3>
+        {hint !== undefined && <span>{hint}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** One bar per day, on a scale whose top is an even number, so its middle is a whole one. */
+function PerDay({ days }: { days: Analytics["perDay"] }) {
   const busiest = days.reduce((top, day) => (day.conversations > top.conversations ? day : top));
+  const top = Math.max(2, Math.ceil(busiest.conversations / 2) * 2);
   const first = days[0];
   const last = days.at(-1);
   return (
-    <figure className="per-day">
-      <figcaption className="visually-hidden">
-        {t("perDaySummary", { day: dayName(busiest.date), count: busiest.conversations })}
-      </figcaption>
-      <Tipped className="bars" hidden>
-        {days.map((day) => (
-          <span
-            key={day.date}
-            data-value={conversations(day.conversations)}
-            data-label={dayName(day.date, { weekday: "long", month: "short", day: "numeric" })}
-          >
-            {day.conversations > 0 && (
-              <i style={{ height: `${(day.conversations / most) * 100}%` }} />
-            )}
+    <Card
+      title="perDayTitle"
+      hint={t("perDayBusiest", { day: dayName(busiest.date), count: busiest.conversations })}
+    >
+      <figure className="per-day">
+        <figcaption className="visually-hidden">
+          {t("perDaySummary", { day: dayName(busiest.date), count: busiest.conversations })}
+        </figcaption>
+        <div className="day-bars" aria-hidden="true">
+          <span className="day-scale" style={{ top: 0 }}>
+            {top}
           </span>
-        ))}
-      </Tipped>
-      <div className="axis" aria-hidden="true">
-        <span>{first === undefined ? "" : dayName(first.date)}</span>
-        <span>{t("perDayMost", { count: most })}</span>
-        <span>{last === undefined ? "" : dayName(last.date)}</span>
-      </div>
-    </figure>
-  );
-}
-
-function ByOperator({ operators }: { operators: Analytics["operators"] }) {
-  if (operators.length === 0) return <p className="note">{t("noReplies")}</p>;
-  const most = Math.max(...operators.map((one) => one.conversations));
-  const total = operators.reduce((sum, one) => sum + one.conversations, 0);
-  return (
-    <Tipped className="by-operator">
-      {operators.map((one) => (
-        <div
-          key={one.apiKeyId === null ? `operator:${one.operatorId}` : `key:${one.apiKeyId}`}
-          className="operator"
-          data-value={conversations(one.conversations)}
-          data-label={t("byOperatorShare", { share: percent(one.conversations / total) })}
-        >
-          <span className="who">
-            {one.apiKeyId === null
-              ? (one.name ?? t("formerOperator"))
-              : t("apiKeyAuthor", { name: one.name ?? t("apiKeyUnknown") })}
+          <span className="day-scale" style={{ top: "50%" }}>
+            {top / 2}
           </span>
-          <span className="track" aria-hidden="true">
-            <span className="fill" style={{ width: `${(one.conversations / most) * 100}%` }} />
+          <span className="day-scale" style={{ top: "100%" }}>
+            0
           </span>
-          <span className="count">{one.conversations}</span>
+          {days.map((day) => (
+            <span
+              key={day.date}
+              className="day-bar"
+              data-value={conversations(day.conversations)}
+              data-label={dayName(day.date, { weekday: "long", month: "short", day: "numeric" })}
+            >
+              {day.conversations > 0 && (
+                <i style={{ height: `${(day.conversations / top) * 100}%` }} />
+              )}
+            </span>
+          ))}
         </div>
-      ))}
-    </Tipped>
+        <div className="day-axis" aria-hidden="true">
+          <span>{first === undefined ? "" : dayName(first.date)}</span>
+          <span>{last === undefined ? "" : dayName(last.date)}</span>
+        </div>
+      </figure>
+    </Card>
   );
 }
 
-/** Weekdays by hours, darker for more conversations. Each cell also has its words. */
+/** What became of the conversations that started: each step as a count and a share of them. */
+function Outcomes({ numbers }: { numbers: Analytics }) {
+  const { started, answered, closed } = numbers;
+  const fast = Math.round((numbers.firstReply.within5Minutes ?? 0) * started);
+  const steps: { label: TextId; count: number; note?: string }[] = [
+    { label: "outcomeStarted", count: started },
+    {
+      label: "outcomeAnswered",
+      count: answered,
+      ...(answered < started && { note: t("outcomeWaiting", { count: started - answered }) }),
+    },
+    { label: "outcomeFast", count: fast },
+    {
+      label: "outcomeClosed",
+      count: closed,
+      ...(closed < started && { note: t("outcomeOpen", { count: started - closed }) }),
+    },
+  ];
+  return (
+    <Card title="outcomesTitle">
+      <ol className="outcomes">
+        {steps.map((step) => (
+          <li key={step.label}>
+            <span className="outcome-label">{t(step.label)}</span>
+            <span className="share-count">
+              {step.count}
+              <span>{percent(shareOf(step.count, started))}</span>
+            </span>
+            <span className="share-track" aria-hidden="true">
+              <span style={{ width: `${shareOf(step.count, started) * 100}%` }} />
+            </span>
+            {step.note !== undefined && <span className="outcome-note">{step.note}</span>}
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
+/** The share of the busiest cell, in four steps, so the legend can show them. */
+const HEAT_LEVELS = 4;
+
+/** Weekdays by hours, darker for more conversations, with the busiest hour ringed. */
 function Hours({ hours }: { hours: number[][] }) {
   const most = Math.max(1, ...hours.flat());
-  let top = { day: 0, hour: 0, count: 0 };
+  let peak = { day: 0, hour: 0, count: 0 };
   hours.forEach((row, day) => {
     row.forEach((count, hour) => {
-      if (count > top.count) top = { day, hour, count };
+      if (count > peak.count) peak = { day, hour, count };
     });
   });
   return (
-    <figure className="hours">
-      <figcaption className="visually-hidden">
-        {t("hoursSummary", {
-          day: WEEKDAYS_LONG[top.day] ?? "",
-          hour: hourName(top.hour),
-          count: top.count,
-        })}
-      </figcaption>
-      <Tipped className="hours-grid" hidden>
-        <span />
-        {HOURS.map((name, hour) => (
-          <span key={name} className="hour-label">
-            {hour % 6 === 0 ? name : ""}
-          </span>
-        ))}
-        {hours.map((row, day) => [
-          <span key={`d${WEEKDAYS[day]}`} className="day-label">
-            {WEEKDAYS[day]}
-          </span>,
-          ...row.map((count, hour) => (
-            <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: the grid's cells never move.
-              key={`${day}-${hour}`}
-              className={`cell level-${count === 0 ? 0 : Math.ceil((count / most) * 4)}`}
-              data-value={conversations(count)}
-              data-label={t("hoursCell", { day: WEEKDAYS_LONG[day] ?? "", hour: hourName(hour) })}
-            />
-          )),
-        ])}
-      </Tipped>
-    </figure>
+    <Card
+      title="hoursTitle"
+      hint={t("hoursPeak", { day: WEEKDAYS_LONG[peak.day] ?? "", hour: hourName(peak.hour) })}
+    >
+      <figure className="hours">
+        <figcaption className="visually-hidden">
+          {t("hoursSummary", {
+            day: WEEKDAYS_LONG[peak.day] ?? "",
+            hour: hourName(peak.hour),
+            count: peak.count,
+          })}
+        </figcaption>
+        <div className="heat" aria-hidden="true">
+          <span />
+          {HOURS.map((name, hour) => (
+            <span key={name} className="heat-hour">
+              {hour % 6 === 0 ? name : ""}
+            </span>
+          ))}
+          {hours.map((row, day) => [
+            <span key={`d${WEEKDAYS[day]}`} className="heat-day">
+              {WEEKDAYS[day]}
+            </span>,
+            ...row.map((count, hour) => (
+              <span
+                // biome-ignore lint/suspicious/noArrayIndexKey: the grid's cells never move.
+                key={`${day}-${hour}`}
+                className={`heat-cell level-${Math.ceil((count / most) * HEAT_LEVELS)}${
+                  day === peak.day && hour === peak.hour ? " peak" : ""
+                }`}
+                data-value={conversations(count)}
+                data-label={t("hoursCell", { day: WEEKDAYS_LONG[day] ?? "", hour: hourName(hour) })}
+              />
+            )),
+          ])}
+        </div>
+        <div className="heat-legend" aria-hidden="true">
+          {t("hoursFewer")}
+          {Array.from({ length: HEAT_LEVELS }, (_, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the legend's steps never move.
+            <i key={index} className={`heat-swatch level-${index + 1}`} />
+          ))}
+          {t("hoursMore")}
+        </div>
+      </figure>
+    </Card>
+  );
+}
+
+function Repliers({ numbers }: { numbers: Analytics }) {
+  const { operators, answered } = numbers;
+  const most = Math.max(1, ...operators.map((one) => one.conversations));
+  return (
+    <Card title="byOperatorTitle">
+      {operators.length === 0 ? (
+        <p className="note">{t("noReplies")}</p>
+      ) : (
+        <ol className="repliers">
+          {operators.map((one) => {
+            const name =
+              one.apiKeyId === null
+                ? (one.name ?? t("formerOperator"))
+                : t("apiKeyAuthor", { name: one.name ?? t("apiKeyUnknown") });
+            return (
+              <li
+                key={one.apiKeyId === null ? `operator:${one.operatorId}` : `key:${one.apiKeyId}`}
+              >
+                <Avatar name={one.name ?? name} />
+                <span className="replier-name">{name}</span>
+                <span className="share-count">
+                  {one.conversations}
+                  <span>{percent(shareOf(one.conversations, answered))}</span>
+                </span>
+                <span className="share-track" aria-hidden="true">
+                  <span style={{ width: `${(one.conversations / most) * 100}%` }} />
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Card>
   );
 }
 
@@ -289,14 +528,14 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
   return (
     <Page
       title={t("analytics")}
-      context={<>{t("analyticsContext", { days, zone })} </>}
+      context={t("analyticsContext", { days, zone })}
       actions={
-        <Select<Period>
+        <Choices<Period>
           label={t("period")}
+          variant="outlined"
           value={days}
-          choices={PERIODS.map((period) => ({ value: period.value, label: t(period.label) }))}
+          options={PERIODS}
           onChange={setDays}
-          side="end"
         />
       }
     >
@@ -309,19 +548,16 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
           {t("analyticsEmptyHint")}
         </div>
       ) : (
-        <>
-          <Figures numbers={numbers} />
-          <PageRow title={t("perDayTitle")} help={t("perDayHelp")}>
+        <Tipped className="analytics">
+          <Stats numbers={numbers} days={days} />
+          <div className="charts">
             <PerDay days={numbers.perDay} />
-          </PageRow>
-          <PageRow title={t("byOperatorTitle")} help={t("byOperatorHelp")}>
-            <ByOperator operators={numbers.operators} />
-          </PageRow>
-          <PageRow title={t("hoursTitle")} help={t("hoursHelp")}>
+            <Outcomes numbers={numbers} />
             <Hours hours={numbers.hours} />
-          </PageRow>
+            <Repliers numbers={numbers} />
+          </div>
           <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
-        </>
+        </Tipped>
       )}
     </Page>
   );

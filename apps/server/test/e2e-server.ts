@@ -4,7 +4,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { SignJWT } from "jose";
 import pg from "pg";
@@ -341,6 +341,21 @@ export async function startE2EServer(
       const sent = await sendOperatorMessage(db, workspace.id, OPERATOR, latest.id, body);
       live.wake(workspace.id, latest.visitorId);
       return sent.seq;
+    },
+    /** Moves the latest conversation `hours` back, with its replies `replyAfterSeconds` later. */
+    async backdateLatest(hours: number, replyAfterSeconds: number) {
+      await owner.execute(sql`
+        WITH latest AS (
+          SELECT id, now() - make_interval(hours => ${hours}::int) AS at FROM conversation
+          WHERE workspace_id = ${workspace.id} ORDER BY created_at DESC LIMIT 1
+        ), moved AS (
+          UPDATE conversation AS c SET created_at = latest.at FROM latest WHERE c.id = latest.id
+        )
+        UPDATE message AS m
+        SET created_at = latest.at + CASE WHEN m.author_visitor_id IS NULL
+                                          THEN make_interval(secs => ${replyAfterSeconds}::int)
+                                          ELSE interval '0' END
+        FROM latest WHERE m.conversation_id = latest.id`);
     },
     /** A reply email's link to the latest conversation, as the worker makes one. */
     async chatLink() {

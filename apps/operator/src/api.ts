@@ -83,6 +83,11 @@ export interface Analytics {
     /** From 0 to 1, of the conversations started. */
     within5Minutes: number | null;
   };
+  /** The same numbers for as many whole days just before the period. */
+  previous: {
+    started: number;
+    firstReply: { medianSeconds: number | null; within5Minutes: number | null };
+  };
   perDay: { date: string; conversations: number }[];
   /** By who sent the first reply. */
   operators: {

@@ -1099,6 +1099,27 @@
             },
             "required": ["medianSeconds", "p90Seconds", "within5Minutes"]
           },
+          "previous": {
+            "type": "object",
+            "properties": {
+              "started": {
+                "type": "integer"
+              },
+              "firstReply": {
+                "type": "object",
+                "properties": {
+                  "medianSeconds": {
+                    "type": ["number", "null"]
+                  },
+                  "within5Minutes": {
+                    "type": ["number", "null"]
+                  }
+                },
+                "required": ["medianSeconds", "within5Minutes"]
+              }
+            },
+            "required": ["started", "firstReply"]
+          },
           "perDay": {
             "type": "array",
             "items": {
@@ -1152,6 +1173,7 @@
           "closed",
           "answered",
           "firstReply",
+          "previous",
           "perDay",
           "operators",
           "hours"
@@ -7070,7 +7092,7 @@
           }
         ],
         "summary": "Support numbers for the last 7, 30 or 90 days",
-        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply. A welcome chat on Dinghy Cloud counts nowhere.",
+        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply. `previous` gives `started` and the first reply numbers for as many whole days just before the period. A welcome chat on Dinghy Cloud counts nowhere.",
         "parameters": [
           {
             "schema": {
@@ -7115,6 +7137,13 @@
                     "medianSeconds": 140,
                     "p90Seconds": 1260,
                     "within5Minutes": 0.67
+                  },
+                  "previous": {
+                    "started": 9,
+                    "firstReply": {
+                      "medianSeconds": 180,
+                      "within5Minutes": 0.56
+                    }
                   },
                   "perDay": [
                     {

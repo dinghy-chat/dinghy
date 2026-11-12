@@ -32,6 +32,11 @@ export function isTimeZone(name: string): boolean {
   }
 }
 
+// Seconds from the start of a conversation to its first operator reply. Null with no reply.
+const medianSeconds = z.number().nullable();
+// The share of started conversations answered within 5 minutes, from 0 to 1. Null with none.
+const within5Minutes = z.number().nullable();
+
 const Analytics = z
   .object({
     days: z.number().int(),
@@ -42,12 +47,11 @@ const Analytics = z
     closed: z.number().int(),
     // Of those, the ones with an operator's reply.
     answered: z.number().int(),
-    firstReply: z.object({
-      // Seconds from the start of a conversation to its first operator reply. Null with no reply.
-      medianSeconds: z.number().nullable(),
-      p90Seconds: z.number().nullable(),
-      // The share of started conversations answered within 5 minutes, from 0 to 1. Null with none.
-      within5Minutes: z.number().nullable(),
+    firstReply: z.object({ medianSeconds, p90Seconds: z.number().nullable(), within5Minutes }),
+    // The same numbers for as many whole days just before the period, to compare with.
+    previous: z.object({
+      started: z.number().int(),
+      firstReply: z.object({ medianSeconds, within5Minutes }),
     }),
     // One entry per day of the period, oldest first, in the given time zone.
     perDay: z.array(z.object({ date: z.string(), conversations: z.number().int() })),
@@ -73,7 +77,7 @@ const analyticsRoute = createRoute({
   security: SESSION,
   summary: "Support numbers for the last 7, 30 or 90 days",
   description:
-    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply. A welcome chat on Dinghy Cloud counts nowhere.",
+    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply. `previous` gives `started` and the first reply numbers for as many whole days just before the period. A welcome chat on Dinghy Cloud counts nowhere.",
   request: {
     params: z.object({ workspaceId: z.uuid() }),
     query: z.object({
@@ -98,6 +102,7 @@ const analyticsRoute = createRoute({
             closed: 9,
             answered: 11,
             firstReply: { medianSeconds: 140, p90Seconds: 1260, within5Minutes: 0.67 },
+            previous: { started: 9, firstReply: { medianSeconds: 180, within5Minutes: 0.56 } },
             perDay: [{ date: "2026-11-02", conversations: 3 }],
             operators: [
               {
@@ -117,12 +122,26 @@ const analyticsRoute = createRoute({
   },
 });
 
-interface Row extends Record<string, unknown> {
+/** How many started in a period, how many got a reply within 5 minutes, and the median wait. */
+interface PeriodRow {
   started: number;
-  closed: number;
-  answered: number;
   fast: number;
   median: number | null;
+}
+
+const periodNumbers = (period: PeriodRow | null) => ({
+  started: period?.started ?? 0,
+  firstReply: {
+    medianSeconds: period?.median ?? null,
+    within5Minutes: period === null || period.started === 0 ? null : period.fast / period.started,
+  },
+});
+
+interface Row extends Record<string, unknown> {
+  current: PeriodRow | null;
+  previous: PeriodRow | null;
+  closed: number;
+  answered: number;
   p90: number | null;
   per_day: { date: string; conversations: number }[];
   repliers: { operatorId: string | null; apiKeyId: string | null; conversations: number }[];
@@ -171,18 +190,28 @@ async function readAnalytics(
       SELECT (now() AT TIME ZONE ${timeZone})::date AS day
     ), bounds AS (
       SELECT day - ${days - 1}::int AS first_day,
-             ((day - ${days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS since
+             ((day - ${days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS since,
+             ((day - ${2 * days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS previous_since
       FROM local_today
-    ), started AS MATERIALIZED (
-      SELECT f.*, (f.created_at AT TIME ZONE ${timeZone}) AS local_at
-      FROM (${firstReplies(workspaceId, sql`(SELECT since FROM bounds)`)}) AS f
+    ), replies AS MATERIALIZED (
+      SELECT f.*, (f.created_at AT TIME ZONE ${timeZone}) AS local_at,
+             f.created_at >= (SELECT since FROM bounds) AS is_current
+      FROM (${firstReplies(workspaceId, sql`(SELECT previous_since FROM bounds)`)}) AS f
+    ), started AS (
+      SELECT * FROM replies WHERE is_current
+    ), periods AS (
+      SELECT is_current, count(*)::int AS started,
+             count(*) FILTER (WHERE wait <= ${FAST_REPLY_SECONDS})::int AS fast,
+             percentile_cont(0.5) WITHIN GROUP (ORDER BY wait) AS median
+      FROM replies GROUP BY is_current
     )
     SELECT
-      (SELECT count(*) FROM started)::int AS started,
+      (SELECT json_build_object('started', started, 'fast', fast, 'median', median)
+         FROM periods WHERE is_current) AS current,
+      (SELECT json_build_object('started', started, 'fast', fast, 'median', median)
+         FROM periods WHERE NOT is_current) AS previous,
       (SELECT count(*) FROM started WHERE status = 'closed')::int AS closed,
       (SELECT count(wait) FROM started)::int AS answered,
-      (SELECT count(*) FROM started WHERE wait <= ${FAST_REPLY_SECONDS})::int AS fast,
-      (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY wait) FROM started) AS median,
       (SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY wait) FROM started) AS p90,
       (SELECT json_agg(json_build_object('date', to_char(g.day, 'YYYY-MM-DD'),
                                          'conversations', g.n) ORDER BY g.day)
@@ -210,17 +239,15 @@ async function readAnalytics(
     const day = hours[cell.dow - 1];
     if (day !== undefined) day[cell.hour] = cell.conversations;
   }
+  const current = periodNumbers(row.current);
   return {
     days,
     timeZone,
-    started: row.started,
+    started: current.started,
     closed: row.closed,
     answered: row.answered,
-    firstReply: {
-      medianSeconds: row.median,
-      p90Seconds: row.p90,
-      within5Minutes: row.started === 0 ? null : row.fast / row.started,
-    },
+    firstReply: { ...current.firstReply, p90Seconds: row.p90 },
+    previous: periodNumbers(row.previous),
     perDay: row.per_day,
     operators: row.repliers.map((one) => ({
       ...one,
