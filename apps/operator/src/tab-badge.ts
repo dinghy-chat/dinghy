@@ -4,7 +4,7 @@ import { t } from "./text.ts";
 const ICON = "/assets/icon.svg";
 /** The favicon's size in the drawing, and its red dot, as fractions of it. */
 const SIZE = 64;
-const DOT = { x: 0.76, y: 0.24, radius: 0.22, ring: 0.06 };
+const DOT = { x: 0.8, y: 0.2, radius: 0.15, ring: 0.05 };
 
 /** The app's icon with a red dot in its corner, drawn once, or null if the browser cannot. */
 let dotted: Promise<string | null> | null = null;
