@@ -45,7 +45,7 @@ interface Beat {
   away: boolean;
 }
 
-interface Presence {
+export interface Presence {
   /** Marks the operator on this conversation, and online unless away. Null if Valkey cannot answer. */
   beat(workspaceId: string, operatorId: string, beat: Beat): Promise<PresenceState | null>;
   /** Ends the operator's online mark, and their mark on this conversation. */

@@ -432,6 +432,10 @@ export const message = pgTable(
     index("message_changed_idx")
       .on(table.workspaceId, table.changedSeq)
       .where(sql`${table.changedSeq} is not null`),
+    // A conversation's handler is the key that wrote last: one backward probe per conversation.
+    index("message_api_key_conversation_idx")
+      .on(table.workspaceId, table.conversationId, table.seq)
+      .where(sql`${table.authorApiKeyId} is not null`),
     // The widget's header shows the members who replied last: one short read per member.
     index("message_operator_seq_idx")
       .on(table.workspaceId, table.authorOperatorId, table.seq)
@@ -495,7 +499,8 @@ const EVENT_KINDS = [
   "note.created",
   // A key's draft reply was made, became stale, or was sent or discarded.
   "draft.changed",
-  // A conversation's handler changed: a bot handed it to a human, or a bot resumed.
+  // A conversation's handler changed: a person took it, a bot handed it off, or a person gave
+  // it back to the bots.
   "conversation.handled",
   "team.changed",
   "billing.changed",
@@ -1065,9 +1070,9 @@ export const WEBHOOK_EVENTS = [
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
-  // A bot handed a conversation to a human, and later resumed it.
+  // A bot handed a conversation to people, and a person gave it back to the bots.
   "conversation.handoff",
-  "conversation.bot_resumed",
+  "conversation.given_back",
   "note.created",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];

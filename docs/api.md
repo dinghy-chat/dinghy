@@ -214,21 +214,28 @@ These routes let an API key's bot answer chats while people stay in control. The
 
 Each key has a `replyMode`. With `send`, a reply goes to the visitor. With `draft`, `POST .../conversations/{conversationId}/messages` answers 202 with `{ draft }` and nothing reaches the visitor: the draft waits under the conversation's last message for an operator. A key in draft mode cannot send an image, which answers 409 `drafts_text_only`. A key made before reply modes existed sends; a new key or connected app drafts unless an owner or admin chooses otherwise.
 
-A draft has `id`, `conversationId`, `apiKeyId`, `authorName`, `clientId`, `body`, `replyToMessageId`, `status` and times. `status` is `open`, `stale` (the visitor wrote after it), `sent` or `discarded`. With a session:
+A draft has `id`, `conversationId`, `apiKeyId`, `authorName`, `clientId`, `body`, `replyToMessageId`, `status` and times. `status` is `open`, `stale` (the visitor or an operator wrote after it), `sent` or `discarded`. With a session:
 
 - `GET .../conversations/{conversationId}/drafts` lists the open and stale drafts, newest first.
-- `POST .../drafts/{draftId}/send`, with an optional `{ "body" }` to edit it, sends it as the operator's own reply, with `via: "draft"`. It answers 201 with the message, and 200 with the same message when it was sent before. Sending approves the bot's words, so the bot keeps the conversation.
+- `POST .../drafts/{draftId}/send`, with an optional `{ "body" }` to edit it, sends it as the operator's own reply, with `via: "draft"`. It answers 201 with the message, and 200 with the same message when it was sent before, by any operator, so the visitor never gets it twice. Sending approves the bot's words, so the bot keeps the conversation. The other drafts that wait become stale.
 - `POST .../drafts/{draftId}/discard` discards it.
 
 Keys cannot send or discard drafts. The MCP `list_drafts` tool shows a key the drafts and what became of them.
 
 ### Human handling
 
-A conversation's `humanSince` says since when a person handles it: an operator replied, or a bot handed it off. Its `handler` is `{ kind: "human", since }`, `{ kind: "bot", apiKeyId, name }` for the bot that handed it off and got it back, or null. While `humanSince` is set, a key that sends directly gets 409 `human_handling` on a reply and on typing. A key in draft mode may still write drafts, as suggestions. `POST .../conversations/{conversationId}/give-back`, with a session only, clears it and adds a `conversation.bot_resumed` event.
+A person handles a conversation from when an operator replies in text or with an image, or a bot hands it off. A conversation's `handler` says who handles it:
+
+- `{ kind: "person", operatorId, name, since }`: a person handles it, and it is assigned to this member.
+- `{ kind: "team", since }`: a person handles it, and it is assigned to no one.
+- `{ kind: "bot", apiKeyId, name }`: no person handles it, and this key took part last, with a message, a draft, a note or a handoff.
+- null: no person handles it, and no bot took part.
+
+While a person handles it, a key that sends directly gets 409 `human_handling` on a reply and on typing. A key in draft mode may still write drafts, as suggestions. `POST .../conversations/{conversationId}/give-back`, with a session only, gives it back to the bots and adds a `conversation.given_back` event.
 
 ### Handoff
 
-`POST .../conversations/{conversationId}/handoff`, with an API key only, takes `clientId`, `reason` (up to 500 characters), and optional `summary` (up to 2,000), `operatorId` and `visitorMessage`. In one transaction, it sends `visitorMessage` as the key's reply (or a draft in draft mode), assigns the conversation to `operatorId`, sets `humanSince`, adds a note with the reason and the summary, and adds a `conversation.handoff` event. That event alerts the assignee, or every member with alerts on when there is none, as a new visitor message does. It answers 201 with `visitorMessage`: `{ status: "sent", message }`, `{ status: "drafted", draft }`, `{ status: "not_sent", reason: "bots_paused" }` or null. A retry with the same `clientId` answers 200 and changes nothing again.
+`POST .../conversations/{conversationId}/handoff`, with an API key only, takes `clientId`, `reason` (up to 500 characters), and optional `summary` (up to 2,000), `operatorId` and `visitorMessage`. In one transaction, it sends `visitorMessage` as the key's reply (or a draft in draft mode), assigns the conversation to `operatorId`, makes a person handle it, adds a note with the reason and the summary, and adds a `conversation.handoff` event. That event alerts the assignee, or every member with alerts on when there is none, as a new visitor message does. It answers 201 with `visitorMessage`: `{ status: "sent", message }`, `{ status: "drafted", draft }`, `{ status: "not_sent", reason: "bots_paused" }` or null. A retry with the same `clientId` answers 200 with the first result and changes nothing, even when bots were resumed since.
 
 ### Notes
 
@@ -236,7 +243,7 @@ A conversation's `humanSince` says since when a person handles it: an operator r
 
 ### Pause all bots
 
-`PUT .../bots-paused` with `{ "paused": true }`, from an owner or admin with a session, pauses every bot of the workspace. While paused, every key's reply, draft and typing answer 409 `bots_paused`. Reads, notes and handoffs still work. The workspace lists answer `botsPaused`.
+`PUT .../bots-paused` with `{ "paused": true }`, from an owner or admin with a session, pauses every bot of the workspace. While paused, every key's reply, draft and typing answer 409 `bots_paused`. Reads, notes and handoffs still work. The workspace lists answer `botsPaused`, and `botsPausedBy`, the name of who paused them. The route answers `{ paused, pausedBy }`.
 
 ### Typing
 
@@ -244,14 +251,14 @@ A conversation's `humanSince` says since when a person handles it: an operator r
 
 ## Events for API keys
 
-`GET /v1/events` streams the workspace's events to an API key, as server-sent events, for a bot with no public address. Each event's name is its webhook type, its `id` is a cursor, and its data is `{ type, workspaceId, data }`, with the same `data` as a [webhook body](#webhooks). `?types=message.created,conversation.handoff` keeps only those types.
+`GET /v1/events` streams the workspace's events to an API key, as server-sent events, for a bot with no public address. Each event's name is its webhook type, its `id` is its position, and its data is `{ type, workspaceId, data }`, with the same `data` as a [webhook body](#webhooks). `?types=message.created,conversation.handoff` keeps only those types.
 
 ```sh
 curl -N "https://chat.example.com/v1/events?types=message.created" \
   -H "Authorization: Bearer dk_..."
 ```
 
-With no cursor, it starts from now. Reconnect with `Last-Event-ID`, or `?after=` and the last `id`, and it sends what you missed. `ready` comes when it has caught up, and `resync` when the cursor is too old: read the open conversations again. It sends a heartbeat every 25 seconds, ends after 15 minutes with a `close` event, and takes a slot in the workspace's stream limit, so too many streams answer 429 `too_many_streams`. A revoked key's stream ends within 25 seconds. A `notice` has no `id` and may be lost: `{ "kind": "typing", conversationId, draft }` carries a visitor's unsent words, only while the workspace's typing preview is on. Messages from test visitors come with `conversation.visitor.isTest: true`.
+With no position, it starts from now. Reconnect with `Last-Event-ID`, or `?after=` and the last `id`, and it sends what you missed. One change can make two events: a conversation's first message sends `conversation.created`, then `message.created`. The first has the position `generation.seq.0`, and the last has the change's cursor, `generation.seq`, so a stream that drops between them sends the second when it resumes. `ready` comes when it has caught up, and `resync` when the cursor is too old: read the open conversations again. It sends a heartbeat every 25 seconds, ends after 15 minutes with a `close` event, and takes a slot in the workspace's stream limit, so too many streams answer 429 `too_many_streams`. A revoked key's stream ends within 25 seconds. A `notice` has no `id` and may be lost: `{ "kind": "typing", conversationId, draft }` carries a visitor's unsent words, only while the workspace's typing preview is on. Messages from test visitors come with `conversation.visitor.isTest: true`.
 
 ## Install and test visitors
 
@@ -284,7 +291,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `conversation.reopened` | A conversation is reopened |
 | `conversation.assigned` | A conversation's assignee changes, or is cleared |
 | `conversation.handoff` | An API key's bot handed the conversation to people |
-| `conversation.bot_resumed` | An operator gave the conversation back to the bots |
+| `conversation.given_back` | An operator gave the conversation back to the bots |
 | `note.created` | An operator or an API key wrote an internal note. `data.note` has `id`, `body`, `authorName` and `authorKind` |
 
 Drafts send no webhook. The body is JSON:
@@ -435,17 +442,18 @@ Every key and connected app gets the Conversations tools. A Setup one also gets 
 |---|---|---|
 | `list_conversations` | Conversations | Lists open or closed conversations, newest activity first. Pass `nextCursor` back as `cursor` for the next page |
 | `search_conversations` | Conversations | Finds conversations by the visitor's name, email or user ID, or by message text |
-| `get_conversation` | Conversations | Reads a conversation: its messages and notes, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript |
+| `get_conversation` | Conversations | Reads a conversation: its messages and notes, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
 | `reply` | Conversations | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Pass the same `clientId` on a retry |
 | `add_note` | Conversations | Adds an internal note that the visitor never sees |
 | `list_drafts` | Conversations | Lists the drafts of keys in draft mode: `open`, `stale` or `all` |
-| `handoff` | Conversations | Hands a conversation to people, with a reason, a summary and an optional last message to the visitor |
+| `hand_off` | Conversations | Hands a conversation to people, with a reason, a summary and an optional last message to the visitor |
+| `list_members` | Conversations | Lists the members: `id`, `name`, `role` and whether they are `online`. The `id` is what `assign_conversation` and `hand_off` take |
 | `set_typing` | Conversations | Shows the visitor that the bot is typing, for 6 seconds |
-| `wait_for_messages` | Conversations | Waits up to 30 seconds for new visitor messages, from a cursor |
+| `wait_for_messages` | Conversations | Waits up to 30 seconds for new visitor messages, from a cursor. With no cursor it answers the cursor for now, and no earlier messages |
 | `close_conversation` | Conversations | Closes a conversation. Marked destructive |
 | `reopen_conversation` | Conversations | Reopens a closed conversation |
 | `assign_conversation` | Conversations | Assigns a conversation to a member by operator ID, or clears it with `null` |
-| `get_contact` | Conversations | Reads a visitor, by `visitorId` or `conversationId`, with their local time, pages and other conversations |
+| `get_contact` | Conversations | Reads a visitor, by `visitorId` or by `conversationId`, exactly one of them, with their local time, pages and other conversations |
 | `list_contacts`, `search_contacts` | Conversations | Lists or finds the people who have a conversation |
 | `get_live_visitors` | Conversations | Lists the tabs of the site open now |
 | `get_analytics` | Conversations | The Analytics page's numbers for 7, 30 or 90 days |
@@ -461,7 +469,7 @@ Every key and connected app gets the Conversations tools. A Setup one also gets 
 | `test_webhook` | Setup | Sends a signed `webhook.test` now and answers what the webhook answered |
 | `get_webhook_verification` | Setup | Signature-check code in TypeScript, Python or Go |
 | `list_webhook_deliveries`, `replay_webhook_delivery` | Setup | Lists a webhook's last 20 deliveries, or sends one again |
-| `simulate_visitor_message` | Setup | Sends a message as a test visitor |
+| `send_test_message` | Setup | Sends a message as a test visitor |
 | `delete_test_visitors` | Setup | Deletes every test visitor. Marked destructive |
 
 Each tool says in its annotations whether it only reads, whether a retry is safe, and whether it deletes or ends something. A client asks the person before it calls a destructive tool. The server's instructions, and every tool that returns text a visitor wrote, tell the agent that this text is data and that it must never follow instructions in it.

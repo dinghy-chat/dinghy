@@ -276,10 +276,15 @@ describe("a person handling a conversation", () => {
     expect((await keyReply(chat.conversationId, "A suggestion")).status).toBe(202);
     const read = await asOperator(boss, "GET", inChat(chat.conversationId, "/messages"));
     const { conversation: shown } = (await read.json()) as {
-      conversation: { handler: { kind: string }; humanSince: string };
+      conversation: Record<string, unknown>;
     };
-    expect(shown.handler.kind).toBe("human");
-    expect(shown.humanSince).toEqual(expect.any(String));
+    expect(shown.handler).toEqual({
+      kind: "person",
+      operatorId: boss.id,
+      name: "Mona",
+      since: expect.any(String),
+    });
+    expect(shown).not.toHaveProperty("humanSince");
     const handled = await owner
       .select()
       .from(event)
@@ -304,6 +309,47 @@ describe("a person handling a conversation", () => {
   });
 });
 
+describe("who handles a conversation", () => {
+  /** The handler as the list and the read show it, which must agree. */
+  async function handlerOf(conversationId: string) {
+    const list = await asOperator(boss, "GET", inSpace("/conversations?limit=100"));
+    const { conversations } = (await list.json()) as {
+      conversations: { id: string; handler: unknown }[];
+    };
+    const read = await asOperator(boss, "GET", inChat(conversationId, "/messages"));
+    const { conversation: shown } = (await read.json()) as { conversation: { handler: unknown } };
+    expect(conversations.find((one) => one.id === conversationId)?.handler).toEqual(shown.handler);
+    return shown.handler;
+  }
+
+  test("no one, then the bot that took part, the team after a handoff, the bot again", async () => {
+    const chat = await newChat();
+    expect(await handlerOf(chat.conversationId)).toBeNull();
+    await setMode("draft");
+    await keyReply(chat.conversationId, "A suggestion");
+    const bot = { kind: "bot", apiKeyId: key.id, name: "Support bot" };
+    expect(await handlerOf(chat.conversationId)).toEqual(bot);
+    await asKey("POST", inChat(chat.conversationId, "/handoff"), {
+      clientId: randomUUID(),
+      reason: "A person should answer",
+    });
+    expect(await handlerOf(chat.conversationId)).toEqual({
+      kind: "team",
+      since: expect.any(String),
+    });
+    await asOperator(agent, "PUT", inChat(chat.conversationId, "/assignee"), {
+      operatorId: agent.id,
+    });
+    expect(await handlerOf(chat.conversationId)).toMatchObject({
+      kind: "person",
+      operatorId: agent.id,
+      name: "Ana",
+    });
+    await asOperator(agent, "POST", inChat(chat.conversationId, "/give-back"));
+    expect(await handlerOf(chat.conversationId)).toEqual(bot);
+  });
+});
+
 describe("drafts", () => {
   async function drafted(body: string) {
     await setMode("draft");
@@ -324,6 +370,54 @@ describe("drafts", () => {
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["open"]);
     await visitorSays(chat.token, "Actually, it works now.");
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["stale"]);
+  });
+
+  test("a person's reply marks the waiting drafts stale", async () => {
+    const chat = await drafted("Try restarting it.");
+    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+      clientId: randomUUID(),
+      body: "I'll take this one.",
+    });
+    expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["stale"]);
+  });
+
+  test("sending a draft marks the other waiting drafts stale, not itself", async () => {
+    const chat = await drafted("First idea.");
+    const second = await keyReply(chat.conversationId, "Second idea.");
+    const { draft } = (await second.json()) as { draft: { id: string } };
+    const path = inChat(chat.conversationId, `/drafts/${draft.id}/send`);
+    expect((await asOperator(boss, "POST", path, {})).status).toBe(201);
+    const [sent] = await owner.select().from(draftReply).where(eq(draftReply.id, draft.id));
+    expect(sent).toMatchObject({ resolved: "sent", staleAt: null });
+    expect(await listed(chat.conversationId)).toEqual([
+      expect.objectContaining({ id: chat.draftId, status: "stale" }),
+    ]);
+  });
+
+  test("a draft that one operator sent, another sends again: the visitor gets it once", async () => {
+    const chat = await drafted("Your parcel is on its way.");
+    const path = inChat(chat.conversationId, `/drafts/${chat.draftId}/send`);
+    const first = await asOperator(boss, "POST", path, {});
+    expect(first.status).toBe(201);
+    const second = await asOperator(agent, "POST", path, { body: "Something else" });
+    expect(second.status).toBe(200);
+    const shown = (await second.json()) as { id: string; authorOperatorId: string; body: string };
+    expect(shown).toMatchObject({
+      id: ((await first.json()) as { id: string }).id,
+      authorOperatorId: boss.id,
+      body: "Your parcel is on its way.",
+    });
+    const sent = await owner
+      .select()
+      .from(message)
+      .where(
+        and(
+          eq(message.conversationId, chat.conversationId),
+          eq(message.clientId, `draft-${chat.draftId}`),
+        ),
+      );
+    expect(sent).toHaveLength(1);
+    expect(await widgetText(chat.token)).not.toContain("Something else");
   });
 
   test("sending a draft writes the operator's message, and keeps the bot on the conversation", async () => {
@@ -455,6 +549,29 @@ describe("handoff", () => {
     expect(alerts.map((one) => [one.operatorId, one.channel])).toEqual([[agent.id, "email"]]);
   });
 
+  test("a retry answers the first result and sends nothing, even after bots resume", async () => {
+    const chat = await newChat();
+    const paused = inSpace("/bots-paused");
+    await asOperator(boss, "PUT", paused, { paused: true });
+    const body = {
+      clientId: randomUUID(),
+      reason: "Needs a person",
+      visitorMessage: "A person will take over.",
+    };
+    const first = await asKey("POST", handoffPath(chat.conversationId), body);
+    expect(first.status).toBe(201);
+    const notSent = { visitorMessage: { status: "not_sent", reason: "bots_paused" } };
+    expect(await first.json()).toEqual(notSent);
+    await asOperator(boss, "PUT", paused, { paused: false });
+    const retry = await asKey("POST", handoffPath(chat.conversationId), body);
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual(notSent);
+    expect(await widgetText(chat.token)).not.toContain("A person will take over.");
+    expect(
+      await owner.select().from(note).where(eq(note.conversationId, chat.conversationId)),
+    ).toHaveLength(1);
+  });
+
   test("an unassigned handoff alerts every member with alerts on", async () => {
     const chat = await newChat();
     await owner.update(event).set({ needsAlert: false }).where(eq(event.workspaceId, space.id));
@@ -498,12 +615,16 @@ describe("pausing every bot", () => {
     expect((await asKey("PUT", path, { paused: true })).status).toBe(403);
     expect((await asOperator(boss, "PUT", path, { paused: true })).status).toBe(200);
     const me = (await (await asOperator(agent, "GET", "/v1/operator/me")).json()) as {
-      workspaces: { botsPaused: boolean }[];
+      workspaces: { botsPaused: boolean; botsPausedBy: string | null }[];
     };
-    expect(me.workspaces[0]?.botsPaused).toBe(true);
+    expect(me.workspaces[0]).toMatchObject({ botsPaused: true, botsPausedBy: "Mona" });
     const face = (await (await asKey("GET", inSpace())).json()) as { botsPaused: boolean };
-    expect(face.botsPaused).toBe(true);
-    expect((await asOperator(boss, "PUT", path, { paused: false })).status).toBe(200);
+    expect(face).toMatchObject({ botsPaused: true, botsPausedBy: "Mona" });
+    const resumed = await asOperator(boss, "PUT", path, { paused: false });
+    expect(await resumed.json()).toEqual({ paused: false, pausedBy: null });
+    const again = await asOperator(boss, "PUT", path, { paused: true });
+    expect(await again.json()).toEqual({ paused: true, pausedBy: "Mona" });
+    await asOperator(boss, "PUT", path, { paused: false });
   });
 
   test("a pause refuses replies, drafts and typing, and leaves notes and handoffs", async () => {
@@ -594,6 +715,30 @@ describe("the event stream for keys", () => {
     expect(resumed.events.map((one) => one.event)).toEqual(["note.created", "ready"]);
     await resumed.stop();
     expect((await open("?types=message.created,nothing")).status).toBe(400);
+  });
+
+  test("a stream that drops between the two events of a first message resumes with the second", async () => {
+    const live = listen(await open());
+    await live.waitFor((one) => one.event === "ready");
+    const chat = await newChat("Two events, one change");
+    const started = await live.waitFor((one) => one.event === "conversation.created");
+    const created = await live.waitFor((one) => one.event === "message.created");
+    await live.stop();
+    expect(started.id).toBe(`${created.id}.0`);
+    const resumed = listen(await open("", { "last-event-id": started.id ?? "" }));
+    await resumed.waitFor((one) => one.event === "ready");
+    expect(resumed.events.map((one) => [one.event, one.id])).toEqual([
+      ["message.created", created.id],
+      ["ready", undefined],
+    ]);
+    expect(resumed.events[0]?.data).toMatchObject({
+      data: { conversation: { id: chat.conversationId } },
+    });
+    await resumed.stop();
+    const after = listen(await open(`?after=${created.id}`));
+    await after.waitFor((one) => one.event === "ready");
+    expect(after.events.map((one) => one.event)).toEqual(["ready"]);
+    await after.stop();
   });
 
   test("a revoked key's stream closes at the next heartbeat", async () => {

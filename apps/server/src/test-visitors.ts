@@ -12,7 +12,14 @@ import {
   type WorkspaceAccess,
   withWorkspace,
 } from "./db/tenant.ts";
-import { errorAnswer, FORBIDDEN, KEY_LIMITED, NOT_FOUND, ROLE_WRITE_ERRORS } from "./errors.ts";
+import {
+  errorAnswer,
+  FORBIDDEN,
+  failure,
+  KEY_LIMITED,
+  NOT_FOUND,
+  ROLE_WRITE_ERRORS,
+} from "./errors.ts";
 import { newBrowserToken, sha256Hex } from "./identity.ts";
 import { InboxMessage, messageView } from "./inbox.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
@@ -24,6 +31,13 @@ import { maySetUp } from "./team.ts";
 /** Simulated visitor messages a workspace may send in a minute. */
 export const TEST_MESSAGES_PER_MINUTE = 10;
 const MINUTE_SECONDS = 60;
+
+/** The answer to a test message over the limit. */
+export const testMessagesLimited = (waitSeconds: number) =>
+  failure(
+    "too_many_requests",
+    `Over ${TEST_MESSAGES_PER_MINUTE} test messages a minute. Retry in ${waitSeconds} seconds.`,
+  );
 
 export const TestMessageInput = z.object({
   body: z

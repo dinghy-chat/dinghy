@@ -412,6 +412,8 @@ export async function appendMessage(
     replyToMessageId?: string | undefined;
     /** A key's reply that came through MCP, or an operator's that sent a draft. */
     via?: "mcp" | "draft";
+    /** The draft that this operator's message sends. */
+    fromDraftId?: string;
   },
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
@@ -546,17 +548,24 @@ export async function appendMessage(
   if (assignsReplier && author.kind === "operator") {
     await assignConversation(tx, workspaceId, conversationId, author.operatorId);
   }
-  if (author.kind === "visitor" && !target.created) {
-    await markDraftsStale(tx, workspaceId, conversationId);
+  // A new visitor message, or a person's answer, leaves the drafts that wait behind.
+  if ((author.kind === "visitor" && !target.created) || author.kind === "operator") {
+    await markDraftsStale(tx, workspaceId, conversationId, input.fromDraftId);
   }
   return { message: stored(row), created: true, conversationStarted: target.created };
 }
 
 /**
- * A visitor wrote again, so the drafts that wait may answer an older question. They stay, marked
- * stale, and a `draft.changed` event tells the operator apps.
+ * A visitor wrote again, or a person answered, so the drafts that wait may answer an older question.
+ * They stay, marked stale, and a `draft.changed` event tells the operator apps. The draft that an
+ * operator sends is not one of them.
  */
-async function markDraftsStale(tx: Transaction, workspaceId: string, conversationId: string) {
+async function markDraftsStale(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  sentDraftId: string | undefined,
+) {
   const marked = await tx
     .update(draftReply)
     .set({ staleAt: sql`now()` })
@@ -566,6 +575,7 @@ async function markDraftsStale(tx: Transaction, workspaceId: string, conversatio
         eq(draftReply.conversationId, conversationId),
         isNull(draftReply.resolved),
         isNull(draftReply.staleAt),
+        sentDraftId === undefined ? undefined : ne(draftReply.id, sentDraftId),
       ),
     )
     .returning({ id: draftReply.id });
@@ -788,15 +798,50 @@ export interface ConversationRow {
   visitorIsTest: boolean;
   /** Since when a person handles it, so bots stay quiet. */
   humanSince: Date | null;
-  /** The key that last handed it off, and its name. */
-  handoffByApiKeyId: string | null;
-  handoffKeyName: string | null;
+  /** The assignee's name, for the handler. */
+  assigneeName: string | null;
+  /** While no person handles it: the key that took part last, or null when none did. */
+  botKey: KeyName | null;
 }
 
-/** The handing-off key's name, read in the same statement as each listed row. */
-const handoffKeyName = sql<string | null>`(
-  select k.name from api_key as k
-  where k.workspace_id = "conversation"."workspace_id" and k.id = "conversation"."handoff_by_api_key_id")`;
+/** A key's ID and name. */
+interface KeyName {
+  id: string;
+  name: string;
+}
+
+/** The assignee's name, read in the same statement as each listed row. */
+const assigneeName = sql<string | null>`(
+  select o.name from operator as o where o.id = "conversation"."assignee_operator_id")`;
+
+/**
+ * While no person handles the conversation, the key that wrote its newest message, draft or note, or
+ * handed it off. Read in the same statement as each listed row, with one backward index probe per
+ * table and no sort, and only for the rows that need it.
+ */
+const botKey = sql<KeyName | null>`(case when "conversation"."human_since" is null then (
+  select json_build_object('id', k.id, 'name', k.name) from api_key as k
+  where k.workspace_id = "conversation"."workspace_id" and k.id = coalesce((
+    select case greatest(by_message.at, by_draft.at, by_note.at)
+      when by_message.at then by_message.key_id
+      when by_draft.at then by_draft.key_id
+      when by_note.at then by_note.key_id end
+    from (select 1) as one
+    left join lateral (
+      select m.author_api_key_id as key_id, m.created_at as at from message as m
+      where m.workspace_id = "conversation"."workspace_id" and m.conversation_id = "conversation"."id"
+        and m.author_api_key_id is not null
+      order by m.seq desc limit 1) as by_message on true
+    left join lateral (
+      select d.api_key_id as key_id, d.created_at as at from draft_reply as d
+      where d.workspace_id = "conversation"."workspace_id" and d.conversation_id = "conversation"."id"
+      order by d.created_at desc limit 1) as by_draft on true
+    left join lateral (
+      select n.author_api_key_id as key_id, n.created_at as at from note as n
+      where n.workspace_id = "conversation"."workspace_id" and n.conversation_id = "conversation"."id"
+        and n.author_api_key_id is not null
+      order by n.seq desc limit 1) as by_note on true
+  ), "conversation"."handoff_by_api_key_id")) end)`;
 
 const conversationColumns = {
   id: conversation.id,
@@ -819,8 +864,8 @@ const conversationColumns = {
   visitorTimeZone: visitor.timeZone,
   visitorIsTest: visitor.isTest,
   humanSince: conversation.humanSince,
-  handoffByApiKeyId: conversation.handoffByApiKeyId,
-  handoffKeyName,
+  assigneeName,
+  botKey,
 };
 
 /** Joins a conversation to its visitor, inside the same workspace. */

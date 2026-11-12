@@ -135,6 +135,7 @@ describe("membership", () => {
       name: "Acme",
       logoUrl: null,
       botsPaused: false,
+      botsPausedBy: null,
     });
   });
 
@@ -329,6 +330,10 @@ describe("conversations", () => {
       expect(text).toMatch(/Index Scan Backward using conversation_list_idx/);
       expect(text).toMatch(/Index Cond: .*ROW\(updated_at, id\) </);
       expect(text).toMatch(/Index Scan Backward using message_conversation_idx/);
+      // The handler's key: one probe of each table's conversation index.
+      expect(text).toMatch(/Index Scan Backward using message_api_key_conversation_idx/);
+      expect(text).toMatch(/Index Scan Backward using draft_reply_conversation_idx/);
+      expect(text).toMatch(/Index Scan Backward using note_conversation_idx/);
       expect(text).not.toMatch(/Sort/);
     } finally {
       await client.query("rollback");

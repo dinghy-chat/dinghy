@@ -36,7 +36,8 @@ export const CLOSE_REASONS_TEXT =
   "after `unauthorized`, which needs a new token or sign-in.";
 
 interface FeedPage {
-  items: { event: string; seq: bigint; data: unknown }[];
+  /** `id` replaces the event's cursor, for a feed row that makes several events. */
+  items: { event: string; seq: bigint; id?: string; data: unknown }[];
   cursor: Cursor;
   hasMore: boolean;
   /** The cursor is from before a restore or an import, so the client must load from the start. */
@@ -125,7 +126,7 @@ export function openLiveStream(c: Context, stream: LiveStream): Response {
           if (closed) return;
           await sse.writeSSE({
             event: item.event,
-            id: formatCursor({ generation: page.cursor.generation, seq: item.seq }),
+            id: item.id ?? formatCursor({ generation: page.cursor.generation, seq: item.seq }),
             data: JSON.stringify(item.data),
           });
         }

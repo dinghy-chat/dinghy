@@ -125,7 +125,7 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   expect(discovered.supportedVersions).toContain(STATELESS);
   const { tools } = (await mcp.request("tools/list")) as { tools: { name: string }[] };
   expect(tools.map((one) => one.name)).toEqual(
-    expect.arrayContaining(["verify_install", "wait_for_messages", "reply", "handoff"]),
+    expect.arrayContaining(["verify_install", "wait_for_messages", "reply", "hand_off"]),
   );
 
   const install = await mcp.call("verify_install");
@@ -136,7 +136,7 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   const start = await mcp.call("wait_for_messages");
   const cursor = start.structuredContent.cursor;
   expect(cursor).toEqual(expect.any(String));
-  const sent = await mcp.call("simulate_visitor_message", {
+  const sent = await mcp.call("send_test_message", {
     body: "Can I change my plan?",
     name: "Tess Test",
   });
@@ -189,7 +189,7 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   await page.getByRole("option", { name: "Send directly" }).click();
   await expect(replies).toContainText("Send directly");
 
-  const handedOff = await mcp.call("handoff", {
+  const handedOff = await mcp.call("hand_off", {
     conversationId,
     clientId: "agent-handoff-1",
     reason: "Plan changes need a person",

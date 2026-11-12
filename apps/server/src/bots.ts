@@ -5,17 +5,21 @@ import {
   draftReply,
   event,
   message,
+  note,
+  operator,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
-import { createDraft, type DraftView } from "./drafts.ts";
+import { createDraft, type DraftView, findDraft } from "./drafts.ts";
 import {
   appendMessage,
   assignConversation,
   lockWorkspace,
+  messageColumns,
   nextSeq,
   type StoredMessage,
+  stored,
   wantsWebhook,
 } from "./messages.ts";
 import { appendNote } from "./notes.ts";
@@ -27,11 +31,11 @@ const text = {
 };
 
 /**
- * What a conversation's handler change was: a person took it, by a reply or a bot's handoff, or a
- * bot got it back. The `conversation.handled` event's payload names it, and the webhooks send
- * `conversation.handoff` and `conversation.bot_resumed`.
+ * What a conversation's handler change was: a person took it, by a reply or a bot's handoff, or
+ * a person gave it back to the bots. The `conversation.handled` event's payload names it, and the
+ * webhooks send `conversation.handoff` and `conversation.given_back`.
  */
-type HandledChange = "human" | "handoff" | "bot_resumed";
+type HandledChange = "human" | "handoff" | "given_back";
 
 export interface HandledPayload {
   conversationId: string;
@@ -133,17 +137,20 @@ export async function giveBack(
     .update(conversation)
     .set({ humanSince: null })
     .where(ofConversation(workspaceId, conversationId));
-  await handled(tx, workspaceId, { conversationId, change: "bot_resumed" });
+  await handled(tx, workspaceId, { conversationId, change: "given_back" });
   return true;
 }
 
-/** Pauses or resumes every bot of the workspace, under the row lock that each key reply takes. */
+/**
+ * Pauses or resumes every bot of the workspace, under the row lock that each key reply takes.
+ * Answers the name of who paused them, or null when bots run.
+ */
 export async function setBotsPaused(
   tx: Transaction,
   workspaceId: string,
   operatorId: string,
   paused: boolean,
-): Promise<void> {
+): Promise<string | null> {
   await tx
     .update(workspace)
     .set(
@@ -155,6 +162,12 @@ export async function setBotsPaused(
         : { botsPausedAt: null, botsPausedBy: null },
     )
     .where(eq(workspace.id, workspaceId));
+  if (!paused) return null;
+  const [pauser] = await tx
+    .select({ name: operator.name })
+    .from(operator)
+    .where(eq(operator.id, operatorId));
+  return pauser?.name ?? null;
 }
 
 export interface HandoffInput {
@@ -202,6 +215,32 @@ async function handoffMessage(
   return { status: "sent", message: sent.message };
 }
 
+/**
+ * The first result of a handoff that went in before with this clientId, or undefined when none did.
+ * Its note marks it done. Its message went out or became a draft, or else bots were paused.
+ */
+async function earlierHandoff(
+  tx: Transaction,
+  workspaceId: string,
+  apiKeyId: string,
+  input: HandoffInput,
+): Promise<HandoffMessage | null | undefined> {
+  const byKey = (table: typeof note | typeof message) =>
+    and(
+      eq(table.workspaceId, workspaceId),
+      eq(table.authorApiKeyId, apiKeyId),
+      eq(table.clientId, input.clientId),
+    );
+  const [noted] = await tx.select({ id: note.id }).from(note).where(byKey(note));
+  if (noted === undefined) return undefined;
+  if (input.visitorMessage === undefined) return null;
+  const [sent] = await tx.select(messageColumns).from(message).where(byKey(message));
+  if (sent !== undefined) return { status: "sent", message: stored(sent) };
+  const draft = await findDraft(tx, workspaceId, apiKeyId, input.clientId);
+  if (draft !== undefined) return { status: "drafted", draft };
+  return { status: "not_sent", reason: "bots_paused" };
+}
+
 async function isMember(tx: Transaction, workspaceId: string, operatorId: string) {
   const [member] = await tx
     .select({ id: workspaceMember.operatorId })
@@ -230,7 +269,8 @@ async function newestMessageId(tx: Transaction, workspaceId: string, conversatio
 /**
  * A bot hands a conversation to people, in one transaction: its message to the visitor, the
  * assignee, the handler, a note with the reason, and an event that alerts the assignee, or every
- * member when there is none. A retry with the same clientId changes nothing again.
+ * member when there is none. A retry with the same clientId changes nothing and answers the first
+ * result, even after the conversation or the pause changed.
  */
 export async function handoff(
   tx: Transaction,
@@ -240,6 +280,8 @@ export async function handoff(
   input: HandoffInput,
 ): Promise<HandoffOutcome> {
   await lockWorkspace(tx, workspaceId);
+  const earlier = await earlierHandoff(tx, workspaceId, key.apiKeyId, input);
+  if (earlier !== undefined) return { kind: "handed_off", created: false, visitorMessage: earlier };
   const [target] = await tx
     .select({ status: conversation.status })
     .from(conversation)
@@ -261,7 +303,6 @@ export async function handoff(
     },
   );
   if (noted === null) return { kind: "missing" };
-  if (!noted.created) return { kind: "handed_off", created: false, visitorMessage };
   if (input.operatorId !== undefined) {
     await assignConversation(tx, workspaceId, conversationId, input.operatorId);
   }

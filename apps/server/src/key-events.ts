@@ -16,7 +16,7 @@ import type { Images } from "./images.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, type OperatorNotice } from "./live.ts";
 import { closedFailure } from "./member.ts";
-import { CURSOR_PATTERN, type Cursor, listWorkspaceEvents, parseCursor } from "./messages.ts";
+import { type Cursor, formatCursor, listWorkspaceEvents, parseCursor } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { webhookData, webhookTypes } from "./webhooks.ts";
@@ -24,6 +24,29 @@ import { webhookData, webhookTypes } from "./webhooks.ts";
 const PATH = "/v1/events";
 /** Events read for one page of the stream. */
 const PAGE = 100;
+/**
+ * Where a client stands: a cursor, or a cursor and a part. One feed row can make several events,
+ * such as `conversation.created` and `message.created`. The last one's id is the row's cursor,
+ * `generation.seq`, and each earlier one's is `generation.seq.part`, its place in the row's list.
+ */
+const POSITION_PATTERN = /^\d{1,9}\.\d{1,18}(\.\d)?$/;
+
+interface Position {
+  after: Cursor;
+  /** The row whose events up to `part` the client has. */
+  partOf: { generation: number; seq: bigint; part: number } | null;
+}
+
+function parsePosition(value: string): Position {
+  const [generation = "", seq = "", part] = value.split(".");
+  const cursor = parseCursor(`${generation}.${seq}`);
+  if (part === undefined) return { after: cursor, partOf: null };
+  // Read the row again, and skip what the client has of it.
+  return {
+    after: { generation: cursor.generation, seq: cursor.seq - 1n },
+    partOf: { ...cursor, part: Number(part) },
+  };
+}
 
 const isWebhookEvent = (name: string): name is WebhookEvent =>
   WEBHOOK_EVENTS.some((one) => one === name);
@@ -34,7 +57,7 @@ const eventsRoute = createRoute({
   security: API_KEY,
   summary: "Stream the workspace's events to an API key's bot, with no public server",
   description:
-    "Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is a cursor: reconnect with `Last-Event-ID` or `?after=` to resume. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.\n\n" +
+    "Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is its position: reconnect with `Last-Event-ID` or `?after=` to resume after it. When one change makes several events, such as `conversation.created` then `message.created`, each has its own position, `generation.seq.part`, and the last has the change's cursor, `generation.seq`. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.\n\n" +
     'A `notice` has no id and may be lost: `{ kind: "typing", conversationId, draft }`, a visitor\'s unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
@@ -44,7 +67,7 @@ const eventsRoute = createRoute({
         .refine((value) => value.split(",").every(isWebhookEvent), "event types, comma separated")
         .optional()
         .openapi({ description: `A comma list of ${WEBHOOK_EVENTS.join(", ")}. All by default.` }),
-      after: z.string().regex(CURSOR_PATTERN).optional(),
+      after: z.string().regex(POSITION_PATTERN).optional(),
     }),
   },
   responses: {
@@ -86,28 +109,41 @@ interface KeyEventsOptions {
 export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
   const { db, images, limits, live, logger, rateLimit, stream, publicOrigin } = options;
 
-  /** One page of events after a cursor, as webhook bodies of the wanted types. */
+  /**
+   * One page of events after a cursor, as webhook bodies of the wanted types, without the parts of
+   * a row that the client has.
+   */
   const readPage = (
     workspaceId: string,
     wanted: Set<WebhookEvent> | null,
     position: Cursor | undefined,
+    partOf: Position["partOf"],
   ) =>
     withWorkspace(db, workspaceId, async (tx) => {
       const page = await listWorkspaceEvents(tx, workspaceId, position, PAGE);
-      const items: { event: string; seq: bigint; data: unknown }[] = [];
+      const items: { event: string; seq: bigint; id: string; data: unknown }[] = [];
+      const has = (seq: bigint, part: number) =>
+        partOf !== null &&
+        partOf.generation === page.cursor.generation &&
+        partOf.seq === seq &&
+        part <= partOf.part;
       for (const one of page.events) {
         const ids = one.payload as { conversationId?: string; messageId?: string; noteId?: string };
         if (ids.conversationId === undefined) continue;
-        for (const type of webhookTypes(one.kind, one.payload)) {
+        const types = webhookTypes(one.kind, one.payload);
+        for (const [part, type] of types.entries()) {
           if (wanted !== null && !wanted.has(type)) continue;
+          if (has(one.seq, part)) continue;
           const data = await webhookData(tx, images, workspaceId, {
             conversationId: ids.conversationId,
             messageId: type.startsWith("message.") ? (ids.messageId ?? null) : null,
             noteId: type === "note.created" ? (ids.noteId ?? null) : null,
           });
           // A conversation or message deleted since has nothing to send.
-          if (typeof data !== "string")
-            items.push({ event: type, seq: one.seq, data: { type, workspaceId, data } });
+          if (typeof data === "string") continue;
+          const cursor = formatCursor({ generation: page.cursor.generation, seq: one.seq });
+          const id = part === types.length - 1 ? cursor : `${cursor}.${part}`;
+          items.push({ event: type, seq: one.seq, id, data: { type, workspaceId, data } });
         }
       }
       return { ...page, items };
@@ -127,7 +163,8 @@ export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
     }
     const { types, after } = c.req.valid("query");
     const resume = c.req.header("last-event-id");
-    const from = resume !== undefined && CURSOR_PATTERN.test(resume) ? resume : after;
+    const from = resume !== undefined && POSITION_PATTERN.test(resume) ? resume : after;
+    const position = from === undefined ? null : parsePosition(from);
     const wanted = types === undefined ? null : new Set(types.split(",").filter(isWebhookEvent));
     const workspaceId = actor.workspaceId;
     const admitted = await limits.openStream(workspaceId, "operator", streamLeaseMs(stream));
@@ -145,9 +182,9 @@ export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
       notices: keyNotice,
       stillAllowed: () => keyStillValid(db, actor),
       expiresAt: undefined,
-      after: from === undefined ? undefined : parseCursor(from),
+      after: position?.after,
       authorized: () => keyStillValid(db, actor),
-      read: (position) => readPage(workspaceId, wanted, position),
+      read: (cursor) => readPage(workspaceId, wanted, cursor, position?.partOf ?? null),
     });
   });
 }

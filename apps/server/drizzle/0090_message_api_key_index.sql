@@ -1,0 +1,1 @@
+CREATE INDEX "message_api_key_conversation_idx" ON "message" USING btree ("workspace_id","conversation_id","seq") WHERE "message"."author_api_key_id" is not null;

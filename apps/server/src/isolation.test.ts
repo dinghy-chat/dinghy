@@ -1722,7 +1722,7 @@ const ATTACKS: Record<string, Attack> = {
       ["get_contact", { conversationId: other.conversationId }],
       ["get_contact", { visitorId: other.id }],
       ["add_note", { ...crossing, body: "crossing" }],
-      ["handoff", { ...crossing, reason: "crossing" }],
+      ["hand_off", { ...crossing, reason: "crossing" }],
       ["set_typing", { conversationId: other.conversationId }],
     ] as const) {
       const answer = await call(name, args);
@@ -1741,6 +1741,11 @@ const ATTACKS: Record<string, Attack> = {
       expect(text, name).not.toContain(other.id);
       expect(text, name).not.toContain(secrets.b);
     }
+    // The team list holds this workspace's members only.
+    const members = JSON.stringify(await call("list_members", {}));
+    expect(members).toContain(world.anna.id);
+    expect(members).not.toContain(world.bea.id);
+    expect(members).not.toContain(world.bea.email);
     // An access token renamed to another workspace finds nothing.
     const renamed = grantA.access.replace(grantA.access.slice(4, 40), world.b.id);
     const crossedGrant = await withKey(renamed, "POST", "/v1/mcp", {
@@ -1880,7 +1885,7 @@ async function setupToolsStayHome({ withKey, setupA, other, hookB, a, b }: World
         params: { name, arguments: args },
       })
     ).json()) as { result: { isError: boolean; structuredContent: Record<string, unknown> } };
-  const into = await call("simulate_visitor_message", {
+  const into = await call("send_test_message", {
     body: "crossing",
     conversationId: other.conversationId,
   });

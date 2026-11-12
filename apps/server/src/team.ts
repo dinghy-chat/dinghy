@@ -660,6 +660,22 @@ interface TeamOptions {
   keepsLastWorkspace: boolean;
 }
 
+/** The workspace's members, by name. */
+export function listMembers(tx: Transaction, workspaceId: string) {
+  return tx
+    .select({
+      id: operator.id,
+      name: operator.name,
+      email: operator.email,
+      role: workspaceMember.role,
+      pictureUpdatedAt: operator.pictureUpdatedAt,
+    })
+    .from(workspaceMember)
+    .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
+    .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)))
+    .orderBy(asc(operator.name));
+}
+
 export function registerTeamRoutes(
   app: App,
   { auth, db, limits, live, logger, imageUrls, mailer, rateLimit, keepsLastWorkspace }: TeamOptions,
@@ -671,20 +687,7 @@ export function registerTeamRoutes(
     audit(logger, event, { workspaceId, operatorId, ...fields });
   app.openapi(listMembersRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
-    const rows = await withWorkspace(db, id, (tx) =>
-      tx
-        .select({
-          id: operator.id,
-          name: operator.name,
-          email: operator.email,
-          role: workspaceMember.role,
-          pictureUpdatedAt: operator.pictureUpdatedAt,
-        })
-        .from(workspaceMember)
-        .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-        .where(and(eq(workspaceMember.workspaceId, id), isNull(workspaceMember.removedAt)))
-        .orderBy(asc(operator.name)),
-    );
+    const rows = await withWorkspace(db, id, (tx) => listMembers(tx, id));
     const members = rows.map(({ pictureUpdatedAt, ...member }) => ({
       ...member,
       pictureUrl: imageUrls.picture(member.id, pictureUpdatedAt),

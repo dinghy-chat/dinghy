@@ -480,7 +480,7 @@ export function createApp({
         testVisitors,
         serverUrl,
       },
-      chat: { db, images, inbox, limits, live, liveVisitors, visitorPresence },
+      chat: { db, images, inbox, limits, live, liveVisitors, presence, visitorPresence },
       resourceMetadata: issuer === null ? null : resourceMetadataUrl(issuer),
     });
     registerKeyEvents(app, { db, images, limits, live, logger, rateLimit, stream, publicOrigin });

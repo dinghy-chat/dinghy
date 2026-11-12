@@ -81,6 +81,8 @@ const meRoute = createRoute({
                   logoUrl: z.string().nullable(),
                   // An owner or admin paused every bot: API keys may not reply or type.
                   botsPaused: z.boolean(),
+                  // The name of who paused them. Null when bots run, or that account is gone.
+                  botsPausedBy: z.string().nullable(),
                   // False while a cloud signup waits for payment.
                   active: z.boolean(),
                   // True after a cloud subscription ended: operators can read and export only.
@@ -441,6 +443,7 @@ export function registerOperatorRoutes(
               name: face?.name ?? "",
               logoUrl: face?.logoUrl ?? null,
               botsPaused: face?.botsPaused ?? false,
+              botsPausedBy: face?.botsPausedBy ?? null,
               soleOwner,
               heir,
             };

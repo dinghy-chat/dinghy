@@ -7,6 +7,7 @@ import {
   appendMessage,
   ConversationClosedError,
   checkQuote,
+  findMessage,
   InvalidReplyToError,
   lockWorkspace,
   nextSeq,
@@ -109,9 +110,8 @@ export async function createDraft(
   conversationId: string,
   input: { clientId: string; body: string; replyToMessageId?: string | undefined },
 ): Promise<{ draft: DraftView; created: boolean }> {
-  const same = and(eq(draftReply.apiKeyId, apiKeyId), eq(draftReply.clientId, input.clientId));
-  const [existing] = await selectDrafts(tx, workspaceId, same);
-  if (existing !== undefined) return { draft: draftView(existing), created: false };
+  const existing = await findDraft(tx, workspaceId, apiKeyId, input.clientId);
+  if (existing !== undefined) return { draft: existing, created: false };
   const access = await workspaceAccess(tx, workspaceId);
   if (!writable(access)) throw new WorkspaceClosedError(access);
   const [target] = await tx
@@ -131,9 +131,21 @@ export async function createDraft(
     replyToMessageId: input.replyToMessageId ?? null,
   });
   await draftChanged(tx, workspaceId, conversationId);
-  const [made] = await selectDrafts(tx, workspaceId, same);
+  const made = await findDraft(tx, workspaceId, apiKeyId, input.clientId);
   if (made === undefined) throw new Error("The draft insert left no row");
-  return { draft: draftView(made), created: true };
+  return { draft: made, created: true };
+}
+
+/** The draft a key wrote with this clientId, or undefined. */
+export async function findDraft(
+  tx: Transaction,
+  workspaceId: string,
+  apiKeyId: string,
+  clientId: string,
+): Promise<DraftView | undefined> {
+  const same = and(eq(draftReply.apiKeyId, apiKeyId), eq(draftReply.clientId, clientId));
+  const [row] = await selectDrafts(tx, workspaceId, same);
+  return row === undefined ? undefined : draftView(row);
 }
 
 /** Which drafts a list holds: the ones that wait (open and stale), one of those, or all. */
@@ -201,8 +213,8 @@ export type SentDraft =
 
 /**
  * Sends a draft as the operator's own message, with `via: "draft"`. The operator approves the bot's
- * words, so this does not mark the conversation as handled by a person. Sending it again returns
- * the message it sent.
+ * words, so this does not mark the conversation as handled by a person. Sending it again, by any
+ * operator, returns the message it sent.
  */
 export async function sendDraft(
   tx: Transaction,
@@ -216,7 +228,18 @@ export async function sendDraft(
   const draft = await waitingDraft(tx, workspaceId, author.conversationId, draftId);
   if (draft === undefined) return { kind: "missing" };
   if (draft.resolved === "discarded") return { kind: "discarded" };
-  const reply = { clientId: `draft-${draftId}`, body: body ?? draft.body, via: "draft" as const };
+  // Sent before, maybe by another operator: that message, so the visitor never gets it twice.
+  if (draft.sentMessageId !== null) {
+    const sent = await findMessage(tx, workspaceId, draft.sentMessageId);
+    if (sent === null) throw new Error("A sent draft names no message");
+    return { kind: "sent", message: sent, created: false };
+  }
+  const reply = {
+    clientId: `draft-${draftId}`,
+    body: body ?? draft.body,
+    via: "draft" as const,
+    fromDraftId: draftId,
+  };
   const quote = draft.replyToMessageId ?? undefined;
   // The quoted message may have been deleted since the draft: then it goes without the quote.
   const appended = await appendMessage(tx, workspaceId, author, {
@@ -226,18 +249,16 @@ export async function sendDraft(
     if (!(error instanceof InvalidReplyToError)) throw error;
     return appendMessage(tx, workspaceId, author, reply);
   });
-  if (draft.resolved === null) {
-    await tx
-      .update(draftReply)
-      .set({
-        resolved: "sent",
-        resolvedAt: new Date(),
-        resolvedByOperatorId: author.operatorId,
-        sentMessageId: appended.message.id,
-      })
-      .where(ofDraft(workspaceId, draftId));
-    await draftChanged(tx, workspaceId, author.conversationId);
-  }
+  await tx
+    .update(draftReply)
+    .set({
+      resolved: "sent",
+      resolvedAt: new Date(),
+      resolvedByOperatorId: author.operatorId,
+      sentMessageId: appended.message.id,
+    })
+    .where(ofDraft(workspaceId, draftId));
+  await draftChanged(tx, workspaceId, author.conversationId);
   return { kind: "sent", message: appended.message, created: appended.created };
 }
 

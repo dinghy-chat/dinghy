@@ -153,7 +153,13 @@ describe("who may set up", () => {
         method: "tools/list",
       });
       const { result } = (await response.json()) as {
-        result: { tools: { name: string; annotations: { destructiveHint: boolean } }[] };
+        result: {
+          tools: {
+            name: string;
+            inputSchema: Record<string, unknown>;
+            annotations: { destructiveHint: boolean };
+          }[];
+        };
       };
       return result.tools;
     };
@@ -171,7 +177,7 @@ describe("who may set up", () => {
       "get_webhook_verification",
       "list_webhook_deliveries",
       "replay_webhook_delivery",
-      "simulate_visitor_message",
+      "send_test_message",
       "delete_test_visitors",
     ]) {
       expect(names).toContain(name);
@@ -183,8 +189,15 @@ describe("who may set up", () => {
       "delete_webhook",
       "remove_allowed_site",
     ]);
-    const chatNames = (await list(chatKey)).map((one) => one.name);
+    const chatTools = await list(chatKey);
+    const chatNames = chatTools.map((one) => one.name);
     expect(chatNames).not.toContain("verify_install");
+    // MCP clients refuse a whole list when one tool's input is not an object at its root.
+    for (const one of [...setupTools, ...chatTools]) {
+      expect(one.inputSchema, one.name).toMatchObject({ type: "object" });
+      expect(one.inputSchema, one.name).not.toHaveProperty("anyOf");
+      expect(one.inputSchema, one.name).not.toHaveProperty("oneOf");
+    }
     const refused = await withKey(chatKey, "POST", "/v1/mcp", {
       jsonrpc: "2.0",
       id: 1,
@@ -401,7 +414,7 @@ describe("appearance", () => {
 
 describe("test visitors", () => {
   const simulate = async (args: Record<string, unknown>) =>
-    (await callTool(setupKey, "simulate_visitor_message", args)).structuredContent as {
+    (await callTool(setupKey, "send_test_message", args)).structuredContent as {
       visitorId: string;
       conversationId: string;
       message: { body: string; fromVisitor: boolean };

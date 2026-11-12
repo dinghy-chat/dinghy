@@ -6,6 +6,7 @@ import { giveBack, type HandoffInput, handoff, setBotsPaused, typingGate } from 
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { DraftSchema, discardDraft, listDrafts, sendDraft } from "./drafts.ts";
 import {
+  CONVERSATION_CLOSED,
   errorAnswer,
   FORBIDDEN,
   failure,
@@ -30,7 +31,7 @@ import {
   WorkspaceClosedError,
 } from "./messages.ts";
 import { appendNote, NoteSchema } from "./notes.ts";
-import { allowed } from "./team.ts";
+import { allowed, NOT_A_MEMBER } from "./team.ts";
 
 const workspaceParams = z.object({ workspaceId: z.uuid() });
 const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
@@ -45,9 +46,7 @@ const text = (max: number) =>
     .max(max)
     .regex(/^[^\0]*$/);
 
-const CLOSED = failure("conversation_closed", "Reopen this conversation first.");
 const KEYS_ONLY = failure("forbidden", "Only an API key's bot does this.");
-const NOT_A_MEMBER = failure("not_a_member", "This person is not in this workspace.");
 
 const json = <T extends z.ZodType>(schema: T) => ({
   required: true,
@@ -169,7 +168,7 @@ const giveBackRoute = createRoute({
   security: SESSION,
   summary: "Give a conversation back to the bots",
   description:
-    "Clears `humanSince`, so a key that sends directly may reply again. Webhooks get `conversation.bot_resumed`. Only people can do this: a bot cannot take a conversation back.",
+    "No person handles it any more, so a key that sends directly may reply again. Webhooks get `conversation.given_back`. Only people can do this: a bot cannot take a conversation back.",
   request: { params: conversationParams },
   responses: {
     200: { description: "Bots may answer it", content: okContent },
@@ -186,7 +185,10 @@ const botsPausedRoute = createRoute({
     "While paused, every API key's reply, draft or typing answers 409 `bots_paused`. Reads, notes and handoffs still work, so a bot can still hand a conversation to people.",
   request: { params: workspaceParams, body: json(z.object({ paused: z.boolean() })) },
   responses: {
-    200: answer("The new state", z.object({ paused: z.boolean() })),
+    200: answer(
+      "The new state, and the name of who paused bots, null when they run",
+      z.object({ paused: z.boolean(), pausedBy: z.string().nullable() }),
+    ),
     ...ROLE_WRITE_ERRORS,
   },
 });
@@ -310,7 +312,7 @@ export function registerHandlingRoutes(app: App, { db, images, live }: HandlingO
       const refused = closedFailure(outcome.access);
       return c.json(refused.body, refused.status);
     }
-    if (outcome.kind === "closed") return c.json(CLOSED, 409);
+    if (outcome.kind === "closed") return c.json(CONVERSATION_CLOSED, 409);
     if (outcome.kind !== "sent") return c.json(NOT_FOUND, 404);
     if (outcome.created && outcome.visitorId !== undefined) {
       wakeConversation(live, id, outcome.visitorId);
@@ -356,7 +358,7 @@ export function registerHandlingRoutes(app: App, { db, images, live }: HandlingO
       return c.json(refused.body, refused.status);
     }
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
-    if (outcome.kind === "closed") return c.json(CLOSED, 409);
+    if (outcome.kind === "closed") return c.json(CONVERSATION_CLOSED, 409);
     if (outcome.kind === "not_member") return c.json(NOT_A_MEMBER, 400);
     const sent = outcome.visitorMessage;
     const visitorMessage =
@@ -379,12 +381,13 @@ export function registerHandlingRoutes(app: App, { db, images, live }: HandlingO
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { paused } = c.req.valid("json");
-    await withWorkspace(db, id, async (tx) => {
-      await setBotsPaused(tx, id, c.get("operatorId"), paused);
+    const pausedBy = await withWorkspace(db, id, async (tx) => {
+      const name = await setBotsPaused(tx, id, c.get("operatorId"), paused);
       await recordWorkspaceChange(tx, id);
+      return name;
     });
     live.wake(id, OPERATORS);
-    return c.json({ paused }, 200);
+    return c.json({ paused, pausedBy }, 200);
   });
 
   app.openapi(typingRoute, async (c) => {

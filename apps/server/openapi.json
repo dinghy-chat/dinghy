@@ -551,6 +551,9 @@
                 "botsPaused": {
                   "type": "boolean"
                 },
+                "botsPausedBy": {
+                  "type": ["string", "null"]
+                },
                 "active": {
                   "type": "boolean"
                 },
@@ -576,6 +579,7 @@
                 "name",
                 "logoUrl",
                 "botsPaused",
+                "botsPausedBy",
                 "active",
                 "readOnly",
                 "waiting",
@@ -617,9 +621,12 @@
           },
           "botsPaused": {
             "type": "boolean"
+          },
+          "botsPausedBy": {
+            "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "logoUrl", "botsPaused"]
+        "required": ["id", "name", "logoUrl", "botsPaused", "botsPausedBy"]
       },
       "Conversation": {
         "type": "object",
@@ -642,9 +649,6 @@
           },
           "welcome": {
             "type": "boolean"
-          },
-          "humanSince": {
-            "type": ["string", "null"]
           },
           "handler": {
             "$ref": "#/components/schemas/ConversationHandler"
@@ -742,7 +746,6 @@
           "assigneeOperatorId",
           "startedPage",
           "welcome",
-          "humanSince",
           "handler",
           "pageContext",
           "visitor",
@@ -751,19 +754,6 @@
       },
       "ConversationHandler": {
         "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["human"]
-              },
-              "since": {
-                "type": "string"
-              }
-            },
-            "required": ["kind", "since"]
-          },
           {
             "type": "object",
             "properties": {
@@ -779,6 +769,38 @@
               }
             },
             "required": ["kind", "apiKeyId", "name"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["person"]
+              },
+              "operatorId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "since": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "operatorId", "name", "since"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["team"]
+              },
+              "since": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "since"]
           },
           {
             "type": "null"
@@ -1228,7 +1250,7 @@
                 "conversation.reopened",
                 "conversation.assigned",
                 "conversation.handoff",
-                "conversation.bot_resumed",
+                "conversation.given_back",
                 "note.created"
               ]
             }
@@ -1275,7 +1297,7 @@
               "conversation.reopened",
               "conversation.assigned",
               "conversation.handoff",
-              "conversation.bot_resumed",
+              "conversation.given_back",
               "note.created"
             ]
           },
@@ -7596,7 +7618,7 @@
                         "conversation.reopened",
                         "conversation.assigned",
                         "conversation.handoff",
-                        "conversation.bot_resumed",
+                        "conversation.given_back",
                         "note.created"
                       ]
                     },
@@ -7785,7 +7807,7 @@
                         "conversation.reopened",
                         "conversation.assigned",
                         "conversation.handoff",
-                        "conversation.bot_resumed",
+                        "conversation.given_back",
                         "note.created"
                       ]
                     },
@@ -9275,7 +9297,7 @@
           }
         ],
         "summary": "Give a conversation back to the bots",
-        "description": "Clears `humanSince`, so a key that sends directly may reply again. Webhooks get `conversation.bot_resumed`. Only people can do this: a bot cannot take a conversation back.",
+        "description": "No person handles it any more, so a key that sends directly may reply again. Webhooks get `conversation.given_back`. Only people can do this: a bot cannot take a conversation back.",
         "parameters": [
           {
             "schema": {
@@ -9425,7 +9447,7 @@
         },
         "responses": {
           "200": {
-            "description": "The new state",
+            "description": "The new state, and the name of who paused bots, null when they run",
             "content": {
               "application/json": {
                 "schema": {
@@ -9433,9 +9455,12 @@
                   "properties": {
                     "paused": {
                       "type": "boolean"
+                    },
+                    "pausedBy": {
+                      "type": ["string", "null"]
                     }
                   },
-                  "required": ["paused"]
+                  "required": ["paused", "pausedBy"]
                 }
               }
             }
@@ -10611,7 +10636,7 @@
           }
         ],
         "summary": "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
-        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `handoff`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
         "requestBody": {
           "required": true,
           "content": {
@@ -10720,22 +10745,22 @@
           }
         ],
         "summary": "Stream the workspace's events to an API key's bot, with no public server",
-        "description": "Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is a cursor: reconnect with `Last-Event-ID` or `?after=` to resume. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.\n\nA `notice` has no id and may be lost: `{ kind: \"typing\", conversationId, draft }`, a visitor's unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is its position: reconnect with `Last-Event-ID` or `?after=` to resume after it. When one change makes several events, such as `conversation.created` then `message.created`, each has its own position, `generation.seq.part`, and the last has the change's cursor, `generation.seq`. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.\n\nA `notice` has no id and may be lost: `{ kind: \"typing\", conversationId, draft }`, a visitor's unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.bot_resumed, note.created. All by default."
+              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, note.created. All by default."
             },
             "required": false,
-            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.bot_resumed, note.created. All by default.",
+            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, note.created. All by default.",
             "name": "types",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "pattern": "^\\d{1,9}\\.\\d{1,18}$"
+              "pattern": "^\\d{1,9}\\.\\d{1,18}(\\.\\d)?$"
             },
             "required": false,
             "name": "after",

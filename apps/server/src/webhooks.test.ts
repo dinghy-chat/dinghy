@@ -299,7 +299,7 @@ describe("delivery", () => {
       "message.created",
       "note.created",
       "conversation.handoff",
-      "conversation.bot_resumed",
+      "conversation.given_back",
     ]);
     const made = await asBoss("POST", inSpace("/api-keys"), { name: "Bot" });
     const { id: keyId, token } = (await made.json()) as { id: string; token: string };
@@ -319,7 +319,7 @@ describe("delivery", () => {
     const events = received.map((request) => verified(request, hook.secret));
     const ofType = (type: string) => events.filter((one) => one.type === type);
     expect(events.map((one) => one.type).sort()).toEqual([
-      "conversation.bot_resumed",
+      "conversation.given_back",
       "conversation.handoff",
       "message.created",
       "note.created",
@@ -345,10 +345,12 @@ describe("delivery", () => {
     expect(ofType("conversation.handoff")[0]?.data.conversation).toMatchObject({
       id: conversationId,
     });
-    expect(ofType("conversation.bot_resumed")[0]?.data.conversation).toMatchObject({
+    expect(ofType("conversation.given_back")[0]?.data.conversation).toMatchObject({
       handler: { kind: "bot", apiKeyId: keyId, name: "Bot" },
-      humanSince: null,
     });
+    expect(ofType("conversation.given_back")[0]?.data.conversation).not.toHaveProperty(
+      "humanSince",
+    );
     expect(JSON.stringify(ofType("message.created"))).not.toContain("Known customer");
   });
 

@@ -858,6 +858,7 @@ describe("invites", () => {
         name: "Acme",
         logoUrl: null,
         botsPaused: false,
+        botsPausedBy: null,
         active: true,
         readOnly: false,
         waiting: false,

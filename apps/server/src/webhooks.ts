@@ -822,7 +822,7 @@ export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhoo
 
 /**
  * The webhook events one feed event makes: a first message also starts its conversation, and a
- * handler change is a handoff or a bot's return. A person's reply that took a conversation makes
+ * handler change is a handoff or a give-back. A person's reply that took a conversation makes
  * none: `message.created` tells it.
  */
 export function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
@@ -833,7 +833,7 @@ export function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
   if (kind === "conversation.handled") {
     const { change } = payload as HandledPayload;
     if (change === "handoff") return ["conversation.handoff"];
-    return change === "bot_resumed" ? ["conversation.bot_resumed"] : [];
+    return change === "given_back" ? ["conversation.given_back"] : [];
   }
   return WEBHOOK_EVENTS.some((one) => one === kind) ? [kind as WebhookEvent] : [];
 }

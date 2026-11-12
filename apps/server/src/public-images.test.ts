@@ -148,7 +148,13 @@ describe("uploading a logo", () => {
     const inbox = await app.request(`/v1/operator/workspaces/${space.id}`, {
       headers: { cookie: boss.cookie },
     });
-    expect(await inbox.json()).toEqual({ id: space.id, name: "Acme", logoUrl, botsPaused: false });
+    expect(await inbox.json()).toEqual({
+      id: space.id,
+      name: "Acme",
+      logoUrl,
+      botsPaused: false,
+      botsPausedBy: null,
+    });
 
     const served = await app.request(logoUrl);
     expect(served.status).toBe(200);

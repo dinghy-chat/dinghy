@@ -126,6 +126,10 @@ export const failure = (code: ErrorCode, message: string) => ({ error: { code, m
 
 export const NOT_FOUND = failure("not_found", "This does not exist.");
 export const FORBIDDEN = failure("forbidden", "Your role does not allow this.");
+export const CONVERSATION_CLOSED = failure(
+  "conversation_closed",
+  "Reopen this conversation to reply.",
+);
 /** No session, or the account was deleted. */
 export const UNAUTHORIZED = failure("unauthorized", "Sign in to continue.");
 /** A write to the operator API from a page that is not this server's own. */

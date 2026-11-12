@@ -16,6 +16,7 @@ import {
 } from "./db/tenant.ts";
 import { createDraft, DraftSchema, type DraftView } from "./drafts.ts";
 import {
+  CONVERSATION_CLOSED,
   errorAnswer,
   FORBIDDEN,
   failure,
@@ -67,7 +68,6 @@ import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs }
 import { allowed } from "./team.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
-const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
 const INVALID_REPLY_TO = failure(
   "invalid_reply_to",
   "Quote a message that people wrote in this conversation and that was not deleted.",
@@ -182,6 +182,19 @@ export const InboxMessage = z
     },
   });
 
+const ConversationHandler = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("bot"), apiKeyId: z.string(), name: z.string() }),
+    z.object({
+      kind: z.literal("person"),
+      operatorId: z.string(),
+      name: z.string(),
+      since: z.string(),
+    }),
+    z.object({ kind: z.literal("team"), since: z.string() }),
+  ])
+  .openapi("ConversationHandler");
+
 const Conversation = z
   .object({
     id: z.string(),
@@ -192,18 +205,10 @@ const Conversation = z
     startedPage: z.string().nullable(),
     // On Dinghy Cloud, a welcome chat with Dinghy's founder. False everywhere else.
     welcome: z.boolean(),
-    // Since when a person handles it: an operator replied, or a bot handed it off. Bots that send
-    // directly stay quiet while it is set. Null while bots may answer.
-    humanSince: z.string().nullable(),
-    // Who handles it: a person since `since`, or the bot that handed it off and got it back. Null
-    // when no person took it and no bot handed it off.
-    handler: z
-      .discriminatedUnion("kind", [
-        z.object({ kind: z.literal("human"), since: z.string() }),
-        z.object({ kind: z.literal("bot"), apiKeyId: z.string(), name: z.string() }),
-      ])
-      .nullable()
-      .openapi("ConversationHandler"),
+    // Who handles it. `person`: the assignee, since an operator replied or a bot handed it off,
+    // and `team` the same with no assignee; bots that send directly stay quiet. `bot`: no person
+    // handles it, and this key took part last. Null: no person handles it and no bot took part.
+    handler: ConversationHandler.nullable(),
     // What the host page last sent with `Dinghy.setContext()`. Unsigned, so not verified.
     pageContext: PageContextSchema.nullable(),
     visitor: z.object({
@@ -254,6 +259,8 @@ const workspaceRoute = createRoute({
               logoUrl: z.string().nullable(),
               // An owner or admin paused every bot: keys may not reply or type.
               botsPaused: z.boolean(),
+              // The name of who paused them. Null when bots run, or that person's account is gone.
+              botsPausedBy: z.string().nullable(),
             })
             .openapi("InboxWorkspace"),
         },
@@ -710,11 +717,16 @@ async function welcomePictures(
   return url === null ? new Map() : new Map(ours.map((one) => [one.id, url]));
 }
 
-/** Who handles a conversation: a person, the bot that handed it off, or nobody in particular. */
-function handlerOf(row: ConversationRow): z.infer<typeof Conversation>["handler"] {
-  if (row.humanSince !== null) return { kind: "human", since: row.humanSince.toISOString() };
-  if (row.handoffByApiKeyId === null) return null;
-  return { kind: "bot", apiKeyId: row.handoffByApiKeyId, name: row.handoffKeyName ?? "" };
+/** Who handles a conversation: its assignee or the team, the bot that took part last, or nobody. */
+function handlerOf(row: ConversationRow): z.infer<typeof ConversationHandler> | null {
+  if (row.humanSince !== null) {
+    const since = row.humanSince.toISOString();
+    if (row.assigneeOperatorId === null || row.assigneeName === null)
+      return { kind: "team", since };
+    return { kind: "person", operatorId: row.assigneeOperatorId, name: row.assigneeName, since };
+  }
+  if (row.botKey === null) return null;
+  return { kind: "bot", apiKeyId: row.botKey.id, name: row.botKey.name };
 }
 
 /** A conversation as the operator API shows it. */
@@ -730,7 +742,6 @@ export function conversationView(
     assigneeOperatorId: row.assigneeOperatorId,
     startedPage: row.startedPage,
     welcome: row.welcome,
-    humanSince: row.humanSince?.toISOString() ?? null,
     handler: handlerOf(row),
     pageContext: PageContextSchema.nullable().catch(null).parse(row.visitorPageContext),
     visitor: {
@@ -1103,7 +1114,7 @@ export type Inbox = ReturnType<typeof createInbox>;
 /** The answer for a reply that did not go in. */
 export function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" | "drafted" }>) {
   if (outcome.kind === "missing") return { body: NOT_FOUND, status: 404 as const };
-  if (outcome.kind === "closed") return { body: CLOSED, status: 409 as const };
+  if (outcome.kind === "closed") return { body: CONVERSATION_CLOSED, status: 409 as const };
   if (outcome.kind === "invalid_reply_to") return { body: INVALID_REPLY_TO, status: 400 as const };
   if (outcome.kind === "bots_paused") return { body: BOTS_PAUSED, status: 409 as const };
   if (outcome.kind === "human_handling") return { body: HUMAN_HANDLING, status: 409 as const };
