@@ -3016,11 +3016,10 @@ button.quote:hover {
   font: 700 22px / 1.2 var(--display);
   letter-spacing: -0.02em;
 }
+/* The image at full size, scaled down to fit the screen whole. */
 .viewer {
-  max-width: 95vw;
-  max-height: 95vh;
   padding: 0;
-  overflow: auto;
+  overflow: hidden;
   border: 0;
   background: transparent;
 }
@@ -3029,7 +3028,8 @@ button.quote:hover {
 }
 .viewer img {
   display: block;
-  max-width: none;
+  max-width: 95vw;
+  max-height: 95vh;
 }
 
 /* Pages in the panel, such as each Settings page. Rows with thin lines, no cards in cards. */
