@@ -203,7 +203,10 @@ test("the Closed switch lists closed conversations, by keyboard too, and a reloa
   await expect(page).toHaveURL(/[?&]view=closed/);
 
   await page.reload();
-  await expect(await inboxFilter(page, "Closed")).toBeChecked();
+  // The card opens with the focus on the chosen filter, so the arrows move from it.
+  const closed = await inboxFilter(page, "Closed");
+  await expect(closed).toBeChecked();
+  await expect(closed).toBeFocused();
   await expect(row(page, "Close this one")).toBeVisible();
   for (const one of [customer, page]) await one.context().close();
 });

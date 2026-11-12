@@ -94,7 +94,7 @@ export function MessageMenu({ items, side }: { items: MenuItem[]; side: "start" 
       items={items}
       buttonClass="msg-more"
       side={side}
-      floating
+      placement="floating"
       className="msg-menu"
     >
       <Icon name="dots" size={18} />

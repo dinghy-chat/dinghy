@@ -15,9 +15,27 @@ import { t } from "./text.ts";
 import { useModal } from "./ui.tsx";
 
 type Side = "start" | "end";
-type Direction = "down" | "up";
+/** Where a menu opens: under its button, over it, or placed in the window, out of any scrolling area. */
+type Placement = "down" | "up" | "floating";
 
 const TYPE_AHEAD_MS = 600;
+/** A floating popup's distance from its button, and from the window's edges. */
+const POPUP_GAP_PX = 6;
+const WINDOW_MARGIN_PX = 8;
+/** The height a popup may take before it scrolls, as `.popup` sets in the CSS. */
+const POPUP_MAX_HEIGHT_PX = 320;
+
+/** Closes an open popup when a press lands outside `wrap`, its button and the popup. */
+function useOutsidePress(open: boolean, wrap: RefObject<HTMLElement | null>, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!wrap.current?.contains(event.target as Node)) close();
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open, wrap, close]);
+}
 
 /**
  * The shared part of a dropdown and a menu: a button that opens a popup of items, the keyboard
@@ -47,14 +65,7 @@ function usePopup(labels: string[], start: () => number) {
     if (open) popup.current?.focus();
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, [open]);
+  useOutsidePress(open, wrap, close);
 
   useEffect(() => {
     if (open)
@@ -137,13 +148,19 @@ function usePopup(labels: string[], start: () => number) {
   };
 }
 
-const EDGE = 8;
+/** The nearest box around `element` that scrolls or clips what it holds, or the window. */
+function clippingBox(element: Element): { top: number; bottom: number } {
+  for (let box = element.parentElement; box !== null; box = box.parentElement) {
+    if (getComputedStyle(box).overflowY !== "visible") return box.getBoundingClientRect();
+  }
+  return { top: 0, bottom: innerHeight };
+}
 
 /**
  * Places an open popup in the window, out of any area that scrolls or clips it, such as the thread
  * above the reply field: under its button, or over it when there is more room there, lined up with
- * `side` of the button and kept inside the window. A scroll outside the popup closes it, as it
- * would no longer sit by its button.
+ * `side` of the button and kept inside the window. It follows its button when the thread scrolls,
+ * as it does when a message arrives, and closes once the button scrolls out of view.
  */
 function useFloating(
   open: boolean,
@@ -153,36 +170,39 @@ function useFloating(
   close: () => void,
 ) {
   useLayoutEffect(() => {
-    const element = popup.current;
-    const anchor = button.current?.getBoundingClientRect();
-    if (!open || element === null || anchor === undefined) return;
-    const gap = 6;
-    const below = innerHeight - anchor.bottom - gap - EDGE;
-    const above = anchor.top - gap - EDGE;
-    const down = element.offsetHeight <= below || below >= above;
-    const width = element.offsetWidth;
-    const left = side === "end" ? anchor.right - width : anchor.left;
-    Object.assign(element.style, {
-      top: down ? `${anchor.bottom + gap}px` : "auto",
-      bottom: down ? "auto" : `${innerHeight - anchor.top + gap}px`,
-      left: `${Math.max(EDGE, Math.min(left, innerWidth - width - EDGE))}px`,
-      maxHeight: `${Math.max(down ? below : above, 120)}px`,
-    });
-    element.classList.toggle("up", !down);
-  }, [open, button, popup, side]);
-
-  useEffect(() => {
     if (!open) return;
-    const away = (event: Event) => {
-      if (!popup.current?.contains(event.target as Node)) close();
+    const place = () => {
+      const element = popup.current;
+      const anchor = button.current;
+      if (element === null || anchor === null) return;
+      const at = anchor.getBoundingClientRect();
+      const view = clippingBox(anchor);
+      if (at.bottom < view.top || at.top > view.bottom) return close();
+      const below = innerHeight - at.bottom - POPUP_GAP_PX - WINDOW_MARGIN_PX;
+      const above = at.top - POPUP_GAP_PX - WINDOW_MARGIN_PX;
+      const down = element.offsetHeight <= below || below >= above;
+      const width = element.offsetWidth;
+      const left = side === "end" ? at.right - width : at.left;
+      Object.assign(element.style, {
+        top: down ? `${at.bottom + POPUP_GAP_PX}px` : "auto",
+        bottom: down ? "auto" : `${innerHeight - at.top + POPUP_GAP_PX}px`,
+        left: `${Math.max(WINDOW_MARGIN_PX, Math.min(left, innerWidth - width - WINDOW_MARGIN_PX))}px`,
+        maxHeight: `${Math.min(down ? below : above, POPUP_MAX_HEIGHT_PX)}px`,
+      });
+      // The inline position wins over the class's, which only picks the animation that rises.
+      element.classList.toggle("up", !down);
     };
-    addEventListener("scroll", away, true);
+    place();
+    const onScroll = (event: Event) => {
+      if (!popup.current?.contains(event.target as Node)) place();
+    };
+    addEventListener("scroll", onScroll, true);
     addEventListener("resize", close);
     return () => {
-      removeEventListener("scroll", away, true);
+      removeEventListener("scroll", onScroll, true);
       removeEventListener("resize", close);
     };
-  }, [open, popup, close]);
+  }, [open, button, popup, side, close]);
 }
 
 interface Choice<V extends string> {
@@ -312,26 +332,24 @@ export function Menu({
   children,
   buttonClass,
   side = "end",
-  direction = "down",
-  floating = false,
+  placement = "down",
   className = "",
 }: {
   /** The button's accessible name. */
   label: string;
   items: MenuItem[];
-  /** Placed in the window, so an area that scrolls, such as the thread, never cuts it off. */
-  floating?: boolean;
   /** What the button shows. */
   children: ReactNode;
   buttonClass: string;
   side?: Side;
-  direction?: Direction;
+  placement?: Placement;
   className?: string;
 }) {
   const popup = usePopup(
     items.map((item) => item.label),
     () => 0,
   );
+  const floating = placement === "floating";
   useFloating(floating && popup.open, popup.button, popup.popup, side, popup.close);
   const choose = (index: number) => {
     const item = items[index];
@@ -340,7 +358,7 @@ export function Menu({
     item?.onSelect();
   };
   return (
-    <div className={`menu-wrap ${className}`} ref={popup.wrap}>
+    <div className={`popup-wrap ${className}`} ref={popup.wrap}>
       <button
         ref={popup.button}
         type="button"
@@ -356,7 +374,7 @@ export function Menu({
       {popup.open && (
         <div
           ref={popup.popup}
-          className={floating ? "popup" : `popup side-${side} ${direction}`}
+          className={floating ? "popup floating" : `popup side-${side} ${placement}`}
           role="menu"
           tabIndex={-1}
           aria-label={label}
@@ -480,7 +498,6 @@ export function Popover({
   children,
   buttonClass,
   buttonContent,
-  side = "end",
 }: {
   /** The button's accessible name. */
   label: string;
@@ -489,7 +506,6 @@ export function Popover({
   children: ReactNode;
   buttonClass: string;
   buttonContent: ReactNode;
-  side?: Side;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -498,20 +514,13 @@ export function Popover({
   const titleId = useId();
 
   useLayoutEffect(() => {
-    if (open) card.current?.querySelector<HTMLElement>("input:checked, input, button")?.focus();
+    if (open) card.current?.querySelector<HTMLElement>("input:checked")?.focus();
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useOutsidePress(open, wrap, close);
 
   return (
-    <div className="menu-wrap" ref={wrap}>
+    <div className="popup-wrap" ref={wrap}>
       <button
         ref={button}
         type="button"
@@ -526,7 +535,7 @@ export function Popover({
       {open && (
         <div
           ref={card}
-          className={`popup popover side-${side}`}
+          className="popup popover side-end"
           role="dialog"
           aria-labelledby={titleId}
           onBlur={(event) => {

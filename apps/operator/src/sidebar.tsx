@@ -132,7 +132,7 @@ function UserMenu({
       label={t("userMenu")}
       buttonClass={current ? "me current" : "me"}
       side="start"
-      direction="up"
+      placement="up"
       className="me-menu"
       items={[
         { label: t("pageProfile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },

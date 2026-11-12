@@ -4,7 +4,7 @@ import { Icon, type IconName } from "./icons.tsx";
 import { type TextId, t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
 
-type Receipt = "sent" | "emailed" | "emailFailed" | "read";
+export type Receipt = "sent" | "emailed" | "emailFailed" | "read";
 
 const RECEIPTS: Record<Receipt, { text: TextId; icon: IconName }> = {
   sent: { text: "receiptSent", icon: "checkThin" },

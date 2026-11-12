@@ -1003,7 +1003,7 @@ button.workspace[aria-expanded="true"],
   background: var(--navy);
   color: var(--on-navy);
 }
-.menu-wrap {
+.popup-wrap {
   position: relative;
 }
 .me-menu {
@@ -1376,6 +1376,12 @@ button.workspace[aria-expanded="true"],
   bottom: 100%;
   margin: 0 0 6px;
   animation-name: pop-up;
+}
+/* Placed in the window by its script, so an area that scrolls, such as the thread, never cuts it
+   off. */
+.popup.floating {
+  position: fixed;
+  margin: 0;
 }
 @keyframes pop-up {
   from {
@@ -2290,8 +2296,11 @@ img.ws-tile {
   transition: opacity 0.12s;
   pointer-events: none;
 }
-.bubble-row:hover > .receipt.later {
-  opacity: 1;
+/* A phone has no room beside the bubble, and its Info item says the same. */
+@media (hover: hover) and (min-width: 761px) {
+  .bubble-row:is(:hover, :focus-within) > .receipt.later {
+    opacity: 1;
+  }
 }
 /* A visitor's unsent words, faded, with three dots that move. */
 .msg.draft {
@@ -2381,25 +2390,22 @@ img.ws-tile {
   flex-direction: row;
   align-self: flex-start;
 }
-.bubble-row .menu-wrap {
+.bubble-row .popup-wrap {
   opacity: 0;
   transition: opacity 0.12s;
 }
-.bubble-row:is(:hover, :focus-within) .menu-wrap,
-.bubble-row .menu-wrap:has([aria-expanded="true"]) {
+.bubble-row:is(:hover, :focus-within) .popup-wrap,
+.bubble-row .popup-wrap:has([aria-expanded="true"]) {
   opacity: 1;
 }
 /* A touch screen has no hover, so the button always shows there, quietly. */
 @media (hover: none) {
-  .bubble-row .menu-wrap {
+  .bubble-row .popup-wrap {
     opacity: 1;
   }
 }
-/* A message's menu: smaller than the app's other menus, and placed in the window, so the thread
-   never cuts it off. Its script sets where. */
+/* A message's menu: smaller than the app's other menus, as it opens over the thread. */
 .msg-menu .popup {
-  position: fixed;
-  margin: 0;
   min-width: 168px;
   padding: 4px;
   border-radius: 12px;
@@ -3315,9 +3321,6 @@ button.quote:hover {
 .choices.full label {
   flex: 1;
   justify-content: center;
-}
-/* In the filter card, narrower, so All, Mine and Unassigned fit on one line. */
-.popover .choices.outlined label {
   padding: 0 8px;
 }
 .choice-count {
