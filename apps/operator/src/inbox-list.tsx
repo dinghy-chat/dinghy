@@ -38,6 +38,9 @@ function ConversationRow({
     body != null ? markdownText(body) : conversation.lastMessage === null ? "" : t("image");
   const waits = isWaiting(conversation);
   const closed = showClosed && conversation.status === "closed";
+  const { handler } = conversation;
+  const isTest = conversation.visitor.isTest;
+  const bot = handler?.kind === "bot" ? handler.name : null;
   return (
     <li>
       <button type="button" className="row" aria-current={selected} onClick={onSelect}>
@@ -61,11 +64,34 @@ function ConversationRow({
           ) : (
             <span className="preview">{preview}</span>
           )}
-          {(waits || closed || replying !== null || assignee !== undefined) && (
+          {(waits ||
+            closed ||
+            isTest ||
+            bot !== null ||
+            replying !== null ||
+            assignee !== undefined) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
               {closed && <span className="chip">{t("closed")}</span>}
-              {assignee !== undefined && <span className="chip">{assignee.name}</span>}
+              {isTest && <span className="chip test">{t("testChip")}</span>}
+              {bot !== null && (
+                <span className="chip" title={t("handledByBot", { name: bot })}>
+                  <Icon name="robot" size={13} />
+                  <span className="visually-hidden">{t("handlerLabel")}: </span>
+                  {bot}
+                </span>
+              )}
+              {assignee !== undefined && (
+                <span className="chip">
+                  {handler?.kind === "human" && (
+                    <span className="chip-mark" title={t("handledByPerson")}>
+                      <Icon name="user" size={13} />
+                      <span className="visually-hidden">{t("handledByPerson")}</span>
+                    </span>
+                  )}
+                  {assignee.name}
+                </span>
+              )}
               {replying !== null && <em>{replying}</em>}
             </span>
           )}

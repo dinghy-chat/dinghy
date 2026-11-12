@@ -103,6 +103,9 @@
   --d-hull: var(--navy);
   /* The operator's own messages. */
   --bubble: light-dark(#0b2239, #2b3f57);
+  /* Internal notes and the composer in Note mode: warm cream, never seen by visitors. */
+  --note: light-dark(#fbf5e3, #2c2819);
+  --note-ink: light-dark(#7a5600, #ffd66b);
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -5788,4 +5791,164 @@ button.quote:hover {
   .live-dot {
     transition: none;
   }
+}
+/* A note for the team: a cream card across the thread, marked by its fill and icon. */
+.team-note {
+  align-self: stretch;
+  margin: 6px 0;
+  padding: 10px 16px 12px;
+  border-radius: 14px;
+  background: var(--note);
+  color: var(--navy);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+.team-note-head,
+.draft-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+}
+.team-note-head {
+  color: var(--note-ink);
+}
+.card-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--navy);
+  font-weight: 600;
+}
+.team-note-head time,
+.draft-head time {
+  color: var(--mute);
+}
+.team-note-body,
+.draft-body {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+:is(.team-note-body, .draft-body) :where(p, ul, ol, pre) {
+  margin: 0;
+}
+:is(.team-note-body, .draft-body) > * + * {
+  margin-top: 6px;
+}
+:is(.team-note-body, .draft-body) :where(ul, ol) {
+  padding-left: 22px;
+}
+:is(.team-note-body, .draft-body) :where(ul) {
+  list-style: disc;
+}
+:is(.team-note-body, .draft-body) :where(ol) {
+  list-style: decimal;
+}
+:is(.team-note-body, .draft-body) :where(pre, code) {
+  font: 13.5px / 1.45 var(--mono);
+}
+:is(.team-note-body, .draft-body) :where(code) {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: rgb(127 127 127 / 0.18);
+}
+/* A bot's suggested replies, on the operator's side: a white card in a dashed blue outline,
+   because nothing has reached the visitor yet. */
+.drafts {
+  display: grid;
+  align-self: flex-end;
+  gap: 8px;
+  width: min(100%, 560px);
+  margin: 4px 0 8px;
+}
+.draft-card {
+  padding: 12px 14px;
+  border: 1.5px dashed var(--blue);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--navy);
+  font-size: 15px;
+  line-height: 1.4;
+}
+.draft-head {
+  color: var(--blue-deep);
+}
+.draft-card.compact {
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.draft-card.compact .draft-body {
+  max-height: 4.3em;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.draft-card.stale {
+  border-color: var(--soft-edge);
+}
+.draft-card.stale :is(.draft-head, .draft-body) {
+  color: var(--mute);
+}
+.draft-stale {
+  margin-bottom: 4px;
+  color: var(--mute);
+  font-size: 12.5px;
+  font-style: italic;
+}
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.draft-ask {
+  flex-basis: 100%;
+  color: var(--warn-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+/* Reply or Note, over the composer. Note mode fills the box with the notes' cream. */
+.compose-modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+.compose-modes .choices label {
+  min-height: 32px;
+  padding: 0 13px 0 10px;
+  font-size: 14px;
+}
+.compose-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--note-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.compose.note .box {
+  background: var(--note);
+}
+/* Who answers, after the visitor's presence in the thread's header. */
+.who-text .handler {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mute);
+  font-weight: 500;
+  vertical-align: bottom;
+}
+.who-text .handler svg {
+  flex: none;
+}
+.chip.test {
+  background: var(--tile-blue);
+  color: var(--blue-deep);
+}
+.chip-mark {
+  display: inline-flex;
 }

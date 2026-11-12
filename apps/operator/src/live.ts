@@ -95,6 +95,9 @@ export function useChanges(
   });
   const cursor = useRef<string | null>(null);
   const { typing, notice, stopTyping } = useNotices();
+  const { typing: botTyping, notice: botNotice, stop: stopBotTyping } = useBotTyping();
+  // Draft changes by conversation: a draft came, went stale, or was sent or discarded.
+  const [draftChanges, setDraftChanges] = useState<Record<string, number>>({});
   const [receipts, setReceipts] = useState<Record<string, number>>({});
   // Edits and deletes by conversation: they keep a message's position, so a thread loads it all.
   const [rewrites, setRewrites] = useState<Record<string, number>>({});
@@ -117,12 +120,23 @@ export function useChanges(
                   [value.visitorId]: (current[value.visitorId] ?? 0) + 1,
                 }));
               } else if (value.kind === "typing") notice(value);
+              else botNotice(value);
             },
             change(next, kind, conversationId, fromVisitor) {
               cursor.current = next;
               // The draft became this message.
               if (kind === "message.created" && fromVisitor && conversationId !== null) {
                 stopTyping(conversationId);
+              }
+              // A key's reply ends its typing, and any message may be it.
+              if (kind === "message.created" && conversationId !== null) {
+                stopBotTyping(conversationId);
+              }
+              if (kind === "draft.changed" && conversationId !== null) {
+                setDraftChanges((current) => ({
+                  ...current,
+                  [conversationId]: (current[conversationId] ?? 0) + 1,
+                }));
               }
               if (live && kind === "message.created" && fromVisitor) {
                 onVisitorMessage(conversationId);
@@ -196,7 +210,7 @@ export function useChanges(
       }
     })();
     return () => controller.abort();
-  }, [api, onSignedOut, onVisitorMessage, visible, notice, stopTyping]);
+  }, [api, onSignedOut, onVisitorMessage, visible, notice, stopTyping, botNotice, stopBotTyping]);
 
   // A write refused as read-only means this page missed the change.
   useEffect(() => {
@@ -210,7 +224,12 @@ export function useChanges(
   const receiptsVersion = (visitorId: string) => receipts[visitorId] ?? 0;
   /** Goes up when a message in this conversation was edited or deleted. */
   const rewriteVersion = (conversationId: string) => rewrites[conversationId] ?? 0;
+  /** Goes up when a draft in this conversation changed, and on each catch-up. */
+  const draftsVersion = (conversationId: string) =>
+    threads.all + (draftChanges[conversationId] ?? 0);
   return {
+    draftsVersion,
+    botTyping,
     lost,
     version,
     threadVersion,
@@ -222,30 +241,29 @@ export function useChanges(
   };
 }
 
-/** Visitors' unsent drafts by conversation. Each goes after a while with no update. */
-function useNotices() {
-  const [typing, setTyping] = useState<Record<string, string>>({});
+/** Values by conversation, each shown until the next, a stop, or TYPING_SHOWN_MS with no update. */
+function useExpiring<T>() {
+  const [shown, setShown] = useState<Record<string, T>>({});
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const stopTyping = useCallback((conversationId: string) => {
+  const stop = useCallback((conversationId: string) => {
     clearTimeout(timers.current.get(conversationId));
     timers.current.delete(conversationId);
-    setTyping((current) => {
+    setShown((current) => {
       if (!(conversationId in current)) return current;
       const { [conversationId]: _gone, ...rest } = current;
       return rest;
     });
   }, []);
-  const notice = useCallback(
-    (value: Extract<OperatorNotice, { kind: "typing" }>) => {
-      if (value.draft === "") return stopTyping(value.conversationId);
-      clearTimeout(timers.current.get(value.conversationId));
+  const show = useCallback(
+    (conversationId: string, value: T) => {
+      clearTimeout(timers.current.get(conversationId));
       timers.current.set(
-        value.conversationId,
-        setTimeout(() => stopTyping(value.conversationId), TYPING_SHOWN_MS),
+        conversationId,
+        setTimeout(() => stop(conversationId), TYPING_SHOWN_MS),
       );
-      setTyping((current) => ({ ...current, [value.conversationId]: value.draft }));
+      setShown((current) => ({ ...current, [conversationId]: value }));
     },
-    [stopTyping],
+    [stop],
   );
   useEffect(() => {
     const running = timers.current;
@@ -253,5 +271,31 @@ function useNotices() {
       for (const timer of running.values()) clearTimeout(timer);
     };
   }, []);
-  return { typing, notice, stopTyping };
+  return { shown, show, stop };
+}
+
+/** The name of the bot that types in each conversation. Each goes after a while with no update. */
+function useBotTyping() {
+  const { shown, show, stop } = useExpiring<string>();
+  const notice = useCallback(
+    (value: Extract<OperatorNotice, { kind: "bot_typing" }>) => {
+      if (value.typing) show(value.conversationId, value.name);
+      else stop(value.conversationId);
+    },
+    [show, stop],
+  );
+  return { typing: shown, notice, stop };
+}
+
+/** Visitors' unsent drafts by conversation. Each goes after a while with no update. */
+function useNotices() {
+  const { shown, show, stop } = useExpiring<string>();
+  const notice = useCallback(
+    (value: Extract<OperatorNotice, { kind: "typing" }>) => {
+      if (value.draft === "") stop(value.conversationId);
+      else show(value.conversationId, value.draft);
+    },
+    [show, stop],
+  );
+  return { typing: shown, notice, stopTyping: stop };
 }

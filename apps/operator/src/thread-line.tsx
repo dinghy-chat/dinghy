@@ -1,7 +1,9 @@
 /** @jsxImportSource react */
 import { createElement, type ReactNode } from "react";
 import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
+import type { Note } from "./api.ts";
 import { clockTime, isToday } from "./format.ts";
+import { Icon } from "./icons.tsx";
 import { type Receipt, ReceiptLine } from "./receipts.tsx";
 import { t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
@@ -135,6 +137,43 @@ export function StatusNote({
   );
 }
 
+/** A note for the team, across the thread: who wrote it, when, and its text. */
+export function NoteCard({ note, meId }: { note: Note; meId: string }) {
+  const isKey = note.authorKind === "key";
+  const author = note.authorOperatorId === meId ? t("you") : (note.authorName ?? t("aTeammate"));
+  return (
+    <article className="team-note" aria-label={t("noteLabel", { name: author })}>
+      <header className="team-note-head">
+        <Icon name="note" size={16} />
+        <strong className="card-author">
+          {isKey && <Icon name="robot" size={14} />}
+          {author}
+        </strong>
+        <time dateTime={note.createdAt}>{clockTime(note.createdAt)}</time>
+      </header>
+      {createElement(
+        "div",
+        { className: "team-note-body" },
+        ...renderMarkdown(note.body, createElement),
+      )}
+    </article>
+  );
+}
+
+/** A bot types a reply: its name, with dots that move. */
+export function BotTyping({ name }: { name: string }) {
+  return (
+    <div className="meta typing" role="status">
+      <span className="typing-dots" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      {t("botTyping", { name })}
+    </div>
+  );
+}
+
 /** A visitor's unsent words, faded, with dots that move while they type. */
 export function TypingDraft({ draft }: { draft: string }) {
   return (
@@ -163,7 +202,7 @@ export const sameSender = (one: Line | undefined, other: Line | undefined) =>
   one.authorOperatorId === other.authorOperatorId &&
   one.authorApiKeyId === other.authorApiKeyId;
 
-export const dayOf = (line: Line | undefined) =>
+const dayOf = (line: Line | undefined) =>
   line?.createdAt === undefined ? null : new Date(line.createdAt).toDateString();
 
 /** "Today", "Yesterday" or the date, for the line between days. */

@@ -45,6 +45,29 @@ function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
   );
 }
 
+/** Who answers a conversation: a bot, a person, or the team when no one is assigned. */
+export type Handler =
+  | { kind: "bot"; name: string }
+  | { kind: "person"; name: string }
+  | { kind: "team" };
+
+/** The quiet mark in the header that says who answers. */
+function HandlerMark({ handler }: { handler: Handler }) {
+  const text =
+    handler.kind === "bot"
+      ? t("handlerBot", { name: handler.name })
+      : handler.kind === "person"
+        ? handler.name
+        : t("handlerTeam");
+  return (
+    <span className="handler" title={t("handlerLabel")}>
+      <Icon name={handler.kind === "bot" ? "robot" : "user"} size={14} />
+      <span className="visually-hidden">{t("handlerLabel")}: </span>
+      {text}
+    </span>
+  );
+}
+
 /** What the operator can do with this conversation. */
 export function ThreadHead({
   conversation,
@@ -58,7 +81,9 @@ export function ThreadHead({
   onBlocked,
   onDelete,
   onTranscript,
+  onGiveBack,
   emailAvailable,
+  handler,
   panel,
 }: {
   conversation: Conversation;
@@ -76,6 +101,10 @@ export function ThreadHead({
   onBlocked(blocked: boolean): void;
   onDelete(): void;
   onTranscript(): void;
+  /** Lets the bots answer again. Undefined while no person handles the conversation. */
+  onGiveBack: (() => void) | undefined;
+  /** Who answers, shown when a bot took part. */
+  handler: Handler | null;
   /** This server sends email, so a transcript can go. */
   emailAvailable: boolean;
 }) {
@@ -90,6 +119,9 @@ export function ThreadHead({
       ? t("transcriptNoEmail")
       : undefined;
   const more: MenuItem[] = [
+    ...(onGiveBack === undefined
+      ? []
+      : [{ label: t("giveBack"), lead: <Icon name="robot" size={18} />, onSelect: onGiveBack }]),
     {
       label: blocked ? t("unblockVisitor") : t("blockVisitor"),
       lead: <Icon name="prohibit" size={18} />,
@@ -131,8 +163,12 @@ export function ThreadHead({
           {welcome !== null ? (
             <WelcomeNote welcome={welcome} />
           ) : (
-            presence !== null && (
-              <p className={online === true ? "visit live" : "visit"}>{presence}</p>
+            (presence !== null || handler !== null) && (
+              <p className={online === true ? "visit live" : "visit"}>
+                {presence}
+                {presence !== null && handler !== null && " · "}
+                {handler !== null && <HandlerMark handler={handler} />}
+              </p>
             )
           )}
         </div>
