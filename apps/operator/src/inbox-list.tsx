@@ -90,7 +90,7 @@ function ConversationRow({
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
               {closed && <span className="chip">{t("closed")}</span>}
-              {isTest && <span className="chip test">{t("testChip")}</span>}
+              {isTest && <span className="chip info">{t("testChip")}</span>}
               {bot !== null && (
                 <span className="chip" title={t("handledByBot", { name: bot })}>
                   <Icon name="robot" size={13} />

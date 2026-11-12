@@ -2570,42 +2570,42 @@ img.ws-tile {
   white-space: pre-wrap;
 }
 /* The small Markdown a message may use. */
-.msg :where(p, ul, ol, pre, blockquote) {
+:is(.msg, .draft-body) :where(p, ul, ol, pre, blockquote) {
   margin: 0;
 }
 /* A quoted passage: a tinted block, like a quoted reply, with no bar at its side. */
-.msg :where(blockquote) {
+:is(.msg, .draft-body) :where(blockquote) {
   padding: 6px 10px;
   border-radius: 10px;
   background: rgb(127 127 127 / 0.14);
 }
-.msg > * + * {
+:is(.msg, .draft-body) > * + * {
   margin-top: 10px;
 }
-.msg :where(ul, ol) {
+:is(.msg, .draft-body) :where(ul, ol) {
   padding-left: 22px;
 }
 /* The app's own lists have no markers, but a message's list is the visitor's or the operator's. */
-.msg :where(ul) {
+:is(.msg, .draft-body) :where(ul) {
   list-style: disc;
 }
-.msg :where(ol) {
+:is(.msg, .draft-body) :where(ol) {
   list-style: decimal;
 }
-.msg :where(pre, code) {
+:is(.msg, .draft-body) :where(pre, code) {
   font: 13.5px / 1.45 var(--mono);
 }
-.msg :where(code) {
+:is(.msg, .draft-body) :where(code) {
   padding: 1px 4px;
   border-radius: 5px;
   background: rgb(127 127 127 / 0.18);
 }
-.msg :where(pre code) {
+:is(.msg, .draft-body) :where(pre code) {
   display: block;
   padding: 8px 10px;
   overflow-x: auto;
 }
-.msg :where(a) {
+:is(.msg, .draft-body) :where(a) {
   color: inherit;
 }
 .msg.visitor {
@@ -4870,7 +4870,8 @@ button.quote:hover {
   align-items: center;
   gap: 8px;
 }
-.chip.connected {
+/* A neutral mark on a row: a connected app, a test visitor. */
+.chip.info {
   background: var(--tile-blue);
   color: var(--blue-deep);
 }
@@ -6028,9 +6029,10 @@ button.quote:hover {
   align-items: center;
   gap: 6px;
   margin-bottom: 4px;
+  color: var(--blue-deep);
   font-size: 12.5px;
 }
-.card-author {
+.draft-author {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -6040,32 +6042,22 @@ button.quote:hover {
 .draft-time {
   color: var(--mute);
 }
+/* A draft's Markdown shows as the message it becomes: the .msg rules cover it too. */
 .draft-body {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-.draft-body :where(p, ul, ol, pre) {
-  margin: 0;
+/* Who answers, after the visitor's presence in the thread's header. */
+.who-text .handler {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mute);
+  font-weight: 500;
+  vertical-align: bottom;
 }
-.draft-body > :not(:first-child) {
-  margin-top: 6px;
-}
-.draft-body :where(ul, ol) {
-  padding-left: 22px;
-}
-.draft-body :where(ul) {
-  list-style: disc;
-}
-.draft-body :where(ol) {
-  list-style: decimal;
-}
-.draft-body :where(pre, code) {
-  font: 13.5px / 1.45 var(--mono);
-}
-.draft-body :where(code) {
-  padding: 1px 4px;
-  border-radius: 5px;
-  background: rgb(127 127 127 / 0.18);
+.who-text .handler svg {
+  flex: none;
 }
 /* A bot's suggested replies, on the operator's side: a white card in a dashed blue outline,
    because nothing has reached the visitor yet. */
@@ -6085,9 +6077,6 @@ button.quote:hover {
   font-size: 15px;
   line-height: 1.4;
 }
-.draft-head {
-  color: var(--blue-deep);
-}
 .draft-card.compact {
   padding: 10px 12px;
   font-size: 14px;
@@ -6100,10 +6089,17 @@ button.quote:hover {
 .draft-card.stale {
   border-color: var(--soft-edge);
 }
-/* "2 older suggestions": a soft pill above the cards. */
+/* "2 older suggestions": a soft pill above the cards. Its chevron turns down while the stale ones
+   show. */
 .drafts-older {
   justify-self: start;
   gap: 6px;
+}
+.pill.drafts-older svg {
+  transition: transform 0.15s;
+}
+.pill.drafts-older[aria-expanded="true"] svg {
+  transform: rotate(90deg);
 }
 /* A cut draft shows all of it once asked, or while a key moved focus to one of its buttons. A
    click does not, so the button under the pointer stays where it is. */
@@ -6144,29 +6140,6 @@ button.quote:hover {
   color: var(--warn-ink);
   font-size: 13px;
   font-weight: 600;
-}
-/* Who answers, after the visitor's presence in the thread's header. */
-.who-text .handler {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--mute);
-  font-weight: 500;
-  vertical-align: bottom;
-}
-.who-text .handler svg {
-  flex: none;
-}
-/* The chevron of "2 older suggestions" turns down while the stale ones show. */
-.pill.drafts-older svg {
-  transition: transform 0.15s;
-}
-.pill.drafts-older[aria-expanded="true"] svg {
-  transform: rotate(90deg);
-}
-.chip.test {
-  background: var(--tile-blue);
-  color: var(--blue-deep);
 }
 .chip-mark {
   display: inline-flex;

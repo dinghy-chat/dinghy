@@ -1,12 +1,6 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState } from "react";
-import type {
-  Conversation,
-  Member,
-  ReplyReceipts,
-  Draft as SuggestedReply,
-  WorkspaceApi,
-} from "./api.ts";
+import type { Conversation, Member, ReplyReceipts, SuggestedReply, WorkspaceApi } from "./api.ts";
 import { type ComposeMode, Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import type { Draft } from "./drafts.ts";

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { type CodeLanguage, highlight } from "../../../packages/widget/src/highlight.ts";
-import { agentTexts } from "./agent-prompt.ts";
+import { agentPrompt } from "./agent-prompt.ts";
 import type { WorkspaceApi, WorkspaceSettings } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
@@ -61,7 +61,7 @@ function CodeBlock({
 function AgentRow({ workspace, waiting }: { workspace: string; waiting: boolean }) {
   // The code row below already says why nothing can be installed yet.
   if (waiting) return null;
-  const { prompt } = agentTexts(location.origin, workspace);
+  const prompt = agentPrompt(location.origin, workspace);
   return (
     <PageRow
       title={t("agentTitle")}
@@ -326,7 +326,10 @@ function SecretRow({
   );
 }
 
-/** Install: a prompt for a coding agent, the code, the sites that may show the chat, and the optional identity secret. */
+/**
+ * Install: a prompt for a coding agent, the code, the sites that may show the chat, and the
+ * optional identity secret.
+ */
 export function InstallPage({
   api,
   settings,

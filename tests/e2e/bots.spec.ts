@@ -72,7 +72,7 @@ test("an operator sends, edits and discards a bot's suggested replies", async ({
   await draft(alice, token, chat, "It ships **today**.");
 
   const row = alice.locator(".row", { hasText: "Where is my order?" });
-  await expect(row.locator(".chip.test")).toHaveText("Test");
+  await expect(row.locator(".chip.info")).toHaveText("Test");
   await row.click();
   const card = alice.locator(".draft-card");
   await expect(card).toContainText("Suggested by Support bot");

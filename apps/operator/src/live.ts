@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BOT_TYPING_MS } from "../../../packages/widget/src/shared.ts";
 import type { OperatorNotice } from "../../server/src/live.ts";
 import { ApiError, READ_ONLY_EVENT, type WorkspaceApi } from "./api.ts";
 
 const RETRY_LIMIT_MS = 30_000;
-/** A visitor's draft goes away this long after its last update, as they may have left. */
-const TYPING_SHOWN_MS = 6000;
 const PRESENCE_EVERY_MS = 10_000;
 
 /**
@@ -94,7 +93,7 @@ export function useChanges(
     by: {},
   });
   const cursor = useRef<string | null>(null);
-  const { typing, notice, stopTyping } = useNotices();
+  const { typing, notice, stop: stopTyping } = useVisitorTyping();
   const { typing: botTyping, notice: botNotice, stop: stopBotTyping } = useBotTyping();
   // Draft changes by conversation: a draft came, went stale, or was sent or discarded.
   const [draftChanges, setDraftChanges] = useState<Record<string, number>>({});
@@ -241,7 +240,10 @@ export function useChanges(
   };
 }
 
-/** Values by conversation, each shown until the next, a stop, or TYPING_SHOWN_MS with no update. */
+/**
+ * Values by conversation, each shown until the next, a stop, or BOT_TYPING_MS with no update. A
+ * visitor's draft goes after the same time, as they may have left.
+ */
 function useExpiring<T>() {
   const [shown, setShown] = useState<Record<string, T>>({});
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -259,7 +261,7 @@ function useExpiring<T>() {
       clearTimeout(timers.current.get(conversationId));
       timers.current.set(
         conversationId,
-        setTimeout(() => stop(conversationId), TYPING_SHOWN_MS),
+        setTimeout(() => stop(conversationId), BOT_TYPING_MS),
       );
       setShown((current) => ({ ...current, [conversationId]: value }));
     },
@@ -288,7 +290,7 @@ function useBotTyping() {
 }
 
 /** Visitors' unsent drafts by conversation. Each goes after a while with no update. */
-function useNotices() {
+function useVisitorTyping() {
   const { shown, show, stop } = useExpiring<string>();
   const notice = useCallback(
     (value: Extract<OperatorNotice, { kind: "typing" }>) => {
@@ -297,5 +299,5 @@ function useNotices() {
     },
     [show, stop],
   );
-  return { typing: shown, notice, stopTyping: stop };
+  return { typing: shown, notice, stop };
 }

@@ -18,8 +18,7 @@ function mcpSetup(origin: string) {
  * The prompt that has a coding agent install the chat through MCP. Its last step adds `notes`, the
  * block for the site repository's AGENTS.md.
  */
-export function agentTexts(origin: string, workspace: string) {
+export function agentPrompt(origin: string, workspace: string) {
   const mcp = mcpSetup(origin);
-  const notes = t("agentNotes", { url: mcp.url });
-  return { prompt: t("agentPrompt", { workspace, ...mcp, notes }), notes };
+  return t("agentPrompt", { workspace, ...mcp, notes: t("agentNotes", { url: mcp.url }) });
 }

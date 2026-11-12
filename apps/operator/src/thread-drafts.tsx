@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { createElement, useLayoutEffect, useRef, useState } from "react";
 import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
-import type { Draft, Message, WorkspaceApi } from "./api.ts";
+import type { Message, SuggestedReply, WorkspaceApi } from "./api.ts";
 import { clockTime } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
@@ -39,12 +39,12 @@ export function useSuggestedReplies({
   const drop = (id: string) =>
     loaded.setData((current) => current?.filter((draft) => draft.id !== id) ?? null);
   /** Sends a draft as it is, or with the operator's edit. */
-  const send = (draft: Draft, body?: string) =>
+  const send = (draft: SuggestedReply, body?: string) =>
     act(async () => {
       keep(await api.sendDraft(conversationId, draft.id, body));
       drop(draft.id);
     });
-  const discard = (draft: Draft) =>
+  const discard = (draft: SuggestedReply) =>
     act(async () => {
       await api.discardDraft(conversationId, draft.id);
       drop(draft.id);
@@ -81,6 +81,63 @@ function DraftBody({ body, compact }: { body: string; compact: boolean }) {
   );
 }
 
+/** A suggested reply's buttons. A stale one asks once before it goes. */
+function DraftActions({
+  isStale,
+  canSend,
+  busy,
+  onSend,
+  onEdit,
+  onDiscard,
+}: {
+  isStale: boolean;
+  canSend: boolean;
+  busy: boolean;
+  onSend(): void;
+  onEdit(): void;
+  onDiscard(): void;
+}) {
+  const [asking, setAsking] = useState(false);
+  // Keys keep React from turning one button into another, which showed a half-drawn pill.
+  if (asking) {
+    return (
+      <div key="ask" className="draft-actions" role="alert">
+        <span className="draft-ask">{t("draftStaleAsk")}</span>
+        <button type="button" className="pill dark small" disabled={busy} onClick={onSend}>
+          {t("draftSendAnyway")}
+        </button>
+        <button type="button" className="pill small" onClick={() => setAsking(false)}>
+          {t("cancel")}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div key="actions" className="draft-actions">
+      {canSend && (
+        <>
+          <button
+            type="button"
+            className="pill dark small"
+            disabled={busy}
+            onClick={isStale ? () => setAsking(true) : onSend}
+          >
+            <Icon name="arrowUp" size={14} />
+            {t("draftSend")}
+          </button>
+          <button type="button" className="pill small" disabled={busy} onClick={onEdit}>
+            <Icon name="pencil" size={14} />
+            {t("draftEdit")}
+          </button>
+        </>
+      )}
+      <button type="button" className="pill small" disabled={busy} onClick={onDiscard}>
+        {t("draftDiscard")}
+      </button>
+    </div>
+  );
+}
+
 /** One suggested reply: who wrote it, its text, and Send, Edit and Discard. */
 function DraftCard({
   draft,
@@ -90,7 +147,7 @@ function DraftCard({
   onEdit,
   onDiscard,
 }: {
-  draft: Draft;
+  draft: SuggestedReply;
   /** One of several, so it takes less room. */
   compact: boolean;
   canSend: boolean;
@@ -99,8 +156,6 @@ function DraftCard({
   onDiscard(): Promise<boolean>;
 }) {
   const [busy, setBusy] = useState(false);
-  // A stale draft asks once before it goes.
-  const [asking, setAsking] = useState(false);
   const isStale = draft.status === "stale";
   const run = async (work: () => Promise<boolean>) => {
     setBusy(true);
@@ -114,58 +169,21 @@ function DraftCard({
     <article className={className} aria-label={t("draftLabel", { name: draft.authorName })}>
       <header className="draft-head">
         <Icon name="robot" size={16} />
-        <strong className="card-author">{t("draftBy", { name: draft.authorName })}</strong>
+        <strong className="draft-author">{t("draftBy", { name: draft.authorName })}</strong>
         <time className="draft-time" dateTime={draft.createdAt}>
           {clockTime(draft.createdAt)}
         </time>
       </header>
       {isStale && <p className="draft-stale">{t("draftStale")}</p>}
       <DraftBody body={draft.body} compact={compact} />
-      {/* Keys keep React from turning one button into another, which showed a half-drawn pill. */}
-      {asking ? (
-        <div key="ask" className="draft-actions" role="alert">
-          <span className="draft-ask">{t("draftStaleAsk")}</span>
-          <button
-            type="button"
-            className="pill dark small"
-            disabled={busy}
-            onClick={() => void run(onSend)}
-          >
-            {t("draftSendAnyway")}
-          </button>
-          <button type="button" className="pill small" onClick={() => setAsking(false)}>
-            {t("cancel")}
-          </button>
-        </div>
-      ) : (
-        <div key="actions" className="draft-actions">
-          {canSend && (
-            <>
-              <button
-                type="button"
-                className="pill dark small"
-                disabled={busy}
-                onClick={() => (isStale ? setAsking(true) : void run(onSend))}
-              >
-                <Icon name="arrowUp" size={14} />
-                {t("draftSend")}
-              </button>
-              <button type="button" className="pill small" disabled={busy} onClick={onEdit}>
-                <Icon name="pencil" size={14} />
-                {t("draftEdit")}
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            className="pill small"
-            disabled={busy}
-            onClick={() => void run(onDiscard)}
-          >
-            {t("draftDiscard")}
-          </button>
-        </div>
-      )}
+      <DraftActions
+        isStale={isStale}
+        canSend={canSend}
+        busy={busy}
+        onSend={() => void run(onSend)}
+        onEdit={onEdit}
+        onDiscard={() => void run(onDiscard)}
+      />
     </article>
   );
 }
@@ -181,12 +199,12 @@ export function DraftCards({
   onEdit,
   onDiscard,
 }: {
-  drafts: Draft[];
+  drafts: SuggestedReply[];
   /** The conversation is open and replies are on. */
   canSend: boolean;
-  onSend(draft: Draft): Promise<boolean>;
-  onEdit(draft: Draft): void;
-  onDiscard(draft: Draft): Promise<boolean>;
+  onSend(draft: SuggestedReply): Promise<boolean>;
+  onEdit(draft: SuggestedReply): void;
+  onDiscard(draft: SuggestedReply): Promise<boolean>;
 }) {
   const [showsStale, setShowsStale] = useState(false);
   if (drafts.length === 0) return null;
@@ -221,7 +239,7 @@ export function DraftCards({
 }
 
 /** Above the message box while it holds a draft's text: sending it sends the draft. */
-export function DraftChip({ draft, onCancel }: { draft: Draft; onCancel(): void }) {
+export function DraftChip({ draft, onCancel }: { draft: SuggestedReply; onCancel(): void }) {
   return (
     <div className="quote-chip">
       <Icon name="robot" size={16} />

@@ -24,6 +24,7 @@ import {
 import { usePresence } from "./presence.ts";
 import { type Quote, quoteOfReply } from "./quote.ts";
 import {
+  BOT_TYPING_MS,
   CONTEXT_VERSION,
   MESSAGE_MAX,
   type QueuedCall,
@@ -40,14 +41,29 @@ import { t } from "./text.ts";
 import { larger, useUnread } from "./use-unread.ts";
 
 const NEW_REPLY_SHOWN_MS = 5000;
-// A bot repeats its typing notice while it writes, so one that stops repeating has stopped.
-const BOT_TYPING_MS = 6000;
 const RETRY_LIMIT_MS = 30_000;
 
 /**
  * Adds a confirmed message in commit order. A pending line with the same client ID becomes this
  * message, so a send whose response was lost cannot stay marked as failed or appear twice.
  */
+interface TypingNotice {
+  kind: "typing";
+  name: string;
+  typing: boolean;
+}
+
+/** The server's notices are not parsed, so this checks a bot's typing notice before it shows. */
+function isTypingNotice(value: unknown): value is TypingNotice {
+  if (typeof value !== "object" || value === null) return false;
+  const notice = value as Record<string, unknown>;
+  return (
+    notice.kind === "typing" &&
+    typeof notice.name === "string" &&
+    typeof notice.typing === "boolean"
+  );
+}
+
 function merge(lines: Line[], message: ChatMessage): Line[] {
   const { kind } = message;
   const note = kind === "closed" || kind === "reopened" ? kind : undefined;
@@ -409,12 +425,7 @@ function Chat({
               setLines((current) => merge(current, message));
             },
             notice(value) {
-              const { kind, name, typing } = value as {
-                kind: string;
-                name: string;
-                typing: boolean;
-              };
-              if (kind === "typing") setBotTyping(typing ? { name } : null);
+              if (isTypingNotice(value)) setBotTyping(value.typing ? { name: value.name } : null);
             },
             ready(next) {
               if (controller.signal.aborted) return;

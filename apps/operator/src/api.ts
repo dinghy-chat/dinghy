@@ -132,7 +132,7 @@ export interface Conversation {
 }
 
 /** A reply that an API key in draft mode wrote. No visitor has seen it. */
-export interface Draft {
+export interface SuggestedReply {
   id: string;
   conversationId: string;
   apiKeyId: string;
@@ -342,6 +342,8 @@ export interface ApiKey {
   replyMode: ReplyMode;
   /** A connected app's host. Null for a static key. */
   clientHost: string | null;
+  /** The connected app runs on the operator's own computer. */
+  clientIsLoopback: boolean;
   createdByName: string | null;
   createdAt: string;
   lastUsedAt: string | null;
@@ -791,7 +793,7 @@ export function workspaceApi(workspaceId: string) {
     /** Emails the visitor the whole conversation, through the worker. */
     sendTranscript: (id: string) =>
       call<{ ok: true }>(`${conversation(id)}/transcript`, { method: "POST" }),
-    drafts: (id: string) => call<{ drafts: Draft[] }>(`${conversation(id)}/drafts`),
+    drafts: (id: string) => call<{ drafts: SuggestedReply[] }>(`${conversation(id)}/drafts`),
     /** Sends a draft as this operator's reply, with `body` in place of its text when edited. */
     sendDraft: (id: string, draftId: string, body?: string) =>
       post<Message>(`${conversation(id)}/drafts/${draftId}/send`, { body }),

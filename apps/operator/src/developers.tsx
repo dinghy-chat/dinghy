@@ -11,14 +11,13 @@ import {
   type WebhookTest,
   type WorkspaceApi,
 } from "./api.ts";
-import { isLoopbackHost, LEVELS, REPLY_MODE_HELP, REPLY_MODES } from "./bots.tsx";
+import { LEVEL_LABEL, LevelChoice, REPLY_MODES, ReplyModeChoice } from "./bots.tsx";
 import { useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import {
   AddForm,
-  Choices,
   CopyField,
   ErrorNote,
   Field,
@@ -77,7 +76,7 @@ function apiKeyLine(key: ApiKey): string {
   const host =
     key.clientHost === null
       ? ""
-      : `${isLoopbackHost(key.clientHost) ? t("thisComputer") : key.clientHost} · `;
+      : `${key.clientIsLoopback ? t("thisComputer") : key.clientHost} · `;
   return `${host}${made} ${used}`;
 }
 
@@ -108,11 +107,6 @@ function ReplyModeSelect({
     />
   );
 }
-
-const LEVEL_HELP: Record<ApiKeyLevel, TextId> = {
-  conversations: "apiKeyLevelConversationsHelp",
-  setup: "apiKeyLevelSetupHelp",
-};
 
 /** Owners and admins make keys for scripts and AI agents, and revoke them. */
 function ApiKeysRow({ api }: { api: WorkspaceApi }) {
@@ -183,11 +177,9 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
               <span className="who-lines">
                 <strong>
                   {key.name}{" "}
-                  {key.source === "oauth" && (
-                    <span className="chip connected">{t("connectedApp")}</span>
-                  )}
+                  {key.source === "oauth" && <span className="chip info">{t("connectedApp")}</span>}
                   <span className={key.level === "setup" ? "chip warn" : "chip"}>
-                    {t(key.level === "setup" ? "apiKeyLevelSetup" : "apiKeyLevelConversations")}
+                    {t(LEVEL_LABEL[key.level])}
                   </span>
                 </strong>
                 <span>{apiKeyLine(key)}</span>
@@ -244,28 +236,8 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
           value={name}
           onChange={setName}
         />
-        <div className="key-level">
-          <span className="setting-label">{t("apiKeyLevel")}</span>
-          <Choices<ApiKeyLevel>
-            label={t("apiKeyLevel")}
-            variant="outlined"
-            value={level}
-            options={LEVELS}
-            onChange={setLevel}
-          />
-          <p className="hint">{t(LEVEL_HELP[level])}</p>
-        </div>
-        <div className="key-level">
-          <span className="setting-label">{t("replyMode")}</span>
-          <Choices<ReplyMode>
-            label={t("replyMode")}
-            variant="outlined"
-            value={replyMode}
-            options={REPLY_MODES}
-            onChange={setReplyMode}
-          />
-          <p className="hint">{t(REPLY_MODE_HELP[replyMode])}</p>
-        </div>
+        <LevelChoice className="key-level" value={level} onChange={setLevel} />
+        <ReplyModeChoice className="key-level" value={replyMode} onChange={setReplyMode} />
       </AddForm>
       <ErrorNote text={failure ?? keys.failure} />
       {revoking !== null && (

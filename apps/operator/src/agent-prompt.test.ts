@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
-import { agentTexts } from "./agent-prompt.ts";
+import { agentPrompt } from "./agent-prompt.ts";
+import { t } from "./text.ts";
 
 const ORIGIN = "https://chat.example.com";
+const notes = t("agentNotes", { url: `${ORIGIN}/v1/mcp` });
 
 test("the prompt connects to this server's MCP and names every setup step", () => {
-  const { prompt } = agentTexts(ORIGIN, "Acme");
+  const prompt = agentPrompt(ORIGIN, "Acme");
   expect(prompt).toContain(
     "claude mcp add --transport http dinghy https://chat.example.com/v1/mcp",
   );
@@ -28,7 +30,7 @@ test("the prompt connects to this server's MCP and names every setup step", () =
 });
 
 test("the prompt ends its steps with the AGENTS.md block, and a name with $ shows as typed", () => {
-  const { prompt, notes } = agentTexts(ORIGIN, "R$$D");
+  const prompt = agentPrompt(ORIGIN, "R$$D");
   expect(notes).toContain("https://chat.example.com/v1/mcp");
   expect(notes).toContain("hand_off");
   expect(notes).not.toMatch(/\{\w+\}/);
@@ -38,5 +40,5 @@ test("the prompt ends its steps with the AGENTS.md block, and a name with $ show
 
 test("docs/agents.md holds the same AGENTS.md block", () => {
   const docs = readFileSync(new URL("../../../docs/agents.md", import.meta.url), "utf8");
-  expect(docs).toContain(agentTexts(ORIGIN, "Acme").notes);
+  expect(docs).toContain(notes);
 });

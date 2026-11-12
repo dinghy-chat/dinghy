@@ -392,8 +392,6 @@ const en = {
   consentCallsItself: 'It calls itself "{name}".',
   unverifiedApp: "Unverified app",
   consentWorkspace: "Workspace",
-  consentConversationsHelp: "Read and answer chats.",
-  consentSetupHelp: "Install Dinghy on a site, manage webhooks and send test visitors.",
   consentSignIn: "Sign in to connect {app}.",
   consentAppLoopback: "an app on this computer",
   consentAppHost: "an app at {host}",
@@ -416,7 +414,8 @@ const en = {
     "This app asked to return to an address it did not register, so Dinghy stopped here.",
   consentExpired: "This request is no longer valid. Start again from the app.",
   consentNotAdmin: "Only owners and admins can connect apps to this workspace.",
-  grantLimit: "This workspace has 50 connected apps. Disconnect one in Settings first.",
+  grantLimit:
+    "This workspace has as many connected apps as it can. Disconnect one in Settings first.",
   inviteJoin: "Join {workspace}",
   inviteHasAccount:
     "You already have a Dinghy account. We'll email you a sign-in link to confirm it's you, then you join {workspace}.",

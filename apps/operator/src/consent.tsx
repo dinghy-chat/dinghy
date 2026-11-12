@@ -8,23 +8,24 @@ import {
   denyApp,
   type ReplyMode,
 } from "./api.ts";
-import { isLoopbackHost, LEVELS, REPLY_MODE_HELP, REPLY_MODES } from "./bots.tsx";
+import { LevelChoice, ReplyModeChoice } from "./bots.tsx";
 import { useLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Select } from "./popup.tsx";
 import { AuthPage, SceneLoading } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { Choices, ErrorNote, failureText } from "./ui.tsx";
+import { ErrorNote, failureText } from "./ui.tsx";
 
 /** After this long on the page, the browser did not leave for the app, so the tab is done. */
 const LEAVE_WAIT_MS = 1000;
 
 type Consent = Extract<AuthorizeInfo, { kind: "consent" }>;
 
-const LEVEL_HELP: Record<ApiKeyLevel, TextId> = {
-  conversations: "consentConversationsHelp",
-  setup: "consentSetupHelp",
-};
+/**
+ * The hosts of an app on the operator's own computer, as the server names them. The server tells
+ * the key list which keys are loopback, but this page reads an address that nothing checked yet.
+ */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
 
 /** Who asks, as the headline says it: the host the browser returns to, never the app's own name. */
 function headline({ client }: Consent): string {
@@ -41,7 +42,7 @@ export function requestingApp(query: URLSearchParams): string {
   const to = query.get("redirect_uri");
   if (to === null || !URL.canParse(to)) return t("consentAppUnknown");
   const url = new URL(to);
-  if (url.protocol === "http:" && isLoopbackHost(url.hostname)) return t("consentAppLoopback");
+  if (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)) return t("consentAppLoopback");
   return url.protocol === "https:"
     ? t("consentAppHost", { host: url.hostname })
     : t("consentAppUnknown");
@@ -189,35 +190,10 @@ function ConsentChoices({
           />
         )}
       </div>
-      <div className="consent-choice">
-        <span className="setting-label" aria-hidden="true">
-          {t("apiKeyLevel")}
-        </span>
-        <Choices<ApiKeyLevel>
-          label={t("apiKeyLevel")}
-          variant="outlined"
-          full
-          value={level}
-          options={LEVELS}
-          onChange={onLevel}
-        />
-        <p className="hint">{t(LEVEL_HELP[level])}</p>
+      <LevelChoice className="consent-choice" full value={level} onChange={onLevel}>
         {level === "setup" && <p className="hint">{t("consentSetupNote")}</p>}
-      </div>
-      <div className="consent-choice">
-        <span className="setting-label" aria-hidden="true">
-          {t("replyMode")}
-        </span>
-        <Choices<ReplyMode>
-          label={t("replyMode")}
-          variant="outlined"
-          full
-          value={replyMode}
-          options={REPLY_MODES}
-          onChange={onReplyMode}
-        />
-        <p className="hint">{t(REPLY_MODE_HELP[replyMode])}</p>
-      </div>
+      </LevelChoice>
+      <ReplyModeChoice className="consent-choice" full value={replyMode} onChange={onReplyMode} />
       <p className="note">{t("consentRevokeNote")}</p>
     </>
   );
