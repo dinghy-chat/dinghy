@@ -67,6 +67,6 @@ self.addEventListener("notificationclick", (event) => {
 // A window that starts asks for a click's address it may have missed.
 self.addEventListener("message", (event) => {
   if (event.data?.type !== "dinghy:ready" || pending === null) return;
-  event.source?.postMessage({ type: "dinghy:open", url: pending.url });
+  event.source?.postMessage({ type: "dinghy:open", url: pending.url, started: true });
   pending.resolve();
 });

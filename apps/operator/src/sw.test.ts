@@ -86,6 +86,7 @@ test("a click opens the conversation in a new window, which gets the address whe
   expect(reply).toHaveBeenCalledWith({
     type: "dinghy:open",
     url: "https://chat.example.com/?conversation=c",
+    started: true,
   });
 });
 

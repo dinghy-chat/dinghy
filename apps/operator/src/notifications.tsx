@@ -22,10 +22,10 @@ async function currentDevice(): Promise<PushSubscription | null> {
  */
 export function followNotificationClicks() {
   if (!("serviceWorker" in navigator)) return;
-  const loaded = location.href;
   navigator.serviceWorker.addEventListener("message", (event: MessageEvent) => {
     const url: unknown = event.data?.type === "dinghy:open" ? event.data.url : null;
-    if (typeof url !== "string" || url === loaded) return;
+    // A window that the click started on the right address is already there.
+    if (typeof url !== "string" || (event.data.started === true && url === location.href)) return;
     if (new URL(url, location.origin).origin === location.origin) navigate(url);
   });
   void navigator.serviceWorker.ready.then((registration) =>

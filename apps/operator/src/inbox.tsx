@@ -128,11 +128,12 @@ export function Inbox({
       const id = linkedConversation(workspaceId);
       if (id === null) return;
       linked.current = id;
+      setView("inbox");
       setSelected(id);
     };
     addEventListener(NAVIGATE_EVENT, moved);
     return () => removeEventListener(NAVIGATE_EVENT, moved);
-  }, [workspaceId]);
+  }, [workspaceId, setView]);
 
   /** Shows a view, and a Settings page in it, and puts it in the address for Back and reloads. */
   const showView = (next: View, page: SettingsPage | null = null) => {
