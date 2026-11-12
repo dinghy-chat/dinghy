@@ -101,7 +101,7 @@ test("an operator sends, edits and discards a bot's suggested replies", async ({
   // Edit puts the text in the box, and sending it sends the draft.
   await card.getByRole("button", { name: "Edit" }).click();
   const box = alice.getByRole("textbox", { name: "Your reply" });
-  await expect(box).toHaveValue("Anything else?");
+  await expect(box).toHaveText("Anything else?");
   await expect(alice.locator(".quote-chip")).toContainText("Editing Support bot's suggestion");
   await box.fill("Anything else I can help with?");
   await box.press("Enter");
