@@ -101,7 +101,7 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 
 `GET /v1/operator/workspaces/{workspaceId}/get-started` answers which first steps are done for the signed-in member: `install`, `logo`, `widget`, `team`, `notifications` and `chat`, and `dismissed`. `POST .../get-started/dismiss` hides them for that member.
 
-`GET /v1/operator/workspaces/{workspaceId}/conversations` answers `waiting`, the open conversations whose newest message is the visitor's and that are not snoozed, and `openBy`, the open conversations for each filter: `all`, `mine` (always 0 for an API key) and `unassigned`. `GET /v1/operator/waiting` answers `waiting` for each of the signed-in operator's workspaces, for the workspace menu.
+`GET /v1/operator/workspaces/{workspaceId}/conversations` answers `waiting`, the open conversations whose newest message is the visitor's and that are not snoozed, `snoozeEndsInMs`, the milliseconds until the workspace's next timed snooze ends (null with none), after which `waiting` can change with no change on the stream, and `openBy`, the open conversations for each filter: `all`, `mine` (always 0 for an API key) and `unassigned`. `GET /v1/operator/waiting` answers `waiting` for each of the signed-in operator's workspaces, for the workspace menu.
 
 Each operator has their own read position in each conversation. A `Conversation` has `unread`, true when a visitor message that is not deleted is past the signed-in operator's position, and always false for an API key. `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/read` with `{ "seq" }`, a message's `seq`, moves the position forward to it, never back and never past the newest message. Only a signed-in operator calls it; an API key gets 403.
 

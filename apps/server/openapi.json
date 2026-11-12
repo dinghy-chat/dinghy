@@ -4328,6 +4328,7 @@
                   ],
                   "hasMore": false,
                   "waiting": 1,
+                  "snoozeEndsInMs": null,
                   "openBy": {
                     "all": 1,
                     "mine": 0,
@@ -4349,6 +4350,9 @@
                     "waiting": {
                       "type": "integer"
                     },
+                    "snoozeEndsInMs": {
+                      "type": ["integer", "null"]
+                    },
                     "openBy": {
                       "type": "object",
                       "properties": {
@@ -4365,7 +4369,7 @@
                       "required": ["all", "mine", "unassigned"]
                     }
                   },
-                  "required": ["conversations", "hasMore", "waiting", "openBy"]
+                  "required": ["conversations", "hasMore", "waiting", "snoozeEndsInMs", "openBy"]
                 }
               }
             }

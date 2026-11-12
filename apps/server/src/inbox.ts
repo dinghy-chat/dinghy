@@ -59,6 +59,7 @@ import {
   listWorkspaceEvents,
   markConversationRead,
   type NewImage,
+  nextSnoozeEndMs,
   parseCursor,
   QuoteSchema,
   quoteView,
@@ -286,6 +287,9 @@ const listRoute = createRoute({
             // Open conversations whose newest message is from the visitor and that are not snoozed,
             // across all pages: for an operator, those assigned to them or to no one.
             waiting: z.number().int(),
+            // Milliseconds until the workspace's next timed snooze ends, when the waiting count may
+            // change with no event, or null with none.
+            snoozeEndsInMs: z.number().int().nullable(),
             // Open conversations for each assignee filter. `mine` is 0 for an API key.
             openBy: z.object({
               all: z.number().int(),
@@ -326,6 +330,7 @@ const listRoute = createRoute({
             ],
             hasMore: false,
             waiting: 1,
+            snoozeEndsInMs: null,
             openBy: { all: 1, mine: 0, unassigned: 1 },
           },
         },
@@ -958,6 +963,7 @@ export function createInbox({
           ...listed,
           pictures: await welcomePictures(tx, workspaceId, listed.conversations, founderPicture),
           waiting: await countWaiting(tx, workspaceId, operatorId),
+          snoozeEndsInMs: await nextSnoozeEndMs(tx, workspaceId),
           openBy: await countOpenByAssignee(tx, workspaceId, operatorId),
         };
       });
@@ -967,6 +973,7 @@ export function createInbox({
         ),
         hasMore: page.hasMore,
         waiting: page.waiting,
+        snoozeEndsInMs: page.snoozeEndsInMs,
         openBy: page.openBy,
       };
     },

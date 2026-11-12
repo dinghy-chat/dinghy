@@ -1069,6 +1069,21 @@ export async function countWaiting(
   return result.rows[0]?.count ?? 0;
 }
 
+/**
+ * How long until the workspace's next timed snooze ends, by the database's clock, or null with none.
+ * A snooze ends with no event, so a client loads the list again then.
+ */
+export async function nextSnoozeEndMs(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<number | null> {
+  const result = await tx.execute<{ ms: number | null }>(sql`
+    select ceil(extract(epoch from min(snoozed_until) - now()) * 1000)::int as ms
+    from ${conversation}
+    where workspace_id = ${workspaceId} and status = 'open' and snoozed_until > now()`);
+  return result.rows[0]?.ms ?? null;
+}
+
 /** A reply's author: its operator's or API key's name, and an operator picture's time. */
 export interface MessageAuthor {
   name: string;

@@ -1139,6 +1139,7 @@ describe("snooze", () => {
     const list = async () =>
       (await (await get(path, member)).json()) as {
         waiting: number;
+        snoozeEndsInMs: number | null;
         conversations: { id: string; snooze: { until: string | null } | null }[];
       };
     const snooze = (body: unknown, as = member) =>
@@ -1190,10 +1191,15 @@ describe("snooze", () => {
     const snoozed = await list();
     expect(snoozed.waiting).toBe(0);
     expect(snoozed.conversations[0]?.snooze).toEqual({ until: later });
+    // The delay to its end, by the server's clock, so the inbox loads again then.
+    expect(snoozed.snoozeEndsInMs).toBeGreaterThan(59 * 60 * 1000);
+    expect(snoozed.snoozeEndsInMs).toBeLessThanOrEqual(60 * 60 * 1000);
 
     await snooze({ snooze: { until: new Date(Date.now() - 1000).toISOString() } });
-    expect((await list()).waiting).toBe(1);
-    expect((await list()).conversations[0]?.snooze).toBeNull();
+    const ended = await list();
+    expect(ended.waiting).toBe(1);
+    expect(ended.conversations[0]?.snooze).toBeNull();
+    expect(ended.snoozeEndsInMs).toBeNull();
 
     await snooze({ snooze: { until: null } });
     expect((await snooze({ snooze: null })).status).toBe(200);
