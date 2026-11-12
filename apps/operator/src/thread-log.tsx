@@ -1,13 +1,15 @@
 /** @jsxImportSource react */
-import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
-import type { Conversation, ReplyReceipts } from "./api.ts";
+import { Fragment, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import type { Conversation, Member, ReplyReceipts } from "./api.ts";
 import { Composer } from "./composer.tsx";
+import { HandoffNote } from "./handoff-note.tsx";
 import { Icon } from "./icons.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { t } from "./text.ts";
 import {
+  BotTyping,
   dayLabel,
   dayOf,
   groupMeta,
@@ -127,12 +129,12 @@ function useJump(log: RefObject<HTMLDivElement | null>) {
 }
 
 /** Keeps the log at its newest line, and jumps to the message a copied link names once it loads. */
-function useLogScroll(lines: Line[], typingDraft: string | null) {
+function useLogScroll(lines: Line[], bottom: (string | number | boolean)[]) {
   const log = useRef<HTMLDivElement>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line or draft scrolls down.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line or what is under the last one scrolls down.
   useEffect(() => {
     if (log.current !== null) log.current.scrollTop = log.current.scrollHeight;
-  }, [lines.length, typingDraft !== null]);
+  }, [lines.length, ...bottom]);
 
   const { flashId, jump } = useJump(log);
   // A copied link to a message ends with #message-<id>, and this scrolls to it once it is loaded.
@@ -147,32 +149,63 @@ function useLogScroll(lines: Line[], typingDraft: string | null) {
   return { log, flashId, jump };
 }
 
-/** The thread's messages, day by day, with each one's menu, its editor and the image viewer. */
+/**
+ * The thread's messages and notes, day by day, with each one's menu, its editor and the image
+ * viewer. Under the last one: the bot's suggested replies and who is typing.
+ */
 export function ThreadLog({
   conversation,
+  members,
   lines,
   receipts,
   who,
   actions,
   typingDraft,
+  botTyping,
+  drafts,
+  olderDrafts,
+  draftCount,
   onImageError,
   onRetry,
 }: {
   conversation: Conversation;
+  /** The team, to name whom a bot handed the conversation to. */
+  members: Member[];
   lines: Line[];
   receipts: ReplyReceipts | null;
   who: Rights;
   actions: MessageActions;
   typingDraft: string | null;
+  /** The name of the bot that types a reply now, or null. */
+  botTyping: string | null;
+  /** The suggested replies, under the last message. */
+  drafts: ReactNode;
+  /**
+   * The stale suggestions, folded, before the first visitor message after `before`, the newest
+   * one's time. At the end when no such message is loaded.
+   */
+  olderDrafts: { node: ReactNode; before: string | null };
+  draftCount: number;
   onImageError(): void;
   onRetry(line: Line): void;
 }) {
-  const { log, flashId, jump } = useLogScroll(lines, typingDraft);
+  const { log, flashId, jump } = useLogScroll(lines, [
+    draftCount,
+    typingDraft !== null,
+    botTyping !== null,
+  ]);
   const [viewing, setViewing] = useState<string | null>(null);
   const { editing, setEditing } = actions;
   const visitorName = title(conversation);
   const face = conversation.visitor.pictureUrl;
   const lastReply = lines.reduce((last, line, index) => (hasReceipt(line) ? index : last), -1);
+  const { before } = olderDrafts;
+  const staleAt =
+    before === null
+      ? -1
+      : lines.findIndex(
+          (line) => line.fromVisitor && line.createdAt !== undefined && line.createdAt > before,
+        );
   const openQuote = (id: string) => {
     if (!jump(id)) toast("quoteMissing", false);
   };
@@ -234,17 +267,23 @@ export function ThreadLog({
         {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
         {lines.map((line, index) => (
           <Fragment key={line.id}>
+            {index === staleAt && olderDrafts.node}
             {line.createdAt !== undefined && dayOf(line) !== dayOf(lines[index - 1]) && (
               <div className="day">{dayLabel(line.createdAt)}</div>
             )}
             {isStatusLine(line) ? (
               <StatusNote line={line} meId={who.meId} />
+            ) : line.handoff !== null && !line.deleted ? (
+              <HandoffNote line={line} meId={who.meId} members={members} />
             ) : (
               renderLine(line, index)
             )}
           </Fragment>
         ))}
+        {staleAt < 0 && olderDrafts.node}
         {typingDraft !== null && <TypingDraft draft={typingDraft} />}
+        {drafts}
+        {botTyping !== null && <BotTyping name={botTyping} />}
       </div>
       {viewing !== null && (
         <ImageViewer

@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { conversation, visitor } from "./db/schema.ts";
@@ -19,7 +19,7 @@ import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import { containing, isChat } from "./messages.ts";
-import { deleteConversation } from "./moderation.ts";
+import { deleteConversations } from "./moderation.ts";
 import type { VisitorPresence } from "./presence.ts";
 import { allowed } from "./team.ts";
 
@@ -104,24 +104,24 @@ function isRealTime(cursor: string): boolean {
   return !Number.isNaN(time.getTime()) && time.toISOString().startsWith(second);
 }
 
+/** A page of the contact list: the route's query, and MCP's `list_contacts` arguments. */
+export const ContactListQuery = z.object({
+  q: z.string().trim().max(100).optional().openapi({
+    description: "Matches the name, email or user ID, ignoring case.",
+  }),
+  sort: z.enum(SORTS).default("lastSeen"),
+  before: z.string().regex(CURSOR).refine(isRealTime).optional().openapi({
+    description: "The `next` of the page before.",
+  }),
+  limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
+});
+
 const listRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/contacts`,
   security: SESSION,
   summary: "List the people who have a conversation, newest first",
-  request: {
-    params: workspaceParams,
-    query: z.object({
-      q: z.string().trim().max(100).optional().openapi({
-        description: "Matches the name, email or user ID, ignoring case.",
-      }),
-      sort: z.enum(SORTS).default("lastSeen"),
-      before: z.string().regex(CURSOR).refine(isRealTime).optional().openapi({
-        description: "The `next` of the page before.",
-      }),
-      limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
-    }),
-  },
+  request: { params: workspaceParams, query: ContactListQuery },
   responses: {
     200: {
       description: "A page of contacts",
@@ -270,7 +270,7 @@ const sortKey = (sort: Sort) =>
  * A page of contacts, newest first by the sort, in one statement: a bounded scan of the sort's
  * index, with one probe of the conversation index per visitor for its count.
  */
-async function listContacts(
+export async function listContacts(
   tx: Transaction,
   workspaceId: string,
   options: { q?: string | undefined; sort: Sort; before?: string | undefined; limit: number },
@@ -289,6 +289,8 @@ async function listContacts(
     .where(
       and(
         eq(visitor.workspaceId, workspaceId),
+        // A bot's test visitors are not people.
+        eq(visitor.isTest, false),
         sql`exists (select 1 from ${conversation} where ${conversation.workspaceId} = ${visitor.workspaceId} and ${conversation.visitorId} = ${visitor.id})`,
         pattern === null
           ? undefined
@@ -362,7 +364,7 @@ const contactConversations = (tx: Transaction, workspaceId: string, visitorId: s
     ORDER BY c.updated_at DESC`);
 
 /** One contact with everything the contact page shows, or null. */
-async function readContact(tx: Transaction, workspaceId: string, visitorId: string) {
+export async function readContact(tx: Transaction, workspaceId: string, visitorId: string) {
   const [row] = await tx
     .select({
       ...contactColumns,
@@ -427,6 +429,27 @@ const csvLine = (contact: ReturnType<typeof contactView>) =>
   ]
     .map(csvCell)
     .join(",")}\r\n`;
+
+/** Deletes visitors with their conversations, messages and images. Answers how many there were. */
+export async function deleteContacts(
+  tx: Transaction,
+  workspaceId: string,
+  visitorIds: string[],
+): Promise<number> {
+  if (visitorIds.length === 0) return 0;
+  const conversations = await tx
+    .select({ id: conversation.id, visitorId: conversation.visitorId })
+    .from(conversation)
+    .where(
+      and(eq(conversation.workspaceId, workspaceId), inArray(conversation.visitorId, visitorIds)),
+    );
+  await deleteConversations(tx, workspaceId, conversations);
+  const deleted = await tx
+    .delete(visitor)
+    .where(and(eq(visitor.workspaceId, workspaceId), inArray(visitor.id, visitorIds)))
+    .returning({ id: visitor.id });
+  return deleted.length;
+}
 
 export function registerContactRoutes(
   app: App,
@@ -513,19 +536,8 @@ export function registerContactRoutes(
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { visitorId } = c.req.valid("param");
-    const found = await withWorkspace(db, id, async (tx) => {
-      const conversations = await tx
-        .select({ id: conversation.id })
-        .from(conversation)
-        .where(and(eq(conversation.workspaceId, id), eq(conversation.visitorId, visitorId)));
-      for (const one of conversations) await deleteConversation(tx, id, one.id, visitorId);
-      const deleted = await tx
-        .delete(visitor)
-        .where(and(eq(visitor.workspaceId, id), eq(visitor.id, visitorId)))
-        .returning({ id: visitor.id });
-      return deleted.length > 0;
-    });
-    if (!found) return c.json(NOT_FOUND, 404);
+    const deleted = await withWorkspace(db, id, (tx) => deleteContacts(tx, id, [visitorId]));
+    if (deleted === 0) return c.json(NOT_FOUND, 404);
     live.wake(id, OPERATORS);
     // Their open chats end: the token now names nobody.
     live.revoke(id, visitorId);

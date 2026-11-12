@@ -4,7 +4,7 @@
 
 ## Add the tag
 
-The installer prints your tag. You can also copy it from **Install code** in **Settings > Install** in the operator app. It looks like this:
+The installer prints your tag. You can also copy it from **Install by hand** in **Settings > Install** in the operator app. It looks like this:
 
 ```html
 <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>

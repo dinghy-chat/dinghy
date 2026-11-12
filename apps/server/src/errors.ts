@@ -66,16 +66,22 @@ export const ERROR_CODES = [
   "bad_signature",
   "billing_unavailable",
   "blocked",
+  "bots_paused",
   "busy",
   "checkout_retry_later",
   "conversation_closed",
+  "drafts_text_only",
   "email_mismatch",
   "email_rejected",
   "email_taken",
   "email_unavailable",
   "forbidden",
+  "human_handling",
+  "grant_limit",
   "internal_error",
+  "invalid_client",
   "invalid_name",
+  "invalid_redirect_uri",
   "invalid_reply_to",
   "invalid_request",
   "invite_invalid",
@@ -98,6 +104,7 @@ export const ERROR_CODES = [
   "push_unavailable",
   "read_only",
   "signed_in",
+  "site_limit",
   "storage_full",
   "suspended",
   "team_changed",
@@ -119,6 +126,10 @@ export const failure = (code: ErrorCode, message: string) => ({ error: { code, m
 
 export const NOT_FOUND = failure("not_found", "This does not exist.");
 export const FORBIDDEN = failure("forbidden", "Your role does not allow this.");
+export const CONVERSATION_CLOSED = failure(
+  "conversation_closed",
+  "Reopen this conversation to reply.",
+);
 /** No session, or the account was deleted. */
 export const UNAUTHORIZED = failure("unauthorized", "Sign in to continue.");
 /** A write to the operator API from a page that is not this server's own. */
@@ -144,6 +155,18 @@ export const okContent = { "application/json": { schema: z.object({ ok: z.litera
 
 /** An error answer in a route's OpenAPI responses. */
 export const errorAnswer = (description: string) => ({ description, content: errorContent });
+
+/** A required JSON request body. */
+export const jsonBody = <T extends z.ZodType>(schema: T) => ({
+  required: true,
+  content: { "application/json": { schema } },
+});
+
+/** A JSON answer. */
+export const jsonAnswer = <T extends z.ZodType>(description: string, schema: T) => ({
+  description,
+  content: { "application/json": { schema } },
+});
 
 /** The description of a JSON body over the server's 64 KB limit. */
 const TOO_LARGE_BODY = "too_large: the body is over 64 KB";

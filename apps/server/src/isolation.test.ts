@@ -12,6 +12,7 @@ import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { pressLinkButton, signedInOperator } from "../test/operators.ts";
+import { readStream } from "../test/sse.ts";
 import { claimDeliveries, fanOutOne, planDelivery } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -20,6 +21,7 @@ import {
   attachment,
   conversation,
   conversationRead,
+  draftReply,
   emailStop,
   event,
   invite,
@@ -31,6 +33,7 @@ import {
   verification,
   visitor,
   webhook,
+  webhookDelivery,
   widgetSettings,
   workspace,
   workspaceLogo,
@@ -104,6 +107,12 @@ interface World {
   /** An API key in each workspace, and a webhook in the other one. */
   keyA: { id: string; token: string };
   keyB: { id: string; token: string };
+  /** A Setup key in the first workspace, which reaches the install, sites and test routes. */
+  setupA: { id: string; token: string };
+  /** An OAuth client, connected to each workspace by its owner. */
+  oauthClientId: string;
+  grantA: Grant;
+  grantB: Grant;
   hookB: { id: string; secret: string; url: string };
   /** Strings that belong to someone else, for each kind of caller. */
   secrets: { two: string; b: string };
@@ -122,20 +131,52 @@ interface World {
 
 const inWorkspace = (id: string, path = "") => `/v1/operator/workspaces/${id}${path}`;
 
-/** Reads a stream until the marker, then closes it. */
-async function readStream(response: Response, until = "event: ready"): Promise<string> {
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
-  const deadline = Date.now() + 5000;
-  while (reader !== undefined && !text.includes(until) && Date.now() < deadline) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    text += decoder.decode(value);
-  }
-  await reader?.cancel();
-  return text;
+/** A draft by the key, waiting in the conversation, written straight to the database. */
+async function draftIn(workspaceId: string, conversationId: string, apiKeyId: string) {
+  const [row] = await owner
+    .insert(draftReply)
+    .values({ workspaceId, conversationId, apiKeyId, clientId: randomUUID(), body: "a draft" })
+    .returning({ id: draftReply.id });
+  return row?.id ?? "";
 }
+
+interface Grant {
+  clientId: string;
+  access: string;
+  refresh: string;
+}
+
+/** Registers an OAuth client. A world registers one, so the hourly limit per address holds. */
+const registerClient = async (server: App) => {
+  const registered = await server.request("/v1/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: "Agent", redirect_uris: ["http://127.0.0.1/cb"] }),
+  });
+  return ((await registered.json()) as { client_id: string }).client_id;
+};
+
+/** The consent page's query for the client, with a new PKCE pair. */
+const authorizeQuery = (clientId: string) => {
+  const verifier = randomUUID() + randomUUID();
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const query = new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: "http://127.0.0.1/cb",
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+  }).toString();
+  return { verifier, query };
+};
+
+/** A request to an OAuth endpoint, which takes a form. */
+const oauthForm = (server: App, path: string, form: Record<string, string>) =>
+  server.request(path, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(form).toString(),
+  });
 
 const png = () =>
   sharp({ create: { width: 2, height: 2, channels: 3, background: "#123456" } })
@@ -1360,7 +1401,265 @@ const ATTACKS: Record<string, Attack> = {
       (await as(anna, "GET", inWorkspace(b.id, `/webhooks/${hookB.id}/deliveries`))).status,
     ).toBe(404);
   },
-  "POST /v1/mcp": async ({ withKey, keyA, other, secrets }) => {
+  "POST /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/deliveries/:deliveryId/replay":
+    async (world) => {
+      const { operator: as, withKey, anna, a, b, hookB, other, setupA } = world;
+      const [delivery] = await owner
+        .insert(webhookDelivery)
+        .values({
+          workspaceId: b.id,
+          webhookId: hookB.id,
+          eventId: randomUUID(),
+          type: "message.created",
+          conversationId: other.conversationId,
+          finishedAt: new Date(),
+          outcome: "sent",
+        })
+        .returning({ id: webhookDelivery.id });
+      const path = (space: string) =>
+        inWorkspace(space, `/webhooks/${hookB.id}/deliveries/${delivery?.id}/replay`);
+      expect((await as(anna, "POST", path(a.id), {})).status).toBe(404);
+      expect((await as(anna, "POST", path(b.id), {})).status).toBe(404);
+      expect((await withKey(setupA.token, "POST", path(a.id), {})).status).toBe(404);
+      expect((await withKey(setupA.token, "POST", path(b.id), {})).status).toBe(404);
+      const rows = await owner
+        .select()
+        .from(webhookDelivery)
+        .where(eq(webhookDelivery.webhookId, hookB.id));
+      expect(rows).toHaveLength(1);
+    },
+  "GET /v1/operator/workspaces/:workspaceId/install/snippet": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    const path = (space: string) => inWorkspace(space, "/install/snippet?framework=html");
+    expect((await as(anna, "GET", path(b.id))).status).toBe(404);
+    expect((await withKey(setupA.token, "GET", path(b.id))).status).toBe(404);
+    const own = await (await withKey(setupA.token, "GET", path(a.id))).text();
+    expect(own).toContain(a.publicKey);
+    expect(own).not.toContain(b.publicKey);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/install/check": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/install/check"))).status).toBe(404);
+    expect((await withKey(setupA.token, "GET", inWorkspace(b.id, "/install/check"))).status).toBe(
+      404,
+    );
+    // B's site loads B's widget, and A's check must not show it, nor B's refusals. A's own
+    // refusals may name B's site: other attacks call A's widget from there.
+    await world.widget(b.publicKey, "POST", "beat", null, SITE_B, {
+      tab: "isolationbeat",
+      page: `${SITE_B}/`,
+    });
+    await world.widget(b.publicKey, "POST", "beat", null, "https://refused-in-b.example.com", {
+      tab: "isolationbeat",
+      page: "https://refused-in-b.example.com/",
+    });
+    const own = await (
+      await withKey(setupA.token, "GET", inWorkspace(a.id, "/install/check"))
+    ).text();
+    const { sites } = JSON.parse(own) as { sites: { origin: string }[] };
+    expect(sites.map((site) => site.origin)).not.toContain(SITE_B);
+    expect(own).not.toContain("refused-in-b");
+  },
+  "GET /v1/operator/workspaces/:workspaceId/install/identity": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    const path = (space: string) => inWorkspace(space, "/install/identity?language=typescript");
+    expect((await as(anna, "GET", path(b.id))).status).toBe(404);
+    expect((await withKey(setupA.token, "GET", path(b.id))).status).toBe(404);
+    const own = await (await withKey(setupA.token, "GET", path(a.id))).text();
+    expect(own).toContain(a.publicKey);
+    expect(own).not.toContain(b.publicKey);
+    expect(own).not.toContain(a.signingSecret);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/sites": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA, keyA } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/sites"))).status).toBe(404);
+    expect((await withKey(setupA.token, "GET", inWorkspace(b.id, "/sites"))).status).toBe(404);
+    expect((await withKey(keyA.token, "GET", inWorkspace(a.id, "/sites"))).status).toBe(403);
+    const own = await (await withKey(setupA.token, "GET", inWorkspace(a.id, "/sites"))).text();
+    expect(own).not.toContain(SITE_B);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/sites": async (world) => {
+    const { operator: as, withKey, anna, b, setupA } = world;
+    const body = { origin: "https://crossing.example.com" };
+    expect((await as(anna, "POST", inWorkspace(b.id, "/sites"), body)).status).toBe(404);
+    expect((await withKey(setupA.token, "POST", inWorkspace(b.id, "/sites"), body)).status).toBe(
+      404,
+    );
+    const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+    expect(row?.allowedOrigins).toEqual([SITE_B]);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/sites": async (world) => {
+    const { operator: as, withKey, anna, b, setupA } = world;
+    const path = inWorkspace(b.id, `/sites?origin=${encodeURIComponent(SITE_B)}`);
+    expect((await as(anna, "DELETE", path)).status).toBe(404);
+    expect((await withKey(setupA.token, "DELETE", path)).status).toBe(404);
+    const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+    expect(row?.allowedOrigins).toEqual([SITE_B]);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/test-visitors/messages": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA, other } = world;
+    const body = { body: "crossing as a test" };
+    expect(
+      (await as(anna, "POST", inWorkspace(b.id, "/test-visitors/messages"), body)).status,
+    ).toBe(404);
+    const path = (space: string) => inWorkspace(space, "/test-visitors/messages");
+    expect((await withKey(setupA.token, "POST", path(b.id), body)).status).toBe(404);
+    // B's conversation is not a test conversation of A's.
+    const into = await withKey(setupA.token, "POST", path(a.id), {
+      ...body,
+      conversationId: other.conversationId,
+    });
+    expect(into.status).toBe(404);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/test-visitors": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    const [testInB] = await owner
+      .insert(visitor)
+      .values({ workspaceId: b.id, tokenHash: randomUUID(), isTest: true })
+      .returning({ id: visitor.id });
+    expect((await as(anna, "DELETE", inWorkspace(b.id, "/test-visitors"))).status).toBe(404);
+    expect(
+      (await withKey(setupA.token, "DELETE", inWorkspace(b.id, "/test-visitors"))).status,
+    ).toBe(404);
+    expect(
+      (await withKey(setupA.token, "DELETE", inWorkspace(a.id, "/test-visitors"))).status,
+    ).toBe(200);
+    expect(
+      await owner
+        .select()
+        .from(visitor)
+        .where(eq(visitor.id, testInB?.id ?? "")),
+    ).toHaveLength(1);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/conversations/:conversationId/drafts": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/drafts`);
+      expect((await as(anna, "GET", path)).status).toBe(404);
+    }
+  },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/drafts/:draftId/send":
+    async ({ operator: as, anna, a, b, other, keyB }) => {
+      const draft = await draftIn(b.id, other.conversationId, keyB.id);
+      for (const id of [a.id, b.id]) {
+        const path = inWorkspace(id, `/conversations/${other.conversationId}/drafts/${draft}/send`);
+        expect((await as(anna, "POST", path, {})).status).toBe(404);
+      }
+      const [row] = await owner.select().from(draftReply).where(eq(draftReply.id, draft));
+      expect(row?.resolved).toBeNull();
+    },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/drafts/:draftId/discard":
+    async ({ operator: as, anna, a, b, one, other, keyB }) => {
+      const draft = await draftIn(b.id, other.conversationId, keyB.id);
+      for (const path of [
+        inWorkspace(a.id, `/conversations/${other.conversationId}/drafts/${draft}/discard`),
+        inWorkspace(b.id, `/conversations/${other.conversationId}/drafts/${draft}/discard`),
+        // Its own conversation, with the other workspace's draft.
+        inWorkspace(a.id, `/conversations/${one.conversationId}/drafts/${draft}/discard`),
+      ]) {
+        expect((await as(anna, "POST", path)).status).toBe(404);
+      }
+      const [row] = await owner.select().from(draftReply).where(eq(draftReply.id, draft));
+      expect(row?.resolved).toBeNull();
+    },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/handoff": async ({
+    withKey,
+    a,
+    b,
+    bea,
+    one,
+    other,
+    keyA,
+  }) => {
+    const body = { clientId: randomUUID(), reason: "crossing", visitorMessage: "crossing over" };
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/handoff`);
+      expect((await withKey(keyA.token, "POST", path, body)).status).toBe(404);
+    }
+    // Bea is real, and only in the other workspace.
+    const own = inWorkspace(a.id, `/conversations/${one.conversationId}/handoff`);
+    const toBea = { clientId: randomUUID(), reason: "crossing", operatorId: bea.id };
+    expect((await withKey(keyA.token, "POST", own, toBea)).status).toBe(400);
+    const [row] = await owner
+      .select()
+      .from(conversation)
+      .where(eq(conversation.id, other.conversationId));
+    expect(row?.humanSince).toBeNull();
+    expect(await owner.select().from(message).where(eq(message.body, "crossing over"))).toEqual([]);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/give-back": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    const since = new Date("2026-01-02T03:04:05.000Z");
+    await owner
+      .update(conversation)
+      .set({ humanSince: since })
+      .where(eq(conversation.id, other.conversationId));
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/give-back`);
+      expect((await as(anna, "POST", path)).status).toBe(404);
+    }
+    const [row] = await owner
+      .select()
+      .from(conversation)
+      .where(eq(conversation.id, other.conversationId));
+    expect(row?.humanSince).toEqual(since);
+    await owner
+      .update(conversation)
+      .set({ humanSince: null })
+      .where(eq(conversation.id, other.conversationId));
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/bots-paused": async ({
+    operator: as,
+    anna,
+    sam,
+    a,
+    b,
+  }) => {
+    expect(
+      (await as(anna, "PUT", inWorkspace(b.id, "/bots-paused"), { paused: true })).status,
+    ).toBe(404);
+    // Sam is an admin in both, and a pause stays in its own workspace.
+    expect((await as(sam, "PUT", inWorkspace(a.id, "/bots-paused"), { paused: true })).status).toBe(
+      200,
+    );
+    const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+    expect(row?.botsPausedAt).toBeNull();
+    await as(sam, "PUT", inWorkspace(a.id, "/bots-paused"), { paused: false });
+  },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/typing": async ({
+    withKey,
+    a,
+    b,
+    other,
+    keyA,
+  }) => {
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/typing`);
+      expect((await withKey(keyA.token, "POST", path, { typing: true })).status).toBe(404);
+    }
+  },
+  "GET /v1/events": async ({ withKey, keyA, other, secrets }) => {
+    expect((await withKey("dk_none", "GET", "/v1/events")).status).toBe(401);
+    // From the start of the feed, so anything from the other workspace would show.
+    const own = await withKey(keyA.token, "GET", "/v1/events?after=1.0");
+    expect(own.status).toBe(200);
+    const text = await readStream(own);
+    expect(text).toContain("message.created");
+    expect(text).not.toContain(other.conversationId);
+    expect(text).not.toContain(secrets.b);
+  },
+  "POST /v1/mcp": async (world) => {
+    const { withKey, keyA, grantA, other, secrets } = world;
     const call = async (name: string, args: unknown) =>
       (await (
         await withKey(keyA.token, "POST", "/v1/mcp", {
@@ -1387,6 +1686,45 @@ const ATTACKS: Record<string, Attack> = {
     expect(JSON.stringify(await call("search_conversations", { q: "written" }))).toContain(
       "written by one",
     );
+    // The Setup tools stay in the key's workspace too.
+    await setupToolsStayHome(world);
+    const crossing = { conversationId: other.conversationId, clientId: randomUUID() };
+    for (const [name, args] of [
+      ["get_contact", { conversationId: other.conversationId }],
+      ["get_contact", { visitorId: other.id }],
+      ["add_note", { ...crossing, body: "crossing" }],
+      ["hand_off", { ...crossing, reason: "crossing" }],
+      ["set_typing", { conversationId: other.conversationId }],
+    ] as const) {
+      const answer = await call(name, args);
+      expect(answer.result.content[0]?.text, name).toMatch(/^not_found/);
+    }
+    for (const [name, args] of [
+      ["list_drafts", { status: "all" }],
+      ["wait_for_messages", { cursor: "1.0", timeoutSeconds: 1 }],
+      ["list_contacts", {}],
+      ["search_contacts", { q: "written" }],
+      ["get_live_visitors", {}],
+      ["get_analytics", { days: 90 }],
+    ] as const) {
+      const text = JSON.stringify(await call(name, args));
+      expect(text, name).not.toContain(other.conversationId);
+      expect(text, name).not.toContain(other.id);
+      expect(text, name).not.toContain(secrets.b);
+    }
+    // The team list holds this workspace's members only.
+    const members = JSON.stringify(await call("list_members", {}));
+    expect(members).toContain(world.anna.id);
+    expect(members).not.toContain(world.bea.id);
+    expect(members).not.toContain(world.bea.email);
+    // An access token renamed to another workspace finds nothing.
+    const renamed = grantA.access.replace(grantA.access.slice(4, 40), world.b.id);
+    const crossedGrant = await withKey(renamed, "POST", "/v1/mcp", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "ping",
+    });
+    expect(crossedGrant.status).toBe(401);
     // Without a key, nothing.
     const bare = await withKey("dk_none", "POST", "/v1/mcp", {
       jsonrpc: "2.0",
@@ -1401,7 +1739,152 @@ const ATTACKS: Record<string, Attack> = {
   "DELETE /v1/mcp": async ({ withKey, keyA }) => {
     expect((await withKey(keyA.token, "DELETE", "/v1/mcp")).status).toBe(405);
   },
+
+  // ---- OAuth.
+  "POST /v1/oauth/register": async ({ server, a, secrets }) => {
+    // Registration stores nothing and names no workspace.
+    const before = await owner.select().from(apiKey);
+    const answer = await server.request("/v1/oauth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ redirect_uris: ["http://127.0.0.1/cb"] }),
+    });
+    const text = await answer.text();
+    expect(text).not.toContain(a.id);
+    expect(text).not.toContain(secrets.b);
+    expect(await owner.select().from(apiKey)).toHaveLength(before.length);
+  },
+  "POST /v1/oauth/token": async ({ server, withKey, b, grantA, grantB }) => {
+    // A's tokens renamed to B's workspace find nothing there.
+    for (const refresh of [grantA.refresh.replace(grantA.refresh.slice(4, 40), b.id)]) {
+      const answer = await oauthForm(server, "/v1/oauth/token", {
+        grant_type: "refresh_token",
+        refresh_token: refresh,
+      });
+      expect(((await answer.json()) as { error: string }).error).toBe("invalid_grant");
+    }
+    const code = grantA.access.replace("dko_", "dkc_").replace(grantA.access.slice(4, 40), b.id);
+    const exchanged = await oauthForm(server, "/v1/oauth/token", {
+      grant_type: "authorization_code",
+      code,
+      code_verifier: "x".repeat(43),
+      client_id: grantB.clientId,
+      redirect_uri: "http://127.0.0.1/cb",
+    });
+    expect(((await exchanged.json()) as { error: string }).error).toBe("invalid_grant");
+    expect((await withKey(grantB.access, "GET", inWorkspace(b.id, "/conversations"))).status).toBe(
+      200,
+    );
+  },
+  // A renamed token finds nothing, and another client cannot end B's grant.
+  "POST /v1/oauth/revoke": async ({ server, withKey, b, grantA, grantB }) => {
+    const renamed = grantA.access.replace(grantA.access.slice(4, 40), b.id);
+    for (const form of [
+      { token: renamed },
+      { token: grantB.access, client_id: "https://other.example/client" },
+    ]) {
+      expect((await oauthForm(server, "/v1/oauth/revoke", form)).status).toBe(200);
+    }
+    expect((await withKey(grantB.access, "GET", inWorkspace(b.id, "/conversations"))).status).toBe(
+      200,
+    );
+  },
+  "GET /v1/operator/oauth/authorize-info": async (world) => {
+    const { operator: as, withKey, sam, anna, a, b, decoy, keyA, grantA } = world;
+    const { query } = authorizeQuery(world.oauthClientId);
+    const path = `/v1/operator/oauth/authorize-info?${query}`;
+    const listed = async (who: { cookie: string }) =>
+      ((await (await as(who, "GET", path)).json()) as { workspaces: { id: string }[] }).workspaces
+        .map((one) => one.id)
+        .sort();
+    expect(await listed(anna)).toEqual([a.id]);
+    // Sam manages both, and sees no workspace he is not in.
+    expect(await listed(sam)).not.toContain(decoy.id);
+    expect((await listed(sam)).every((id) => id === a.id || id === b.id)).toBe(true);
+    for (const token of [keyA.token, grantA.access]) {
+      expect((await withKey(token, "GET", path)).status).toBe(403);
+    }
+  },
+  "POST /v1/operator/oauth/deny": async (world) => {
+    const { operator: as, withKey, anna, keyA, grantA } = world;
+    const { query } = authorizeQuery(world.oauthClientId);
+    expect((await as(anna, "POST", "/v1/operator/oauth/deny", { request: query })).status).toBe(
+      200,
+    );
+    for (const token of [keyA.token, grantA.access]) {
+      expect(
+        (await withKey(token, "POST", "/v1/operator/oauth/deny", { request: query })).status,
+      ).toBe(403);
+    }
+  },
+  "POST /v1/operator/workspaces/:workspaceId/oauth/grants": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, grantA } = world;
+    const inB = async () => owner.select().from(apiKey).where(eq(apiKey.workspaceId, b.id));
+    const before = await inB();
+    const body = { request: authorizeQuery(world.oauthClientId).query, level: "setup" };
+    expect((await as(anna, "POST", inWorkspace(b.id, "/oauth/grants"), body)).status).toBe(404);
+    for (const token of [keyA.token, grantA.access]) {
+      expect((await withKey(token, "POST", inWorkspace(a.id, "/oauth/grants"), body)).status).toBe(
+        403,
+      );
+    }
+    expect(await inB()).toEqual(before);
+  },
+  "PATCH /v1/operator/workspaces/:workspaceId/api-keys/:keyId": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, keyB } = world;
+    const body = { name: "Stolen", replyMode: "send" };
+    for (const space of [a.id, b.id]) {
+      const path = inWorkspace(space, `/api-keys/${keyB.id}`);
+      expect((await as(anna, "PATCH", path, body)).status).toBe(404);
+    }
+    expect(
+      (await withKey(keyA.token, "PATCH", inWorkspace(a.id, `/api-keys/${keyA.id}`), body)).status,
+    ).toBe(403);
+    const [row] = await owner.select().from(apiKey).where(eq(apiKey.id, keyB.id));
+    expect(row?.name).toBe("Helper B");
+  },
 };
+
+/** A Setup key's MCP tools, aimed at the other workspace's conversation, webhook and sites. */
+async function setupToolsStayHome({ withKey, setupA, other, hookB, a, b }: World) {
+  const call = async (name: string, args: unknown) =>
+    (await (
+      await withKey(setupA.token, "POST", "/v1/mcp", {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name, arguments: args },
+      })
+    ).json()) as { result: { isError: boolean; structuredContent: Record<string, unknown> } };
+  const into = await call("send_test_message", {
+    body: "crossing",
+    conversationId: other.conversationId,
+  });
+  expect(into.result.structuredContent).toMatchObject({ error: { code: "not_found" } });
+  const listed = await call("list_webhook_deliveries", { webhookId: hookB.id });
+  expect(listed.result.structuredContent).toEqual({ deliveries: [] });
+  const replayed = await call("replay_webhook_delivery", {
+    webhookId: hookB.id,
+    deliveryId: randomUUID(),
+  });
+  expect(replayed.result.structuredContent).toMatchObject({ error: { code: "not_found" } });
+  for (const [name, args] of [
+    ["verify_install", {}],
+    ["list_allowed_sites", {}],
+    ["get_install_snippet", { framework: "html" }],
+    ["get_appearance", {}],
+    ["get_identity_setup", { language: "go" }],
+  ] as const) {
+    const text = JSON.stringify(await call(name, args));
+    expect(text).not.toContain("refused-in-b");
+    expect(text).not.toContain(b.publicKey);
+    expect(text).not.toContain(a.signingSecret);
+  }
+  await call("remove_allowed_site", { origin: SITE_B });
+  await call("delete_test_visitors", {});
+  const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+  expect(row?.allowedOrigins).toEqual([SITE_B]);
+}
 
 const pushed: string[] = [];
 const signer = createImages({
@@ -1529,13 +2012,37 @@ async function buildWorld(db: Database): Promise<World> {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       }),
     );
-  const madeKey = async (as: { cookie: string }, space: NewWorkspace, name: string) =>
+  const madeKey = async (
+    as: { cookie: string },
+    space: NewWorkspace,
+    name: string,
+    level: "conversations" | "setup" = "conversations",
+  ) =>
     (await (
-      await operatorCall(as, "POST", inWorkspace(space.id, "/api-keys"), { name })
+      await operatorCall(as, "POST", inWorkspace(space.id, "/api-keys"), { name, level })
     ).json()) as {
       id: string;
       token: string;
     };
+  const oauthClientId = await registerClient(server);
+  const madeGrant = async (as: { cookie: string }, space: NewWorkspace): Promise<Grant> => {
+    const clientId = oauthClientId;
+    const { verifier, query } = authorizeQuery(clientId);
+    const approved = await operatorCall(as, "POST", inWorkspace(space.id, "/oauth/grants"), {
+      request: query,
+      level: "setup",
+    });
+    const { redirectTo } = (await approved.json()) as { redirectTo: string };
+    const answer = await oauthForm(server, "/v1/oauth/token", {
+      grant_type: "authorization_code",
+      code: new URL(redirectTo).searchParams.get("code") ?? "",
+      code_verifier: verifier,
+      client_id: clientId,
+      redirect_uri: "http://127.0.0.1/cb",
+    });
+    const tokens = (await answer.json()) as { access_token: string; refresh_token: string };
+    return { clientId, access: tokens.access_token, refresh: tokens.refresh_token };
+  };
   const madeHook = await operatorCall(bea, "POST", inWorkspace(b.id, "/webhooks"), {
     url: "https://93.184.215.14/b-hook",
     events: ["message.created"],
@@ -1554,6 +2061,10 @@ async function buildWorld(db: Database): Promise<World> {
     inviteB: (await madeInvite.json()) as { id: string; email: string; token: string },
     keyA: await madeKey(anna, a, "Helper A"),
     keyB: await madeKey(bea, b, "Helper B"),
+    setupA: await madeKey(anna, a, "Installer A", "setup"),
+    oauthClientId,
+    grantA: await madeGrant(anna, a),
+    grantB: await madeGrant(bea, b),
     hookB: (await madeHook.json()) as { id: string; secret: string; url: string },
     secrets: { two: "written by two", b: "written in the other workspace" },
     widget,

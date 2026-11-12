@@ -46,6 +46,8 @@ export interface Line {
   editedAt: string | null;
   deleted: boolean;
   via: Message["via"];
+  /** A bot's handoff note: whom it handed the conversation to, with null for the team. */
+  handoff: Message["handoff"];
 }
 
 /** Adds a confirmed message in commit order, and replaces its pending line if it has one. */
@@ -67,6 +69,7 @@ function merge(lines: Line[], message: Message): Line[] {
     editedAt: message.editedAt,
     deleted: message.deleted,
     via: message.via,
+    handoff: message.handoff,
   };
   const others = lines.filter(
     (other) => other.id !== message.id && !(other.seq === null && other.id === message.clientId),
@@ -203,6 +206,7 @@ export function useThreadLines({
     editedAt: null,
     deleted: false,
     via: null,
+    handoff: null,
   });
 
   /** Sends a reply, or a note that only the team sees. */

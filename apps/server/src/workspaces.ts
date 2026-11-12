@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import type pg from "pg";
-import { widgetSettings, workspace } from "./db/schema.ts";
+import { operator, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { normalizeOrigin } from "./identity.ts";
 import type { ImageUrls } from "./public-images.ts";
@@ -98,7 +98,10 @@ export async function workspacesTable(admin: pg.ClientBase): Promise<string> {
     .join("");
 }
 
-/** A workspace's name and its logo's address, as the app's workspace menu and the API show them. */
+/**
+ * A workspace's name, its logo's address and whether bots are paused, and by whom, as the app's
+ * workspace menu and the API show them.
+ */
 export async function readWorkspaceFace(
   tx: Transaction,
   imageUrls: ImageUrls,
@@ -109,10 +112,19 @@ export async function readWorkspaceFace(
       name: workspace.name,
       publicKey: workspace.publicKey,
       logoUpdatedAt: widgetSettings.logoUpdatedAt,
+      botsPausedAt: workspace.botsPausedAt,
+      botsPausedBy: operator.name,
     })
     .from(workspace)
     .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
+    .leftJoin(operator, eq(operator.id, workspace.botsPausedBy))
     .where(eq(workspace.id, workspaceId));
   if (row === undefined) return undefined;
-  return { name: row.name, logoUrl: imageUrls.logo(row.publicKey, row.logoUpdatedAt) };
+  return {
+    name: row.name,
+    logoUrl: imageUrls.logo(row.publicKey, row.logoUpdatedAt),
+    botsPaused: row.botsPausedAt !== null,
+    botsPausedBy: row.botsPausedAt === null ? null : row.botsPausedBy,
+    botsPausedAt: row.botsPausedAt?.toISOString() ?? null,
+  };
 }

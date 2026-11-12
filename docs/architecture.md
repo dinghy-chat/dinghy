@@ -36,7 +36,7 @@ Two layers keep workspaces apart:
 
 Table owners and superusers bypass row-level security, so the app never connects as either. `chat migrate` creates four roles (`apps/server/src/db/roles.ts`): `dinghy_migrator` owns the tables and runs migrations, `dinghy_app` and `dinghy_worker` are the `web` and `worker` logins, with `NOBYPASSRLS`, and `dinghy_backup` is the only role that bypasses row-level security, to dump the whole database. `apps/server/src/isolation.test.ts` attacks every route from another workspace.
 
-A workspace API key (`dk_...`) names its workspace in the token, so its lookup runs under that workspace's policy too. The member check (`apps/server/src/member.ts`) gives a key a member's role in its own workspace and nothing anywhere else, and lets it call only the routes whose OpenAPI `security` lists `apiKey`. MCP at `/v1/mcp` calls the same functions as those routes.
+A workspace API key (`dk_...`) names its workspace in the token, so its lookup runs under that workspace's policy too. So does an OAuth access token (`dko_...`): an approved OAuth grant is a row in `api_key`, so it works as a key of its level. The member check (`apps/server/src/member.ts`) gives a key a member's role in its own workspace and nothing anywhere else, and lets it call only the routes whose OpenAPI `security` lists `apiKey`. MCP at `/v1/mcp` calls the same functions as those routes.
 
 ## Messages, events and cursors
 

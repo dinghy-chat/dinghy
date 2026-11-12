@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { conversation, pageView, visitor } from "./db/schema.ts";
 import type { Database, Transaction } from "./db/tenant.ts";
 
@@ -51,7 +51,7 @@ export async function recordPage(
   const isVisitor = and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId));
   // The visitor row's lock makes this take turns with another report and with the delete of the
   // visitor's last conversation, so a delete can never leave a page behind.
-  await lockVisitor(tx, workspaceId, visitorId);
+  await lockVisitors(tx, workspaceId, [visitorId]);
   const chatted = await tx
     .select({ id: conversation.id })
     .from(conversation)
@@ -118,15 +118,17 @@ export async function recordPageContext(
 }
 
 /**
- * Takes the visitor row's lock, as an update of it would. A caller that also writes the workspace
- * takes this first, as a send and a block do, so the two locks never come in opposite orders. It
- * leaves the key alone, so a send that starts a conversation can still check its foreign key.
+ * Takes the visitor rows' locks, as an update of them would, in ID order so two callers take turns.
+ * A caller that also writes the workspace takes these first, as a send and a block do, so the two
+ * locks never come in opposite orders. They leave the key alone, so a send that starts a
+ * conversation can still check its foreign key.
  */
-export async function lockVisitor(tx: Transaction, workspaceId: string, visitorId: string) {
+export async function lockVisitors(tx: Transaction, workspaceId: string, visitorIds: string[]) {
   await tx
     .select({ id: visitor.id })
     .from(visitor)
-    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)))
+    .where(and(eq(visitor.workspaceId, workspaceId), inArray(visitor.id, visitorIds)))
+    .orderBy(visitor.id)
     .for("no key update");
 }
 
@@ -153,17 +155,21 @@ export function visitorPages(
 export async function forgetPagesWithoutChat(
   tx: Transaction,
   workspaceId: string,
-  visitorId: string,
+  visitorIds: string[],
 ): Promise<void> {
+  const ids = sql.join(
+    visitorIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
   await tx.execute(sql`
-    DELETE FROM page_view WHERE workspace_id = ${workspaceId} AND visitor_id = ${visitorId}
-      AND NOT EXISTS (SELECT 1 FROM conversation
-        WHERE workspace_id = ${workspaceId} AND visitor_id = ${visitorId})`);
+    DELETE FROM page_view AS p WHERE p.workspace_id = ${workspaceId} AND p.visitor_id IN (${ids})
+      AND NOT EXISTS (SELECT 1 FROM conversation AS c
+        WHERE c.workspace_id = p.workspace_id AND c.visitor_id = p.visitor_id)`);
   // What the page sent goes with the journey.
   await tx.execute(sql`
-    UPDATE visitor SET page_context = NULL WHERE workspace_id = ${workspaceId} AND id = ${visitorId}
-      AND page_context IS NOT NULL AND NOT EXISTS (SELECT 1 FROM conversation
-        WHERE workspace_id = ${workspaceId} AND visitor_id = ${visitorId})`);
+    UPDATE visitor AS v SET page_context = NULL WHERE v.workspace_id = ${workspaceId} AND v.id IN (${ids})
+      AND v.page_context IS NOT NULL AND NOT EXISTS (SELECT 1 FROM conversation AS c
+        WHERE c.workspace_id = v.workspace_id AND c.visitor_id = v.id)`);
 }
 
 /** Deletes up to `limit` rows older than 90 days, across workspaces. For the worker. */

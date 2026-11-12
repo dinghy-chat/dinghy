@@ -24,6 +24,7 @@ import {
 import { usePresence } from "./presence.ts";
 import { type Quote, quoteOfReply } from "./quote.ts";
 import {
+  BOT_TYPING_MS,
   CONTEXT_VERSION,
   MESSAGE_MAX,
   type QueuedCall,
@@ -46,6 +47,23 @@ const RETRY_LIMIT_MS = 30_000;
  * Adds a confirmed message in commit order. A pending line with the same client ID becomes this
  * message, so a send whose response was lost cannot stay marked as failed or appear twice.
  */
+interface TypingNotice {
+  kind: "typing";
+  name: string;
+  typing: boolean;
+}
+
+/** The server's notices are not parsed, so this checks a bot's typing notice before it shows. */
+function isTypingNotice(value: unknown): value is TypingNotice {
+  if (typeof value !== "object" || value === null) return false;
+  const notice = value as Record<string, unknown>;
+  return (
+    notice.kind === "typing" &&
+    typeof notice.name === "string" &&
+    typeof notice.typing === "boolean"
+  );
+}
+
 function merge(lines: Line[], message: ChatMessage): Line[] {
   const { kind } = message;
   const note = kind === "closed" || kind === "reopened" ? kind : undefined;
@@ -153,6 +171,8 @@ function Chat({
   const [problem, setProblem] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
   const [newReply, setNewReply] = useState(false);
+  // A bot that types a reply: a new object for each notice, so each one restarts the timer.
+  const [botTyping, setBotTyping] = useState<{ name: string } | null>(null);
   // True once the replay of history has ended, so only a message that arrives later is "new".
   const replayed = useRef(false);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -272,6 +292,12 @@ function Chat({
     return () => clearTimeout(timer);
   }, [newReply]);
 
+  useEffect(() => {
+    if (botTyping === null) return;
+    const timer = setTimeout(() => setBotTyping(null), BOT_TYPING_MS);
+    return () => clearTimeout(timer);
+  }, [botTyping]);
+
   const { online, members, emailReplies, replySeconds } = usePresence(
     client,
     fullPage ? token : null,
@@ -390,12 +416,16 @@ function Chat({
               if (fresh && (kind === "closed" || kind === "reopened")) {
                 setOpenConversation(kind === "reopened");
               } else if (fresh && !message.fromVisitor) {
+                setBotTyping(null);
                 // Only a reply that arrives now, as history replays before ready.
                 if (replayed.current && wantsChime.current) chime();
                 setNewReply(true);
                 emit(context, "message:received", { body: message.body });
               }
               setLines((current) => merge(current, message));
+            },
+            notice(value) {
+              if (isTypingNotice(value)) setBotTyping(value.typing ? { name: value.name } : null);
             },
             ready(next) {
               if (controller.signal.aborted) return;
@@ -702,6 +732,9 @@ function Chat({
           </Fragment>
         ))}
         {emailAt === -1 && emailInLog}
+        {botTyping !== null && (
+          <div class="notice">{t("botTyping").replace("{name}", botTyping.name)}</div>
+        )}
       </div>
       {viewing !== null && (
         // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.

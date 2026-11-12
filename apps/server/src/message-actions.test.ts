@@ -7,8 +7,11 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { setReplyMode } from "../test/keys.ts";
 import { untilWaiting } from "../test/locks.ts";
 import { signedInOperator } from "../test/operators.ts";
+import { asOperator, withKey } from "../test/requests.ts";
+import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { readTar } from "./archive.ts";
 import { createAuth } from "./auth.ts";
@@ -31,8 +34,6 @@ import { exportArchive } from "./transfer.ts";
 import { fanOutWebhooksOne } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const SITE = "https://app.example.com";
-const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 
 let database: TestDatabase;
@@ -54,6 +55,7 @@ const live: Live = {
   },
   revoke() {},
   tell() {},
+  tellVisitor() {},
   async subscribe() {
     return () => {};
   },
@@ -80,27 +82,6 @@ interface Line {
   image: unknown;
 }
 
-const send = (cookie: string, method: string, path: string, body?: unknown) =>
-  app.request(path, {
-    method,
-    headers: {
-      cookie,
-      origin: ORIGIN,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
-const withKey = (method: string, path: string, body?: unknown) =>
-  app.request(path, {
-    method,
-    headers: {
-      authorization: `Bearer ${keyToken}`,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
 const widget = (token: string, method: string, path: string, body?: unknown) =>
   app.request(`/v1/widget/${space.publicKey}/${path}`, {
     method,
@@ -115,29 +96,13 @@ const widget = (token: string, method: string, path: string, body?: unknown) =>
 const thread = (conversationId: string) =>
   `/v1/operator/workspaces/${space.id}/conversations/${conversationId}/messages`;
 
-/** A new visitor's first message, which starts a conversation. */
-async function visitorStarts(body: string, workspace = space) {
-  const created = await app.request(`/v1/widget/${workspace.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
-  });
-  const { token, visitorId } = (await created.json()) as { token: string; visitorId: string };
-  const sent = await app.request(`/v1/widget/${workspace.publicKey}/messages`, {
-    method: "POST",
-    headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ clientId: randomUUID(), body }),
-  });
-  const first = (await sent.json()) as Line & { conversationId: string };
-  return { token, visitorId, conversationId: first.conversationId, first };
-}
-
 async function reply(
   cookie: string,
   conversationId: string,
   body: string,
   replyToMessageId?: string,
 ): Promise<Line> {
-  const response = await send(cookie, "POST", thread(conversationId), {
+  const response = await asOperator(app, cookie, "POST", thread(conversationId), {
     clientId: randomUUID(),
     body,
     replyToMessageId,
@@ -147,7 +112,7 @@ async function reply(
 }
 
 async function operatorLines(conversationId: string): Promise<Line[]> {
-  const response = await send(ana.cookie, "GET", thread(conversationId));
+  const response = await asOperator(app, ana.cookie, "GET", thread(conversationId));
   return ((await response.json()) as { messages: Line[] }).messages;
 }
 
@@ -182,10 +147,18 @@ beforeAll(async () => {
   ana = await member("ana@example.com", "Ana Lee", "owner");
   ben = await member("ben@example.com", "Ben", "member");
   cleo = await member("cleo@example.com", "Cleo", "admin");
-  const made = await send(ana.cookie, "POST", `/v1/operator/workspaces/${space.id}/api-keys`, {
-    name: "Helper bot",
-  });
-  keyToken = ((await made.json()) as { token: string }).token;
+  const made = await asOperator(
+    app,
+    ana.cookie,
+    "POST",
+    `/v1/operator/workspaces/${space.id}/api-keys`,
+    {
+      name: "Helper bot",
+    },
+  );
+  const key = (await made.json()) as { id: string; token: string };
+  await setReplyMode(owner, key.id, "send");
+  keyToken = key.token;
 }, 30_000);
 
 afterAll(async () => {
@@ -195,6 +168,8 @@ afterAll(async () => {
 describe("a reply with a quote", () => {
   test("an operator quotes a visitor's message, and both sides show the quote", async () => {
     const { token, conversationId, first } = await visitorStarts(
+      app,
+      space.publicKey,
       "Do you have a **yearly** plan? See [pricing](https://example.com/p)",
     );
     const sent = await reply(ana.cookie, conversationId, "Yes.", first.id);
@@ -211,7 +186,7 @@ describe("a reply with a quote", () => {
   });
 
   test("a visitor quotes a reply: the operator sees the full name, the visitor the first name", async () => {
-    const { token, conversationId } = await visitorStarts("Hello");
+    const { token, conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const answer = await reply(ana.cookie, conversationId, "x".repeat(300));
     const response = await widget(token, "POST", "messages", {
       clientId: randomUUID(),
@@ -233,10 +208,11 @@ describe("a reply with a quote", () => {
   });
 
   test("a quote from another conversation, another workspace or a status line is refused", async () => {
-    const mine = await visitorStarts("Mine");
-    const elsewhere = await visitorStarts("Elsewhere");
-    const theirs = await visitorStarts("Theirs", other);
-    await send(
+    const mine = await visitorStarts(app, space.publicKey, "Mine");
+    const elsewhere = await visitorStarts(app, space.publicKey, "Elsewhere");
+    const theirs = await visitorStarts(app, other.publicKey, "Theirs");
+    await asOperator(
+      app,
       ana.cookie,
       "PATCH",
       `/v1/operator/workspaces/${space.id}/conversations/${mine.conversationId}`,
@@ -244,7 +220,8 @@ describe("a reply with a quote", () => {
         status: "closed",
       },
     );
-    await send(
+    await asOperator(
+      app,
       ana.cookie,
       "PATCH",
       `/v1/operator/workspaces/${space.id}/conversations/${mine.conversationId}`,
@@ -254,7 +231,7 @@ describe("a reply with a quote", () => {
     );
     const status = (await operatorLines(mine.conversationId)).at(-1);
     for (const quoted of [elsewhere.first.id, theirs.first.id, status?.id ?? "", randomUUID()]) {
-      const response = await send(ana.cookie, "POST", thread(mine.conversationId), {
+      const response = await asOperator(app, ana.cookie, "POST", thread(mine.conversationId), {
         clientId: randomUUID(),
         body: "No",
         replyToMessageId: quoted,
@@ -272,10 +249,19 @@ describe("a reply with a quote", () => {
   });
 
   test("a deleted quoted message leaves the quote with no ID", async () => {
-    const { token, conversationId, first } = await visitorStarts("My card is 4242 4242 4242 4242");
+    const { token, conversationId, first } = await visitorStarts(
+      app,
+      space.publicKey,
+      "My card is 4242 4242 4242 4242",
+    );
     const quoting = await reply(ana.cookie, conversationId, "Please never send that.", first.id);
     const { cursor } = await widgetLines(token);
-    const removed = await send(ana.cookie, "DELETE", `${thread(conversationId)}/${first.id}`);
+    const removed = await asOperator(
+      app,
+      ana.cookie,
+      "DELETE",
+      `${thread(conversationId)}/${first.id}`,
+    );
     expect(removed.status).toBe(200);
     const deleted = { id: null, fromVisitor: true, text: "", hasImage: false };
     expect((await operatorLines(conversationId)).at(-1)?.replyTo).toMatchObject(deleted);
@@ -293,7 +279,7 @@ describe("a reply with a quote", () => {
   });
 
   test("a list reads every quote in its one statement", async () => {
-    const { conversationId, first } = await visitorStarts("One");
+    const { conversationId, first } = await visitorStarts(app, space.publicKey, "One");
     for (let n = 0; n < 3; n += 1) await reply(ana.cookie, conversationId, `Answer ${n}`, first.id);
     let statements = 0;
     const page = await withWorkspace(db, space.id, (tx) => {
@@ -313,13 +299,19 @@ describe("a reply with a quote", () => {
 
 describe("editing a reply", () => {
   test("the author edits it, and the widget and the other operators get it again", async () => {
-    const { token, visitorId, conversationId } = await visitorStarts("Hi");
+    const { token, visitorId, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
     const sent = await reply(ana.cookie, conversationId, "Teh answer");
     const before = await widgetLines(token);
     wakes.length = 0;
-    const response = await send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
-      body: "The answer",
-    });
+    const response = await asOperator(
+      app,
+      ana.cookie,
+      "PATCH",
+      `${thread(conversationId)}/${sent.id}`,
+      {
+        body: "The answer",
+      },
+    );
     expect(response.status).toBe(200);
     const edited = (await response.json()) as Line;
     expect(edited).toMatchObject({ body: "The answer", seq: sent.seq });
@@ -341,11 +333,11 @@ describe("editing a reply", () => {
   });
 
   test("an edit sends again the replies that quote it, with the new words", async () => {
-    const { token, conversationId } = await visitorStarts("Hi");
+    const { token, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
     const sent = await reply(ana.cookie, conversationId, "Teh **answer**");
     const quoting = await reply(ana.cookie, conversationId, "And more", sent.id);
     const { cursor } = await widgetLines(token);
-    await send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
+    await asOperator(app, ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
       body: "The **answer**",
     });
     const live = await widgetLines(token, cursor);
@@ -356,30 +348,40 @@ describe("editing a reply", () => {
   });
 
   test("only the operator who wrote a text reply may edit it, and never a key", async () => {
-    const { conversationId, first } = await visitorStarts("Hi");
+    const { conversationId, first } = await visitorStarts(app, space.publicKey, "Hi");
     const sent = await reply(ana.cookie, conversationId, "Mine");
     const path = `${thread(conversationId)}/${sent.id}`;
-    expect((await send(ben.cookie, "PATCH", path, { body: "Ben's" })).status).toBe(403);
-    expect((await send(cleo.cookie, "PATCH", path, { body: "Cleo's" })).status).toBe(403);
-    expect((await withKey("PATCH", path, { body: "Bot's" })).status).toBe(403);
+    expect((await asOperator(app, ben.cookie, "PATCH", path, { body: "Ben's" })).status).toBe(403);
+    expect((await asOperator(app, cleo.cookie, "PATCH", path, { body: "Cleo's" })).status).toBe(
+      403,
+    );
+    expect((await withKey(app, keyToken, "PATCH", path, { body: "Bot's" })).status).toBe(403);
     const visitorsOwn = `${thread(conversationId)}/${first.id}`;
-    expect((await send(ana.cookie, "PATCH", visitorsOwn, { body: "Changed" })).status).toBe(403);
+    expect(
+      (await asOperator(app, ana.cookie, "PATCH", visitorsOwn, { body: "Changed" })).status,
+    ).toBe(403);
     expect((await operatorLines(conversationId)).at(-1)?.body).toBe("Mine");
   });
 
   test("a reply the visitor read can no longer change", async () => {
-    const { token, conversationId } = await visitorStarts("Hi");
+    const { token, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
     const sent = await reply(ana.cookie, conversationId, "Read me");
     expect((await widget(token, "POST", "read", { seq: sent.seq })).status).toBe(200);
-    const response = await send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
-      body: "Too late",
-    });
+    const response = await asOperator(
+      app,
+      ana.cookie,
+      "PATCH",
+      `${thread(conversationId)}/${sent.id}`,
+      {
+        body: "Too late",
+      },
+    );
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: "message_seen" } });
   });
 
   test("a reply older than the record of its emails can no longer change", async () => {
-    const { conversationId } = await visitorStarts("Hi");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hi");
     const sent = await reply(ana.cookie, conversationId, "Long ago");
     // The record of what an email carried is pruned after RETENTION_MS, so an older reply may
     // have reached the visitor's inbox with no trace left.
@@ -389,16 +391,22 @@ describe("editing a reply", () => {
         .set({ createdAt: new Date(Date.now() - RETENTION_MS - DAY_MS) })
         .where(and(eq(message.workspaceId, space.id), eq(message.id, sent.id))),
     );
-    const response = await send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
-      body: "Rewritten",
-    });
+    const response = await asOperator(
+      app,
+      ana.cookie,
+      "PATCH",
+      `${thread(conversationId)}/${sent.id}`,
+      {
+        body: "Rewritten",
+      },
+    );
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: "message_seen" } });
   });
 
   test("a reply an email carried, or one an email is sending now, can no longer change", async () => {
     for (const state of ["sent", "sending"] as const) {
-      const { visitorId, conversationId } = await visitorStarts("Hi");
+      const { visitorId, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
       const sent = await reply(ana.cookie, conversationId, "Emailed");
       await owner.insert(alertDelivery).values({
         workspaceId: space.id,
@@ -413,9 +421,15 @@ describe("editing a reply", () => {
           ? { outcome: "sent", finishedAt: new Date(Date.now() + 1000) }
           : { claimedUntil: new Date(Date.now() + 60_000) }),
       });
-      const response = await send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
-        body: "Changed",
-      });
+      const response = await asOperator(
+        app,
+        ana.cookie,
+        "PATCH",
+        `${thread(conversationId)}/${sent.id}`,
+        {
+          body: "Changed",
+        },
+      );
       expect(response.status).toBe(409);
     }
   });
@@ -423,7 +437,7 @@ describe("editing a reply", () => {
 
 describe("edits and reads at once", () => {
   test("a visitor's read and an edit that wait for the same visitor both finish", async () => {
-    const { token, visitorId, conversationId } = await visitorStarts("Hi");
+    const { token, visitorId, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
     const sent = await reply(ana.cookie, conversationId, "Teh answer");
     const held = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
@@ -437,7 +451,7 @@ describe("edits and reads at once", () => {
       await held.promise;
       const read = widget(token, "POST", "read", { seq: sent.seq });
       await untilWaiting(owner, 1);
-      const edit = send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
+      const edit = asOperator(app, ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
         body: "The answer",
       });
       await untilWaiting(owner, 2);
@@ -454,23 +468,25 @@ describe("edits and reads at once", () => {
 
 describe("deleting a message", () => {
   test("the author deletes their own; a member may not delete someone else's", async () => {
-    const { conversationId } = await visitorStarts("Hi");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hi");
     const anas = await reply(ana.cookie, conversationId, "Ana's");
     const bens = await reply(ben.cookie, conversationId, "Ben's");
-    expect((await send(ben.cookie, "DELETE", `${thread(conversationId)}/${anas.id}`)).status).toBe(
-      403,
-    );
-    expect((await send(ben.cookie, "DELETE", `${thread(conversationId)}/${bens.id}`)).status).toBe(
-      200,
-    );
-    expect((await withKey("DELETE", `${thread(conversationId)}/${anas.id}`)).status).toBe(403);
+    expect(
+      (await asOperator(app, ben.cookie, "DELETE", `${thread(conversationId)}/${anas.id}`)).status,
+    ).toBe(403);
+    expect(
+      (await asOperator(app, ben.cookie, "DELETE", `${thread(conversationId)}/${bens.id}`)).status,
+    ).toBe(200);
+    expect(
+      (await withKey(app, keyToken, "DELETE", `${thread(conversationId)}/${anas.id}`)).status,
+    ).toBe(403);
     const lines = await operatorLines(conversationId);
     expect(lines.find((line) => line.id === anas.id)).toMatchObject({ deleted: false });
     expect(lines.find((line) => line.id === bens.id)).toMatchObject({ deleted: true, body: null });
   });
 
   test("an admin deletes a visitor's message, and its image goes to the worker to delete", async () => {
-    const { token, conversationId, visitorId } = await visitorStarts("Look");
+    const { token, conversationId, visitorId } = await visitorStarts(app, space.publicKey, "Look");
     const shot = await withWorkspace(db, space.id, (tx) =>
       appendMessage(
         tx,
@@ -490,7 +506,8 @@ describe("deleting a message", () => {
       ),
     );
     const before = await widgetLines(token);
-    const response = await send(
+    const response = await asOperator(
+      app,
       cleo.cookie,
       "DELETE",
       `${thread(conversationId)}/${shot.message.id}`,
@@ -515,8 +532,8 @@ describe("deleting a message", () => {
   });
 
   test("an export shows a deleted message with no body", async () => {
-    const { conversationId, first } = await visitorStarts("Secret 123");
-    await send(ana.cookie, "DELETE", `${thread(conversationId)}/${first.id}`);
+    const { conversationId, first } = await visitorStarts(app, space.publicKey, "Secret 123");
+    await asOperator(app, ana.cookie, "DELETE", `${thread(conversationId)}/${first.id}`);
     const store = localStore(await mkdtemp(join(tmpdir(), "dinghy-actions-")));
     let data: { messages: { id: string; body: string | null; deletedAt: string | null }[] } = {
       messages: [],
@@ -548,12 +565,15 @@ describe("webhooks and info", () => {
       name: "Dana",
       workspaceId: hooked.id,
     });
-    const { conversationId } = await visitorStarts("Hi", hooked);
+    const { conversationId } = await visitorStarts(app, hooked.publicKey, "Hi");
     const path = `/v1/operator/workspaces/${hooked.id}/conversations/${conversationId}/messages`;
-    const sent = await send(dana.cookie, "POST", path, { clientId: randomUUID(), body: "Draft" });
+    const sent = await asOperator(app, dana.cookie, "POST", path, {
+      clientId: randomUUID(),
+      body: "Draft",
+    });
     const { id } = (await sent.json()) as { id: string };
-    await send(dana.cookie, "PATCH", `${path}/${id}`, { body: "Final" });
-    await send(dana.cookie, "DELETE", `${path}/${id}`);
+    await asOperator(app, dana.cookie, "PATCH", `${path}/${id}`, { body: "Final" });
+    await asOperator(app, dana.cookie, "DELETE", `${path}/${id}`);
     while (await fanOutWebhooksOne(workerDb)) {}
     const rows = await owner
       .select({ type: webhookDelivery.type, messageId: webhookDelivery.messageId })
@@ -566,8 +586,8 @@ describe("webhooks and info", () => {
   });
 
   test("a key's reply says whether it came through the API or MCP, and a read sets its time", async () => {
-    const { token, conversationId } = await visitorStarts("Hi");
-    const viaApi = await withKey("POST", thread(conversationId), {
+    const { token, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
+    const viaApi = await withKey(app, keyToken, "POST", thread(conversationId), {
       clientId: randomUUID(),
       body: "From the API",
     });
@@ -594,7 +614,12 @@ describe("webhooks and info", () => {
     const last = lines.at(-1);
     expect(last).toMatchObject({ body: "From MCP", via: "mcp", readAt: null });
     await widget(token, "POST", "read", { seq: last?.seq });
-    const receipt = await send(ana.cookie, "GET", `${thread(conversationId)}/${last?.id}/receipt`);
+    const receipt = await asOperator(
+      app,
+      ana.cookie,
+      "GET",
+      `${thread(conversationId)}/${last?.id}/receipt`,
+    );
     expect(await receipt.json()).toMatchObject({ emailedAt: null, readAt: expect.any(String) });
     const read = await owner
       .select({ readAt: message.readAt })

@@ -6,11 +6,29 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Added
 
+- An MCP client such as Claude Code connects with OAuth in the browser: `claude mcp add --transport http dinghy https://chat.example.com/v1/mcp`, then an owner or admin approves it on one page and picks the workspace, the access (**Chats** or **Full access**) and the reply mode. The agent never sees a secret. A connected app shows in **Settings > API & webhooks** beside the keys, and can be disconnected there. OAuth is on when `PUBLIC_URL` is `https` or `localhost`. API: OAuth discovery at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/v1/oauth/token`, `/v1/oauth/register` and `/v1/oauth/revoke`, with Client ID Metadata Documents and Dynamic Client Registration.
+- MCP speaks protocol 2026-07-28, which is stateless, beside the older versions.
+- **Full access** tools and routes, so a coding agent can install the chat: the install snippet for seven frameworks, allowed sites, an install check, identity code with no secret, the widget's look, webhook signature code, delivery replay, and test visitors. API: `/install/snippet`, `/install/check`, `/install/identity`, `/sites`, `/test-visitors` and `.../deliveries/{deliveryId}/replay`.
+- A key's reply mode: **Send directly**, or **Drafts only**, where each reply waits under the conversation as a pale suggested reply, for an operator to send, edit or discard. A draft becomes stale when the visitor writes or an operator replies after it, and the thread folds stale drafts into one card. API: `replyMode` on keys, a 202 `{ draft }` answer to a key's reply, and `/drafts` routes.
+- Internal notes: choose **Note** above the reply box to write a message that only your team sees, never the visitor. API: `"note": true` on `POST .../conversations/{conversationId}/messages`, a message `kind` of `note`, and the MCP tool `add_note`. A note goes while bots are paused and while a person handles the conversation, and an operator's note neither takes the conversation from the bots nor makes drafts stale.
+- A bot hands a conversation to people with a reason, a summary and a last message to the visitor, and the team gets an alert. While a person handles it, a key that sends directly gets 409 `human_handling`, until an operator gives it back. The thread shows the handoff with the bot's note, the inbox row ends with a mark for who handles each conversation, and one dropdown picks the bot, the team or a member. API: `POST .../handoff`, `POST .../give-back`, which also clears the assignee, `handler` and `bot` on conversations, `handoff` on messages, and the `conversation.handoff` and `conversation.given_back` webhooks.
+- Owners and admins pause every bot with one switch: replies, drafts and typing from keys answer 409 `bots_paused`, and the banner says who paused them and when, with **Resume bots**. API: `PUT .../bots-paused`, and `botsPaused`, `botsPausedBy` and `botsPausedAt` on workspaces.
+- A bot shows "<name> is typing" in the chat. API: `POST .../typing`, and a widget `notice`.
+- `GET /v1/events` streams the webhook events to an API key, for a bot with no public address, and the MCP tool `wait_for_messages` waits for new visitor messages.
+- MCP tools for keys: `hand_off`, `list_members`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors`, `get_analytics`, and `format: "markdown"` and `replySeconds` on `get_conversation`.
+- A failed webhook delivery shows the start of the receiver's answer. API: `responseExcerpt` and `replayOf` on deliveries.
+- **Install** has a "Set up with an agent" prompt to copy, for Claude Code, Cursor or another MCP client.
+- Docs: [Use Dinghy with AI agents](docs/agents.md), with a block to paste into a repository's `AGENTS.md`, and every doc in one file at `https://dinghy.chat/llms-full.txt`.
 - Snooze: the **…** menu of a conversation snoozes it until the visitor replies, until tomorrow at 9:00 or until next Monday at 9:00. It stays open, shows **Snoozed** in the Inbox and does not count as waiting until then, and the visitor sees nothing. API: `{ "snooze": { "until" } }` on `PATCH .../conversations/{conversationId}`, `snooze` on each conversation, a `conversation.snoozed` change, and the MCP tools `snooze_conversation` and `unsnooze_conversation`.
-- Internal notes: choose **Note** above the reply box to write a message that only your team sees, never the visitor. API: `"note": true` on `POST .../conversations/{conversationId}/messages`, a message `kind` of `note`, and the MCP tool `add_note`.
 
 ### Changed
 
+- A new API key or connected app starts in **Drafts only**. Existing keys keep sending directly, so no bot changes how it behaves.
+- API keys can read the analytics, and **Full access** keys can read and change the widget's look.
+- Settings names the two access levels **Chats** and **Full access**. The API keeps `conversations` and `setup`.
+- Assigning a conversation in the operator app takes it from the bots, as a reply does. An API key's assign changes only the assignee.
+- **Settings > API & webhooks** shows how many bots are connected, with a big switch to pause them, and lists connected apps, API keys and webhooks apart.
+- `close_conversation` is marked destructive, so an MCP client asks the person first.
 - A visitor who writes after their conversation was closed reopens it, with its assignee, instead of starting a new one. Only a visitor's first message starts a conversation, and the `conversation:started` event and `conversation.created` webhook come only then.
 
 ### Fixed

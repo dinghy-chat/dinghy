@@ -36,6 +36,7 @@ const mine = (kind: "text" | "note"): Line => ({
   editedAt: null,
   deleted: false,
   via: null,
+  handoff: null,
 });
 const who = { meId: "me", mayDeleteAnyone: false, canWrite: true, canReply: true };
 // The visitor read past the line.

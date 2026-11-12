@@ -64,3 +64,12 @@ test("every icon the manifest and the page name is served, and both use one them
     expect(response.headers.get("content-type")).toBe(type);
   }
 });
+
+test("the OAuth consent page opens the app, and no other site may frame it", async () => {
+  const response = await operatorApp().request(
+    "/oauth/authorize?response_type=code&client_id=x&redirect_uri=https%3A%2F%2Fa.example%2Fcb",
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+});

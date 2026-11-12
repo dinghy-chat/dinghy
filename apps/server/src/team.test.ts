@@ -66,6 +66,7 @@ const live: Live = {
   },
   revoke() {},
   tell() {},
+  tellVisitor() {},
   async subscribe() {
     return () => {};
   },
@@ -880,6 +881,9 @@ describe("invites", () => {
         role: "admin",
         name: "Acme",
         logoUrl: null,
+        botsPaused: false,
+        botsPausedBy: null,
+        botsPausedAt: null,
         active: true,
         readOnly: false,
         waiting: false,

@@ -4,9 +4,9 @@
 import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Contact, ContactDetail, Conversation, Member, PageView } from "./api.ts";
 import { MINUTE_MS, shortTime } from "./format.ts";
+import { HandlerSelect } from "./handler.tsx";
 import { Icon, type IconName } from "./icons.tsx";
 import { countryName, flag, localTime } from "./place.ts";
-import { Select } from "./popup.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
@@ -460,7 +460,9 @@ export function VisitorPanel({
   overlay,
   motion,
   onMoved,
+  meId,
   onAssign,
+  onGiveBack,
   onOpenContact,
   onOpenConversation,
   onNote,
@@ -477,7 +479,9 @@ export function VisitorPanel({
   motion: PanelMotion;
   /** The slide ended. */
   onMoved(): void;
+  meId: string;
   onAssign(operatorId: string | null): void;
+  onGiveBack(): void;
   onOpenContact(): void;
   onOpenConversation(id: string, status: "open" | "closed"): void;
   onNote(note: string | null): Promise<unknown>;
@@ -486,9 +490,6 @@ export function VisitorPanel({
   const { visitor } = conversation;
   const name = visitorName(visitor);
   const presence = presenceLine(visitor.lastSeenAt, online);
-  const assignee = members.some((member) => member.id === conversation.assigneeOperatorId)
-    ? (conversation.assigneeOperatorId ?? "")
-    : "";
   return (
     <aside
       className={["visitor-panel", overlay && "overlay", motion].filter(Boolean).join(" ")}
@@ -534,19 +535,12 @@ export function VisitorPanel({
         {hasPlace(visitor) && <PlaceTiles visitor={visitor} online={online === true} />}
       </header>
       <div className="panel-bar">
-        <Select
-          label={t("assignTo")}
-          className="assignee"
-          value={assignee}
-          choices={[
-            { value: "", label: t("unassigned"), lead: <span className="avatar nobody" /> },
-            ...members.map((member) => ({
-              value: member.id,
-              label: member.name,
-              lead: <Avatar name={member.name} pictureUrl={member.pictureUrl} />,
-            })),
-          ]}
-          onChange={(value) => onAssign(value === "" ? null : value)}
+        <HandlerSelect
+          conversation={conversation}
+          members={members}
+          meId={meId}
+          onAssign={onAssign}
+          onGiveBack={onGiveBack}
         />
         <span
           className={conversation.status === "open" ? "chip warn" : "chip"}

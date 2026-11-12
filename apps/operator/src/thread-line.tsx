@@ -1,11 +1,28 @@
 /** @jsxImportSource react */
 import { createElement, type ReactNode } from "react";
-import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
+import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import { clockTime, isToday } from "./format.ts";
 import { type Receipt, ReceiptLine } from "./receipts.tsx";
 import { t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
 import { replyAuthor } from "./visitor.ts";
+
+/**
+ * Elements for a key's note: each link shows as plain text with its address, and nobody can click
+ * it. A bot's note may carry a visitor's link, and the team's note would make it look trusted.
+ */
+export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) => {
+  if (tag !== "a") return createElement(tag, props, ...children);
+  const href = String(props?.href);
+  const isBare = children.length === 1 && children[0] === href;
+  return createElement(
+    "span",
+    { className: "plain-link" },
+    ...(isBare ? [] : [...children, " ("]),
+    href,
+    isBare ? "" : ")",
+  );
+};
 
 /** A message's bubble: its quote and text, its image, or what stands in for them. */
 function Bubble({
@@ -52,7 +69,10 @@ function Bubble({
     { className: `msg${side}` },
     noteBy !== null && <span className="note-label">{t("noteBy", { name: noteBy })}</span>,
     quote,
-    ...renderMarkdown(line.body, createElement),
+    ...renderMarkdown(
+      line.body,
+      line.kind === "note" && line.authorApiKeyId !== null ? plainLinks : createElement,
+    ),
   );
 }
 
@@ -140,6 +160,20 @@ export function StatusNote({ line, meId }: { line: Line; meId: string }) {
       {text}
       {time !== null && <time dateTime={line.createdAt}> · {time}</time>}
     </p>
+  );
+}
+
+/** A bot types a reply: its name, with dots that move. */
+export function BotTyping({ name }: { name: string }) {
+  return (
+    <div className="meta typing" role="status">
+      <span className="typing-dots" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      {t("botTyping", { name })}
+    </div>
   );
 }
 

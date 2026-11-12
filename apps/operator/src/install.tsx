@@ -1,12 +1,13 @@
 /** @jsxImportSource react */
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { type CodeLanguage, highlight } from "../../../packages/widget/src/highlight.ts";
+import { type AgentClient, agentPrompt } from "./agent-prompt.ts";
 import type { WorkspaceApi, WorkspaceSettings } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { CopyButton, ErrorNote, failureText, Page, PageRow } from "./ui.tsx";
+import { Choices, CopyButton, ErrorNote, failureText, type Option, Page, PageRow } from "./ui.tsx";
 
 /** The code's lines as text and colored spans. Each span's key is where it starts in the code. */
 function codeNodes(value: string, language: CodeLanguage): ReactNode[] {
@@ -53,6 +54,65 @@ function CodeBlock({
         <code>{codeNodes(value, language)}</code>
       </pre>
     </div>
+  );
+}
+
+const AGENT_CLIENTS: Option<AgentClient>[] = [
+  { value: "claude", label: "agentClientClaude", icon: "terminal" },
+  { value: "cursor", label: "agentClientCursor", icon: "cursorClick" },
+  { value: "other", label: "agentClientOther" },
+];
+
+/**
+ * The prompt with its command, its server address and the workspace's name in color. Where two
+ * marked strings start at the same place, the longer one wins.
+ */
+function promptNodes(prompt: string, marked: string[]): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let at = 0;
+  while (at < prompt.length) {
+    const next = marked
+      .map((text) => ({ text, index: prompt.indexOf(text, at) }))
+      .filter((found) => found.index >= 0)
+      .sort((a, b) => a.index - b.index || b.text.length - a.text.length)[0];
+    if (next === undefined) break;
+    nodes.push(prompt.slice(at, next.index));
+    nodes.push(
+      <span key={next.index} className={next.text.startsWith('"') ? "code-attr" : "code-string"}>
+        {next.text}
+      </span>,
+    );
+    at = next.index + next.text.length;
+  }
+  nodes.push(prompt.slice(at));
+  return nodes;
+}
+
+/** A prompt to paste into a coding agent, in its client's words, which installs the chat through MCP. */
+function AgentRow({ workspace, waiting }: { workspace: string; waiting: boolean }) {
+  const [client, setClient] = useState<AgentClient>("claude");
+  // The code row below already says why nothing can be installed yet.
+  if (waiting) return null;
+  const prompt = agentPrompt(location.origin, workspace, client);
+  const url = `${location.origin}/v1/mcp`;
+  const marked = [`claude mcp add --transport http dinghy ${url}`, url, `"${workspace}"`];
+  return (
+    <PageRow
+      title={t("agentTitle")}
+      help={t("agentHelp")}
+      docs={[{ path: "agents", text: "mcpDocsLink" }]}
+    >
+      <div className="agent-prompt">
+        <Choices<AgentClient>
+          label={t("agentClient")}
+          value={client}
+          options={AGENT_CLIENTS}
+          onChange={setClient}
+        />
+        <pre className="prompt-text">{promptNodes(prompt, marked)}</pre>
+        <CopyButton value={prompt} label={t("agentCopy")} text={t("agentCopy")} />
+      </div>
+    </PageRow>
   );
 }
 
@@ -302,21 +362,27 @@ function SecretRow({
   );
 }
 
-/** Install: the code, the sites that may show the chat, and the optional identity secret. */
+/**
+ * Install: a prompt for a coding agent, the code, the sites that may show the chat, and the
+ * optional identity secret.
+ */
 export function InstallPage({
   api,
   settings,
+  workspaceName,
   waiting,
   onSaved,
 }: {
   api: WorkspaceApi;
   settings: WorkspaceSettings;
+  workspaceName: string;
   /** The workspace waits for the cloud to open, so its widget is off. */
   waiting: boolean;
   onSaved(saved: WorkspaceSettings): void;
 }) {
   return (
     <Page title={t("pageInstall")} context={t("installContext")}>
+      <AgentRow workspace={workspaceName} waiting={waiting} />
       <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
       <OriginsRow api={api} settings={settings} onSaved={onSaved} />
       <SecretRow api={api} settings={settings} onSaved={onSaved} />

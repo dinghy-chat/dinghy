@@ -5,7 +5,8 @@ import { toast } from "./toast.tsx";
 
 /**
  * What the operator does to the whole conversation: assign it, close, reopen or snooze it, block its
- * visitor, email its transcript or delete it, which asks first. Each change shows at once.
+ * visitor, email its transcript, give it back to the bots, or delete it, which asks first. Each
+ * change shows at once.
  */
 export function useConversationActions({
   api,
@@ -44,9 +45,18 @@ export function useConversationActions({
     onBack();
   };
 
-  const assign = async (operatorId: string | null) => {
+  /** Picking a person or the team takes the conversation over: a person handles it from now. */
+  const assign = async (operatorId: string | null, name: string | null) => {
     if (!(await act(() => api.assign(conversationId, operatorId)))) return;
-    change((current) => ({ ...current, assigneeOperatorId: operatorId }));
+    const since = new Date().toISOString();
+    change((current) => ({
+      ...current,
+      assigneeOperatorId: operatorId,
+      handler:
+        operatorId === null || name === null
+          ? { kind: "team", since }
+          : { kind: "person", operatorId, name, since },
+    }));
   };
 
   const sendTranscript = async () => {
@@ -57,6 +67,17 @@ export function useConversationActions({
     if (!(await act(() => api.setStatus(conversationId, status)))) return;
     // A close ends a snooze, and a reopen starts with none.
     change((current) => ({ ...current, status, snooze: null }));
+  };
+
+  /** Gives the conversation back to its bot: nobody is assigned, and the bot may answer again. */
+  const giveBack = async () => {
+    if (!(await act(() => api.giveBack(conversationId)))) return;
+    toast("giveBackDone");
+    change((current) => ({
+      ...current,
+      assigneeOperatorId: null,
+      handler: current.bot === null ? null : { kind: "bot", ...current.bot },
+    }));
   };
 
   const setSnooze = async (snooze: Snooze | null) => {
@@ -72,6 +93,7 @@ export function useConversationActions({
     assign,
     sendTranscript,
     setStatus,
+    giveBack,
     setSnooze,
   };
 }

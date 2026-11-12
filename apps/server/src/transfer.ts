@@ -113,6 +113,8 @@ const ExportFile = z.strictObject({
         .nullable()
         .default(null),
       timeZone: z.string().max(64).nullable().default(null),
+      // A file from before test visitors has none.
+      isTest: z.boolean().default(false),
       createdAt: date,
     }),
   ),
@@ -125,6 +127,9 @@ const ExportFile = z.strictObject({
       snoozedAt: nullableDate.default(null),
       snoozedUntil: nullableDate.default(null),
       startedPage: z.string().max(PAGE_PATH_MAX).nullable(),
+      // A file from before bot handoffs has neither.
+      humanSince: nullableDate.default(null),
+      handoffByApiKeyId: id.nullable().default(null),
       createdAt: date,
       updatedAt: date,
     }),
@@ -334,6 +339,7 @@ async function readWorkspace(
           note: row.note,
           country: row.country,
           timeZone: row.timeZone,
+          isTest: row.isTest,
           createdAt: iso(row.createdAt),
         })),
         conversations: conversations.map((row) => ({
@@ -344,6 +350,8 @@ async function readWorkspace(
           snoozedAt: isoOrNull(row.snoozedAt),
           snoozedUntil: isoOrNull(row.snoozedUntil),
           startedPage: row.startedPage,
+          humanSince: isoOrNull(row.humanSince),
+          handoffByApiKeyId: row.handoffByApiKeyId,
           createdAt: iso(row.createdAt),
           updatedAt: iso(row.updatedAt),
         })),
@@ -624,6 +632,7 @@ async function insertWorkspace(
         note: row.note,
         country: row.country,
         timeZone: row.timeZone,
+        isTest: row.isTest,
         createdAt: new Date(row.createdAt),
       })),
     );
@@ -636,9 +645,11 @@ async function insertWorkspace(
         visitorId: row.visitorId,
         status: row.status,
         assigneeOperatorId: mapOperator(row.assigneeOperatorId),
-        snoozedAt: row.snoozedAt === null ? null : new Date(row.snoozedAt),
-        snoozedUntil: row.snoozedUntil === null ? null : new Date(row.snoozedUntil),
+        snoozedAt: dateOrNull(row.snoozedAt),
+        snoozedUntil: dateOrNull(row.snoozedUntil),
         startedPage: row.startedPage,
+        humanSince: dateOrNull(row.humanSince),
+        handoffByApiKeyId: row.handoffByApiKeyId,
         createdAt: new Date(row.createdAt),
         updatedAt: new Date(row.updatedAt),
       })),

@@ -11,6 +11,9 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
+import { asOperator, callTool, ORIGIN, withKey } from "../test/requests.ts";
+import { readStream } from "../test/sse.ts";
+import { SITE, visitorStarts } from "../test/visitors.ts";
 import { medianFirstReplySeconds } from "./analytics.ts";
 import { type App, createApp } from "./app.ts";
 import { readTar } from "./archive.ts";
@@ -24,8 +27,6 @@ import { exportArchive } from "./transfer.ts";
 import { claimWebhookDeliveries, deliverWebhook, fanOutWebhooksOne } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const SITE = "https://app.example.com";
-const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 
 let database: TestDatabase;
@@ -45,6 +46,7 @@ const live: Live = {
   },
   revoke() {},
   tell() {},
+  tellVisitor() {},
   async subscribe() {
     return () => {};
   },
@@ -61,17 +63,6 @@ interface Line {
   deleted: boolean;
 }
 
-const send = (cookie: string, method: string, path: string, body?: unknown) =>
-  app.request(path, {
-    method,
-    headers: {
-      cookie,
-      origin: ORIGIN,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
 const widget = (token: string, method: string, path: string, workspace = space) =>
   app.request(`/v1/widget/${workspace.publicKey}/${path}`, {
     method,
@@ -83,22 +74,6 @@ const inSpace = (path: string, workspace = space) =>
 const thread = (conversationId: string, workspace = space) =>
   inSpace(`/conversations/${conversationId}/messages`, workspace);
 
-/** A new visitor's first message, which starts a conversation. */
-async function visitorStarts(body: string, workspace = space) {
-  const created = await app.request(`/v1/widget/${workspace.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
-  });
-  const { token, visitorId } = (await created.json()) as { token: string; visitorId: string };
-  const sent = await app.request(`/v1/widget/${workspace.publicKey}/messages`, {
-    method: "POST",
-    headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ clientId: randomUUID(), body }),
-  });
-  const first = (await sent.json()) as Line & { conversationId: string };
-  return { token, visitorId, conversationId: first.conversationId, first };
-}
-
 async function write(
   cookie: string,
   conversationId: string,
@@ -106,7 +81,7 @@ async function write(
   extra: { note?: boolean; replyToMessageId?: string } = {},
   workspace = space,
 ): Promise<Line> {
-  const response = await send(cookie, "POST", thread(conversationId, workspace), {
+  const response = await asOperator(app, cookie, "POST", thread(conversationId, workspace), {
     clientId: randomUUID(),
     body,
     ...extra,
@@ -118,7 +93,7 @@ const addNote = (cookie: string, conversationId: string, body: string, workspace
   write(cookie, conversationId, body, { note: true }, workspace);
 
 async function operatorLines(conversationId: string): Promise<Line[]> {
-  const response = await send(ana.cookie, "GET", thread(conversationId));
+  const response = await asOperator(app, ana.cookie, "GET", thread(conversationId));
   return ((await response.json()) as { messages: Line[] }).messages;
 }
 
@@ -132,20 +107,11 @@ async function widgetLines(token: string, after?: string) {
 async function widgetStream(token: string, after: string) {
   const response = await widget(token, "GET", `stream?after=${after}`);
   expect(response.status).toBe(200);
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
-  while (reader !== undefined && !text.includes("event: ready")) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    text += decoder.decode(value);
-  }
-  await reader?.cancel();
-  return text;
+  return readStream(response);
 }
 
 const setStatus = (conversationId: string, status: "open" | "closed") =>
-  send(ana.cookie, "PATCH", inSpace(`/conversations/${conversationId}`), { status });
+  asOperator(app, ana.cookie, "PATCH", inSpace(`/conversations/${conversationId}`), { status });
 
 /** A workspace of its own, with one owner, for counts that every conversation adds to. */
 async function ownSpace(name: string) {
@@ -162,22 +128,6 @@ async function ownSpace(name: string) {
   });
   return { fresh, lead };
 }
-
-const mcp = (name: string, args: Record<string, unknown>) =>
-  app.request("/v1/mcp", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${keyToken}`,
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: { name, arguments: args },
-    }),
-  });
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -205,7 +155,9 @@ beforeAll(async () => {
     signedInOperator({ app, auth, owner, email, name, workspaceId: space.id, role });
   ana = await member("ana@example.com", "Ana Lee", "owner");
   ben = await member("ben@example.com", "Ben", "member");
-  const made = await send(ana.cookie, "POST", inSpace("/api-keys"), { name: "Helper bot" });
+  const made = await asOperator(app, ana.cookie, "POST", inSpace("/api-keys"), {
+    name: "Helper bot",
+  });
   keyToken = ((await made.json()) as { token: string }).token;
 }, 30_000);
 
@@ -215,7 +167,7 @@ afterAll(async () => {
 
 describe("writing a note", () => {
   test("an operator adds a note: the team sees it with its kind, and the visitor's stream is not woken", async () => {
-    const { conversationId, visitorId } = await visitorStarts("Hello");
+    const { conversationId, visitorId } = await visitorStarts(app, space.publicKey, "Hello");
     wakes.length = 0;
     const note = await addNote(ana.cookie, conversationId, "VIP customer, be kind");
     expect(note).toMatchObject({ kind: "note", fromVisitor: false, body: "VIP customer, be kind" });
@@ -224,31 +176,31 @@ describe("writing a note", () => {
   });
 
   test("a retry with the same clientId returns the original note", async () => {
-    const { conversationId } = await visitorStarts("Hello");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const body = { clientId: "note-1", body: "Once", note: true };
-    const first = await send(ana.cookie, "POST", thread(conversationId), body);
-    const again = await send(ana.cookie, "POST", thread(conversationId), body);
+    const first = await asOperator(app, ana.cookie, "POST", thread(conversationId), body);
+    const again = await asOperator(app, ana.cookie, "POST", thread(conversationId), body);
     expect(first.status).toBe(201);
     expect(again.status).toBe(200);
     expect(((await again.json()) as Line).id).toBe(((await first.json()) as Line).id);
   });
 
   test("a note goes in a closed conversation and leaves it closed", async () => {
-    const { conversationId } = await visitorStarts("Hello");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     await setStatus(conversationId, "closed");
     await addNote(ana.cookie, conversationId, "Followed up by phone");
-    const read = await send(ana.cookie, "GET", thread(conversationId));
+    const read = await asOperator(app, ana.cookie, "GET", thread(conversationId));
     const body = (await read.json()) as { conversation: { status: string }; messages: Line[] };
     expect(body.conversation.status).toBe("closed");
     expect(body.messages.at(-1)?.kind).toBe("note");
   });
 
   test("a note never assigns the conversation, and the first reply after it still does", async () => {
-    const { conversationId } = await visitorStarts("Hello");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     await addNote(ben.cookie, conversationId, "Looking into it");
     const assignee = async () =>
       (
-        (await (await send(ana.cookie, "GET", thread(conversationId))).json()) as {
+        (await (await asOperator(app, ana.cookie, "GET", thread(conversationId))).json()) as {
           conversation: { assigneeOperatorId: string | null };
         }
       ).conversation.assigneeOperatorId;
@@ -258,30 +210,27 @@ describe("writing a note", () => {
   });
 
   test("an API key adds a note through the REST API and through MCP's add_note", async () => {
-    const { conversationId, token } = await visitorStarts("Hello");
-    const viaApi = await app.request(thread(conversationId), {
-      method: "POST",
-      headers: { authorization: `Bearer ${keyToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ clientId: randomUUID(), body: "Bot note", note: true }),
+    const { conversationId, token } = await visitorStarts(app, space.publicKey, "Hello");
+    const viaApi = await withKey(app, keyToken, "POST", thread(conversationId), {
+      clientId: randomUUID(),
+      body: "Bot note",
+      note: true,
     });
     expect(viaApi.status).toBe(201);
     expect(await viaApi.json()).toMatchObject({ kind: "note", authorName: "Helper bot" });
-    const viaMcp = await mcp("add_note", { conversationId, body: "MCP note", clientId: "mcp-n" });
-    const result = (await viaMcp.json()) as {
-      result: { isError: boolean; structuredContent: { message: Line } };
-    };
-    expect(result.result.isError).toBe(false);
-    expect(result.result.structuredContent.message).toMatchObject({ kind: "note", via: "mcp" });
-    const again = await mcp("add_note", { conversationId, body: "MCP note", clientId: "mcp-n" });
-    const retried = (await again.json()) as typeof result;
-    expect(retried.result.structuredContent.message.id).toBe(
-      result.result.structuredContent.message.id,
+    const args = { conversationId, body: "MCP note", clientId: "mcp-n" };
+    const viaMcp = await callTool(app, keyToken, "add_note", args);
+    expect(viaMcp.isError).toBe(false);
+    expect(viaMcp.structuredContent.message).toMatchObject({ kind: "note", via: "mcp" });
+    const again = await callTool(app, keyToken, "add_note", args);
+    expect((again.structuredContent.message as Line).id).toBe(
+      (viaMcp.structuredContent.message as Line).id,
     );
     expect((await widgetLines(token)).messages.map((one) => one.body)).toEqual(["Hello"]);
   });
 
   test("a note with an image is refused", async () => {
-    const { conversationId } = await visitorStarts("Hello");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const response = await app.request(
       inSpace(`/conversations/${conversationId}/images?clientId=img-note&note=true`),
       {
@@ -303,9 +252,9 @@ describe("writing a note", () => {
 
 describe("quotes and notes", () => {
   test("a reply that quotes a note is refused, as the visitor would see the quote", async () => {
-    const { conversationId } = await visitorStarts("Hello");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const note = await addNote(ana.cookie, conversationId, "Internal only");
-    const response = await send(ana.cookie, "POST", thread(conversationId), {
+    const response = await asOperator(app, ana.cookie, "POST", thread(conversationId), {
       clientId: randomUUID(),
       body: "Quoting",
       replyToMessageId: note.id,
@@ -317,7 +266,7 @@ describe("quotes and notes", () => {
   });
 
   test("a note quotes a visitor's message, a reply or another note", async () => {
-    const { conversationId, first } = await visitorStarts("Hello");
+    const { conversationId, first } = await visitorStarts(app, space.publicKey, "Hello");
     const answer = await write(ana.cookie, conversationId, "Hi");
     const note = await addNote(ana.cookie, conversationId, "First note");
     for (const quoted of [first, answer, note]) {
@@ -332,13 +281,19 @@ describe("quotes and notes", () => {
 
 describe("what a note never reaches", () => {
   test("the widget's list and stream never carry a note, nor its edit or delete", async () => {
-    const { conversationId, token } = await visitorStarts("Hello");
+    const { conversationId, token } = await visitorStarts(app, space.publicKey, "Hello");
     const { cursor } = await widgetLines(token);
     const note = await addNote(ana.cookie, conversationId, "Refund approved by finance");
     await write(ana.cookie, conversationId, "Good news");
-    const edited = await send(ana.cookie, "PATCH", `${thread(conversationId)}/${note.id}`, {
-      body: "Refund approved by finance, ref 42",
-    });
+    const edited = await asOperator(
+      app,
+      ana.cookie,
+      "PATCH",
+      `${thread(conversationId)}/${note.id}`,
+      {
+        body: "Refund approved by finance, ref 42",
+      },
+    );
     expect(edited.status).toBe(200);
     expect((await widgetLines(token)).messages.map((one) => one.body)).toEqual([
       "Hello",
@@ -349,7 +304,12 @@ describe("what a note never reaches", () => {
     expect(backlog).not.toContain("Refund");
     expect(backlog).not.toContain(note.id);
     const before = (await widgetLines(token)).cursor;
-    const deleted = await send(ana.cookie, "DELETE", `${thread(conversationId)}/${note.id}`);
+    const deleted = await asOperator(
+      app,
+      ana.cookie,
+      "DELETE",
+      `${thread(conversationId)}/${note.id}`,
+    );
     expect(deleted.status).toBe(200);
     expect((await widgetLines(token, before)).messages).toEqual([]);
     expect(await widgetStream(token, before)).not.toContain(note.id);
@@ -357,12 +317,18 @@ describe("what a note never reaches", () => {
 
   test("a note is not the inbox preview, does not stop a conversation from waiting, and is not unread", async () => {
     const { fresh, lead } = await ownSpace("Preview");
-    const { conversationId } = await visitorStarts("Where is my order?", fresh);
-    await send(lead.cookie, "POST", inSpace(`/conversations/${conversationId}/read`, fresh), {
-      seq: "999999",
-    });
+    const { conversationId } = await visitorStarts(app, fresh.publicKey, "Where is my order?");
+    await asOperator(
+      app,
+      lead.cookie,
+      "POST",
+      inSpace(`/conversations/${conversationId}/read`, fresh),
+      {
+        seq: "999999",
+      },
+    );
     await addNote(lead.cookie, conversationId, "Checking with shipping", fresh);
-    const list = await send(lead.cookie, "GET", inSpace("/conversations", fresh));
+    const list = await asOperator(app, lead.cookie, "GET", inSpace("/conversations", fresh));
     const page = (await list.json()) as {
       conversations: {
         id: string;
@@ -380,9 +346,14 @@ describe("what a note never reaches", () => {
 
   test("search finds a conversation by its note, and shows its chat as the preview", async () => {
     const { fresh, lead } = await ownSpace("Search");
-    const { conversationId } = await visitorStarts("Where is my order?", fresh);
+    const { conversationId } = await visitorStarts(app, fresh.publicKey, "Where is my order?");
     await addNote(lead.cookie, conversationId, "Refund pending with finance", fresh);
-    const found = await send(lead.cookie, "GET", inSpace("/conversations/search?q=refund", fresh));
+    const found = await asOperator(
+      app,
+      lead.cookie,
+      "GET",
+      inSpace("/conversations/search?q=refund", fresh),
+    );
     const { conversations } = (await found.json()) as {
       conversations: { id: string; lastMessage: { body: string; fromVisitor: boolean } }[];
     };
@@ -394,7 +365,7 @@ describe("what a note never reaches", () => {
   });
 
   test("a note does not move the conversation up the inbox", async () => {
-    const { conversationId } = await visitorStarts("Hello");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const updatedAt = async () =>
       (
         await owner
@@ -409,7 +380,7 @@ describe("what a note never reaches", () => {
 
   test("a note is not a first reply in analytics", async () => {
     const { fresh, lead } = await ownSpace("Analytics");
-    const { conversationId } = await visitorStarts("Hi", fresh);
+    const { conversationId } = await visitorStarts(app, fresh.publicKey, "Hi");
     await addNote(lead.cookie, conversationId, "Will answer tomorrow", fresh);
     const median = await withWorkspace(db, fresh.id, (tx) =>
       medianFirstReplySeconds(tx, fresh.id, 7),
@@ -418,7 +389,7 @@ describe("what a note never reaches", () => {
   });
 
   test("a note's message.created alerts nobody, and the operator stream says it is not the visitor's", async () => {
-    const { conversationId } = await visitorStarts("Hello");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const note = await addNote(ana.cookie, conversationId, "Quiet");
     const [row] = await owner
       .select({ needsAlert: event.needsAlert, payload: event.payload })
@@ -433,7 +404,7 @@ describe("what a note never reaches", () => {
   });
 
   test("a note's receipt is empty", async () => {
-    const { conversationId, token } = await visitorStarts("Hello");
+    const { conversationId, token } = await visitorStarts(app, space.publicKey, "Hello");
     const note = await addNote(ana.cookie, conversationId, "Quiet");
     await write(ana.cookie, conversationId, "Hi");
     const { messages } = await widgetLines(token);
@@ -446,14 +417,19 @@ describe("what a note never reaches", () => {
       },
       body: JSON.stringify({ seq: messages.at(-1)?.seq }),
     });
-    const receipt = await send(ana.cookie, "GET", `${thread(conversationId)}/${note.id}/receipt`);
+    const receipt = await asOperator(
+      app,
+      ana.cookie,
+      "GET",
+      `${thread(conversationId)}/${note.id}/receipt`,
+    );
     expect(await receipt.json()).toEqual({ readAt: null, emailedAt: null });
   });
 });
 
 describe("changing a note", () => {
   test("its author edits it even after the visitor read past it; others and keys cannot", async () => {
-    const { conversationId, token } = await visitorStarts("Hello");
+    const { conversationId, token } = await visitorStarts(app, space.publicKey, "Hello");
     const note = await addNote(ana.cookie, conversationId, "Draft note");
     await write(ana.cookie, conversationId, "Hi");
     const { messages } = await widgetLines(token);
@@ -467,19 +443,21 @@ describe("changing a note", () => {
       body: JSON.stringify({ seq: messages.at(-1)?.seq }),
     });
     const path = `${thread(conversationId)}/${note.id}`;
-    expect((await send(ben.cookie, "PATCH", path, { body: "Mine now" })).status).toBe(403);
-    const edited = await send(ana.cookie, "PATCH", path, { body: "Final note" });
+    expect((await asOperator(app, ben.cookie, "PATCH", path, { body: "Mine now" })).status).toBe(
+      403,
+    );
+    const edited = await asOperator(app, ana.cookie, "PATCH", path, { body: "Final note" });
     expect(edited.status).toBe(200);
     expect(await edited.json()).toMatchObject({ kind: "note", body: "Final note" });
   });
 
   test("a member deletes only their own note, and the visitor's stream is not woken", async () => {
-    const { conversationId, visitorId } = await visitorStarts("Hello");
+    const { conversationId, visitorId } = await visitorStarts(app, space.publicKey, "Hello");
     const note = await addNote(ana.cookie, conversationId, "Ana's note");
     const path = `${thread(conversationId)}/${note.id}`;
-    expect((await send(ben.cookie, "DELETE", path)).status).toBe(403);
+    expect((await asOperator(app, ben.cookie, "DELETE", path)).status).toBe(403);
     wakes.length = 0;
-    expect((await send(ana.cookie, "DELETE", path)).status).toBe(200);
+    expect((await asOperator(app, ana.cookie, "DELETE", path)).status).toBe(200);
     expect(wakes).not.toContain(visitorId);
     expect((await operatorLines(conversationId)).at(-1)).toMatchObject({
       id: note.id,
@@ -511,11 +489,11 @@ describe("webhooks and export", () => {
         secret: "whsec_test",
         events: ["message.created", "message.updated", "message.deleted"],
       });
-      const { conversationId } = await visitorStarts("Hi", fresh);
+      const { conversationId } = await visitorStarts(app, fresh.publicKey, "Hi");
       const note = await addNote(lead.cookie, conversationId, "Draft", fresh);
       const path = `${thread(conversationId, fresh)}/${note.id}`;
-      await send(lead.cookie, "PATCH", path, { body: "Final" });
-      await send(lead.cookie, "DELETE", path);
+      await asOperator(app, lead.cookie, "PATCH", path, { body: "Final" });
+      await asOperator(app, lead.cookie, "DELETE", path);
       while (await fanOutWebhooksOne(workerDb)) {}
       const stopping = new AbortController().signal;
       for (const row of await claimWebhookDeliveries(workerDb, 50, 60_000)) {
@@ -538,7 +516,7 @@ describe("webhooks and export", () => {
   });
 
   test("a workspace export keeps a note, with its kind", async () => {
-    const { conversationId } = await visitorStarts("Hello");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const note = await addNote(ana.cookie, conversationId, "Keep me");
     const store = localStore(await mkdtemp(join(tmpdir(), "dinghy-notes-")));
     let data: { messages: { id: string; kind: string; body: string | null }[] } = { messages: [] };

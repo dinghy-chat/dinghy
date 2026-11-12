@@ -32,6 +32,7 @@ import { purgeDeletedWorkspaces } from "../../apps/server/src/workspace-delete.t
 import { createWorkspace, type NewWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
+import { setReplyMode } from "../../apps/server/test/keys.ts";
 import { signedInOperator } from "../../apps/server/test/operators.ts";
 import { cloudProblem } from "./index.ts";
 import {
@@ -426,7 +427,8 @@ describe("copies between the two sides", () => {
       cookie: acme.cookie,
       body: { name: "Helper" },
     });
-    const { token } = (await made.json()) as { token: string };
+    const { id, token } = (await made.json()) as { id: string; token: string };
+    await setReplyMode(owner, id, "send");
     const sent = await early.request(
       inWorkspace(acme.workspaceId, `/conversations/${link.customerConversationId}/messages`),
       {

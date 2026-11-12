@@ -3,6 +3,7 @@ import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useStat
 import { useBilling } from "../../../ee/operator/billing.tsx";
 import { AnalyticsPage } from "./analytics.tsx";
 import { type Me, workspaceApi } from "./api.ts";
+import { pauseBots } from "./bots.tsx";
 import { ContactsPage } from "./contacts.tsx";
 import { NO_DRAFT, useDrafts } from "./drafts.ts";
 import { GetStarted } from "./get-started.tsx";
@@ -119,6 +120,11 @@ export function Inbox({
   const readOnly = membership?.readOnly ?? false;
   const suspended = membership?.suspended ?? false;
   const waitsForCloud = membership?.waiting ?? false;
+  const botsPaused = membership?.botsPaused ?? false;
+  const botsPausedBy = membership?.botsPausedBy ?? null;
+  // Only owners and admins pause or resume the bots.
+  const setBotsPaused =
+    role === "member" ? null : (paused: boolean) => void pauseBots(api, paused, onAccountChanged);
   const billing = useBilling(api, me.billing && role === "owner", accountVersion);
   // The conversation a link opened, whose status picks Open or Closed once it loads.
   const linked = useRef(selected);
@@ -185,6 +191,8 @@ export function Inbox({
           waiting={waiting}
           waitingBy={{ ...data.waitingElsewhere, [workspaceId]: waiting }}
           liveCount={data.liveCount}
+          botsPaused={botsPaused}
+          onBotsPaused={setBotsPaused}
           steps={
             role === "member" ? null : (
               <GetStarted api={api} version={version} onOpen={openSettings} />
@@ -213,6 +221,10 @@ export function Inbox({
             suspended={suspended}
             waitsForCloud={waitsForCloud}
             billing={billing}
+            botsPaused={botsPaused}
+            botsPausedBy={botsPausedBy}
+            botsPausedAt={membership?.botsPausedAt ?? null}
+            onResumeBots={setBotsPaused && (() => setBotsPaused(false))}
           />
           <main className="panel">
             {view === "settings" && (
@@ -227,6 +239,9 @@ export function Inbox({
                 logoUrl={logoUrl}
                 billing={billing}
                 waiting={waitsForCloud}
+                botsPaused={botsPaused}
+                botsPausedBy={botsPausedBy}
+                onBotsPaused={setBotsPaused}
                 emailAvailable={emailAvailable}
                 page={settingsPage}
                 onPage={openSettings}
@@ -303,6 +318,8 @@ export function Inbox({
                   onOpenContact={openContact}
                   onOpenConversation={openConversation}
                   typingDraft={data.typing[selected] ?? null}
+                  botTyping={data.botTyping[selected] ?? null}
+                  draftsVersion={data.draftsVersion(selected)}
                   onBack={() => setSelected(null)}
                   onChanged={reload}
                   inView={view === "inbox"}

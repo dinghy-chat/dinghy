@@ -113,7 +113,7 @@ test("a member sees only their own pages, and the team and the widget read-only"
   // An address of a page they cannot see opens their first page instead.
   await page.goto(`${server.apiOrigin}/settings/install`);
   await expect(pageTitle(page, "Profile")).toBeVisible();
-  await expect(page.getByText("Install code")).toHaveCount(0);
+  await expect(page.getByText("Install by hand")).toHaveCount(0);
   await page.context().close();
 });
 

@@ -6,11 +6,7 @@ import { operator, workspaceMember } from "../src/db/schema.ts";
 import type { Database } from "../src/db/tenant.ts";
 import type { Mailer } from "../src/mailer.ts";
 import type { Role } from "../src/team.ts";
-
-/** Anything that answers a request like `App.request`, such as an app or a test server. */
-interface Server {
-  request(path: string, init?: RequestInit): Response | Promise<Response>;
-}
+import type { Server } from "./requests.ts";
 
 export interface OperatorOptions {
   auth: Auth;

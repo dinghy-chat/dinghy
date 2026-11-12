@@ -623,15 +623,15 @@ test("the assignee dropdown works with the keyboard", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
   await visitor(browser, "Keyboard assignment");
   await row(operator, "Keyboard assignment").click();
-  const button = operator.getByRole("button", { name: /^Assign to/ });
+  const button = operator.getByRole("button", { name: /^Who answers/ });
   await expect(button).toHaveAttribute("aria-haspopup", "listbox");
   await expect(button).toHaveAttribute("aria-expanded", "false");
   await button.focus();
   await operator.keyboard.press("ArrowDown");
-  const list = operator.getByRole("listbox", { name: "Assign to" });
+  const list = operator.getByRole("listbox", { name: "Who answers" });
   await expect(list).toBeFocused();
   await expect(button).toHaveAttribute("aria-expanded", "true");
-  await expect(list.getByRole("option", { name: "Unassigned" })).toHaveAttribute(
+  await expect(list.getByRole("option", { name: /^Unassigned/ })).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -660,7 +660,9 @@ test("the assignee dropdown works with the keyboard", async ({ browser }) => {
   await expect(list).toHaveCount(0);
   await expect(button).toBeFocused();
   await expect(button).toContainText("anna@example.com");
-  await expect(row(operator, "Keyboard assignment")).toContainText("anna@example.com");
+  await expect(
+    row(operator, "Keyboard assignment").getByRole("img", { name: "anna@example.com" }),
+  ).toBeVisible();
 
   // A click outside closes it with no change.
   await button.click();
@@ -700,7 +702,10 @@ test("the install code is one colored line, and a webhook's events are checkboxe
 }) => {
   const page = await signedIn(browser, server, "anna@example.com");
   await openSettings(page, "Install");
-  const code = page.locator(".code-block code");
+  // The install code's row: the agent prompt above it has code blocks of its own.
+  const code = page
+    .locator(".page-row", { has: page.getByRole("heading", { name: "Install by hand" }) })
+    .locator(".code-block code");
   await expect(code).toHaveText(
     /^<script src="[^"]+\/widget\/loader\.js" data-key="wk_[^"]+" async><\/script>$/,
   );
@@ -718,7 +723,7 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(events).toHaveCount(0);
   await page.getByRole("button", { name: "New webhook" }).click();
-  await expect(events).toHaveCount(7);
+  await expect(events).toHaveCount(9);
   await expect(
     page.getByRole("checkbox", { name: /A message is sent\s*message\.created/ }),
   ).toBeChecked();
@@ -732,7 +737,7 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   await events.nth(3).check();
   await add.click();
   const hook = page.locator(".hook", { hasText: url });
-  await expect(hook.locator(".hook-url")).toHaveAttribute("title", url);
+  await expect(hook.locator(".item-name")).toHaveAttribute("title", url);
   await expect(hook).toContainText("3 events");
   await expect(page.getByRole("checkbox", { name: `Send events to ${url}` })).toBeChecked();
   // Once added, the form closes.

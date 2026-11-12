@@ -837,7 +837,12 @@ describe("email", () => {
     const told: unknown[] = [];
     runWorker({
       mail: true,
-      signals: { wake() {}, revoke() {}, tell: (_workspaceId, notice) => told.push(notice) },
+      signals: {
+        wake() {},
+        revoke() {},
+        tell: (_workspaceId, notice) => told.push(notice),
+        tellVisitor() {},
+      },
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(mails).toEqual([]);

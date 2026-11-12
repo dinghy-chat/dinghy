@@ -84,10 +84,14 @@ test("an owner invites a member, assigns a chat to them, then removes them @smok
   await server.seedConversations(1, "assign me");
   await boss.reload();
   await boss.locator(".row", { hasText: "assign me" }).click();
-  await pick(boss, "Assign to", "Ben");
-  await expect(boss.locator(".row", { hasText: "assign me" })).toContainText("Ben");
+  await pick(boss, "Who answers", "Ben");
+  await expect(
+    boss.locator(".row", { hasText: "assign me" }).getByRole("img", { name: "Ben" }),
+  ).toBeVisible();
   // The member's open app learns this from the stream.
-  await expect(member.locator(".row", { hasText: "assign me" })).toContainText("Ben");
+  await expect(
+    member.locator(".row", { hasText: "assign me" }).getByRole("img", { name: "Ben" }),
+  ).toBeVisible();
 
   await openSettings(boss, "Team");
   await boss.getByRole("button", { name: "Remove Ben" }).click();
@@ -95,7 +99,9 @@ test("an owner invites a member, assigns a chat to them, then removes them @smok
   await boss.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(boss.locator(".members .email-cell").getByText("ben@example.com")).toHaveCount(0);
   await boss.getByRole("button", { name: "Inbox", exact: true }).click();
-  await expect(boss.locator(".row", { hasText: "assign me" })).not.toContainText("Ben");
+  await expect(
+    boss.locator(".row", { hasText: "assign me" }).getByRole("img", { name: "Ben" }),
+  ).toHaveCount(0);
 
   await member.reload();
   await expect(member.getByText("You are not in a workspace on this server.")).toBeVisible();
@@ -105,7 +111,11 @@ test("an owner invites a member, assigns a chat to them, then removes them @smok
 test("an owner changes the allowed sites and replaces the secret", async ({ browser }) => {
   const boss = await signedIn(browser, server, "owner@example.com");
   await openSettings(boss, "Install");
-  await expect(boss.locator(".page pre").first()).toContainText("data-key=");
+  await expect(
+    boss
+      .locator(".page-row", { has: boss.getByRole("heading", { name: "Install by hand" }) })
+      .locator("pre"),
+  ).toContainText("data-key=");
 
   // Each saved site is a card, and the field shows only after "Add a site".
   const cards = boss.locator(".site-card");
@@ -280,9 +290,9 @@ test("an open app sees team changes, and a removal opens the other workspace", a
   await boss.reload();
   await boss.locator(".row", { hasText: "live roster" }).click();
   const assignees = async () => {
-    await boss.getByRole("button", { name: /^Assign to/ }).click();
+    await boss.getByRole("button", { name: /^Who answers/ }).click();
     const names = await boss
-      .getByRole("listbox", { name: "Assign to" })
+      .getByRole("listbox", { name: "Who answers" })
       .getByRole("option")
       .locator(".item-label")
       .allTextContents();

@@ -27,6 +27,7 @@ import {
   CHAT_KINDS,
   conversation,
   conversationRead,
+  draftReply,
   type EventKind,
   event,
   type MessagePayload,
@@ -143,8 +144,18 @@ export const visitorQuote = (row: QuoteRow | null) =>
         : quoted.authorName,
   );
 
-/** How a key's reply came: through the REST API or through the MCP server. */
-type KeyChannel = "api" | "mcp";
+/**
+ * How a reply came: a key's through the REST API or the MCP server, or an operator's that sent a
+ * key's draft.
+ */
+export const CHANNELS = ["api", "mcp", "draft"] as const;
+type Channel = (typeof CHANNELS)[number];
+
+/** A write that did not come the default way: a key's through MCP, or an operator's that sent a draft. */
+export type MessageSource = { via: "mcp" } | { via: "draft"; draftId: string };
+
+/** How a key's write came, when not through the REST API. */
+export type KeySource = Extract<MessageSource, { via: "mcp" }>;
 
 export interface StoredMessage {
   id: string;
@@ -168,8 +179,13 @@ export interface StoredMessage {
   deleted: boolean;
   /** When the visitor's read position first passed this reply, when known. */
   readAt: Date | null;
-  /** A key's reply: through the API or MCP. Null for an operator's or a visitor's message. */
-  via: KeyChannel | null;
+  /**
+   * A key's reply: through the API or MCP. `draft`: an operator sent a key's draft. Null for anyone
+   * else's message.
+   */
+  via: Channel | null;
+  /** A bot's handoff note: who it handed the conversation to, with null for the team. */
+  handoff: { operatorId: string | null } | null;
   /** Its own position, or its last edit's or delete's, for a stream that sends changes again. */
   changeSeq: bigint;
   createdAt: Date;
@@ -225,8 +241,10 @@ interface MessageRow {
 interface MessageMetadata {
   image?: StoredMessage["image"];
   imageRemoved?: boolean;
-  /** Set on a key's reply that came through MCP. */
-  via?: "mcp";
+  /** Set on a key's reply that came through MCP, and on an operator's that sent a draft. */
+  via?: "mcp" | "draft";
+  /** Set on a bot's handoff note: who it handed the conversation to, or null for the team. */
+  handoff?: { operatorId: string | null };
 }
 
 export function stored({
@@ -243,7 +261,9 @@ export function stored({
     imageRemoved: meta?.imageRemoved === true,
     fromVisitor: authorVisitorId !== null,
     deleted: deletedAt !== null,
-    via: row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
+    via:
+      meta?.via === "draft" ? "draft" : row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
+    handoff: meta?.handoff ?? null,
     changeSeq: changedSeq ?? row.seq,
   };
 }
@@ -336,7 +356,7 @@ export class InvalidReplyToError extends Error {
  * Throws InvalidReplyToError unless the quoted message is a live chat line of this conversation, or
  * for a note, a live note too.
  */
-async function checkQuote(
+export async function checkQuote(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
@@ -380,15 +400,44 @@ export const catchClosed = <T>(write: Promise<T>): Promise<T | WorkspaceClosedEr
     throw error;
   });
 
+/** Waits for a write, and returns `{ kind: "closed" }` instead of throwing ConversationClosedError. */
+export const catchConversationClosed = <T>(write: Promise<T>): Promise<T | { kind: "closed" }> =>
+  write.catch((error: unknown) => {
+    if (error instanceof ConversationClosedError) return { kind: "closed" as const };
+    throw error;
+  });
+
 /** Takes the next position and the workspace row lock, which lasts until commit. */
-export async function nextSeq(tx: Transaction, workspaceId: string): Promise<bigint> {
-  const [next] = await tx
+export const nextSeq = (tx: Transaction, workspaceId: string): Promise<bigint> =>
+  takeSeqs(tx, workspaceId, 1);
+
+/** Takes `count` positions in a row and the workspace row lock. Answers the first position. */
+async function takeSeqs(tx: Transaction, workspaceId: string, count: number): Promise<bigint> {
+  const [last] = await tx
     .update(workspace)
-    .set({ eventSeq: sql`${workspace.eventSeq} + 1` })
+    .set({ eventSeq: sql`${workspace.eventSeq} + ${count}` })
     .where(eq(workspace.id, workspaceId))
     .returning({ seq: workspace.eventSeq });
-  if (next === undefined) throw new Error("The workspace row is missing");
-  return next.seq;
+  if (last === undefined) throw new Error("The workspace row is missing");
+  return last.seq - BigInt(count - 1);
+}
+
+/**
+ * Takes the workspace row lock, which lasts until commit, without taking a position: a write that
+ * may take none, such as a key's reply that the gate refuses. It reads whether bots are paused,
+ * which the pause changes under the same lock.
+ */
+export async function lockWorkspace(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<{ botsPaused: boolean }> {
+  const [row] = await tx
+    .select({ botsPausedAt: workspace.botsPausedAt })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .for("no key update");
+  if (row === undefined) throw new Error("The workspace row is missing");
+  return { botsPaused: row.botsPausedAt !== null };
 }
 
 /**
@@ -434,8 +483,9 @@ export async function appendMessage(
     alert?: boolean;
     /** An earlier message of the same conversation that this one quotes. */
     replyToMessageId?: string | undefined;
-    /** A key's reply that came through MCP, which the message's info names. */
-    via?: "mcp";
+    source?: MessageSource | undefined;
+    /** A bot's handoff note: who takes the conversation, with null for the team. */
+    handoffTo?: string | null | undefined;
   } & ({ image?: NewImage; note?: false } | { image?: undefined; note: true }),
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
@@ -519,7 +569,8 @@ export async function appendMessage(
         height: input.image.height,
       },
     }),
-    ...(input.via !== undefined && { via: input.via }),
+    ...(input.source !== undefined && { via: input.source.via }),
+    ...(input.handoffTo !== undefined && { handoff: { operatorId: input.handoffTo } }),
   };
   const [row] = await tx
     .insert(message)
@@ -583,7 +634,41 @@ export async function appendMessage(
   if (assignsReplier && author.kind === "operator") {
     await assignConversation(tx, workspaceId, conversationId, author.operatorId);
   }
+  // A new visitor message, or a person's answer, leaves the drafts that wait behind. A note reaches
+  // no visitor, so it answers nothing. A reopened conversation keeps its drafts, so they go stale too.
+  if ((author.kind === "visitor" && !created) || (author.kind === "operator" && !isNote)) {
+    const sentDraftId = input.source?.via === "draft" ? input.source.draftId : undefined;
+    await markDraftsStale(tx, workspaceId, conversationId, sentDraftId);
+  }
   return { message: stored(row), created: true, conversationStarted: created };
+}
+
+/**
+ * A visitor wrote again, or a person answered, so the drafts that wait may answer an older question.
+ * They stay, marked stale, and a `draft.changed` event tells the operator apps. The draft that an
+ * operator sends is not one of them.
+ */
+async function markDraftsStale(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  sentDraftId: string | undefined,
+) {
+  const marked = await tx
+    .update(draftReply)
+    .set({ staleAt: sql`now()` })
+    .where(
+      and(
+        eq(draftReply.workspaceId, workspaceId),
+        eq(draftReply.conversationId, conversationId),
+        isNull(draftReply.resolved),
+        isNull(draftReply.staleAt),
+        sentDraftId === undefined ? undefined : ne(draftReply.id, sentDraftId),
+      ),
+    )
+    .returning({ id: draftReply.id });
+  if (marked.length > 0)
+    await recordConversationChange(tx, workspaceId, conversationId, "draft.changed");
 }
 
 /** Whether an operator has replied in this conversation. */
@@ -800,6 +885,14 @@ export interface ConversationRow {
   visitorLastSeenAt: Date | null;
   visitorCountry: string | null;
   visitorTimeZone: string | null;
+  /** A test visitor, made by a bot's simulated message. */
+  visitorIsTest: boolean;
+  /** Since when a person handles it, so bots stay quiet. */
+  humanSince: Date | null;
+  /** The assignee's name, for the handler. */
+  assigneeName: string | null;
+  /** The key that took part last, whoever handles it now, or null when none did. */
+  botKey: KeyName | null;
   /** Null unless it is snoozed now. */
   snooze: Snooze | null;
 }
@@ -808,6 +901,39 @@ export interface ConversationRow {
 export interface Snooze {
   until: Date | null;
 }
+
+/** A key's ID and name. */
+interface KeyName {
+  id: string;
+  name: string;
+}
+
+/** The assignee's name, read in the same statement as each listed row. */
+const assigneeName = sql<string | null>`(
+  select o.name from operator as o where o.id = "conversation"."assignee_operator_id")`;
+
+/**
+ * The key that wrote the conversation's newest message, draft or note, or handed it off. A note is a
+ * message, so one probe reads both. Read in the same statement as each listed row, with one backward
+ * index probe per table and no sort.
+ */
+const botKey = sql<KeyName | null>`(
+  select json_build_object('id', k.id, 'name', k.name) from api_key as k
+  where k.workspace_id = "conversation"."workspace_id" and k.id = coalesce((
+    select case greatest(by_message.at, by_draft.at)
+      when by_message.at then by_message.key_id
+      when by_draft.at then by_draft.key_id end
+    from (select 1) as one
+    left join lateral (
+      select m.author_api_key_id as key_id, m.created_at as at from message as m
+      where m.workspace_id = "conversation"."workspace_id" and m.conversation_id = "conversation"."id"
+        and m.author_api_key_id is not null
+      order by m.seq desc limit 1) as by_message on true
+    left join lateral (
+      select d.api_key_id as key_id, d.created_at as at from draft_reply as d
+      where d.workspace_id = "conversation"."workspace_id" and d.conversation_id = "conversation"."id"
+      order by d.created_at desc limit 1) as by_draft on true
+  ), "conversation"."handoff_by_api_key_id"))`;
 
 /**
  * Whether a conversation is snoozed now: an operator snoozed it and its time, if any, has not come.
@@ -836,6 +962,10 @@ const conversationColumns = {
   visitorLastSeenAt: visitor.lastSeenAt,
   visitorCountry: visitor.country,
   visitorTimeZone: visitor.timeZone,
+  visitorIsTest: visitor.isTest,
+  humanSince: conversation.humanSince,
+  assigneeName,
+  botKey,
   snoozed: snoozedNow(),
   snoozedUntil: conversation.snoozedUntil,
 };
@@ -883,14 +1013,24 @@ export interface ConversationSummary extends ConversationRow {
 }
 
 /**
+ * Whether a conversation, named by its alias in the query, is a bot's test visitor's. Nobody is
+ * told about one: it alerts nobody, is never unread and stays out of the numbers.
+ */
+export const conversationHasTestVisitor = (alias: SQL) => sql<boolean>`exists (
+  select 1 from ${visitor} as tv
+  where tv.workspace_id = ${alias}.workspace_id and tv.id = ${alias}.visitor_id and tv.is_test
+)`;
+
+/**
  * Whether the conversation in the query has a visitor message past this operator's read position.
- * An API key, null here, has no position, so nothing is unread for it. The probe walks
- * message_conversation_idx from the position up.
+ * An API key, null here, has no position, so nothing is unread for it. A bot's test visitor is
+ * never unread, as it alerts nobody. Notes are not messages, so they are never unread. The probe
+ * walks message_conversation_idx from the position up.
  */
 function unreadBy(operatorId: string | null) {
   if (operatorId === null) return sql<boolean>`false`;
   // Aliased, because Drizzle leaves the table off a column when a query has no join.
-  return sql<boolean>`exists (
+  return sql<boolean>`not ${conversationHasTestVisitor(sql`${conversation}`)} and exists (
     select 1 from ${message} as m
     where m.workspace_id = ${conversation}.workspace_id and m.conversation_id = ${conversation}.id
       and m.author_visitor_id is not null and m.deleted_at is null
@@ -1196,11 +1336,21 @@ export async function findMessage(
   workspaceId: string,
   messageId: string,
 ): Promise<StoredMessage | null> {
-  const [row] = await tx
+  return (await findMessages(tx, workspaceId, [messageId])).get(messageId) ?? null;
+}
+
+/** The messages of these IDs that exist, by ID, in one query. */
+export async function findMessages(
+  tx: Transaction,
+  workspaceId: string,
+  messageIds: string[],
+): Promise<Map<string, StoredMessage>> {
+  if (messageIds.length === 0) return new Map();
+  const rows = await tx
     .select(messageColumns)
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
-  return row === undefined ? null : stored(row);
+    .where(and(eq(message.workspaceId, workspaceId), inArray(message.id, messageIds)));
+  return new Map(rows.map((row) => [row.id, stored(row)]));
 }
 
 export async function findConversation(
@@ -1208,12 +1358,24 @@ export async function findConversation(
   workspaceId: string,
   conversationId: string,
 ): Promise<ConversationRow | null> {
-  const [row] = await tx
+  return (await findConversations(tx, workspaceId, [conversationId])).get(conversationId) ?? null;
+}
+
+/** The conversations of these IDs that exist, by ID, in one query. */
+export async function findConversations(
+  tx: Transaction,
+  workspaceId: string,
+  conversationIds: string[],
+): Promise<Map<string, ConversationRow>> {
+  if (conversationIds.length === 0) return new Map();
+  const rows = await tx
     .select(conversationColumns)
     .from(conversation)
     .innerJoin(visitor, joinVisitor())
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  return row === undefined ? null : withSnooze(row);
+    .where(
+      and(eq(conversation.workspaceId, workspaceId), inArray(conversation.id, conversationIds)),
+    );
+  return new Map(rows.map((row) => [row.id, withSnooze(row)]));
 }
 
 /** One conversation's messages after a position, in commit order. */
@@ -1362,15 +1524,33 @@ export async function assignConversation(
   return true;
 }
 
-/** Tells every open operator app that this conversation changed. It holds no text. */
-export async function recordConversationChange(
+type ConversationChange = Extract<EventKind, `conversation.${string}` | "draft.changed">;
+
+/** Tells every open operator app that this conversation, or its drafts, changed. It holds no text. */
+export const recordConversationChange = (
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
-  kind: Extract<EventKind, `conversation.${string}`>,
+  kind: ConversationChange,
+): Promise<void> => recordConversationChanges(tx, workspaceId, [conversationId], kind);
+
+/** The same change to several conversations, with an event each, in one insert. */
+export async function recordConversationChanges(
+  tx: Transaction,
+  workspaceId: string,
+  conversationIds: string[],
+  kind: ConversationChange,
 ): Promise<void> {
-  const seq = await nextSeq(tx, workspaceId);
-  await tx.insert(event).values({ workspaceId, seq, kind, payload: { conversationId } });
+  if (conversationIds.length === 0) return;
+  const first = await takeSeqs(tx, workspaceId, conversationIds.length);
+  await tx.insert(event).values(
+    conversationIds.map((conversationId, index) => ({
+      workspaceId,
+      seq: first + BigInt(index),
+      kind,
+      payload: { conversationId },
+    })),
+  );
 }
 
 /** Tells every open operator app to read the team again. It holds no names. */
@@ -1398,6 +1578,8 @@ interface FeedEvent {
   conversationId: string | null;
   /** On a new message: whether the visitor wrote it. */
   fromVisitor: boolean;
+  /** The IDs the event names, which the key event stream reads back. */
+  payload: unknown;
 }
 
 /**
@@ -1446,6 +1628,7 @@ export async function listWorkspaceEvents(
       kind: row.kind,
       conversationId: (row.payload as { conversationId?: string }).conversationId ?? null,
       fromVisitor: (row.payload as { fromVisitor?: boolean }).fromVisitor === true,
+      payload: row.payload,
     })),
     cursor: { generation: current.generation, seq: page.at(-1)?.seq ?? after.seq },
     hasMore: rows.length > limit,

@@ -6,8 +6,10 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { WIDGET_DEFAULTS } from "../../../packages/widget/src/shared.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { setReplyMode } from "../test/keys.ts";
 import { sendOperatorMessage } from "../test/messages.ts";
 import { addOperator, signedInOperator } from "../test/operators.ts";
+import { SITE, visitorStarts } from "../test/visitors.ts";
 import { FORMER_MEMBER_NAME } from "./account-delete.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
@@ -22,7 +24,6 @@ import { type Database, withWorkspace } from "./db/tenant.ts";
 import { visitorAuthorId } from "./identity.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const SITE = "https://app.example.com";
 const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 
@@ -289,7 +290,7 @@ describe("the widget's appearance", () => {
       .update(operator)
       .set({ pictureUpdatedAt: new Date(1_800_000_000_000) })
       .where(eq(operator.id, ana.id));
-    const { conversationId } = await visitorWrites(space);
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello?");
     for (const one of [maya, sam, ana, lee, maya]) await reply(space, one.id, conversationId);
     // A member who left is not on the team any more.
     await owner
@@ -323,7 +324,7 @@ describe("the header's faces", () => {
     if (maya === undefined || sam === undefined || ana === undefined) {
       throw new Error("The team is missing");
     }
-    const { conversationId } = await visitorWrites(space);
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello?");
     for (const one of [maya, sam]) await reply(space, one.id, conversationId);
     return { space, boss, maya, sam, ana };
   }
@@ -383,7 +384,7 @@ describe("the header's faces", () => {
     const live = createApp({ db, logger, auth, valkey, checks: { postgres: ok, valkey: ok } });
     try {
       const { space, boss } = await workspaceWithOwner();
-      const { conversationId } = await visitorWrites(space);
+      const { conversationId } = await visitorStarts(app, space.publicKey, "Hello?");
       await reply(space, boss.id, conversationId);
       // The visitor wrote 2 minutes before the reply.
       await owner.execute(
@@ -425,7 +426,7 @@ describe("a reply in the widget", () => {
       .update(operator)
       .set({ pictureUpdatedAt: new Date(1_800_000_000_000) })
       .where(eq(operator.id, maya.id));
-    const { token, conversationId } = await visitorWrites(space);
+    const { token, conversationId } = await visitorStarts(app, space.publicKey, "Hello?");
     await reply(space, maya.id, conversationId);
     const made = await app.request(`/v1/operator/workspaces/${space.id}/api-keys`, {
       method: "POST",
@@ -433,6 +434,7 @@ describe("a reply in the widget", () => {
       body: JSON.stringify({ name: "Helper bot" }),
     });
     const key = (await made.json()) as { id: string; token: string };
+    await setReplyMode(owner, key.id, "send");
     await app.request(
       `/v1/operator/workspaces/${space.id}/conversations/${conversationId}/messages`,
       {
@@ -472,7 +474,7 @@ describe("a reply in the widget", () => {
   test("from a deleted account names a former team member in full, with no picture", async () => {
     const { space } = await workspaceWithOwner();
     const maya = await addOperator({ auth, owner, name: "Maya Chen", workspaceId: space.id });
-    const { token, conversationId } = await visitorWrites(space);
+    const { token, conversationId } = await visitorStarts(app, space.publicKey, "Hello?");
     await reply(space, maya.id, conversationId);
     // What deleting the account leaves of the operator's row.
     await owner
@@ -490,22 +492,6 @@ describe("a reply in the widget", () => {
     });
   });
 });
-
-/** A visitor's first message, which starts a conversation. */
-async function visitorWrites(space: NewWorkspace) {
-  const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
-  });
-  const { token } = (await created.json()) as { token: string };
-  const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
-    method: "POST",
-    headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ clientId: randomUUID(), body: "Hello?" }),
-  });
-  const { conversationId } = (await sent.json()) as { conversationId: string };
-  return { token, conversationId };
-}
 
 /** A reply from `operatorId`, written as the inbox writes it. */
 const reply = (space: NewWorkspace, operatorId: string, conversationId: string) =>

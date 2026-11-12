@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState } from "react";
-import type { Conversation, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
+import type { Conversation, Member, ReplyReceipts, SuggestedReply, WorkspaceApi } from "./api.ts";
 import { type ComposeMode, Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import type { Draft } from "./drafts.ts";
@@ -12,6 +12,13 @@ import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
+import {
+  DraftCards,
+  DraftChip,
+  OlderDrafts,
+  staleBefore,
+  useSuggestedReplies,
+} from "./thread-drafts.tsx";
 import { ThreadHead } from "./thread-head.tsx";
 import { type Line, useThreadLines } from "./thread-lines.ts";
 import { ThreadLog } from "./thread-log.tsx";
@@ -81,7 +88,9 @@ export function Thread({
   setDraft,
   receiptsVersion,
   rewriteVersion,
+  draftsVersion,
   typingDraft,
+  botTyping,
   onBack,
   onChanged,
   onLoaded,
@@ -111,8 +120,12 @@ export function Thread({
   receiptsVersion(visitorId: string): number;
   /** Goes up when someone edits or deletes a message here, so this loads every message again. */
   rewriteVersion: number;
+  /** Goes up when a bot's suggested reply here changed. */
+  draftsVersion: number;
   /** What the visitor is typing and has not sent, or null. */
   typingDraft: string | null;
+  /** The name of the bot that types a reply now, or null. */
+  botTyping: string | null;
   onBack(): void;
   onChanged(): void;
   /** The conversation as each load finds it. */
@@ -151,6 +164,13 @@ export function Thread({
   const { conversation, online, welcome, receipts, lines, sendFiles } = thread;
   useMarkRead(api, conversationId, lines, inView, onRead);
   const actions = useMessageActions({ api, conversationId, act, keep: thread.keep });
+  const suggestions = useSuggestedReplies({
+    api,
+    conversationId,
+    version: draftsVersion,
+    act,
+    keep: thread.keep,
+  });
   const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
   const change = useConversationActions({
     api,
@@ -179,6 +199,8 @@ export function Thread({
   const mode: ComposeMode = closed || draft.isNote ? "note" : "reply";
   const imagesOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
+  // The bot's draft whose text is in the composer: sending it sends the draft.
+  const [editingDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
 
   if (conversation === null) {
     return (
@@ -191,6 +213,13 @@ export function Thread({
   /** Who wrote a line, as this thread names them. */
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
   const send = (body: string) => {
+    if (editingDraft !== null) {
+      // The composer emptied itself, so a failure puts the text back.
+      return void suggestions.send(editingDraft, body).then((done) => {
+        if (done) setEditingDraft(null);
+        else setDraft({ text: body, isNote: false });
+      });
+    }
     thread.sendText(
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
@@ -198,6 +227,34 @@ export function Thread({
     );
     setQuoting(null);
   };
+  const editDraft = (chosen: SuggestedReply) => {
+    setQuoting(null);
+    setEditingDraft(chosen);
+    setDraft({ text: chosen.body, isNote: false });
+  };
+  const canReply = repliesOffReason === null && !closed;
+  const draftHandlers = {
+    // A suggestion says who can't see it yet: the visitor's first name, as a reply would greet them.
+    visitor: conversation.visitor.name?.split(" ")[0] ?? visitorName,
+    canSend: canReply,
+    onSend: (chosen: SuggestedReply) => suggestions.send(chosen),
+    onEdit: editDraft,
+    onDiscard: (chosen: SuggestedReply) => {
+      if (editingDraft?.id === chosen.id) setEditingDraft(null);
+      return suggestions.discard(chosen);
+    },
+  };
+  const assign = (operatorId: string | null) =>
+    void change.assign(
+      operatorId,
+      members.find((member) => member.id === operatorId)?.name ?? null,
+    );
+  // A person handles it and a bot took part, so the bot can have it back.
+  const canGiveBack =
+    repliesOffReason === null &&
+    conversation.bot !== null &&
+    conversation.handler !== null &&
+    conversation.handler.kind !== "bot";
   const infoLine =
     info === null
       ? null
@@ -230,14 +287,17 @@ export function Thread({
           welcome={welcome}
           online={online}
           members={members}
+          meId={meId}
           mayDeleteAnyone={mayDeleteAnyone}
           onBack={onBack}
-          onAssign={(operatorId) => void change.assign(operatorId)}
+          onAssign={assign}
           onStatus={(status) => void change.setStatus(status)}
           onSnooze={(snooze) => void change.setSnooze(snooze)}
           onBlocked={(blocked) => void change.setBlocked(blocked)}
           onDelete={() => change.setConfirming(true)}
           onTranscript={() => void change.sendTranscript()}
+          canGiveBack={canGiveBack}
+          onGiveBack={() => void change.giveBack()}
           emailAvailable={emailAvailable}
           panel={welcome === null ? panel : null}
         />
@@ -279,16 +339,19 @@ export function Thread({
         )}
         <ThreadLog
           conversation={conversation}
+          members={members}
           lines={lines}
           receipts={receipts}
-          who={{
-            meId,
-            mayDeleteAnyone,
-            canWrite: repliesOffReason === null,
-            canReply: repliesOffReason === null && !closed,
-          }}
+          who={{ meId, mayDeleteAnyone, canWrite: repliesOffReason === null, canReply }}
           actions={actions}
           typingDraft={typingDraft}
+          botTyping={botTyping}
+          draftCount={suggestions.drafts.length}
+          drafts={<DraftCards drafts={suggestions.drafts} {...draftHandlers} />}
+          olderDrafts={{
+            node: <OlderDrafts drafts={suggestions.drafts} {...draftHandlers} />,
+            before: staleBefore(suggestions.drafts),
+          }}
           onImageError={thread.refreshImages}
           onRetry={thread.retry}
         />
@@ -313,12 +376,23 @@ export function Thread({
                   ? { value: "note" }
                   : {
                       value: mode,
-                      onChange: (next) => setDraft({ ...draft, isNote: next === "note" }),
+                      onChange: (next) => {
+                        setEditingDraft(null);
+                        setDraft({ ...draft, isNote: next === "note" });
+                      },
                     }
               }
               onEscape={quoting === null ? undefined : () => setQuoting(null)}
               above={
-                quoting === null ? undefined : (
+                editingDraft !== null ? (
+                  <DraftChip
+                    draft={editingDraft}
+                    onCancel={() => {
+                      setEditingDraft(null);
+                      setDraft({ text: "", isNote: false });
+                    }}
+                  />
+                ) : quoting === null ? undefined : (
                   <QuoteChip
                     quote={quoteOf(quoting, authorOf(quoting))}
                     visitorName={visitorName}
@@ -341,7 +415,9 @@ export function Thread({
           overlay={!panel.wide}
           motion={panel.motion}
           onMoved={panel.moved}
-          onAssign={(operatorId) => void change.assign(operatorId)}
+          meId={meId}
+          onAssign={assign}
+          onGiveBack={() => void change.giveBack()}
           onOpenContact={() => onOpenContact(conversation.visitor.id)}
           onOpenConversation={onOpenConversation}
           onNote={async (note) => {

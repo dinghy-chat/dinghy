@@ -4,10 +4,12 @@ import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { Logger } from "pino";
+import type { Actor } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, LINK_MINUTES, signInNow } from "./auth.ts";
+import { takeOver } from "./bots.ts";
 import {
   attachment,
   conversation,
@@ -23,6 +25,8 @@ import {
   FORBIDDEN,
   failure,
   INVALID,
+  jsonAnswer,
+  jsonBody,
   KEY_LIMITED,
   LINK_INVALID,
   MEMBER_ERRORS,
@@ -36,7 +40,7 @@ import {
   WRONG_ORIGIN,
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
-import { emailAddressHash, normalizeOrigin, sha256Hex } from "./identity.ts";
+import { emailAddressHash, normalizeOrigins, sha256Hex } from "./identity.ts";
 import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
@@ -48,6 +52,7 @@ import {
   recordTeamChange,
   recordWorkspaceChange,
 } from "./messages.ts";
+import { revokeGrantsOf } from "./oauth-grants.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { MINUTE_MS } from "./time.ts";
@@ -62,7 +67,8 @@ const HOUR_SECONDS = 3600;
 const INVITE_MAILS_PER_WORKSPACE = 20;
 /** Invite emails one address may get in an hour, from all workspaces together. */
 const INVITE_MAILS_PER_ADDRESS = 5;
-const MAX_ORIGINS = 20;
+/** Allowed sites a workspace may have. */
+export const MAX_ORIGINS = 20;
 
 const LAST_OWNER = failure(
   "last_owner",
@@ -95,6 +101,29 @@ export const allowed = {
     isSelf || role === "owner" || (role === "admin" && target === "member"),
 };
 
+/** Owners and admins, and a Setup key, which the member check let through to a Setup route. */
+export const maySetUp = (actor: Actor, role: Role) =>
+  actor.kind === "key" || allowed.settings(role);
+
+/** What a Setup route answers to a member who may not set up. */
+export const SETUP_DENIED = {
+  ...MEMBER_ERRORS,
+  403: errorAnswer("forbidden: this role, or a Chats (`conversations`) API key, may not do this"),
+};
+
+/** Refuses, before any handler, a member who may not set up on these routes' paths. */
+export function requireSetUp(app: App, routes: { getRoutingPath(): string }[]): void {
+  for (const path of new Set(routes.map((route) => route.getRoutingPath()))) {
+    app.use(path, async (c, next) => {
+      if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+      await next();
+    });
+  }
+}
+
+export const badOrigin = (origin: string) =>
+  failure("bad_origin", `This is not a valid origin: ${origin}`);
+
 const ok = {
   description: "Done",
   content: okContent,
@@ -119,14 +148,6 @@ const invitedRole = z.enum(["admin", "member"]);
 const workspaceParams = z.object({ workspaceId: z.uuid() });
 const memberParams = workspaceParams.extend({ operatorId: z.uuid() });
 const inviteParams = workspaceParams.extend({ inviteId: z.uuid() });
-const json = <T extends z.ZodType>(schema: T) => ({
-  required: true,
-  content: { "application/json": { schema } },
-});
-const reply = <T extends z.ZodType>(description: string, schema: T) => ({
-  description,
-  content: { "application/json": { schema } },
-});
 
 const Member = z
   .object({
@@ -171,7 +192,7 @@ const listMembersRoute = createRoute({
   summary: "List the workspace's members",
   request: { params: workspaceParams },
   responses: {
-    200: reply("The members", z.object({ members: z.array(Member) })),
+    200: jsonAnswer("The members", z.object({ members: z.array(Member) })),
     ...MEMBER_ERRORS,
   },
 });
@@ -181,7 +202,7 @@ const changeMemberRoute = createRoute({
   path: `${PREFIX}/members/{operatorId}`,
   security: SESSION,
   summary: "Change a member's role",
-  request: { params: memberParams, body: json(z.object({ role: roleEnum })) },
+  request: { params: memberParams, body: jsonBody(z.object({ role: roleEnum })) },
   responses: {
     200: ok,
     ...ROLE_WRITE_ERRORS,
@@ -210,7 +231,7 @@ const listInvitesRoute = createRoute({
   summary: "List invites that can still be used",
   request: { params: workspaceParams },
   responses: {
-    200: reply("The invites", z.object({ invites: z.array(PendingInvite) })),
+    200: jsonAnswer("The invites", z.object({ invites: z.array(PendingInvite) })),
     ...denied,
   },
 });
@@ -223,10 +244,10 @@ const createInviteRoute = createRoute({
     "Invite an email address. With a mail server, the invite goes by email. An earlier invite to the same address stops working.",
   request: {
     params: workspaceParams,
-    body: json(z.object({ email: z.email().max(254), role: invitedRole })),
+    body: jsonBody(z.object({ email: z.email().max(254), role: invitedRole })),
   },
   responses: {
-    201: reply(
+    201: jsonAnswer(
       "The invite. `token` is null when the invite went by email. On a server with no mail server, it is shown only here, for you to send to the person",
       PendingInvite.extend({ token: z.string().nullable() }),
     ),
@@ -260,7 +281,7 @@ const getSettingsRoute = createRoute({
   security: SESSION,
   summary: "Get the allowed origins, the public key and the signing secret",
   request: { params: workspaceParams },
-  responses: { 200: reply("The settings", Settings), ...denied },
+  responses: { 200: jsonAnswer("The settings", Settings), ...denied },
 });
 
 const patchSettingsRoute = createRoute({
@@ -270,10 +291,10 @@ const patchSettingsRoute = createRoute({
   summary: "Replace the allowed origins",
   request: {
     params: workspaceParams,
-    body: json(z.object({ allowedOrigins: z.array(z.string().max(300)).max(MAX_ORIGINS) })),
+    body: jsonBody(z.object({ allowedOrigins: z.array(z.string().max(300)).max(MAX_ORIGINS) })),
   },
   responses: {
-    200: reply("The settings", Settings),
+    200: jsonAnswer("The settings", Settings),
     ...ROLE_WRITE_ERRORS,
     400: errorAnswer(
       "invalid_request: the request is not valid. bad_origin: an origin is not valid",
@@ -287,7 +308,7 @@ const rotateSecretRoute = createRoute({
   security: SESSION,
   summary: "Replace the signing secret. Tokens signed with the old one stop at once.",
   request: { params: workspaceParams },
-  responses: { 200: reply("The settings", Settings), ...ROLE_WRITE_ERRORS },
+  responses: { 200: jsonAnswer("The settings", Settings), ...ROLE_WRITE_ERRORS },
 });
 
 const renameRoute = createRoute({
@@ -298,10 +319,10 @@ const renameRoute = createRoute({
   request: {
     params: workspaceParams,
     // The same rule as the workspace name at signup.
-    body: json(z.object({ name: z.string().trim().min(1).max(100) })),
+    body: jsonBody(z.object({ name: z.string().trim().min(1).max(100) })),
   },
   responses: {
-    200: reply("The new name", z.object({ name: z.string() })),
+    200: jsonAnswer("The new name", z.object({ name: z.string() })),
     ...ROLE_WRITE_ERRORS,
     400: errorAnswer("invalid_request: the name is blank or over 100 characters"),
   },
@@ -312,9 +333,11 @@ const assignRoute = createRoute({
   path: `${PREFIX}/conversations/{conversationId}/assignee`,
   security: SESSION_OR_KEY,
   summary: "Assign a conversation to a member, or clear it with null",
+  description:
+    "Signed in, it also makes a person handle the conversation, as a reply does, so a key that sends directly stops replying. With an API key, it changes only the assignee.",
   request: {
     params: workspaceParams.extend({ conversationId: z.uuid() }),
-    body: json(z.object({ operatorId: z.uuid().nullable() })),
+    body: jsonBody(z.object({ operatorId: z.uuid().nullable() })),
   },
   responses: {
     200: ok,
@@ -332,9 +355,9 @@ const previewRoute = createRoute({
   method: "post",
   path: "/v1/invites/preview",
   summary: "Read what an invite link offers",
-  request: { body: json(tokenBody) },
+  request: { body: jsonBody(tokenBody) },
   responses: {
-    200: reply(
+    200: jsonAnswer(
       "The invite, the email it is for, and whether that email has an account",
       z.object({
         workspaceName: z.string(),
@@ -359,7 +382,7 @@ const joinRoute = createRoute({
   summary:
     "Join with an invite, as the email it is for. With no account, this creates one and signs in. With an account, a link to join goes to the email",
   request: {
-    body: json(
+    body: jsonBody(
       tokenBody.extend({
         // Names a new account. An existing account keeps its own name.
         name: z.string().trim().min(1).max(100).optional(),
@@ -367,7 +390,7 @@ const joinRoute = createRoute({
     ),
   },
   responses: {
-    200: reply(
+    200: jsonAnswer(
       "With a workspace ID, the new account joined and is signed in, with the session cookie set. Null means the email has an account: a link to join went to it, and works for 15 minutes",
       z.object({ workspaceId: z.string().nullable() }),
     ),
@@ -386,9 +409,9 @@ const openRoute = createRoute({
   path: "/v1/invites/open",
   summary:
     "Use a join link's token, from the button on the page the link opens: join with the account, and sign in",
-  request: { body: json(tokenBody) },
+  request: { body: jsonBody(tokenBody) },
   responses: {
-    200: reply(
+    200: jsonAnswer(
       "Signed in, with the session cookie set. Open the workspace",
       z.object({ workspaceId: z.uuid() }),
     ),
@@ -415,9 +438,9 @@ const acceptRoute = createRoute({
   path: "/v1/operator/invites/accept",
   security: SESSION,
   summary: "Join with an invite, using the signed-in account",
-  request: { body: json(tokenBody) },
+  request: { body: jsonBody(tokenBody) },
   responses: {
-    200: reply("The workspace", z.object({ workspaceId: z.string() })),
+    200: jsonAnswer("The workspace", z.object({ workspaceId: z.string() })),
     ...OPERATOR_WRITE_ERRORS,
     ...INVITE_INVALID,
     403: errorAnswer(
@@ -593,6 +616,10 @@ async function changeMember(
         ),
       );
   }
+  // An app they connected acts with their approval, which ends when they can no longer give it.
+  if (change.kind === "remove" || !allowed.settings(change.role)) {
+    await revokeGrantsOf(tx, workspaceId, targetId);
+  }
   await recordTeamChange(tx, workspaceId);
   return "ok";
 }
@@ -614,26 +641,34 @@ export async function assignTo(
   workspaceId: string,
   conversationId: string,
   operatorId: string | null,
+  /** A person picked this in the app, so a person handles the conversation from now. */
+  takesOver: boolean,
 ): Promise<"ok" | "not_member" | "none"> {
   const result = await withWorkspace(db, workspaceId, async (tx) => {
-    if (operatorId !== null) {
-      const [member] = await tx
-        .select({ id: workspaceMember.operatorId })
-        .from(workspaceMember)
-        .where(
-          and(
-            eq(workspaceMember.workspaceId, workspaceId),
-            eq(workspaceMember.operatorId, operatorId),
-            isNull(workspaceMember.removedAt),
-          ),
-        );
-      if (member === undefined) return "not_member" as const;
+    if (operatorId !== null && !(await isActiveMember(tx, workspaceId, operatorId))) {
+      return "not_member" as const;
     }
     const found = await assignConversation(tx, workspaceId, conversationId, operatorId);
+    if (found && takesOver) await takeOver(tx, workspaceId, conversationId);
     return found ? ("ok" as const) : ("none" as const);
   });
   if (result === "ok") live.wake(workspaceId, OPERATORS);
   return result;
+}
+
+/** Whether the operator is a member of the workspace who was not removed. */
+export async function isActiveMember(tx: Transaction, workspaceId: string, operatorId: string) {
+  const [member] = await tx
+    .select({ id: workspaceMember.operatorId })
+    .from(workspaceMember)
+    .where(
+      and(
+        eq(workspaceMember.workspaceId, workspaceId),
+        eq(workspaceMember.operatorId, operatorId),
+        isNull(workspaceMember.removedAt),
+      ),
+    );
+  return member !== undefined;
 }
 
 export const NOT_A_MEMBER = failure("not_a_member", "This person is not in this workspace.");
@@ -652,6 +687,22 @@ interface TeamOptions {
   keepsLastWorkspace: boolean;
 }
 
+/** The workspace's members, by name. */
+export function listMembers(tx: Transaction, workspaceId: string) {
+  return tx
+    .select({
+      id: operator.id,
+      name: operator.name,
+      email: operator.email,
+      role: workspaceMember.role,
+      pictureUpdatedAt: operator.pictureUpdatedAt,
+    })
+    .from(workspaceMember)
+    .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
+    .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)))
+    .orderBy(asc(operator.name));
+}
+
 export function registerTeamRoutes(
   app: App,
   { auth, db, limits, live, logger, imageUrls, mailer, rateLimit, keepsLastWorkspace }: TeamOptions,
@@ -663,20 +714,7 @@ export function registerTeamRoutes(
     audit(logger, event, { workspaceId, operatorId, ...fields });
   app.openapi(listMembersRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
-    const rows = await withWorkspace(db, id, (tx) =>
-      tx
-        .select({
-          id: operator.id,
-          name: operator.name,
-          email: operator.email,
-          role: workspaceMember.role,
-          pictureUpdatedAt: operator.pictureUpdatedAt,
-        })
-        .from(workspaceMember)
-        .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-        .where(and(eq(workspaceMember.workspaceId, id), isNull(workspaceMember.removedAt)))
-        .orderBy(asc(operator.name)),
-    );
+    const rows = await withWorkspace(db, id, (tx) => listMembers(tx, id));
     const members = rows.map(({ pictureUpdatedAt, ...member }) => ({
       ...member,
       pictureUrl: imageUrls.picture(member.id, pictureUpdatedAt),
@@ -905,19 +943,12 @@ export function registerTeamRoutes(
   app.openapi(patchSettingsRoute, async (c) => {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
-    const { allowedOrigins } = c.req.valid("json");
-    const origins = new Set<string>();
-    for (const origin of allowedOrigins) {
-      const normalized = normalizeOrigin(origin);
-      if (normalized === null) {
-        return c.json(failure("bad_origin", `This is not a valid origin: ${origin}`), 400);
-      }
-      origins.add(normalized);
-    }
+    const normalized = normalizeOrigins(c.req.valid("json").allowedOrigins);
+    if ("bad" in normalized) return c.json(badOrigin(normalized.bad), 400);
     const settings = await withWorkspace(db, id, async (tx) => {
       await tx
         .update(workspace)
-        .set({ allowedOrigins: [...origins] })
+        .set({ allowedOrigins: normalized.origins })
         .where(eq(workspace.id, id));
       return readSettings(tx, sources, id);
     });
@@ -959,7 +990,10 @@ export function registerTeamRoutes(
   app.openapi(assignRoute, async (c) => {
     const { conversationId } = c.req.valid("param");
     const { operatorId } = c.req.valid("json");
-    const result = await assignTo(db, live, c.get("memberWorkspaceId"), conversationId, operatorId);
+    // A person who assigns in the app takes the conversation from the bots. A key's assign does not.
+    const takesOver = c.get("actor").kind === "operator";
+    const workspaceId = c.get("memberWorkspaceId");
+    const result = await assignTo(db, live, workspaceId, conversationId, operatorId, takesOver);
     if (result === "not_member") return c.json(NOT_A_MEMBER, 400);
     if (result === "none") return c.json(NOT_FOUND, 404);
     return c.json({ ok: true as const }, 200);

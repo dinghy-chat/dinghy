@@ -4,7 +4,7 @@ import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
-import { firstName, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
+import { firstName } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
@@ -32,6 +32,7 @@ import {
   visitorAuthorId,
 } from "./identity.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
+import { Body, ClientId } from "./inputs.ts";
 import {
   PAGE_PATH_MAX,
   PageContextSchema,
@@ -65,10 +66,10 @@ import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moder
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
+import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
-const CLIENT_ID = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
 
 const createVisitorRoute = createRoute({
@@ -424,16 +425,10 @@ const sendMessageRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            clientId: CLIENT_ID,
+            clientId: ClientId,
             page: PAGE,
             replyToMessageId: REPLY_TO,
-            // Postgres text cannot hold a NUL byte.
-            body: z
-              .string()
-              .trim()
-              .min(1)
-              .max(MESSAGE_MAX)
-              .regex(/^[^\0]*$/),
+            body: Body,
           }),
           example: {
             clientId: "m_4f9a2c",
@@ -468,7 +463,7 @@ const sendImageRoute = createRoute({
     "Send an image as the raw request body. A retry with the same clientId returns the original",
   request: {
     params,
-    query: z.object({ clientId: CLIENT_ID, page: PAGE, replyToMessageId: REPLY_TO }),
+    query: z.object({ clientId: ClientId, page: PAGE, replyToMessageId: REPLY_TO }),
   },
   responses: {
     200: {
@@ -528,7 +523,7 @@ const streamRoute = createRoute({
   security: VISITOR_TOKEN,
   summary: "Stream the visitor's messages after a cursor",
   description:
-    "Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\n" +
+    'Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, `notice` for something live that is not stored, and `close` with a reason. A `notice` has no id and may be lost: `{ kind: "typing", name, typing }` while an API key\'s bot writes a reply, and with `typing: false` when it stops. Read this with fetch, because EventSource cannot send the bearer token.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
     params,
@@ -574,6 +569,7 @@ function messageView(
     editedAt: _edited,
     readAt: _read,
     via: _via,
+    handoff: _handoff,
     ...message
   }: VisitorMessage,
 ) {
@@ -619,7 +615,7 @@ const fromChatPage = (
   (origin === undefined || origin === ownOrigin);
 
 /** Finds the workspace, checks the Origin header exactly, and answers CORS for the allowed site. */
-function widgetAccess(db: Database, ownOrigin: string | undefined) {
+function widgetAccess(db: Database, ownOrigin: string | undefined, sites: SiteSignals) {
   return createMiddleware<{
     Variables: { workspace: WidgetWorkspace; widgetToken: WidgetToken };
   }>(async (c, next) => {
@@ -637,7 +633,11 @@ function widgetAccess(db: Database, ownOrigin: string | undefined) {
     // A browser sends Origin on these requests. An unknown key gets the same answer as a bad site.
     if (origin === undefined || token.kind === "link") return forbidden();
     const found = await widgetWorkspace(db, key);
-    if (found === null || !found.allowedOrigins.includes(origin)) return forbidden();
+    if (found === null) return forbidden();
+    if (!found.allowedOrigins.includes(origin)) {
+      await sites.siteRefused(found.id, origin);
+      return forbidden();
+    }
 
     c.header("access-control-allow-origin", origin);
     c.header("access-control-expose-headers", "retry-after");
@@ -987,6 +987,8 @@ interface WidgetOptions {
   /** The tabs of the site open now, for the operators. */
   liveVisitors: LiveVisitors;
   countryOf: CountryOf;
+  /** Notes where the widget loaded and where it was refused, for the install check. */
+  sites: SiteSignals;
 }
 
 /** A person with several tabs open. */
@@ -1016,6 +1018,7 @@ export function registerWidgetRoutes(
     ownOrigin,
     liveVisitors,
     countryOf,
+    sites,
   }: WidgetOptions,
 ): void {
   const view = (workspaceId: string, message: VisitorMessage, authors = NO_AUTHORS) =>
@@ -1040,7 +1043,7 @@ export function registerWidgetRoutes(
   const identify = <P extends string, I extends Input>(c: Context<AppEnv, P, I>) =>
     authenticate(db, c.get("workspace"), c.req.param("key") ?? "", c.get("widgetToken"));
 
-  app.use("/v1/widget/:key/*", widgetAccess(db, ownOrigin));
+  app.use("/v1/widget/:key/*", widgetAccess(db, ownOrigin, sites));
   // After the access check, so a refusal here also carries the CORS headers the browser needs.
   app.use("/v1/widget/:key/*", async (c, next) => {
     const [name, max, windowSeconds] = limitFor(c.req.method, c.req.path);
@@ -1172,6 +1175,8 @@ export function registerWidgetRoutes(
       options: stream,
       workspaceId: found.id,
       subscriber: visitorId,
+      // Only this visitor's own notices reach it: a bot that types a reply.
+      notices: (notice) => notice,
       expiresAt,
       after: after === undefined ? undefined : parseCursor(after),
       authorized: async () => {
@@ -1343,6 +1348,7 @@ export function registerWidgetRoutes(
       );
       seenWidget.add(found.id);
     }
+    await sites.siteSeen(found.id, c.req.header("origin") ?? "");
     const country = countryOf(c.get("clientIp"));
     const zone = knownTimeZone(timeZone);
     // A token that no longer works still counts the tab, as a visitor with none.

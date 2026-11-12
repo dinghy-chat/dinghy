@@ -22,6 +22,7 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   HEADER_FACES_MAX,
+  MESSAGE_MAX,
   RADIUS_MAX_PX,
   WIDGET_DEFAULTS,
 } from "../../../../packages/widget/src/shared.ts";
@@ -106,6 +107,12 @@ export const workspace = pgTable(
     suspendedReason: text("suspended_reason"),
     // When an allowed site first loaded the widget, for the Get started steps.
     widgetSeenAt: timestamp("widget_seen_at", { withTimezone: true }),
+    // Set when an operator pauses every bot of the workspace. A key's reply reads it under the row
+    // lock that every reply already takes, so a pause needs no lock of its own.
+    botsPausedAt: timestamp("bots_paused_at", { withTimezone: true }),
+    // The operator who paused them. Not a foreign key: the workspace row would then depend on its
+    // own members, which the purge removes before it.
+    botsPausedBy: uuid("bots_paused_by"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -269,10 +276,14 @@ export const visitor = pgTable(
     country: text("country"),
     // IANA, such as Europe/Paris, from the browser's last beat.
     timeZone: text("time_zone"),
+    // Made by a bot's simulated visitor message, to test it. Lists and analytics leave it out.
+    isTest: boolean("is_test").notNull().default(false),
     createdAt: createdAt(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.id] }),
+    // A workspace's test visitors, which are few, to clear them.
+    index("visitor_test_idx").on(table.workspaceId).where(sql`${table.isTest}`),
     // Contacts, newest seen first, paged by (seen, id). A visitor never seen counts from its start.
     index("visitor_seen_idx").on(
       table.workspaceId,
@@ -305,6 +316,11 @@ export const conversation = pgTable(
     // Cloud only. One side of a welcome chat between a new workspace and Dinghy's own, which
     // analytics leave out. The link below joins the two sides.
     welcome: boolean("welcome").notNull().default(false),
+    // Set by a bot's handoff or an operator's reply, and cleared when a bot resumes. Bots stay quiet
+    // while it is set, so a human and a bot never answer over each other.
+    humanSince: timestamp("human_since", { withTimezone: true }),
+    // The key that handed the conversation off, for the line in its header.
+    handoffByApiKeyId: uuid("handoff_by_api_key_id"),
     // An operator snoozed it: it stays open but waits for nobody until `snoozed_until`, or with
     // none until the visitor writes. A visitor message, a close and a reopen clear both.
     snoozedAt: timestamp("snoozed_at", { withTimezone: true }),
@@ -325,6 +341,13 @@ export const conversation = pgTable(
       columns: [table.workspaceId, table.assigneeOperatorId],
       foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
     }),
+    foreignKey({
+      name: "conversation_handoff_api_key_fk",
+      columns: [table.workspaceId, table.handoffByApiKeyId],
+      foreignColumns: [apiKey.workspaceId, apiKey.id],
+    }),
+    // A key's delete checks this foreign key, and the conversation table is the largest but one.
+    index("conversation_handoff_api_key_idx").on(table.workspaceId, table.handoffByApiKeyId),
     index("conversation_visitor_idx").on(table.workspaceId, table.visitorId),
     // The inbox list: one status, newest activity first, paged by (updated_at, id).
     index("conversation_list_idx").on(table.workspaceId, table.status, table.updatedAt, table.id),
@@ -429,6 +452,10 @@ export const message = pgTable(
     index("message_changed_idx")
       .on(table.workspaceId, table.changedSeq)
       .where(sql`${table.changedSeq} is not null`),
+    // A conversation's handler is the key that wrote last: one backward probe per conversation.
+    index("message_api_key_conversation_idx")
+      .on(table.workspaceId, table.conversationId, table.seq)
+      .where(sql`${table.authorApiKeyId} is not null`),
     // The widget's header shows the members who replied last: one short read per member.
     index("message_operator_seq_idx")
       .on(table.workspaceId, table.authorOperatorId, table.seq)
@@ -490,6 +517,11 @@ const EVENT_KINDS = [
   "conversation.moderated",
   // An operator asked to email the visitor the conversation. The worker sends it.
   "transcript.requested",
+  // A key's draft reply was made, became stale, or was sent or discarded.
+  "draft.changed",
+  // A conversation's handler changed: a person took it, a bot handed it off, or a person gave
+  // it back to the bots.
+  "conversation.handled",
   "team.changed",
   "billing.changed",
   "workspace.changed",
@@ -782,10 +814,6 @@ export const alertDelivery = pgTable(
 );
 
 /**
- * A workspace API key, for scripts and AI agents. Only the token's hash is stored, and the token is
- * shown once. A revoked key keeps its row, so the replies it sent keep their author name.
- */
-/**
  * What an API key reaches: `conversations`, the conversation routes and tools, or `setup`, those
  * and the webhooks, so an agent can connect a workspace by itself. No key reaches keys, members,
  * billing, export or the workspace's deletion.
@@ -793,15 +821,39 @@ export const alertDelivery = pgTable(
 export const API_KEY_LEVELS = ["conversations", "setup"] as const;
 export type ApiKeyLevel = (typeof API_KEY_LEVELS)[number];
 
+/**
+ * How a key came to be: `static`, made in Settings with a token shown once, or `oauth`, a grant an
+ * operator approved for an OAuth client such as an AI agent. A grant's tokens are in
+ * `api_key_credential`, so everything else that works for a key works for a grant.
+ */
+export const API_KEY_SOURCES = ["static", "oauth"] as const;
+export type ApiKeySource = (typeof API_KEY_SOURCES)[number];
+
+/** What a key's reply does: `send` goes to the visitor, and `draft` waits for an operator. */
+export const REPLY_MODES = ["send", "draft"] as const;
+export type ReplyMode = (typeof REPLY_MODES)[number];
+
+/**
+ * A workspace API key, for scripts and AI agents. Only the token's hash is stored, and the token is
+ * shown once. A revoked key keeps its row, so the replies it sent keep their author name.
+ */
 export const apiKey = pgTable(
   "api_key",
   {
     workspaceId: workspaceId(),
     id: id(),
-    // The author name visitors and operators see on the key's replies.
+    // The author name visitors and operators see on the key's replies. A grant starts with its
+    // client's name.
     name: text("name").notNull(),
     level: text("level").$type<ApiKeyLevel>().notNull().default("conversations"),
-    tokenHash: text("token_hash").notNull().unique(),
+    source: text("source").$type<ApiKeySource>().notNull().default("static"),
+    // A static key's token. A grant has none: its tokens are credentials, which expire.
+    tokenHash: text("token_hash").unique(),
+    // A new key drafts, so a new bot cannot write to visitors before someone has read its replies.
+    // The migration set `send` on the keys made before this, so no bot changed behavior.
+    replyMode: text("reply_mode").$type<ReplyMode>().notNull().default("draft"),
+    // A grant's OAuth client: a client ID that Dinghy signed at registration, or a metadata URL.
+    clientId: text("client_id"),
     createdBy: uuid("created_by").notNull(),
     // To a minute, so a busy key does not write on every request.
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
@@ -817,7 +869,161 @@ export const apiKey = pgTable(
     }),
     check("api_key_name_length", sql`char_length(${table.name}) between 1 and 60`),
     check("api_key_level", sql`${table.level} in ('conversations', 'setup')`),
+    check("api_key_source", sql`${table.source} in ('static', 'oauth')`),
+    check("api_key_reply_mode", sql`${table.replyMode} in ('send', 'draft')`),
+    check("api_key_token", sql`(${table.source} = 'static') = (${table.tokenHash} is not null)`),
+    check("api_key_client", sql`(${table.source} = 'oauth') = (${table.clientId} is not null)`),
   ],
+);
+
+const CREDENTIAL_KINDS = ["code", "access", "refresh"] as const;
+export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
+
+/**
+ * One token of an OAuth grant: an authorization code, an access token or a refresh token. Only the
+ * token's SHA-256 is stored. A grant's revoke or delete removes them all, and the worker prunes the
+ * expired ones.
+ */
+export const apiKeyCredential = pgTable(
+  "api_key_credential",
+  {
+    workspaceId: workspaceId(),
+    id: id(),
+    apiKeyId: uuid("api_key_id").notNull(),
+    kind: text("kind").$type<CredentialKind>().notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // A code or a refresh token works once. A second use is a replay.
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    // Every refresh token of one grant's chain, so a replayed one revokes the whole chain.
+    familyId: uuid("family_id"),
+    // A code's PKCE challenge (S256), address and resource, which its exchange must match.
+    codeChallenge: text("code_challenge"),
+    redirectUri: text("redirect_uri"),
+    resource: text("resource"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "api_key_credential_api_key_fk",
+      columns: [table.workspaceId, table.apiKeyId],
+      foreignColumns: [apiKey.workspaceId, apiKey.id],
+    }).onDelete("cascade"),
+    // A request finds its token before it knows the workspace.
+    unique("api_key_credential_token_hash_key").on(table.tokenHash),
+    index("api_key_credential_api_key_idx").on(table.workspaceId, table.apiKeyId),
+    index("api_key_credential_expires_idx").on(table.expiresAt),
+    check("api_key_credential_kind", sql`${table.kind} in ('code', 'access', 'refresh')`),
+    // Only a code carries the values its exchange checks.
+    check(
+      "api_key_credential_code",
+      sql`${table.kind} = 'code' or num_nonnulls(${table.codeChallenge}, ${table.redirectUri}, ${table.resource}) = 0`,
+    ),
+  ],
+);
+
+/** How an operator ended a draft reply. */
+const DRAFT_RESOLUTIONS = ["sent", "discarded"] as const;
+export type DraftResolution = (typeof DRAFT_RESOLUTIONS)[number];
+
+/**
+ * A reply that a key in draft mode wrote, which waits for an operator to send or discard it. It is a
+ * table of its own and not a message kind, so the visitor cannot see it before it is sent. Sending
+ * it writes a message, which `sent_message_id` names.
+ */
+export const draftReply = pgTable(
+  "draft_reply",
+  {
+    workspaceId: workspaceId(),
+    id: id(),
+    conversationId: uuid("conversation_id").notNull(),
+    apiKeyId: uuid("api_key_id").notNull(),
+    // Generated by the key's client, so a retry cannot create a duplicate.
+    clientId: text("client_id").notNull(),
+    body: text("body").notNull(),
+    replyToMessageId: uuid("reply_to_message_id"),
+    createdAt: createdAt(),
+    // A newer visitor message arrived, so the draft may answer an old question.
+    staleAt: timestamp("stale_at", { withTimezone: true }),
+    // Null while the draft waits.
+    resolved: text("resolved").$type<DraftResolution>(),
+    resolvedByOperatorId: uuid("resolved_by_operator_id"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    sentMessageId: uuid("sent_message_id"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "draft_reply_conversation_fk",
+      columns: [table.workspaceId, table.conversationId],
+      foreignColumns: [conversation.workspaceId, conversation.id],
+    }),
+    foreignKey({
+      name: "draft_reply_api_key_fk",
+      columns: [table.workspaceId, table.apiKeyId],
+      foreignColumns: [apiKey.workspaceId, apiKey.id],
+    }),
+    foreignKey({
+      name: "draft_reply_reply_to_fk",
+      columns: [table.workspaceId, table.replyToMessageId],
+      foreignColumns: [message.workspaceId, message.id],
+    }),
+    foreignKey({
+      name: "draft_reply_sent_message_fk",
+      columns: [table.workspaceId, table.sentMessageId],
+      foreignColumns: [message.workspaceId, message.id],
+    }),
+    foreignKey({
+      name: "draft_reply_resolved_by_fk",
+      columns: [table.workspaceId, table.resolvedByOperatorId],
+      foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
+    }),
+    unique("draft_reply_client_key").on(table.workspaceId, table.apiKeyId, table.clientId),
+    check(
+      "draft_reply_body_length",
+      sql`char_length(${table.body}) between 1 and ${sql.raw(String(MESSAGE_MAX))}`,
+    ),
+    check("draft_reply_resolved", sql`${table.resolved} in ('sent', 'discarded')`),
+    check(
+      "draft_reply_resolved_at",
+      sql`(${table.resolved} is null) = (${table.resolvedAt} is null)`,
+    ),
+    check(
+      "draft_reply_sent_message",
+      sql`coalesce(${table.resolved} = 'sent', false) = (${table.sentMessageId} is not null)`,
+    ),
+    index("draft_reply_conversation_idx").on(
+      table.workspaceId,
+      table.conversationId,
+      table.createdAt,
+    ),
+    // The drafts that wait, which the inbox shows and a new visitor message marks stale.
+    index("draft_reply_open_idx")
+      .on(table.workspaceId, table.conversationId)
+      .where(sql`${table.resolved} is null`),
+    // A message's delete checks these foreign keys.
+    index("draft_reply_reply_to_idx").on(table.workspaceId, table.replyToMessageId),
+    index("draft_reply_sent_message_idx").on(table.workspaceId, table.sentMessageId),
+  ],
+);
+
+/**
+ * A site that loaded the widget, for Settings to list where it runs. The widget's beat writes it at
+ * most once an hour per origin per instance, as with `widget_seen_at`.
+ */
+export const widgetSiteSeen = pgTable(
+  "widget_site_seen",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    // An exact origin, such as https://app.example.com.
+    origin: text("origin").notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.origin] })],
 );
 
 /** The kinds of change a webhook can ask for. */
@@ -829,6 +1035,9 @@ export const WEBHOOK_EVENTS = [
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
+  // A bot handed a conversation to people, and a person gave it back to the bots.
+  "conversation.handoff",
+  "conversation.given_back",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -867,6 +1076,9 @@ export const webhook = pgTable(
   ],
 );
 
+/** The characters of a failed answer's body that a delivery keeps: about 2 KB. */
+export const RESPONSE_EXCERPT_MAX = 2048;
+
 /** One event for one webhook. Delivery is at-least-once: a crash can repeat a send. */
 export const webhookDelivery = pgTable(
   "webhook_delivery",
@@ -887,6 +1099,14 @@ export const webhookDelivery = pgTable(
     // The last answer's HTTP status, or the reason no answer came.
     lastStatus: integer("last_status"),
     lastError: text("last_error"),
+    // The start of a failed answer's body, so Settings can show why a receiver refused it.
+    responseExcerpt: text("response_excerpt"),
+    // The delivery this one sends again. Not a foreign key: the worker prunes old deliveries in any
+    // order.
+    replayOf: uuid("replay_of"),
+    // When someone replayed it. Its day of retries counts from here, while createdAt stays the
+    // change's own time, which the payload carries.
+    replayedAt: timestamp("replayed_at", { withTimezone: true }),
     // When the change happened.
     createdAt: createdAt(),
   },
@@ -907,14 +1127,22 @@ export const webhookDelivery = pgTable(
       columns: [table.workspaceId, table.messageId],
       foreignColumns: [message.workspaceId, message.id],
     }).onDelete("cascade"),
-    // A webhook's recent deliveries, for Settings.
-    index("webhook_delivery_webhook_idx").on(table.workspaceId, table.webhookId, table.createdAt),
+    // A webhook's recent deliveries, for Settings, newest first by their last send.
+    index("webhook_delivery_webhook_idx").on(
+      table.workspaceId,
+      table.webhookId,
+      sql`coalesce(${table.replayedAt}, ${table.createdAt})`,
+    ),
     index("webhook_delivery_due_idx")
       .on(table.nextAttemptAt)
       .where(sql`${table.finishedAt} is null`),
     index("webhook_delivery_finished_idx").on(table.finishedAt),
     index("webhook_delivery_conversation_idx").on(table.workspaceId, table.conversationId),
     index("webhook_delivery_message_idx").on(table.workspaceId, table.messageId),
+    check(
+      "webhook_delivery_response_excerpt_length",
+      sql`char_length(${table.responseExcerpt}) <= ${sql.raw(String(RESPONSE_EXCERPT_MAX))}`,
+    ),
   ],
 );
 

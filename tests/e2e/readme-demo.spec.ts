@@ -138,7 +138,7 @@ test("record", async () => {
   await operator.mouse.move(0, 0);
   await operator.screenshot({ path: join(directory, "inbox.png") });
   await openSettings(operator, "Install");
-  await operator.getByRole("heading", { name: "Install code" }).waitFor();
+  await operator.getByRole("heading", { name: "Install by hand" }).waitFor();
   // The snippet names the test server's address. A reader should see a real-looking one.
   await operator.evaluate((api) => {
     for (const code of document.querySelectorAll("pre, code")) {

@@ -209,7 +209,7 @@ const SceneUse = createContext<{ use(change: number): void; at(time: TimeOfDay):
   at() {},
 });
 
-function useScene(time?: TimeOfDay) {
+export function useScene(time?: TimeOfDay) {
   const scene = useContext(SceneUse);
   // A layout effect, so a screen that replaces another adds itself before the paint. The count
   // never reaches zero between them, and the sea keeps moving.
@@ -299,6 +299,16 @@ export function ShellLoading() {
   );
 }
 
+/** The logo on an account screen, which goes back to the product's site on Dinghy Cloud. */
+export function SceneLogo() {
+  if (!logoLinksHome) return <Logo />;
+  return (
+    <a className="logo-home" href={SITE} aria-label={t("backToSite")}>
+      <Logo />
+    </a>
+  );
+}
+
 /**
  * The page for everyone who is not signed in: one card over the sky and the sea from the landing
  * page, at the step's time of day. With onSubmit, the card is a form.
@@ -316,13 +326,7 @@ export function AuthPage({
   useScene(time);
   const content = (
     <>
-      {logoLinksHome ? (
-        <a className="logo-home" href={SITE} aria-label={t("backToSite")}>
-          <Logo />
-        </a>
-      ) : (
-        <Logo />
-      )}
+      <SceneLogo />
       {children}
     </>
   );

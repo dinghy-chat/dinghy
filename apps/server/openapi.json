@@ -26,7 +26,7 @@
       "setupKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A workspace API key, `dk_...`, made with the Setup access level. It reaches what a Conversations key does, and the webhooks: list, add, change, delete, rotate a secret, test and read deliveries. It never reaches keys, members, billing, export or the workspace's deletion."
+        "description": "A workspace API key, `dk_...`, made with Full access, the `setup` level. It reaches what a Chats (`conversations`) key does, and the webhooks: list, add, change, delete, rotate a secret, test and read deliveries. It never reaches keys, members, billing, export or the workspace's deletion."
       }
     },
     "schemas": {
@@ -46,16 +46,22 @@
                   "bad_signature",
                   "billing_unavailable",
                   "blocked",
+                  "bots_paused",
                   "busy",
                   "checkout_retry_later",
                   "conversation_closed",
+                  "drafts_text_only",
                   "email_mismatch",
                   "email_rejected",
                   "email_taken",
                   "email_unavailable",
                   "forbidden",
+                  "human_handling",
+                  "grant_limit",
                   "internal_error",
+                  "invalid_client",
                   "invalid_name",
+                  "invalid_redirect_uri",
                   "invalid_reply_to",
                   "invalid_request",
                   "invite_invalid",
@@ -78,6 +84,7 @@
                   "push_unavailable",
                   "read_only",
                   "signed_in",
+                  "site_limit",
                   "storage_full",
                   "suspended",
                   "team_changed",
@@ -541,6 +548,15 @@
                 "logoUrl": {
                   "type": ["string", "null"]
                 },
+                "botsPaused": {
+                  "type": "boolean"
+                },
+                "botsPausedBy": {
+                  "type": ["string", "null"]
+                },
+                "botsPausedAt": {
+                  "type": ["string", "null"]
+                },
                 "active": {
                   "type": "boolean"
                 },
@@ -565,6 +581,9 @@
                 "role",
                 "name",
                 "logoUrl",
+                "botsPaused",
+                "botsPausedBy",
+                "botsPausedAt",
                 "active",
                 "readOnly",
                 "waiting",
@@ -603,9 +622,18 @@
           },
           "logoUrl": {
             "type": ["string", "null"]
+          },
+          "botsPaused": {
+            "type": "boolean"
+          },
+          "botsPausedBy": {
+            "type": ["string", "null"]
+          },
+          "botsPausedAt": {
+            "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "logoUrl"]
+        "required": ["id", "name", "logoUrl", "botsPaused", "botsPausedBy", "botsPausedAt"]
       },
       "Conversation": {
         "type": "object",
@@ -628,6 +656,21 @@
           },
           "welcome": {
             "type": "boolean"
+          },
+          "handler": {
+            "$ref": "#/components/schemas/ConversationHandler"
+          },
+          "bot": {
+            "type": ["object", "null"],
+            "properties": {
+              "apiKeyId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["apiKeyId", "name"]
           },
           "pageContext": {
             "allOf": [
@@ -678,6 +721,9 @@
               },
               "pictureUrl": {
                 "type": ["string", "null"]
+              },
+              "isTest": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -692,7 +738,8 @@
               "lastSeenAt",
               "country",
               "timeZone",
-              "pictureUrl"
+              "pictureUrl",
+              "isTest"
             ]
           },
           "lastMessage": {
@@ -724,11 +771,68 @@
           "assigneeOperatorId",
           "startedPage",
           "welcome",
+          "handler",
+          "bot",
           "pageContext",
           "visitor",
           "lastMessage",
           "snooze",
           "unread"
+        ]
+      },
+      "ConversationHandler": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["bot"]
+              },
+              "apiKeyId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "apiKeyId", "name"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["person"]
+              },
+              "operatorId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "since": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "operatorId", "name", "since"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["team"]
+              },
+              "since": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "since"]
+          },
+          {
+            "type": "null"
+          }
         ]
       },
       "Snooze": {
@@ -795,7 +899,16 @@
           },
           "via": {
             "type": ["string", "null"],
-            "enum": ["api", "mcp", null]
+            "enum": ["api", "mcp", "draft", null]
+          },
+          "handoff": {
+            "type": ["object", "null"],
+            "properties": {
+              "operatorId": {
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["operatorId"]
           },
           "createdAt": {
             "type": "string"
@@ -819,6 +932,7 @@
           "deleted",
           "readAt",
           "via",
+          "handoff",
           "createdAt"
         ],
         "example": {
@@ -845,6 +959,7 @@
           "deleted": false,
           "readAt": null,
           "via": null,
+          "handoff": null,
           "createdAt": "2026-11-08T09:31:00.000Z"
         }
       },
@@ -944,6 +1059,62 @@
         },
         "required": ["readSeq", "emails"]
       },
+      "Draft": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "apiKeyId": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "replyToMessageId": {
+            "type": ["string", "null"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["open", "stale", "sent", "discarded"]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "staleAt": {
+            "type": ["string", "null"]
+          },
+          "resolvedAt": {
+            "type": ["string", "null"]
+          },
+          "sentMessageId": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "apiKeyId",
+          "authorName",
+          "clientId",
+          "body",
+          "replyToMessageId",
+          "status",
+          "createdAt",
+          "staleAt",
+          "resolvedAt",
+          "sentMessageId"
+        ]
+      },
       "MessageReceipt": {
         "type": "object",
         "properties": {
@@ -969,6 +1140,30 @@
             "type": "string",
             "enum": ["conversations", "setup"]
           },
+          "source": {
+            "type": "string",
+            "enum": ["static", "oauth"]
+          },
+          "replyMode": {
+            "type": "string",
+            "enum": ["send", "draft"]
+          },
+          "client": {
+            "type": ["object", "null"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["dcr", "cimd"]
+              },
+              "host": {
+                "type": "string"
+              },
+              "local": {
+                "type": "boolean"
+              }
+            },
+            "required": ["kind", "host", "local"]
+          },
           "createdByName": {
             "type": ["string", "null"]
           },
@@ -979,7 +1174,73 @@
             "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "level", "createdByName", "createdAt", "lastUsedAt"]
+        "required": [
+          "id",
+          "name",
+          "level",
+          "source",
+          "replyMode",
+          "client",
+          "createdByName",
+          "createdAt",
+          "lastUsedAt"
+        ]
+      },
+      "OAuthProtectedResource": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string"
+          },
+          "authorization_servers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopes_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bearer_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource",
+          "authorization_servers",
+          "scopes_supported",
+          "bearer_methods_supported",
+          "resource_name"
+        ]
+      },
+      "OAuthAuthorizationServer": {
+        "type": "object",
+        "additionalProperties": {}
+      },
+      "OAuthError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "error_description": {
+            "type": "string"
+          }
+        },
+        "required": ["error", "error_description"],
+        "example": {
+          "error": "invalid_grant",
+          "error_description": "The code is not valid."
+        }
       },
       "Webhook": {
         "type": "object",
@@ -1001,7 +1262,9 @@
                 "message.deleted",
                 "conversation.closed",
                 "conversation.reopened",
-                "conversation.assigned"
+                "conversation.assigned",
+                "conversation.handoff",
+                "conversation.given_back"
               ]
             }
           },
@@ -1045,7 +1308,9 @@
               "message.deleted",
               "conversation.closed",
               "conversation.reopened",
-              "conversation.assigned"
+              "conversation.assigned",
+              "conversation.handoff",
+              "conversation.given_back"
             ]
           },
           "status": {
@@ -1059,6 +1324,15 @@
             "type": ["integer", "null"]
           },
           "lastError": {
+            "type": ["string", "null"]
+          },
+          "responseExcerpt": {
+            "type": ["string", "null"]
+          },
+          "replayOf": {
+            "type": ["string", "null"]
+          },
+          "replayedAt": {
             "type": ["string", "null"]
           },
           "createdAt": {
@@ -1076,9 +1350,195 @@
           "attempts",
           "lastStatus",
           "lastError",
+          "responseExcerpt",
+          "replayOf",
+          "replayedAt",
           "createdAt",
           "finishedAt"
         ]
+      },
+      "HandoffMessage": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["sent"]
+              },
+              "message": {
+                "$ref": "#/components/schemas/InboxMessage"
+              }
+            },
+            "required": ["status", "message"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["drafted"]
+              },
+              "draft": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "required": ["status", "draft"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["not_sent"]
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["bots_paused"]
+              }
+            },
+            "required": ["status", "reason"]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "InstallSnippet": {
+        "type": "object",
+        "properties": {
+          "framework": {
+            "type": "string",
+            "enum": ["html", "nextjs", "react", "vue", "rails", "laravel", "wordpress"]
+          },
+          "code": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "placement": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "serverUrl": {
+            "type": "string"
+          }
+        },
+        "required": ["framework", "code", "file", "placement", "notes", "publicKey", "serverUrl"]
+      },
+      "InstallCheck": {
+        "type": "object",
+        "properties": {
+          "allowed": {
+            "type": ["boolean", "null"]
+          },
+          "widgetSeenAt": {
+            "type": ["string", "null"]
+          },
+          "sites": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string"
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "firstSeenAt": {
+                  "type": ["string", "null"]
+                },
+                "lastSeenAt": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["origin", "allowed", "firstSeenAt", "lastSeenAt"]
+            }
+          },
+          "refused": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string"
+                },
+                "lastSeenAt": {
+                  "type": "string"
+                }
+              },
+              "required": ["origin", "lastSeenAt"]
+            }
+          },
+          "liveTabs": {
+            "type": ["integer", "null"]
+          },
+          "nextStep": {
+            "type": "string"
+          }
+        },
+        "required": ["allowed", "widgetSeenAt", "sites", "refused", "liveTabs", "nextStep"]
+      },
+      "IdentitySetup": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "enum": ["typescript", "python", "ruby", "php", "go"]
+          },
+          "explanation": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "serverFile": {
+            "type": "string"
+          },
+          "serverCode": {
+            "type": "string"
+          },
+          "browserCode": {
+            "type": "string"
+          },
+          "secretNote": {
+            "type": "string"
+          },
+          "publicKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "language",
+          "explanation",
+          "serverFile",
+          "serverCode",
+          "browserCode",
+          "secretNote",
+          "publicKey"
+        ]
+      },
+      "AllowedSites": {
+        "type": "object",
+        "properties": {
+          "sites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["sites"]
       },
       "Analytics": {
         "type": "object",
@@ -2290,7 +2750,7 @@
           }
         ],
         "summary": "Stream the visitor's messages after a cursor",
-        "description": "Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, `notice` for something live that is not stored, and `close` with a reason. A `notice` has no id and may be lost: `{ kind: \"typing\", name, typing }` while an API key's bot writes a reply, and with `typing: false` when it stops. Read this with fetch, because EventSource cannot send the bearer token.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
@@ -4299,6 +4759,9 @@
                       "updatedAt": "2026-11-08T09:30:00.000Z",
                       "assigneeOperatorId": null,
                       "startedPage": "https://www.example.com/pricing",
+                      "welcome": false,
+                      "handler": null,
+                      "bot": null,
                       "pageContext": {
                         "plan": "pro"
                       },
@@ -4315,7 +4778,8 @@
                         "lastPage": "https://www.example.com/pricing",
                         "lastSeenAt": "2026-11-08T09:30:00.000Z",
                         "country": "PT",
-                        "timeZone": "Europe/Lisbon"
+                        "timeZone": "Europe/Lisbon",
+                        "isTest": false
                       },
                       "lastMessage": {
                         "body": "Do you have a yearly plan?",
@@ -4670,6 +5134,22 @@
               }
             }
           },
+          "202": {
+            "description": "An API key in draft mode wrote a draft, which waits for an operator. Nothing reached the visitor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "$ref": "#/components/schemas/Draft"
+                    }
+                  },
+                  "required": ["draft"]
+                }
+              }
+            }
+          },
           "400": {
             "description": "invalid_request: the request is not valid. invalid_reply_to: the quoted message is not in this conversation",
             "content": {
@@ -4721,7 +5201,7 @@
             }
           },
           "409": {
-            "description": "conversation_closed: reopen it to reply. A note does not need it",
+            "description": "conversation_closed: reopen it to reply, though a note does not need it. bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly. Neither refuses a note",
             "content": {
               "application/json": {
                 "schema": {
@@ -5002,7 +5482,7 @@
             }
           },
           "409": {
-            "description": "conversation_closed: reopen it to reply",
+            "description": "conversation_closed: reopen it to reply. bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly. drafts_text_only: the key writes drafts, which hold text only",
             "content": {
               "application/json": {
                 "schema": {
@@ -5862,7 +6342,7 @@
           }
         ],
         "summary": "Stream the workspace's changes after a cursor",
-        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `draft.changed`, `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, `{ kind: \"bot_typing\", conversationId, name, typing }` when an API key types or stops, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
@@ -5954,7 +6434,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "List the workspace's API keys that are not revoked. Owners and admins only",
+        "summary": "List the workspace's API keys and connected apps that are not revoked. Owners and admins only",
         "parameters": [
           {
             "schema": {
@@ -5968,7 +6448,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The keys, newest first",
+            "description": "The keys and connected apps, newest first",
             "content": {
               "application/json": {
                 "schema": {
@@ -6063,6 +6543,11 @@
                     "type": "string",
                     "enum": ["conversations", "setup"],
                     "default": "conversations"
+                  },
+                  "replyMode": {
+                    "type": "string",
+                    "enum": ["send", "draft"],
+                    "default": "draft"
                   }
                 },
                 "required": ["name"]
@@ -6168,6 +6653,142 @@
       }
     },
     "/v1/operator/workspaces/{workspaceId}/api-keys/{keyId}": {
+      "patch": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Change an API key's or a connected app's name, reply mode or level",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "keyId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$/u"
+                  },
+                  "replyMode": {
+                    "type": "string",
+                    "enum": ["send", "draft"]
+                  },
+                  "level": {
+                    "type": "string",
+                    "enum": ["conversations", "setup"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The key as changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "x-workspace-access": "closed",
         "security": [
@@ -6175,7 +6796,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Revoke an API key. Its replies keep its name",
+        "summary": "Revoke an API key or disconnect an app. Its replies keep its name",
         "parameters": [
           {
             "schema": {
@@ -6287,6 +6908,764 @@
         }
       }
     },
+    "/.well-known/oauth-protected-resource/v1/mcp": {
+      "get": {
+        "summary": "OAuth protected resource metadata for the MCP endpoint (RFC 9728)",
+        "responses": {
+          "200": {
+            "description": "The metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthProtectedResource"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/oauth-protected-resource": {
+      "get": {
+        "summary": "OAuth protected resource metadata for the MCP endpoint (RFC 9728)",
+        "responses": {
+          "200": {
+            "description": "The metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthProtectedResource"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/oauth-authorization-server": {
+      "get": {
+        "summary": "OAuth authorization server metadata (RFC 8414)",
+        "responses": {
+          "200": {
+            "description": "The metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthAuthorizationServer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/oauth/register": {
+      "post": {
+        "summary": "Register a public OAuth client (RFC 7591). Dinghy stores nothing: the client ID holds the name and redirect URIs, signed. 10 an hour per address",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "client_name": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    "minItems": 1,
+                    "maxItems": 5
+                  }
+                },
+                "required": ["redirect_uris"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The client, as registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "client_id": {
+                      "type": "string"
+                    },
+                    "client_id_issued_at": {
+                      "type": "integer"
+                    },
+                    "client_name": {
+                      "type": "string"
+                    },
+                    "redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "grant_types": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "response_types": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "token_endpoint_auth_method": {
+                      "type": "string",
+                      "enum": ["none"]
+                    }
+                  },
+                  "required": [
+                    "client_id",
+                    "client_id_issued_at",
+                    "client_name",
+                    "redirect_uris",
+                    "grant_types",
+                    "response_types",
+                    "token_endpoint_auth_method"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_client_metadata or invalid_redirect_uri",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "temporarily_unavailable: over the rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/oauth/token": {
+      "post": {
+        "summary": "Trade an authorization code with its PKCE verifier, or a refresh token, for an access token (1 hour) and a new refresh token (30 days). 60 a minute per address",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "grant_type": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "`authorization_code` or `refresh_token`"
+                  },
+                  "code": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "code_verifier": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "redirect_uri": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "refresh_token": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "resource": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "scope": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": ["grant_type"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The tokens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string"
+                    },
+                    "token_type": {
+                      "type": "string",
+                      "enum": ["Bearer"]
+                    },
+                    "expires_in": {
+                      "type": "integer"
+                    },
+                    "refresh_token": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["access_token", "token_type", "expires_in", "refresh_token", "scope"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request, invalid_grant, unsupported_grant_type or invalid_target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "temporarily_unavailable: over the rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/oauth/revoke": {
+      "post": {
+        "summary": "Revoke the grant of an access or refresh token (RFC 7009). An unknown token also answers 200",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "token_type_hint": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "maxLength": 4096
+                  }
+                },
+                "required": ["token"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revoked, or the token was not known"
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "temporarily_unavailable: over the rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/oauth/authorize-info": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Check an OAuth authorization request for the consent page: who asks, which access, and the workspaces this operator may connect it to",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "response_type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "client_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "redirect_uri",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "code_challenge",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "code_challenge_method",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "scope",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "resource",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`consent`: show the screen. `redirect`: a parameter is not valid, so send the browser back to the app with the error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["consent"]
+                        },
+                        "client": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "host": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": ["dcr", "cimd"]
+                            },
+                            "local": {
+                              "type": "boolean"
+                            },
+                            "verified": {
+                              "type": "boolean",
+                              "enum": [false]
+                            }
+                          },
+                          "required": ["name", "host", "kind", "local", "verified"]
+                        },
+                        "scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": ["conversations", "setup"]
+                          }
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": ["conversations", "setup"]
+                        },
+                        "workspaces": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["id", "name"]
+                          }
+                        }
+                      },
+                      "required": ["kind", "client", "scopes", "level", "workspaces"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["redirect"]
+                        },
+                        "redirectTo": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "redirectTo"]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_client or invalid_redirect_uri: show an error. Never send the browser to the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/oauth/grants": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Approve an OAuth client for this workspace. Owners and admins only. It replaces the operator's earlier grant to the same client, and answers the redirect with the code",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384,
+                    "description": "The query string of the /oauth/authorize page, as the client sent it"
+                  },
+                  "level": {
+                    "type": "string",
+                    "enum": ["conversations", "setup"]
+                  },
+                  "replyMode": {
+                    "type": "string",
+                    "enum": ["send", "draft"],
+                    "default": "draft"
+                  }
+                },
+                "required": ["request", "level"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Where to send the browser",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redirectTo": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["redirectTo"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_client, invalid_redirect_uri or invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "grant_limit: the workspace already has 50 connected apps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/oauth/deny": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Cancel an OAuth authorization request: the app gets access_denied",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384,
+                    "description": "The query string of the /oauth/authorize page, as the client sent it"
+                  }
+                },
+                "required": ["request"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Where to send the browser",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redirectTo": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["redirectTo"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_client or invalid_redirect_uri: there is nowhere safe to return",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/workspaces/{workspaceId}/webhooks": {
       "get": {
         "security": [
@@ -6297,7 +7676,7 @@
             "setupKey": []
           }
         ],
-        "summary": "List the workspace's webhooks. Owners, admins and Setup API keys only",
+        "summary": "List the workspace's webhooks. Owners, admins and Full access (`setup`) API keys only",
         "parameters": [
           {
             "schema": {
@@ -6350,7 +7729,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role, or a Conversations API key, may not do this",
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -6424,11 +7803,13 @@
                         "message.deleted",
                         "conversation.closed",
                         "conversation.reopened",
-                        "conversation.assigned"
+                        "conversation.assigned",
+                        "conversation.handoff",
+                        "conversation.given_back"
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 7
+                    "maxItems": 9
                   },
                   "enabled": {
                     "type": "boolean",
@@ -6610,11 +7991,13 @@
                         "message.deleted",
                         "conversation.closed",
                         "conversation.reopened",
-                        "conversation.assigned"
+                        "conversation.assigned",
+                        "conversation.handoff",
+                        "conversation.given_back"
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 7
+                    "maxItems": 9
                   },
                   "enabled": {
                     "type": "boolean"
@@ -7196,7 +8579,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role, or a Conversations API key, may not do this",
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -7228,6 +8611,2049 @@
         }
       }
     },
+    "/v1/operator/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries/{deliveryId}/replay": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Send a delivery's event again, now, as a new delivery with the same `Dinghy-Event-Id`. It is retried like any other",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "webhookId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "deliveryId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new delivery",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "delivery": {
+                      "$ref": "#/components/schemas/WebhookDelivery"
+                    }
+                  },
+                  "required": ["delivery"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/drafts": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "The drafts that wait in a conversation, newest first",
+        "description": "Replies that API keys in draft mode wrote, which no visitor has seen. A `stale` draft is older than the visitor's newest message.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The drafts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "drafts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Draft"
+                      }
+                    }
+                  },
+                  "required": ["drafts"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/drafts/{draftId}/send": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Send a draft to the visitor, as is or edited, as your own reply",
+        "description": "The message's author is the operator, and its `via` is `draft`. Sending approves the bot's words, so the bot keeps the conversation. Sending it again returns the same message.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000,
+                    "pattern": "^[^\\0]*$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "It was sent before. This is that message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxMessage"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxMessage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: no such draft here, or it was discarded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conversation_closed: reopen it to reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/drafts/{draftId}/discard": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Discard a draft. The visitor never sees it",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Discarded, or it already was",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: no such draft here, or it was sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/handoff": {
+      "post": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Hand a conversation to people. API keys only",
+        "description": "In one step: `visitorMessage` goes to the visitor as the key's reply (or a draft in draft mode), the conversation is assigned to `operatorId` if given, a person handles it from now so bots that send directly answer `human_handling`, a note holds `reason` and `summary`, and the assignee, or every member when there is none, gets an alert. Webhooks get `conversation.handoff`. A retry with the same clientId changes nothing again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "pattern": "^[^\\0]*$"
+                  },
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "pattern": "^[^\\0]*$"
+                  },
+                  "operatorId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "visitorMessage": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000,
+                    "pattern": "^[^\\0]*$"
+                  }
+                },
+                "required": ["clientId", "reason"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "visitorMessage": {
+                      "$ref": "#/components/schemas/HandoffMessage"
+                    }
+                  },
+                  "required": ["visitorMessage"]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Handed off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "visitorMessage": {
+                      "$ref": "#/components/schemas/HandoffMessage"
+                    }
+                  },
+                  "required": ["visitorMessage"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. not_a_member: operatorId is not in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: an operator sent it. People assign a conversation instead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conversation_closed: the conversation is closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/give-back": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Give a conversation back to the bots",
+        "description": "No person handles it any more and its assignee is cleared, so a key that sends directly may reply again. Webhooks get `conversation.given_back`, and `conversation.assigned` when it had an assignee. Only people can do this: a bot cannot take a conversation back.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bots may answer it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/bots-paused": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Pause or resume every bot of the workspace. Owners and admins only",
+        "description": "While paused, every API key's reply, draft or typing answers 409 `bots_paused`. Reads, notes and handoffs still work, so a bot can still hand a conversation to people.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paused": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["paused"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new state, and the name of who paused bots, null when they run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "pausedBy": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["paused", "pausedBy"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/typing": {
+      "post": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Show the visitor that the key's bot is typing. API keys only",
+        "description": "Nothing is stored. The visitor's chat shows `<name> is typing` for 6 seconds, or until the next message, so repeat it while you write. Operators see it too. A key in draft mode shows it to operators only. Refused like a reply: `bots_paused`, and `human_handling` for a key that sends directly.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "typing": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Passed on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: an operator sent it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/install/snippet": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "The code that adds the widget to an app made with a framework, and where it goes",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["html", "nextjs", "react", "vue", "rails", "laravel", "wordpress"]
+            },
+            "required": true,
+            "name": "framework",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The snippet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallSnippet"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/install/check": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Whether the widget is installed: the allowed sites, where it loaded, and what to do next",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 300,
+              "description": "An origin, such as https://www.example.com"
+            },
+            "required": false,
+            "description": "An origin, such as https://www.example.com",
+            "name": "origin",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The install's state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallCheck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. bad_origin: not a valid origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/install/identity": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Server code that signs the identity token for `Dinghy.identify()`, in a language. Never the signing secret",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["typescript", "python", "ruby", "php", "go"]
+            },
+            "required": true,
+            "name": "language",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code and its steps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySetup"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/sites": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "The allowed sites: the origins where the widget may load",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The allowed sites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllowedSites"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Allow the widget on one more origin. A workspace has at most 20",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "origin": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "description": "An origin, such as https://www.example.com"
+                  }
+                },
+                "required": ["origin"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The allowed sites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllowedSites"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. bad_origin: not a valid origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "site_limit: the workspace has 20 allowed sites already",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "x-workspace-access": "closed",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Stop the widget on an origin. Its open chats end at their next check",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 300,
+              "description": "An origin, such as https://www.example.com"
+            },
+            "required": true,
+            "description": "An origin, such as https://www.example.com",
+            "name": "origin",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The allowed sites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllowedSites"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. bad_origin: not a valid origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/test-visitors/messages": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Send a message as a test visitor, to test a bot from end to end. At most 10 a minute per workspace",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000,
+                    "pattern": "^[^\\0]*$",
+                    "description": "What the test visitor writes"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$/u",
+                    "description": "The test visitor's name, as operators see it"
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "A test conversation to write in again, from an earlier answer. Without it, a new test visitor starts a new conversation"
+                  }
+                },
+                "required": ["body"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The test visitor, its conversation and the message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "visitorId": {
+                      "type": "string"
+                    },
+                    "conversationId": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "$ref": "#/components/schemas/InboxMessage"
+                    }
+                  },
+                  "required": ["visitorId", "conversationId", "message"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: the conversation is not a test visitor's",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute, or the workspace's 10 test messages a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/test-visitors": {
+      "delete": {
+        "x-workspace-access": "closed",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Delete every test visitor, with their conversations, messages and images",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many test visitors were deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["deleted"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/mcp": {
       "post": {
         "security": [
@@ -7236,7 +10662,7 @@
           }
         ],
         "summary": "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
-        "description": "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `add_note`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
         "requestBody": {
           "required": true,
           "content": {
@@ -7302,7 +10728,104 @@
             }
           },
           "401": {
+            "description": "unauthorized: the API key or OAuth access token is not valid, expired or was revoked. With OAuth on, `WWW-Authenticate` names the resource metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: a browser on another site sent this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A 2026-07-28 request for a method that does not exist, in JSON-RPC form"
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Stream the workspace's events to an API key's bot, with no public server",
+        "description": "Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is its position: reconnect with `Last-Event-ID` or `?after=` to resume after it. When one change makes several events, such as `conversation.created` then `message.created`, each has its own position, `generation.seq.part`, and the last has the change's cursor, `generation.seq`. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.\n\nA `notice` has no id and may be lost: `{ kind: \"typing\", conversationId, draft }`, a visitor's unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back. All by default."
+            },
+            "required": false,
+            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back. All by default.",
+            "name": "types",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,9}\\.\\d{1,18}(\\.\\d)?$"
+            },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
             "description": "unauthorized: the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
             "content": {
               "application/json": {
                 "schema": {
@@ -7322,7 +10845,7 @@
             }
           },
           "429": {
-            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "description": "too_many_requests: over the key's rate limit. too_many_streams: the workspace has too many open streams. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {
@@ -7339,6 +10862,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "summary": "Support numbers for the last 7, 30 or 90 days",
@@ -7457,6 +10983,16 @@
           },
           "404": {
             "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {
@@ -10212,6 +13748,7 @@
           }
         ],
         "summary": "Assign a conversation to a member, or clear it with null",
+        "description": "Signed in, it also makes a person handle the conversation, as a reply does, so a key that sends directly stops replying. With an API key, it changes only the assignee.",
         "parameters": [
           {
             "schema": {
@@ -10781,6 +14318,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
         "summary": "Get the widget's look, words and behavior",
@@ -10835,6 +14375,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -10842,9 +14392,12 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "setupKey": []
           }
         ],
-        "summary": "Replace the widget's look, words and behavior. Sites show it within 5 minutes.",
+        "summary": "Replace the widget's look, words and behavior. Sites show it within 5 minutes. Owners, admins and Full access (`setup`) API keys only",
         "parameters": [
           {
             "schema": {
@@ -10929,6 +14482,16 @@
           },
           "413": {
             "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

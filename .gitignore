@@ -11,3 +11,4 @@ playwright-report/
 CLAUDE.local.md
 # Built from docs/*.md by `bun run docs:build`. The Site workflow builds them before it tests and deploys.
 site/public/docs/
+site/public/llms-full.txt

@@ -113,3 +113,14 @@ export function normalizeOrigin(value: string): string | null {
     return null;
   }
 }
+
+/** Each origin in its exact form, without repeats, or the first value that is not one. */
+export function normalizeOrigins(values: string[]): { origins: string[] } | { bad: string } {
+  const origins = new Set<string>();
+  for (const value of values) {
+    const normalized = normalizeOrigin(value);
+    if (normalized === null) return { bad: value };
+    origins.add(normalized);
+  }
+  return { origins: [...origins] };
+}

@@ -80,22 +80,24 @@ test("the operator sees the visitor's draft, the read receipt and the visitor's 
 
   // The first reply assigned the conversation to the operator.
   const panel = operator.locator(".visitor-panel");
-  await expect(panel.getByRole("button", { name: /^Assign to/ })).toContainText("vera");
+  await expect(panel.getByRole("button", { name: /^Who answers/ })).toContainText("vera");
   await expect(panel.locator(".place-tiles")).toContainText("Chrome on Linux");
   await picture(operator, "thread");
 
   // The panel hides, and the header holds the assignee again.
   await operator.getByRole("button", { name: "Hide the visitor's details" }).click();
   await expect(panel).toHaveCount(0);
-  await expect(operator.getByRole("button", { name: /^Assign to/ })).toBeVisible();
+  await expect(operator.getByRole("button", { name: /^Who answers/ })).toBeVisible();
   await operator.getByRole("button", { name: "Show the visitor's details" }).click();
 
   // The note saves when the field loses focus, and the contact page shows it.
-  await panel.getByRole("textbox", { name: "Note" }).fill("Wants an invoice.");
+  await panel.getByRole("textbox", { name: "Contact note" }).fill("Wants an invoice.");
   await panel.getByRole("button", { name: "View contact" }).focus();
   await expect(operator.getByText("Saved.")).toBeVisible();
   await panel.getByRole("button", { name: "View contact" }).click();
-  await expect(operator.getByRole("textbox", { name: "Note" })).toHaveValue("Wants an invoice.");
+  await expect(operator.getByRole("textbox", { name: "Contact note" })).toHaveValue(
+    "Wants an invoice.",
+  );
   // The contact page: the visitor is on the site, and the card has the conversation's numbers.
   const contact = operator.locator(".contact-page");
   await expect(contact.locator(".contact-seen")).toContainText("On your site now");

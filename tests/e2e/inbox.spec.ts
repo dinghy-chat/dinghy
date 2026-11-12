@@ -165,7 +165,7 @@ test("the Inbox item, the tab title and the favicon count the conversations that
 
   // A teammate's conversation is not theirs to answer, so it leaves their count.
   await row(operator, "Second question").click();
-  await operator.getByRole("button", { name: /^Assign to/ }).click();
+  await operator.getByRole("button", { name: /^Who answers/ }).click();
   await operator.getByRole("option", { name: "alice@example.com" }).click();
   await expect(openCount(teammate)).toHaveCount(0);
   await expect(teammate).toHaveTitle("Dinghy");
@@ -257,7 +257,7 @@ test("an operator changes their name in Profile, which has no password", async (
   const customer = await visitor(browser, "Who is Carol now?");
   await page.getByRole("button", { name: "Inbox" }).click();
   await row(page, "Who is Carol now?").click();
-  await page.getByRole("button", { name: /^Assign to/ }).click();
+  await page.getByRole("button", { name: /^Who answers/ }).click();
   await expect(page.getByRole("option", { name: "Carol King" })).toBeVisible();
   await page.keyboard.press("Escape");
   await customer.context().close();
@@ -299,7 +299,7 @@ test("Mine and Unassigned follow assignments as they change", async ({ browser }
   const bob = await signedIn(browser, server, "bob@example.com");
   const assign = async (text: string, name: string) => {
     await row(alice, text).click();
-    await alice.getByRole("button", { name: /^Assign to/ }).click();
+    await alice.getByRole("button", { name: /^Who answers/ }).click();
     await alice.getByRole("option", { name }).click();
   };
 

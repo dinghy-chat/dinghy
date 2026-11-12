@@ -624,6 +624,20 @@
       "when": 1794516145902,
       "tag": "0088_conversation_snooze",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1794517627975,
+      "tag": "0089_agent_experience",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1794517638021,
+      "tag": "0090_agent_experience_grants",
+      "breakpoints": true
     }
   ]
 }

@@ -344,6 +344,37 @@ describe("chat migrate", () => {
     expect(after.laterEdit.kind).toBe("seen");
   });
 
+  test("keys made before reply modes keep sending, and new keys draft", async () => {
+    await run(await migrationsBefore("0089_"));
+    const workspace = "00000000-0000-4000-8000-0000000000e1";
+    const anna = "00000000-0000-4000-8000-0000000000e2";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000004', 'secret')`,
+    );
+    await query(
+      `insert into operator (id, name, email, email_verified)
+       values ('${anna}', 'Anna', 'anna-e2@example.com', true)`,
+    );
+    await query(
+      `insert into workspace_member (workspace_id, operator_id, role)
+       values ('${workspace}', '${anna}', 'owner')`,
+    );
+    await query(
+      `insert into api_key (workspace_id, name, token_hash, created_by)
+       values ('${workspace}', 'Old bot', 'old-hash', '${anna}')`,
+    );
+    await run();
+    await query(
+      `insert into api_key (workspace_id, name, token_hash, created_by)
+       values ('${workspace}', 'New bot', 'new-hash', '${anna}')`,
+    );
+    expect(await query("select name, source, reply_mode from api_key order by name")).toEqual([
+      { name: "New bot", source: "static", reply_mode: "draft" },
+      { name: "Old bot", source: "static", reply_mode: "send" },
+    ]);
+  });
+
   test("existing conversations start read for their workspace's current members", async () => {
     await run(await migrationsBefore("0085_"));
     const workspace = "00000000-0000-4000-8000-0000000000e1";

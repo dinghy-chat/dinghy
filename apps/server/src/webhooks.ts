@@ -1,20 +1,22 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Logger } from "pino";
-import type { Actor } from "./api-keys.ts";
+import { type Actor, actorFields } from "./api-keys.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
+import type { HandledPayload } from "./bots.ts";
 import {
   apiKey,
   event,
   type MessagePayload,
   operator,
+  RESPONSE_EXCERPT_MAX,
   WEBHOOK_EVENTS,
   type WebhookEvent,
   webhook,
@@ -23,10 +25,10 @@ import {
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
-  FORBIDDEN,
   failure,
+  jsonAnswer,
+  jsonBody,
   KEY_LIMITED,
-  MEMBER_ERRORS,
   NOT_FOUND,
   okContent,
   ROLE_WRITE_ERRORS,
@@ -34,9 +36,15 @@ import {
 import type { Images } from "./images.ts";
 import { conversationView, messageView } from "./inbox.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
-import { authorNames, findConversation, findMessage } from "./messages.ts";
+import {
+  authorNames,
+  findConversation,
+  findConversations,
+  findMessage,
+  findMessages,
+} from "./messages.ts";
 import { retryDelayMs } from "./retry.ts";
-import { allowed } from "./team.ts";
+import { requireSetUp, SETUP_DENIED } from "./team.ts";
 import { DAY_MS } from "./time.ts";
 
 /** At most this many webhooks per workspace. */
@@ -45,7 +53,7 @@ const WEBHOOK_LIMIT = 5;
 const REQUEST_TIMEOUT_MS = 10_000;
 /** The first retry waits 30 seconds, doubling to an hour: 30 attempts last about a day. */
 export const WEBHOOK_MAX_ATTEMPTS = 30;
-const DELIVERIES_SHOWN = 20;
+export const DELIVERIES_SHOWN = 20;
 const ERROR_MAX = 200;
 /** The type of the event that "Send test" sends. It is never stored. */
 const TEST_TYPE = "webhook.test";
@@ -103,7 +111,7 @@ const REFUSED_ADDRESS =
 const WRONG_SCHEME = "Dinghy cannot use this webhook URL. Use an HTTPS address.";
 
 /** Why this address cannot take webhooks, from the address alone, or null. */
-function endpointProblem(url: URL, policy: WebhookPolicy): string | null {
+export function endpointProblem(url: URL, policy: WebhookPolicy): string | null {
   if (url.protocol !== "https:" && !(policy.allowPrivate && url.protocol === "http:")) {
     return WRONG_SCHEME;
   }
@@ -114,7 +122,7 @@ function endpointProblem(url: URL, policy: WebhookPolicy): string | null {
 }
 
 /** Resolves a name the way a request would, and refuses it if any address it gives is private. */
-function guardedLookup(policy: WebhookPolicy): LookupFunction {
+export function guardedLookup(policy: WebhookPolicy): LookupFunction {
   return (hostname, options, callback) => {
     dnsLookup(hostname, { ...options, all: true }, (error, addresses: LookupAddress[]) => {
       if (error !== null) return callback(error, []);
@@ -165,6 +173,48 @@ interface SendResult {
   status: number | null;
   /** Why it did not reach a 2xx answer, or null when it did. */
   error: string | null;
+  /** The start of a refusing answer's body, so Settings can show why. Null for anything else. */
+  excerpt: string | null;
+}
+
+const REFUSED_BY_RECEIVER =
+  "The receiving server refused the event. Check its logs and webhook settings.";
+// Control characters but tab and newline, which a log or a JSON error may hold.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: these are what it removes
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+
+/** The body's first bytes as text a person can read: UTF-8, no control characters, no cut letter. */
+export function responseExcerpt(bytes: Buffer): string | null {
+  const text = bytes
+    .subarray(0, RESPONSE_EXCERPT_MAX)
+    .toString("utf8")
+    .replace(/\uFFFD$/, "")
+    .replace(CONTROL_CHARACTERS, "")
+    .trim();
+  return text === "" ? null : text;
+}
+
+/**
+ * Reads at most RESPONSE_EXCERPT_MAX bytes of a refusing answer, then drops the connection, so a
+ * receiver that answers with a large or endless body costs no memory.
+ */
+function readExcerpt(response: IncomingMessage): Promise<string | null> {
+  return new Promise((resolve) => {
+    const parts: Buffer[] = [];
+    let size = 0;
+    const finish = () => {
+      response.destroy();
+      resolve(responseExcerpt(Buffer.concat(parts)));
+    };
+    response.on("data", (part: Buffer) => {
+      parts.push(part.subarray(0, RESPONSE_EXCERPT_MAX - size));
+      size += part.length;
+      if (size >= RESPONSE_EXCERPT_MAX) finish();
+    });
+    response.on("end", finish);
+    response.on("close", finish);
+    response.on("error", finish);
+  });
 }
 
 /**
@@ -181,7 +231,9 @@ function sendWebhook(
 ): Promise<SendResult> {
   const target = URL.canParse(url) ? new URL(url) : null;
   const problem = target === null ? WRONG_SCHEME : endpointProblem(target, policy);
-  if (target === null || problem !== null) return Promise.resolve({ status: null, error: problem });
+  if (target === null || problem !== null) {
+    return Promise.resolve({ status: null, error: problem, excerpt: null });
+  }
   const send = target.protocol === "https:" ? httpsRequest : httpRequest;
   return new Promise((resolve) => {
     const request = send(
@@ -199,15 +251,15 @@ function sendWebhook(
       },
       (response) => {
         const status = response.statusCode ?? null;
-        response.destroy();
-        const ok = status !== null && status >= 200 && status < 300;
-        resolve({
-          status,
-          // The delivery shows the status beside this, so the words need not repeat it.
-          error: ok
-            ? null
-            : "The receiving server refused the event. Check its logs and webhook settings.",
-        });
+        if (status !== null && status >= 200 && status < 300) {
+          response.destroy();
+          resolve({ status, error: null, excerpt: null });
+          return;
+        }
+        // The delivery shows the status beside this, so the words need not repeat it.
+        void readExcerpt(response).then((excerpt) =>
+          resolve({ status, error: REFUSED_BY_RECEIVER, excerpt }),
+        );
       },
     );
     request.on("error", (error: Error & { code?: unknown }) => {
@@ -217,7 +269,7 @@ function sendWebhook(
           : error.name === "AbortError" || error.name === "TimeoutError"
             ? `The receiving server did not respond within ${timeoutMs / 1000} seconds. Ask your developer to check its response time.`
             : `Dinghy could not connect to the receiving server. Ask your developer to check the address, HTTPS certificate, and server availability. Details: ${typeof error.code === "string" ? `${error.code}: ` : ""}${error.message}`;
-      resolve({ status: null, error: reason.slice(0, ERROR_MAX) });
+      resolve({ status: null, error: reason.slice(0, ERROR_MAX), excerpt: null });
     });
     request.end(body);
   });
@@ -271,23 +323,18 @@ const Delivery = z
     attempts: z.number().int(),
     lastStatus: z.number().int().nullable(),
     lastError: z.string().nullable(),
+    // The start of the receiver's last refusing answer, up to 2 KB, with control characters removed.
+    responseExcerpt: z.string().nullable(),
+    // The delivery this one sends again, when it is a replay.
+    replayOf: z.string().nullable(),
+    // When someone replayed it, or null. Settings shows this time for a replay.
+    replayedAt: z.string().nullable(),
+    // When the change happened, as the payload says.
     createdAt: z.string(),
     finishedAt: z.string().nullable(),
   })
   .openapi("WebhookDelivery");
 
-const json = <T extends z.ZodType>(schema: T) => ({
-  required: true,
-  content: { "application/json": { schema } },
-});
-const answer = <T extends z.ZodType>(description: string, schema: T) => ({
-  description,
-  content: { "application/json": { schema } },
-});
-const denied = {
-  ...MEMBER_ERRORS,
-  403: errorAnswer("forbidden: this role, or a Conversations API key, may not do this"),
-};
 const BAD_ENDPOINT_ANSWER = {
   400: errorAnswer(
     "invalid_request: the request is not valid. bad_endpoint: the URL is not https, or it is a private address on a server that does not allow them",
@@ -298,12 +345,12 @@ const listRoute = createRoute({
   method: "get",
   path: PREFIX,
   security: SESSION_OR_SETUP_KEY,
-  summary: "List the workspace's webhooks. Owners, admins and Setup API keys only",
+  summary: "List the workspace's webhooks. Owners, admins and Full access (`setup`) API keys only",
   request: { params: workspaceParams },
   responses: {
     ...KEY_LIMITED,
-    200: answer("The webhooks", z.object({ webhooks: z.array(Webhook) })),
-    ...denied,
+    200: jsonAnswer("The webhooks", z.object({ webhooks: z.array(Webhook) })),
+    ...SETUP_DENIED,
   },
 });
 
@@ -314,11 +361,11 @@ const createWebhookRoute = createRoute({
   summary: "Add a webhook. Its signing secret is shown only in this response",
   request: {
     params: workspaceParams,
-    body: json(z.object({ url: Url, events: EventList, enabled: z.boolean().default(true) })),
+    body: jsonBody(z.object({ url: Url, events: EventList, enabled: z.boolean().default(true) })),
   },
   responses: {
     ...KEY_LIMITED,
-    201: answer("The webhook, with its signing secret", WithSecret),
+    201: jsonAnswer("The webhook, with its signing secret", WithSecret),
     ...ROLE_WRITE_ERRORS,
     ...BAD_ENDPOINT_ANSWER,
     409: errorAnswer(`webhook_limit: the workspace has ${WEBHOOK_LIMIT} webhooks already`),
@@ -332,7 +379,7 @@ const changeRoute = createRoute({
   summary: "Change a webhook's URL, events, or whether it is on",
   request: {
     params: webhookParams,
-    body: json(
+    body: jsonBody(
       z.object({
         url: Url.optional(),
         events: EventList.optional(),
@@ -342,7 +389,7 @@ const changeRoute = createRoute({
   },
   responses: {
     ...KEY_LIMITED,
-    200: answer("The webhook", Webhook),
+    200: jsonAnswer("The webhook", Webhook),
     ...ROLE_WRITE_ERRORS,
     ...BAD_ENDPOINT_ANSWER,
   },
@@ -370,7 +417,7 @@ const rotateRoute = createRoute({
   request: { params: webhookParams },
   responses: {
     ...KEY_LIMITED,
-    200: answer("The webhook, with its new secret", WithSecret),
+    200: jsonAnswer("The webhook, with its new secret", WithSecret),
     ...ROLE_WRITE_ERRORS,
   },
 });
@@ -383,7 +430,7 @@ const testRoute = createRoute({
   request: { params: webhookParams },
   responses: {
     ...KEY_LIMITED,
-    200: answer(
+    200: jsonAnswer(
       "What the webhook answered",
       z.object({
         delivered: z.boolean(),
@@ -403,8 +450,22 @@ const deliveriesRoute = createRoute({
   request: { params: webhookParams },
   responses: {
     ...KEY_LIMITED,
-    200: answer("The deliveries, newest first", z.object({ deliveries: z.array(Delivery) })),
-    ...denied,
+    200: jsonAnswer("The deliveries, newest first", z.object({ deliveries: z.array(Delivery) })),
+    ...SETUP_DENIED,
+  },
+});
+
+const replayRoute = createRoute({
+  method: "post",
+  path: `${PREFIX}/{webhookId}/deliveries/{deliveryId}/replay`,
+  security: SESSION_OR_SETUP_KEY,
+  summary:
+    "Send a delivery's event again, now, as a new delivery with the same `Dinghy-Event-Id`. It is retried like any other",
+  request: { params: webhookParams.extend({ deliveryId: z.uuid() }) },
+  responses: {
+    ...KEY_LIMITED,
+    201: jsonAnswer("The new delivery", z.object({ delivery: Delivery })),
+    ...ROLE_WRITE_ERRORS,
   },
 });
 
@@ -427,9 +488,21 @@ const view = (row: WebhookRow, createdBy: Creator) => ({
   createdAt: row.createdAt.toISOString(),
 });
 
-/** The actor's ID for the audit log and a webhook's creator. */
-const actorFields = (actor: Actor) =>
-  actor.kind === "operator" ? { operatorId: actor.operatorId } : { apiKeyId: actor.apiKeyId };
+type DeliveryRow = typeof webhookDelivery.$inferSelect;
+const deliveryView = (row: DeliveryRow) => ({
+  id: row.id,
+  eventId: row.eventId,
+  type: row.type,
+  status: row.finishedAt === null ? ("pending" as const) : (row.outcome ?? "failed"),
+  attempts: row.attempts,
+  lastStatus: row.lastStatus,
+  lastError: row.lastError,
+  responseExcerpt: row.responseExcerpt,
+  replayOf: row.replayOf,
+  replayedAt: row.replayedAt?.toISOString() ?? null,
+  createdAt: row.createdAt.toISOString(),
+  finishedAt: row.finishedAt?.toISOString() ?? null,
+});
 
 const ofWebhook = (workspaceId: string, webhookId: string) =>
   and(eq(webhook.workspaceId, workspaceId), eq(webhook.id, webhookId));
@@ -595,28 +668,82 @@ export function createWebhooks({
       if (row === undefined) return null;
       const eventId = randomUUID();
       const body = webhookBody(eventId, TEST_TYPE, new Date(), workspaceId, {});
-      const result = await sendWebhook(row.url, row.secret, eventId, body, policy);
-      return { delivered: result.error === null, ...result };
+      const { status, error } = await sendWebhook(row.url, row.secret, eventId, body, policy);
+      return { delivered: error === null, status, error };
+    },
+
+    /** The webhook's newest deliveries. None for a webhook that is not in this workspace. */
+    async deliveries(workspaceId: string, webhookId: string) {
+      const rows = await withWorkspace(db, workspaceId, (tx) =>
+        tx
+          .select()
+          .from(webhookDelivery)
+          .where(
+            and(
+              eq(webhookDelivery.workspaceId, workspaceId),
+              eq(webhookDelivery.webhookId, webhookId),
+            ),
+          )
+          .orderBy(desc(sql`coalesce(${webhookDelivery.replayedAt}, ${webhookDelivery.createdAt})`))
+          .limit(DELIVERIES_SHOWN),
+      );
+      return rows.map(deliveryView);
+    },
+
+    /**
+     * A new delivery of the same event, due now, with the same event ID, so a receiver that kept the
+     * first can drop it. Null when the delivery is not this webhook's.
+     */
+    async replay(workspaceId: string, actor: Actor, webhookId: string, deliveryId: string) {
+      const [made] = await withWorkspace(db, workspaceId, async (tx) => {
+        const [found] = await tx
+          .select()
+          .from(webhookDelivery)
+          .where(
+            and(
+              eq(webhookDelivery.workspaceId, workspaceId),
+              eq(webhookDelivery.webhookId, webhookId),
+              eq(webhookDelivery.id, deliveryId),
+            ),
+          );
+        if (found === undefined) return [];
+        const { eventId, type, conversationId, messageId } = found;
+        return tx
+          .insert(webhookDelivery)
+          .values({
+            workspaceId,
+            webhookId,
+            eventId,
+            type,
+            conversationId,
+            messageId,
+            replayOf: deliveryId,
+            // The change keeps its own time in the payload. The replay's retries count from now.
+            createdAt: found.createdAt,
+            replayedAt: new Date(),
+          })
+          .returning();
+      });
+      if (made === undefined) return null;
+      audit(logger, "webhook.replayed", {
+        workspaceId,
+        ...actorFields(actor),
+        webhookId,
+        deliveryId,
+      });
+      return deliveryView(made);
     },
   };
 }
 export type Webhooks = ReturnType<typeof createWebhooks>;
 
-/** Owners and admins, and a Setup key, which the member check let through. */
-const mayManage = (actor: Actor, role: Parameters<typeof allowed.settings>[0]) =>
-  actor.kind === "key" || allowed.settings(role);
-
-export function registerWebhookRoutes(
-  app: App,
-  { db, webhooks }: { db: Database; webhooks: Webhooks },
-): void {
+export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhooks }): void {
+  requireSetUp(app, [listRoute, changeRoute, rotateRoute, testRoute, deliveriesRoute, replayRoute]);
   app.openapi(listRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     return c.json({ webhooks: await webhooks.list(c.get("memberWorkspaceId")) }, 200);
   });
 
   app.openapi(createWebhookRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const made = await webhooks.create(
       c.get("memberWorkspaceId"),
       c.get("actor"),
@@ -628,7 +755,6 @@ export function registerWebhookRoutes(
   });
 
   app.openapi(changeRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const changed = await webhooks.change(
       c.get("memberWorkspaceId"),
       c.get("actor"),
@@ -641,14 +767,12 @@ export function registerWebhookRoutes(
   });
 
   app.openapi(deleteRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     await webhooks.remove(c.get("memberWorkspaceId"), c.get("actor"), webhookId);
     return c.json({ ok: true as const }, 200);
   });
 
   app.openapi(rotateRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     const rotated = await webhooks.rotate(c.get("memberWorkspaceId"), c.get("actor"), webhookId);
     if (rotated === null) return c.json(NOT_FOUND, 404);
@@ -656,7 +780,6 @@ export function registerWebhookRoutes(
   });
 
   app.openapi(testRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     const result = await webhooks.test(c.get("memberWorkspaceId"), webhookId);
     if (result === null) return c.json(NOT_FOUND, 404);
@@ -664,45 +787,87 @@ export function registerWebhookRoutes(
   });
 
   app.openapi(deliveriesRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
     const { webhookId } = c.req.valid("param");
-    const rows = await withWorkspace(db, id, (tx) =>
-      tx
-        .select()
-        .from(webhookDelivery)
-        .where(and(eq(webhookDelivery.workspaceId, id), eq(webhookDelivery.webhookId, webhookId)))
-        .orderBy(desc(webhookDelivery.createdAt))
-        .limit(DELIVERIES_SHOWN),
-    );
     return c.json(
-      {
-        deliveries: rows.map((row) => ({
-          id: row.id,
-          eventId: row.eventId,
-          type: row.type,
-          status: row.finishedAt === null ? ("pending" as const) : (row.outcome ?? "failed"),
-          attempts: row.attempts,
-          lastStatus: row.lastStatus,
-          lastError: row.lastError,
-          createdAt: row.createdAt.toISOString(),
-          finishedAt: row.finishedAt?.toISOString() ?? null,
-        })),
-      },
+      { deliveries: await webhooks.deliveries(c.get("memberWorkspaceId"), webhookId) },
       200,
     );
+  });
+
+  app.openapi(replayRoute, async (c) => {
+    const { webhookId, deliveryId } = c.req.valid("param");
+    const delivery = await webhooks.replay(
+      c.get("memberWorkspaceId"),
+      c.get("actor"),
+      webhookId,
+      deliveryId,
+    );
+    if (delivery === null) return c.json(NOT_FOUND, 404);
+    return c.json({ delivery }, 201);
   });
 }
 
 // The worker's part -------------------------------------------------------------------------------
 
-/** The webhook events one feed event makes: a first message also starts its conversation. */
-function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
+/**
+ * The webhook events one feed event makes: a first message also starts its conversation, and a
+ * handler change is a handoff or a give-back. A person's reply that took a conversation makes
+ * none: `message.created` tells it.
+ */
+export function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
   if (kind === "message.created") {
     const created = (payload as MessagePayload).conversationCreated === true;
     return created ? ["conversation.created", "message.created"] : ["message.created"];
   }
-  return WEBHOOK_EVENTS.some((one) => one === kind) ? [kind as WebhookEvent] : [];
+  if (kind === "conversation.handled") {
+    const { change } = payload as HandledPayload;
+    if (change === "handoff") return ["conversation.handoff"];
+    return change === "given_back" ? ["conversation.given_back"] : [];
+  }
+  return isWebhookEvent(kind) ? [kind] : [];
+}
+
+export const isWebhookEvent = (name: string): name is WebhookEvent =>
+  WEBHOOK_EVENTS.some((one) => one === name);
+
+/** What one webhook event names: its conversation, and its message. */
+interface WebhookSubject {
+  conversationId: string;
+  messageId: string | null;
+}
+
+/**
+ * The `data` of webhook events, in the same shapes as the operator API: the conversation, and the
+ * message each names, in the subjects' order. It reads each kind of row in one query. A string says
+ * why there is nothing to send. The webhooks and the key event stream both build their bodies with
+ * this.
+ */
+export async function webhookData(
+  tx: Transaction,
+  images: Images | undefined,
+  workspaceId: string,
+  subjects: WebhookSubject[],
+): Promise<(Record<string, unknown> | string)[]> {
+  const conversations = await findConversations(
+    tx,
+    workspaceId,
+    subjects.map((one) => one.conversationId),
+  );
+  const messages = await findMessages(
+    tx,
+    workspaceId,
+    subjects.flatMap((one) => (one.messageId === null ? [] : [one.messageId])),
+  );
+  const names = await authorNames(tx, workspaceId, [...messages.values()]);
+  return subjects.map((subject) => {
+    const found = conversations.get(subject.conversationId);
+    if (found === undefined) return "The conversation was deleted.";
+    const data: Record<string, unknown> = { conversation: conversationView(found, null) };
+    if (subject.messageId === null) return data;
+    const stored = messages.get(subject.messageId);
+    if (stored === undefined) return "The message was deleted.";
+    return { ...data, message: messageView(images, workspaceId, names, stored) };
+  });
 }
 
 /**
@@ -728,7 +893,10 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     if (found === undefined) return false;
     const { workspaceId, seq } = found;
     await enterWorkspace(tx, workspaceId);
-    const payload = found.payload as { conversationId?: string; messageId?: string };
+    const payload = found.payload as {
+      conversationId?: string;
+      messageId?: string;
+    };
     const types = webhookTypes(found.kind, found.payload);
     const hooks = await tx
       .select({ id: webhook.id, events: webhook.events })
@@ -829,7 +997,7 @@ async function planWebhook(
   images: Images | undefined,
   row: ClaimedWebhook,
 ): Promise<
-  { url: string; secret: string; eventId: string; body: string; createdAt: Date } | string
+  { url: string; secret: string; eventId: string; body: string; retryFrom: Date } | string
 > {
   return withWorkspace(db, row.workspaceId, async (tx) => {
     const [delivery] = await tx
@@ -839,6 +1007,7 @@ async function planWebhook(
         conversationId: webhookDelivery.conversationId,
         messageId: webhookDelivery.messageId,
         createdAt: webhookDelivery.createdAt,
+        replayedAt: webhookDelivery.replayedAt,
         url: webhook.url,
         secret: webhook.secret,
         enabled: webhook.enabled,
@@ -856,22 +1025,15 @@ async function planWebhook(
     if (!delivery.enabled) {
       return "Dinghy stopped this delivery because the webhook is off. Turn it on to receive future events.";
     }
-    const found = await findConversation(tx, row.workspaceId, delivery.conversationId);
-    if (found === null) return "The conversation was deleted.";
-    const data: Record<string, unknown> = {
-      conversation: conversationView(found, null),
-    };
-    if (delivery.messageId !== null) {
-      const stored = await findMessage(tx, row.workspaceId, delivery.messageId);
-      if (stored === null) return "The message was deleted.";
-      const names = await authorNames(tx, row.workspaceId, [stored]);
-      data.message = messageView(images, row.workspaceId, names, stored);
-    }
+    const subject = { conversationId: delivery.conversationId, messageId: delivery.messageId };
+    const [data] = await webhookData(tx, images, row.workspaceId, [subject]);
+    // One subject has one answer.
+    if (typeof data !== "object") return data ?? "The conversation was deleted.";
     return {
       url: delivery.url,
       secret: delivery.secret,
       eventId: delivery.eventId,
-      createdAt: delivery.createdAt,
+      retryFrom: delivery.replayedAt ?? delivery.createdAt,
       body: webhookBody(delivery.eventId, delivery.type, delivery.createdAt, row.workspaceId, data),
     };
   });
@@ -891,6 +1053,7 @@ async function finishWebhook(
       claimedUntil: null,
       lastStatus: result.status,
       lastError: result.error,
+      responseExcerpt: result.excerpt,
     })
     .where(held(row));
 }
@@ -911,7 +1074,7 @@ export async function deliverWebhook(
 ): Promise<void> {
   const plan = await planWebhook(db, images, row);
   if (typeof plan === "string") {
-    await finishWebhook(db, row, "failed", { status: null, error: plan });
+    await finishWebhook(db, row, "failed", { status: null, error: plan, excerpt: null });
     return;
   }
   const result = await sendWebhook(plan.url, plan.secret, plan.eventId, plan.body, policy);
@@ -927,7 +1090,7 @@ export async function deliverWebhook(
     return;
   }
   const wait = retryDelayMs(retryMs, row.attempts);
-  const expired = Date.now() + wait - plan.createdAt.getTime() > DAY_MS;
+  const expired = Date.now() + wait - plan.retryFrom.getTime() > DAY_MS;
   if (row.attempts >= WEBHOOK_MAX_ATTEMPTS || expired) {
     await finishWebhook(db, row, "failed", result);
     return;
@@ -939,6 +1102,7 @@ export async function deliverWebhook(
       nextAttemptAt: new Date(Date.now() + wait),
       lastStatus: result.status,
       lastError: result.error,
+      responseExcerpt: result.excerpt,
     })
     .where(held(row));
 }
@@ -947,6 +1111,7 @@ export async function deliverWebhook(
 export async function abandonWebhook(db: Database, row: ClaimedWebhook): Promise<void> {
   await finishWebhook(db, row, "failed", {
     status: null,
+    excerpt: null,
     error:
       "Dinghy stopped retrying after repeated interruptions. Check whether the receiving app processed the event before sending it again.",
   });

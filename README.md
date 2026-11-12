@@ -18,6 +18,8 @@ The installer asks a few questions, installs Docker if it is missing, gets an HT
 
 It has text and images in both directions, verified users, several operators, web push and email alerts, and export and import.
 
+An AI agent can install it on your site and answer chats through its MCP server, with OAuth in the browser, drafts that a person approves, and a handoff to your team. [Use Dinghy with AI agents](docs/agents.md) has the steps.
+
 One Hetzner CX23 ran the full install with 5,000 open streams in under 600 MB. [The measurements](docs/measurements.md) have the numbers and their limits.
 
 ## Self-hosted or cloud
@@ -37,6 +39,8 @@ The code is the same. A paid cloud plan is planned, and it is not open yet.
 - [Self-hosting](docs/self-hosting.md), including settings, backups, restore and upgrades
 - [Add the chat to your website](docs/add-to-your-site.md)
 - [Use the operator app](docs/operator-guide.md)
+- [Use Dinghy with AI agents](docs/agents.md)
+- [API](docs/api.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Run on Coolify or Dokploy](docs/deploy-coolify-dokploy.md), not tested yet
 - [Changelog](CHANGELOG.md)

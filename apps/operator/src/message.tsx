@@ -120,7 +120,7 @@ export interface InfoLine {
   createdAt: string;
   /** Who wrote it, as the thread names them. */
   author: string;
-  via: "api" | "mcp" | null;
+  via: "api" | "mcp" | "draft" | null;
   /** A reply, whose receipt the info shows. Null for a visitor's message. */
   receipt: { isRead: boolean } | null;
 }
@@ -151,7 +151,9 @@ export function MessageInfo({
       .catch(() => setReceipt([t(isRead ? "infoRead" : "infoNotSeen")]));
   }, [api, conversationId, line.id, wantsReceipt, isRead]);
   const via: TextId | null =
-    line.via === "api" ? "infoViaApi" : line.via === "mcp" ? "infoViaMcp" : null;
+    line.via === null
+      ? null
+      : ({ api: "infoViaApi", mcp: "infoViaMcp", draft: "infoViaDraft" } as const)[line.via];
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
     <dialog

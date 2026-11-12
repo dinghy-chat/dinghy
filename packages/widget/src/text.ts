@@ -52,6 +52,7 @@ const en = {
   quoteDeleted: "Original message deleted",
   quoteImage: "Image",
   messageDeleted: "Message deleted",
+  botTyping: "{name} is typing…",
 };
 
 export type TextId = keyof typeof en;

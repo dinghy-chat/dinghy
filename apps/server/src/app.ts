@@ -21,8 +21,10 @@ import { AccountDeletedError, type Database, type Transaction } from "./db/tenan
 import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { registerGetStartedRoutes } from "./get-started.ts";
+import { registerHandlingRoutes } from "./handling.ts";
 import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
+import { registerKeyEvents } from "./key-events.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { type Live, noLive } from "./live.ts";
 import { createLiveVisitors, registerLiveVisitorRoutes } from "./live-visitors.ts";
@@ -30,6 +32,8 @@ import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
 import { registerModerationRoutes } from "./moderation.ts";
+import { oauthIssuer, registerOAuth, resourceMetadataUrl } from "./oauth.ts";
+import { type FetchClientDocument, fetchClientDocument } from "./oauth-client.ts";
 import { registerOperatorRoutes } from "./operator.ts";
 import { registerOperatorApp } from "./operator-app.ts";
 import {
@@ -41,8 +45,10 @@ import {
 import { imageUrls, registerPublicImages } from "./public-images.ts";
 import type { Push } from "./push.ts";
 import { createRateLimit, createSlots } from "./rate-limit.ts";
+import { createSetup, registerSetupRoutes } from "./setup.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
+import { createTestVisitors, registerTestVisitorRoutes } from "./test-visitors.ts";
 import { MINUTE_MS } from "./time.ts";
 import { registerExportRoute } from "./transfer.ts";
 import {
@@ -53,7 +59,11 @@ import {
 } from "./webhooks.ts";
 import { registerWidgetRoutes, type WidgetToken } from "./widget.ts";
 import { registerWidgetFiles } from "./widget-files.ts";
-import { registerWidgetAppearance, registerWidgetSettingsRoutes } from "./widget-settings.ts";
+import {
+  createAppearance,
+  registerWidgetAppearance,
+  registerWidgetSettingsRoutes,
+} from "./widget-settings.ts";
 import { lastWorkerPass } from "./worker.ts";
 import { registerWorkspaceDelete } from "./workspace-delete.ts";
 import type { WidgetWorkspace } from "./workspaces.ts";
@@ -98,6 +108,8 @@ export interface AppOptions {
   webhooks?: WebhookPolicy;
   /** The country of an address, for the live view. Without it, every country is unknown. */
   countryOf?: CountryOf;
+  /** Fetches an OAuth client's metadata document. Tests replace it, because it needs the internet. */
+  fetchClientDocument?: FetchClientDocument;
 }
 
 export interface AppEnv {
@@ -212,6 +224,7 @@ export function createApp({
   publicUrl,
   webhooks = PUBLIC_ONLY,
   countryOf = NO_COUNTRIES,
+  fetchClientDocument: fetchDocument = fetchClientDocument,
 }: AppOptions): App {
   const app: App = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -352,6 +365,7 @@ export function createApp({
   const visitorPresence = createVisitorPresence(valkey, logger, presenceTtlMs);
   const liveVisitors = createLiveVisitors(valkey, logger);
   const ownOrigin = publicUrl === undefined ? undefined : new URL(publicUrl).origin;
+  const setup = createSetup({ db, logger, valkey, liveVisitors });
   // Before the widget routes, because any site may read it.
   registerWidgetAppearance(app, db, urls, rateLimit);
   registerWidgetRoutes(app, {
@@ -369,6 +383,7 @@ export function createApp({
     liveVisitors,
     countryOf,
     ownOrigin,
+    sites: setup,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
   registerWidgetPresence(app, db, presence, alerts?.emailAvailable ?? false);
@@ -421,23 +436,61 @@ export function createApp({
       visitorPresence,
     });
     registerApiKeyRoutes(app, db, logger);
+    // On https or a loopback address only, because OAuth 2.1 allows no other http issuer.
+    const issuer = oauthIssuer(String(auth.options.baseURL));
+    if (issuer !== null) {
+      registerOAuth(app, {
+        db,
+        logger,
+        rateLimit,
+        valkey,
+        secret: auth.options.secret ?? ipSecret,
+        issuer,
+        fetchDocument,
+      });
+    }
     const webhookManager = createWebhooks({ db, logger, policy: webhooks });
-    registerWebhookRoutes(app, { db, webhooks: webhookManager });
+    registerWebhookRoutes(app, { webhooks: webhookManager });
+    registerHandlingRoutes(app, { db, images, live });
+    const serverUrl = new URL(String(auth.options.baseURL)).origin;
+    registerSetupRoutes(app, setup, serverUrl);
+    const testVisitors = createTestVisitors({ db, live, rateLimit });
+    registerTestVisitorRoutes(app, testVisitors);
+    const inbox = createInbox({
+      copyReply: cloud?.copyReply,
+      founderPicture,
+      db,
+      images,
+      live,
+      visitorPresence,
+    });
     registerMcp(app, {
       db,
       webhooks: webhookManager,
       live,
       rateLimit,
-      inbox: createInbox({
-        copyReply: cloud?.copyReply,
-        founderPicture,
-        db,
-        images,
-        live,
-        visitorPresence,
-      }),
-      publicOrigin: new URL(String(auth.options.baseURL)).origin,
+      inbox,
+      publicOrigin: serverUrl,
       version,
+      setup: {
+        setup,
+        appearance: createAppearance(db, urls),
+        webhooks: webhookManager,
+        testVisitors,
+        serverUrl,
+      },
+      chat: { db, images, inbox, limits, live, liveVisitors, presence, visitorPresence },
+      resourceMetadata: issuer === null ? null : resourceMetadataUrl(issuer),
+    });
+    registerKeyEvents(app, {
+      db,
+      images,
+      limits,
+      live,
+      logger,
+      rateLimit,
+      stream,
+      publicOrigin: serverUrl,
     });
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, db, presence);

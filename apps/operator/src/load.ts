@@ -45,7 +45,7 @@ export function useLatestLoad(load: () => Promise<void>): () => void {
  * What a load gave: its answer, or why it failed, with ways to replace it or load it again.
  * `setData` takes an update function too, for changes that may finish in any order.
  */
-interface Loaded<T> {
+export interface Loaded<T> {
   data: T | null;
   failure: TextId | null;
   setData: Dispatch<SetStateAction<T | null>>;

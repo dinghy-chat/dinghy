@@ -4,6 +4,7 @@ import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Conversation, Member, OpenCounts, WorkspaceApi } from "./api.ts";
 import type { Draft } from "./drafts.ts";
 import { dayTime, shortTime } from "./format.ts";
+import { rowHandler } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
 import { emptyLook, ListFilters, type Status, type Who } from "./inbox-filters.tsx";
 import { EmptyArt } from "./scene.tsx";
@@ -43,6 +44,8 @@ function ConversationRow({
   const waits = isWaiting(conversation);
   const { snooze } = conversation;
   const closed = showClosed && conversation.status === "closed";
+  const isTest = conversation.visitor.isTest;
+  const handler = rowHandler(conversation, assignee);
   // The open conversation shows its draft in the composer, and is read. A blank draft is no draft.
   const shownDraft = selected || draft?.trim() === "" ? undefined : draft;
   const unread = conversation.unread && !selected;
@@ -79,7 +82,12 @@ function ConversationRow({
           ) : (
             <span className="preview">{preview}</span>
           )}
-          {(waits || snooze !== null || closed || replying !== null || assignee !== undefined) && (
+          {(waits ||
+            snooze !== null ||
+            closed ||
+            isTest ||
+            replying !== null ||
+            handler !== null) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
               {snooze !== null && (
@@ -90,8 +98,14 @@ function ConversationRow({
                 </span>
               )}
               {closed && <span className="chip">{t("closed")}</span>}
-              {assignee !== undefined && <span className="chip">{assignee.name}</span>}
+              {isTest && (
+                <span className="chip test">
+                  <Icon name="flask" size={12} />
+                  {t("testChip")}
+                </span>
+              )}
               {replying !== null && <em>{replying}</em>}
+              {handler}
             </span>
           )}
         </span>

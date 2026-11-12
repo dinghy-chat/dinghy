@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
 import type { Conversation, Member, Snooze, WelcomeChat } from "./api.ts";
+import { HandlerSelect } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
-import { Menu, type MenuItem, Select } from "./popup.tsx";
+import { Menu, type MenuItem } from "./popup.tsx";
 import { SNOOZE_CHOICES } from "./snooze.ts";
 import { type TextId, t } from "./text.ts";
 import { Avatar } from "./ui.tsx";
@@ -66,6 +67,7 @@ export function ThreadHead({
   welcome,
   online,
   members,
+  meId,
   mayDeleteAnyone,
   onBack,
   onAssign,
@@ -74,6 +76,8 @@ export function ThreadHead({
   onBlocked,
   onDelete,
   onTranscript,
+  canGiveBack,
+  onGiveBack,
   emailAvailable,
   panel,
 }: {
@@ -84,6 +88,7 @@ export function ThreadHead({
   /** A widget stream of the visitor's is open, or null when unknown. */
   online: boolean | null;
   members: Member[];
+  meId: string;
   /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
   mayDeleteAnyone: boolean;
   onBack(): void;
@@ -94,20 +99,24 @@ export function ThreadHead({
   onBlocked(blocked: boolean): void;
   onDelete(): void;
   onTranscript(): void;
+  /** A person handles it and a bot took part, so the ⋯ menu offers to give it back. */
+  canGiveBack: boolean;
+  /** Gives it back to the bot: nobody is assigned and the bot may answer again. */
+  onGiveBack(): void;
   /** This server sends email, so a transcript can go. */
   emailAvailable: boolean;
 }) {
   const closed = conversation.status === "closed";
   const { blocked } = conversation.visitor;
-  const assignee = members.some((member) => member.id === conversation.assigneeOperatorId)
-    ? (conversation.assigneeOperatorId ?? "")
-    : "";
   const noEmail = !emailAvailable
     ? t("transcriptNoServer")
     : conversation.visitor.email === null
       ? t("transcriptNoEmail")
       : undefined;
   const more: MenuItem[] = [
+    ...(canGiveBack
+      ? [{ label: t("giveBack"), lead: <Icon name="robot" size={18} />, onSelect: onGiveBack }]
+      : []),
     {
       label: blocked ? t("unblockVisitor") : t("blockVisitor"),
       lead: <Icon name="prohibit" size={18} />,
@@ -158,20 +167,13 @@ export function ThreadHead({
       </div>
       <div className="actions">
         {!(panel?.open ?? false) && (
-          <Select
-            label={t("assignTo")}
-            className="assignee"
+          <HandlerSelect
+            conversation={conversation}
+            members={members}
+            meId={meId}
             side="end"
-            value={assignee}
-            choices={[
-              { value: "", label: t("unassigned"), lead: <span className="avatar nobody" /> },
-              ...members.map((member) => ({
-                value: member.id,
-                label: member.name,
-                lead: <Avatar name={member.name} pictureUrl={member.pictureUrl} />,
-              })),
-            ]}
-            onChange={(value) => onAssign(value === "" ? null : value)}
+            onAssign={onAssign}
+            onGiveBack={onGiveBack}
           />
         )}
         <button

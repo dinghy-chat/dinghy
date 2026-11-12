@@ -34,6 +34,8 @@ interface Visitor extends VisitorIdentity {
   timeZone: string | null;
   /** Only Dinghy Cloud's welcome chat has one: its founder's. */
   pictureUrl: string | null;
+  /** A test visitor that a bot's simulated message made. */
+  isTest: boolean;
 }
 
 /** A page in the visitor's journey, as the widget reported it. */
@@ -116,6 +118,17 @@ export interface Conversation {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: string } | null;
   /** A welcome chat on Dinghy Cloud. */
   welcome: boolean;
+  /**
+   * Who handles it: a bot that took part while no person handles it, the assigned person, or the
+   * team when a person handles it unassigned. Null when no bot took part and no person handles it.
+   */
+  handler:
+    | { kind: "bot"; apiKeyId: string; name: string }
+    | { kind: "person"; operatorId: string; name: string; since: string }
+    | { kind: "team"; since: string }
+    | null;
+  /** The bot that took part last, whoever handles it now. Null when no bot took part. */
+  bot: { apiKeyId: string; name: string } | null;
   /** A visitor message is past this operator's read position. */
   unread: boolean;
   /** Snoozed: it waits for nobody until `until`, or with null until the visitor writes. */
@@ -124,6 +137,19 @@ export interface Conversation {
 
 export interface Snooze {
   until: string | null;
+}
+
+/** A reply that an API key in draft mode wrote. No visitor has seen it. */
+export interface SuggestedReply {
+  id: string;
+  conversationId: string;
+  apiKeyId: string;
+  /** The key's name. */
+  authorName: string;
+  body: string;
+  /** `stale`: the visitor wrote after it. */
+  status: "open" | "stale" | "sent" | "discarded";
+  createdAt: string;
 }
 
 export interface Message {
@@ -152,8 +178,10 @@ export interface Message {
   editedAt: string | null;
   /** Deleted: no body and no image, and the line says so. */
   deleted: boolean;
-  /** A key's reply: through the REST API or through MCP. */
-  via: "api" | "mcp" | null;
+  /** A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft. */
+  via: "api" | "mcp" | "draft" | null;
+  /** A bot's handoff note: the member it handed the conversation to, or null for the team. */
+  handoff: { operatorId: string | null } | null;
   createdAt: string;
 }
 
@@ -244,6 +272,12 @@ export interface Me {
     name: string;
     /** The workspace's logo, for the workspace menu. Null with none. */
     logoUrl: string | null;
+    /** An owner or admin paused every bot: API keys and connected apps may not reply or type. */
+    botsPaused: boolean;
+    /** Who paused the bots, or null when they run or that person is gone. */
+    botsPausedBy: string | null;
+    /** When the bots were paused, or null when they run. */
+    botsPausedAt: string | null;
     active: boolean;
     /** The subscription ended: operators can read and export, and cannot reply. */
     readOnly: boolean;
@@ -315,6 +349,11 @@ export interface ApiKey {
   name: string;
   /** Conversations, or Setup, which also reaches the webhooks. */
   level: ApiKeyLevel;
+  /** `static`, a key made in Settings, or `oauth`, an app that an owner or admin connected. */
+  source: "static" | "oauth";
+  replyMode: ReplyMode;
+  /** A connected app's origin. Null for a static key. */
+  client: ClientOrigin | null;
   createdByName: string | null;
   createdAt: string;
   lastUsedAt: string | null;
@@ -328,10 +367,14 @@ export const WEBHOOK_EVENTS = [
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
+  "conversation.handoff",
+  "conversation.given_back",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export type ApiKeyLevel = "conversations" | "setup";
+/** `send`: replies go to the visitor. `draft`: they wait for a person to send them. */
+export type ReplyMode = "send" | "draft";
 
 export interface Webhook {
   id: string;
@@ -352,6 +395,11 @@ export interface WebhookDelivery {
   /** The HTTP status of the last attempt, or null when it got no answer. */
   lastStatus: number | null;
   lastError: string | null;
+  /** The start of the receiver's last refusing answer, up to 2 KB. */
+  responseExcerpt: string | null;
+  /** The delivery this one sends again, when it is a replay. */
+  replayOf: string | null;
+  replayedAt: string | null;
   createdAt: string;
   finishedAt: string | null;
 }
@@ -515,6 +563,37 @@ export const joinWithInvite = (token: string, name?: string) =>
   post<{ workspaceId: string | null }>("/v1/invites/join", { token, name });
 export const acceptInvite = (token: string) =>
   post<{ workspaceId: string }>("/v1/operator/invites/accept", { token });
+/** What the consent page shows for an OAuth request, or where to send the browser back. */
+/**
+ * Who an OAuth app is, as Dinghy can tell. `cimd`: the host that published its metadata document.
+ * `dcr`: the host or scheme it returns to, which is on this computer when `local`.
+ */
+export interface ClientOrigin {
+  kind: "dcr" | "cimd";
+  host: string;
+  local: boolean;
+}
+
+export type AuthorizeInfo =
+  | {
+      kind: "consent";
+      client: ClientOrigin & { name: string };
+      level: ApiKeyLevel;
+      /** Where this operator is an owner or admin. */
+      workspaces: { id: string; name: string }[];
+    }
+  | { kind: "redirect"; redirectTo: string };
+
+/** `request` is the consent page's query string, as the app sent it. */
+export const authorizeInfo = (request: string) =>
+  call<AuthorizeInfo>(`/v1/operator/oauth/authorize-info${request}`);
+export const approveApp = (
+  workspaceId: string,
+  choice: { request: string; level: ApiKeyLevel; replyMode: ReplyMode },
+) => post<{ redirectTo: string }>(`/v1/operator/workspaces/${workspaceId}/oauth/grants`, choice);
+export const denyApp = (request: string) =>
+  post<{ redirectTo: string }>("/v1/operator/oauth/deny", { request });
+
 export const testPush = () => post<{ sent: number; failed: number }>("/v1/operator/push-test", {});
 
 export function workspaceApi(workspaceId: string) {
@@ -577,8 +656,18 @@ export function workspaceApi(workspaceId: string) {
     deleteContact: (visitorId: string) =>
       call<{ ok: true }>(`${base}/contacts/${visitorId}`, { method: "DELETE" }),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
-    createApiKey: (name: string, level: ApiKeyLevel) =>
-      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, level }),
+    createApiKey: (name: string, level: ApiKeyLevel, replyMode: ReplyMode) =>
+      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, level, replyMode }),
+    setReplyMode: (id: string, replyMode: ReplyMode) =>
+      call<ApiKey>(`${base}/api-keys/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ replyMode }),
+      }),
+    setBotsPaused: (paused: boolean) =>
+      call<{ paused: boolean; pausedBy: string | null }>(`${base}/bots-paused`, {
+        method: "PUT",
+        body: JSON.stringify({ paused }),
+      }),
     revokeApiKey: (id: string) =>
       call<{ ok: true }>(`${base}/api-keys/${id}`, { method: "DELETE" }),
     webhooks: () => call<{ webhooks: Webhook[] }>(`${base}/webhooks`),
@@ -593,6 +682,11 @@ export function workspaceApi(workspaceId: string) {
     testWebhook: (id: string) => post<WebhookTest>(`${base}/webhooks/${id}/test`, {}),
     webhookDeliveries: (id: string) =>
       call<{ deliveries: WebhookDelivery[] }>(`${base}/webhooks/${id}/deliveries`),
+    replayDelivery: (id: string, deliveryId: string) =>
+      post<{ delivery: WebhookDelivery }>(
+        `${base}/webhooks/${id}/deliveries/${deliveryId}/replay`,
+        {},
+      ),
     billing: () => call<BillingState>(`${base}/billing`),
     analytics: (days: AnalyticsDays, timeZone: string) =>
       call<Analytics>(`${base}/analytics?days=${days}&tz=${encodeURIComponent(timeZone)}`),
@@ -723,6 +817,14 @@ export function workspaceApi(workspaceId: string) {
     /** Emails the visitor the whole conversation, through the worker. */
     sendTranscript: (id: string) =>
       call<{ ok: true }>(`${conversation(id)}/transcript`, { method: "POST" }),
+    drafts: (id: string) => call<{ drafts: SuggestedReply[] }>(`${conversation(id)}/drafts`),
+    /** Sends a draft as this operator's reply, with `body` in place of its text when edited. */
+    sendDraft: (id: string, draftId: string, body?: string) =>
+      post<Message>(`${conversation(id)}/drafts/${draftId}/send`, { body }),
+    discardDraft: (id: string, draftId: string) =>
+      post<{ ok: true }>(`${conversation(id)}/drafts/${draftId}/discard`, {}),
+    /** Lets bots that send directly answer this conversation again. */
+    giveBack: (id: string) => post<{ ok: true }>(`${conversation(id)}/give-back`, {}),
     /** Moves this operator's read position in the conversation forward to a message's seq. */
     markRead: (id: string, seq: string) => post<{ ok: true }>(`${conversation(id)}/read`, { seq }),
     setStatus: (id: string, status: "open" | "closed") =>

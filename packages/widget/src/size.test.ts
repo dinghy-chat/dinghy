@@ -9,6 +9,8 @@ const LIMITS: Record<string, number> = {
   // from 2,291). The label and square launchers before it took it to 2,300.
   "loader.js": 2700,
   "page.js": 1000,
+  // 23,900 since a bot's "is typing" line, from the agent experience design of 2026-11-12
+  // (23,869 with it and the changes below, 2026-11-12). The typing line alone gave about 250 bytes.
   // 23,720 since bold around italic, as `***both***`, reads as both, for the operator app's rich
   // composer (23,710 with it, from 23,681, 2026-11-12).
   // 23,700 since a message's lines that start with > show as a quote, after a visitor's quote
@@ -26,7 +28,7 @@ const LIMITS: Record<string, number> = {
   // 22,200 since the new composer and header, the closed line and the reply chime, which the
   // owner asked for on 2026-11-11 (22,162 with them, from 21,585). Markdown in messages and the
   // typing preview took it to 21,600 the same day, and the emoji picker before them to 20,500.
-  "widget.js": 23_720,
+  "widget.js": 23_900,
 };
 
 test("the bundles use no API that exists only on secure pages", async () => {

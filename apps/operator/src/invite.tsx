@@ -78,7 +78,7 @@ export function InvitePage({ token, me }: { token: string; me: Me | null }) {
         <h1>{t("inviteInvalidTitle")}</h1>
         <p className="note">{t("inviteInvalidHelp")}</p>
         <button type="button" className="btn primary large" onClick={() => navigate("/")}>
-          {t(me === null ? "linkSignIn" : "inviteOpenApp")}
+          {t(me === null ? "linkSignIn" : "openApp")}
         </button>
       </AuthPage>
     );
