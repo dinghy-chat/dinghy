@@ -4,6 +4,7 @@ import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { Logger } from "pino";
+import type { Actor } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
@@ -36,7 +37,7 @@ import {
   WRONG_ORIGIN,
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
-import { emailAddressHash, normalizeOrigin, sha256Hex } from "./identity.ts";
+import { emailAddressHash, normalizeOrigins, sha256Hex } from "./identity.ts";
 import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
@@ -57,7 +58,8 @@ const HOUR_SECONDS = 3600;
 const INVITE_MAILS_PER_WORKSPACE = 20;
 /** Invite emails one address may get in an hour, from all workspaces together. */
 const INVITE_MAILS_PER_ADDRESS = 5;
-const MAX_ORIGINS = 20;
+/** Allowed sites a workspace may have. */
+export const MAX_ORIGINS = 20;
 
 const LAST_OWNER = failure(
   "last_owner",
@@ -89,6 +91,13 @@ export const allowed = {
   remove: (role: Role, target: Role, isSelf: boolean) =>
     isSelf || role === "owner" || (role === "admin" && target === "member"),
 };
+
+/** Owners and admins, and a Setup key, which the member check let through to a Setup route. */
+export const maySetUp = (actor: Actor, role: Role) =>
+  actor.kind === "key" || allowed.settings(role);
+
+export const badOrigin = (origin: string) =>
+  failure("bad_origin", `This is not a valid origin: ${origin}`);
 
 const ok = {
   description: "Done",
@@ -899,19 +908,12 @@ export function registerTeamRoutes(
   app.openapi(patchSettingsRoute, async (c) => {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
-    const { allowedOrigins } = c.req.valid("json");
-    const origins = new Set<string>();
-    for (const origin of allowedOrigins) {
-      const normalized = normalizeOrigin(origin);
-      if (normalized === null) {
-        return c.json(failure("bad_origin", `This is not a valid origin: ${origin}`), 400);
-      }
-      origins.add(normalized);
-    }
+    const normalized = normalizeOrigins(c.req.valid("json").allowedOrigins);
+    if ("bad" in normalized) return c.json(badOrigin(normalized.bad), 400);
     const settings = await withWorkspace(db, id, async (tx) => {
       await tx
         .update(workspace)
-        .set({ allowedOrigins: [...origins] })
+        .set({ allowedOrigins: normalized.origins })
         .where(eq(workspace.id, id));
       return readSettings(tx, sources, id);
     });

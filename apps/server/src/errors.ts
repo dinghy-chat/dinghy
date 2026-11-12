@@ -98,6 +98,7 @@ export const ERROR_CODES = [
   "push_unavailable",
   "read_only",
   "signed_in",
+  "site_limit",
   "storage_full",
   "suspended",
   "team_changed",

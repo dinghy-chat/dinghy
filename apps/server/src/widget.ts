@@ -64,6 +64,7 @@ import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moder
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
+import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
@@ -618,7 +619,7 @@ const fromChatPage = (
   (origin === undefined || origin === ownOrigin);
 
 /** Finds the workspace, checks the Origin header exactly, and answers CORS for the allowed site. */
-function widgetAccess(db: Database, ownOrigin: string | undefined) {
+function widgetAccess(db: Database, ownOrigin: string | undefined, sites: SiteSignals) {
   return createMiddleware<{
     Variables: { workspace: WidgetWorkspace; widgetToken: WidgetToken };
   }>(async (c, next) => {
@@ -636,7 +637,11 @@ function widgetAccess(db: Database, ownOrigin: string | undefined) {
     // A browser sends Origin on these requests. An unknown key gets the same answer as a bad site.
     if (origin === undefined || token.kind === "link") return forbidden();
     const found = await widgetWorkspace(db, key);
-    if (found === null || !found.allowedOrigins.includes(origin)) return forbidden();
+    if (found === null) return forbidden();
+    if (!found.allowedOrigins.includes(origin)) {
+      await sites.siteRefused(found.id, origin);
+      return forbidden();
+    }
 
     c.header("access-control-allow-origin", origin);
     c.header("access-control-expose-headers", "retry-after");
@@ -986,6 +991,8 @@ interface WidgetOptions {
   /** The tabs of the site open now, for the operators. */
   liveVisitors: LiveVisitors;
   countryOf: CountryOf;
+  /** Notes where the widget loaded and where it was refused, for the install check. */
+  sites: SiteSignals;
 }
 
 /** A person with several tabs open. */
@@ -1015,6 +1022,7 @@ export function registerWidgetRoutes(
     ownOrigin,
     liveVisitors,
     countryOf,
+    sites,
   }: WidgetOptions,
 ): void {
   const view = (workspaceId: string, message: StoredMessage, authors = NO_AUTHORS) =>
@@ -1039,7 +1047,7 @@ export function registerWidgetRoutes(
   const identify = <P extends string, I extends Input>(c: Context<AppEnv, P, I>) =>
     authenticate(db, c.get("workspace"), c.req.param("key") ?? "", c.get("widgetToken"));
 
-  app.use("/v1/widget/:key/*", widgetAccess(db, ownOrigin));
+  app.use("/v1/widget/:key/*", widgetAccess(db, ownOrigin, sites));
   // After the access check, so a refusal here also carries the CORS headers the browser needs.
   app.use("/v1/widget/:key/*", async (c, next) => {
     const [name, max, windowSeconds] = limitFor(c.req.method, c.req.path);
@@ -1336,6 +1344,7 @@ export function registerWidgetRoutes(
       );
       seenWidget.add(found.id);
     }
+    await sites.siteSeen(found.id, c.req.header("origin") ?? "");
     const country = countryOf(c.get("clientIp"));
     const zone = knownTimeZone(timeZone);
     // A token that no longer works still counts the tab, as a visitor with none.

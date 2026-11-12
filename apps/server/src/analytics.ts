@@ -185,7 +185,8 @@ interface Row extends Record<string, unknown> {
 
 /**
  * Each conversation started since `since`, with its first reply: how long it waited, in seconds,
- * and who sent it. A conversation with no reply yet has a null wait. The welcome chat is not one.
+ * and who sent it. A conversation with no reply yet has a null wait. The welcome chat and a bot's
+ * test visitor's chats are not ones.
  */
 const firstReplies = (workspaceId: string, since: SQL) => sql`
   SELECT c.status, c.created_at,
@@ -199,7 +200,9 @@ const firstReplies = (workspaceId: string, since: SQL) => sql`
       AND m.author_visitor_id IS NULL AND ${isChat(sql`m.kind`)}
     ORDER BY m.seq LIMIT 1
   ) AS reply ON true
-  WHERE c.workspace_id = ${workspaceId} AND c.created_at >= ${since} AND NOT c.welcome`;
+  WHERE c.workspace_id = ${workspaceId} AND c.created_at >= ${since} AND NOT c.welcome
+    AND NOT EXISTS (SELECT 1 FROM visitor AS v
+                    WHERE v.workspace_id = c.workspace_id AND v.id = c.visitor_id AND v.is_test)`;
 
 /** The median first reply time over the last `days`, as Analytics shows it. Null with no reply. */
 export async function medianFirstReplySeconds(

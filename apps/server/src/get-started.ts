@@ -20,7 +20,7 @@ const GetStartedSchema = z
     team: z.boolean(),
     // Browser notifications on a device of this operator's, or email alerts here.
     notifications: z.boolean(),
-    // A conversation, other than the cloud's welcome chat.
+    // A conversation, other than the cloud's welcome chat and a bot's test visitor's.
     chat: z.boolean(),
     // This member hid the steps.
     dismissed: z.boolean(),
@@ -74,7 +74,9 @@ export function registerGetStartedRoutes(app: App, db: Database): void {
           (exists (select 1 from push_subscription where operator_id = ${operatorId})
            or coalesce((select alert_email from workspace_member
              where workspace_id = ${id} and operator_id = ${operatorId}), false)) as notifications,
-          exists (select 1 from conversation where workspace_id = ${id} and not welcome) as chat,
+          exists (select 1 from conversation c join visitor v
+            on v.workspace_id = c.workspace_id and v.id = c.visitor_id
+            where c.workspace_id = ${id} and not c.welcome and not v.is_test) as chat,
           coalesce((select get_started_dismissed_at is not null from workspace_member
             where workspace_id = ${id} and operator_id = ${operatorId}), false) as dismissed`),
     );

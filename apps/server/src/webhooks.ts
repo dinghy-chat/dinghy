@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { createRoute, z } from "@hono/zod-openapi";
@@ -15,6 +15,7 @@ import {
   event,
   type MessagePayload,
   operator,
+  RESPONSE_EXCERPT_MAX,
   WEBHOOK_EVENTS,
   type WebhookEvent,
   webhook,
@@ -36,7 +37,7 @@ import { conversationView, messageView } from "./inbox.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { authorNames, findConversation, findMessage } from "./messages.ts";
 import { retryDelayMs } from "./retry.ts";
-import { allowed } from "./team.ts";
+import { maySetUp } from "./team.ts";
 import { DAY_MS } from "./time.ts";
 
 /** At most this many webhooks per workspace. */
@@ -165,6 +166,48 @@ interface SendResult {
   status: number | null;
   /** Why it did not reach a 2xx answer, or null when it did. */
   error: string | null;
+  /** The start of a refusing answer's body, so Settings can show why. Null for anything else. */
+  excerpt: string | null;
+}
+
+const REFUSED_BY_RECEIVER =
+  "The receiving server refused the event. Check its logs and webhook settings.";
+// Control characters but tab and newline, which a log or a JSON error may hold.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: these are what it removes
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+
+/** The body's first bytes as text a person can read: UTF-8, no control characters, no cut letter. */
+export function responseExcerpt(bytes: Buffer): string | null {
+  const text = bytes
+    .subarray(0, RESPONSE_EXCERPT_MAX)
+    .toString("utf8")
+    .replace(/\uFFFD$/, "")
+    .replace(CONTROL_CHARACTERS, "")
+    .trim();
+  return text === "" ? null : text;
+}
+
+/**
+ * Reads at most RESPONSE_EXCERPT_MAX bytes of a refusing answer, then drops the connection, so a
+ * receiver that answers with a large or endless body costs no memory.
+ */
+function readExcerpt(response: IncomingMessage): Promise<string | null> {
+  return new Promise((resolve) => {
+    const parts: Buffer[] = [];
+    let size = 0;
+    const finish = () => {
+      response.destroy();
+      resolve(responseExcerpt(Buffer.concat(parts)));
+    };
+    response.on("data", (part: Buffer) => {
+      parts.push(part.subarray(0, RESPONSE_EXCERPT_MAX - size));
+      size += part.length;
+      if (size >= RESPONSE_EXCERPT_MAX) finish();
+    });
+    response.on("end", finish);
+    response.on("close", finish);
+    response.on("error", finish);
+  });
 }
 
 /**
@@ -181,7 +224,9 @@ function sendWebhook(
 ): Promise<SendResult> {
   const target = URL.canParse(url) ? new URL(url) : null;
   const problem = target === null ? WRONG_SCHEME : endpointProblem(target, policy);
-  if (target === null || problem !== null) return Promise.resolve({ status: null, error: problem });
+  if (target === null || problem !== null) {
+    return Promise.resolve({ status: null, error: problem, excerpt: null });
+  }
   const send = target.protocol === "https:" ? httpsRequest : httpRequest;
   return new Promise((resolve) => {
     const request = send(
@@ -199,15 +244,15 @@ function sendWebhook(
       },
       (response) => {
         const status = response.statusCode ?? null;
-        response.destroy();
-        const ok = status !== null && status >= 200 && status < 300;
-        resolve({
-          status,
-          // The delivery shows the status beside this, so the words need not repeat it.
-          error: ok
-            ? null
-            : "The receiving server refused the event. Check its logs and webhook settings.",
-        });
+        if (status !== null && status >= 200 && status < 300) {
+          response.destroy();
+          resolve({ status, error: null, excerpt: null });
+          return;
+        }
+        // The delivery shows the status beside this, so the words need not repeat it.
+        void readExcerpt(response).then((excerpt) =>
+          resolve({ status, error: REFUSED_BY_RECEIVER, excerpt }),
+        );
       },
     );
     request.on("error", (error: Error & { code?: unknown }) => {
@@ -217,7 +262,7 @@ function sendWebhook(
           : error.name === "AbortError" || error.name === "TimeoutError"
             ? `The receiving server did not respond within ${timeoutMs / 1000} seconds. Ask your developer to check its response time.`
             : `Dinghy could not connect to the receiving server. Ask your developer to check the address, HTTPS certificate, and server availability. Details: ${typeof error.code === "string" ? `${error.code}: ` : ""}${error.message}`;
-      resolve({ status: null, error: reason.slice(0, ERROR_MAX) });
+      resolve({ status: null, error: reason.slice(0, ERROR_MAX), excerpt: null });
     });
     request.end(body);
   });
@@ -271,6 +316,10 @@ const Delivery = z
     attempts: z.number().int(),
     lastStatus: z.number().int().nullable(),
     lastError: z.string().nullable(),
+    // The start of the receiver's last refusing answer, up to 2 KB, with control characters removed.
+    responseExcerpt: z.string().nullable(),
+    // The delivery this one sends again, when it is a replay.
+    replayOf: z.string().nullable(),
     createdAt: z.string(),
     finishedAt: z.string().nullable(),
   })
@@ -408,6 +457,20 @@ const deliveriesRoute = createRoute({
   },
 });
 
+const replayRoute = createRoute({
+  method: "post",
+  path: `${PREFIX}/{webhookId}/deliveries/{deliveryId}/replay`,
+  security: SESSION_OR_SETUP_KEY,
+  summary:
+    "Send a delivery's event again, now, as a new delivery with the same `Dinghy-Event-Id`. It is retried like any other",
+  request: { params: webhookParams.extend({ deliveryId: z.uuid() }) },
+  responses: {
+    ...KEY_LIMITED,
+    201: answer("The new delivery", z.object({ delivery: Delivery })),
+    ...ROLE_WRITE_ERRORS,
+  },
+});
+
 const BAD_ENDPOINT = (reason: string) => failure("bad_endpoint", reason);
 const LIMIT = failure("webhook_limit", `A workspace can have ${WEBHOOK_LIMIT} webhooks.`);
 const newSecret = () => `whsec_${randomBytes(32).toString("base64url")}`;
@@ -425,6 +488,21 @@ const view = (row: WebhookRow, createdBy: Creator) => ({
   ...row,
   createdBy,
   createdAt: row.createdAt.toISOString(),
+});
+
+type DeliveryRow = typeof webhookDelivery.$inferSelect;
+const deliveryView = (row: DeliveryRow) => ({
+  id: row.id,
+  eventId: row.eventId,
+  type: row.type,
+  status: row.finishedAt === null ? ("pending" as const) : (row.outcome ?? "failed"),
+  attempts: row.attempts,
+  lastStatus: row.lastStatus,
+  lastError: row.lastError,
+  responseExcerpt: row.responseExcerpt,
+  replayOf: row.replayOf,
+  createdAt: row.createdAt.toISOString(),
+  finishedAt: row.finishedAt?.toISOString() ?? null,
 });
 
 /** The actor's ID for the audit log and a webhook's creator. */
@@ -595,28 +673,80 @@ export function createWebhooks({
       if (row === undefined) return null;
       const eventId = randomUUID();
       const body = webhookBody(eventId, TEST_TYPE, new Date(), workspaceId, {});
-      const result = await sendWebhook(row.url, row.secret, eventId, body, policy);
-      return { delivered: result.error === null, ...result };
+      const { status, error } = await sendWebhook(row.url, row.secret, eventId, body, policy);
+      return { delivered: error === null, status, error };
+    },
+
+    /** The webhook's newest deliveries. None for a webhook that is not in this workspace. */
+    async deliveries(workspaceId: string, webhookId: string) {
+      const rows = await withWorkspace(db, workspaceId, (tx) =>
+        tx
+          .select()
+          .from(webhookDelivery)
+          .where(
+            and(
+              eq(webhookDelivery.workspaceId, workspaceId),
+              eq(webhookDelivery.webhookId, webhookId),
+            ),
+          )
+          .orderBy(desc(webhookDelivery.createdAt))
+          .limit(DELIVERIES_SHOWN),
+      );
+      return rows.map(deliveryView);
+    },
+
+    /**
+     * A new delivery of the same event, due now, with the same event ID, so a receiver that kept the
+     * first can drop it. Null when the delivery is not this webhook's.
+     */
+    async replay(workspaceId: string, actor: Actor, webhookId: string, deliveryId: string) {
+      const [made] = await withWorkspace(db, workspaceId, async (tx) => {
+        const [found] = await tx
+          .select()
+          .from(webhookDelivery)
+          .where(
+            and(
+              eq(webhookDelivery.workspaceId, workspaceId),
+              eq(webhookDelivery.webhookId, webhookId),
+              eq(webhookDelivery.id, deliveryId),
+            ),
+          );
+        if (found === undefined) return [];
+        const { eventId, type, conversationId, messageId } = found;
+        return tx
+          .insert(webhookDelivery)
+          .values({
+            workspaceId,
+            webhookId,
+            eventId,
+            type,
+            conversationId,
+            messageId,
+            replayOf: deliveryId,
+          })
+          .returning();
+      });
+      if (made === undefined) return null;
+      audit(logger, "webhook.replayed", {
+        workspaceId,
+        ...actorFields(actor),
+        webhookId,
+        deliveryId,
+      });
+      return deliveryView(made);
     },
   };
 }
 export type Webhooks = ReturnType<typeof createWebhooks>;
 
-/** Owners and admins, and a Setup key, which the member check let through. */
-const mayManage = (actor: Actor, role: Parameters<typeof allowed.settings>[0]) =>
-  actor.kind === "key" || allowed.settings(role);
-
-export function registerWebhookRoutes(
-  app: App,
-  { db, webhooks }: { db: Database; webhooks: Webhooks },
-): void {
+export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhooks }): void {
   app.openapi(listRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     return c.json({ webhooks: await webhooks.list(c.get("memberWorkspaceId")) }, 200);
   });
 
   app.openapi(createWebhookRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const made = await webhooks.create(
       c.get("memberWorkspaceId"),
       c.get("actor"),
@@ -628,7 +758,7 @@ export function registerWebhookRoutes(
   });
 
   app.openapi(changeRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const changed = await webhooks.change(
       c.get("memberWorkspaceId"),
       c.get("actor"),
@@ -641,14 +771,14 @@ export function registerWebhookRoutes(
   });
 
   app.openapi(deleteRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     await webhooks.remove(c.get("memberWorkspaceId"), c.get("actor"), webhookId);
     return c.json({ ok: true as const }, 200);
   });
 
   app.openapi(rotateRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     const rotated = await webhooks.rotate(c.get("memberWorkspaceId"), c.get("actor"), webhookId);
     if (rotated === null) return c.json(NOT_FOUND, 404);
@@ -656,7 +786,7 @@ export function registerWebhookRoutes(
   });
 
   app.openapi(testRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     const result = await webhooks.test(c.get("memberWorkspaceId"), webhookId);
     if (result === null) return c.json(NOT_FOUND, 404);
@@ -664,33 +794,25 @@ export function registerWebhookRoutes(
   });
 
   app.openapi(deliveriesRoute, async (c) => {
-    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
-    const rows = await withWorkspace(db, id, (tx) =>
-      tx
-        .select()
-        .from(webhookDelivery)
-        .where(and(eq(webhookDelivery.workspaceId, id), eq(webhookDelivery.webhookId, webhookId)))
-        .orderBy(desc(webhookDelivery.createdAt))
-        .limit(DELIVERIES_SHOWN),
-    );
     return c.json(
-      {
-        deliveries: rows.map((row) => ({
-          id: row.id,
-          eventId: row.eventId,
-          type: row.type,
-          status: row.finishedAt === null ? ("pending" as const) : (row.outcome ?? "failed"),
-          attempts: row.attempts,
-          lastStatus: row.lastStatus,
-          lastError: row.lastError,
-          createdAt: row.createdAt.toISOString(),
-          finishedAt: row.finishedAt?.toISOString() ?? null,
-        })),
-      },
+      { deliveries: await webhooks.deliveries(c.get("memberWorkspaceId"), webhookId) },
       200,
     );
+  });
+
+  app.openapi(replayRoute, async (c) => {
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    const { webhookId, deliveryId } = c.req.valid("param");
+    const delivery = await webhooks.replay(
+      c.get("memberWorkspaceId"),
+      c.get("actor"),
+      webhookId,
+      deliveryId,
+    );
+    if (delivery === null) return c.json(NOT_FOUND, 404);
+    return c.json({ delivery }, 201);
   });
 }
 
@@ -889,6 +1011,7 @@ async function finishWebhook(
       claimedUntil: null,
       lastStatus: result.status,
       lastError: result.error,
+      responseExcerpt: result.excerpt,
     })
     .where(held(row));
 }
@@ -909,7 +1032,7 @@ export async function deliverWebhook(
 ): Promise<void> {
   const plan = await planWebhook(db, images, row);
   if (typeof plan === "string") {
-    await finishWebhook(db, row, "failed", { status: null, error: plan });
+    await finishWebhook(db, row, "failed", { status: null, error: plan, excerpt: null });
     return;
   }
   const result = await sendWebhook(plan.url, plan.secret, plan.eventId, plan.body, policy);
@@ -937,6 +1060,7 @@ export async function deliverWebhook(
       nextAttemptAt: new Date(Date.now() + wait),
       lastStatus: result.status,
       lastError: result.error,
+      responseExcerpt: result.excerpt,
     })
     .where(held(row));
 }
@@ -945,6 +1069,7 @@ export async function deliverWebhook(
 export async function abandonWebhook(db: Database, row: ClaimedWebhook): Promise<void> {
   await finishWebhook(db, row, "failed", {
     status: null,
+    excerpt: null,
     error:
       "Dinghy stopped retrying after repeated interruptions. Check whether the receiving app processed the event before sending it again.",
   });

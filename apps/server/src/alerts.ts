@@ -261,7 +261,15 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
     const base = { workspaceId, eventSeq: seq, conversationId, messageId };
 
     const [written] = await tx
-      .select({ authorVisitorId: message.authorVisitorId, deletedAt: message.deletedAt })
+      .select({
+        authorVisitorId: message.authorVisitorId,
+        deletedAt: message.deletedAt,
+        // A bot's simulated visitor: nobody is told about it.
+        fromTest: sql<boolean>`exists (select 1 from conversation c join visitor v
+          on v.workspace_id = c.workspace_id and v.id = c.visitor_id
+          where c.workspace_id = message.workspace_id and c.id = message.conversation_id
+            and v.is_test)`,
+      })
       .from(message)
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
     // A message whose row was deleted before this step has nothing to alert about.
@@ -280,10 +288,11 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
 async function eventRows(
   tx: Transaction,
   kind: EventKind,
-  written: { authorVisitorId: string | null; deletedAt: Date | null },
+  written: { authorVisitorId: string | null; deletedAt: Date | null; fromTest: boolean },
   channels: Channels,
   base: DeliveryBase,
 ): Promise<DeliveryRow[]> {
+  if (written.fromTest) return [];
   switch (kind) {
     case "conversation.closed":
       return channels.email ? transcriptRows(tx, base) : [];

@@ -30,6 +30,7 @@ import {
   verification,
   visitor,
   webhook,
+  webhookDelivery,
   widgetSettings,
   workspace,
   workspaceLogo,
@@ -103,6 +104,8 @@ interface World {
   /** An API key in each workspace, and a webhook in the other one. */
   keyA: { id: string; token: string };
   keyB: { id: string; token: string };
+  /** A Setup key in the first workspace, which reaches the install, sites and test routes. */
+  setupA: { id: string; token: string };
   hookB: { id: string; secret: string; url: string };
   /** Strings that belong to someone else, for each kind of caller. */
   secrets: { two: string; b: string };
@@ -1342,7 +1345,138 @@ const ATTACKS: Record<string, Attack> = {
       (await as(anna, "GET", inWorkspace(b.id, `/webhooks/${hookB.id}/deliveries`))).status,
     ).toBe(404);
   },
-  "POST /v1/mcp": async ({ withKey, keyA, other, secrets }) => {
+  "POST /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/deliveries/:deliveryId/replay":
+    async (world) => {
+      const { operator: as, withKey, anna, a, b, hookB, other, setupA } = world;
+      const [delivery] = await owner
+        .insert(webhookDelivery)
+        .values({
+          workspaceId: b.id,
+          webhookId: hookB.id,
+          eventId: randomUUID(),
+          type: "message.created",
+          conversationId: other.conversationId,
+          finishedAt: new Date(),
+          outcome: "sent",
+        })
+        .returning({ id: webhookDelivery.id });
+      const path = (space: string) =>
+        inWorkspace(space, `/webhooks/${hookB.id}/deliveries/${delivery?.id}/replay`);
+      expect((await as(anna, "POST", path(a.id), {})).status).toBe(404);
+      expect((await as(anna, "POST", path(b.id), {})).status).toBe(404);
+      expect((await withKey(setupA.token, "POST", path(a.id), {})).status).toBe(404);
+      expect((await withKey(setupA.token, "POST", path(b.id), {})).status).toBe(404);
+      const rows = await owner
+        .select()
+        .from(webhookDelivery)
+        .where(eq(webhookDelivery.webhookId, hookB.id));
+      expect(rows).toHaveLength(1);
+    },
+  "GET /v1/operator/workspaces/:workspaceId/install/snippet": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    const path = (space: string) => inWorkspace(space, "/install/snippet?framework=html");
+    expect((await as(anna, "GET", path(b.id))).status).toBe(404);
+    expect((await withKey(setupA.token, "GET", path(b.id))).status).toBe(404);
+    const own = await (await withKey(setupA.token, "GET", path(a.id))).text();
+    expect(own).toContain(a.publicKey);
+    expect(own).not.toContain(b.publicKey);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/install/check": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/install/check"))).status).toBe(404);
+    expect((await withKey(setupA.token, "GET", inWorkspace(b.id, "/install/check"))).status).toBe(
+      404,
+    );
+    // B's site loads B's widget, and A's check must not show it, nor B's refusals. A's own
+    // refusals may name B's site: other attacks call A's widget from there.
+    await world.widget(b.publicKey, "POST", "beat", null, SITE_B, {
+      tab: "isolationbeat",
+      page: `${SITE_B}/`,
+    });
+    await world.widget(b.publicKey, "POST", "beat", null, "https://refused-in-b.example.com", {
+      tab: "isolationbeat",
+      page: "https://refused-in-b.example.com/",
+    });
+    const own = await (
+      await withKey(setupA.token, "GET", inWorkspace(a.id, "/install/check"))
+    ).text();
+    const { sites } = JSON.parse(own) as { sites: { origin: string }[] };
+    expect(sites.map((site) => site.origin)).not.toContain(SITE_B);
+    expect(own).not.toContain("refused-in-b");
+  },
+  "GET /v1/operator/workspaces/:workspaceId/install/identity": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    const path = (space: string) => inWorkspace(space, "/install/identity?language=typescript");
+    expect((await as(anna, "GET", path(b.id))).status).toBe(404);
+    expect((await withKey(setupA.token, "GET", path(b.id))).status).toBe(404);
+    const own = await (await withKey(setupA.token, "GET", path(a.id))).text();
+    expect(own).toContain(a.publicKey);
+    expect(own).not.toContain(b.publicKey);
+    expect(own).not.toContain(a.signingSecret);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/sites": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA, keyA } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/sites"))).status).toBe(404);
+    expect((await withKey(setupA.token, "GET", inWorkspace(b.id, "/sites"))).status).toBe(404);
+    expect((await withKey(keyA.token, "GET", inWorkspace(a.id, "/sites"))).status).toBe(403);
+    const own = await (await withKey(setupA.token, "GET", inWorkspace(a.id, "/sites"))).text();
+    expect(own).not.toContain(SITE_B);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/sites": async (world) => {
+    const { operator: as, withKey, anna, b, setupA } = world;
+    const body = { origin: "https://crossing.example.com" };
+    expect((await as(anna, "POST", inWorkspace(b.id, "/sites"), body)).status).toBe(404);
+    expect((await withKey(setupA.token, "POST", inWorkspace(b.id, "/sites"), body)).status).toBe(
+      404,
+    );
+    const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+    expect(row?.allowedOrigins).toEqual([SITE_B]);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/sites": async (world) => {
+    const { operator: as, withKey, anna, b, setupA } = world;
+    const path = inWorkspace(b.id, `/sites?origin=${encodeURIComponent(SITE_B)}`);
+    expect((await as(anna, "DELETE", path)).status).toBe(404);
+    expect((await withKey(setupA.token, "DELETE", path)).status).toBe(404);
+    const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+    expect(row?.allowedOrigins).toEqual([SITE_B]);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/test-visitors/messages": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA, other } = world;
+    const body = { body: "crossing as a test" };
+    expect(
+      (await as(anna, "POST", inWorkspace(b.id, "/test-visitors/messages"), body)).status,
+    ).toBe(404);
+    const path = (space: string) => inWorkspace(space, "/test-visitors/messages");
+    expect((await withKey(setupA.token, "POST", path(b.id), body)).status).toBe(404);
+    // B's conversation is not a test conversation of A's.
+    const into = await withKey(setupA.token, "POST", path(a.id), {
+      ...body,
+      conversationId: other.conversationId,
+    });
+    expect(into.status).toBe(404);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/test-visitors": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    const [testInB] = await owner
+      .insert(visitor)
+      .values({ workspaceId: b.id, tokenHash: randomUUID(), isTest: true })
+      .returning({ id: visitor.id });
+    expect((await as(anna, "DELETE", inWorkspace(b.id, "/test-visitors"))).status).toBe(404);
+    expect(
+      (await withKey(setupA.token, "DELETE", inWorkspace(b.id, "/test-visitors"))).status,
+    ).toBe(404);
+    expect(
+      (await withKey(setupA.token, "DELETE", inWorkspace(a.id, "/test-visitors"))).status,
+    ).toBe(200);
+    expect(
+      await owner
+        .select()
+        .from(visitor)
+        .where(eq(visitor.id, testInB?.id ?? "")),
+    ).toHaveLength(1);
+  },
+  "POST /v1/mcp": async (world) => {
+    const { withKey, keyA, other, secrets } = world;
     const call = async (name: string, args: unknown) =>
       (await (
         await withKey(keyA.token, "POST", "/v1/mcp", {
@@ -1369,6 +1503,8 @@ const ATTACKS: Record<string, Attack> = {
     expect(JSON.stringify(await call("search_conversations", { q: "written" }))).toContain(
       "written by one",
     );
+    // The Setup tools stay in the key's workspace too.
+    await setupToolsStayHome(world);
     // Without a key, nothing.
     const bare = await withKey("dk_none", "POST", "/v1/mcp", {
       jsonrpc: "2.0",
@@ -1384,6 +1520,47 @@ const ATTACKS: Record<string, Attack> = {
     expect((await withKey(keyA.token, "DELETE", "/v1/mcp")).status).toBe(405);
   },
 };
+
+/** A Setup key's MCP tools, aimed at the other workspace's conversation, webhook and sites. */
+async function setupToolsStayHome({ withKey, setupA, other, hookB, a, b }: World) {
+  const call = async (name: string, args: unknown) =>
+    (await (
+      await withKey(setupA.token, "POST", "/v1/mcp", {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name, arguments: args },
+      })
+    ).json()) as { result: { isError: boolean; structuredContent: Record<string, unknown> } };
+  const into = await call("simulate_visitor_message", {
+    body: "crossing",
+    conversationId: other.conversationId,
+  });
+  expect(into.result.structuredContent).toMatchObject({ error: { code: "not_found" } });
+  const listed = await call("list_webhook_deliveries", { webhookId: hookB.id });
+  expect(listed.result.structuredContent).toEqual({ deliveries: [] });
+  const replayed = await call("replay_webhook_delivery", {
+    webhookId: hookB.id,
+    deliveryId: randomUUID(),
+  });
+  expect(replayed.result.structuredContent).toMatchObject({ error: { code: "not_found" } });
+  for (const [name, args] of [
+    ["verify_install", {}],
+    ["list_allowed_sites", {}],
+    ["get_install_snippet", { framework: "html" }],
+    ["get_appearance", {}],
+    ["get_identity_setup", { language: "go" }],
+  ] as const) {
+    const text = JSON.stringify(await call(name, args));
+    expect(text).not.toContain("refused-in-b");
+    expect(text).not.toContain(b.publicKey);
+    expect(text).not.toContain(a.signingSecret);
+  }
+  await call("remove_allowed_site", { origin: SITE_B });
+  await call("delete_test_visitors", {});
+  const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+  expect(row?.allowedOrigins).toEqual([SITE_B]);
+}
 
 const pushed: string[] = [];
 const signer = createImages({
@@ -1511,9 +1688,14 @@ async function buildWorld(db: Database): Promise<World> {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       }),
     );
-  const madeKey = async (as: { cookie: string }, space: NewWorkspace, name: string) =>
+  const madeKey = async (
+    as: { cookie: string },
+    space: NewWorkspace,
+    name: string,
+    level: "conversations" | "setup" = "conversations",
+  ) =>
     (await (
-      await operatorCall(as, "POST", inWorkspace(space.id, "/api-keys"), { name })
+      await operatorCall(as, "POST", inWorkspace(space.id, "/api-keys"), { name, level })
     ).json()) as {
       id: string;
       token: string;
@@ -1536,6 +1718,7 @@ async function buildWorld(db: Database): Promise<World> {
     inviteB: (await madeInvite.json()) as { id: string; email: string; token: string },
     keyA: await madeKey(anna, a, "Helper A"),
     keyB: await madeKey(bea, b, "Helper B"),
+    setupA: await madeKey(anna, a, "Installer A", "setup"),
     hookB: (await madeHook.json()) as { id: string; secret: string; url: string },
     secrets: { two: "written by two", b: "written in the other workspace" },
     widget,

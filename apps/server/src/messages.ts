@@ -731,6 +731,7 @@ export interface ConversationRow {
   visitorLastSeenAt: Date | null;
   visitorCountry: string | null;
   visitorTimeZone: string | null;
+  visitorIsTest: boolean;
 }
 
 const conversationColumns = {
@@ -752,6 +753,7 @@ const conversationColumns = {
   visitorLastSeenAt: visitor.lastSeenAt,
   visitorCountry: visitor.country,
   visitorTimeZone: visitor.timeZone,
+  visitorIsTest: visitor.isTest,
 };
 
 /** Joins a conversation to its visitor, inside the same workspace. */

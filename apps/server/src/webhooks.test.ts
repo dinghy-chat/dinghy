@@ -18,6 +18,7 @@ import {
   fanOutWebhooksOne,
   isPrivateAddress,
   PUBLIC_ONLY,
+  responseExcerpt,
   signature,
   WEBHOOK_MAX_ATTEMPTS,
   type WebhookPolicy,
@@ -51,6 +52,8 @@ let receiverUrl: string;
 const received: Received[] = [];
 /** The statuses the receiver answers with, in turn. Empty means 200. */
 const answers: number[] = [];
+/** The bodies the receiver answers with, in turn. Empty means "thanks". */
+const bodies: string[] = [];
 
 const inSpace = (path = "") => `/v1/operator/workspaces/${space.id}${path}`;
 const asBoss = (method: string, path: string, body?: unknown, server = app) =>
@@ -138,7 +141,7 @@ beforeAll(async () => {
     request.on("data", (part: Buffer) => parts.push(part));
     request.on("end", () => {
       received.push({ headers: request.headers, body: Buffer.concat(parts).toString("utf8") });
-      response.writeHead(answers.shift() ?? 200).end("thanks");
+      response.writeHead(answers.shift() ?? 200).end(bodies.shift() ?? "thanks");
     });
   });
   await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
@@ -152,6 +155,7 @@ beforeEach(async () => {
   boss = { id: made.id, cookie: made.cookie };
   received.length = 0;
   answers.length = 0;
+  bodies.length = 0;
 });
 
 afterAll(async () => {
@@ -474,6 +478,137 @@ describe("delivery", () => {
   });
 });
 
+describe("replays and refusals", () => {
+  const deliveries = async (hookId: string) =>
+    (
+      (await (await asBoss("GET", inSpace(`/webhooks/${hookId}/deliveries`))).json()) as {
+        deliveries: {
+          id: string;
+          eventId: string;
+          status: string;
+          responseExcerpt: string | null;
+          replayOf: string | null;
+        }[];
+      }
+    ).deliveries;
+
+  test("a refused delivery keeps the start of the answer's body, at most 2 KB", async () => {
+    const hook = await addWebhook(["message.created"]);
+    // Earlier tests can leave a due delivery, which would take this answer.
+    await runWorker();
+    answers.push(500);
+    bodies.push(`\u0007Bad\u0000 signature\n${"é".repeat(100_000)}`);
+    await visitorSends("Hello");
+    await runWorker();
+    const [row] = await deliveriesOf(hook.id);
+    expect(row?.lastStatus).toBe(500);
+    const excerpt = row?.responseExcerpt ?? "";
+    expect(excerpt.startsWith("Bad signature\né")).toBe(true);
+    expect(Buffer.byteLength(excerpt)).toBeLessThanOrEqual(2048);
+    // The cut in the middle of a two-byte letter leaves no broken letter behind.
+    expect(excerpt).not.toContain("\uFFFD");
+    expect((await deliveries(hook.id))[0]?.responseExcerpt).toBe(excerpt);
+  });
+
+  test("the excerpt is readable text or nothing", () => {
+    expect(responseExcerpt(Buffer.from("\u0000\u001b[31m  "))).toBe("[31m");
+    expect(responseExcerpt(Buffer.from(" \r\n "))).toBeNull();
+    expect(responseExcerpt(Buffer.alloc(5000, "a"))).toHaveLength(2048);
+  });
+
+  test("a replay sends the same event again, now, with its own delivery", async () => {
+    const hook = await addWebhook(["message.created"]);
+    await visitorSends("Replay me");
+    await runWorker();
+    const [first] = await deliveries(hook.id);
+    const replayed = await asBoss(
+      "POST",
+      inSpace(`/webhooks/${hook.id}/deliveries/${first?.id}/replay`),
+      {},
+    );
+    expect(replayed.status).toBe(201);
+    const { delivery } = (await replayed.json()) as { delivery: Record<string, unknown> };
+    expect(delivery).toMatchObject({
+      eventId: first?.eventId,
+      replayOf: first?.id,
+      status: "pending",
+      attempts: 0,
+    });
+    await runWorker();
+    expect(received.map((one) => one.headers["dinghy-event-id"])).toEqual([
+      first?.eventId,
+      first?.eventId,
+    ]);
+    expect((await deliveries(hook.id)).map((one) => one.status)).toEqual(["sent", "sent"]);
+    const unknown = await asBoss(
+      "POST",
+      inSpace(`/webhooks/${hook.id}/deliveries/${crypto.randomUUID()}/replay`),
+      {},
+    );
+    expect(unknown.status).toBe(404);
+  });
+
+  test("a Setup key lists and replays deliveries through MCP", async () => {
+    const hook = await addWebhook(["message.created"]);
+    await visitorSends("Through MCP");
+    await runWorker();
+    const key = await asBoss("POST", inSpace("/api-keys"), { name: "Bot", level: "setup" });
+    const { token } = (await key.json()) as { token: string };
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const response = await app.request("/v1/mcp", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }),
+      });
+      return ((await response.json()) as { result: { structuredContent: Record<string, unknown> } })
+        .result.structuredContent;
+    };
+    const listed = (await call("list_webhook_deliveries", { webhookId: hook.id })) as {
+      deliveries: { id: string; eventId: string }[];
+    };
+    const [first] = listed.deliveries;
+    const replayed = await call("replay_webhook_delivery", {
+      webhookId: hook.id,
+      deliveryId: first?.id,
+    });
+    expect(replayed).toMatchObject({ delivery: { eventId: first?.eventId, replayOf: first?.id } });
+    const missing = await call("replay_webhook_delivery", {
+      webhookId: hook.id,
+      deliveryId: crypto.randomUUID(),
+    });
+    expect(missing).toMatchObject({ error: { code: "not_found" } });
+  });
+
+  test("a payload says whether its visitor is a test visitor", async () => {
+    await runWorker();
+    received.length = 0;
+    const hook = await addWebhook(["message.created"]);
+    await visitorSends("A person");
+    const key = await asBoss("POST", inSpace("/api-keys"), { name: "Bot", level: "setup" });
+    const { token } = (await key.json()) as { token: string };
+    await app.request(inSpace("/test-visitors/messages"), {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ body: "A test" }),
+    });
+    await runWorker();
+    const isTest = Object.fromEntries(
+      received
+        .map((one) => verified(one, hook.secret))
+        .map((body) => [
+          body.data.message?.body,
+          (body.data.conversation?.visitor as { isTest?: boolean } | undefined)?.isTest,
+        ]),
+    );
+    expect(isTest).toEqual({ "A person": false, "A test": true });
+  });
+});
+
 test("the signature is the HMAC-SHA256 of the time and the body", () => {
   expect(signature("whsec_x", 1700000000, '{"a":1}')).toBe(
     `t=1700000000,v1=${createHmac("sha256", "whsec_x").update('1700000000.{"a":1}').digest("hex")}`,
@@ -530,6 +665,7 @@ describe("Setup API keys", () => {
       ["POST", inSpace(`/webhooks/${hook.id}/rotate-secret`), {}],
       ["POST", inSpace(`/webhooks/${hook.id}/test`), {}],
       ["GET", inSpace(`/webhooks/${hook.id}/deliveries`), undefined],
+      ["POST", inSpace(`/webhooks/${hook.id}/deliveries/${crypto.randomUUID()}/replay`), {}],
       ["DELETE", inSpace(`/webhooks/${hook.id}`), undefined],
     ] as const) {
       const response = await withKey(key.token, method, path, body);
@@ -600,7 +736,8 @@ describe("Setup API keys", () => {
       expect(conversations).not.toContain(name);
       expect(setup).toContain(name);
     }
-    expect(setup.filter((name) => !webhookTools.includes(name))).toEqual(conversations);
+    // A Setup key also has every tool a Conversations key has.
+    expect(conversations.filter((name) => !setup.includes(name))).toEqual([]);
   });
 
   test("a Setup key's MCP tools add, test and delete a webhook; a Conversations key's cannot", async () => {

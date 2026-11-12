@@ -15,6 +15,7 @@ import { type Database, writable } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND, RATE_LIMITED, WRONG_ORIGIN } from "./errors.ts";
 import type { Inbox, ReplyOutcome } from "./inbox.ts";
 import type { Live } from "./live.ts";
+import { mcpSetupTools, type SetupToolOptions } from "./mcp-setup-tools.ts";
 import { closedFailure } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { assignTo, NOT_A_MEMBER } from "./team.ts";
@@ -47,14 +48,14 @@ const rpcResult = (id: RpcId, result: Record<string, unknown>) => ({
 });
 
 /** A tool's answer: its data, or an error body with a stable code, as the HTTP API gives. */
-type Outcome = { data: Record<string, unknown> } | { error: ReturnType<typeof failure> };
+export type Outcome = { data: Record<string, unknown> } | { error: ReturnType<typeof failure> };
 
-interface Context {
+export interface Context {
   workspaceId: string;
   actor: KeyActor;
 }
 
-interface Tool {
+export interface Tool {
   name: string;
   title: string;
   description: string;
@@ -64,13 +65,15 @@ interface Tool {
 }
 
 /** A tool whose input is checked with its Zod schema, which also gives the JSON Schema it lists. */
-function tool<S extends z.ZodType>(spec: {
+export function tool<S extends z.ZodType>(spec: {
   name: string;
   title: string;
   description: string;
   input: S;
   readOnly?: boolean;
   idempotent?: boolean;
+  /** It deletes or ends something, so a client asks the person first. */
+  destructive?: boolean;
   run(input: z.output<S>, context: Context): Promise<Outcome>;
 }): Tool {
   const { $schema: _dialect, ...inputSchema } = z.toJSONSchema(spec.input, { io: "input" });
@@ -81,7 +84,7 @@ function tool<S extends z.ZodType>(spec: {
     inputSchema,
     annotations: {
       readOnlyHint: spec.readOnly === true,
-      destructiveHint: false,
+      destructiveHint: spec.destructive === true,
       idempotentHint: spec.readOnly === true || spec.idempotent === true,
     },
     async call(args, context) {
@@ -302,6 +305,7 @@ function setupTools(webhooks: Webhooks): Tool[] {
       description: "Deletes a webhook and its deliveries. It gets no more events.",
       input: z.object({ webhookId }),
       idempotent: true,
+      destructive: true,
       async run(input, { workspaceId, actor }) {
         const gone = await webhooks.remove(workspaceId, actor, input.webhookId);
         return gone ? { data: { ok: true } } : { error: NOT_FOUND };
@@ -347,15 +351,16 @@ interface McpOptions {
   /** The server's own origin. A browser request from any other is refused. */
   publicOrigin: string;
   version: string;
+  setup: SetupToolOptions;
 }
 
 export function registerMcp(
   app: App,
-  { db, webhooks, live, rateLimit, inbox, publicOrigin, version }: McpOptions,
+  { db, webhooks, live, rateLimit, inbox, publicOrigin, version, setup }: McpOptions,
 ): void {
   const everyKey = tools(inbox, db, live);
-  const setupOnly = setupTools(webhooks);
-  /** A Conversations key does not see the webhook tools at all. */
+  const setupOnly = [...setupTools(webhooks), ...mcpSetupTools(setup)];
+  /** A Conversations key does not see the Setup tools at all. */
   const toolsFor = (actor: KeyActor) =>
     actor.level === "setup" ? [...everyKey, ...setupOnly] : everyKey;
 

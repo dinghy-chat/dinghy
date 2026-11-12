@@ -11,7 +11,7 @@ import {
   type WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
 import { medianFirstReplySeconds } from "./analytics.ts";
-import { SESSION } from "./api-security.ts";
+import { SESSION, SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import {
   message,
@@ -28,14 +28,21 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { errorAnswer, FORBIDDEN, MEMBER_ERRORS, NOT_FOUND, ROLE_WRITE_ERRORS } from "./errors.ts";
+import {
+  errorAnswer,
+  FORBIDDEN,
+  KEY_LIMITED,
+  MEMBER_ERRORS,
+  NOT_FOUND,
+  ROLE_WRITE_ERRORS,
+} from "./errors.ts";
 import { visitorAuthorId } from "./identity.ts";
 import { processLogo, refuseImage } from "./images.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { isChat, recordWorkspaceChange } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
-import { allowed } from "./team.ts";
+import { maySetUp } from "./team.ts";
 import { PUBLIC_KEY, widgetWorkspace } from "./workspaces.ts";
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}/widget";
@@ -127,22 +134,23 @@ const appearanceAnswer = {
 const getRoute = createRoute({
   method: "get",
   path: PREFIX,
-  security: SESSION,
+  security: SESSION_OR_SETUP_KEY,
   summary: "Get the widget's look, words and behavior",
   request: { params: workspaceParams },
-  responses: { 200: appearanceAnswer, ...MEMBER_ERRORS },
+  responses: { ...KEY_LIMITED, 200: appearanceAnswer, ...MEMBER_ERRORS },
 });
 
 const putRoute = createRoute({
   method: "put",
   path: PREFIX,
-  security: SESSION,
-  summary: "Replace the widget's look, words and behavior. Sites show it within 5 minutes.",
+  security: SESSION_OR_SETUP_KEY,
+  summary:
+    "Replace the widget's look, words and behavior. Sites show it within 5 minutes. Owners, admins and Setup API keys only",
   request: {
     params: workspaceParams,
     body: { required: true, content: { "application/json": { schema: WidgetSettingsSchema } } },
   },
-  responses: { 200: appearanceAnswer, ...ROLE_WRITE_ERRORS },
+  responses: { ...KEY_LIMITED, 200: appearanceAnswer, ...ROLE_WRITE_ERRORS },
 });
 
 const setLogoRoute = createRoute({
@@ -286,8 +294,32 @@ export function headerReplySeconds(db: Database, workspaceId: string): Promise<n
 }
 
 /**
+ * The widget's look, words and behavior, as the routes and MCP's Setup tools read and change them.
+ * The logo is not here: only an operator uploads one.
+ */
+export function createAppearance(db: Database, urls: ImageUrls) {
+  return {
+    read: (workspaceId: string) =>
+      withWorkspace(db, workspaceId, (tx) => readAppearance(tx, urls, workspaceId)),
+    /** Saves the fields given, keeps the others, and answers the settings after it. */
+    update: (
+      workspaceId: string,
+      fields: { [K in keyof WidgetSettings]?: WidgetSettings[K] | undefined },
+    ) =>
+      withWorkspace(db, workspaceId, async (tx) => {
+        await tx
+          .update(widgetSettings)
+          .set({ ...fields, customizedAt: sql`coalesce(${widgetSettings.customizedAt}, now())` })
+          .where(eq(widgetSettings.workspaceId, workspaceId));
+        return readAppearance(tx, urls, workspaceId);
+      }),
+  };
+}
+
+/**
  * The widget's settings in the operator app. Every member reads them, and only an owner or an
- * admin changes them. An API key and MCP cannot reach them: the routes take a session only.
+ * admin changes them. A Setup API key reads and replaces them too, but never the logo, whose
+ * routes take a session only.
  */
 export function registerWidgetSettingsRoutes(
   app: App,
@@ -295,15 +327,16 @@ export function registerWidgetSettingsRoutes(
   urls: ImageUrls,
   live: Live,
 ): void {
-  // Every change takes an owner or an admin. Before the routes, so a member's logo upload is
-  // refused before it is read.
+  const appearance = createAppearance(db, urls);
+  // Every change takes an owner, an admin or a Setup key. Before the routes, so a member's logo
+  // upload is refused before it is read.
   for (const path of [
     putRoute.getRoutingPath(),
     setLogoRoute.getRoutingPath(),
     typingPreviewRoute.getRoutingPath(),
   ]) {
     app.use(path, async (c, next) => {
-      if (c.req.method !== "GET" && !allowed.settings(c.get("memberRole"))) {
+      if (c.req.method !== "GET" && !maySetUp(c.get("actor"), c.get("memberRole"))) {
         return c.json(FORBIDDEN, 403);
       }
       await next();
@@ -330,24 +363,13 @@ export function registerWidgetSettingsRoutes(
       return readAppearance(tx, urls, workspaceId);
     });
 
-  app.openapi(getRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
-    return c.json(await withWorkspace(db, id, (tx) => readAppearance(tx, urls, id)), 200);
-  });
+  app.openapi(getRoute, async (c) =>
+    c.json(await appearance.read(c.get("memberWorkspaceId")), 200),
+  );
 
-  app.openapi(putRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
-    const saved = await change(id, (tx) =>
-      tx
-        .update(widgetSettings)
-        .set({
-          ...c.req.valid("json"),
-          customizedAt: sql`coalesce(${widgetSettings.customizedAt}, now())`,
-        })
-        .where(eq(widgetSettings.workspaceId, id)),
-    );
-    return c.json(saved, 200);
-  });
+  app.openapi(putRoute, async (c) =>
+    c.json(await appearance.update(c.get("memberWorkspaceId"), c.req.valid("json")), 200),
+  );
 
   app.openapi(typingPreviewRoute, async (c) => {
     const id = c.get("memberWorkspaceId");

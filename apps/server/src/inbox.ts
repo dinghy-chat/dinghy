@@ -102,7 +102,7 @@ const BODY = z
   .max(MESSAGE_MAX)
   .regex(/^[^\0]*$/);
 
-const InboxMessage = z
+export const InboxMessage = z
   .object({
     id: z.string(),
     conversationId: z.string(),
@@ -193,6 +193,8 @@ const Conversation = z
       timeZone: z.string().nullable(),
       // A visitor has no picture. Only Dinghy Cloud's welcome chat shows its founder's here.
       pictureUrl: z.string().nullable(),
+      // Made by a bot's simulate_visitor_message to test it, not a person.
+      isTest: z.boolean(),
     }),
     lastMessage: z
       .object({ body: z.string().nullable(), fromVisitor: z.boolean(), createdAt: z.string() })
@@ -691,6 +693,7 @@ export function conversationView(
       country: row.visitorCountry,
       timeZone: row.visitorTimeZone,
       pictureUrl,
+      isTest: row.visitorIsTest,
     },
     lastMessage:
       lastMessage === null

@@ -289,6 +289,8 @@ async function listContacts(
     .where(
       and(
         eq(visitor.workspaceId, workspaceId),
+        // A bot's test visitors are not people.
+        eq(visitor.isTest, false),
         sql`exists (select 1 from ${conversation} where ${conversation.workspaceId} = ${visitor.workspaceId} and ${conversation.visitorId} = ${visitor.id})`,
         pattern === null
           ? undefined
@@ -428,6 +430,24 @@ const csvLine = (contact: ReturnType<typeof contactView>) =>
     .map(csvCell)
     .join(",")}\r\n`;
 
+/** Deletes a visitor with their conversations, messages and images. False when there is none. */
+export async function deleteContact(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+): Promise<boolean> {
+  const conversations = await tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)));
+  for (const one of conversations) await deleteConversation(tx, workspaceId, one.id, visitorId);
+  const deleted = await tx
+    .delete(visitor)
+    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)))
+    .returning({ id: visitor.id });
+  return deleted.length > 0;
+}
+
 export function registerContactRoutes(
   app: App,
   { db, live, visitorPresence }: { db: Database; live: Live; visitorPresence: VisitorPresence },
@@ -513,18 +533,7 @@ export function registerContactRoutes(
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { visitorId } = c.req.valid("param");
-    const found = await withWorkspace(db, id, async (tx) => {
-      const conversations = await tx
-        .select({ id: conversation.id })
-        .from(conversation)
-        .where(and(eq(conversation.workspaceId, id), eq(conversation.visitorId, visitorId)));
-      for (const one of conversations) await deleteConversation(tx, id, one.id, visitorId);
-      const deleted = await tx
-        .delete(visitor)
-        .where(and(eq(visitor.workspaceId, id), eq(visitor.id, visitorId)))
-        .returning({ id: visitor.id });
-      return deleted.length > 0;
-    });
+    const found = await withWorkspace(db, id, (tx) => deleteContact(tx, id, visitorId));
     if (!found) return c.json(NOT_FOUND, 404);
     live.wake(id, OPERATORS);
     // Their open chats end: the token now names nobody.
