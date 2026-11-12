@@ -2446,6 +2446,13 @@ img.ws-tile {
 .msg :where(ul, ol) {
   padding-left: 22px;
 }
+/* The app's own lists have no markers, but a message's list is the visitor's or the operator's. */
+.msg :where(ul) {
+  list-style: disc;
+}
+.msg :where(ol) {
+  list-style: decimal;
+}
 .msg :where(pre, code) {
   font: 13.5px / 1.45 var(--mono);
 }
