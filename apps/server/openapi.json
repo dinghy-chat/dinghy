@@ -21,7 +21,7 @@
       "apiKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A workspace API key, `dk_...`, that an owner or admin creates in Settings. It works only in its own workspace, with a member's permissions: read, search, reply, close, reopen and assign conversations. It needs no Origin."
+        "description": "A workspace API key, `dk_...`, that an owner or admin creates in Settings. It works only in its own workspace, with a member's permissions: read, search, reply, close, reopen, snooze and assign conversations. It needs no Origin."
       },
       "setupKey": {
         "type": "http",
@@ -757,6 +757,9 @@
             },
             "required": ["body", "fromVisitor", "createdAt"]
           },
+          "snooze": {
+            "$ref": "#/components/schemas/Snooze"
+          },
           "unread": {
             "type": "boolean"
           }
@@ -773,6 +776,7 @@
           "pageContext",
           "visitor",
           "lastMessage",
+          "snooze",
           "unread"
         ]
       },
@@ -830,6 +834,16 @@
             "type": "null"
           }
         ]
+      },
+      "Snooze": {
+        "type": ["object", "null"],
+        "properties": {
+          "until": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        },
+        "required": ["until"]
       },
       "InboxMessage": {
         "type": "object",
@@ -4772,11 +4786,13 @@
                         "fromVisitor": true,
                         "createdAt": "2026-11-08T09:30:00.000Z"
                       },
+                      "snooze": null,
                       "unread": true
                     }
                   ],
                   "hasMore": false,
                   "waiting": 1,
+                  "snoozeEndsInMs": null,
                   "openBy": {
                     "all": 1,
                     "mine": 0,
@@ -4798,6 +4814,9 @@
                     "waiting": {
                       "type": "integer"
                     },
+                    "snoozeEndsInMs": {
+                      "type": ["integer", "null"]
+                    },
                     "openBy": {
                       "type": "object",
                       "properties": {
@@ -4814,7 +4833,7 @@
                       "required": ["all", "mine", "unassigned"]
                     }
                   },
-                  "required": ["conversations", "hasMore", "waiting", "openBy"]
+                  "required": ["conversations", "hasMore", "waiting", "snoozeEndsInMs", "openBy"]
                 }
               }
             }
@@ -5897,7 +5916,8 @@
             "apiKey": []
           }
         ],
-        "summary": "Close or reopen a conversation",
+        "summary": "Close, reopen, snooze or unsnooze a conversation",
+        "description": "Send `status` to close or reopen it, or `snooze` to snooze an open one, or null to end its snooze. A snoozed conversation stays open and does not count as waiting until `until` passes or the visitor writes. A close ends a snooze, and the visitor hears nothing of one.",
         "parameters": [
           {
             "schema": {
@@ -5922,22 +5942,42 @@
           "required": true,
           "content": {
             "application/json": {
+              "example": {
+                "snooze": {
+                  "until": "2026-11-09T09:00:00.000Z"
+                }
+              },
               "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "enum": ["open", "closed"]
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": ["open", "closed"]
+                      }
+                    },
+                    "required": ["status"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "snooze": {
+                        "$ref": "#/components/schemas/Snooze"
+                      }
+                    },
+                    "required": ["snooze"],
+                    "additionalProperties": false
                   }
-                },
-                "required": ["status"]
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "The status is now as requested",
+            "description": "The conversation is now as requested",
             "content": {
               "application/json": {
                 "schema": {
@@ -5995,6 +6035,16 @@
           },
           "404": {
             "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conversation_closed: reopen it to snooze it",
             "content": {
               "application/json": {
                 "schema": {
@@ -6292,7 +6342,7 @@
           }
         ],
         "summary": "Stream the workspace's changes after a cursor",
-        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `draft.changed`, `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, `{ kind: \"bot_typing\", conversationId, name, typing }` when an API key types or stops, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `draft.changed`, `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, `{ kind: \"bot_typing\", conversationId, name, typing }` when an API key types or stops, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
@@ -10612,7 +10662,7 @@
           }
         ],
         "summary": "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
-        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
         "requestBody": {
           "required": true,
           "content": {

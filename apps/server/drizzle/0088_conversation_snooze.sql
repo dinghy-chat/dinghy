@@ -1,0 +1,4 @@
+ALTER TABLE "conversation" ADD COLUMN "snoozed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "conversation" ADD COLUMN "snoozed_until" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "conversation_snooze_end_idx" ON "conversation" USING btree ("workspace_id","snoozed_until") WHERE "conversation"."snoozed_until" is not null;--> statement-breakpoint
+ALTER TABLE "conversation" ADD CONSTRAINT "conversation_snooze" CHECK ("conversation"."snoozed_at" is null and "conversation"."snoozed_until" is null or "conversation"."snoozed_at" is not null and "conversation"."status" = 'open');

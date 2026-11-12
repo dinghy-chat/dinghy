@@ -292,6 +292,7 @@ export function Thread({
           onBack={onBack}
           onAssign={assign}
           onStatus={(status) => void change.setStatus(status)}
+          onSnooze={(snooze) => void change.setSnooze(snooze)}
           onBlocked={(blocked) => void change.setBlocked(blocked)}
           onDelete={() => change.setConfirming(true)}
           onTranscript={() => void change.sendTranscript()}

@@ -45,7 +45,7 @@ export function registerOperatorApp(
         ...SECURITY,
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-cache",
-        "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:${images}; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+        "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:${images}; connect-src 'self'${images}; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
       },
     });
   };

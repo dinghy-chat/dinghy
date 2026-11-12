@@ -24,6 +24,7 @@ import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import {
   alertDelivery,
+  conversation,
   emailStop,
   event,
   ipBlock,
@@ -1009,6 +1010,10 @@ describe("email", () => {
         kind: "operator",
         operatorId: anna,
       }),
+    );
+    // A second conversation, as a visitor has from before a message reopened a closed one.
+    await withWorkspace(app, space.id, (tx) =>
+      tx.insert(conversation).values({ workspaceId: space.id, visitorId: from }),
     );
     const next = await visitorWrites(from, "One more thing");
     expect(next.message.conversationId).not.toBe(conversationId);

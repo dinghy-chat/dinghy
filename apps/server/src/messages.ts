@@ -13,6 +13,7 @@ import {
   lt,
   lte,
   ne,
+  notExists,
   or,
   type SQL,
   type SQLWrapper,
@@ -267,32 +268,62 @@ export function stored({
   };
 }
 
-/** The visitor's open conversation, or a new one. The workspace lock makes this safe to race. */
-async function openConversationId(
+/**
+ * Unassigns a conversation whose assignee left the team. Such an assignee hides it from everyone's
+ * waiting count and lists, and a reply would not take it over.
+ */
+async function dropDepartedAssignee(tx: Transaction, workspaceId: string, conversationId: string) {
+  const stillMember = tx
+    .select({ operatorId: workspaceMember.operatorId })
+    .from(workspaceMember)
+    .where(
+      and(
+        eq(workspaceMember.workspaceId, workspaceId),
+        eq(workspaceMember.operatorId, conversation.assigneeOperatorId),
+        isNull(workspaceMember.removedAt),
+      ),
+    );
+  await tx
+    .update(conversation)
+    .set({ assigneeOperatorId: null })
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        eq(conversation.id, conversationId),
+        notExists(stillMember),
+      ),
+    );
+}
+
+/**
+ * The conversation a visitor's message goes to: their open one, else their newest closed one,
+ * reopened with its assignee, else a new one. No time limit applies, so a visitor keeps one thread.
+ * The workspace lock makes this safe to race.
+ */
+async function visitorConversation(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
   startedPage: string | null,
-): Promise<{ id: string; created: boolean }> {
-  const [open] = await tx
-    .select({ id: conversation.id })
+): Promise<{ id: string; started: "created" | "reopened" | null }> {
+  const [newest] = await tx
+    .select({ id: conversation.id, status: conversation.status })
     .from(conversation)
-    .where(
-      and(
-        eq(conversation.workspaceId, workspaceId),
-        eq(conversation.visitorId, visitorId),
-        eq(conversation.status, "open"),
-      ),
-    )
-    .orderBy(desc(conversation.createdAt))
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
+    .orderBy(sql`${conversation.status} = 'open' desc`, desc(conversation.createdAt))
     .limit(1);
-  if (open !== undefined) return { id: open.id, created: false };
+  if (newest?.status === "open") return { id: newest.id, started: null };
+  if (newest !== undefined) {
+    await setConversationStatus(tx, workspaceId, newest.id, "open", { kind: "visitor", visitorId });
+    await dropDepartedAssignee(tx, workspaceId, newest.id);
+    return { id: newest.id, started: "reopened" };
+  }
   const [created] = await tx
     .insert(conversation)
     .values({ workspaceId, visitorId, startedPage })
     .returning({ id: conversation.id });
   if (created === undefined) throw new Error("The conversation insert returned no row");
-  return { id: created.id, created: true };
+  return { id: created.id, started: "created" };
 }
 
 /**
@@ -521,9 +552,12 @@ export async function appendMessage(
 
   const target =
     author.kind === "visitor"
-      ? await openConversationId(tx, workspaceId, author.visitorId, input.page ?? null)
-      : { id: author.conversationId, created: false };
+      ? await visitorConversation(tx, workspaceId, author.visitorId, input.page ?? null)
+      : { id: author.conversationId, started: null };
   const conversationId = target.id;
+  const created = target.started === "created";
+  // The reopen's status line took a later position than this message's, and must come first.
+  const messageSeq = target.started === "reopened" ? await nextSeq(tx, workspaceId) : seq;
   if (input.replyToMessageId !== undefined) {
     await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId, isNote);
   }
@@ -543,7 +577,7 @@ export async function appendMessage(
     .values({
       workspaceId,
       conversationId,
-      seq,
+      seq: messageSeq,
       kind: isNote ? "note" : input.image === undefined ? "text" : "image",
       clientId: input.clientId,
       body: input.body ?? null,
@@ -573,23 +607,27 @@ export async function appendMessage(
   // The payload holds IDs only, so deleting a message removes its text.
   await tx.insert(event).values({
     workspaceId,
-    seq,
+    seq: messageSeq,
     kind: "message.created",
     payload: {
       messageId: row.id,
       conversationId,
       fromVisitor: author.kind === "visitor",
-      ...(target.created ? { conversationCreated: true } : {}),
+      ...(created ? { conversationCreated: true } : {}),
     } satisfies MessagePayload,
     // A note alerts nobody, and its visitor never hears of it.
     needsAlert: !isNote && (input.alert ?? true),
     needsWebhook: wantsWebhook(workspaceId),
   });
-  // A note is not activity in the chat, so the inbox keeps the conversation in its place.
+  // A note is not activity in the chat, so the inbox keeps the conversation in its place. The
+  // visitor writing ends a snooze, under the lock, so a snooze that races this message cannot hide it.
   if (!isNote) {
     await tx
       .update(conversation)
-      .set({ updatedAt: sql`now()` })
+      .set({
+        updatedAt: sql`now()`,
+        ...(author.kind === "visitor" && { snoozedAt: null, snoozedUntil: null }),
+      })
       .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
   }
   // The operator who answers an unassigned conversation first takes it. A key's reply never does.
@@ -597,12 +635,12 @@ export async function appendMessage(
     await assignConversation(tx, workspaceId, conversationId, author.operatorId);
   }
   // A new visitor message, or a person's answer, leaves the drafts that wait behind. A note reaches
-  // no visitor, so it answers nothing.
-  if ((author.kind === "visitor" && !target.created) || (author.kind === "operator" && !isNote)) {
+  // no visitor, so it answers nothing. A reopened conversation keeps its drafts, so they go stale too.
+  if ((author.kind === "visitor" && !created) || (author.kind === "operator" && !isNote)) {
     const sentDraftId = input.source?.via === "draft" ? input.source.draftId : undefined;
     await markDraftsStale(tx, workspaceId, conversationId, sentDraftId);
   }
-  return { message: stored(row), created: true, conversationStarted: target.created };
+  return { message: stored(row), created: true, conversationStarted: created };
 }
 
 /**
@@ -855,6 +893,13 @@ export interface ConversationRow {
   assigneeName: string | null;
   /** The key that took part last, whoever handles it now, or null when none did. */
   botKey: KeyName | null;
+  /** Null unless it is snoozed now. */
+  snooze: Snooze | null;
+}
+
+/** How long a snooze lasts: until a time, or with null until the visitor writes. */
+export interface Snooze {
+  until: Date | null;
 }
 
 /** A key's ID and name. */
@@ -890,6 +935,14 @@ const botKey = sql<KeyName | null>`(
       order by d.created_at desc limit 1) as by_draft on true
   ), "conversation"."handoff_by_api_key_id"))`;
 
+/**
+ * Whether a conversation is snoozed now: an operator snoozed it and its time, if any, has not come.
+ * A visitor message, a close and a reopen clear the snooze, so only the time is read here. `row` names
+ * the conversation in a statement written by hand, such as sql`c`.
+ */
+const snoozedNow = (row: SQLWrapper = conversation) =>
+  sql<boolean>`(${row}.snoozed_at is not null and (${row}.snoozed_until is null or ${row}.snoozed_until > now()))`;
+
 const conversationColumns = {
   id: conversation.id,
   status: conversation.status,
@@ -913,7 +966,18 @@ const conversationColumns = {
   humanSince: conversation.humanSince,
   assigneeName,
   botKey,
+  snoozed: snoozedNow(),
+  snoozedUntil: conversation.snoozedUntil,
 };
+
+/** A row with its snooze as one value, so an ended snooze's time never reads as a snooze. */
+function withSnooze<Row extends { snoozed: boolean; snoozedUntil: Date | null }>({
+  snoozed,
+  snoozedUntil,
+  ...row
+}: Row) {
+  return { ...row, snooze: snoozed ? { until: snoozedUntil } : null };
+}
 
 /** Joins a conversation to its visitor, inside the same workspace. */
 export function joinVisitor() {
@@ -1111,7 +1175,7 @@ export async function listConversations(
     conversations: rows
       .slice(0, limit)
       .map(({ lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
-        ...row,
+        ...withSnooze(row),
         lastMessage:
           lastCreatedAt === null
             ? null
@@ -1149,9 +1213,10 @@ export async function countOpenByAssignee(
 }
 
 /**
- * How many open conversations wait for a reply: their newest message is from the visitor. For an
- * operator, only the ones assigned to them or to no one, as a teammate's are not theirs to answer.
- * An API key, with no assignments, counts them all. It is not a per-operator read state.
+ * How many open conversations wait for a reply: their newest message is from the visitor, and they
+ * are not snoozed. For an operator, only the ones assigned to them or to no one, as a teammate's are
+ * not theirs to answer. An API key, with no assignments, counts them all. It is not a per-operator
+ * read state.
  */
 export async function countWaiting(
   tx: Transaction,
@@ -1169,9 +1234,25 @@ export async function countWaiting(
       limit 1
     ) as newest
     where c.workspace_id = ${workspaceId} and c.status = 'open'
-      and newest.author_visitor_id is not null
+      and newest.author_visitor_id is not null and not ${snoozedNow(sql`c`)}
       ${operatorId === null ? sql`` : sql`and (c.assignee_operator_id is null or c.assignee_operator_id = ${operatorId})`}`);
   return result.rows[0]?.count ?? 0;
+}
+
+/**
+ * How long until the workspace's next timed snooze ends, by the database's clock, or null with none.
+ * A snooze ends with no event, so a client loads the list again then. Only an open conversation has
+ * a snooze, which the conversation_snooze check holds, so conversation_snooze_end_idx serves this.
+ */
+export async function nextSnoozeEndMs(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<number | null> {
+  const result = await tx.execute<{ ms: number | null }>(sql`
+    select ceil(extract(epoch from min(snoozed_until) - now()) * 1000)::float8 as ms
+    from ${conversation}
+    where workspace_id = ${workspaceId} and snoozed_until > now()`);
+  return result.rows[0]?.ms ?? null;
 }
 
 /** A reply's author: its operator's or API key's name, and an operator picture's time. */
@@ -1294,7 +1375,7 @@ export async function findConversations(
     .where(
       and(eq(conversation.workspaceId, workspaceId), inArray(conversation.id, conversationIds)),
     );
-  return new Map(rows.map((row) => [row.id, row]));
+  return new Map(rows.map((row) => [row.id, withSnooze(row)]));
 }
 
 /** One conversation's messages after a position, in commit order. */
@@ -1336,7 +1417,8 @@ export async function setConversationStatus(
   const seq = await nextSeq(tx, workspaceId);
   const changed = await tx
     .update(conversation)
-    .set({ status, updatedAt: sql`now()` })
+    // A close ends a snooze, and a reopen starts with none.
+    .set({ status, updatedAt: sql`now()`, snoozedAt: null, snoozedUntil: null })
     .where(
       and(
         eq(conversation.workspaceId, workspaceId),
@@ -1372,6 +1454,41 @@ export async function setConversationStatus(
     needsAlert: status === "closed",
     needsWebhook: wantsWebhook(workspaceId),
   });
+}
+
+/**
+ * Snoozes an open conversation, or ends its snooze with null. An event tells other operators, and
+ * the visitor hears nothing. False when no open conversation has this ID.
+ */
+export async function snoozeConversation(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  snooze: Snooze | null,
+): Promise<boolean> {
+  const seq = await nextSeq(tx, workspaceId);
+  const changed = await tx
+    .update(conversation)
+    .set({
+      snoozedAt: snooze === null ? null : sql`now()`,
+      snoozedUntil: snooze?.until ?? null,
+    })
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        eq(conversation.id, conversationId),
+        eq(conversation.status, "open"),
+      ),
+    )
+    .returning({ id: conversation.id });
+  if (changed.length === 0) return false;
+  await tx.insert(event).values({
+    workspaceId,
+    seq,
+    kind: "conversation.snoozed",
+    payload: { conversationId },
+  });
+  return true;
 }
 
 /**
@@ -1610,7 +1727,7 @@ export async function searchConversations(
   // The matching message's text is the preview. Who wrote last and when still come from the
   // newest message, so a conversation shows as waiting only when the visitor wrote last.
   return rows.map(({ hitBody, lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
-    ...row,
+    ...withSnooze(row),
     lastMessage:
       lastCreatedAt === null
         ? null

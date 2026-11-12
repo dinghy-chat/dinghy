@@ -6,7 +6,7 @@ import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { setReplyMode } from "../test/keys.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { asOperator, callTool } from "../test/requests.ts";
-import { SITE, visitorStarts } from "../test/visitors.ts";
+import { SITE, visitorSays, visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { conversation, message, visitor } from "./db/schema.ts";
@@ -138,6 +138,8 @@ describe("the protocol", () => {
       "search_conversations",
       "close_conversation",
       "reopen_conversation",
+      "snooze_conversation",
+      "unsnooze_conversation",
       "assign_conversation",
       "get_conversation",
       "reply",
@@ -489,6 +491,23 @@ describe("answering chats", () => {
       messages: [],
       cursor: second.structuredContent.cursor,
     });
+  });
+
+  test("wait_for_messages gives a visitor's message that reopens a closed conversation", async () => {
+    const chat = await visitorStarts(app, space.publicKey, "Hello?");
+    await callTool(app, token, "close_conversation", { conversationId: chat.conversationId });
+    const first = await callTool(app, token, "wait_for_messages", {});
+    await visitorSays(app, space.publicKey, chat.token, "Back again");
+    const second = await callTool(app, token, "wait_for_messages", {
+      cursor: first.structuredContent.cursor,
+      timeoutSeconds: 1,
+    });
+    expect(second.structuredContent.messages).toEqual([
+      expect.objectContaining({
+        conversationId: chat.conversationId,
+        message: expect.objectContaining({ body: "Back again" }),
+      }),
+    ]);
   });
 
   test("a draft-mode key's reply is a draft, which list_drafts shows", async () => {

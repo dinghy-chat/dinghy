@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 // What the team knows about a visitor, in folds: the right panel of a conversation and the contact
 // page show the same sections.
-import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Contact, ContactDetail, Conversation, Member, PageView } from "./api.ts";
 import { MINUTE_MS, shortTime } from "./format.ts";
 import { HandlerSelect } from "./handler.tsx";
@@ -17,6 +17,8 @@ import {
   bare,
   conversationPreview,
   detailRows,
+  pageName,
+  pagePath,
   presenceLine,
   visitorName,
   webLink,
@@ -85,16 +87,42 @@ const hasPlace = (visitor: Place) =>
   visitor.device !== null ||
   webLink(visitor.lastPage) !== null;
 
-/** An email shown as a name wraps after its @, not in the middle of the domain. */
-function breakAfterAt(name: string): ReactNode {
+/**
+ * The visitor's name as the panel's title. An email in its place shrinks until it fits on one line,
+ * down to 13px. A longer one wraps after its @, at 15px. It is never cut.
+ */
+function PanelName({ name }: { name: string }) {
+  const ref = useRef<HTMLHeadingElement>(null);
   const at = name.indexOf("@");
-  if (at < 0) return name;
+  useLayoutEffect(() => {
+    const heading = ref.current;
+    if (heading === null || at < 0) return;
+    const fit = () => {
+      heading.style.fontSize = "";
+      heading.classList.add("one-line");
+      let size = 18;
+      while (heading.scrollWidth > heading.clientWidth && size > 13) {
+        size -= 0.5;
+        heading.style.fontSize = `${size}px`;
+      }
+      if (heading.scrollWidth <= heading.clientWidth) return;
+      heading.classList.remove("one-line");
+      heading.style.fontSize = "15px";
+    };
+    fit();
+    let live = true;
+    void document.fonts.ready.then(() => live && fit());
+    return () => {
+      live = false;
+    };
+  }, [at]);
+  if (at < 0) return <h3>{name}</h3>;
+  // Two blocks rather than a <wbr>, which Chrome breaks at even on a line that may not wrap.
   return (
-    <>
-      {name.slice(0, at + 1)}
-      <wbr />
-      {name.slice(at + 1)}
-    </>
+    <h3 ref={ref} className="panel-email">
+      <span className="email-part">{name.slice(0, at + 1)}</span>
+      <span className="email-part">{name.slice(at + 1)}</span>
+    </h3>
   );
 }
 
@@ -155,7 +183,7 @@ function PlaceTiles({ visitor, online }: { visitor: Place; online: boolean }) {
       {page !== null && (
         <Tile icon="link" label={t(online ? "currentPageLabel" : "lastPageLabel")}>
           <a href={page} target="_blank" rel="noopener noreferrer" title={page}>
-            {bare(page)}
+            {pagePath(page)}
           </a>
         </Tile>
       )}
@@ -259,7 +287,7 @@ export function PageJourney({ pages, online }: { pages: PageView[]; online: bool
       <ol>
         {shown.map((page, index) => {
           const link = webLink(page.path);
-          const name = page.title ?? bare(page.path);
+          const name = pageName(page.title, page.path);
           const newer = shown[index - 1];
           const isNow = online && index === 0;
           const startsVisit =
@@ -477,7 +505,7 @@ export function VisitorPanel({
             {online === true && <i className="presence-dot" />}
           </span>
           <div className="panel-name">
-            <h3>{breakAfterAt(name)}</h3>
+            <PanelName key={name} name={name} />
             {visitor.email !== null && visitor.email !== name && <p>{visitor.email}</p>}
             {presence !== null && (
               <p className={online === true ? "online" : undefined}>{presence}</p>

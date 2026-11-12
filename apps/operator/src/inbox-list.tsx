@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Conversation, Member, OpenCounts, WorkspaceApi } from "./api.ts";
 import type { Draft } from "./drafts.ts";
-import { shortTime } from "./format.ts";
+import { dayTime, shortTime } from "./format.ts";
 import { rowHandler } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
 import { emptyLook, ListFilters, type Status, type Who } from "./inbox-filters.tsx";
@@ -42,6 +42,7 @@ function ConversationRow({
   const preview =
     body != null ? markdownText(body) : conversation.lastMessage === null ? "" : t("image");
   const waits = isWaiting(conversation);
+  const { snooze } = conversation;
   const closed = showClosed && conversation.status === "closed";
   const isTest = conversation.visitor.isTest;
   const handler = rowHandler(conversation, assignee);
@@ -81,9 +82,21 @@ function ConversationRow({
           ) : (
             <span className="preview">{preview}</span>
           )}
-          {(waits || closed || isTest || replying !== null || handler !== null) && (
+          {(waits ||
+            snooze !== null ||
+            closed ||
+            isTest ||
+            replying !== null ||
+            handler !== null) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
+              {snooze !== null && (
+                <span className="chip">
+                  {snooze.until === null
+                    ? t("snoozed")
+                    : t("snoozedUntil", { time: dayTime(snooze.until) })}
+                </span>
+              )}
               {closed && <span className="chip">{t("closed")}</span>}
               {isTest && (
                 <span className="chip test">

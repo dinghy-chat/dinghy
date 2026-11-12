@@ -444,13 +444,14 @@ describe("page journey", () => {
     await report(token, "/one", "One");
     const remove = (id: string) =>
       asOperator(inA(`/conversations/${id}`), ownerCookie, { method: "DELETE" });
-    // A second conversation, after the first one closes.
-    await asOperator(inA(`/conversations/${first.conversationId}`), ownerCookie, {
-      method: "PATCH",
-      body: JSON.stringify({ status: "closed" }),
-    });
-    const second = await send(token, "Two");
-    expect(second.conversationId).not.toBe(first.conversationId);
+    // A second conversation, which a visitor gets only from before reopening, or after a delete.
+    const [second] = await withWorkspace(db, a.id, (tx) =>
+      tx
+        .insert(conversation)
+        .values({ workspaceId: a.id, visitorId })
+        .returning({ conversationId: conversation.id }),
+    );
+    if (second === undefined) throw new Error("No second conversation");
     expect((await remove(first.conversationId)).status).toBe(200);
     expect(await journey(visitorId)).toHaveLength(1);
     expect((await remove(second.conversationId)).status).toBe(200);

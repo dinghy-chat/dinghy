@@ -33,7 +33,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 402 | `payment_required`, `read_only` | On the cloud plan, a workspace that is not paid for. A self-hosted install never answers 402 |
 | 403 | `origin_not_allowed`, `suspended`, `forbidden`, `blocked` | The site is not allowed or the widget is off, the workspace is suspended, the role or the key's level does not allow it, or an operator blocked the visitor |
 | 404 | `not_found` | It does not exist, or it is in another workspace |
-| 409 | `conversation_closed`, `webhook_limit`, `site_limit`, `grant_limit`, `message_seen` | Reopen the conversation to reply, the workspace has 5 webhooks, 20 allowed sites or 50 connected apps already, or the visitor has seen the reply you tried to edit |
+| 409 | `conversation_closed`, `webhook_limit`, `site_limit`, `grant_limit`, `message_seen` | Reopen the conversation to reply or to snooze it, the workspace has 5 webhooks, 20 allowed sites or 50 connected apps already, or the visitor has seen the reply you tried to edit |
 | 409 | `human_handling`, `bots_paused`, `drafts_text_only` | For an API key: a person handles the conversation and the key sends directly, an owner or admin paused every bot, or a key in draft mode sent an image. See [Bots](#bots-reply-modes-drafts-notes-and-handoff) |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
@@ -45,7 +45,16 @@ In a read-only or suspended workspace, operators can read and export, and a writ
 
 A message or an image carries a `clientId` that the client makes, such as `m_4f9a2c`. A retry with the same `clientId` returns the first message and creates nothing, so a client can retry a send after any network error.
 
-A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry of that message answers true too.
+A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry of that message answers true too. A visitor who has no open conversation but a closed one writes into their newest closed one: the send reopens it, with its assignee, and answers false. Its status line and `conversation.reopened` event come before the message, with the visitor as the author. Only a visitor's first message starts a conversation.
+
+### Close, reopen and snooze
+
+`PATCH /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}` takes one of:
+
+- `{ "status": "closed" }` or `{ "status": "open" }` to close or reopen it.
+- `{ "snooze": { "until": "2026-11-16T09:00:00.000Z" } }` to snooze an open conversation until a time, or `{ "snooze": { "until": null } }` until the visitor writes again. `{ "snooze": null }` ends a snooze.
+
+A snoozed conversation stays open, and does not count as waiting for a reply until its time passes or the visitor writes. A reply from the team does not end it. A close ends it, and a reopen starts with none. Snoozing a closed conversation answers 409 `conversation_closed`. Each `Conversation` has `snooze`: `{ "until" }` while it is snoozed, with `until` null until the visitor writes, and null otherwise. A snooze writes a `conversation.snoozed` change to the operator stream, and the visitor hears nothing of it: no status line, no stream event and no webhook.
 
 A message's `body` is plain text that the widget, the operator app and reply emails show as a small Markdown: `**bold**`, `*italic*`, `` `code` ``, blocks between lines of three backticks, `[words](https://...)` links, bare `http` and `https` addresses, and lists that start with `-`, `*`, `+` or `1.`. HTML, images and headings stay text, and only `http`, `https` and `mailto` links work. The API stores and answers the body as it was sent.
 
@@ -96,7 +105,7 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 
 `GET /v1/operator/workspaces/{workspaceId}/get-started` answers which first steps are done for the signed-in member: `install`, `logo`, `widget`, `team`, `notifications` and `chat`, and `dismissed`. `POST .../get-started/dismiss` hides them for that member.
 
-`GET /v1/operator/workspaces/{workspaceId}/conversations` answers `waiting`, the open conversations whose newest message is the visitor's, and `openBy`, the open conversations for each filter: `all`, `mine` (always 0 for an API key) and `unassigned`. `GET /v1/operator/waiting` answers `waiting` for each of the signed-in operator's workspaces, for the workspace menu.
+`GET /v1/operator/workspaces/{workspaceId}/conversations` answers `waiting`, the open conversations whose newest message is the visitor's and that are not snoozed, `snoozeEndsInMs`, the milliseconds until the workspace's next timed snooze ends (null with none), after which `waiting` can change with no change on the stream, and `openBy`, the open conversations for each filter: `all`, `mine` (always 0 for an API key) and `unassigned`. `GET /v1/operator/waiting` answers `waiting` for each of the signed-in operator's workspaces, for the workspace menu.
 
 Each operator has their own read position in each conversation. A `Conversation` has `unread`, true when a visitor message that is not deleted is past the signed-in operator's position, and always false for an API key. `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/read` with `{ "seq" }`, a message's `seq`, moves the position forward to it, never back and never past the newest message. Only a signed-in operator calls it; an API key gets 403.
 
@@ -158,7 +167,7 @@ A key works in its own workspace only, at the access level chosen when it was ma
 
 - list, search and read conversations, with the visitor and the page journey (`?assignee=none` lists the unassigned ones; a key is assigned nothing, so `assignee=me` answers 400),
 - reply with text or an image, as its reply mode says, write notes, hand a conversation to people and show that it types (see [Bots](#bots-reply-modes-drafts-notes-and-handoff)),
-- close, reopen and assign a conversation,
+- close, reopen, snooze and assign a conversation,
 - read contacts, the visitors on the site now and the analytics, and stream events from [`GET /v1/events`](#events-for-api-keys).
 
 **Full access** can do all of that, and set the workspace up: the [webhooks](#webhooks) (list, add, change, delete, replace a secret, send a test, read and replay the deliveries), the widget's look, and the [install routes and test visitors](#install-and-test-visitors). It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Full access key.
@@ -471,6 +480,7 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `wait_for_messages` | Chats | Waits up to 30 seconds for new visitor messages, from a cursor. With no cursor it answers the cursor for now, and no earlier messages |
 | `close_conversation` | Chats | Closes a conversation. Marked destructive |
 | `reopen_conversation` | Chats | Reopens a closed conversation |
+| `snooze_conversation`, `unsnooze_conversation` | Chats | Snoozes an open conversation until `until`, or with `until` null until the visitor writes, or ends its snooze |
 | `assign_conversation` | Chats | Assigns a conversation to a member by operator ID, or clears it with `null` |
 | `get_contact` | Chats | Reads a visitor, by `visitorId` or by `conversationId`, exactly one of them, with their local time, pages and other conversations |
 | `list_contacts`, `search_contacts` | Chats | Lists or finds the people who have a conversation |

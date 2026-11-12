@@ -345,7 +345,7 @@ describe("chat migrate", () => {
   });
 
   test("keys made before reply modes keep sending, and new keys draft", async () => {
-    await run(await migrationsBefore("0088_"));
+    await run(await migrationsBefore("0089_"));
     const workspace = "00000000-0000-4000-8000-0000000000e1";
     const anna = "00000000-0000-4000-8000-0000000000e2";
     await query(

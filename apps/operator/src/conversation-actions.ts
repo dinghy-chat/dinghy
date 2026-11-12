@@ -1,10 +1,10 @@
 import { type Dispatch, type SetStateAction, useState } from "react";
-import type { Conversation, WorkspaceApi } from "./api.ts";
+import type { Conversation, Snooze, WorkspaceApi } from "./api.ts";
 import type { Act } from "./message-actions.tsx";
 import { toast } from "./toast.tsx";
 
 /**
- * What the operator does to the whole conversation: assign it, close or reopen it, block its
+ * What the operator does to the whole conversation: assign it, close, reopen or snooze it, block its
  * visitor, email its transcript, give it back to the bots, or delete it, which asks first. Each
  * change shows at once.
  */
@@ -65,7 +65,8 @@ export function useConversationActions({
 
   const setStatus = async (status: "open" | "closed") => {
     if (!(await act(() => api.setStatus(conversationId, status)))) return;
-    change((current) => ({ ...current, status }));
+    // A close ends a snooze, and a reopen starts with none.
+    change((current) => ({ ...current, status, snooze: null }));
   };
 
   /** Gives the conversation back to its bot: nobody is assigned, and the bot may answer again. */
@@ -79,6 +80,11 @@ export function useConversationActions({
     }));
   };
 
+  const setSnooze = async (snooze: Snooze | null) => {
+    if (!(await act(() => api.setSnooze(conversationId, snooze)))) return;
+    change((current) => ({ ...current, snooze }));
+  };
+
   return {
     confirming,
     setConfirming,
@@ -88,5 +94,6 @@ export function useConversationActions({
     sendTranscript,
     setStatus,
     giveBack,
+    setSnooze,
   };
 }

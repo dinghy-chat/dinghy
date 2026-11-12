@@ -140,7 +140,7 @@ export async function deleteConversations(
   await lockVisitors(tx, workspaceId, visitorIds);
   // Then the workspace's, as in every other write. A send that holds this lock and checks the
   // conversation with a foreign key would deadlock with a delete that took the conversation first.
-  // One that waits here finds the conversation gone, and a visitor's next message starts a new one.
+  // One that waits here finds the conversation gone, and goes to another of the visitor's, or a new one.
   await recordConversationChanges(tx, workspaceId, ids, "conversation.deleted");
   // A draft names the messages it quotes or became, so it goes before them.
   await tx

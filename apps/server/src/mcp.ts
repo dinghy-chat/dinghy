@@ -6,7 +6,7 @@ import type { App } from "./app.ts";
 import { WEBHOOK_EVENTS } from "./db/schema.ts";
 import { type Database, writable } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND, RATE_LIMITED, WRONG_ORIGIN } from "./errors.ts";
-import type { Inbox } from "./inbox.ts";
+import { type Inbox, parseSnooze, SNOOZE_CLOSED, type SnoozeOutcome } from "./inbox.ts";
 import { conversationId, UNTRUSTED_TEXT, webhookId } from "./inputs.ts";
 import type { Live } from "./live.ts";
 import { type ChatToolsOptions, chatTools } from "./mcp-chat-tools.ts";
@@ -120,6 +120,12 @@ export function tool<S extends z.ZodType>(spec: {
 const INSTRUCTIONS_SAFETY = `${UNTRUSTED_TEXT} A Setup connection is for installing Dinghy on a site. Give the bot that answers chats its own Conversations connection.`;
 const CURSOR = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\|([0-9a-f-]{36})$/;
 
+const snoozeAnswer = (outcome: SnoozeOutcome): Outcome => {
+  if (outcome === "missing") return { error: NOT_FOUND };
+  if (outcome === "closed") return { error: SNOOZE_CLOSED };
+  return { data: { ok: true } };
+};
+
 function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
   const status =
     (target: "open" | "closed") =>
@@ -166,7 +172,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
     tool({
       name: "close_conversation",
       title: "Close a conversation",
-      description: "Closes a conversation. A new message from the visitor starts a new one.",
+      description: "Closes a conversation. A new message from the visitor reopens it.",
       input: z.object({ conversationId }),
       idempotent: true,
       destructive: true,
@@ -179,6 +185,32 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       input: z.object({ conversationId }),
       idempotent: true,
       run: status("open"),
+    }),
+    tool({
+      name: "snooze_conversation",
+      title: "Snooze a conversation",
+      description:
+        "Snoozes an open conversation: it stays open but does not count as waiting until `until`, or with `until` null until the visitor writes. The visitor hears nothing of it. A close ends it.",
+      input: z.object({
+        conversationId,
+        until: z.iso
+          .datetime()
+          .nullable()
+          .describe("When the snooze ends, as an ISO date, or null until the visitor writes"),
+      }),
+      idempotent: true,
+      run: async ({ conversationId: id, until }, { workspaceId }) =>
+        snoozeAnswer(await inbox.setSnooze(workspaceId, id, parseSnooze({ until }))),
+    }),
+    tool({
+      name: "unsnooze_conversation",
+      title: "Unsnooze a conversation",
+      description:
+        "Ends a conversation's snooze, so it counts as waiting again when the visitor wrote last.",
+      input: z.object({ conversationId }),
+      idempotent: true,
+      run: async (input, { workspaceId }) =>
+        snoozeAnswer(await inbox.setSnooze(workspaceId, input.conversationId, null)),
     }),
     tool({
       name: "assign_conversation",
@@ -486,7 +518,7 @@ export function registerMcp(
     security: API_KEY,
     summary: "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
     description:
-      "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+      "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
     request: {
       body: {
         required: true,

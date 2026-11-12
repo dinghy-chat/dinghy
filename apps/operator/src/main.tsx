@@ -8,6 +8,7 @@ import { ConsentPage, requestingApp } from "./consent.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate, replaceAddress } from "./nav.ts";
+import { followNotificationClicks } from "./notifications.tsx";
 import { DeleteAccount } from "./profile.tsx";
 import { AuthPage, Scene, SceneLoading, ShellLoading, setLogoLinksHome } from "./scene.tsx";
 import { readStored, store } from "./stored.ts";
@@ -16,6 +17,7 @@ import { applyTheme, savedTheme } from "./theme.ts";
 import { Toaster } from "./toast.tsx";
 
 applyTheme(savedTheme());
+followNotificationClicks();
 
 const WORKSPACE_KEY = "dinghy.workspace";
 

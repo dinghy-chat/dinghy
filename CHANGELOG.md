@@ -19,6 +19,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - A failed webhook delivery shows the start of the receiver's answer. API: `responseExcerpt` and `replayOf` on deliveries.
 - **Install** has a "Set up with an agent" prompt to copy, for Claude Code, Cursor or another MCP client.
 - Docs: [Use Dinghy with AI agents](docs/agents.md), with a block to paste into a repository's `AGENTS.md`, and every doc in one file at `https://dinghy.chat/llms-full.txt`.
+- Snooze: the **…** menu of a conversation snoozes it until the visitor replies, until tomorrow at 9:00 or until next Monday at 9:00. It stays open, shows **Snoozed** in the Inbox and does not count as waiting until then, and the visitor sees nothing. API: `{ "snooze": { "until" } }` on `PATCH .../conversations/{conversationId}`, `snooze` on each conversation, a `conversation.snoozed` change, and the MCP tools `snooze_conversation` and `unsnooze_conversation`.
 
 ### Changed
 
@@ -28,10 +29,12 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Assigning a conversation in the operator app takes it from the bots, as a reply does. An API key's assign changes only the assignee.
 - **Settings > API & webhooks** shows how many bots are connected, with a big switch to pause them, and lists connected apps, API keys and webhooks apart.
 - `close_conversation` is marked destructive, so an MCP client asks the person first.
+- A visitor who writes after their conversation was closed reopens it, with its assignee, instead of starting a new one. Only a visitor's first message starts a conversation, and the `conversation:started` event and `conversation.created` webhook come only then.
 
 ### Fixed
 
 - Text you select in the widget stays readable. A site that styled its own selection made the selected text in the chat invisible, because Chrome passes the page's selection style into the widget.
+- A visitor who left only their email shows it on one line at the top of the conversation's side panel, a little smaller when it is long, instead of split across two lines. Only a very long email wraps, after its @.
 
 ## [0.23.0] - 2026-11-12
 

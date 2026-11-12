@@ -681,10 +681,13 @@ test("the … menu blocks with the keyboard too", async ({ browser }) => {
   await operator.keyboard.press("Enter");
   const menu = operator.getByRole("menu", { name: "More actions" });
   await expect(menu).toBeFocused();
-  // Send transcript says why it is unavailable: this visitor gave no email.
+  // Email transcript says why it is unavailable: this visitor gave no email.
   await expect(menu.getByRole("menuitem")).toHaveText([
     "Block",
-    "Send transcriptThe visitor gave no email",
+    "Email transcriptThe visitor gave no email",
+    "Snooze until they reply",
+    "Snooze until tomorrow",
+    "Snooze until next week",
     "Delete",
   ]);
   await operator.keyboard.press("Enter");

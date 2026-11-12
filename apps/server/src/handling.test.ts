@@ -495,6 +495,16 @@ describe("drafts", () => {
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["stale"]);
   });
 
+  test("a visitor's message that reopens a closed conversation marks its drafts stale", async () => {
+    const chat = await drafted("Try restarting it.");
+    await asOperator(app, boss.cookie, "PATCH", inChat(chat.conversationId, ""), {
+      status: "closed",
+    });
+    const again = await visitorSays(app, space.publicKey, chat.token, "It broke again.");
+    expect(again.conversationId).toBe(chat.conversationId);
+    expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["stale"]);
+  });
+
   test("a person's reply marks the waiting drafts stale", async () => {
     const chat = await drafted("Try restarting it.");
     await asOperator(app, boss.cookie, "POST", inChat(chat.conversationId, "/messages"), {
@@ -997,6 +1007,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",
@@ -1062,6 +1073,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",
@@ -1127,6 +1139,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",
@@ -1192,6 +1205,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",
@@ -1257,6 +1271,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",
@@ -1324,6 +1339,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",
@@ -1368,6 +1384,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",
@@ -1412,6 +1429,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",
@@ -1456,6 +1474,7 @@ describe("the event stream for keys", () => {
                 "id": "<id 1>",
                 "lastMessage": null,
                 "pageContext": null,
+                "snooze": null,
                 "startedPage": null,
                 "status": "open",
                 "updatedAt": "<time>",

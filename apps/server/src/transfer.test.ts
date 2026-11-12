@@ -55,6 +55,8 @@ interface Install {
 }
 
 const installs: Install[] = [];
+const SNOOZED_AT = new Date("2026-11-12T10:00:00.000Z");
+const SNOOZED_UNTIL = new Date("2030-01-07T09:00:00.000Z");
 /** The installs that a beforeAll made for several tests. */
 let keptInstalls = 0;
 
@@ -225,6 +227,10 @@ async function makeSource(): Promise<Source> {
     .update(workspaceMember)
     .set({ removedAt: new Date() })
     .where(eq(workspaceMember.operatorId, gone.id));
+  await owner
+    .update(conversation)
+    .set({ snoozedAt: SNOOZED_AT, snoozedUntil: SNOOZED_UNTIL })
+    .where(eq(conversation.id, conversationId));
   await owner.insert(emailStop).values({ workspaceId: space.id, addressHash: "a".repeat(64) });
   await owner
     .update(widgetSettings)
@@ -394,7 +400,7 @@ describe("a round trip onto a fresh install", () => {
     expect(reads.every((read) => read.readSeq === BigInt(newest?.seq ?? 0))).toBe(true);
   });
 
-  test("keeps the conversation, its status, its authors and its assignee", async () => {
+  test("keeps the conversation, its status, its authors, its assignee and its snooze", async () => {
     const [row] = await target.owner
       .select()
       .from(conversation)
@@ -406,6 +412,8 @@ describe("a round trip onto a fresh install", () => {
       .where(eq(operator.email, source.agentEmail));
     expect(row?.assigneeOperatorId).toBe(assignee?.id);
     expect(row?.startedPage).toBe(`${SITE}/pricing`);
+    expect(row?.snoozedAt).toEqual(SNOOZED_AT);
+    expect(row?.snoozedUntil).toEqual(SNOOZED_UNTIL);
     const messages = await target.owner
       .select()
       .from(message)

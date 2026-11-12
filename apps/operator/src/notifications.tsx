@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { deleteDevice, saveDevice, testPush, type WorkspaceApi } from "./api.ts";
 import { useLoad } from "./load.ts";
+import { navigate } from "./nav.ts";
 import { setSoundOn, soundOn } from "./sound.ts";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
@@ -13,6 +14,23 @@ async function currentDevice(): Promise<PushSubscription | null> {
   if (!pushSupported()) return null;
   const registration = await navigator.serviceWorker.getRegistration();
   return (await registration?.pushManager.getSubscription()) ?? null;
+}
+
+/**
+ * Opens the conversation of a clicked notification, which the service worker sends to the open
+ * app. A window that the click started asks for it too: on an iPhone it can start on its home page.
+ */
+export function followNotificationClicks() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.addEventListener("message", (event: MessageEvent) => {
+    const url: unknown = event.data?.type === "dinghy:open" ? event.data.url : null;
+    // A window that the click started on the right address is already there.
+    if (typeof url !== "string" || (event.data.started === true && url === location.href)) return;
+    if (new URL(url, location.origin).origin === location.origin) navigate(url);
+  });
+  void navigator.serviceWorker.ready.then((registration) =>
+    registration.active?.postMessage({ type: "dinghy:ready" }),
+  );
 }
 
 /** Stops this browser's alerts before sign-out, because the next person here may be someone else. */

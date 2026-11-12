@@ -383,7 +383,7 @@ export async function startE2EServer(
       await withWorkspace(db, workspace.id, (tx) =>
         tx
           .update(conversation)
-          .set({ status: "closed" })
+          .set({ status: "closed", snoozedAt: null, snoozedUntil: null })
           .where(eq(conversation.workspaceId, workspace.id)),
       );
     },

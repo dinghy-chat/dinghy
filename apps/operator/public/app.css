@@ -2278,7 +2278,7 @@ img.ws-tile {
   flex: 1;
   min-width: 0;
 }
-/* A long name or email takes a second line before it is cut. */
+/* A long name takes a second line before it is cut. */
 .panel-name h3 {
   display: -webkit-box;
   overflow: hidden;
@@ -2287,6 +2287,17 @@ img.ws-tile {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+/* An email shown as the name breaks only after its @, and only when it cannot fit on one line. */
+.panel-name .panel-email {
+  display: block;
+}
+.email-part {
+  display: inline-block;
+  max-width: 100%;
+}
+.panel-email.one-line {
+  white-space: nowrap;
 }
 .panel-name p {
   overflow: hidden;
@@ -3260,6 +3271,22 @@ button.quote:hover {
   display: block;
   max-width: 95vw;
   max-height: 95svh;
+}
+.viewer-actions {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  display: flex;
+  gap: 8px;
+}
+.viewer-actions .icon-button {
+  width: 44px;
+  height: 44px;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(11 34 57 / 0.3);
+}
+.viewer-actions .icon-button:hover:not(:disabled) {
+  background: var(--soft-hover);
 }
 
 /* Pages in the panel, such as each Settings page. Rows with thin lines, no cards in cards. */

@@ -3,6 +3,7 @@ import { Fragment, type ReactNode, type RefObject, useEffect, useRef, useState }
 import type { Conversation, Member, ReplyReceipts } from "./api.ts";
 import { Composer } from "./composer.tsx";
 import { HandoffNote } from "./handoff-note.tsx";
+import { Icon } from "./icons.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
@@ -23,6 +24,47 @@ import { toast } from "./toast.tsx";
 import { ErrorNote, useModal } from "./ui.tsx";
 import { replyAuthor, title } from "./visitor.ts";
 
+/**
+ * The image as a file, read when the viewer opens: a phone shares only during the tap itself, and
+ * a read after the tap could outlast it.
+ */
+function useImageFile(url: string | undefined): File | null {
+  const [file, setFile] = useState<File | null>(null);
+  useEffect(() => {
+    if (url === undefined) return;
+    let current = true;
+    fetch(url)
+      .then((response) => (response.ok ? response.blob() : Promise.reject(response.status)))
+      .then((blob) => {
+        const kind = blob.type.split("/")[1] ?? "png";
+        if (current) setFile(new File([blob], `image.${kind}`, { type: blob.type }));
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [url]);
+  return file;
+}
+
+/** A phone opens its share sheet, which has Save Image for the photos. A computer downloads it. */
+function saveImage(file: File) {
+  if (matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) {
+    navigator.share({ files: [file] }).catch((error: unknown) => {
+      // The operator closed the share sheet.
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        toast("imageSaveFailed", false);
+      }
+    });
+    return;
+  }
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(file);
+  link.download = file.name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href));
+}
+
 function ImageViewer({
   url,
   onClose,
@@ -33,6 +75,7 @@ function ImageViewer({
   onError(): void;
 }) {
   const viewer = useModal();
+  const file = useImageFile(url);
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
     <dialog
@@ -42,6 +85,24 @@ function ImageViewer({
       onClick={() => viewer.current?.close()}
     >
       <img src={url} alt={t("imageAlt")} onError={onError} />
+      {/* A phone has no Escape key and little backdrop around a wide image. */}
+      <div className="viewer-actions">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={t("imageSave")}
+          disabled={file === null}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (file !== null) saveImage(file);
+          }}
+        >
+          <Icon name="download" size={20} />
+        </button>
+        <button type="button" className="icon-button" aria-label={t("close")}>
+          <Icon name="close" size={20} />
+        </button>
+      </div>
     </dialog>
   );
 }

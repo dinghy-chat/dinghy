@@ -19,6 +19,10 @@ import { useWaitingBadge } from "./tab-badge.ts";
 import { t } from "./text.ts";
 
 const PAGE_SIZE = 50;
+/** The longest delay setTimeout keeps: a longer one fires at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+/** Waits this long past a snooze's end, so the server's clock has passed it too. */
+const SNOOZE_END_MARGIN_MS = 1000;
 
 /** Whether this browser already did something once. Without storage, it reads as no. */
 const remembered = (key: string) => readStored(key) !== null;
@@ -105,6 +109,8 @@ function useConversationList({
     setListed(false);
   }
   const [waiting, setWaiting] = useState(0);
+  // A new object on each load, so even the same delay sets its timer again.
+  const [snoozeEnd, setSnoozeEnd] = useState<{ inMs: number } | null>(null);
   const [openBy, setOpenBy] = useState<OpenCounts | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const { status } = filter;
@@ -127,6 +133,7 @@ function useConversationList({
       setListed(true);
       setHasMore(page.hasMore);
       setWaiting(page.waiting);
+      setSnoozeEnd(page.snoozeEndsInMs === null ? null : { inMs: page.snoozeEndsInMs });
       setOpenBy(page.openBy);
       if (firstList.current && wanted.status === "open" && wanted.assignee === null) {
         firstList.current = false;
@@ -142,6 +149,13 @@ function useConversationList({
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: each of these asks for a load.
   useEffect(reload, [reload, status, assignee, limit, version]);
+  // A snooze ends with no event, so the list loads again when the workspace's next one ends. The
+  // server gives the delay, so this device's clock does not matter, and each load sets a new timer.
+  useEffect(() => {
+    if (snoozeEnd === null) return;
+    const timer = setTimeout(reload, Math.min(snoozeEnd.inMs + SNOOZE_END_MARGIN_MS, MAX_TIMER_MS));
+    return () => clearTimeout(timer);
+  }, [snoozeEnd, reload]);
   const loadMore = () => setLimit((current) => current + PAGE_SIZE);
   // Grows with each read, so a search, which is a snapshot, asks again.
   const [reads, setReads] = useState(0);

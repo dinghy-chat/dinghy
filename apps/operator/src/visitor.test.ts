@@ -3,6 +3,8 @@ import type { Conversation } from "./api.ts";
 import {
   detailRows,
   isWaiting,
+  pageName,
+  pagePath,
   presenceLine,
   replyAuthor,
   visitorLabel,
@@ -64,6 +66,7 @@ describe("waiting", () => {
     handler: null,
     bot: null,
     unread: false,
+    snooze: null,
   };
 
   test("an open conversation whose newest message is the visitor's waits", () => {
@@ -75,6 +78,10 @@ describe("waiting", () => {
     expect(isWaiting({ ...base, lastMessage: reply })).toBe(false);
     expect(isWaiting({ ...base, status: "closed" })).toBe(false);
     expect(isWaiting({ ...base, lastMessage: null })).toBe(false);
+  });
+
+  test("a snoozed conversation does not wait", () => {
+    expect(isWaiting({ ...base, snooze: { until: null } })).toBe(false);
   });
 });
 
@@ -104,6 +111,28 @@ describe("names and links", () => {
     ]) {
       expect(webLink(value)).toBeNull();
     }
+  });
+});
+
+describe("pages of the customer's site", () => {
+  test("show their path, with no domain", () => {
+    expect(pagePath("https://shipmail.to/docs/features/import?tab=2#top")).toBe(
+      "/docs/features/import?tab=2#top",
+    );
+    expect(pagePath("https://shipmail.to")).toBe("/");
+    expect(pagePath("shipmail.to/docs")).toBe("shipmail.to/docs");
+  });
+
+  test("lose the site's name at the end of their title", () => {
+    const page = "https://app.shipmail.to/settings/profile";
+    expect(pageName("Profile - Settings - Shipmail", page)).toBe("Profile - Settings");
+    expect(pageName("Pricing | Shipmail Docs", page)).toBe("Pricing");
+    expect(pageName("Pricing — Annual", page)).toBe("Pricing — Annual");
+    expect(pageName("Shipmail", page)).toBe("Shipmail");
+    expect(pageName(null, page)).toBe("/settings/profile");
+    expect(pageName("Settings - Email", "https://mail.com/settings")).toBe("Settings - Email");
+    expect(pageName("Help - Community", "https://acme.com.au/help")).toBe("Help - Community");
+    expect(pageName("Pricing - Acme", "https://acme.co.uk/pricing")).toBe("Pricing");
   });
 });
 

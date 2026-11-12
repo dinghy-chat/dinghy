@@ -1,5 +1,5 @@
 {
-  "id": "5dcea203-406d-4c08-b59b-98bba997aab4",
+  "id": "16122f92-3a48-4720-b376-9c3cac4cedd7",
   "prevId": "c036217a-e869-423d-b980-56186d788080",
   "version": "7",
   "dialect": "postgresql",
@@ -438,31 +438,11 @@
           "notNull": true,
           "default": "'conversations'"
         },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'static'"
-        },
         "token_hash": {
           "name": "token_hash",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "reply_mode": {
-          "name": "reply_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "created_by": {
           "name": "created_by",
@@ -533,185 +513,6 @@
         "api_key_level": {
           "name": "api_key_level",
           "value": "\"api_key\".\"level\" in ('conversations', 'setup')"
-        },
-        "api_key_source": {
-          "name": "api_key_source",
-          "value": "\"api_key\".\"source\" in ('static', 'oauth')"
-        },
-        "api_key_reply_mode": {
-          "name": "api_key_reply_mode",
-          "value": "\"api_key\".\"reply_mode\" in ('send', 'draft')"
-        },
-        "api_key_token": {
-          "name": "api_key_token",
-          "value": "(\"api_key\".\"source\" = 'static') = (\"api_key\".\"token_hash\" is not null)"
-        },
-        "api_key_client": {
-          "name": "api_key_client",
-          "value": "(\"api_key\".\"source\" = 'oauth') = (\"api_key\".\"client_id\" is not null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.api_key_credential": {
-      "name": "api_key_credential",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "api_key_id": {
-          "name": "api_key_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "family_id": {
-          "name": "family_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "code_challenge": {
-          "name": "code_challenge",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "redirect_uri": {
-          "name": "redirect_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resource": {
-          "name": "resource",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "api_key_credential_api_key_idx": {
-          "name": "api_key_credential_api_key_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "api_key_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "api_key_credential_expires_idx": {
-          "name": "api_key_credential_expires_idx",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "api_key_credential_workspace_id_workspace_id_fk": {
-          "name": "api_key_credential_workspace_id_workspace_id_fk",
-          "tableFrom": "api_key_credential",
-          "tableTo": "workspace",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "api_key_credential_api_key_fk": {
-          "name": "api_key_credential_api_key_fk",
-          "tableFrom": "api_key_credential",
-          "tableTo": "api_key",
-          "columnsFrom": ["workspace_id", "api_key_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "api_key_credential_workspace_id_id_pk": {
-          "name": "api_key_credential_workspace_id_id_pk",
-          "columns": ["workspace_id", "id"]
-        }
-      },
-      "uniqueConstraints": {
-        "api_key_credential_token_hash_key": {
-          "name": "api_key_credential_token_hash_key",
-          "nullsNotDistinct": false,
-          "columns": ["token_hash"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "api_key_credential_kind": {
-          "name": "api_key_credential_kind",
-          "value": "\"api_key_credential\".\"kind\" in ('code', 'access', 'refresh')"
-        },
-        "api_key_credential_code": {
-          "name": "api_key_credential_code",
-          "value": "\"api_key_credential\".\"kind\" = 'code' or num_nonnulls(\"api_key_credential\".\"code_challenge\", \"api_key_credential\".\"redirect_uri\", \"api_key_credential\".\"resource\") = 0"
         }
       },
       "isRLSEnabled": false
@@ -1071,15 +872,15 @@
           "notNull": true,
           "default": false
         },
-        "human_since": {
-          "name": "human_since",
+        "snoozed_at": {
+          "name": "snoozed_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
-        "handoff_by_api_key_id": {
-          "name": "handoff_by_api_key_id",
-          "type": "uuid",
+        "snoozed_until": {
+          "name": "snoozed_until",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -1099,27 +900,6 @@
         }
       },
       "indexes": {
-        "conversation_handoff_api_key_idx": {
-          "name": "conversation_handoff_api_key_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "handoff_by_api_key_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "conversation_visitor_idx": {
           "name": "conversation_visitor_idx",
           "columns": [
@@ -1233,6 +1013,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "conversation_snooze_end_idx": {
+          "name": "conversation_snooze_end_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "snoozed_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"conversation\".\"snoozed_until\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -1262,15 +1064,6 @@
           "columnsTo": ["workspace_id", "operator_id"],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "conversation_handoff_api_key_fk": {
-          "name": "conversation_handoff_api_key_fk",
-          "tableFrom": "conversation",
-          "tableTo": "api_key",
-          "columnsFrom": ["workspace_id", "handoff_by_api_key_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -1281,7 +1074,12 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "conversation_snooze": {
+          "name": "conversation_snooze",
+          "value": "\"conversation\".\"snoozed_at\" is null and \"conversation\".\"snoozed_until\" is null or \"conversation\".\"snoozed_at\" is not null and \"conversation\".\"status\" = 'open'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.conversation_read": {
@@ -1374,274 +1172,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.draft_reply": {
-      "name": "draft_reply",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "conversation_id": {
-          "name": "conversation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "api_key_id": {
-          "name": "api_key_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reply_to_message_id": {
-          "name": "reply_to_message_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "stale_at": {
-          "name": "stale_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved": {
-          "name": "resolved",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved_by_operator_id": {
-          "name": "resolved_by_operator_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved_at": {
-          "name": "resolved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sent_message_id": {
-          "name": "sent_message_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "draft_reply_conversation_idx": {
-          "name": "draft_reply_conversation_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "draft_reply_open_idx": {
-          "name": "draft_reply_open_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"draft_reply\".\"resolved\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "draft_reply_reply_to_idx": {
-          "name": "draft_reply_reply_to_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "reply_to_message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "draft_reply_sent_message_idx": {
-          "name": "draft_reply_sent_message_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sent_message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "draft_reply_workspace_id_workspace_id_fk": {
-          "name": "draft_reply_workspace_id_workspace_id_fk",
-          "tableFrom": "draft_reply",
-          "tableTo": "workspace",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "draft_reply_conversation_fk": {
-          "name": "draft_reply_conversation_fk",
-          "tableFrom": "draft_reply",
-          "tableTo": "conversation",
-          "columnsFrom": ["workspace_id", "conversation_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "draft_reply_api_key_fk": {
-          "name": "draft_reply_api_key_fk",
-          "tableFrom": "draft_reply",
-          "tableTo": "api_key",
-          "columnsFrom": ["workspace_id", "api_key_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "draft_reply_reply_to_fk": {
-          "name": "draft_reply_reply_to_fk",
-          "tableFrom": "draft_reply",
-          "tableTo": "message",
-          "columnsFrom": ["workspace_id", "reply_to_message_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "draft_reply_sent_message_fk": {
-          "name": "draft_reply_sent_message_fk",
-          "tableFrom": "draft_reply",
-          "tableTo": "message",
-          "columnsFrom": ["workspace_id", "sent_message_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "draft_reply_resolved_by_fk": {
-          "name": "draft_reply_resolved_by_fk",
-          "tableFrom": "draft_reply",
-          "tableTo": "workspace_member",
-          "columnsFrom": ["workspace_id", "resolved_by_operator_id"],
-          "columnsTo": ["workspace_id", "operator_id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "draft_reply_workspace_id_id_pk": {
-          "name": "draft_reply_workspace_id_id_pk",
-          "columns": ["workspace_id", "id"]
-        }
-      },
-      "uniqueConstraints": {
-        "draft_reply_client_key": {
-          "name": "draft_reply_client_key",
-          "nullsNotDistinct": false,
-          "columns": ["workspace_id", "api_key_id", "client_id"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "draft_reply_body_length": {
-          "name": "draft_reply_body_length",
-          "value": "char_length(\"draft_reply\".\"body\") between 1 and 10000"
-        },
-        "draft_reply_resolved": {
-          "name": "draft_reply_resolved",
-          "value": "\"draft_reply\".\"resolved\" in ('sent', 'discarded')"
-        },
-        "draft_reply_resolved_at": {
-          "name": "draft_reply_resolved_at",
-          "value": "(\"draft_reply\".\"resolved\" is null) = (\"draft_reply\".\"resolved_at\" is null)"
-        },
-        "draft_reply_sent_message": {
-          "name": "draft_reply_sent_message",
-          "value": "coalesce(\"draft_reply\".\"resolved\" = 'sent', false) = (\"draft_reply\".\"sent_message_id\" is not null)"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.email_stop": {
@@ -2340,34 +1870,6 @@
           ],
           "isUnique": false,
           "where": "\"message\".\"changed_seq\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "message_api_key_conversation_idx": {
-          "name": "message_api_key_conversation_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"message\".\"author_api_key_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3398,13 +2900,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "is_test": {
-          "name": "is_test",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3414,22 +2909,6 @@
         }
       },
       "indexes": {
-        "visitor_test_idx": {
-          "name": "visitor_test_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"visitor\".\"is_test\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "visitor_seen_idx": {
           "name": "visitor_seen_idx",
           "columns": [
@@ -3750,24 +3229,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "response_excerpt": {
-          "name": "response_excerpt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "replay_of": {
-          "name": "replay_of",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "replayed_at": {
-          "name": "replayed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3793,9 +3254,9 @@
               "nulls": "last"
             },
             {
-              "expression": "coalesce(\"replayed_at\", \"created_at\")",
+              "expression": "created_at",
+              "isExpression": false,
               "asc": true,
-              "isExpression": true,
               "nulls": "last"
             }
           ],
@@ -3924,12 +3385,7 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "webhook_delivery_response_excerpt_length": {
-          "name": "webhook_delivery_response_excerpt_length",
-          "value": "char_length(\"webhook_delivery\".\"response_excerpt\") <= 2048"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.welcome_link": {
@@ -4205,60 +3661,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.widget_site_seen": {
-      "name": "widget_site_seen",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "origin": {
-          "name": "origin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "first_seen_at": {
-          "name": "first_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "widget_site_seen_workspace_id_workspace_id_fk": {
-          "name": "widget_site_seen_workspace_id_workspace_id_fk",
-          "tableFrom": "widget_site_seen",
-          "tableTo": "workspace",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "widget_site_seen_workspace_id_origin_pk": {
-          "name": "widget_site_seen_workspace_id_origin_pk",
-          "columns": ["workspace_id", "origin"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.worker_heartbeat": {
       "name": "worker_heartbeat",
       "schema": "",
@@ -4374,18 +3776,6 @@
         "widget_seen_at": {
           "name": "widget_seen_at",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "bots_paused_at": {
-          "name": "bots_paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "bots_paused_by": {
-          "name": "bots_paused_by",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },

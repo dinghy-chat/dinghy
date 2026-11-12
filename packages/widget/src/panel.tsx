@@ -185,7 +185,7 @@ export interface Line {
   fromVisitor: boolean;
   /** Null for the visitor's own message. */
   author: Author | null;
-  /** A status line: the team closed or reopened the conversation. */
+  /** A status line: the conversation was closed, or reopened by the team or by a message. */
   note?: "closed" | "reopened";
   status: "sent" | "sending" | "failed";
   quote?: Quote | null;
