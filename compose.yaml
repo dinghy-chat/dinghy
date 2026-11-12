@@ -10,7 +10,7 @@ name: dinghy
 # DINGHY_IMAGE and DINGHY_POSTGRES_* are for our tests and scripts/upgrade-postgres.sh, not settings.
 # Dinghy's own image goes by its tag, unlike the others: it is built from the tagged commit, so this
 # file cannot hold its digest. `docker image inspect -f '{{.RepoDigests}}' <image>` shows the one pulled.
-x-image: &image ${DINGHY_IMAGE:-ghcr.io/dinghy-chat/dinghy:0.21.0}
+x-image: &image ${DINGHY_IMAGE:-ghcr.io/dinghy-chat/dinghy:0.22.0}
 
 # Docker keeps every log line until a container is recreated, so a busy server could fill its disk.
 # This keeps at most 3 files of 10 MB per container. docker compose logs still reads them.
