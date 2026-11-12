@@ -21,8 +21,10 @@ import { AccountDeletedError, type Database, type Transaction } from "./db/tenan
 import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { registerGetStartedRoutes } from "./get-started.ts";
+import { registerHandlingRoutes } from "./handling.ts";
 import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
+import { registerKeyEvents } from "./key-events.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { type Live, noLive } from "./live.ts";
 import { createLiveVisitors, registerLiveVisitorRoutes } from "./live-visitors.ts";
@@ -423,22 +425,27 @@ export function createApp({
     registerApiKeyRoutes(app, db, logger);
     const webhookManager = createWebhooks({ db, logger, policy: webhooks });
     registerWebhookRoutes(app, { db, webhooks: webhookManager });
+    registerHandlingRoutes(app, { db, images, live });
+    const inbox = createInbox({
+      copyReply: cloud?.copyReply,
+      founderPicture,
+      db,
+      images,
+      live,
+      visitorPresence,
+    });
+    const publicOrigin = new URL(String(auth.options.baseURL)).origin;
     registerMcp(app, {
       db,
       webhooks: webhookManager,
       live,
       rateLimit,
-      inbox: createInbox({
-        copyReply: cloud?.copyReply,
-        founderPicture,
-        db,
-        images,
-        live,
-        visitorPresence,
-      }),
-      publicOrigin: new URL(String(auth.options.baseURL)).origin,
+      inbox,
+      publicOrigin,
       version,
+      chat: { db, images, inbox, limits, live, liveVisitors, visitorPresence },
     });
+    registerKeyEvents(app, { db, images, limits, live, logger, rateLimit, stream, publicOrigin });
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, db, presence);
     registerModerationRoutes(app, db, live);

@@ -40,6 +40,8 @@ import { t } from "./text.ts";
 import { larger, useUnread } from "./use-unread.ts";
 
 const NEW_REPLY_SHOWN_MS = 5000;
+// A bot repeats its typing notice while it writes, so one that stops repeating has stopped.
+const BOT_TYPING_MS = 6000;
 const RETRY_LIMIT_MS = 30_000;
 
 /**
@@ -153,6 +155,8 @@ function Chat({
   const [problem, setProblem] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
   const [newReply, setNewReply] = useState(false);
+  // A bot that types a reply: a new object for each notice, so each one restarts the timer.
+  const [botTyping, setBotTyping] = useState<{ name: string } | null>(null);
   // True once the replay of history has ended, so only a message that arrives later is "new".
   const replayed = useRef(false);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -272,6 +276,12 @@ function Chat({
     return () => clearTimeout(timer);
   }, [newReply]);
 
+  useEffect(() => {
+    if (botTyping === null) return;
+    const timer = setTimeout(() => setBotTyping(null), BOT_TYPING_MS);
+    return () => clearTimeout(timer);
+  }, [botTyping]);
+
   const { online, members, emailReplies, replySeconds } = usePresence(
     client,
     fullPage ? token : null,
@@ -390,12 +400,21 @@ function Chat({
               if (fresh && (kind === "closed" || kind === "reopened")) {
                 setOpenConversation(kind === "reopened");
               } else if (fresh && !message.fromVisitor) {
+                setBotTyping(null);
                 // Only a reply that arrives now, as history replays before ready.
                 if (replayed.current && wantsChime.current) chime();
                 setNewReply(true);
                 emit(context, "message:received", { body: message.body });
               }
               setLines((current) => merge(current, message));
+            },
+            notice(value) {
+              const { kind, name, typing } = value as {
+                kind: string;
+                name: string;
+                typing: boolean;
+              };
+              if (kind === "typing") setBotTyping(typing ? { name } : null);
             },
             ready(next) {
               if (controller.signal.aborted) return;
@@ -702,6 +721,9 @@ function Chat({
           </Fragment>
         ))}
         {emailAt === -1 && emailInLog}
+        {botTyping !== null && (
+          <div class="notice">{t("botTyping").replace("{name}", botTyping.name)}</div>
+        )}
       </div>
       {viewing !== null && (
         // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.

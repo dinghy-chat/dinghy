@@ -79,6 +79,8 @@ const meRoute = createRoute({
                   name: z.string(),
                   // The workspace's logo, for the workspace menu. Null with no logo.
                   logoUrl: z.string().nullable(),
+                  // An owner or admin paused every bot: API keys may not reply or type.
+                  botsPaused: z.boolean(),
                   // False while a cloud signup waits for payment.
                   active: z.boolean(),
                   // True after a cloud subscription ended: operators can read and export only.
@@ -438,6 +440,7 @@ export function registerOperatorRoutes(
               ...accessFlags(access),
               name: face?.name ?? "",
               logoUrl: face?.logoUrl ?? null,
+              botsPaused: face?.botsPaused ?? false,
               soleOwner,
               heir,
             };

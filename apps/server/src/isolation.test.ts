@@ -19,10 +19,12 @@ import {
   apiKey,
   attachment,
   conversation,
+  draftReply,
   emailStop,
   event,
   invite,
   message,
+  note,
   operator,
   operatorPicture,
   pageView,
@@ -120,6 +122,15 @@ interface World {
 }
 
 const inWorkspace = (id: string, path = "") => `/v1/operator/workspaces/${id}${path}`;
+
+/** A draft by the key, waiting in the conversation, written straight to the database. */
+async function draftIn(workspaceId: string, conversationId: string, apiKeyId: string) {
+  const [row] = await owner
+    .insert(draftReply)
+    .values({ workspaceId, conversationId, apiKeyId, clientId: randomUUID(), body: "a draft" })
+    .returning({ id: draftReply.id });
+  return row?.id ?? "";
+}
 
 /** Reads a stream until the marker, then closes it. */
 async function readStream(response: Response, until = "event: ready"): Promise<string> {
@@ -1342,6 +1353,165 @@ const ATTACKS: Record<string, Attack> = {
       (await as(anna, "GET", inWorkspace(b.id, `/webhooks/${hookB.id}/deliveries`))).status,
     ).toBe(404);
   },
+  "GET /v1/operator/workspaces/:workspaceId/conversations/:conversationId/drafts": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/drafts`);
+      expect((await as(anna, "GET", path)).status).toBe(404);
+    }
+  },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/drafts/:draftId/send":
+    async ({ operator: as, anna, a, b, other, keyB }) => {
+      const draft = await draftIn(b.id, other.conversationId, keyB.id);
+      for (const id of [a.id, b.id]) {
+        const path = inWorkspace(id, `/conversations/${other.conversationId}/drafts/${draft}/send`);
+        expect((await as(anna, "POST", path, {})).status).toBe(404);
+      }
+      const [row] = await owner.select().from(draftReply).where(eq(draftReply.id, draft));
+      expect(row?.resolved).toBeNull();
+    },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/drafts/:draftId/discard":
+    async ({ operator: as, anna, a, b, one, other, keyB }) => {
+      const draft = await draftIn(b.id, other.conversationId, keyB.id);
+      for (const path of [
+        inWorkspace(a.id, `/conversations/${other.conversationId}/drafts/${draft}/discard`),
+        inWorkspace(b.id, `/conversations/${other.conversationId}/drafts/${draft}/discard`),
+        // Its own conversation, with the other workspace's draft.
+        inWorkspace(a.id, `/conversations/${one.conversationId}/drafts/${draft}/discard`),
+      ]) {
+        expect((await as(anna, "POST", path)).status).toBe(404);
+      }
+      const [row] = await owner.select().from(draftReply).where(eq(draftReply.id, draft));
+      expect(row?.resolved).toBeNull();
+    },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/notes": async ({
+    operator: as,
+    withKey,
+    anna,
+    a,
+    b,
+    one,
+    other,
+    keyA,
+    keyB,
+    secrets,
+  }) => {
+    const body = { clientId: randomUUID(), body: "a note crossing over" };
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/notes`);
+      expect((await as(anna, "POST", path, body)).status).toBe(404);
+      expect((await withKey(keyA.token, "POST", path, body)).status).toBe(404);
+    }
+    expect(await owner.select().from(note).where(eq(note.body, body.body))).toEqual([]);
+    // The other workspace's own note never shows in this one's thread. Written straight to the
+    // database, because the attacks must not move the other workspace's feed.
+    await owner.insert(note).values({
+      workspaceId: b.id,
+      conversationId: other.conversationId,
+      seq: 1n,
+      authorApiKeyId: keyB.id,
+      clientId: randomUUID(),
+      body: `${secrets.b}, a note`,
+    });
+    const read = inWorkspace(a.id, `/conversations/${one.conversationId}/messages`);
+    expect(await (await as(anna, "GET", read)).text()).not.toContain(secrets.b);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/handoff": async ({
+    withKey,
+    a,
+    b,
+    bea,
+    one,
+    other,
+    keyA,
+  }) => {
+    const body = { clientId: randomUUID(), reason: "crossing", visitorMessage: "crossing over" };
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/handoff`);
+      expect((await withKey(keyA.token, "POST", path, body)).status).toBe(404);
+    }
+    // Bea is real, and only in the other workspace.
+    const own = inWorkspace(a.id, `/conversations/${one.conversationId}/handoff`);
+    const toBea = { clientId: randomUUID(), reason: "crossing", operatorId: bea.id };
+    expect((await withKey(keyA.token, "POST", own, toBea)).status).toBe(400);
+    const [row] = await owner
+      .select()
+      .from(conversation)
+      .where(eq(conversation.id, other.conversationId));
+    expect(row?.humanSince).toBeNull();
+    expect(await owner.select().from(message).where(eq(message.body, "crossing over"))).toEqual([]);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/give-back": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    const since = new Date("2026-01-02T03:04:05.000Z");
+    await owner
+      .update(conversation)
+      .set({ humanSince: since })
+      .where(eq(conversation.id, other.conversationId));
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/give-back`);
+      expect((await as(anna, "POST", path)).status).toBe(404);
+    }
+    const [row] = await owner
+      .select()
+      .from(conversation)
+      .where(eq(conversation.id, other.conversationId));
+    expect(row?.humanSince).toEqual(since);
+    await owner
+      .update(conversation)
+      .set({ humanSince: null })
+      .where(eq(conversation.id, other.conversationId));
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/bots-paused": async ({
+    operator: as,
+    anna,
+    sam,
+    a,
+    b,
+  }) => {
+    expect(
+      (await as(anna, "PUT", inWorkspace(b.id, "/bots-paused"), { paused: true })).status,
+    ).toBe(404);
+    // Sam is an admin in both, and a pause stays in its own workspace.
+    expect((await as(sam, "PUT", inWorkspace(a.id, "/bots-paused"), { paused: true })).status).toBe(
+      200,
+    );
+    const [row] = await owner.select().from(workspace).where(eq(workspace.id, b.id));
+    expect(row?.botsPausedAt).toBeNull();
+    await as(sam, "PUT", inWorkspace(a.id, "/bots-paused"), { paused: false });
+  },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/typing": async ({
+    withKey,
+    a,
+    b,
+    other,
+    keyA,
+  }) => {
+    for (const id of [a.id, b.id]) {
+      const path = inWorkspace(id, `/conversations/${other.conversationId}/typing`);
+      expect((await withKey(keyA.token, "POST", path, { typing: true })).status).toBe(404);
+    }
+  },
+  "GET /v1/events": async ({ withKey, keyA, other, secrets }) => {
+    expect((await withKey("dk_none", "GET", "/v1/events")).status).toBe(401);
+    // From the start of the feed, so anything from the other workspace would show.
+    const own = await withKey(keyA.token, "GET", "/v1/events?after=1.0");
+    expect(own.status).toBe(200);
+    const text = await readStream(own);
+    expect(text).toContain("message.created");
+    expect(text).not.toContain(other.conversationId);
+    expect(text).not.toContain(secrets.b);
+  },
   "POST /v1/mcp": async ({ withKey, keyA, other, secrets }) => {
     const call = async (name: string, args: unknown) =>
       (await (
@@ -1369,6 +1539,30 @@ const ATTACKS: Record<string, Attack> = {
     expect(JSON.stringify(await call("search_conversations", { q: "written" }))).toContain(
       "written by one",
     );
+    const crossing = { conversationId: other.conversationId, clientId: randomUUID() };
+    for (const [name, args] of [
+      ["get_contact", { conversationId: other.conversationId }],
+      ["get_contact", { visitorId: other.id }],
+      ["add_note", { ...crossing, body: "crossing" }],
+      ["handoff", { ...crossing, reason: "crossing" }],
+      ["set_typing", { conversationId: other.conversationId }],
+    ] as const) {
+      const answer = await call(name, args);
+      expect(answer.result.content[0]?.text, name).toMatch(/^not_found/);
+    }
+    for (const [name, args] of [
+      ["list_drafts", { status: "all" }],
+      ["wait_for_messages", { cursor: "1.0", timeoutSeconds: 1 }],
+      ["list_contacts", {}],
+      ["search_contacts", { q: "written" }],
+      ["get_live_visitors", {}],
+      ["get_analytics", { days: 90 }],
+    ] as const) {
+      const text = JSON.stringify(await call(name, args));
+      expect(text, name).not.toContain(other.conversationId);
+      expect(text, name).not.toContain(other.id);
+      expect(text, name).not.toContain(secrets.b);
+    }
     // Without a key, nothing.
     const bare = await withKey("dk_none", "POST", "/v1/mcp", {
       jsonrpc: "2.0",

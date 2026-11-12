@@ -10,6 +10,7 @@ import type { Actor } from "./api-keys.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
+import type { HandledPayload } from "./bots.ts";
 import {
   apiKey,
   event,
@@ -35,6 +36,7 @@ import type { Images } from "./images.ts";
 import { conversationView, messageView } from "./inbox.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { authorNames, findConversation, findMessage } from "./messages.ts";
+import { findNote } from "./notes.ts";
 import { retryDelayMs } from "./retry.ts";
 import { allowed } from "./team.ts";
 import { DAY_MS } from "./time.ts";
@@ -696,14 +698,66 @@ export function registerWebhookRoutes(
 
 // The worker's part -------------------------------------------------------------------------------
 
-/** The webhook events one feed event makes: a first message also starts its conversation. */
-function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
+/**
+ * The webhook events one feed event makes: a first message also starts its conversation, and a
+ * handler change is a handoff or a bot's return. A person's reply that took a conversation makes
+ * none: `message.created` tells it.
+ */
+export function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
   if (kind === "message.created") {
     const created = (payload as MessagePayload).conversationCreated === true;
     return created ? ["conversation.created", "message.created"] : ["message.created"];
   }
+  if (kind === "conversation.handled") {
+    const { change } = payload as HandledPayload;
+    if (change === "handoff") return ["conversation.handoff"];
+    return change === "bot_resumed" ? ["conversation.bot_resumed"] : [];
+  }
   return WEBHOOK_EVENTS.some((one) => one === kind) ? [kind as WebhookEvent] : [];
 }
+
+/** What one webhook event names: its conversation, and its message or note. */
+export interface WebhookSubject {
+  conversationId: string;
+  messageId: string | null;
+  noteId: string | null;
+}
+
+/**
+ * The `data` of one webhook event, in the same shapes as the operator API: the conversation, and
+ * the message or the note it names. A string says why there is nothing to send. The webhooks and
+ * the key event stream both build their bodies with this.
+ */
+export async function webhookData(
+  tx: Transaction,
+  images: Images | undefined,
+  workspaceId: string,
+  subject: WebhookSubject,
+): Promise<Record<string, unknown> | string> {
+  const found = await findConversation(tx, workspaceId, subject.conversationId);
+  if (found === null) return "The conversation was deleted.";
+  const data: Record<string, unknown> = { conversation: conversationView(found, null) };
+  if (subject.messageId !== null) {
+    const stored = await findMessage(tx, workspaceId, subject.messageId);
+    if (stored === null) return "The message was deleted.";
+    const names = await authorNames(tx, workspaceId, [stored]);
+    data.message = messageView(images, workspaceId, names, stored);
+  }
+  if (subject.noteId !== null) {
+    const found = await findNote(tx, workspaceId, subject.noteId);
+    if (found === null) return "The note was deleted.";
+    const { id, body, authorName, authorKind } = found;
+    data.note = { id, body, authorName, authorKind };
+  }
+  return data;
+}
+
+/**
+ * The ID a receiver sees for one event type of one change. A `note.created` event uses its note's
+ * ID, which is as unique, so the delivery can name its note without a column of its own.
+ */
+const deliveryEventId = (type: WebhookEvent, payload: { noteId?: string }) =>
+  type === "note.created" && payload.noteId !== undefined ? payload.noteId : randomUUID();
 
 /**
  * Creates the deliveries for one event, in one transaction with clearing its flag, so a crash here
@@ -728,7 +782,11 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     if (found === undefined) return false;
     const { workspaceId, seq } = found;
     await enterWorkspace(tx, workspaceId);
-    const payload = found.payload as { conversationId?: string; messageId?: string };
+    const payload = found.payload as {
+      conversationId?: string;
+      messageId?: string;
+      noteId?: string;
+    };
     const types = webhookTypes(found.kind, found.payload);
     const hooks = await tx
       .select({ id: webhook.id, events: webhook.events })
@@ -737,7 +795,7 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     const rows: (typeof webhookDelivery.$inferInsert)[] = [];
     if (payload.conversationId !== undefined) {
       for (const type of types) {
-        const eventId = randomUUID();
+        const eventId = deliveryEventId(type, payload);
         for (const hook of hooks.filter((one) => one.events.includes(type))) {
           rows.push({
             workspaceId,
@@ -856,15 +914,12 @@ async function planWebhook(
     if (!delivery.enabled) {
       return "Dinghy stopped this delivery because the webhook is off. Turn it on to receive future events.";
     }
-    const found = await findConversation(tx, row.workspaceId, delivery.conversationId);
-    if (found === null) return "The conversation was deleted.";
-    const data: Record<string, unknown> = { conversation: conversationView(found, null) };
-    if (delivery.messageId !== null) {
-      const stored = await findMessage(tx, row.workspaceId, delivery.messageId);
-      if (stored === null) return "The message was deleted.";
-      const names = await authorNames(tx, row.workspaceId, [stored]);
-      data.message = messageView(images, row.workspaceId, names, stored);
-    }
+    const data = await webhookData(tx, images, row.workspaceId, {
+      conversationId: delivery.conversationId,
+      messageId: delivery.messageId,
+      noteId: delivery.type === "note.created" ? delivery.eventId : null,
+    });
+    if (typeof data === "string") return data;
     return {
       url: delivery.url,
       secret: delivery.secret,

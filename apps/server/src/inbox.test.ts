@@ -38,6 +38,7 @@ const live: Live = {
   tell(workspaceId, notice) {
     tells.push([workspaceId, notice]);
   },
+  tellVisitor() {},
   async subscribe() {
     return () => {};
   },
@@ -129,7 +130,12 @@ describe("headers", () => {
 describe("membership", () => {
   test("a member reads its workspace", async () => {
     const response = await get(inA(""));
-    expect(await response.json()).toEqual({ id: a.id, name: "Acme", logoUrl: null });
+    expect(await response.json()).toEqual({
+      id: a.id,
+      name: "Acme",
+      logoUrl: null,
+      botsPaused: false,
+    });
   });
 
   test.each(["", "/conversations", "/stream"])(

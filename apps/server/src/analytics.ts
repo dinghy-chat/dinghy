@@ -1,9 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { type SQL, sql } from "drizzle-orm";
-import { SESSION } from "./api-security.ts";
+import { SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { failure, INVALID, MEMBER_ERRORS } from "./errors.ts";
+import { failure, INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import { isChat, messageAuthors } from "./messages.ts";
 
@@ -76,25 +76,29 @@ const Analytics = z
 
 export type AnalyticsResult = z.infer<typeof Analytics>;
 
+/** The period and the time zone: the route's query, and MCP's `get_analytics` arguments. */
+export const AnalyticsQuery = z.object({
+  days: z.coerce
+    .number()
+    .int()
+    .refine((days) => (PERIODS as readonly number[]).includes(days), "7, 30 or 90")
+    .default(30),
+  tz: z.string().refine(isTimeZone, "an IANA time zone, such as Europe/Paris").default("UTC"),
+});
+
 const analyticsRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/analytics`,
-  security: SESSION,
+  security: SESSION_OR_KEY,
   summary: "Support numbers for the last 7, 30 or 90 days",
   description:
     "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
   request: {
     params: z.object({ workspaceId: z.uuid() }),
-    query: z.object({
-      days: z.coerce
-        .number()
-        .int()
-        .refine((days) => (PERIODS as readonly number[]).includes(days), "7, 30 or 90")
-        .default(30),
-      tz: z.string().refine(isTimeZone, "an IANA time zone, such as Europe/Paris").default("UTC"),
-    }),
+    query: AnalyticsQuery,
   },
   responses: {
+    ...KEY_LIMITED,
     200: {
       description: "The numbers",
       content: {
@@ -305,24 +309,31 @@ function isUnknownZone(error: unknown): boolean {
   return false;
 }
 
+export const UNKNOWN_ZONE = failure("invalid_request", "This server does not know that time zone.");
+
+/** The numbers as the Analytics page shows them, or null when Postgres does not know the zone. */
+export async function analyticsFor(
+  db: Database,
+  workspaceId: string,
+  { days, tz }: z.output<typeof AnalyticsQuery>,
+): Promise<AnalyticsResult | null> {
+  try {
+    return await withWorkspace(
+      db,
+      workspaceId,
+      (tx) => readAnalytics(tx, workspaceId, { days, timeZone: tz, now: new Date() }),
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+  } catch (error) {
+    if (!isUnknownZone(error)) throw error;
+    return null;
+  }
+}
+
 export function registerAnalyticsRoute(app: App, db: Database): void {
   app.openapi(analyticsRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
-    const { days, tz } = c.req.valid("query");
-    try {
-      const numbers = await withWorkspace(
-        db,
-        id,
-        (tx) => readAnalytics(tx, id, { days, timeZone: tz, now: new Date() }),
-        {
-          isolationLevel: "repeatable read",
-          accessMode: "read only",
-        },
-      );
-      return c.json(numbers, 200);
-    } catch (error) {
-      if (!isUnknownZone(error)) throw error;
-      return c.json(failure("invalid_request", "This server does not know that time zone."), 400);
-    }
+    const numbers = await analyticsFor(db, c.get("memberWorkspaceId"), c.req.valid("query"));
+    if (numbers === null) return c.json(UNKNOWN_ZONE, 400);
+    return c.json(numbers, 200);
   });
 }

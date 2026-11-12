@@ -20,7 +20,7 @@ export interface Session {
   /** Runs one ordered read from Postgres. A signal never carries the data itself. */
   wake(): void;
   close(reason: CloseReason): void;
-  /** Passes on a notice to an operator stream. A visitor's stream has none. */
+  /** Passes on a notice: an operator stream's, or a visitor stream's own. */
   tell?(notice: string): void;
 }
 
@@ -31,7 +31,11 @@ export interface Session {
  */
 export type OperatorNotice =
   | { kind: "typing"; conversationId: string; visitorId: string; draft: string }
+  | { kind: "bot_typing"; conversationId: string; name: string; typing: boolean }
   | { kind: "receipts"; visitorId: string };
+
+/** Something live for one visitor's chat, that nothing stores: a bot types a reply, or stopped. */
+type VisitorNotice = { kind: "typing"; name: string; typing: boolean };
 
 export interface Live {
   /** `subscriber` is a visitor's ID, or OPERATORS. */
@@ -39,19 +43,22 @@ export interface Live {
   revoke(workspaceId: string, subscriber: string): void;
   /** Sends a notice to every operator stream in the workspace. */
   tell(workspaceId: string, notice: OperatorNotice): void;
+  /** Sends a notice to one visitor's streams. */
+  tellVisitor(workspaceId: string, visitorId: string, notice: VisitorNotice): void;
   /** Resolves once the subscription is active, or after a short wait if Valkey is down. */
   subscribe(workspaceId: string, subscriber: string, session: Session): Promise<() => void>;
   stop(): void;
 }
 
 /** Sends signals, for a process such as the worker that holds no streams. */
-export type Signals = Pick<Live, "wake" | "revoke" | "tell">;
+export type Signals = Pick<Live, "wake" | "revoke" | "tell" | "tellVisitor">;
 
 /** For the OpenAPI document and for tests that need no live delivery. */
 export const noLive: Live = {
   wake() {},
   revoke() {},
   tell() {},
+  tellVisitor() {},
   async subscribe() {
     return () => {};
   },
@@ -82,11 +89,16 @@ export function createSignals(publisher: Redis, logger: Logger): Signals {
     tell(workspaceId, notice) {
       publish(workspaceId, `${TELL}${JSON.stringify(notice)}`);
     },
+    tellVisitor(workspaceId, visitorId, notice) {
+      publish(workspaceId, `${TELL_VISITOR}${visitorId}:${JSON.stringify(notice)}`);
+    },
   };
 }
 
 /** A notice's prefix. Its JSON holds colons, so it is read before the other signals are split. */
 const TELL = "tell:";
+/** A visitor's notice: the prefix, the visitor's ID, a colon, then the JSON. */
+const TELL_VISITOR = "tellv:";
 
 interface WorkspaceEntry {
   visitors: Map<string, Set<Session>>;
@@ -134,6 +146,13 @@ export function createLive(publisher: Redis, url: string, logger: Logger): Live 
     if (payload.startsWith(TELL)) {
       for (const session of visitors?.get(OPERATORS) ?? [])
         session.tell?.(payload.slice(TELL.length));
+      return;
+    }
+    if (payload.startsWith(TELL_VISITOR)) {
+      const rest = payload.slice(TELL_VISITOR.length);
+      const colon = rest.indexOf(":");
+      for (const session of visitors?.get(rest.slice(0, colon)) ?? [])
+        session.tell?.(rest.slice(colon + 1));
       return;
     }
     const [type, visitorId = ""] = payload.split(":");

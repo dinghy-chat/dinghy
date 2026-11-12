@@ -55,6 +55,7 @@ const live: Live = {
   },
   revoke() {},
   tell() {},
+  tellVisitor() {},
   async subscribe() {
     return () => {};
   },
