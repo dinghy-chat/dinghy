@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-12
+
 ### Upgrading
 
 - The Docker image downloads DB-IP's free IP to Country Lite database when it is built, for the countries in the new live view. Nothing to set. A server built from source can point `GEOIP_COUNTRY_FILE` at a copy, and without one the live view shows no countries.
@@ -388,7 +390,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/dinghy-chat/dinghy/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/dinghy-chat/dinghy/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/dinghy-chat/dinghy/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/dinghy-chat/dinghy/compare/v0.17.0...v0.18.0
