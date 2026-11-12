@@ -4,6 +4,17 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The **…** menu has one **Snooze** item, which opens its choices in place, with a row to go back. The right arrow opens it and the left arrow goes back.
+- A signed detail that links to a page ending in an ID, such as `organization: https://example.com/admin/organizations/org_8f2k1`, shows the ID and still opens the page. Its copy button copies the ID.
+- The conversation's side panel no longer shows the last page, which **Pages visited** already lists. A click on the visitor's email copies it.
+- **Reply** and **Note** above the reply box are a small switch with an icon each, and **Note** turns yellow when chosen.
+
+### Fixed
+
+- In dark mode, menus, popovers and modals stand out from the page, on a lighter card with a pale edge over a darker backdrop.
+
 ## [0.24.0] - 2026-11-12
 
 ### Added
