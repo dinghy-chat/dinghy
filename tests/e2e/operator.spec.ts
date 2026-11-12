@@ -409,6 +409,19 @@ test("on a phone, the list and the thread take turns", async ({ browser }) => {
   await row(operator, "From a phone test").click();
   await expect(reply(operator)).toBeVisible();
   await expect(row(operator, "From a phone test")).toBeHidden();
+  // With no room beside the menu, Snooze opens its choices in its place, under a row back.
+  await operator.getByRole("button", { name: "More actions" }).click();
+  const menu = operator.getByRole("menu", { name: "More actions" });
+  await menu.getByRole("menuitem", { name: "Snooze" }).click();
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "Snooze",
+    "Until they reply",
+    "Until tomorrow",
+    "Until next week",
+  ]);
+  await menu.getByRole("menuitem", { name: "Back" }).click();
+  await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  await operator.keyboard.press("Escape");
   await operator.getByRole("button", { name: "Back" }).click();
   await expect(row(operator, "From a phone test")).toBeVisible();
   const overflow = await operator.evaluate(
@@ -688,17 +701,23 @@ test("the … menu blocks with the keyboard too", async ({ browser }) => {
     "Snooze",
     "Delete",
   ]);
-  // Snooze opens its choices in place, under a row that goes back, and the left arrow goes back.
-  await operator.keyboard.press("End");
-  await operator.keyboard.press("ArrowUp");
-  await operator.keyboard.press("ArrowRight");
-  await expect(menu.getByRole("menuitem")).toHaveText([
-    "Snooze",
+  // With a mouse, Snooze opens its choices beside the menu, on hover or with the right arrow,
+  // and the left arrow closes them.
+  const snooze = operator.getByRole("menu", { name: "Snooze" });
+  await menu.getByRole("menuitem", { name: "Snooze" }).hover();
+  await expect(snooze.getByRole("menuitem")).toHaveText([
     "Until they reply",
     "Until tomorrow",
     "Until next week",
   ]);
+  await menu.getByRole("menuitem", { name: "Block" }).hover();
+  await expect(snooze).toHaveCount(0);
+  await operator.keyboard.press("End");
+  await operator.keyboard.press("ArrowUp");
+  await operator.keyboard.press("ArrowRight");
+  await expect(menu).toHaveAttribute("aria-activedescendant", /-sub-0$/);
   await operator.keyboard.press("ArrowLeft");
+  await expect(snooze).toHaveCount(0);
   await expect(menu.getByRole("menuitem")).toHaveCount(4);
   await operator.keyboard.press("Home");
   await operator.keyboard.press("Enter");

@@ -847,7 +847,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   panelDetails: "Details",
   panelOtherConversations: "Other conversations",
   panelNote: "Contact note",
-  notePlaceholder: "About this person. Visitors never see it.",
+  notePlaceholder: "What your team should know about this person. Visitors never see it.",
   viewContact: "View contact",
   showPanel: "Show the visitor's details",
   hidePanel: "Hide the visitor's details",
