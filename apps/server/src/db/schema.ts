@@ -49,6 +49,8 @@ export const MESSAGE_KINDS = [...VISITOR_KINDS, "note"] as const;
 export const messageKind = pgEnum("message_kind", MESSAGE_KINDS);
 /** The kinds that people wrote in the chat, which both sides see. */
 export const CHAT_KINDS = ["text", "image"] as const;
+/** What people wrote: the chat, and the notes only the team sees. */
+export const WRITTEN_KINDS = [...CHAT_KINDS, "note"] as const;
 // `transcript` is the email of a whole conversation to its visitor, after a close or on request.
 export const alertChannel = pgEnum("alert_channel", ["push", "email", "transcript"]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);

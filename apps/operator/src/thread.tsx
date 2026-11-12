@@ -60,7 +60,7 @@ function infoOf(line: Line, author: string, receipts: ReplyReceipts | null): Inf
     author,
     via: line.via,
     receipt:
-      !hasReceipt(line) || receipts === null || line.seq === null
+      !hasReceipt(line) || receipts === null
         ? null
         : { isRead: receiptOf(line.seq, receipts) === "read" },
   };

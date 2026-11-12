@@ -49,7 +49,6 @@ import {
   catchClosed,
   formatCursor,
   InvalidReplyToError,
-  isVisitorMessage,
   listVisitorMessages,
   type MessageAuthor,
   markRead,
@@ -57,8 +56,8 @@ import {
   parseCursor,
   QuoteSchema,
   readState,
-  type StoredMessage,
   type VisitorMessage,
+  visitorMessage,
   visitorQuote,
   WorkspaceClosedError,
 } from "./messages.ts";
@@ -598,12 +597,6 @@ function messageView(
   };
 }
 
-/** The visitor's own message, which is never a note. */
-function ownMessage(message: StoredMessage): VisitorMessage {
-  if (!isVisitorMessage(message)) throw new Error("A visitor's message is never a note");
-  return message;
-}
-
 const UNAUTHORIZED = failure("unauthorized", "The token is not valid.");
 
 const ORIGIN_NOT_ALLOWED = failure("origin_not_allowed", "This site may not use this workspace.");
@@ -1115,7 +1108,7 @@ export function registerWidgetRoutes(
     }
     return c.json(
       {
-        ...view(found.id, ownMessage(result.message)),
+        ...view(found.id, visitorMessage(result.message)),
         conversationStarted: result.conversationStarted,
       },
       result.created ? 201 : 200,
@@ -1271,7 +1264,7 @@ export function registerWidgetRoutes(
       const { result } = outcome;
       return c.json(
         {
-          ...view(found.id, ownMessage(result.message)),
+          ...view(found.id, visitorMessage(result.message)),
           conversationStarted: result.conversationStarted,
         },
         result.created ? 201 : 200,

@@ -33,6 +33,7 @@ import {
   operator,
   type VISITOR_KINDS,
   visitor,
+  WRITTEN_KINDS,
   webhook,
   workspace,
   workspaceMember,
@@ -56,7 +57,7 @@ type MessageKind = (typeof message.$inferSelect)["kind"];
 export const isChat = (kind: SQLWrapper = message.kind) => inArray(kind, [...CHAT_KINDS]);
 
 /** What people wrote: the chat, and the notes only the team sees. */
-export const isWritten = () => inArray(message.kind, [...CHAT_KINDS, "note"]);
+export const isWritten = () => inArray(message.kind, [...WRITTEN_KINDS]);
 
 /** Who closed or reopened a conversation, as the author of its status line. */
 export type StatusActor =
@@ -175,7 +176,12 @@ export interface StoredMessage {
 
 /** A message the visitor may get: any kind but a note. */
 export type VisitorMessage = StoredMessage & { kind: (typeof VISITOR_KINDS)[number] };
-export const isVisitorMessage = (one: StoredMessage): one is VisitorMessage => one.kind !== "note";
+
+/** The message as a visitor's, for a read that left notes out. Throws on a note, which is a bug. */
+export function visitorMessage(one: StoredMessage): VisitorMessage {
+  if (one.kind === "note") throw new Error("A note must never reach a visitor");
+  return { ...one, kind: one.kind };
+}
 
 export const messageColumns = {
   id: message.id,
@@ -725,8 +731,7 @@ export async function listVisitorMessages(
   );
   const changed = await read(gt(message.changedSeq, position.seq), message.changedSeq);
   const rows = [...fresh, ...changed]
-    .map(stored)
-    .filter(isVisitorMessage)
+    .map((row) => visitorMessage(stored(row)))
     .sort((one, other) => (one.changeSeq < other.changeSeq ? -1 : 1));
   const page = rows.slice(0, limit);
   const last = page.at(-1);

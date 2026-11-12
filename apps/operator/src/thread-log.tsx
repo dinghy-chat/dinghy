@@ -118,10 +118,7 @@ export function ThreadLog({
 
   const renderLine = (line: Line, index: number) => {
     const meta = groupMeta(lines, index, who.meId);
-    const receipt =
-      !hasReceipt(line) || line.seq === null || receipts === null
-        ? null
-        : receiptOf(line.seq, receipts);
+    const receipt = !hasReceipt(line) || receipts === null ? null : receiptOf(line.seq, receipts);
     return (
       <>
         {/* The welcome chat's founder has a face, as an operator does in the widget. */}
