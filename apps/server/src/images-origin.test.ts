@@ -123,6 +123,8 @@ describe("a separate origin for user images", () => {
     const page = await app.request(new URL("/", APP).toString());
     expect(page.status).toBe(200);
     expect(page.headers.get("content-security-policy")).toContain(`img-src 'self' data: ${FILES};`);
+    // The image viewer reads the file to save it on the device.
+    expect(page.headers.get("content-security-policy")).toContain(`connect-src 'self' ${FILES};`);
   });
 
   test("an HTML or SVG body is never served, whatever its row says", async () => {
