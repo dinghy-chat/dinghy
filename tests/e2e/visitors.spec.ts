@@ -78,7 +78,7 @@ test("the operator sees the visitor's draft, the read receipt and the visitor's 
   // The first reply assigned the conversation to the operator.
   const panel = operator.locator(".visitor-panel");
   await expect(panel.getByRole("button", { name: /^Assign to/ })).toContainText("vera");
-  await expect(panel.getByRole("region", { name: "Visitor" })).toContainText("Chrome on Linux");
+  await expect(panel.locator(".place-tiles")).toContainText("Chrome on Linux");
   await picture(operator, "thread");
 
   // The panel hides, and the header holds the assignee again.

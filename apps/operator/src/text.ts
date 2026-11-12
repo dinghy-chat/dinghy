@@ -267,6 +267,7 @@ const en = {
   reopenedPlain: "Conversation reopened",
   copyValue: "Copy the {name}",
   userIdLabel: "user ID",
+  userIdTitle: "User ID",
   originsTitle: "Allowed sites",
   originsHelp:
     "Add each website address where you want chat, including https://. Add addresses with and without www separately if you use both.",
@@ -724,7 +725,6 @@ const en = {
   typingPreviewHelp:
     "Operators see a visitor's message as they type it, before they send it. Dinghy does not store it.",
   typingPreviewToggle: "Show what visitors type before they send",
-  panelConversation: "Conversation",
   panelVisitor: "Visitor",
   panelDetails: "Details",
   panelOtherConversations: "Other conversations",
@@ -738,6 +738,7 @@ const en = {
   localTimeLabel: "Local time",
   deviceLabel: "Device",
   currentPageLabel: "Current page",
+  lastPageLabel: "Last page",
   statusLabel: "Status",
   contacts: "Contacts",
   contactsContext: "Everyone who started a conversation with you.",

@@ -6,12 +6,16 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Added
 
-- **Settings > Appearance** has a **Header** section: the faces beside the chat's title are the members online now (the default, with the latest repliers when nobody is), the latest repliers, members you choose and order, or none, 1 to 5 of them, with a green dot on each member online. The status line can say "Usually replies in 2 min", from the 30-day median first reply time. API: the widget settings have `headerFaces`, `headerFaceCount`, `headerDot`, `headerStatus` and `headerMembers`, the appearance answers `faces` and `replySeconds`, and the widget's presence answers `members`.
+- **Settings > Appearance** has a **Header** section: the faces beside the chat's title are the members online now (the default, with the latest repliers when nobody is), the latest repliers, members you choose and order, or none, 1 to 5 of them, with a green dot on each member online. The status line can say "Usually replies in 2 min", from the 30-day median first reply time. API: the widget settings have `headerFaces`, `headerFaceCount`, `headerDot`, `headerStatus` and `headerMembers`, the appearance answers `faces`, and the widget's presence answers `members` and `replySeconds`.
 - The user menu sets you **Available** or **Away**, in every workspace, with a dot on your picture. While you are away, the widget does not count you online. API: `PUT /v1/operator/me/status`, and `away` on `/v1/operator/me`.
 
 ### Changed
 
 - A background tab of the operator app keeps you online for the widget, as most of the time the inbox waits in one. A hidden tab marks you online for 2 minutes per beat, as browsers slow its timers, and shows no conversation as open. API: the operator's presence beat takes `hidden`.
+- The Inbox's Open, Closed, All, Mine and Unassigned choices are in a card behind a filter button beside the search, with a dot when a filter is set. The message menu is smaller and never cut off by the thread or the reply field, and hovering a message no longer moves the thread.
+- **Visitors** has an interactive map: hover a country for who is there, click it to zoom and list only its people, drag and scroll to move and zoom. People who used the chat show their name, **Open chat** and **View contact**. Everyone, Chatting and Known filter the list, and two tiles count the pages open now and where people came from. A referrer from the site itself no longer counts.
+- **Analytics** shows four key numbers with their change against the previous period of the same length, conversations per day with a scale, what happened to the conversations, the busiest hours with the peak marked, and who replies first. API: the analytics answer adds `previous`, returns `firstReply.fast` as a count instead of `within5Minutes`, and replaces `operators` with `repliers`, each an operator, an API key or a former member.
+- The conversation's visitor panel has a new look. Its head shows the visitor on a soft blue, with their place, local time, device and current page (the last page once they leave) as tiles. The assignee and the status sit in one row under it. Long values stay on one line, the pages visited form a timeline, folds show their item count, and the note looks like a sticky note. **View contact** is an icon in the head, and the user ID moved to **Details**. The panel slides in and out when you show or hide it, unless the device asks for reduced motion.
 
 ## [0.21.0] - 2026-11-12
 
