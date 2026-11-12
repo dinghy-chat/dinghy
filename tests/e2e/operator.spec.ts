@@ -366,6 +366,40 @@ test("on a phone, the list and the thread take turns", async ({ browser }) => {
   expect(overflow).toBe(false);
 });
 
+test("on a phone, the sections sit in a tab bar and the formats wait behind Aa", async ({
+  browser,
+}) => {
+  const operator = await signedIn(browser, server, "anna@example.com");
+  await operator.setViewportSize({ width: 390, height: 844 });
+  await visitor(browser, "Tab bar test");
+  const tabs = operator.getByRole("navigation", { name: "Main menu" });
+  const box = await tabs.boundingBox();
+  expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe(844);
+  await tabs.getByRole("button", { name: "Contacts" }).click();
+  await expect(operator.getByRole("heading", { name: "Contacts" })).toBeVisible();
+  await tabs.getByRole("button", { name: "Inbox" }).click();
+
+  // A thread has its own Back, so the tab bar goes, and the reply takes one row.
+  await row(operator, "Tab bar test").click();
+  await expect(tabs).toBeHidden();
+  const send = await operator.getByRole("button", { name: "Send" }).boundingBox();
+  const field = await reply(operator).boundingBox();
+  expect(Math.abs((send?.y ?? 0) - (field?.y ?? 0))).toBeLessThan(10);
+  const bold = operator.getByRole("button", { name: /^Bold/ });
+  await expect(bold).toBeHidden();
+  const formats = operator.getByRole("button", { name: "Formatting" });
+  await formats.click();
+  await expect(formats).toHaveAttribute("aria-pressed", "true");
+  await reply(operator).fill("Phone");
+  await reply(operator).selectText();
+  await bold.click();
+  await expect(reply(operator)).toHaveValue("**Phone**");
+  const overflow = await operator.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth,
+  );
+  expect(overflow).toBe(false);
+});
+
 test("a site that is not allowed shows Not sent, never the text for a block", async ({
   browser,
 }) => {

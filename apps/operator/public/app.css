@@ -1383,7 +1383,7 @@ button.workspace[aria-expanded="true"],
   top: 100%;
   z-index: 50;
   min-width: max(100%, 200px);
-  max-width: min(320px, calc(100vw - 32px));
+  max-width: min(320px, calc(100vw - 24px));
   max-height: 320px;
   margin-top: 6px;
   padding: 6px;
@@ -2882,6 +2882,10 @@ button.quote:hover {
   gap: 2px;
   min-width: 0;
 }
+/* The Aa toggle shows only on a phone, where the formats wait behind it. */
+.format-toggle {
+  display: none;
+}
 .format-tools {
   display: flex;
   flex-wrap: wrap;
@@ -3247,6 +3251,22 @@ button.quote:hover {
 .info-tip:focus-visible {
   background: var(--soft-edge);
   color: var(--navy);
+}
+/* On a touch screen, a press anywhere in the 40px around a small control reaches it. */
+@media (pointer: coarse) {
+  .info-tip {
+    position: relative;
+  }
+  .info-tip::after,
+  .live-dot::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
+    transform: translate(-50%, -50%);
+  }
 }
 .stat-value {
   margin: 8px 0 2px;
@@ -4000,6 +4020,17 @@ button.quote:hover {
   }
   .range-field {
     justify-self: stretch;
+  }
+  /* Five choices, such as the chat button's, share the row and wrap only when they must. */
+  .setting-row > .choices.outlined {
+    flex-wrap: wrap;
+    justify-self: stretch;
+    border-radius: 20px;
+  }
+  .setting-row > .choices.outlined label {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 8px;
   }
 }
 .widget-save {
@@ -4864,10 +4895,18 @@ button.quote:hover {
   }
 }
 
-/* Phone: one pane at a time. */
+/* Phone: one pane at a time, a compact top bar, and the sections in a tab bar at the bottom. The
+   insets keep everything clear of the notch, the home bar and the browser's own bars. */
 @media (max-width: 760px) {
+  :root {
+    --tab-bar-height: 58px;
+    --phone-edge: max(8px, env(safe-area-inset-left));
+  }
+  .shell {
+    height: 100dvh;
+  }
   .app {
-    padding: 0 8px 8px;
+    padding: 0 var(--phone-edge) calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 8px);
   }
   .contacts .wide-cell {
     display: none;
@@ -4876,52 +4915,91 @@ button.quote:hover {
     width: 100%;
     max-width: none;
   }
+  /* The top bar: the workspace on the left, Get started and the operator on the right. The tab
+     bar names the app, so the wordmark goes. */
+  .side {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: max(8px, env(safe-area-inset-top)) 4px 6px;
+  }
   .brand {
-    order: 0;
+    display: none;
   }
   .workspace-menu,
   .side > .workspace {
-    flex: 1;
-    order: 1;
+    flex: 0 1 auto;
+    min-width: 0;
     max-width: none;
   }
-  .me-menu {
-    order: 2;
+  .get-started,
+  .get-started + .me-menu {
     margin: 0;
   }
   .get-started {
-    order: 2;
-    margin: 0;
+    margin-left: auto;
   }
-  /* On a phone the steps rise as a sheet from the bottom. */
+  /* The steps drop under the top bar as a card, inside the screen's edges. */
   .get-started-panel {
     position: fixed;
-    top: auto;
+    top: calc(max(8px, env(safe-area-inset-top)) + 52px);
+    right: 12px;
+    bottom: auto;
+    left: 12px;
+    width: auto;
+    max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - 64px);
+    overflow-y: auto;
+  }
+  .get-started-panel .icon-button {
+    width: 40px;
+    height: 40px;
+    margin: -8px -8px 0 0;
+  }
+  .nav {
+    position: fixed;
     right: 0;
     bottom: 0;
     left: 0;
-    width: auto;
-    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
-    border-radius: 22px 22px 0 0;
-  }
-  .nav {
-    order: 3;
-    flex: 1 1 100%;
-    justify-content: space-between;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
     margin: 0;
-    /* The items fit a 360px phone. A narrower screen scrolls them, never the page. */
-    overflow-x: auto;
-    scrollbar-width: none;
+    padding: 4px max(4px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom))
+      max(4px, env(safe-area-inset-left));
+    border-top: 1px solid var(--line);
+    background: var(--surface);
   }
   .nav button {
-    flex: 1;
+    position: relative;
+    flex-direction: column;
     justify-content: center;
-    gap: 6px;
-    padding: 0 6px;
-    font-size: 14px;
+    gap: 2px;
+    width: auto;
+    min-width: 0;
+    height: calc(var(--tab-bar-height) - 9px);
+    min-height: 0;
+    padding: 0 2px;
+    font-size: 11.5px;
+    line-height: 1.2;
   }
-  .nav svg {
-    display: none;
+  .nav button[aria-current="page"] {
+    background: var(--soft);
+    box-shadow: none;
+  }
+  /* The count sits on the icon's corner, so every label keeps its place. */
+  .nav .count {
+    position: absolute;
+    top: 3px;
+    left: calc(50% + 4px);
+    min-width: 18px;
+    margin: 0;
+    padding: 0 5px;
+    font-size: 11px;
+    line-height: 16px;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+  .toasts {
+    bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px);
   }
   .panel {
     border-radius: 18px;
@@ -4938,7 +5016,8 @@ button.quote:hover {
   }
   .app.showing {
     grid-template-rows: minmax(0, 1fr);
-    padding-top: 8px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
   .app:not(.showing) .thread {
     display: none;
@@ -4948,8 +5027,8 @@ button.quote:hover {
     margin-left: -8px;
   }
   .thread-head {
-    gap: 10px;
-    padding: 10px 14px 12px;
+    gap: 8px;
+    padding: 8px 12px 10px;
   }
   .who-is {
     flex-basis: 100%;
@@ -4961,10 +5040,17 @@ button.quote:hover {
   .thread-head .actions {
     flex: 1 1 100%;
     flex-wrap: nowrap;
+    gap: 6px;
     min-width: 0;
   }
   .assignee {
     flex: 1;
+    min-width: 0;
+  }
+  /* The assignee is the row's first control, so its list opens from its left edge. */
+  .thread-head .assignee .popup {
+    right: auto;
+    left: 0;
   }
   .assignee .select-button {
     width: 100%;
@@ -4987,7 +5073,63 @@ button.quote:hover {
     max-width: calc(84% + 34px);
   }
   .compose {
-    padding: 0 10px 10px;
+    padding: 0 8px 8px;
+  }
+  .compose .box {
+    position: relative;
+    padding: 4px;
+  }
+  /* The emoji grid opens over the whole box, as the button sits too far right for its width. */
+  .compose .emoji-picker {
+    position: static;
+  }
+  .compose .box textarea {
+    min-height: 40px;
+    max-height: 160px;
+  }
+  .format-toggle {
+    display: grid;
+  }
+  .compose:not(.formatting) .format-tools,
+  .compose .tools-divider {
+    display: none;
+  }
+  /* One row: attach, emoji, Aa, the field and send. The formats show above the field. */
+  .compose:not(.editing) .box {
+    grid-template-columns: repeat(3, auto) minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0;
+  }
+  .compose:not(.editing) .box > * {
+    grid-column: 1 / -1;
+  }
+  .compose:not(.editing) .compose-tools {
+    display: contents;
+  }
+  .compose:not(.editing) .compose-tools > * {
+    grid-row: 3;
+  }
+  .compose:not(.editing) .box textarea {
+    grid-row: 3;
+    grid-column: 4;
+  }
+  .compose:not(.editing) .send {
+    grid-column: 5;
+  }
+  .compose:not(.editing) .format-tools {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .compose.editing .compose-tools {
+    flex-wrap: wrap;
+  }
+  .compose.editing .format-tools {
+    flex-basis: 100%;
+    order: -1;
   }
   .closed,
   .thread > .bad {
@@ -5022,19 +5164,46 @@ button.quote:hover {
   .app .select-button {
     min-height: 44px;
   }
-  .nav button {
-    min-height: 44px;
+  /* The thread's controls share one row on a 360px phone, so they keep the 40px minimum. */
+  .thread-head .pill,
+  .thread-head .assignee .select-button {
+    min-height: 40px;
+    height: 40px;
+    padding: 0 12px;
+  }
+  .thread-head .assignee .select-button {
+    padding-left: 6px;
   }
   .thread-head .round {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
   }
   .thread-head .icon-button,
   .back,
   .compose .icon-button,
-  .compose button[type="submit"] {
-    min-width: 44px;
-    min-height: 44px;
+  .compose button[type="submit"],
+  .panel-who .icon-button,
+  .live-tool {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  /* A finger needs 40px: the text buttons, the docs links and the small pills grow to it. */
+  .text-button,
+  .doc-link,
+  .app .live-actions .pill {
+    min-height: 40px;
+  }
+  .choices.outlined label {
+    min-height: 36px;
+  }
+  /* A field under 16px makes iOS zoom the page when it takes the focus. */
+  :root
+    :is(
+      input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+      textarea,
+      select
+    ) {
+    font-size: 16px;
   }
   .members thead,
   .members .email-cell {

@@ -21,7 +21,7 @@ type Placement = "down" | "up" | "floating";
 const TYPE_AHEAD_MS = 600;
 /** A floating popup's distance from its button, and from the window's edges. */
 const POPUP_GAP_PX = 6;
-const WINDOW_MARGIN_PX = 8;
+const WINDOW_MARGIN_PX = 12;
 /** The height a popup may take before it scrolls, as `.popup` sets in the CSS. */
 const POPUP_MAX_HEIGHT_PX = 320;
 
