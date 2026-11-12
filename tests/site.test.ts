@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
-import { writeDocs } from "../site/build-docs.ts";
+import { PAGES, pathOf, writeDocs } from "../site/build-docs.ts";
 
 const PUBLIC = "site/public";
 // The docs pages are built, not committed, so the tests check the pages that docs/*.md make now.
@@ -151,4 +151,15 @@ test("the old self-host address moves to the docs", () => {
   expect(readFileSync(join(PUBLIC, "_redirects"), "utf8")).toMatch(
     /^\/self-host \/docs\/self-hosting 301$/m,
   );
+});
+
+test("llms-full.txt holds every doc, with its title and its page's address", () => {
+  const full = readFileSync(join(PUBLIC, "llms-full.txt"), "utf8");
+  expect(full.startsWith("# Dinghy docs, in full\n")).toBe(true);
+  for (const page of PAGES) {
+    const title = readFileSync(join("docs", page.source), "utf8").split("\n")[0] ?? "";
+    expect(title, page.source).toMatch(/^# \S/);
+    expect(full, page.source).toContain(`${title}\n\nSource: https://dinghy.chat${pathOf(page)}\n`);
+  }
+  expect(full).not.toMatch(/\]\((?!https?:|mailto:|#)/);
 });

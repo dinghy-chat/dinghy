@@ -8,6 +8,8 @@ Dinghy is a live support chat. Visitors chat from a small widget on your website
 2. [Add the chat to your website](add-to-your-site.md). It takes one tag.
 3. [Learn the operator app](operator-guide.md), then invite your team and turn on alerts on your phone.
 
+A coding agent such as Claude Code can do step 2 for you, and your own bot can answer chats: read [Use Dinghy with AI agents](agents.md).
+
 If something does not work, read [Troubleshooting](troubleshooting.md). If the server itself breaks, read the [Runbooks](runbooks.md).
 
 ## Run the server
@@ -21,5 +23,6 @@ If something does not work, read [Troubleshooting](troubleshooting.md). If the s
 
 ## Build on it
 
+- [Use Dinghy with AI agents](agents.md) connects Claude Code or your own bot with OAuth or an API key, and explains drafts, handoff and safety.
 - [Architecture](architecture.md) explains how the processes, tenant isolation, messages, live signals and jobs fit together.
 - [API](api.md) describes the HTTP API, and links its OpenAPI document at `/v1/openapi.json`.

@@ -172,6 +172,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       description: "Closes a conversation. A new message from the visitor starts a new one.",
       input: z.object({ conversationId }),
       idempotent: true,
+      destructive: true,
       run: status("closed"),
     }),
     tool({

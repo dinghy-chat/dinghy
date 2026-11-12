@@ -149,7 +149,7 @@ Someone in two workspaces switches between them with the workspace name at the t
 - **Allowed sites** lists the sites that can load the chat, one per row. **Add a site** adds a row, and each row says if its address is not a site such as `https://example.com`.
 - **Identify signed-in users (optional)** holds the identity signing secret, for [signed-in users](add-to-your-site.md#show-who-is-chatting). Ordinary chat does not need it. It stays hidden until you select the eye. **Replace the secret** asks first, because the old one stops working at once.
 
-**Settings > API & webhooks** has the workspace's [API keys](api.md#api-keys), for your own scripts and AI assistants, and its [webhooks](api.md#webhooks), which tell another app about new conversations and messages. Both are optional. A key's token and a webhook's secret show once, so copy them then. A key's replies show its name, and **Revoke** stops it at once. Owners and admins see this page.
+**Settings > API & webhooks** has the workspace's [API keys](api.md#api-keys), for your own scripts and AI assistants, and its [webhooks](api.md#webhooks), which tell another app about new conversations and messages. Both are optional. A key's token and a webhook's secret show once, so copy them then. A key's replies show its name, and **Revoke** stops it at once. Apps that you connected in the browser, such as Claude Code, show there too, and [Use Dinghy with AI agents](agents.md) explains them. Owners and admins see this page.
 
 **Settings > Workspace** is for owners and admins. It has these sections:
 
