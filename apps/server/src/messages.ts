@@ -25,6 +25,7 @@ import {
   attachment,
   CHAT_KINDS,
   conversation,
+  draftReply,
   type EventKind,
   event,
   type MessagePayload,
@@ -138,8 +139,11 @@ export const visitorQuote = (row: QuoteRow | null) =>
         : quoted.authorName,
   );
 
-/** How a key's reply came: through the REST API or through the MCP server. */
-type KeyChannel = "api" | "mcp";
+/**
+ * How a reply came: a key's through the REST API or the MCP server, or an operator's that sent a
+ * key's draft.
+ */
+type Channel = "api" | "mcp" | "draft";
 
 export interface StoredMessage {
   id: string;
@@ -163,8 +167,11 @@ export interface StoredMessage {
   deleted: boolean;
   /** When the visitor's read position first passed this reply, when known. */
   readAt: Date | null;
-  /** A key's reply: through the API or MCP. Null for an operator's or a visitor's message. */
-  via: KeyChannel | null;
+  /**
+   * A key's reply: through the API or MCP. `draft`: an operator sent a key's draft. Null for anyone
+   * else's message.
+   */
+  via: Channel | null;
   /** Its own position, or its last edit's or delete's, for a stream that sends changes again. */
   changeSeq: bigint;
   createdAt: Date;
@@ -211,8 +218,8 @@ interface MessageRow {
 interface MessageMetadata {
   image?: StoredMessage["image"];
   imageRemoved?: boolean;
-  /** Set on a key's reply that came through MCP. */
-  via?: "mcp";
+  /** Set on a key's reply that came through MCP, and on an operator's that sent a draft. */
+  via?: "mcp" | "draft";
 }
 
 export function stored({
@@ -229,7 +236,8 @@ export function stored({
     imageRemoved: meta?.imageRemoved === true,
     fromVisitor: authorVisitorId !== null,
     deleted: deletedAt !== null,
-    via: row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
+    via:
+      meta?.via === "draft" ? "draft" : row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
     changeSeq: changedSeq ?? row.seq,
   };
 }
@@ -286,7 +294,7 @@ export class InvalidReplyToError extends Error {
 }
 
 /** Throws InvalidReplyToError unless the quoted message is a live chat line of this conversation. */
-async function checkQuote(
+export async function checkQuote(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
@@ -341,6 +349,24 @@ export async function nextSeq(tx: Transaction, workspaceId: string): Promise<big
 }
 
 /**
+ * Takes the workspace row lock, which lasts until commit, without taking a position: a write that
+ * may take none, such as a key's reply that the gate refuses. It reads whether bots are paused,
+ * which the pause changes under the same lock.
+ */
+export async function lockWorkspace(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<{ botsPaused: boolean }> {
+  const [row] = await tx
+    .select({ botsPausedAt: workspace.botsPausedAt })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .for("no key update");
+  if (row === undefined) throw new Error("The workspace row is missing");
+  return { botsPaused: row.botsPausedAt !== null };
+}
+
+/**
  * Whether the message goes to a welcome chat. A welcome chat's visitor has no other conversation,
  * so a visitor's message, which is a copy from the other side, is checked by its visitor.
  */
@@ -384,8 +410,8 @@ export async function appendMessage(
     alert?: boolean;
     /** An earlier message of the same conversation that this one quotes. */
     replyToMessageId?: string | undefined;
-    /** A key's reply that came through MCP, which the message's info names. */
-    via?: "mcp";
+    /** A key's reply that came through MCP, or an operator's that sent a draft. */
+    via?: "mcp" | "draft";
   },
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
@@ -520,7 +546,34 @@ export async function appendMessage(
   if (assignsReplier && author.kind === "operator") {
     await assignConversation(tx, workspaceId, conversationId, author.operatorId);
   }
+  if (author.kind === "visitor" && !target.created) {
+    await markDraftsStale(tx, workspaceId, conversationId);
+  }
   return { message: stored(row), created: true, conversationStarted: target.created };
+}
+
+/**
+ * A visitor wrote again, so the drafts that wait may answer an older question. They stay, marked
+ * stale, and a `draft.changed` event tells the operator apps.
+ */
+async function markDraftsStale(tx: Transaction, workspaceId: string, conversationId: string) {
+  const marked = await tx
+    .update(draftReply)
+    .set({ staleAt: sql`now()` })
+    .where(
+      and(
+        eq(draftReply.workspaceId, workspaceId),
+        eq(draftReply.conversationId, conversationId),
+        isNull(draftReply.resolved),
+        isNull(draftReply.staleAt),
+      ),
+    )
+    .returning({ id: draftReply.id });
+  if (marked.length === 0) return;
+  const seq = await nextSeq(tx, workspaceId);
+  await tx
+    .insert(event)
+    .values({ workspaceId, seq, kind: "draft.changed", payload: { conversationId } });
 }
 
 /** Whether an operator has replied in this conversation. */
@@ -731,8 +784,19 @@ export interface ConversationRow {
   visitorLastSeenAt: Date | null;
   visitorCountry: string | null;
   visitorTimeZone: string | null;
+  /** A test visitor, made by a bot's simulated message. */
   visitorIsTest: boolean;
+  /** Since when a person handles it, so bots stay quiet. */
+  humanSince: Date | null;
+  /** The key that last handed it off, and its name. */
+  handoffByApiKeyId: string | null;
+  handoffKeyName: string | null;
 }
+
+/** The handing-off key's name, read in the same statement as each listed row. */
+const handoffKeyName = sql<string | null>`(
+  select k.name from api_key as k
+  where k.workspace_id = "conversation"."workspace_id" and k.id = "conversation"."handoff_by_api_key_id")`;
 
 const conversationColumns = {
   id: conversation.id,
@@ -754,6 +818,9 @@ const conversationColumns = {
   visitorCountry: visitor.country,
   visitorTimeZone: visitor.timeZone,
   visitorIsTest: visitor.isTest,
+  humanSince: conversation.humanSince,
+  handoffByApiKeyId: conversation.handoffByApiKeyId,
+  handoffKeyName,
 };
 
 /** Joins a conversation to its visitor, inside the same workspace. */
@@ -1165,6 +1232,8 @@ interface FeedEvent {
   conversationId: string | null;
   /** On a new message: whether the visitor wrote it. */
   fromVisitor: boolean;
+  /** The IDs the event names, which the key event stream reads back. */
+  payload: unknown;
 }
 
 /**
@@ -1213,6 +1282,7 @@ export async function listWorkspaceEvents(
       kind: row.kind,
       conversationId: (row.payload as { conversationId?: string }).conversationId ?? null,
       fromVisitor: (row.payload as { fromVisitor?: boolean }).fromVisitor === true,
+      payload: row.payload,
     })),
     cursor: { generation: current.generation, seq: page.at(-1)?.seq ?? after.seq },
     hasMore: rows.length > limit,

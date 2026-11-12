@@ -528,7 +528,7 @@ const streamRoute = createRoute({
   security: VISITOR_TOKEN,
   summary: "Stream the visitor's messages after a cursor",
   description:
-    "Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\n" +
+    'Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, `notice` for something live that is not stored, and `close` with a reason. A `notice` has no id and may be lost: `{ kind: "typing", name, typing }` while an API key\'s bot writes a reply, and with `typing: false` when it stops. Read this with fetch, because EventSource cannot send the bearer token.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
     params,
@@ -1176,6 +1176,8 @@ export function registerWidgetRoutes(
       options: stream,
       workspaceId: found.id,
       subscriber: visitorId,
+      // Only this visitor's own notices reach it: a bot that types a reply.
+      notices: (notice) => notice,
       expiresAt,
       after: after === undefined ? undefined : parseCursor(after),
       authorized: async () => {

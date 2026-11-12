@@ -5,6 +5,7 @@ import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
+import { keyGate, takeOver } from "./bots.ts";
 import { MESSAGE_KINDS, session, welcomeLink } from "./db/schema.ts";
 import {
   type Database,
@@ -13,6 +14,7 @@ import {
   type WorkspaceAccess,
   withWorkspace,
 } from "./db/tenant.ts";
+import { createDraft, DraftSchema, type DraftView } from "./drafts.ts";
 import {
   errorAnswer,
   FORBIDDEN,
@@ -58,6 +60,7 @@ import {
   setConversationStatus,
   WorkspaceClosedError,
 } from "./messages.ts";
+import { listNotes, NoteSchema } from "./notes.ts";
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
@@ -74,11 +77,27 @@ const MESSAGE_SEEN = failure(
   "The visitor has read this reply, or an email carried it, so it can no longer change.",
 );
 const NOT_YOURS = failure("forbidden", "You can change only your own replies.");
+export const BOTS_PAUSED = failure(
+  "bots_paused",
+  "An owner or admin paused every bot of this workspace. Only people reply until they resume.",
+);
+export const HUMAN_HANDLING = failure(
+  "human_handling",
+  "A person handles this conversation now, so a bot may not send. Write a draft or a note instead.",
+);
+const DRAFTS_TEXT_ONLY = failure(
+  "drafts_text_only",
+  "This API key writes drafts, and a draft holds text only. Send the image as a person.",
+);
 const KEY_HAS_NO_ASSIGNMENTS = failure(
   "invalid_request",
   "An API key is assigned nothing. Pass assignee=none, or leave it out.",
 );
-const CLOSED_ANSWER = { 409: errorAnswer("conversation_closed: reopen it to reply") };
+const KEY_REPLY_REFUSALS =
+  "bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly";
+const KEY_REPLY_ANSWER = {
+  409: errorAnswer(`conversation_closed: reopen it to reply. ${KEY_REPLY_REFUSALS}`),
+};
 const INVALID_REPLY_TO_ANSWER = {
   400: errorAnswer(
     "invalid_request: the request is not valid. invalid_reply_to: the quoted message is not in this conversation",
@@ -95,7 +114,7 @@ const REPLY_TO = z.uuid().optional().openapi({
 });
 
 /** A message's text, as a send and an edit take it. Postgres text cannot hold a NUL byte. */
-const BODY = z
+export const BODY = z
   .string()
   .trim()
   .min(1)
@@ -129,8 +148,9 @@ export const InboxMessage = z
     deleted: z.boolean(),
     // When the visitor first read this reply in the chat, when known.
     readAt: z.string().nullable(),
-    // A key's reply: sent through the REST API or through MCP. Null for anyone else's.
-    via: z.enum(["api", "mcp"]).nullable(),
+    // A key's reply: sent through the REST API or through MCP. `draft`: an operator sent a key's
+    // draft, and is its author. Null for anyone else's.
+    via: z.enum(["api", "mcp", "draft"]).nullable(),
     createdAt: z.string(),
   })
   .openapi("InboxMessage", {
@@ -172,6 +192,18 @@ const Conversation = z
     startedPage: z.string().nullable(),
     // On Dinghy Cloud, a welcome chat with Dinghy's founder. False everywhere else.
     welcome: z.boolean(),
+    // Since when a person handles it: an operator replied, or a bot handed it off. Bots that send
+    // directly stay quiet while it is set. Null while bots may answer.
+    humanSince: z.string().nullable(),
+    // Who handles it: a person since `since`, or the bot that handed it off and got it back. Null
+    // when no person took it and no bot handed it off.
+    handler: z
+      .discriminatedUnion("kind", [
+        z.object({ kind: z.literal("human"), since: z.string() }),
+        z.object({ kind: z.literal("bot"), apiKeyId: z.string(), name: z.string() }),
+      ])
+      .nullable()
+      .openapi("ConversationHandler"),
     // What the host page last sent with `Dinghy.setContext()`. Unsigned, so not verified.
     pageContext: PageContextSchema.nullable(),
     visitor: z.object({
@@ -193,7 +225,7 @@ const Conversation = z
       timeZone: z.string().nullable(),
       // A visitor has no picture. Only Dinghy Cloud's welcome chat shows its founder's here.
       pictureUrl: z.string().nullable(),
-      // Made by a bot's simulate_visitor_message to test it, not a person.
+      // A test visitor that a bot's simulated message made.
       isTest: z.boolean(),
     }),
     lastMessage: z
@@ -220,6 +252,8 @@ const workspaceRoute = createRoute({
               name: z.string(),
               // The logo's address, which changes with each upload. Null with no logo.
               logoUrl: z.string().nullable(),
+              // An owner or admin paused every bot: keys may not reply or type.
+              botsPaused: z.boolean(),
             })
             .openapi("InboxWorkspace"),
         },
@@ -365,6 +399,9 @@ const conversationRoute = createRoute({
           schema: z.object({
             conversation: Conversation,
             messages: z.array(InboxMessage),
+            // The internal notes among this page's messages, by `seq`. Only operators and keys
+            // see notes: never the visitor, an email or a transcript.
+            notes: z.array(NoteSchema),
             hasMore: z.boolean(),
             // A widget stream of the visitor's is open now. Null when the server cannot tell.
             visitorOnline: z.boolean().nullable(),
@@ -434,8 +471,13 @@ const replyRoute = createRoute({
       description: "The new message",
       content: { "application/json": { schema: InboxMessage } },
     },
+    202: {
+      description:
+        "An API key in draft mode wrote a draft, which waits for an operator. Nothing reached the visitor",
+      content: { "application/json": { schema: z.object({ draft: DraftSchema }) } },
+    },
     ...MEMBER_WRITE_ERRORS,
-    ...CLOSED_ANSWER,
+    ...KEY_REPLY_ANSWER,
     ...INVALID_REPLY_TO_ANSWER,
   },
 });
@@ -529,7 +571,9 @@ const replyImageRoute = createRoute({
     400: errorAnswer(
       `${IMAGE_UPLOAD_ERRORS[400].description}. invalid_reply_to: the quoted message is not in this conversation`,
     ),
-    ...CLOSED_ANSWER,
+    409: errorAnswer(
+      `conversation_closed: reopen it to reply. ${KEY_REPLY_REFUSALS}. drafts_text_only: the key writes drafts, which hold text only`,
+    ),
   },
 });
 
@@ -588,8 +632,8 @@ const streamRoute = createRoute({
   summary: "Stream the workspace's changes after a cursor",
   description:
     "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
-    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
-    'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
+    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `note.created`, `draft.changed`, `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, `{ kind: "bot_typing", conversationId, name, typing }` when an API key types or stops, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
     params: workspaceParams,
@@ -666,6 +710,13 @@ async function welcomePictures(
   return url === null ? new Map() : new Map(ours.map((one) => [one.id, url]));
 }
 
+/** Who handles a conversation: a person, the bot that handed it off, or nobody in particular. */
+function handlerOf(row: ConversationRow): z.infer<typeof Conversation>["handler"] {
+  if (row.humanSince !== null) return { kind: "human", since: row.humanSince.toISOString() };
+  if (row.handoffByApiKeyId === null) return null;
+  return { kind: "bot", apiKeyId: row.handoffByApiKeyId, name: row.handoffKeyName ?? "" };
+}
+
 /** A conversation as the operator API shows it. */
 export function conversationView(
   row: ConversationRow,
@@ -679,6 +730,8 @@ export function conversationView(
     assigneeOperatorId: row.assigneeOperatorId,
     startedPage: row.startedPage,
     welcome: row.welcome,
+    humanSince: row.humanSince?.toISOString() ?? null,
+    handler: handlerOf(row),
     pageContext: PageContextSchema.nullable().catch(null).parse(row.visitorPageContext),
     visitor: {
       id: row.visitorId,
@@ -765,10 +818,53 @@ type CommitOutcome = "committed" | "rolled_back" | "unknown";
 /** What a reply came to. The routes and the MCP tools answer each the same way. */
 export type ReplyOutcome =
   | { kind: "sent"; created: boolean; message: MessageView }
+  | { kind: "drafted"; created: boolean; draft: DraftView }
   | { kind: "missing" }
   | { kind: "closed" }
   | { kind: "invalid_reply_to" }
+  | { kind: "bots_paused" }
+  | { kind: "human_handling" }
+  | { kind: "drafts_text_only" }
   | { kind: "refused"; access: WorkspaceAccess };
+
+/** What a key's reply asks for: its text, or an image's clientId with no text. */
+interface KeyRequest {
+  clientId: string;
+  body?: string | undefined;
+  replyToMessageId?: string | undefined;
+}
+
+type Written =
+  | "missing"
+  | "bots_paused"
+  | "human_handling"
+  | "drafts_text_only"
+  | { drafted: { draft: DraftView; created: boolean } }
+  | (Appended & { visitorId: string });
+
+/**
+ * A key's gate, under the workspace row lock: a refusal, a draft, or null to send. A draft holds
+ * text only.
+ */
+async function keyTurn(
+  tx: Transaction,
+  workspaceId: string,
+  actor: KeyActor,
+  conversationId: string,
+  request: KeyRequest,
+): Promise<Exclude<Written, Appended & { visitorId: string }> | null> {
+  const gate = await keyGate(tx, workspaceId, actor.apiKeyId, conversationId, request.clientId);
+  if (gate === "send") return null;
+  if (gate !== "draft") return gate;
+  if (request.body === undefined) return "drafts_text_only";
+  const body = request.body;
+  return {
+    drafted: await createDraft(tx, workspaceId, actor.apiKeyId, conversationId, {
+      ...request,
+      body,
+    }),
+  };
+}
 
 interface InboxOptions {
   db: Database;
@@ -798,26 +894,37 @@ export function createInbox({
   InboxOptions,
   "db" | "images" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
 >) {
-  /** Writes a reply in the caller's transaction, and wakes the clients after the commit. */
+  /**
+   * Writes a reply in the caller's transaction, and wakes the clients after the commit. A key's
+   * reply passes its gate first, and an operator's marks the conversation as handled by a person.
+   */
   const reply = async (
     workspaceId: string,
     actor: Actor,
     conversationId: string,
     image: NewImage | undefined,
+    request: KeyRequest,
     write: (tx: Transaction, author: Author) => Promise<Appended>,
   ): Promise<ReplyOutcome> => {
     const copy = (await copyReply?.(workspaceId, conversationId, image)) ?? null;
     let outcome: CommitOutcome = "rolled_back";
     const result = await catchClosed(
-      withWorkspace(db, workspaceId, async (tx) => {
+      withWorkspace(db, workspaceId, async (tx): Promise<Written> => {
         const found = await findConversation(tx, workspaceId, conversationId);
-        if (found === null) return "missing" as const;
+        if (found === null) return "missing";
+        if (actor.kind === "key") {
+          const turn = await keyTurn(tx, workspaceId, actor, conversationId, request);
+          if (turn !== null) return turn;
+        }
         const append = () => write(tx, replyAuthor(actor, conversationId));
         const appended = copy === null ? await append() : await copy.write(tx, append);
+        if (actor.kind === "operator" && appended.created) {
+          await takeOver(tx, workspaceId, conversationId);
+        }
         return { ...appended, visitorId: found.visitorId };
       })
         .then((done) => {
-          if (done !== "missing") outcome = "committed";
+          if (typeof done !== "string" && !("drafted" in done)) outcome = "committed";
           return done;
         })
         .catch((error: unknown) => {
@@ -827,10 +934,12 @@ export function createInbox({
           throw error;
         }),
     ).finally(() => copy?.finish(outcome));
-    if (result === "missing" || result === "closed" || result === "invalid_reply_to") {
-      return { kind: result };
-    }
+    if (typeof result === "string") return { kind: result };
     if (result instanceof WorkspaceClosedError) return { kind: "refused", access: result.access };
+    if ("drafted" in result) {
+      if (result.drafted.created) live.wake(workspaceId, OPERATORS);
+      return { kind: "drafted", ...result.drafted };
+    }
     // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.
     if (result.created) wakeConversation(live, workspaceId, result.visitorId);
     const names = new Map([[actorId(actor), actor.name]]);
@@ -876,13 +985,16 @@ export function createInbox({
         const found = await findConversation(tx, workspaceId, conversationId);
         if (found === null) return null;
         const page = await listConversationMessages(tx, workspaceId, conversationId, after, limit);
+        // The notes among this page: up to its last message while more follow.
+        const upTo = page.hasMore ? (page.messages.at(-1)?.seq ?? after) : null;
+        const notes = await listNotes(tx, workspaceId, conversationId, after, upTo);
         const names = await authorNames(tx, workspaceId, page.messages);
         const pages = await visitorPages(tx, workspaceId, found.visitorId);
         const welcome = found.welcome
           ? await welcomeChat(tx, conversationId, founderPicture)
           : null;
         const receipts = await replyReceipts(tx, workspaceId, conversationId, found.visitorId);
-        return { found, page, names, pages, welcome, receipts };
+        return { found, page, notes, names, pages, welcome, receipts };
       });
       if (result === null) return null;
       return {
@@ -894,6 +1006,7 @@ export function createInbox({
         messages: result.page.messages.map((message) =>
           messageView(images, workspaceId, result.names, message),
         ),
+        notes: result.notes,
         hasMore: result.page.hasMore,
         visitorOnline: await visitorPresence.online(workspaceId, result.found.visitorId),
         visitorPages: result.pages.map((row) => ({
@@ -933,7 +1046,7 @@ export function createInbox({
       conversationId: string,
       input: { clientId: string; body: string; replyToMessageId?: string | undefined; via?: "mcp" },
     ) {
-      return reply(workspaceId, actor, conversationId, undefined, (tx, author) =>
+      return reply(workspaceId, actor, conversationId, undefined, input, (tx, author) =>
         appendMessage(tx, workspaceId, author, input),
       );
     },
@@ -955,6 +1068,7 @@ export function createInbox({
         actor,
         conversationId,
         input.image,
+        { clientId: input.clientId },
         async (tx, author) => {
           await check(tx);
           return appendMessage(tx, workspaceId, author, input, limits);
@@ -987,10 +1101,13 @@ export function createInbox({
 export type Inbox = ReturnType<typeof createInbox>;
 
 /** The answer for a reply that did not go in. */
-function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" }>) {
+export function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" | "drafted" }>) {
   if (outcome.kind === "missing") return { body: NOT_FOUND, status: 404 as const };
   if (outcome.kind === "closed") return { body: CLOSED, status: 409 as const };
   if (outcome.kind === "invalid_reply_to") return { body: INVALID_REPLY_TO, status: 400 as const };
+  if (outcome.kind === "bots_paused") return { body: BOTS_PAUSED, status: 409 as const };
+  if (outcome.kind === "human_handling") return { body: HUMAN_HANDLING, status: 409 as const };
+  if (outcome.kind === "drafts_text_only") return { body: DRAFTS_TEXT_ONLY, status: 409 as const };
   return closedFailure(outcome.access);
 }
 
@@ -1063,6 +1180,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       c.req.valid("json"),
     );
     if (outcome.kind === "sent") return c.json(outcome.message, outcome.created ? 201 : 200);
+    if (outcome.kind === "drafted") return c.json({ draft: outcome.draft }, 202);
     const refused = refusedReply(outcome);
     return c.json(refused.body, refused.status);
   });
@@ -1109,6 +1227,8 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       if ("refused" in outcome) return refuseImage(c, outcome.refused);
       const result = outcome.result;
       if (result.kind === "sent") return c.json(result.message, result.created ? 201 : 200);
+      // An image never makes a draft.
+      if (result.kind === "drafted") return c.json(DRAFTS_TEXT_ONLY, 409);
       const refused = refusedReply(result);
       return c.json(refused.body, refused.status);
     });
@@ -1198,7 +1318,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       options: stream,
       workspaceId: id,
       subscriber: OPERATORS,
-      notices: true,
+      notices: (notice) => notice,
       expiresAt: undefined,
       after: after === undefined ? undefined : parseCursor(after),
       read: async (position) => {

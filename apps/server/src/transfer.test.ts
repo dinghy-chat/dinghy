@@ -10,6 +10,7 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { keySends } from "../test/keys.ts";
 import { addOperator, openSignInLink, signIn as signInTo } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { readTar, tarEnd, tarEntry } from "./archive.ts";
@@ -192,6 +193,9 @@ async function makeSource(): Promise<Source> {
     id: string;
     token: string;
   };
+  await keySends(owner, key.id);
+  // The owner's reply took the conversation, so it goes back to the bot first.
+  await write("POST", `/conversations/${conversationId}/give-back`, {});
   await app.request(`${inSpace}/conversations/${conversationId}/messages`, {
     method: "POST",
     headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },

@@ -109,10 +109,15 @@ export async function readWorkspaceFace(
       name: workspace.name,
       publicKey: workspace.publicKey,
       logoUpdatedAt: widgetSettings.logoUpdatedAt,
+      botsPausedAt: workspace.botsPausedAt,
     })
     .from(workspace)
     .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
     .where(eq(workspace.id, workspaceId));
   if (row === undefined) return undefined;
-  return { name: row.name, logoUrl: imageUrls.logo(row.publicKey, row.logoUpdatedAt) };
+  return {
+    name: row.name,
+    logoUrl: imageUrls.logo(row.publicKey, row.logoUpdatedAt),
+    botsPaused: row.botsPausedAt !== null,
+  };
 }

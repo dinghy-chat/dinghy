@@ -104,24 +104,24 @@ function isRealTime(cursor: string): boolean {
   return !Number.isNaN(time.getTime()) && time.toISOString().startsWith(second);
 }
 
+/** A page of the contact list: the route's query, and MCP's `list_contacts` arguments. */
+export const ContactListQuery = z.object({
+  q: z.string().trim().max(100).optional().openapi({
+    description: "Matches the name, email or user ID, ignoring case.",
+  }),
+  sort: z.enum(SORTS).default("lastSeen"),
+  before: z.string().regex(CURSOR).refine(isRealTime).optional().openapi({
+    description: "The `next` of the page before.",
+  }),
+  limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
+});
+
 const listRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/contacts`,
   security: SESSION,
   summary: "List the people who have a conversation, newest first",
-  request: {
-    params: workspaceParams,
-    query: z.object({
-      q: z.string().trim().max(100).optional().openapi({
-        description: "Matches the name, email or user ID, ignoring case.",
-      }),
-      sort: z.enum(SORTS).default("lastSeen"),
-      before: z.string().regex(CURSOR).refine(isRealTime).optional().openapi({
-        description: "The `next` of the page before.",
-      }),
-      limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
-    }),
-  },
+  request: { params: workspaceParams, query: ContactListQuery },
   responses: {
     200: {
       description: "A page of contacts",
@@ -270,7 +270,7 @@ const sortKey = (sort: Sort) =>
  * A page of contacts, newest first by the sort, in one statement: a bounded scan of the sort's
  * index, with one probe of the conversation index per visitor for its count.
  */
-async function listContacts(
+export async function listContacts(
   tx: Transaction,
   workspaceId: string,
   options: { q?: string | undefined; sort: Sort; before?: string | undefined; limit: number },
@@ -364,7 +364,7 @@ const contactConversations = (tx: Transaction, workspaceId: string, visitorId: s
     ORDER BY c.updated_at DESC`);
 
 /** One contact with everything the contact page shows, or null. */
-async function readContact(tx: Transaction, workspaceId: string, visitorId: string) {
+export async function readContact(tx: Transaction, workspaceId: string, visitorId: string) {
   const [row] = await tx
     .select({
       ...contactColumns,

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { WIDGET_DEFAULTS } from "../../../packages/widget/src/shared.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { keySends } from "../test/keys.ts";
 import { sendOperatorMessage } from "../test/messages.ts";
 import { addOperator, signedInOperator } from "../test/operators.ts";
 import { FORMER_MEMBER_NAME } from "./account-delete.ts";
@@ -433,6 +434,7 @@ describe("a reply in the widget", () => {
       body: JSON.stringify({ name: "Helper bot" }),
     });
     const key = (await made.json()) as { id: string; token: string };
+    await keySends(owner, key.id);
     await app.request(
       `/v1/operator/workspaces/${space.id}/conversations/${conversationId}/messages`,
       {

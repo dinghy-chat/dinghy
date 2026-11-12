@@ -208,44 +208,49 @@ const countRoute = createRoute({
   },
 });
 
+/** The live tabs, newest first, with who the chatting visitors are. Null when Valkey cannot tell. */
+export async function liveVisitorList(
+  db: Database,
+  visitors: LiveVisitors,
+  id: string,
+): Promise<z.infer<typeof LiveVisitorSchema>[] | null> {
+  const tabs = await visitors.list(id);
+  if (tabs === null) return null;
+  // Who the chatting visitors are, in one query, from this workspace only.
+  const ids = [...new Set(tabs.flatMap((tab) => (tab.visitorId === null ? [] : [tab.visitorId])))];
+  const people =
+    ids.length === 0
+      ? []
+      : await withWorkspace(db, id, (tx) =>
+          tx
+            .select({
+              id: visitor.id,
+              name: visitor.name,
+              email: visitor.email,
+              externalId: visitor.externalId,
+            })
+            .from(visitor)
+            .where(and(eq(visitor.workspaceId, id), inArray(visitor.id, ids))),
+        );
+  const byId = new Map(people.map((person) => [person.id, person]));
+  return tabs
+    .sort((one, other) => other.startedAt - one.startedAt)
+    .map(({ visitorId, conversationId, startedAt, seenAt: _seen, ...tab }) => {
+      const person = visitorId === null ? undefined : byId.get(visitorId);
+      return {
+        ...tab,
+        startedAt: new Date(startedAt).toISOString(),
+        visitor: person === undefined ? null : { ...person, conversationId },
+      };
+    });
+}
+
 export function registerLiveVisitorRoutes(app: App, db: Database, visitors: LiveVisitors): void {
   app.openapi(countRoute, async (c) => {
     return c.json({ count: await visitors.count(c.get("memberWorkspaceId")) }, 200);
   });
 
-  app.openapi(listRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
-    const tabs = await visitors.list(id);
-    if (tabs === null) return c.json({ visitors: null }, 200);
-    // Who the chatting visitors are, in one query, from this workspace only.
-    const ids = [
-      ...new Set(tabs.flatMap((tab) => (tab.visitorId === null ? [] : [tab.visitorId]))),
-    ];
-    const people =
-      ids.length === 0
-        ? []
-        : await withWorkspace(db, id, (tx) =>
-            tx
-              .select({
-                id: visitor.id,
-                name: visitor.name,
-                email: visitor.email,
-                externalId: visitor.externalId,
-              })
-              .from(visitor)
-              .where(and(eq(visitor.workspaceId, id), inArray(visitor.id, ids))),
-          );
-    const byId = new Map(people.map((person) => [person.id, person]));
-    const shown = tabs
-      .sort((one, other) => other.startedAt - one.startedAt)
-      .map(({ visitorId, conversationId, startedAt, seenAt: _seen, ...tab }) => {
-        const person = visitorId === null ? undefined : byId.get(visitorId);
-        return {
-          ...tab,
-          startedAt: new Date(startedAt).toISOString(),
-          visitor: person === undefined ? null : { ...person, conversationId },
-        };
-      });
-    return c.json({ visitors: shown }, 200);
-  });
+  app.openapi(listRoute, async (c) =>
+    c.json({ visitors: await liveVisitorList(db, visitors, c.get("memberWorkspaceId")) }, 200),
+  );
 }

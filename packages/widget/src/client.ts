@@ -182,6 +182,7 @@ export function createClient(
         message(message: ChatMessage, cursor: string): void;
         ready(cursor: string | null): void;
         resync(cursor: string): void;
+        notice(value: unknown): void;
       },
     ): Promise<string | null> {
       const query = after === null ? "" : `?after=${encodeURIComponent(after)}`;
@@ -203,6 +204,7 @@ export function createClient(
         data: handlers.message,
         ready: handlers.ready,
         resync: handlers.resync,
+        notice: handlers.notice,
       });
     },
   };

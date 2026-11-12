@@ -1,5 +1,6 @@
 import { and, desc, eq, gt, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
 import { escapeHtml, markdownHtml } from "../../../packages/widget/src/markdown.ts";
+import type { HandledPayload } from "./bots.ts";
 import { chatLinkUrl, createChatLink, pruneChatLinks } from "./chat-link.ts";
 import {
   alertDelivery,
@@ -8,6 +9,7 @@ import {
   event,
   type MessagePayload,
   message,
+  note,
   operator,
   pushSubscription,
   visitor,
@@ -65,6 +67,14 @@ const text = {
   testTitle: "Dinghy",
   testBody: "Alerts work on this device.",
   operatorSubject: (name: string) => `New message in ${name}`,
+  handoffSubject: (name: string) => `A bot handed a conversation to your team in ${name}`,
+  handoffBody: (place: string, why: string, url: string) => [
+    `A bot handed a conversation in ${place} to a person:`,
+    why,
+    `Open the conversation: ${url}`,
+    "You get these because email alerts are on for you. You can turn them off in Settings, " +
+      "under Alerts.",
+  ],
   operatorBody: (who: string, place: string, body: string, url: string) => [
     `${who} wrote in ${place}:`,
     body,
@@ -134,11 +144,15 @@ export type DeliveryBase = Pick<
   "workspaceId" | "eventSeq" | "conversationId" | "messageId"
 >;
 
-/** A visitor wrote: a push and an email for each member who can get them. */
+/**
+ * A visitor wrote, or a bot handed a conversation off: a push and an email for each member who can
+ * get them, or only for `assignee` when there is one.
+ */
 async function operatorAlertRows(
   tx: Transaction,
   channels: Channels,
   base: DeliveryBase,
+  assignee: string | null = null,
 ): Promise<DeliveryRow[]> {
   const { workspaceId, conversationId } = base;
   const rows: DeliveryRow[] = [];
@@ -148,7 +162,13 @@ async function operatorAlertRows(
       email: workspaceMember.alertEmail,
     })
     .from(workspaceMember)
-    .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)));
+    .where(
+      and(
+        eq(workspaceMember.workspaceId, workspaceId),
+        isNull(workspaceMember.removedAt),
+        assignee === null ? undefined : eq(workspaceMember.operatorId, assignee),
+      ),
+    );
   const ids = members.map((member) => member.operatorId);
   const withDevice =
     channels.push && ids.length > 0
@@ -255,8 +275,9 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
     await enterWorkspace(tx, workspaceId);
     // The email limits read past rows and then write new ones, so two workers must take turns.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}))`);
-    // Only a message.created event, a close and a transcript request set needsAlert. Each names a
-    // message: the new one, the close's status line, or the newest message when it was asked for.
+    // Only a message.created event, a close, a transcript request and a handoff set needsAlert. Each
+    // names a message: the new one, the close's status line, or the newest message when it was
+    // asked for or handed off.
     const { messageId, conversationId } = found.payload as MessagePayload | StatusPayload;
     const base = { workspaceId, eventSeq: seq, conversationId, messageId };
 
@@ -274,7 +295,9 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
     // A message whose row was deleted before this step has nothing to alert about.
     const rows =
-      written === undefined ? [] : await eventRows(tx, found.kind, written, channels, base);
+      written === undefined
+        ? []
+        : await eventRows(tx, found.kind, found.payload, written, channels, base);
     if (rows.length > 0) await tx.insert(alertDelivery).values(rows).onConflictDoNothing();
     await tx
       .update(event)
@@ -284,16 +307,35 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
   });
 }
 
-/** The rows one event makes: a message alerts the other side, and a close or a request a transcript. */
+/** A bot handed a conversation off: its assignee, or every member when it has none. */
+async function handoffRows(tx: Transaction, channels: Channels, base: DeliveryBase) {
+  const [row] = await tx
+    .select({ assignee: conversation.assigneeOperatorId })
+    .from(conversation)
+    .where(
+      and(eq(conversation.workspaceId, base.workspaceId), eq(conversation.id, base.conversationId)),
+    );
+  return row === undefined ? [] : operatorAlertRows(tx, channels, base, row.assignee);
+}
+
+/**
+ * The rows one event makes: a message alerts the other side, a close or a request a transcript, and
+ * a handoff the people who take over.
+ */
 async function eventRows(
   tx: Transaction,
   kind: EventKind,
+  payload: unknown,
   written: { authorVisitorId: string | null; deletedAt: Date | null; fromTest: boolean },
   channels: Channels,
   base: DeliveryBase,
 ): Promise<DeliveryRow[]> {
   if (written.fromTest) return [];
   switch (kind) {
+    case "conversation.handled":
+      return (payload as HandledPayload).change === "handoff"
+        ? handoffRows(tx, channels, base)
+        : [];
     case "conversation.closed":
       return channels.email ? transcriptRows(tx, base) : [];
     case "transcript.requested":
@@ -488,10 +530,12 @@ export function planDelivery(
       }
       return plan;
     }
+    const threadUrl = new URL(threadPath(workspaceId, conversationId), publicUrl).href;
+    const handoff = await handoffNote(tx, workspaceId, row.eventSeq);
+    if (handoff !== null) return operatorPlan(tx, row, place.name, { handoff }, threadUrl);
     // A visitor's message deleted while its alert waited has nothing to alert about.
     if (written.deletedAt !== null) return null;
-    const threadUrl = new URL(threadPath(workspaceId, conversationId), publicUrl).href;
-    return operatorPlan(tx, row, place.name, written.body, threadUrl);
+    return operatorPlan(tx, row, place.name, { body: written.body }, threadUrl);
   });
 }
 
@@ -676,12 +720,40 @@ export function replyLetter(
   };
 }
 
+/**
+ * The handoff note that a row's event names, or null when its event is not a handoff. The event is
+ * pruned long after its alerts are sent, and without it the alert reads as a message's.
+ */
+async function handoffNote(tx: Transaction, workspaceId: string, eventSeq: string) {
+  const [row] = await tx
+    .select({ body: note.body })
+    .from(event)
+    .innerJoin(
+      note,
+      and(
+        eq(note.workspaceId, event.workspaceId),
+        sql`${note.id}::text = ${event.payload}->>'noteId'`,
+      ),
+    )
+    .where(
+      and(
+        eq(event.workspaceId, workspaceId),
+        eq(event.seq, BigInt(eventSeq)),
+        eq(event.kind, "conversation.handled"),
+      ),
+    );
+  return row?.body ?? null;
+}
+
+/** What an operator's alert says: a message's text, or a handoff's note. */
+type AlertText = { body: string | null } | { handoff: string };
+
 /** A push or an email to the operator this row is for, if they are still a member who wants it. */
 async function operatorPlan(
   tx: Transaction,
   row: ClaimedDelivery,
   placeName: string,
-  body: string | null,
+  said: AlertText,
   threadUrl: string,
 ): Promise<AlertPlan | null> {
   const { workspaceId, conversationId } = row;
@@ -710,7 +782,9 @@ async function operatorPlan(
       operatorId,
       payload: {
         title: placeName,
-        body: Array.from(messageText(body)).slice(0, PUSH_BODY_CHARACTERS).join(""),
+        body: Array.from("handoff" in said ? said.handoff : messageText(said.body))
+          .slice(0, PUSH_BODY_CHARACTERS)
+          .join(""),
         tag: `${workspaceId}:${row.eventSeq}`,
         url: threadPath(workspaceId, conversationId),
       },
@@ -718,6 +792,15 @@ async function operatorPlan(
   }
   // The operator may have turned email off while this row waited for a retry.
   if (!member.wantsEmail) return null;
+  if ("handoff" in said) {
+    return {
+      channel: "email",
+      to: member.email,
+      subject: text.handoffSubject(placeName),
+      text: letter(text.handoffBody(placeName, said.handoff, threadUrl), member.name),
+    };
+  }
+  const body = said.body;
   const from = await conversationVisitor(tx, workspaceId, conversationId);
   return {
     channel: "email",

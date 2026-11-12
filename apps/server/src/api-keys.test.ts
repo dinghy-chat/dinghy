@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { keySends } from "../test/keys.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
@@ -65,7 +66,10 @@ async function makeKey(name: string, space = a, as = ownerA.cookie) {
     name,
   });
   expect(response.status).toBe(201);
-  return (await response.json()) as { id: string; name: string; token: string };
+  const made = (await response.json()) as { id: string; name: string; token: string };
+  // A new key drafts. These tests are about what a key that sends can reach.
+  await keySends(owner, made.id);
+  return made;
 }
 
 async function visitorSends(key: string, body: string) {
@@ -247,7 +251,7 @@ describe("what a key can do", () => {
     expect(response.status).toBe(200);
   });
 
-  test("it never reaches settings, members, keys, webhooks, export, delete, analytics or the stream", async () => {
+  test("it never reaches settings, members, keys, webhooks, export, delete or the stream", async () => {
     const key = await makeKey("Limited");
     for (const [method, path, body] of [
       ["GET", inA("/settings"), undefined],
@@ -260,7 +264,6 @@ describe("what a key can do", () => {
       ["DELETE", inA(`/api-keys/${key.id}`), undefined],
       ["GET", inA("/webhooks"), undefined],
       ["POST", inA("/webhooks"), { url: "https://93.184.215.14/x", events: ["message.created"] }],
-      ["GET", inA("/analytics"), undefined],
       ["GET", inA("/stream"), undefined],
       ["DELETE", inA(""), { name: "Acme" }],
     ] as const) {

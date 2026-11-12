@@ -52,8 +52,13 @@ interface LiveStream {
   subscriber: string;
   expiresAt: Date | undefined;
   after: Cursor | undefined;
-  /** Passes on operator notices as `notice` events, which carry no cursor. */
-  notices?: boolean;
+  /**
+   * Passes on notices as `notice` events, which carry no cursor. It gives the event's data for a
+   * notice's JSON, or null to drop it.
+   */
+  notices?: (notice: string) => string | null;
+  /** Checked at each heartbeat: false closes the stream as `revoked`. */
+  stillAllowed?: () => Promise<boolean>;
   /** Frees this stream's place in the plan's count when it ends. */
   release?: (() => void) | undefined;
   /**
@@ -152,10 +157,11 @@ export function openLiveStream(c: Context, stream: LiveStream): Response {
     const session: Session = {
       wake: () => void wake(),
       close: (reason) => void close(reason),
-      ...(stream.notices && {
+      ...(stream.notices !== undefined && {
         tell: (notice) => {
+          const data = closed ? null : (stream.notices?.(notice) ?? null);
           // A notice that cannot be written is lost, which a notice may be.
-          if (!closed) sse.writeSSE({ event: "notice", data: notice }).catch(() => undefined);
+          if (data !== null) sse.writeSSE({ event: "notice", data }).catch(() => undefined);
         },
       }),
     };
@@ -165,7 +171,14 @@ export function openLiveStream(c: Context, stream: LiveStream): Response {
     const unsubscribe = await live.subscribe(workspaceId, subscriber, session);
 
     const heartbeat = setInterval(() => {
-      if (!closed) sse.write(": ping\n\n").catch(() => void close("aborted"));
+      if (closed) return;
+      sse.write(": ping\n\n").catch(() => void close("aborted"));
+      stream
+        .stillAllowed?.()
+        .then((allowed) => {
+          if (!allowed) void close("revoked");
+        })
+        .catch(() => void close("error"));
     }, options.heartbeatMs);
     // Jitter, so streams opened together do not all reconnect together.
     const lifetime = setTimeout(

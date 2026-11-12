@@ -7,6 +7,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { keySends } from "../test/keys.ts";
 import { untilWaiting } from "../test/locks.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
@@ -54,6 +55,7 @@ const live: Live = {
   },
   revoke() {},
   tell() {},
+  tellVisitor() {},
   async subscribe() {
     return () => {};
   },
@@ -185,7 +187,9 @@ beforeAll(async () => {
   const made = await send(ana.cookie, "POST", `/v1/operator/workspaces/${space.id}/api-keys`, {
     name: "Helper bot",
   });
-  keyToken = ((await made.json()) as { token: string }).token;
+  const key = (await made.json()) as { id: string; token: string };
+  await keySends(owner, key.id);
+  keyToken = key.token;
 }, 30_000);
 
 afterAll(async () => {

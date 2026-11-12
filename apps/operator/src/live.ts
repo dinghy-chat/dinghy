@@ -116,7 +116,7 @@ export function useChanges(
                   ...current,
                   [value.visitorId]: (current[value.visitorId] ?? 0) + 1,
                 }));
-              } else notice(value);
+              } else if (value.kind === "typing") notice(value);
             },
             change(next, kind, conversationId, fromVisitor) {
               cursor.current = next;

@@ -6,6 +6,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { keySends } from "../test/keys.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { pruneOnce } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
@@ -293,6 +294,64 @@ describe("managing webhooks", () => {
 });
 
 describe("delivery", () => {
+  test("notes, handoffs and a bot's return arrive with their data, and never inside a message", async () => {
+    const hook = await addWebhook([
+      "message.created",
+      "note.created",
+      "conversation.handoff",
+      "conversation.bot_resumed",
+    ]);
+    const made = await asBoss("POST", inSpace("/api-keys"), { name: "Bot" });
+    const { id: keyId, token } = (await made.json()) as { id: string; token: string };
+    await keySends(owner, keyId);
+    const conversationId = await visitorSends("Refund please");
+    const path = inSpace(`/conversations/${conversationId}`);
+    await asBoss("POST", `${path}/notes`, { clientId: "n1", body: "Known customer" });
+    const handed = await app.request(`${path}/handoff`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ clientId: "h1", reason: "Refund" }),
+    });
+    expect(handed.status).toBe(201);
+    await asBoss("POST", `${path}/give-back`);
+    await runWorker();
+
+    const events = received.map((request) => verified(request, hook.secret));
+    const ofType = (type: string) => events.filter((one) => one.type === type);
+    expect(events.map((one) => one.type).sort()).toEqual([
+      "conversation.bot_resumed",
+      "conversation.handoff",
+      "message.created",
+      "note.created",
+      "note.created",
+    ]);
+    expect(ofType("note.created").map((one) => one.data.note)).toEqual(
+      expect.arrayContaining([
+        {
+          id: expect.any(String),
+          body: "Known customer",
+          authorName: "Hana",
+          authorKind: "operator",
+        },
+        {
+          id: expect.any(String),
+          body: "Handed off: Refund",
+          authorName: "Bot",
+          authorKind: "key",
+        },
+      ]),
+    );
+    // A body shows the conversation as it is when the worker sends, after the give back here.
+    expect(ofType("conversation.handoff")[0]?.data.conversation).toMatchObject({
+      id: conversationId,
+    });
+    expect(ofType("conversation.bot_resumed")[0]?.data.conversation).toMatchObject({
+      handler: { kind: "bot", apiKeyId: keyId, name: "Bot" },
+      humanSince: null,
+    });
+    expect(JSON.stringify(ofType("message.created"))).not.toContain("Known customer");
+  });
+
   test("each change reaches the webhook once, signed, in the operator API's shapes", async () => {
     const hook = await addWebhook([
       "conversation.created",
