@@ -83,6 +83,8 @@ A phone can delay or drop a notification, so do not rely on one for urgent work.
 
 Select your name at the bottom of the sidebar, then **Profile**. This opens **Settings > Profile**, where you change the name your teammates see. Visitors see only your first name, next to your replies. **Sign out** is in the same menu.
 
+The same menu sets you **Available** or **Away**, and a dot on your picture shows which: green or gray. It holds in every workspace until you change it. The chat on your site says the team is online while one member is available with the app open, even in a background tab. While you are away, it does not count you, and it says so at its next check, within 30 seconds. Your team still sees which conversation you have open.
+
 **Picture** in **Profile** sets your picture from a PNG, JPEG or WebP of up to 2 MB. Dinghy cuts it to a square. Visitors see it next to your replies and at the top of the chat, and your team sees it in place of your initials in the inbox, a conversation and **Team**. It is the same in every workspace.
 
 **Theme** picks light, dark or **Use device setting** for the operator app. It applies only to this browser.
@@ -130,9 +132,10 @@ Someone in two workspaces switches between them with the workspace name at the t
 
 - **Chat text**: the chat's title, its greeting before the first message and its message for when nobody is online. An empty field keeps Dinghy's own text.
 - **Colors and layout**: the main color and the accent color, the side of the page, the theme (light, dark, or **Use device setting**, which follows the visitor's device), the chat button (a bubble, a label with the chat's title, a square, a boat, or hidden so your own button opens the chat), the corner rounding, and whether the open chat shows the boat.
+- **Header**: whose faces show beside the chat's title: **Online now** (the members online at the moment, or the members who replied last when nobody is), **Latest repliers**, **Members you choose** (in your order; a member who leaves the team is skipped), or **None**. Then how many, 1 to 5, and whether a green dot marks each member who is online. The **Status line** under the title says **Online** or your away message, or with **Usual reply time**, "Usually replies in 2 min" while someone is online, from the median first reply time over the last 30 days. Before the first reply, it says **Online**. The preview marks two members online, so you see the dots.
 - **Email and branding**: when to ask visitors for their email, so you can reply after they leave: never, after their first message, or before it. Dinghy never asks a signed-in user, nor anyone when your server sends no email. A switch hides the "Powered by Dinghy" line under the chat.
 
-**Save** sends the form. Pages of your site that open after the save show the change within 5 minutes, and a page already open keeps the look it loaded with. The browser asks before you leave the page with a change you did not save. The top of the chat shows the workspace's logo, which you change in **Settings > Workspace**. It also shows up to 3 members who replied last, by first name and picture. Attributes in your site's tag win over these settings: see [Add the chat to your website](add-to-your-site.md#change-how-it-looks).
+**Save** sends the form. Pages of your site that open after the save show the change within 5 minutes, and a page already open keeps the look it loaded with. The browser asks before you leave the page with a change you did not save. The top of the chat shows the workspace's logo, which you change in **Settings > Workspace**. It also shows the faces that **Header** picks, by first name and picture. Attributes in your site's tag win over these settings: see [Add the chat to your website](add-to-your-site.md#change-how-it-looks).
 
 ## The other settings
 

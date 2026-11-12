@@ -1,14 +1,27 @@
 import { randomUUID } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
+import { eq } from "drizzle-orm";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { MEMBER_ERRORS, OPERATOR_WRITE_ERRORS, okContent, WIDGET_ERRORS } from "./errors.ts";
+import { operator } from "./db/schema.ts";
+import { type Database, operatorWorkspaces } from "./db/tenant.ts";
+import {
+  MEMBER_ERRORS,
+  OPERATOR_POST_ERRORS,
+  OPERATOR_WRITE_ERRORS,
+  okContent,
+  WIDGET_ERRORS,
+} from "./errors.ts";
+import { visitorAuthorId } from "./identity.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 
 // A client that stops sending, because of a crash or a lost network, expires after this long.
 const DEFAULT_TTL_MS = 30_000;
+// Browsers run a hidden tab's timers about once a minute, so its beats come further apart: 2 minutes
+// with the default.
+const HIDDEN_TTL_FACTOR = 4;
 const NO_CONVERSATION = "-";
 
 const keyFor = (workspaceId: string) => `dinghy:presence:${workspaceId}`;
@@ -21,17 +34,26 @@ interface PresenceState {
   viewers: Record<string, string[]>;
 }
 
+interface Beat {
+  /** The conversation open now. A hidden tab has none. */
+  viewing: string | null;
+  /** The conversation open before, which this beat leaves. */
+  left: string | null;
+  /** A hidden tab, which beats less often, so its mark lasts longer. */
+  hidden: boolean;
+  /** The operator set Away: the beat says what they view, and does not count them online. */
+  away: boolean;
+}
+
 interface Presence {
-  /** Marks the operator online and on this conversation. Returns null if Valkey cannot answer. */
-  beat(
-    workspaceId: string,
-    operatorId: string,
-    viewing: string | null,
-    left: string | null,
-  ): Promise<PresenceState | null>;
+  /** Marks the operator on this conversation, and online unless away. Null if Valkey cannot answer. */
+  beat(workspaceId: string, operatorId: string, beat: Beat): Promise<PresenceState | null>;
   leave(workspaceId: string, operatorId: string, conversationId: string | null): Promise<void>;
-  /** Null means unknown, so a caller must not tell a visitor that the team is away. */
-  online(workspaceId: string): Promise<boolean | null>;
+  /**
+   * The operators online now, who are not away. Null means unknown, so a caller must not tell a
+   * visitor that the team is away.
+   */
+  online(workspaceId: string): Promise<string[] | null>;
 }
 
 /** Presence lives only in Valkey. Losing it loses nothing, and every read and write can fail. */
@@ -51,17 +73,20 @@ export function createPresence(
   };
 
   return {
-    beat(workspaceId, operatorId, viewing, left) {
+    beat(workspaceId, operatorId, { viewing, left, hidden, away }) {
       return attempt(async (client) => {
         const key = keyFor(workspaceId);
         const now = Date.now();
-        const expires = now + ttlMs;
+        const expires = now + (hidden ? ttlMs * HIDDEN_TTL_FACTOR : ttlMs);
+        const online = memberFor(operatorId, null);
         const batch = client.multi().zremrangebyscore(key, "-inf", now);
         if (left !== null && left !== viewing) batch.zrem(key, memberFor(operatorId, left));
-        batch.zadd(key, expires, memberFor(operatorId, null));
+        if (away) batch.zrem(key, online);
+        else batch.zadd(key, expires, online);
         if (viewing !== null) batch.zadd(key, expires, memberFor(operatorId, viewing));
-        // A workspace that everyone left does not keep its key.
-        batch.pexpire(key, ttlMs * 2);
+        // A workspace that everyone left does not keep its key. As long as the longest mark, so a
+        // visible tab's beat never cuts a hidden one's short.
+        batch.pexpire(key, ttlMs * HIDDEN_TTL_FACTOR * 2);
         batch.zrange(key, 0, -1);
         const results = await batch.exec();
         const last = results?.at(-1);
@@ -84,9 +109,13 @@ export function createPresence(
       });
     },
     online(workspaceId) {
-      return attempt(
-        async (client) => (await client.zcount(keyFor(workspaceId), Date.now(), "+inf")) > 0,
-      );
+      return attempt(async (client) => {
+        const members = await client.zrangebyscore(keyFor(workspaceId), Date.now(), "+inf");
+        const suffix = `|${NO_CONVERSATION}`;
+        return members.flatMap((member) =>
+          member.endsWith(suffix) ? [member.slice(0, -suffix.length)] : [],
+        );
+      });
     },
   };
 }
@@ -161,7 +190,14 @@ const beatRoute = createRoute({
       required: true,
       content: {
         "application/json": {
-          schema: z.object({ viewing: z.uuid().nullable(), left: z.uuid().nullable() }),
+          // A hidden tab is not looking at a conversation.
+          schema: z
+            .object({
+              viewing: z.uuid().nullable(),
+              left: z.uuid().nullable(),
+              hidden: z.boolean(),
+            })
+            .refine((beat) => !beat.hidden || beat.viewing === null),
         },
       },
     },
@@ -217,6 +253,9 @@ const widgetRoute = createRoute({
         "application/json": {
           schema: z.object({
             online: z.boolean().nullable(),
+            // The members online now, by the same hash as `authorId` on their replies, so the
+            // header can mark their faces. Empty when this server cannot tell.
+            members: z.array(z.string()),
             emailReplies: z.boolean(),
           }),
         },
@@ -226,16 +265,48 @@ const widgetRoute = createRoute({
   },
 });
 
-export function registerOperatorPresence(app: App, presence: Presence): void {
+const statusRoute = createRoute({
+  method: "put",
+  path: "/v1/operator/me/status",
+  security: SESSION,
+  summary:
+    "Set yourself available or away, in every workspace. While away, the widget does not count you online.",
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: z.strictObject({ away: z.boolean() }) } },
+    },
+  },
+  responses: {
+    200: {
+      description: "The status now",
+      content: { "application/json": { schema: z.object({ away: z.boolean() }) } },
+    },
+    ...OPERATOR_POST_ERRORS,
+  },
+});
+
+export function registerOperatorPresence(app: App, db: Database, presence: Presence): void {
   app.openapi(beatRoute, async (c) => {
-    const { viewing, left } = c.req.valid("json");
-    const state = await presence.beat(
-      c.get("memberWorkspaceId"),
-      c.get("operatorId"),
-      viewing,
-      left,
-    );
+    const state = await presence.beat(c.get("memberWorkspaceId"), c.get("operatorId"), {
+      ...c.req.valid("json"),
+      away: c.get("operatorAway"),
+    });
     return c.json({ viewers: state?.viewers ?? {} }, 200);
+  });
+
+  app.openapi(statusRoute, async (c) => {
+    const { away } = c.req.valid("json");
+    const id = c.get("operatorId");
+    await db.update(operator).set({ away }).where(eq(operator.id, id));
+    // At once, so the widget says away at its next ask. Being available waits for the next beat.
+    if (away) {
+      const memberships = await operatorWorkspaces(db, id);
+      await Promise.all(
+        memberships.map(({ workspaceId }) => presence.leave(workspaceId, id, null)),
+      );
+    }
+    return c.json({ away }, 200);
   });
 
   app.openapi(leaveRoute, async (c) => {
@@ -247,7 +318,14 @@ export function registerOperatorPresence(app: App, presence: Presence): void {
 
 export function registerWidgetPresence(app: App, presence: Presence, emailReplies: boolean): void {
   app.openapi(widgetRoute, async (c) => {
-    const online = await presence.online(c.get("workspace").id);
-    return c.json({ online, emailReplies }, 200);
+    const members = await presence.online(c.get("workspace").id);
+    return c.json(
+      {
+        online: members === null ? null : members.length > 0,
+        members: (members ?? []).map(visitorAuthorId),
+        emailReplies,
+      },
+      200,
+    );
   });
 }

@@ -9,28 +9,23 @@ const PRESENCE_EVERY_MS = 10_000;
 
 /**
  * Says which conversation is open, and learns who else has one open. This follows what is open, and
- * no operator's keystroke. Only a visible tab counts.
+ * no operator's keystroke. A hidden tab keeps the operator online, as the inbox often waits in one,
+ * and has no conversation open. `leave` is for a sign-out: no beat follows it.
  */
-export function usePresence(
-  api: WorkspaceApi,
-  selected: string | null,
-  visible: boolean,
-): Record<string, string[]> {
+export function usePresence(api: WorkspaceApi, selected: string | null, visible: boolean) {
   const [viewers, setViewers] = useState<Record<string, string[]>>({});
   const open = useRef<string | null>(null);
+  const signedOut = useRef(false);
 
   useEffect(() => {
-    if (!visible) {
-      void api.leave(open.current).catch(() => {});
-      open.current = null;
-      return;
-    }
     const left = open.current;
-    open.current = selected;
+    const viewing = visible ? selected : null;
+    open.current = viewing;
     let stopped = false;
     const beat = (previous: string | null) => {
+      if (signedOut.current) return;
       api
-        .beat(selected, previous)
+        .beat(viewing, previous, !visible)
         .then((state) => {
           if (!stopped) setViewers(state.viewers);
         })
@@ -50,7 +45,15 @@ export function usePresence(
     return () => removeEventListener("pagehide", onHide);
   }, [api]);
 
-  return viewers;
+  const leave = useCallback(() => {
+    signedOut.current = true;
+    return api.leave(open.current).then(
+      () => {},
+      () => {},
+    );
+  }, [api]);
+
+  return { viewers, leave };
 }
 
 export function useTabVisible(): boolean {

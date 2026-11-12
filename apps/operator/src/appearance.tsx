@@ -4,6 +4,7 @@ import { clearPreview, renderPreview } from "../../../packages/widget/src/previe
 import {
   DEFAULT_COLORS,
   firstName,
+  HEADER_FACES_MAX,
   RADIUS_MAX_PX,
   type SavedAppearance,
   TEXT_MAX,
@@ -12,16 +13,18 @@ import {
   type WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
 import { t as widgetText } from "../../../packages/widget/src/text.ts";
-import type { Me, WorkspaceApi } from "./api.ts";
+import type { AppearanceSettings, Me, Member, OperatorAppearance, WorkspaceApi } from "./api.ts";
 import { hexColor } from "./hex-color.ts";
+import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import { setLeaveGuard } from "./nav.ts";
-import { Confirm } from "./popup.tsx";
+import { Confirm, Menu, Select } from "./popup.tsx";
 import { settingsAddress } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import {
   AppLink,
+  Avatar,
   Choices,
   DocLink,
   ErrorNote,
@@ -64,14 +67,46 @@ const EMAIL_ASKS: Option<WidgetSettings["emailAsk"]>[] = [
   { value: "before_first", label: "widgetEmailBefore" },
 ];
 
-/** What the form edits: the saved answer without the logo and the team. */
-function editable({ logoUrl: _logo, team: _team, ...settings }: SavedAppearance): WidgetSettings {
+const HEADER_FACES: { value: WidgetSettings["headerFaces"]; label: TextId }[] = [
+  { value: "online", label: "widgetFacesOnline" },
+  { value: "repliers", label: "widgetFacesRepliers" },
+  { value: "chosen", label: "widgetFacesChosen" },
+  { value: "none", label: "widgetFacesNone" },
+];
+const HEADER_FACES_HELP: Record<WidgetSettings["headerFaces"], TextId> = {
+  online: "widgetFacesOnlineHelp",
+  repliers: "widgetFacesRepliersHelp",
+  chosen: "widgetFacesChosenHelp",
+  none: "widgetFacesNoneHelp",
+};
+const HEADER_STATUSES: Option<WidgetSettings["headerStatus"]>[] = [
+  { value: "presence", label: "widgetStatusPresence" },
+  { value: "reply_time", label: "widgetStatusReplyTime" },
+];
+
+/** What the form edits: the saved answer without the logo, the faces and the reply time. */
+function editable({
+  logoUrl: _logo,
+  team: _team,
+  faces: _faces,
+  replySeconds: _reply,
+  ...settings
+}: OperatorAppearance): AppearanceSettings {
   return settings;
 }
 
-// Every value is a string, a number, a boolean or null, so === compares each one whole.
-const sameSettings = (one: WidgetSettings, other: WidgetSettings) =>
-  (Object.keys(one) as (keyof WidgetSettings)[]).every((key) => one[key] === other[key]);
+// Every other value is a string, a number, a boolean or null, so === compares each one whole.
+const sameSettings = (one: AppearanceSettings, other: AppearanceSettings) =>
+  (Object.keys(one) as (keyof AppearanceSettings)[]).every((key) =>
+    key === "headerMembers" ? one[key].join() === other[key].join() : one[key] === other[key],
+  );
+
+/** A member as the widget shows them, for the preview. */
+const memberFace = (member: Member): TeamFace => ({
+  id: member.id,
+  name: firstName(member.name),
+  pictureUrl: member.pictureUrl,
+});
 
 /**
  * Asks before a change that is not saved is lost: the browser asks before it leaves the page, and
@@ -404,6 +439,179 @@ function LayoutFields({
   );
 }
 
+/** The members the header shows with "Members you choose", in order, with a menu to add one. */
+function ChosenMembers({
+  chosen,
+  members,
+  onChange,
+}: {
+  chosen: string[];
+  members: Member[];
+  onChange(ids: string[]): void;
+}) {
+  const picked = chosen.flatMap((id) => members.find((member) => member.id === id) ?? []);
+  const others = members.filter((member) => !chosen.includes(member.id));
+  const move = (from: number, to: number) => {
+    const next = [...chosen];
+    const [moved] = next.splice(from, 1);
+    if (moved !== undefined) next.splice(to, 0, moved);
+    onChange(next);
+  };
+  return (
+    <div className="setting-row setting-stacked">
+      {picked.length === 0 ? (
+        <p className="hint">{t("widgetChosenNone")}</p>
+      ) : (
+        <ol className="chosen-members">
+          {picked.map((member, index) => (
+            <li key={member.id}>
+              <Avatar name={member.name} pictureUrl={member.pictureUrl} />
+              <span className="chosen-name">{member.name}</span>
+              <button
+                type="button"
+                className="round"
+                aria-label={t("widgetChosenUp", { name: member.name })}
+                disabled={index === 0}
+                onClick={() => move(index, index - 1)}
+              >
+                <Icon name="arrowUp" size={16} />
+              </button>
+              <button
+                type="button"
+                className="round down"
+                aria-label={t("widgetChosenDown", { name: member.name })}
+                disabled={index === picked.length - 1}
+                onClick={() => move(index, index + 1)}
+              >
+                <Icon name="arrowUp" size={16} />
+              </button>
+              <button
+                type="button"
+                className="round"
+                aria-label={t("widgetChosenRemove", { name: member.name })}
+                onClick={() => onChange(chosen.filter((id) => id !== member.id))}
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+      {others.length > 0 && picked.length < HEADER_FACES_MAX && (
+        <Menu
+          label={t("widgetChosenAdd")}
+          buttonClass="pill small"
+          side="start"
+          items={others.map((member) => ({
+            label: member.name,
+            lead: <Avatar name={member.name} pictureUrl={member.pictureUrl} />,
+            onSelect: () => onChange([...chosen, member.id]),
+          }))}
+        >
+          <Icon name="plus" size={16} />
+          {t("widgetChosenAdd")}
+        </Menu>
+      )}
+    </div>
+  );
+}
+
+/** Whose faces the header shows, how many, their dots, and the line under the title. */
+function HeaderFields({
+  settings,
+  members,
+  onChange,
+}: {
+  settings: AppearanceSettings;
+  /** Null until the team loads, which choosing members waits for. */
+  members: Member[] | null;
+  onChange(change: Partial<AppearanceSettings>): void;
+}) {
+  const mode = settings.headerFaces;
+  return (
+    <div className="setting-rows">
+      <SettingRow label={t("widgetFaces")} hint={t(HEADER_FACES_HELP[mode])}>
+        {() => (
+          <Select
+            label={t("widgetFaces")}
+            side="end"
+            value={mode}
+            choices={HEADER_FACES.map((choice) => ({ ...choice, label: t(choice.label) }))}
+            onChange={(headerFaces) => onChange({ headerFaces })}
+          />
+        )}
+      </SettingRow>
+      {mode === "chosen" && members !== null && (
+        <ChosenMembers
+          chosen={settings.headerMembers}
+          members={members}
+          onChange={(headerMembers) => onChange({ headerMembers })}
+        />
+      )}
+      {mode !== "none" && (
+        <>
+          <SettingRow label={t("widgetFaceCount")}>
+            {() => (
+              <div className="radius-field">
+                <input
+                  type="range"
+                  aria-label={t("widgetFaceCount")}
+                  min={1}
+                  max={HEADER_FACES_MAX}
+                  value={settings.headerFaceCount}
+                  onChange={(event) => onChange({ headerFaceCount: Number(event.target.value) })}
+                />
+                <output>{settings.headerFaceCount}</output>
+              </div>
+            )}
+          </SettingRow>
+          <div className="setting-row setting-switch">
+            <Switch
+              label={t("widgetFaceDot")}
+              hint={t("widgetFaceDotHelp")}
+              checked={settings.headerDot}
+              onChange={(headerDot) => onChange({ headerDot })}
+            />
+          </div>
+        </>
+      )}
+      <SettingRow
+        label={t("widgetStatusLine")}
+        hint={t(
+          settings.headerStatus === "reply_time"
+            ? "widgetStatusReplyTimeHelp"
+            : "widgetStatusPresenceHelp",
+        )}
+        stacked
+      >
+        {(hintId) => (
+          <Choices
+            describedBy={hintId}
+            label={t("widgetStatusLine")}
+            variant="outlined"
+            value={settings.headerStatus}
+            options={HEADER_STATUSES}
+            onChange={(headerStatus) => onChange({ headerStatus })}
+          />
+        )}
+      </SettingRow>
+    </div>
+  );
+}
+
+/**
+ * The faces the preview shows for the form's choice, before a save: the chosen members, or for
+ * Online now, the whole team. The preview marks two of them online.
+ */
+function previewFaces(settings: AppearanceSettings, members: Member[]): TeamFace[] {
+  if (settings.headerFaces === "online") return members.map(memberFace);
+  if (settings.headerFaces !== "chosen") return [];
+  return settings.headerMembers.flatMap((id) => {
+    const member = members.find((one) => one.id === id);
+    return member === undefined ? [] : [memberFace(member)];
+  });
+}
+
 /** The chat as visitors will see it, drawn by the widget's own code in a Shadow DOM. */
 function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me }) {
   const host = useRef<HTMLDivElement>(null);
@@ -510,9 +718,11 @@ interface AppearanceProps {
 
 function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: AppearanceProps) {
   const loaded = useLoad(() => api.widget(), [api]);
+  const team = useLoad(() => api.members(), [api]);
+  const members = team.data?.members ?? null;
   const saved = loaded.data;
   // Null until the first change, so the form shows what is saved until then.
-  const [edited, setEdited] = useState<WidgetSettings | null>(null);
+  const [edited, setEdited] = useState<AppearanceSettings | null>(null);
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   const unsaved = saved !== null && edited !== null && !sameSettings(editable(saved), edited);
@@ -520,7 +730,7 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
   if (saved === null) return <Loading failure={loaded.failure} />;
   const draft = edited ?? editable(saved);
 
-  const change = (next: Partial<WidgetSettings>) => {
+  const change = (next: Partial<AppearanceSettings>) => {
     setEdited({ ...draft, ...next });
     setError(null);
   };
@@ -541,7 +751,15 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
   return (
     <div className="appearance">
       <LeaveGuard unsaved={unsaved} />
-      <WidgetPreview appearance={{ ...saved, ...draft }} me={me} />
+      <WidgetPreview
+        appearance={{
+          ...saved,
+          ...draft,
+          // The saved faces are for the saved choice. The team gives them for the form's.
+          ...(members !== null && { faces: previewFaces(draft, members) }),
+        }}
+        me={me}
+      />
       <form className="widget-form" onSubmit={save}>
         {!canEdit && <p className="note">{t("widgetMemberNote")}</p>}
         <fieldset className="widget-sections" disabled={!canEdit}>
@@ -555,6 +773,9 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
           </FormSection>
           <FormSection title="widgetLayoutTitle">
             <LayoutFields settings={draft} onChange={change} />
+          </FormSection>
+          <FormSection title="widgetHeaderTitle" help="widgetHeaderHelp">
+            <HeaderFields settings={draft} members={members} onChange={change} />
           </FormSection>
           <FormSection title="widgetEmailTitle">
             <div className="setting-rows">

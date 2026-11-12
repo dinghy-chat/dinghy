@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
@@ -129,6 +129,36 @@ interface Row extends Record<string, unknown> {
   hours: { dow: number; hour: number; conversations: number }[];
 }
 
+/**
+ * Each conversation started since `since`, with its first reply: how long it waited, in seconds,
+ * and who sent it. A conversation with no reply yet has a null wait. The welcome chat is not one.
+ */
+const firstReplies = (workspaceId: string, since: SQL) => sql`
+  SELECT c.status, c.created_at,
+         extract(epoch FROM reply.created_at - c.created_at) AS wait,
+         reply.author_operator_id AS operator_id,
+         reply.author_api_key_id AS api_key_id
+  FROM conversation AS c
+  LEFT JOIN LATERAL (
+    SELECT m.created_at, m.author_operator_id, m.author_api_key_id FROM message AS m
+    WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
+      AND m.author_visitor_id IS NULL AND ${isChat(sql`m.kind`)}
+    ORDER BY m.seq LIMIT 1
+  ) AS reply ON true
+  WHERE c.workspace_id = ${workspaceId} AND c.created_at >= ${since} AND NOT c.welcome`;
+
+/** The median first reply time over the last `days`, as Analytics shows it. Null with no reply. */
+export async function medianFirstReplySeconds(
+  tx: Transaction,
+  workspaceId: string,
+  days: number,
+): Promise<number | null> {
+  const result = await tx.execute<{ median: number | null }>(sql`
+    SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY wait) AS median
+    FROM (${firstReplies(workspaceId, sql`now() - make_interval(days => ${days}::int)`)}) AS f`);
+  return result.rows[0]?.median ?? null;
+}
+
 /** One statement, so every number reads the same rows. */
 async function readAnalytics(
   tx: Transaction,
@@ -144,20 +174,8 @@ async function readAnalytics(
              ((day - ${days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS since
       FROM local_today
     ), started AS MATERIALIZED (
-      SELECT c.status,
-             (c.created_at AT TIME ZONE ${timeZone}) AS local_at,
-             extract(epoch FROM reply.created_at - c.created_at) AS wait,
-             reply.author_operator_id AS operator_id,
-             reply.author_api_key_id AS api_key_id
-      FROM bounds
-      JOIN conversation AS c ON c.workspace_id = ${workspaceId} AND c.created_at >= bounds.since
-        AND NOT c.welcome
-      LEFT JOIN LATERAL (
-        SELECT m.created_at, m.author_operator_id, m.author_api_key_id FROM message AS m
-        WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
-          AND m.author_visitor_id IS NULL AND ${isChat(sql`m.kind`)}
-        ORDER BY m.seq LIMIT 1
-      ) AS reply ON true
+      SELECT f.*, (f.created_at AT TIME ZONE ${timeZone}) AS local_at
+      FROM (${firstReplies(workspaceId, sql`(SELECT since FROM bounds)`)}) AS f
     )
     SELECT
       (SELECT count(*) FROM started)::int AS started,

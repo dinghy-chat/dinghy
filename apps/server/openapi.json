@@ -133,44 +133,7 @@
         },
         "required": ["name", "version", "billing", "signup", "email"]
       },
-      "WidgetAppearance": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/WidgetSettings"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "typingPreview": {
-                "type": "boolean"
-              },
-              "logoUrl": {
-                "type": ["string", "null"]
-              },
-              "team": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "pictureUrl": {
-                      "type": ["string", "null"]
-                    }
-                  },
-                  "required": ["id", "name", "pictureUrl"]
-                }
-              }
-            },
-            "required": ["typingPreview", "logoUrl", "team"]
-          }
-        ]
-      },
-      "WidgetSettings": {
+      "WidgetPublicAppearance": {
         "type": "object",
         "properties": {
           "title": {
@@ -231,6 +194,67 @@
           },
           "transcript": {
             "type": "boolean"
+          },
+          "headerFaces": {
+            "type": "string",
+            "enum": ["online", "repliers", "chosen", "none"]
+          },
+          "headerFaceCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "headerDot": {
+            "type": "boolean"
+          },
+          "headerStatus": {
+            "type": "string",
+            "enum": ["presence", "reply_time"]
+          },
+          "typingPreview": {
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "type": ["string", "null"]
+          },
+          "team": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pictureUrl": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["id", "name", "pictureUrl"]
+            }
+          },
+          "faces": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pictureUrl": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["id", "name", "pictureUrl"]
+            }
+          },
+          "replySeconds": {
+            "type": ["number", "null"]
           }
         },
         "required": [
@@ -247,7 +271,16 @@
           "emailAsk",
           "branding",
           "sound",
-          "transcript"
+          "transcript",
+          "headerFaces",
+          "headerFaceCount",
+          "headerDot",
+          "headerStatus",
+          "typingPreview",
+          "logoUrl",
+          "team",
+          "faces",
+          "replySeconds"
         ]
       },
       "NewVisitor": {
@@ -492,6 +525,9 @@
           "pictureUrl": {
             "type": ["string", "null"]
           },
+          "away": {
+            "type": "boolean"
+          },
           "workspaces": {
             "type": "array",
             "items": {
@@ -549,7 +585,16 @@
             "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "email", "pictureUrl", "workspaces", "billing", "contact"]
+        "required": [
+          "id",
+          "name",
+          "email",
+          "pictureUrl",
+          "away",
+          "workspaces",
+          "billing",
+          "contact"
+        ]
       },
       "InboxWorkspace": {
         "type": "object",
@@ -1443,6 +1488,173 @@
         },
         "required": ["publicKey", "allowedOrigins", "signingSecret", "usage", "deletion"]
       },
+      "WidgetAppearance": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WidgetSettings"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "typingPreview": {
+                "type": "boolean"
+              },
+              "logoUrl": {
+                "type": ["string", "null"]
+              },
+              "team": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "pictureUrl": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["id", "name", "pictureUrl"]
+                }
+              },
+              "faces": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "pictureUrl": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["id", "name", "pictureUrl"]
+                }
+              },
+              "replySeconds": {
+                "type": ["number", "null"]
+              }
+            },
+            "required": ["typingPreview", "logoUrl", "team", "faces", "replySeconds"]
+          }
+        ]
+      },
+      "WidgetSettings": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "greeting": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "away": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "primary": {
+            "type": ["string", "null"],
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "accent": {
+            "type": ["string", "null"],
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "position": {
+            "type": "string",
+            "enum": ["left", "right"]
+          },
+          "theme": {
+            "type": "string",
+            "enum": ["light", "dark", "auto"]
+          },
+          "launcher": {
+            "type": "string",
+            "enum": ["boat", "bubble", "hidden", "label", "square"]
+          },
+          "mascot": {
+            "type": "boolean"
+          },
+          "radius": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "emailAsk": {
+            "type": "string",
+            "enum": ["off", "after_first", "before_first"]
+          },
+          "branding": {
+            "type": "boolean"
+          },
+          "sound": {
+            "type": "boolean"
+          },
+          "transcript": {
+            "type": "boolean"
+          },
+          "headerFaces": {
+            "type": "string",
+            "enum": ["online", "repliers", "chosen", "none"]
+          },
+          "headerFaceCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "headerDot": {
+            "type": "boolean"
+          },
+          "headerStatus": {
+            "type": "string",
+            "enum": ["presence", "reply_time"]
+          },
+          "headerMembers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 5
+          }
+        },
+        "required": [
+          "title",
+          "greeting",
+          "away",
+          "primary",
+          "accent",
+          "position",
+          "theme",
+          "launcher",
+          "mascot",
+          "radius",
+          "emailAsk",
+          "branding",
+          "sound",
+          "transcript",
+          "headerFaces",
+          "headerFaceCount",
+          "headerDot",
+          "headerStatus",
+          "headerMembers"
+        ]
+      },
       "AlertSettings": {
         "type": "object",
         "properties": {
@@ -1602,7 +1814,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WidgetAppearance"
+                  "$ref": "#/components/schemas/WidgetPublicAppearance"
                 }
               }
             }
@@ -3118,11 +3330,17 @@
                     "online": {
                       "type": ["boolean", "null"]
                     },
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "emailReplies": {
                       "type": "boolean"
                     }
                   },
-                  "required": ["online", "emailReplies"]
+                  "required": ["online", "members", "emailReplies"]
                 }
               }
             }
@@ -7005,9 +7223,12 @@
                   "left": {
                     "type": ["string", "null"],
                     "format": "uuid"
+                  },
+                  "hidden": {
+                    "type": "boolean"
                   }
                 },
-                "required": ["viewing", "left"]
+                "required": ["viewing", "left", "hidden"]
               }
             }
           }
@@ -7087,6 +7308,71 @@
           },
           "413": {
             "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/me/status": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Set yourself available or away, in every workspace. While away, the widget does not count you online.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "away": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["away"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The status now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "away": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["away"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
             "content": {
               "application/json": {
                 "schema": {

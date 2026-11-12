@@ -4,6 +4,15 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **Settings > Appearance** has a **Header** section: the faces beside the chat's title are the members online now (the default, with the latest repliers when nobody is), the latest repliers, members you choose and order, or none, 1 to 5 of them, with a green dot on each member online. The status line can say "Usually replies in 2 min", from the 30-day median first reply time. API: the widget settings have `headerFaces`, `headerFaceCount`, `headerDot`, `headerStatus` and `headerMembers`, the appearance answers `faces` and `replySeconds`, and the widget's presence answers `members`.
+- The user menu sets you **Available** or **Away**, in every workspace, with a dot on your picture. While you are away, the widget does not count you online. API: `PUT /v1/operator/me/status`, and `away` on `/v1/operator/me`.
+
+### Changed
+
+- A background tab of the operator app keeps you online for the widget, as most of the time the inbox waits in one. A hidden tab marks you online for 2 minutes per beat, as browsers slow its timers, and shows no conversation as open. API: the operator's presence beat takes `hidden`.
+
 ## [0.21.0] - 2026-11-12
 
 ### Upgrading

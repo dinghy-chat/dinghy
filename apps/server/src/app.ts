@@ -112,6 +112,8 @@ export interface AppEnv {
     operatorId: string;
     operatorName: string;
     operatorEmail: string;
+    /** The operator set Away, so their beats do not count them online. */
+    operatorAway: boolean;
     /** The signed-in operator's session, which a stream checks again on each wake. */
     sessionId: string;
     memberWorkspaceId: string;
@@ -438,7 +440,7 @@ export function createApp({
       version,
     });
     registerAnalyticsRoute(app, db);
-    registerOperatorPresence(app, presence);
+    registerOperatorPresence(app, db, presence);
     registerModerationRoutes(app, db, live);
     registerContactRoutes(app, db, live);
     registerLiveVisitorRoutes(app, db, liveVisitors);

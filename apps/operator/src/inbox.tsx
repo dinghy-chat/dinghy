@@ -181,6 +181,8 @@ export function Inbox({
           }}
           onProfileOpen={() => openSettings("profile")}
           onSwitch={onSwitch}
+          onStatusChanged={onAccountChanged}
+          onLeavePresence={data.leavePresence}
           onSignedOut={onSignedOut}
         />
         <div className="stage">

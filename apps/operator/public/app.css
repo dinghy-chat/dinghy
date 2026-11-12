@@ -1148,6 +1148,23 @@ button.workspace[aria-expanded="true"],
   background: var(--navy);
   color: var(--on-navy);
 }
+/* The operator's own status: green while available, gray while away. */
+.status-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.status-dot.away {
+  background: var(--mute);
+}
+.me .status-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  box-shadow: 0 0 0 2px var(--side-tint);
+}
 .me-text {
   display: grid;
   flex: 1;
@@ -4870,4 +4887,27 @@ button.quote:hover {
   .live-dot {
     transition: none;
   }
+}
+/* Appearance: the members the header shows, in order, each with its buttons. */
+.chosen-members {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chosen-members li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chosen-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chosen-members .down svg {
+  transform: rotate(180deg);
 }

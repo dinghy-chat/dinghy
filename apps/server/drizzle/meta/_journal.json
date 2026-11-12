@@ -589,6 +589,13 @@
       "when": 1794434890699,
       "tag": "0083_email_coverage_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1794477029055,
+      "tag": "0084_operator_away_and_widget_header",
+      "breakpoints": true
     }
   ]
 }

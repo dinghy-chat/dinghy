@@ -43,6 +43,14 @@ export interface WidgetSettings {
   sound: boolean;
   /** The visitor gets the conversation by email when it closes. The widget does not use it. */
   transcript: boolean;
+  /** Whose faces the header shows. `online` falls back to the latest repliers when nobody is. */
+  headerFaces: "online" | "repliers" | "chosen" | "none";
+  /** How many faces, 1 to HEADER_FACES_MAX. */
+  headerFaceCount: number;
+  /** A green dot on the face of each member who is online now. */
+  headerDot: boolean;
+  /** Under the title while someone is online: "Online", or the usual reply time. */
+  headerStatus: "presence" | "reply_time";
 }
 
 /** A member the widget's header shows: a first name and a picture, never an email. */
@@ -59,14 +67,20 @@ export interface SavedAppearance extends WidgetSettings {
   /** The chat sends the visitor's unsent words, so operators see them as they type. */
   typingPreview: boolean;
   logoUrl: string | null;
-  /** Up to 3 members, the ones who sent the latest replies. */
+  /** Up to HEADER_FACES_MAX members, the ones who sent the latest replies, newest first. */
   team: TeamFace[];
+  /** The header's faces for `online` or `chosen`, in order, up to HEADER_FACES_MAX. Else empty. */
+  faces: TeamFace[];
+  /** The 30-day median first reply time, for the `reply_time` status. Null without it or data. */
+  replySeconds: number | null;
 }
 
 /** The longest title an owner can save. */
 export const TITLE_MAX = 40;
 /** The longest greeting or away text. */
 export const TEXT_MAX = 200;
+/** The most faces the header shows. */
+export const HEADER_FACES_MAX = 5;
 /** The roundest corners an owner can save. */
 export const RADIUS_MAX_PX = 24;
 
@@ -89,9 +103,15 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   branding: true,
   sound: true,
   transcript: true,
+  headerFaces: "online",
+  headerFaceCount: 3,
+  headerDot: true,
+  headerStatus: "presence",
   typingPreview: true,
   logoUrl: null,
   team: [],
+  faces: [],
+  replySeconds: null,
 };
 
 /**

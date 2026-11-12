@@ -1,13 +1,14 @@
 /** @jsxImportSource react */
 import type { ReactNode } from "react";
 
-import { type Me, type Role, signOut } from "./api.ts";
+import { type Me, type Role, setAway, signOut } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { leave, navigate } from "./nav.ts";
 import { leaveDevice } from "./notifications.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { Logo } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
+import { toast } from "./toast.tsx";
 import { Avatar, initials, ROLE_TEXT } from "./ui.tsx";
 
 /** What the panel shows: the Inbox, or a page. */
@@ -112,12 +113,14 @@ function WorkspaceSwitcher({
   );
 }
 
-/** The operator at the foot of the sidebar, with their profile and sign out. */
+/** The operator at the foot of the sidebar, with their status, their profile and sign out. */
 function UserMenu({
   me,
   role,
   current,
   onProfile,
+  onStatusChanged,
+  onLeavePresence,
   onSignedOut,
 }: {
   me: Me;
@@ -125,26 +128,52 @@ function UserMenu({
   /** True on the Profile page, which the menu opens, so the menu shows it as the current page. */
   current: boolean;
   onProfile(): void;
+  /** The status is in `me`, which loads again. */
+  onStatusChanged(): void;
+  /** Says the operator left, before the session ends. */
+  onLeavePresence(): Promise<void>;
   onSignedOut(): void;
 }) {
+  const status = t(me.away ? "statusAway" : "statusAvailable");
+  const switchStatus = () =>
+    void setAway(!me.away).then(onStatusChanged, () => toast("statusFailed", false));
   return (
     <Menu
-      label={t("userMenu")}
+      label={`${t("userMenu")}, ${status}`}
       buttonClass={current ? "me current" : "me"}
       side="start"
       placement="up"
       className="me-menu"
       items={[
-        { label: t("pageProfile"), lead: <Icon name="user" size={18} />, onSelect: onProfile },
+        {
+          label: t(me.away ? "setAvailable" : "setAway"),
+          lead: <i className={me.away ? "status-dot" : "status-dot away"} />,
+          onSelect: switchStatus,
+        },
+        {
+          divider: true,
+          label: t("pageProfile"),
+          lead: <Icon name="user" size={18} />,
+          onSelect: onProfile,
+        },
         {
           divider: true,
           label: t("signOut"),
           lead: <Icon name="exit" size={18} />,
-          onSelect: () => leave(() => void leaveDevice().then(signOut).finally(onSignedOut)),
+          onSelect: () =>
+            leave(
+              () =>
+                void Promise.all([onLeavePresence(), leaveDevice()])
+                  .then(signOut)
+                  .finally(onSignedOut),
+            ),
         },
       ]}
     >
-      <Avatar name={me.name} pictureUrl={me.pictureUrl} />
+      <span className="avatar-wrap">
+        <Avatar name={me.name} pictureUrl={me.pictureUrl} />
+        <i className={me.away ? "status-dot away" : "status-dot"} title={status} />
+      </span>
       <span className="me-text">
         <b>{me.name}</b>
         <small>{t(ROLE_TEXT[role])}</small>
@@ -170,6 +199,8 @@ export function Sidebar({
   onView,
   onProfileOpen,
   onSwitch,
+  onStatusChanged,
+  onLeavePresence,
   onSignedOut,
 }: {
   me: Me;
@@ -192,6 +223,8 @@ export function Sidebar({
   onView(view: View): void;
   onProfileOpen(): void;
   onSwitch(id: string): void;
+  onStatusChanged(): void;
+  onLeavePresence(): Promise<void>;
   onSignedOut(): void;
 }) {
   const waitingText = t("waitingCount", { count: waiting });
@@ -251,6 +284,8 @@ export function Sidebar({
         role={role}
         current={isProfile}
         onProfile={onProfileOpen}
+        onStatusChanged={onStatusChanged}
+        onLeavePresence={onLeavePresence}
         onSignedOut={onSignedOut}
       />
     </aside>

@@ -58,7 +58,7 @@ function useTeam(
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: teamVersion asks for a load.
   useEffect(loadMembers, [loadMembers, teamVersion]);
-  const viewers = usePresence(api, selected, visible);
+  const { viewers, leave } = usePresence(api, selected, visible);
   /** Who else has this conversation open, by name. Someone who left the team has no name here. */
   const replying = (conversationId: string) => {
     const names = (viewers[conversationId] ?? [])
@@ -67,7 +67,7 @@ function useTeam(
     if (names.length === 0) return null;
     return t(names.length === 1 ? "isReplying" : "areReplying", { names: names.join(", ") });
   };
-  return { members, loadMembers, replying };
+  return { members, loadMembers, replying, leavePresence: leave };
 }
 
 /**

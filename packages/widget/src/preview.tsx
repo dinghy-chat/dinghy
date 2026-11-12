@@ -51,6 +51,10 @@ function sampleLines({ question, answer, author }: PreviewSample): Line[] {
   ];
 }
 
+/** Two members online, as a sample, so the owner sees the dots. */
+const sampleOnline = ({ faces, team }: SavedAppearance) =>
+  (faces.length > 0 ? faces : team).slice(0, 2).map((face) => face.id);
+
 /** The launcher as the loader draws it. The label carries the chat's title. */
 function Launcher({ kind, title }: { kind: LauncherKind; title: string }) {
   return (
@@ -89,9 +93,9 @@ function Preview({ appearance, sample }: PreviewProps) {
         <ChatHead
           scene="waiting"
           online
+          members={sampleOnline(appearance)}
           mascot={mascot}
-          logoUrl={appearance.logoUrl}
-          team={appearance.team}
+          saved={appearance}
           say={say}
           onClose={ignore}
         />

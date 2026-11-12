@@ -25,8 +25,15 @@ const SITE = "https://app.example.com";
 const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 
-// What the form saves: the widget's defaults without the logo and the team.
-const { logoUrl: _logo, team: _team, ...DEFAULTS } = WIDGET_DEFAULTS;
+// What the form saves: the widget's defaults without the logo and the faces, with no chosen member.
+const {
+  logoUrl: _logo,
+  team: _team,
+  faces: _faces,
+  replySeconds: _reply,
+  ...WIDGET_SETTINGS
+} = WIDGET_DEFAULTS;
+const DEFAULTS = { ...WIDGET_SETTINGS, headerMembers: [] };
 
 const CHANGED = {
   title: "Ask Acme",
@@ -43,7 +50,14 @@ const CHANGED = {
   branding: false,
   sound: false,
   transcript: false,
+  headerFaces: "repliers",
+  headerFaceCount: 5,
+  headerDot: false,
+  headerStatus: "reply_time",
+  headerMembers: [],
 };
+
+const SOME_ID = randomUUID();
 
 let database: TestDatabase;
 let db: Database;
@@ -104,8 +118,13 @@ describe("the widget's settings", () => {
     });
     const response = await app.request(settingsPath(space), { headers: { cookie: member.cookie } });
     expect(response.status).toBe(200);
-    // The database's defaults are the ones the widget falls back to with no answer.
-    expect(await response.json()).toEqual(WIDGET_DEFAULTS);
+    // The database's defaults are the ones the widget falls back to with no answer. Online now
+    // lists every member as a face it may show.
+    expect(await response.json()).toEqual({
+      ...WIDGET_DEFAULTS,
+      headerMembers: [],
+      faces: expect.arrayContaining([expect.objectContaining({ id: visitorAuthorId(member.id) })]),
+    });
   });
 
   test("an owner saves every value, and a color is kept in lower case", async () => {
@@ -118,6 +137,9 @@ describe("the widget's settings", () => {
       typingPreview: true,
       logoUrl: null,
       team: [],
+      faces: [],
+      // No reply yet, so no reply time.
+      replySeconds: null,
     };
     expect(await response.json()).toEqual(expected);
     const read = await app.request(settingsPath(space), { headers: { cookie: boss.cookie } });
@@ -139,6 +161,12 @@ describe("the widget's settings", () => {
     ["a blank text", { away: "   " }],
     ["a control character", { title: "a\u0000b" }],
     ["a missing value", { branding: undefined }],
+    ["no faces", { headerFaceCount: 0 }],
+    ["over 5 faces", { headerFaceCount: 6 }],
+    ["an unknown faces mode", { headerFaces: "everyone" }],
+    ["an unknown status line", { headerStatus: "busy" }],
+    ["a member chosen twice", { headerMembers: [SOME_ID, SOME_ID] }],
+    ["a chosen member that is not an ID", { headerMembers: ["maya"] }],
   ])("%s is refused, and nothing changes", async (_name, change) => {
     const { space, boss } = await workspaceWithOwner();
     const response = await saveSettings(space, boss.cookie, { ...DEFAULTS, ...change });
@@ -214,7 +242,7 @@ describe("the widget's appearance", () => {
     expect(first.status).toBe(200);
     expect(first.headers.get("access-control-allow-origin")).toBe("*");
     expect(first.headers.get("cache-control")).toBe("public, max-age=300");
-    expect(await first.json()).toEqual(WIDGET_DEFAULTS);
+    expect(await first.json()).toEqual({ ...WIDGET_DEFAULTS, faces: expect.any(Array) });
     const tag = first.headers.get("etag") ?? "";
     expect(tag).not.toBe("");
 
@@ -252,7 +280,7 @@ describe("the widget's appearance", () => {
     expect((await appearance({ ...space, publicKey: "not-a-key" })).status).toBe(404);
   });
 
-  test("the header shows the 3 members who replied last, by first name, never an email", async () => {
+  test("the team is the members who replied last, by first name, never an email", async () => {
     const { space } = await workspaceWithOwner();
     const names = ["Maya Chen", "Sam Diaz", "Ana Ruiz", "Lee Park"];
     const team = await Promise.all(
@@ -287,6 +315,75 @@ describe("the widget's appearance", () => {
       { id: visitorAuthorId(sam.id), name: "Sam", pictureUrl: null },
     ]);
     expect(text).not.toContain("@");
+  });
+});
+
+describe("the header's faces", () => {
+  /** Maya and Sam replied, Sam last. Ana never did. */
+  async function teamOfThree() {
+    const { space, boss } = await workspaceWithOwner();
+    const [maya, sam, ana] = await Promise.all(
+      ["Maya Chen", "Sam Diaz", "Ana Ruiz"].map((name) =>
+        addOperator({ auth, owner, name, workspaceId: space.id, role: "member" }),
+      ),
+    );
+    if (maya === undefined || sam === undefined || ana === undefined) {
+      throw new Error("The team is missing");
+    }
+    const { conversationId } = await visitorWrites(space);
+    for (const one of [maya, sam]) await reply(space, one.id, conversationId);
+    return { space, boss, maya, sam, ana };
+  }
+  const ids = (faces: { id: string }[]) => faces.map((face) => face.id);
+
+  test("Online now offers every member, the latest repliers first", async () => {
+    const { space, boss, maya, sam, ana } = await teamOfThree();
+    const body = await (await appearance(space)).json();
+    expect(ids(body.faces).slice(0, 2)).toEqual([sam, maya].map((one) => visitorAuthorId(one.id)));
+    expect(ids(body.faces).sort()).toEqual(
+      [boss, maya, sam, ana].map((one) => visitorAuthorId(one.id)).sort(),
+    );
+    // The fallback when nobody is online.
+    expect(ids(body.team)).toEqual([sam, maya].map((one) => visitorAuthorId(one.id)));
+  });
+
+  test("chosen members keep their order, a removed one is skipped, and no site sees an ID", async () => {
+    const { space, boss, maya, sam, ana } = await teamOfThree();
+    const chosen = { ...DEFAULTS, headerFaces: "chosen", headerMembers: [ana.id, maya.id, sam.id] };
+    expect((await saveSettings(space, boss.cookie, chosen)).status).toBe(200);
+    await owner
+      .update(workspaceMember)
+      .set({ removedAt: new Date() })
+      .where(eq(workspaceMember.operatorId, maya.id));
+    const read = await app.request(settingsPath(space), { headers: { cookie: boss.cookie } });
+    expect((await read.json()).headerMembers).toEqual([ana.id, sam.id]);
+    const text = await (await appearance(space)).text();
+    expect(ids(JSON.parse(text).faces)).toEqual([ana, sam].map((one) => visitorAuthorId(one.id)));
+    expect(text).not.toContain("headerMembers");
+    expect(text).not.toContain(ana.id);
+  });
+
+  test("Latest repliers and None send no faces of their own", async () => {
+    const { space, boss } = await teamOfThree();
+    for (const headerFaces of ["repliers", "none"]) {
+      await saveSettings(space, boss.cookie, { ...DEFAULTS, headerFaces });
+      expect((await (await appearance(space)).json()).faces).toEqual([]);
+    }
+  });
+
+  test("the usual reply time is the median first reply over 30 days, only when it shows", async () => {
+    const { space, boss } = await workspaceWithOwner();
+    const { conversationId } = await visitorWrites(space);
+    await reply(space, boss.id, conversationId);
+    // The visitor wrote 2 minutes before the reply.
+    await owner.execute(
+      sql`update conversation set created_at = created_at - interval '2 minutes' where id = ${conversationId}`,
+    );
+    expect((await (await appearance(space)).json()).replySeconds).toBeNull();
+    await saveSettings(space, boss.cookie, { ...DEFAULTS, headerStatus: "reply_time" });
+    const seconds = (await (await appearance(space)).json()).replySeconds;
+    expect(seconds).toBeGreaterThanOrEqual(120);
+    expect(seconds).toBeLessThan(130);
   });
 });
 

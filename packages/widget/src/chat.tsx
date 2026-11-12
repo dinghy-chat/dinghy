@@ -272,7 +272,11 @@ function Chat({
     return () => clearTimeout(timer);
   }, [newReply]);
 
-  const { online, emailReplies } = usePresence(client, fullPage ? token : null, open && visible);
+  const { online, members, emailReplies } = usePresence(
+    client,
+    fullPage ? token : null,
+    open && visible,
+  );
   usePageReports(client, token, chatted && !fullPage);
   // Only into an open conversation, and only when the workspace shows drafts.
   useDraftPreview(client, token, openConversation && saved?.typingPreview === true, draft);
@@ -668,9 +672,9 @@ function Chat({
       <ChatHead
         scene={sceneState}
         online={online}
+        members={members}
         mascot={mascot}
-        logoUrl={saved.logoUrl}
-        team={saved.team}
+        saved={saved}
         say={say}
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />

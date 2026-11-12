@@ -56,7 +56,13 @@ export function createAuth({ db, secret, baseURL }: AuthOptions) {
     }),
     advanced: { database: { generateId: "uuid" } },
     // Read with the session, so the session check can refuse a deleted account.
-    user: { additionalFields: { deletedAt: { type: "date", required: false, input: false } } },
+    user: {
+      additionalFields: {
+        deletedAt: { type: "date", required: false, input: false },
+        // Set by its own route, which also clears the operator's presence.
+        away: { type: "boolean", required: false, input: false },
+      },
+    },
     // Its own logs would hold a failed query's parameters, such as tokens.
     // With this, an unexpected error reaches the app's error handler, which logs safe fields.
     logger: { disabled: true },

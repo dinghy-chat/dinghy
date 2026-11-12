@@ -214,6 +214,8 @@ export interface Me {
   email: string;
   /** The same in every workspace. Null with none. */
   pictureUrl: string | null;
+  /** Set Away, in every workspace: the widget does not count this operator online. */
+  away: boolean;
   workspaces: {
     workspaceId: string;
     role: Role;
@@ -240,6 +242,15 @@ export interface Me {
 }
 
 export type Role = "owner" | "admin" | "member";
+
+/** What the Appearance form saves: the widget's settings, and the operators the header shows. */
+export interface AppearanceSettings extends WidgetSettings {
+  /** Operator IDs, in order, for the `chosen` faces. Only members who are still on the team. */
+  headerMembers: string[];
+}
+
+/** The saved appearance, as the operator app reads it. */
+export type OperatorAppearance = SavedAppearance & AppearanceSettings;
 
 export interface Member {
   id: string;
@@ -423,6 +434,11 @@ export const getWaiting = () =>
 type Picture = { pictureUrl: string | null };
 export const setPicture = (file: Blob) => putImage<Picture>("/v1/operator/me/picture", file);
 export const removePicture = () => call<Picture>("/v1/operator/me/picture", { method: "DELETE" });
+export const setAway = (away: boolean) =>
+  call<{ away: boolean }>("/v1/operator/me/status", {
+    method: "PUT",
+    body: JSON.stringify({ away }),
+  });
 /**
  * Deletes the account. With email, a link goes to it and `deleted` is false. Without, the typed
  * email confirms, and the account is gone.
@@ -505,13 +521,13 @@ export function workspaceApi(workspaceId: string) {
         body: JSON.stringify({ allowedOrigins }),
       }),
     rotateSecret: () => post<WorkspaceSettings>(`${base}/settings/rotate-secret`, {}),
-    widget: () => call<SavedAppearance>(`${base}/widget`),
-    setWidget: (settings: WidgetSettings) =>
-      call<SavedAppearance>(`${base}/widget`, { method: "PUT", body: JSON.stringify(settings) }),
-    setLogo: (file: Blob) => putImage<SavedAppearance>(`${base}/widget/logo`, file),
-    removeLogo: () => call<SavedAppearance>(`${base}/widget/logo`, { method: "DELETE" }),
+    widget: () => call<OperatorAppearance>(`${base}/widget`),
+    setWidget: (settings: AppearanceSettings) =>
+      call<OperatorAppearance>(`${base}/widget`, { method: "PUT", body: JSON.stringify(settings) }),
+    setLogo: (file: Blob) => putImage<OperatorAppearance>(`${base}/widget/logo`, file),
+    removeLogo: () => call<OperatorAppearance>(`${base}/widget/logo`, { method: "DELETE" }),
     setTypingPreview: (enabled: boolean) =>
-      call<SavedAppearance>(`${base}/widget/typing-preview`, {
+      call<OperatorAppearance>(`${base}/widget/typing-preview`, {
         method: "PUT",
         body: JSON.stringify({ enabled }),
       }),
@@ -577,10 +593,11 @@ export function workspaceApi(workspaceId: string) {
         method: "PUT",
         body: JSON.stringify({ operatorId }),
       }),
-    beat: (viewing: string | null, left: string | null) =>
+    /** A hidden tab views nothing, and still counts online. */
+    beat: (viewing: string | null, left: string | null, hidden: boolean) =>
       call<{ viewers: Record<string, string[]> }>(`${base}/presence`, {
         method: "PUT",
-        body: JSON.stringify({ viewing, left }),
+        body: JSON.stringify({ viewing, left, hidden }),
       }),
     /** keepalive, so this still goes out while the page closes. */
     leave: (conversationId: string | null) =>

@@ -97,3 +97,57 @@ test("a closed widget asks nothing about the team", async ({ browser }) => {
   await expect.poll(() => asked.length).toBe(1);
   await context.close();
 });
+
+test("Away makes the widget say away at its next check", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const anna = await signedIn(browser, server, "anna@example.com");
+  const context = await browser.newContext();
+  const visitor = await context.newPage();
+  await visitor.goto(`${server.hostOrigin}/plain`);
+  await visitor.getByRole("button", { name: "Open chat" }).click();
+  await expect(visitor.getByText("Online", { exact: true })).toBeVisible();
+
+  const account = anna.getByRole("button", { name: "Your account, Available" });
+  await expect(account.locator(".status-dot")).not.toHaveClass(/away/);
+  await account.click();
+  await anna.getByRole("menuitem", { name: "Set yourself as away" }).click();
+  await expect(anna.getByRole("button", { name: "Your account, Away" })).toBeVisible();
+  await expect(anna.locator(".me .status-dot")).toHaveClass(/away/);
+  // The widget asks every 30 seconds, and the open panel is not reloaded.
+  await expect(visitor.getByText("Away, we reply")).toBeVisible({ timeout: 35_000 });
+
+  await anna.getByRole("button", { name: "Your account, Away" }).click();
+  await anna.getByRole("menuitem", { name: "Set yourself as available" }).click();
+  await expect(anna.getByRole("button", { name: "Your account, Available" })).toBeVisible();
+  await anna.context().close();
+  await context.close();
+});
+
+test("a hidden tab keeps its operator online, and the header marks them", async ({ browser }) => {
+  // Ben has no other tab open: only the hidden one can keep him online.
+  const ben = await signedIn(browser, server, "ben@example.com");
+  const hiddenBeat = ben.waitForRequest(
+    (request) =>
+      request.method() === "PUT" &&
+      request.url().endsWith("/presence") &&
+      request.postDataJSON().hidden === true,
+  );
+  // As when the operator moves to another tab.
+  await ben.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect((await hiddenBeat).postDataJSON().viewing).toBeNull();
+
+  const context = await browser.newContext();
+  const visitor = await context.newPage();
+  await visitor.goto(`${server.hostOrigin}/plain`);
+  await visitor.getByRole("button", { name: "Open chat" }).click();
+  await expect(visitor.getByText("Online", { exact: true })).toBeVisible();
+  // Online now: Ben's face, with its dot.
+  const benFace = visitor.locator(".faces > span", { hasText: "B" });
+  await expect(benFace).toHaveCount(1);
+  await expect(benFace.locator("i")).toHaveCount(1);
+  await ben.context().close();
+  await context.close();
+});

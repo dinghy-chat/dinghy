@@ -27,6 +27,12 @@ afterAll(() => {
 });
 
 const space = () => randomUUID();
+const visible = (viewing: string | null, left: string | null) => ({
+  viewing,
+  left,
+  hidden: false,
+  away: false,
+});
 
 describe("across two instances", () => {
   test("each instance sees what the other wrote", async () => {
@@ -34,21 +40,21 @@ describe("across two instances", () => {
     const conversation = randomUUID();
     const anna = randomUUID();
     const ben = randomUUID();
-    await first.beat(workspace, anna, conversation, null);
-    const state = await second.beat(workspace, ben, conversation, null);
+    await first.beat(workspace, anna, visible(conversation, null));
+    const state = await second.beat(workspace, ben, visible(conversation, null));
     expect(state?.viewers[conversation]?.sort()).toEqual([anna, ben].sort());
-    expect(await first.online(workspace)).toBe(true);
-    expect(await second.online(workspace)).toBe(true);
+    expect((await first.online(workspace))?.sort()).toEqual([anna, ben].sort());
+    expect((await second.online(workspace))?.sort()).toEqual([anna, ben].sort());
   });
 
   test("a leave on one instance clears it for the other", async () => {
     const workspace = space();
     const conversation = randomUUID();
     const anna = randomUUID();
-    await first.beat(workspace, anna, conversation, null);
+    await first.beat(workspace, anna, visible(conversation, null));
     await second.leave(workspace, anna, conversation);
-    expect(await first.online(workspace)).toBe(false);
-    const state = await first.beat(workspace, randomUUID(), null, null);
+    expect(await first.online(workspace)).toEqual([]);
+    const state = await first.beat(workspace, randomUUID(), visible(null, null));
     expect(state?.viewers).toEqual({});
   });
 });
@@ -58,12 +64,12 @@ describe("clearing", () => {
     const short = createPresence(connect(), logger, 100);
     const workspace = space();
     const conversation = randomUUID();
-    await short.beat(workspace, randomUUID(), conversation, null);
-    expect(await short.online(workspace)).toBe(true);
+    await short.beat(workspace, randomUUID(), visible(conversation, null));
+    expect(await short.online(workspace)).not.toEqual([]);
     await new Promise((resolve) => setTimeout(resolve, 150));
     // Nothing removed the entry, and the time alone ends it.
-    expect(await short.online(workspace)).toBe(false);
-    const state = await short.beat(workspace, randomUUID(), null, null);
+    expect(await short.online(workspace)).toEqual([]);
+    const state = await short.beat(workspace, randomUUID(), visible(null, null));
     expect(state?.viewers).toEqual({});
   });
 
@@ -72,11 +78,11 @@ describe("clearing", () => {
     const workspace = space();
     const anna = randomUUID();
     const conversation = randomUUID();
-    await short.beat(workspace, anna, conversation, null);
+    await short.beat(workspace, anna, visible(conversation, null));
     await new Promise((resolve) => setTimeout(resolve, 120));
-    await short.beat(workspace, anna, conversation, null);
+    await short.beat(workspace, anna, visible(conversation, null));
     await new Promise((resolve) => setTimeout(resolve, 120));
-    expect(await short.online(workspace)).toBe(true);
+    expect(await short.online(workspace)).not.toEqual([]);
   });
 
   test("moving to another conversation leaves the first", async () => {
@@ -84,8 +90,8 @@ describe("clearing", () => {
     const anna = randomUUID();
     const one = randomUUID();
     const two = randomUUID();
-    await first.beat(workspace, anna, one, null);
-    const state = await first.beat(workspace, anna, two, one);
+    await first.beat(workspace, anna, visible(one, null));
+    const state = await first.beat(workspace, anna, visible(two, one));
     expect(state?.viewers).toEqual({ [two]: [anna] });
   });
 
@@ -93,19 +99,72 @@ describe("clearing", () => {
     const workspace = space();
     const anna = randomUUID();
     const one = randomUUID();
-    await first.beat(workspace, anna, one, null);
-    const state = await first.beat(workspace, anna, null, one);
+    await first.beat(workspace, anna, visible(one, null));
+    const state = await first.beat(workspace, anna, visible(null, one));
     expect(state?.viewers).toEqual({});
-    expect(await first.online(workspace)).toBe(true);
+    expect(await first.online(workspace)).not.toEqual([]);
   });
 
   test("a workspace that everyone left does not keep its key", async () => {
     const client = connect();
     const short = createPresence(client, logger, 50);
     const workspace = space();
-    await short.beat(workspace, randomUUID(), null, null);
-    await new Promise((resolve) => setTimeout(resolve, 160));
+    await short.beat(workspace, randomUUID(), visible(null, null));
+    // The key lasts twice a hidden tab's mark, 4 times the visible one.
+    await new Promise((resolve) => setTimeout(resolve, 450));
     expect(await client.exists(`dinghy:presence:${workspace}`)).toBe(0);
+  });
+});
+
+describe("a hidden tab", () => {
+  const hidden = (left: string | null) => ({ viewing: null, left, hidden: true, away: false });
+
+  test("stays online 4 times as long as a visible one, and views nothing", async () => {
+    const short = createPresence(connect(), logger, 100);
+    const workspace = space();
+    const anna = randomUUID();
+    const conversation = randomUUID();
+    await short.beat(workspace, anna, visible(conversation, null));
+    const state = await short.beat(workspace, anna, hidden(conversation));
+    expect(state?.viewers).toEqual({});
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(await short.online(workspace)).toEqual([anna]);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(await short.online(workspace)).toEqual([]);
+  });
+
+  test("a visible beat after it does not cut its mark short", async () => {
+    const short = createPresence(connect(), logger, 100);
+    const workspace = space();
+    const anna = randomUUID();
+    await short.beat(workspace, anna, hidden(null));
+    // Another tab of the team, visible, beats after the hidden one.
+    await short.beat(workspace, randomUUID(), visible(null, null));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(await short.online(workspace)).toEqual([anna]);
+  });
+});
+
+describe("away", () => {
+  const away = (viewing: string | null) => ({ viewing, left: null, hidden: false, away: true });
+
+  test("says what the operator views, and does not count them online", async () => {
+    const workspace = space();
+    const anna = randomUUID();
+    const conversation = randomUUID();
+    const state = await first.beat(workspace, anna, away(conversation));
+    expect(state?.viewers).toEqual({ [conversation]: [anna] });
+    expect(await first.online(workspace)).toEqual([]);
+  });
+
+  test("an away beat ends the online mark at once", async () => {
+    const workspace = space();
+    const anna = randomUUID();
+    const ben = randomUUID();
+    await first.beat(workspace, anna, visible(null, null));
+    await first.beat(workspace, ben, visible(null, null));
+    await first.beat(workspace, anna, away(null));
+    expect(await first.online(workspace)).toEqual([ben]);
   });
 });
 
@@ -113,9 +172,9 @@ test("one workspace sees nothing from another", async () => {
   const one = space();
   const two = space();
   const conversation = randomUUID();
-  await first.beat(one, randomUUID(), conversation, null);
-  expect(await first.online(two)).toBe(false);
-  const state = await first.beat(two, randomUUID(), null, null);
+  await first.beat(one, randomUUID(), visible(conversation, null));
+  expect(await first.online(two)).toEqual([]);
+  const state = await first.beat(two, randomUUID(), visible(null, null));
   expect(state?.viewers).toEqual({});
 });
 
@@ -123,7 +182,7 @@ describe("with Valkey down", () => {
   test("no Valkey means unknown, and nothing throws", async () => {
     const none = createPresence(null, logger);
     expect(await none.online(space())).toBeNull();
-    expect(await none.beat(space(), randomUUID(), null, null)).toBeNull();
+    expect(await none.beat(space(), randomUUID(), visible(null, null))).toBeNull();
     await expect(none.leave(space(), randomUUID(), null)).resolves.toBeUndefined();
   });
 
@@ -138,6 +197,6 @@ describe("with Valkey down", () => {
     connections.push(broken);
     const presence = createPresence(broken, logger);
     expect(await presence.online(space())).toBeNull();
-    expect(await presence.beat(space(), randomUUID(), null, null)).toBeNull();
+    expect(await presence.beat(space(), randomUUID(), visible(null, null))).toBeNull();
   });
 });

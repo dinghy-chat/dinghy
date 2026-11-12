@@ -428,7 +428,11 @@ test("the user menu opens the profile, which saves a new name", async ({ browser
   const account = page.getByRole("button", { name: "Your account" });
   await expect(account).toHaveAttribute("aria-haspopup", "menu");
   await account.click();
-  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText(["Profile", "Sign out"]);
+  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText([
+    "Set yourself as away",
+    "Profile",
+    "Sign out",
+  ]);
   await page.getByRole("menuitem", { name: "Profile" }).click();
   await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
   await expect(page.getByLabel("Email", { exact: true })).toHaveValue("owner@example.com");

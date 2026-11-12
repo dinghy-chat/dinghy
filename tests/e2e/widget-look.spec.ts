@@ -21,6 +21,10 @@ const DEFAULTS = {
   branding: true,
   sound: true,
   transcript: true,
+  headerFaces: "online",
+  headerFaceCount: 3,
+  headerDot: true,
+  headerStatus: "presence",
 } as const;
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
@@ -35,6 +39,7 @@ test.beforeAll(async () => {
     { emailAvailable: true },
   );
   await server.createOperator("owner@example.com");
+  await server.createOperator("maya@example.com", { role: "member" });
 });
 
 test.afterAll(async () => {
@@ -510,5 +515,72 @@ test("with the sound off, a reply makes no chime", async ({ browser }) => {
   await server.reply("A quiet reply");
   await expect(launcher(visitor).locator(".badge")).toHaveText("1");
   expect(await notes(visitor)).toBe(0);
+  await context.close();
+});
+
+test("the owner picks the header's faces in Appearance, and the widget follows", async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+  const context = await browser.newContext();
+  const owner = await context.newPage();
+  await signInOn(owner, server, "owner@example.com");
+  await openSettings(owner, "Appearance");
+  const form = owner.locator(".widget-form");
+  /** Picks a choice in the Faces dropdown. */
+  const faces = async (choice: string) => {
+    await form.getByRole("button", { name: /^Faces/ }).click();
+    await owner
+      .getByRole("listbox", { name: "Faces" })
+      .getByRole("option", { name: choice })
+      .click();
+  };
+  const save = form.getByRole("button", { name: "Save", exact: true });
+  const saved = owner.getByText("Saved. New pages of your site show this within 5 minutes.");
+
+  // Members you choose, in the owner's order: Maya first.
+  await faces("Members you choose");
+  await expect(form.getByText("No members yet.")).toBeVisible();
+  for (const email of ["owner@example.com", "maya@example.com"]) {
+    await form.getByRole("button", { name: "Add a member" }).click();
+    await owner.getByRole("menuitem", { name: email }).click();
+  }
+  await form.getByRole("button", { name: "Move maya@example.com up" }).click();
+  // The preview shows the order at once, with two sample members online.
+  const previewFaces = owner.locator(".preview-stage > div").locator(".faces > span");
+  await expect(previewFaces).toHaveText(["M", "O"]);
+  await expect(previewFaces.locator("i")).toHaveCount(2);
+  await save.click();
+  await expect(saved).toBeVisible();
+
+  // The owner is online and Maya is not, so only the owner's face has a dot.
+  let visitor = await visit(browser);
+  await launcher(visitor).click();
+  const shown = visitor.locator(".faces > span");
+  await expect(shown).toHaveText(["M", "O"]);
+  await expect(shown.nth(0).locator("i")).toHaveCount(0);
+  await expect(shown.nth(1).locator("i")).toHaveCount(1);
+  await visitor.context().close();
+
+  // Online now shows only who is online: the owner.
+  await faces("Online now");
+  await save.click();
+  await expect(saved).toBeVisible();
+  visitor = await visit(browser);
+  await launcher(visitor).click();
+  await expect(visitor.getByText("Online", { exact: true })).toBeVisible();
+  await expect(visitor.locator(".faces > span")).toHaveText(["O"]);
+  await visitor.context().close();
+
+  // None hides the faces, and with them the count and the dots.
+  await faces("None");
+  await expect(form.getByRole("slider", { name: "How many faces" })).toHaveCount(0);
+  await save.click();
+  await expect(saved).toBeVisible();
+  visitor = await visit(browser);
+  await launcher(visitor).click();
+  await expect(visitor.getByText("Online", { exact: true })).toBeVisible();
+  await expect(visitor.locator(".faces")).toHaveCount(0);
+  await visitor.context().close();
   await context.close();
 });
