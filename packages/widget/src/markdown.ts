@@ -17,7 +17,7 @@ export type Block =
 
 /** Bold inside italic inside a link is plenty, and a limit stops a stack of markers. */
 const MAX_DEPTH = 4;
-const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
+export const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
 // A bare link stops before trailing punctuation, so "see https://a.example." keeps its period.
 const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
 const FENCE = /^\s*```/;
@@ -45,7 +45,10 @@ function inline(source: string, depth = 0): Inline[] {
     } else if (char === "*" && depth < MAX_DEPTH) {
       const mark = source[at + 1] === "*" ? "**" : "*";
       const from = at + mark.length;
-      const end = source.indexOf(mark, from + 1);
+      let end = source.indexOf(mark, from + 1);
+      // In `***both***` the bold holds an italic, an odd star inside, so it closes after its star.
+      const isItalicOpen = source.slice(from, end).split("*").length % 2 === 0;
+      if (mark === "**" && end > 0 && source[end + 2] === "*" && isItalicOpen) end++;
       // Like Markdown, a marker next to a space is a plain star, as in "2 * 3 * 4".
       if (end > 0 && source[from]?.trim() && source[end - 1]?.trim()) {
         add({
@@ -79,6 +82,12 @@ function inline(source: string, depth = 0): Inline[] {
   }
   if (text !== "") parts.push(text);
   return parts;
+}
+
+/** Whether the parser makes the whole address a link with no brackets around it. */
+export function isBareLink(href: string): boolean {
+  BARE_LINK.lastIndex = 0;
+  return BARE_LINK.exec(href)?.[0] === href;
 }
 
 /** Splits a message into paragraphs, code blocks and lists. */
@@ -186,7 +195,10 @@ const ESCAPES: Record<string, string> = {
 /** Text for HTML, with every character that could start markup escaped. */
 export const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (char) => ESCAPES[char] ?? "");
 
-/** The message as HTML, for an email. Every character of the message's own text is escaped. */
+/**
+ * The message as HTML, for an email and for the operator's composer. Every character of the
+ * message's own text is escaped.
+ */
 export function markdownHtml(source: string): string {
   type Html = { html: string };
   const text = (part: string | Html) =>

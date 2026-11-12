@@ -7,6 +7,13 @@ test("bold, italic and inline code", () => {
   );
 });
 
+test("three stars make bold around italic, and bold next to italic stays apart", () => {
+  expect(markdownHtml("***both*** and **bold *end***")).toBe(
+    "<p><strong><em>both</em></strong> and <strong>bold <em>end</em></strong></p>",
+  );
+  expect(markdownHtml("**bold***italic*")).toBe("<p><strong>bold</strong><em>italic</em></p>");
+});
+
 test("a star next to a space stays a star", () => {
   expect(markdownHtml("2 * 3 * 4")).toBe("<p>2 * 3 * 4</p>");
 });
