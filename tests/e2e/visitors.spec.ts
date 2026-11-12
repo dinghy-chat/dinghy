@@ -148,7 +148,7 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(american).toHaveCount(0);
   await show.getByRole("radio", { name: /^Chatting/ }).check();
   await expect(claire).toHaveCount(0);
-  await show.getByRole("radio", { name: /^All/ }).check();
+  await show.getByRole("radio", { name: /^Everyone/ }).check();
 
   // A dot's card says who is there, and its click keeps only that country.
   const map = operator.getByRole("figure", { name: "Where your visitors are" });
@@ -161,6 +161,8 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(rows).toHaveCount(2);
   await expect(map).toHaveClass(/zoomed/);
   await expect(operator.getByRole("region", { name: "Came from" })).toContainText("google.com2");
+  // Pages count by address, so two titles of one page make one row.
+  await expect(operator.getByRole("region", { name: "Pages now" }).locator("li")).toHaveCount(1);
   await map.getByRole("button", { name: "All countries" }).click();
   await expect(american).toBeVisible();
   await expect(map).not.toHaveClass(/zoomed/);

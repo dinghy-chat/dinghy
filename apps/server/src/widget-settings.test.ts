@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
+import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { WIDGET_DEFAULTS } from "../../../packages/widget/src/shared.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
-import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { sendOperatorMessage } from "../test/messages.ts";
 import { addOperator, signedInOperator } from "../test/operators.ts";
 import { FORMER_MEMBER_NAME } from "./account-delete.ts";
@@ -26,13 +27,7 @@ const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 
 // What the form saves: the widget's defaults without the logo and the faces, with no chosen member.
-const {
-  logoUrl: _logo,
-  team: _team,
-  faces: _faces,
-  replySeconds: _reply,
-  ...WIDGET_SETTINGS
-} = WIDGET_DEFAULTS;
+const { logoUrl: _logo, team: _team, faces: _faces, ...WIDGET_SETTINGS } = WIDGET_DEFAULTS;
 const DEFAULTS = { ...WIDGET_SETTINGS, headerMembers: [] };
 
 const CHANGED = {
@@ -64,6 +59,7 @@ let db: Database;
 let owner: Database;
 let auth: Auth;
 let app: App;
+const ok = async () => {};
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -71,7 +67,6 @@ beforeAll(async () => {
   db = database.connect("app", 10).db;
   owner = database.connect("migrator").db;
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
-  const ok = async () => {};
   app = createApp({
     db,
     logger,
@@ -138,8 +133,6 @@ describe("the widget's settings", () => {
       logoUrl: null,
       team: [],
       faces: [],
-      // No reply yet, so no reply time.
-      replySeconds: null,
     };
     expect(await response.json()).toEqual(expected);
     const read = await app.request(settingsPath(space), { headers: { cookie: boss.cookie } });
@@ -363,27 +356,63 @@ describe("the header's faces", () => {
     expect(text).not.toContain(ana.id);
   });
 
-  test("Latest repliers and None send no faces of their own", async () => {
-    const { space, boss } = await teamOfThree();
-    for (const headerFaces of ["repliers", "none"]) {
-      await saveSettings(space, boss.cookie, { ...DEFAULTS, headerFaces });
-      expect((await (await appearance(space)).json()).faces).toEqual([]);
-    }
+  test("Online now offers a member who never replied, past the first five", async () => {
+    const { space } = await teamOfThree();
+    const added = await Promise.all(
+      ["Kim", "Lou", "Max"].map((name) =>
+        addOperator({ auth, owner, name, workspaceId: space.id, role: "member" }),
+      ),
+    );
+    const faces = ids((await (await appearance(space)).json()).faces);
+    expect(faces).toHaveLength(7);
+    for (const one of added) expect(faces).toContain(visitorAuthorId(one.id));
   });
 
-  test("the usual reply time is the median first reply over 30 days, only when it shows", async () => {
-    const { space, boss } = await workspaceWithOwner();
-    const { conversationId } = await visitorWrites(space);
-    await reply(space, boss.id, conversationId);
-    // The visitor wrote 2 minutes before the reply.
-    await owner.execute(
-      sql`update conversation set created_at = created_at - interval '2 minutes' where id = ${conversationId}`,
+  test("Latest repliers offers the team's latest repliers, and None nobody", async () => {
+    const { space, boss, maya, sam } = await teamOfThree();
+    await saveSettings(space, boss.cookie, { ...DEFAULTS, headerFaces: "repliers" });
+    expect(ids((await (await appearance(space)).json()).faces)).toEqual(
+      [sam, maya].map((one) => visitorAuthorId(one.id)),
     );
-    expect((await (await appearance(space)).json()).replySeconds).toBeNull();
-    await saveSettings(space, boss.cookie, { ...DEFAULTS, headerStatus: "reply_time" });
-    const seconds = (await (await appearance(space)).json()).replySeconds;
-    expect(seconds).toBeGreaterThanOrEqual(120);
-    expect(seconds).toBeLessThan(130);
+    await saveSettings(space, boss.cookie, { ...DEFAULTS, headerFaces: "none" });
+    expect((await (await appearance(space)).json()).faces).toEqual([]);
+  });
+
+  test("the usual reply time comes with the presence answer, only when it shows and someone is online", async () => {
+    const valkey = new Redis(VALKEY_URL, { maxRetriesPerRequest: 1 });
+    const live = createApp({ db, logger, auth, valkey, checks: { postgres: ok, valkey: ok } });
+    try {
+      const { space, boss } = await workspaceWithOwner();
+      const { conversationId } = await visitorWrites(space);
+      await reply(space, boss.id, conversationId);
+      // The visitor wrote 2 minutes before the reply.
+      await owner.execute(
+        sql`update conversation set created_at = created_at - interval '2 minutes' where id = ${conversationId}`,
+      );
+      const replySeconds = async () =>
+        (
+          await (
+            await live.request(`/v1/widget/${space.publicKey}/presence`, {
+              headers: { origin: SITE },
+            })
+          ).json()
+        ).replySeconds;
+      await saveSettings(space, boss.cookie, { ...DEFAULTS, headerStatus: "reply_time" });
+      expect(await replySeconds()).toBeNull();
+      await live.request(`/v1/operator/workspaces/${space.id}/presence`, {
+        method: "PUT",
+        headers: { cookie: boss.cookie, origin: ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({ viewing: null, left: null, hidden: false }),
+      });
+      const seconds = await replySeconds();
+      expect(seconds).toBeGreaterThanOrEqual(120);
+      expect(seconds).toBeLessThan(130);
+      await saveSettings(space, boss.cookie, DEFAULTS);
+      expect(await replySeconds()).toBeNull();
+      expect(await (await appearance(space)).text()).not.toContain("replySeconds");
+    } finally {
+      valkey.disconnect();
+    }
   });
 });
 

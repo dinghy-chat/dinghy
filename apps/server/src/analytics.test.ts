@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
@@ -7,7 +8,7 @@ import { addOperator, signIn } from "../test/operators.ts";
 import { type AnalyticsResult, isTimeZone } from "./analytics.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { apiKey, conversation, message, visitor } from "./db/schema.ts";
+import { apiKey, conversation, message, operator, visitor } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -133,9 +134,9 @@ describe("an empty workspace", () => {
       started: 0,
       closed: 0,
       answered: 0,
-      firstReply: { medianSeconds: null, p90Seconds: null, within5Minutes: null },
-      previous: { started: 0, firstReply: { medianSeconds: null, within5Minutes: null } },
-      operators: [],
+      firstReply: { medianSeconds: null, p90Seconds: null, fast: 0 },
+      previous: { started: 0, firstReply: { medianSeconds: null, fast: 0 } },
+      repliers: [],
     });
     expect(body.perDay).toHaveLength(7);
     expect(body.perDay.every((day) => day.conversations === 0)).toBe(true);
@@ -208,34 +209,34 @@ describe("a workspace with conversations", () => {
     const week = (await analytics(space.id, sam.cookie, "days=7&tz=UTC")).body;
     expect(week.previous).toEqual({
       started: 1,
-      firstReply: { medianSeconds: 240, within5Minutes: 1 },
+      firstReply: { medianSeconds: 240, fast: 1 },
     });
     const month = (await analytics(space.id, sam.cookie, "days=30&tz=UTC")).body;
     expect(month.previous).toEqual({
       started: 0,
-      firstReply: { medianSeconds: null, within5Minutes: null },
+      firstReply: { medianSeconds: null, fast: 0 },
     });
     const quarter = (await analytics(space.id, sam.cookie, "days=90&tz=UTC")).body;
     expect(quarter.previous).toEqual({
       started: 1,
-      firstReply: { medianSeconds: 1, within5Minutes: 1 },
+      firstReply: { medianSeconds: 1, fast: 1 },
     });
   });
 
-  test("gives the median and 90th percentile of the first reply, and the share within 5 minutes", async () => {
+  test("gives the median and 90th percentile of the first reply, and how many came within 5 minutes", async () => {
     const { firstReply } = (await analytics(space.id, sam.cookie, "days=7&tz=UTC")).body;
     // Waits of 60, 120 and 600 seconds. The 90th percentile is interpolated, as Postgres does.
     expect(firstReply.medianSeconds).toBe(120);
     expect(firstReply.p90Seconds).toBeCloseTo(504, 5);
-    // Two of the four started conversations, since the unanswered one counts as not answered.
-    expect(firstReply.within5Minutes).toBe(0.5);
+    // Two of the four started conversations: the unanswered one is not fast.
+    expect(firstReply.fast).toBe(2);
   });
 
   test("counts conversations by who sent the first reply, most first", async () => {
-    const { operators } = (await analytics(space.id, sam.cookie, "days=7&tz=UTC")).body;
-    expect(operators).toEqual([
-      { operatorId: sam.id, apiKeyId: null, name: "Sam", conversations: 2 },
-      { operatorId: lea.id, apiKeyId: null, name: "Lea", conversations: 1 },
+    const { repliers } = (await analytics(space.id, sam.cookie, "days=7&tz=UTC")).body;
+    expect(repliers).toEqual([
+      { kind: "operator", operatorId: sam.id, name: "Sam", conversations: 2 },
+      { kind: "operator", operatorId: lea.id, name: "Lea", conversations: 1 },
     ]);
   });
 
@@ -314,9 +315,33 @@ test("a first reply sent with an API key counts under the key's name", async () 
   const { body } = await analytics(space.id, owen.cookie, "days=7&tz=UTC");
   expect(body.answered).toBe(1);
   expect(body.firstReply.medianSeconds).toBe(60);
-  expect(body.operators).toEqual([
-    { operatorId: null, apiKeyId: keyId, name: "Helper bot", conversations: 1 },
+  expect(body.repliers).toEqual([
+    { kind: "api_key", apiKeyId: keyId, name: "Helper bot", conversations: 1 },
   ]);
+});
+
+test("a deleted operator's first replies count as a former operator's", async () => {
+  const space = await createWorkspace(db, "Former", []);
+  const owen = await person(space.id, "Owen");
+  const gone = await person(space.id, "Gone");
+  await seed(space.id, {
+    startedAt: new Date(Date.now() - DAY),
+    reply: { by: gone.id, afterMs: MINUTE },
+  });
+  await owner.update(operator).set({ deletedAt: new Date() }).where(eq(operator.id, gone.id));
+  const { body } = await analytics(space.id, owen.cookie, "days=7&tz=UTC");
+  expect(body.repliers).toEqual([{ kind: "former", conversations: 1 }]);
+});
+
+test("the previous period is as long as the current one, which ends now", async () => {
+  const space = await createWorkspace(db, "Lengths", []);
+  const owen = await person(space.id, "Owen");
+  // Before the 7-day period's first day, but within the last 7 days: in neither period.
+  await seed(space.id, { startedAt: new Date(Date.now() - 7 * DAY + MINUTE) });
+  // Just over 7 days ago: in the previous period.
+  await seed(space.id, { startedAt: new Date(Date.now() - 7 * DAY - MINUTE) });
+  const { body } = await analytics(space.id, owen.cookie, "days=7&tz=UTC");
+  expect(body.previous.started).toBe(1);
 });
 
 test("a time zone is an IANA name that this Node knows", () => {

@@ -14,7 +14,7 @@ import { useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
 import { countryName, flag, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
-import { t } from "./text.ts";
+import { type TextId, t } from "./text.ts";
 import { Choices, initials, Loading, type Option, Page } from "./ui.tsx";
 import { bare, visitorName, webLink } from "./visitor.ts";
 
@@ -37,6 +37,12 @@ const CARD_HALF_PX = 140;
 const WORLD_TOP = 0.04;
 
 type Show = "all" | "chatting" | "known";
+
+/** The live list: not loaded yet, unknown as Valkey cannot answer, or loaded. */
+type VisitorList =
+  | { state: "loading" }
+  | { state: "unknown" }
+  | { state: "ready"; visitors: LiveVisitor[] };
 
 /** Zoom, and the land's offset as a share of the map's size, so a resize keeps the same view. */
 type View = { scale: number; x: number; y: number };
@@ -109,10 +115,25 @@ function byCountry(visitors: LiveVisitor[]): Map<string, LiveVisitor[]> {
 }
 
 /** Counts by a key, most first, as the rows of a tile. */
-function tally(visitors: LiveVisitor[], key: (one: LiveVisitor) => string): [string, number][] {
-  const counts = new Map<string, number>();
-  for (const one of visitors) counts.set(key(one), (counts.get(key(one)) ?? 0) + 1);
-  return [...counts].sort((one, other) => other[1] - one[1]).slice(0, TILE_ROWS);
+interface Tally {
+  key: string;
+  label: string;
+  count: number;
+}
+
+/** The most common values of `key`, each shown as its first `label`. */
+function tally(
+  visitors: LiveVisitor[],
+  key: (one: LiveVisitor) => string,
+  label: (one: LiveVisitor) => string = key,
+): Tally[] {
+  const counts = new Map<string, Tally>();
+  for (const one of visitors) {
+    const found = counts.get(key(one));
+    if (found === undefined) counts.set(key(one), { key: key(one), label: label(one), count: 1 });
+    else found.count += 1;
+  }
+  return [...counts.values()].sort((one, other) => other.count - one.count).slice(0, TILE_ROWS);
 }
 
 /** Drag to pan, and wheel to zoom around the pointer. */
@@ -318,12 +339,12 @@ function WorldMap({
 }
 
 /** Initials on a tile with a flag badge for a known person, or the flag alone for anyone else. */
-function Face({ visitor }: { visitor: LiveVisitor }) {
-  const badge = visitor.country === null ? null : flag(visitor.country);
-  if (visitor.visitor !== null) {
+function Face({ one }: { one: LiveVisitor }) {
+  const badge = one.country === null ? null : flag(one.country);
+  if (one.visitor !== null) {
     return (
       <span className="live-face known" aria-hidden="true">
-        {initials(visitorName(visitor.visitor))}
+        {initials(visitorName(one.visitor))}
         {badge !== null && <span className="live-badge">{badge}</span>}
       </span>
     );
@@ -335,48 +356,48 @@ function Face({ visitor }: { visitor: LiveVisitor }) {
   );
 }
 
-function personName(visitor: LiveVisitor): string {
-  if (visitor.visitor !== null) return visitorName(visitor.visitor);
-  if (visitor.country === null) return t("visitorAnonymous");
-  return t("visitorFrom", { country: countryName(visitor.country) });
+function personName(one: LiveVisitor): string {
+  if (one.visitor !== null) return visitorName(one.visitor);
+  if (one.country === null) return t("visitorAnonymous");
+  return t("visitorFrom", { country: countryName(one.country) });
 }
 
 function PersonRow({
-  visitor,
+  one,
   now,
   isLit,
   onLight,
   onOpenConversation,
   onOpenContact,
 }: {
-  visitor: LiveVisitor;
+  one: LiveVisitor;
   now: number;
   isLit: boolean;
   onLight(lit: Lit): void;
   onOpenConversation(id: string): void;
   onOpenContact(visitorId: string): void;
 }) {
-  const page = webLink(visitor.page);
-  const time = visitor.timeZone === null ? null : localTime(visitor.timeZone, new Date(now));
-  const person = visitor.visitor;
+  const page = webLink(one.page);
+  const time = one.timeZone === null ? null : localTime(one.timeZone, new Date(now));
+  const person = one.visitor;
   const conversationId = person?.conversationId ?? null;
-  const country = visitor.country;
+  const country = one.country;
   return (
     <li
       className={isLit ? "live-row lit" : "live-row"}
       onPointerEnter={() => onLight(country === null ? null : { country, from: "list" })}
       onPointerLeave={() => onLight(null)}
     >
-      <Face visitor={visitor} />
+      <Face one={one} />
       <div className="live-text">
         <div className="live-who">
-          <b>{personName(visitor)}</b>
+          <b>{personName(one)}</b>
           {conversationId !== null && <span className="chip live-chatting">{t("chatting")}</span>}
         </div>
         {page !== null && (
           <div className="live-page">
             <a href={page} target="_blank" rel="noopener noreferrer" title={page}>
-              {pageTitle(visitor)}
+              {pageTitle(one)}
             </a>
             <span>{new URL(page).pathname}</span>
           </div>
@@ -388,17 +409,17 @@ function PersonRow({
               {time}
             </span>
           )}
-          <span>{onSite(visitor.startedAt, now)}</span>
-          {visitor.device !== null && (
+          <span>{onSite(one.startedAt, now)}</span>
+          {one.device !== null && (
             <span>
               <Icon name="monitor" size={13} />
-              {visitor.device}
+              {one.device}
             </span>
           )}
-          {visitor.referrer !== null && (
+          {one.referrer !== null && (
             <span>
               <Icon name="arrowRight" size={13} />
-              {t("cameFrom", { site: bare(visitor.referrer) })}
+              {t("cameFrom", { site: bare(one.referrer) })}
             </span>
           )}
         </div>
@@ -424,14 +445,14 @@ function PersonRow({
 }
 
 /** A tile of counts drawn as bars, such as the pages people are on. */
-function Bars({ title, rows }: { title: string; rows: [string, number][] }) {
-  const most = rows[0]?.[1] ?? 1;
+function Bars({ title, rows }: { title: string; rows: Tally[] }) {
+  const most = rows[0]?.count ?? 1;
   return (
     <section className="live-tile" aria-label={title}>
       <h3>{title}</h3>
       <ol className="live-bars">
-        {rows.map(([label, count]) => (
-          <li key={label} className="live-bars-row">
+        {rows.map(({ key, label, count }) => (
+          <li key={key} className="live-bars-row">
             <span
               className="live-bar"
               style={{ width: `${Math.max(BAR_MIN_PERCENT, (count / most) * 100)}%` }}
@@ -445,10 +466,17 @@ function Bars({ title, rows }: { title: string; rows: [string, number][] }) {
   );
 }
 
+const LIST_TITLES = {
+  all: { anywhere: "visitorsEveryone", inPlace: "visitorsInPlace" },
+  chatting: { anywhere: "visitorsChattingTitle", inPlace: "visitorsChattingInPlace" },
+  known: { anywhere: "visitorsKnownTitle", inPlace: "visitorsKnownInPlace" },
+} as const satisfies Record<Show, { anywhere: TextId; inPlace: TextId }>;
+
 function listTitle(show: Show, country: string | null): string {
-  if (country !== null) return t("visitorsInPlace", { country: countryName(country) });
-  if (show === "chatting") return t("visitorsChattingTitle");
-  return show === "known" ? t("visitorsKnownTitle") : t("visitorsEveryone");
+  const titles = LIST_TITLES[show];
+  return country === null
+    ? t(titles.anywhere)
+    : t(titles.inPlace, { country: countryName(country) });
 }
 
 /** Who is on the site now: a map, each open tab, and which pages and sites they came through. */
@@ -481,11 +509,11 @@ function LiveVisitors({
         />
         {listed.length > 0 && (
           <div className="live-tiles">
-            <Bars title={t("visitorsPages")} rows={tally(listed, pageTitle)} />
+            <Bars title={t("visitorsPages")} rows={tally(listed, (one) => one.page, pageTitle)} />
             <Bars
               title={t("visitorsSources")}
               rows={tally(listed, (one) =>
-                one.referrer === null ? t("visitorsDirect") : bare(one.referrer),
+                one.referrer === null ? t("visitorsNoReferrer") : bare(one.referrer),
               )}
             />
           </div>
@@ -506,7 +534,7 @@ function LiveVisitors({
             {listed.map((one) => (
               <PersonRow
                 key={one.tab}
-                visitor={one}
+                one={one}
                 now={now}
                 isLit={lit?.from === "map" && lit.country === one.country}
                 onLight={setLit}
@@ -528,7 +556,7 @@ function LiveVisitors({
 
 function showOptions(visitors: LiveVisitor[]): Option<Show>[] {
   return [
-    { value: "all", label: "filterAll", count: visitors.length },
+    { value: "all", label: "visitorsEveryone", count: visitors.length },
     { value: "chatting", label: "chatting", count: visitors.filter(isChatting).length },
     {
       value: "known",
@@ -547,12 +575,13 @@ export function VisitorsPage({
   onOpenConversation(id: string): void;
   onOpenContact(visitorId: string): void;
 }) {
-  const [visitors, setVisitors] = useState<LiveVisitor[] | null | undefined>(undefined);
+  const [list, setList] = useState<VisitorList>({ state: "loading" });
   const [now, setNow] = useState(Date.now);
   const [show, setShow] = useState<Show>("all");
   const visible = useTabVisible();
   const load = useLatestLoad(async () => {
-    setVisitors((await api.liveVisitors()).visitors);
+    const { visitors } = await api.liveVisitors();
+    setList(visitors === null ? { state: "unknown" } : { state: "ready", visitors });
     setNow(Date.now());
   });
   useEffect(() => {
@@ -562,13 +591,12 @@ export function VisitorsPage({
     return () => clearInterval(timer);
   }, [load, visible]);
 
-  const isKnown = visitors !== undefined && visitors !== null;
-  const count = visitors?.length ?? 0;
+  const count = list.state === "ready" ? list.visitors.length : 0;
   return (
     <Page
       title={t("visitors")}
       context={
-        isKnown ? (
+        list.state === "ready" ? (
           <span className="live-count">
             <span className="live-pulse" aria-hidden="true" />
             {count === 1 ? t("visitorsOne") : t("visitorsMany", { count })}
@@ -576,24 +604,24 @@ export function VisitorsPage({
         ) : undefined
       }
       actions={
-        isKnown ? (
+        list.state === "ready" ? (
           <Choices<Show>
             label={t("visitorsShow")}
             variant="outlined"
             value={show}
-            options={showOptions(visitors)}
+            options={showOptions(list.visitors)}
             onChange={setShow}
           />
         ) : undefined
       }
     >
-      {visitors === undefined ? (
+      {list.state === "loading" ? (
         <Loading />
-      ) : visitors === null ? (
+      ) : list.state === "unknown" ? (
         <p className="hint">{t("visitorsUnknown")}</p>
       ) : (
         <LiveVisitors
-          visitors={visitors}
+          visitors={list.visitors}
           now={now}
           show={show}
           onOpenConversation={onOpenConversation}

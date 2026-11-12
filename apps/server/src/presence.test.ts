@@ -105,6 +105,17 @@ describe("clearing", () => {
     expect(await first.online(workspace)).not.toEqual([]);
   });
 
+  test("a closing tab ends its conversation's mark, and keeps the operator online", async () => {
+    const workspace = space();
+    const anna = randomUUID();
+    const conversation = randomUUID();
+    await first.beat(workspace, anna, visible(conversation, null));
+    await second.close(workspace, anna, conversation);
+    expect(await first.online(workspace)).toEqual([anna]);
+    const state = await first.beat(workspace, randomUUID(), visible(null, null));
+    expect(state?.viewers).toEqual({});
+  });
+
   test("a workspace that everyone left does not keep its key", async () => {
     const client = connect();
     const short = createPresence(client, logger, 50);

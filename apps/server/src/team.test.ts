@@ -1312,7 +1312,10 @@ describe("presence routes", () => {
     const response = await beat(member);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ viewers: {} });
-    const leave = await call("POST", inSpace("/presence/leave"), member, { conversationId: null });
+    const leave = await call("POST", inSpace("/presence/leave"), member, {
+      conversationId: null,
+      signingOut: true,
+    });
     expect(leave.status).toBe(200);
     const widget = await app.request(`/v1/widget/${space.publicKey}/presence`, {
       headers: { origin: SITE },
@@ -1321,6 +1324,7 @@ describe("presence routes", () => {
       online: null,
       members: [],
       emailReplies: false,
+      replySeconds: null,
     });
   });
 
@@ -1399,6 +1403,21 @@ describe("presence routes", () => {
       await send("PUT", "/v1/operator/me/status", anna, { away: false });
       await send("PUT", inSpace("/presence"), anna, hidden);
       expect(await widget()).toMatchObject({ online: true });
+    });
+
+    test("a closing tab keeps the operator online, and a sign-out does not", async () => {
+      const ben = await person("member");
+      const shown = { viewing: conversationId, left: null, hidden: false };
+      await send("PUT", inSpace("/presence"), ben, shown);
+      const closing = { conversationId, signingOut: false };
+      expect((await send("POST", inSpace("/presence/leave"), ben, closing)).status).toBe(200);
+      expect((await widget()).members).toContain(visitorAuthorId(ben.id));
+      const beat = await send("PUT", inSpace("/presence"), ben, { ...shown, viewing: null });
+      expect((await beat.json()).viewers[conversationId] ?? []).not.toContain(ben.id);
+
+      const signingOut = { conversationId: null, signingOut: true };
+      await send("POST", inSpace("/presence/leave"), ben, signingOut);
+      expect((await widget()).members).not.toContain(visitorAuthorId(ben.id));
     });
   });
 

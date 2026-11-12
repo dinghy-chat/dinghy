@@ -46,12 +46,12 @@ function dayName(
 }
 
 /** Monday first, as the server sends the hours. 2024-01-01 was a Monday. */
-const WEEKDAYS = Array.from({ length: 7 }, (_, index) =>
-  new Date(2024, 0, 1 + index).toLocaleDateString([], { weekday: "short" }),
-);
-const WEEKDAYS_LONG = Array.from({ length: 7 }, (_, index) =>
-  new Date(2024, 0, 1 + index).toLocaleDateString([], { weekday: "long" }),
-);
+const weekdayNames = (weekday: "short" | "long") =>
+  Array.from({ length: 7 }, (_, index) =>
+    new Date(2024, 0, 1 + index).toLocaleDateString([], { weekday }),
+  );
+const WEEKDAYS = weekdayNames("short");
+const WEEKDAYS_LONG = weekdayNames("long");
 const hourName = (hour: number) =>
   new Date(2024, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" });
 const HOURS = Array.from({ length: 24 }, (_, hour) => hourName(hour));
@@ -166,8 +166,9 @@ function StartedChange({ numbers, days }: { numbers: Analytics; days: Period }) 
   const before = numbers.previous.started;
   if (before === 0) return null;
   const change = numbers.started / before - 1;
+  // A change that rounds to 0% reads as none, not as "↑ 0%".
   const words =
-    numbers.started === before
+    percent(Math.abs(change)) === percent(0)
       ? t("changeSame")
       : t(change > 0 ? "changeUp" : "changeDown", { change: percent(Math.abs(change)) });
   return <Change words={words} direction="neutral" days={days} />;
@@ -189,9 +190,10 @@ function MedianChange({ numbers, days }: { numbers: Analytics; days: Period }) {
 }
 
 function FastChange({ numbers, days }: { numbers: Analytics; days: Period }) {
-  const now = numbers.firstReply.within5Minutes;
-  const before = numbers.previous.firstReply.within5Minutes;
-  if (now === null || before === null) return null;
+  const { started, previous } = numbers;
+  if (started === 0 || previous.started === 0) return null;
+  const now = shareOf(numbers.firstReply.fast, started);
+  const before = shareOf(previous.firstReply.fast, previous.started);
   const points = Math.round((now - before) * 100);
   if (points === 0) return <Change words={t("changeSame")} direction="neutral" days={days} />;
   return (
@@ -267,7 +269,7 @@ function Stat({ title, help, children }: { title: TextId; help?: TextId; childre
 
 function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
   const { started, answered, firstReply } = numbers;
-  const fast = firstReply.within5Minutes ?? 0;
+  const fast = shareOf(firstReply.fast, started);
   const answeredShare = shareOf(answered, started);
   return (
     <section className="stats" aria-label={t("statsTitle")}>
@@ -326,11 +328,17 @@ function PerDay({ days }: { days: Analytics["perDay"] }) {
   return (
     <Card
       title="perDayTitle"
-      hint={t("perDayBusiest", { day: dayName(busiest.date), count: busiest.conversations })}
+      hint={t("perDayBusiest", {
+        day: dayName(busiest.date),
+        conversations: conversations(busiest.conversations),
+      })}
     >
       <figure className="per-day">
         <figcaption className="visually-hidden">
-          {t("perDaySummary", { day: dayName(busiest.date), count: busiest.conversations })}
+          {t("perDaySummary", {
+            day: dayName(busiest.date),
+            conversations: conversations(busiest.conversations),
+          })}
         </figcaption>
         <div className="day-bars" aria-hidden="true">
           <span className="day-scale" style={{ top: 0 }}>
@@ -367,7 +375,7 @@ function PerDay({ days }: { days: Analytics["perDay"] }) {
 /** What became of the conversations that started: each step as a count and a share of them. */
 function Outcomes({ numbers }: { numbers: Analytics }) {
   const { started, answered, closed } = numbers;
-  const fast = Math.round((numbers.firstReply.within5Minutes ?? 0) * started);
+  const { fast } = numbers.firstReply;
   const steps: { label: TextId; count: number; note?: string }[] = [
     { label: "outcomeStarted", count: started },
     {
@@ -418,14 +426,14 @@ function Hours({ hours }: { hours: number[][] }) {
   return (
     <Card
       title="hoursTitle"
-      hint={t("hoursPeak", { day: WEEKDAYS_LONG[peak.day] ?? "", hour: hourName(peak.hour) })}
+      hint={t("hoursBusiest", { day: WEEKDAYS_LONG[peak.day] ?? "", hour: hourName(peak.hour) })}
     >
       <figure className="hours">
         <figcaption className="visually-hidden">
           {t("hoursSummary", {
             day: WEEKDAYS_LONG[peak.day] ?? "",
             hour: hourName(peak.hour),
-            count: peak.count,
+            conversations: conversations(peak.count),
           })}
         </figcaption>
         <div className="heat" aria-hidden="true">
@@ -465,32 +473,46 @@ function Hours({ hours }: { hours: number[][] }) {
   );
 }
 
+type Replier = Analytics["repliers"][number];
+
+/** A key for the list, the name the avatar draws, and the words beside it. */
+function replierLabel(one: Replier): { key: string; avatar: string; name: string } {
+  switch (one.kind) {
+    case "operator":
+      return { key: `operator:${one.operatorId}`, avatar: one.name, name: one.name };
+    case "api_key":
+      return {
+        key: `key:${one.apiKeyId}`,
+        avatar: one.name,
+        name: t("apiKeyAuthor", { name: one.name }),
+      };
+    case "former":
+      return { key: "former", avatar: t("formerOperator"), name: t("formerOperator") };
+  }
+}
+
+/** The bar and the share both measure against the conversations answered, as Outcomes does. */
 function Repliers({ numbers }: { numbers: Analytics }) {
-  const { operators, answered } = numbers;
-  const most = Math.max(1, ...operators.map((one) => one.conversations));
+  const { repliers, answered } = numbers;
   return (
     <Card title="byOperatorTitle">
-      {operators.length === 0 ? (
+      {repliers.length === 0 ? (
         <p className="note">{t("noReplies")}</p>
       ) : (
         <ol className="repliers">
-          {operators.map((one) => {
-            const name =
-              one.apiKeyId === null
-                ? (one.name ?? t("formerOperator"))
-                : t("apiKeyAuthor", { name: one.name ?? t("apiKeyUnknown") });
+          {repliers.map((one) => {
+            const { key, avatar, name } = replierLabel(one);
+            const share = shareOf(one.conversations, answered);
             return (
-              <li
-                key={one.apiKeyId === null ? `operator:${one.operatorId}` : `key:${one.apiKeyId}`}
-              >
-                <Avatar name={one.name ?? name} />
+              <li key={key}>
+                <Avatar name={avatar} />
                 <span className="replier-name">{name}</span>
                 <span className="share-count">
                   {one.conversations}
-                  <span>{percent(shareOf(one.conversations, answered))}</span>
+                  <span>{percent(share)}</span>
                 </span>
                 <span className="share-track" aria-hidden="true">
-                  <span style={{ width: `${(one.conversations / most) * 100}%` }} />
+                  <span style={{ width: `${share * 100}%` }} />
                 </span>
               </li>
             );

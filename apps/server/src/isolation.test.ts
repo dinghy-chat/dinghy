@@ -275,7 +275,7 @@ const ATTACKS: Record<string, Attack> = {
     expect((await as(anna, "PUT", inWorkspace(a.id, "/presence"), beat)).status).toBe(200);
     const own = await widget(b.publicKey, "GET", "presence", null, SITE_B);
     const body = (await own.json()) as { members: string[] };
-    expect(Object.keys(body)).toEqual(["online", "members", "emailReplies"]);
+    expect(Object.keys(body)).toEqual(["online", "members", "emailReplies", "replySeconds"]);
     expect(body.members).not.toContain(visitorAuthorId(anna.id));
   },
   "GET /v1/widget/:key/appearance": async ({ server, a, b, secrets }) => {
@@ -604,7 +604,7 @@ const ATTACKS: Record<string, Attack> = {
     expect((await as(anna, "PUT", inWorkspace(b.id, "/presence"), body)).status).toBe(404);
   },
   "POST /v1/operator/workspaces/:workspaceId/presence/leave": async ({ operator: as, anna, b }) => {
-    const body = { conversationId: null };
+    const body = { conversationId: null, signingOut: true };
     expect((await as(anna, "POST", inWorkspace(b.id, "/presence/leave"), body)).status).toBe(404);
   },
   "GET /v1/operator/workspaces/:workspaceId/members": async ({ operator: as, anna, bea, a, b }) => {

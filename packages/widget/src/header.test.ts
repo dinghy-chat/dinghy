@@ -16,6 +16,8 @@ const saved = (change: Partial<SavedAppearance>): SavedAppearance => ({
   faces: [sam, maya, ana, lee],
   ...change,
 });
+const repliers = (change: Partial<SavedAppearance>) =>
+  saved({ headerFaces: "repliers", faces: [sam, maya], ...change });
 
 describe("the header's faces", () => {
   test("Online now shows the members online, in order", () => {
@@ -29,17 +31,17 @@ describe("the header's faces", () => {
   test("each mode keeps to the count", () => {
     const one = { headerFaceCount: 1 };
     expect(ids(headerFaces(saved(one), ["ana", "lee"]))).toEqual(["ana"]);
-    expect(ids(headerFaces(saved({ ...one, headerFaces: "repliers" }), []))).toEqual(["sam"]);
+    expect(ids(headerFaces(repliers(one), []))).toEqual(["sam"]);
     expect(ids(headerFaces(saved({ ...one, headerFaces: "chosen" }), []))).toEqual(["sam"]);
   });
 
   test("Latest repliers and chosen members do not depend on who is online", () => {
-    expect(ids(headerFaces(saved({ headerFaces: "repliers" }), ["lee"]))).toEqual(["sam", "maya"]);
+    expect(ids(headerFaces(repliers({}), ["lee"]))).toEqual(["sam", "maya"]);
     const chosen = saved({ headerFaces: "chosen", faces: [ana, sam] });
     expect(ids(headerFaces(chosen, ["lee"]))).toEqual(["ana", "sam"]);
   });
 
   test("None shows nobody", () => {
-    expect(headerFaces(saved({ headerFaces: "none" }), ["maya"])).toEqual([]);
+    expect(headerFaces(saved({ headerFaces: "none", faces: [] }), ["maya"])).toEqual([]);
   });
 });

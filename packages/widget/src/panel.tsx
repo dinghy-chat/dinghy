@@ -321,19 +321,12 @@ function Face({ name, pictureUrl, bot = false }: TeamFace & { bot?: boolean }) {
 
 /**
  * The header's faces as the owner chose them. Online now shows the members online, in order, and
- * the latest repliers when nobody is.
+ * the latest repliers when nobody is. Every other mode shows its candidates.
  */
 export function headerFaces(saved: SavedAppearance, members: string[]): TeamFace[] {
   const { headerFaces: mode, faces } = saved;
   const here = faces.filter((face) => members.includes(face.id));
-  const shown =
-    mode === "none"
-      ? []
-      : mode === "chosen"
-        ? faces
-        : mode === "online" && here.length > 0
-          ? here
-          : saved.team;
+  const shown = mode !== "online" ? faces : here.length > 0 ? here : saved.team;
   return shown.slice(0, saved.headerFaceCount);
 }
 
@@ -353,6 +346,7 @@ export function ChatHead({
   scene,
   online,
   members,
+  replySeconds,
   mascot,
   saved,
   say,
@@ -362,13 +356,15 @@ export function ChatHead({
   online: boolean | null;
   /** The members online now, by the hash on their faces. */
   members: string[];
+  /** The usual first reply time, from the presence answer. */
+  replySeconds: number | null;
   mascot: boolean;
   saved: SavedAppearance;
   say: Say;
   /** Missing on the full-page chat, which has nothing to close. */
   onClose?: () => void;
 }) {
-  const { logoUrl, replySeconds } = saved;
+  const { logoUrl } = saved;
   const isOnline = scene === "waiting" && online === true;
   const status =
     isOnline && saved.headerStatus === "reply_time" && replySeconds !== null

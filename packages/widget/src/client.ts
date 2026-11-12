@@ -2,6 +2,18 @@ import type { Quote } from "./quote.ts";
 import type { PageContext } from "./shared.ts";
 import { readStream, retryAfterMs } from "./stream.ts";
 
+/** The presence answer. */
+export interface Presence {
+  /** Null means unknown, and then the panel says nothing about the team. */
+  online: boolean | null;
+  /** The members online now, by the hash on their faces. */
+  members: string[];
+  /** Whether this server sends reply emails. */
+  emailReplies: boolean;
+  /** The header's usual reply time, in seconds, while it shows and someone is online. */
+  replySeconds: number | null;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
@@ -117,8 +129,7 @@ export function createClient(
       call<{ visitorId: string; token: string }>("visitors", null, { method: "POST" }),
     me: (token: string) => call<Me>("me", token),
     /** The token only on the chat page, where it is what lets the request in. */
-    presence: (token: string | null) =>
-      call<{ online: boolean | null; members: string[]; emailReplies: boolean }>("presence", token),
+    presence: (token: string | null) => call<Presence>("presence", token),
     reportPage: (token: string, address: string, title: string) =>
       call<{ ok: true }>("page", token, {
         method: "POST",

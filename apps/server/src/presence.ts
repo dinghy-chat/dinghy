@@ -16,6 +16,7 @@ import {
 } from "./errors.ts";
 import { visitorAuthorId } from "./identity.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { headerReplySeconds } from "./widget-settings.ts";
 
 // A client that stops sending, because of a crash or a lost network, expires after this long.
 const DEFAULT_TTL_MS = 30_000;
@@ -29,7 +30,6 @@ const memberFor = (operatorId: string, conversationId: string | null) =>
   `${operatorId}|${conversationId ?? NO_CONVERSATION}`;
 
 interface PresenceState {
-  online: boolean;
   /** Conversation ID to the operators who have it open. */
   viewers: Record<string, string[]>;
 }
@@ -48,7 +48,10 @@ interface Beat {
 interface Presence {
   /** Marks the operator on this conversation, and online unless away. Null if Valkey cannot answer. */
   beat(workspaceId: string, operatorId: string, beat: Beat): Promise<PresenceState | null>;
+  /** Ends the operator's online mark, and their mark on this conversation. */
   leave(workspaceId: string, operatorId: string, conversationId: string | null): Promise<void>;
+  /** Ends only the mark on this conversation: another tab may keep the operator online. */
+  close(workspaceId: string, operatorId: string, conversationId: string): Promise<void>;
   /**
    * The operators online now, who are not away. Null means unknown, so a caller must not tell a
    * visitor that the team is away.
@@ -98,7 +101,7 @@ export function createPresence(
             viewers[conversation] = [...(viewers[conversation] ?? []), operator];
           }
         }
-        return { online: true, viewers };
+        return { viewers };
       });
     },
     async leave(workspaceId, operatorId, conversationId) {
@@ -107,6 +110,11 @@ export function createPresence(
         if (conversationId !== null) members.push(memberFor(operatorId, conversationId));
         return client.zrem(keyFor(workspaceId), ...members);
       });
+    },
+    async close(workspaceId, operatorId, conversationId) {
+      await attempt((client) =>
+        client.zrem(keyFor(workspaceId), memberFor(operatorId, conversationId)),
+      );
     },
     online(workspaceId) {
       return attempt(async (client) => {
@@ -221,13 +229,17 @@ const leaveRoute = createRoute({
   ...OPEN_WHILE_CLOSED,
   path: "/v1/operator/workspaces/{workspaceId}/presence/leave",
   security: SESSION,
-  summary: "Say that this operator's app is no longer showing",
+  summary: "Say that a tab of this operator's app closed, or that the operator signed out",
+  description:
+    "A closing tab ends only its mark on the conversation it showed, as another tab may still keep the operator online, and the online mark expires on its own. A sign-out ends the online mark too.",
   request: {
     params,
     body: {
       required: true,
       content: {
-        "application/json": { schema: z.object({ conversationId: z.uuid().nullable() }) },
+        "application/json": {
+          schema: z.object({ conversationId: z.uuid().nullable(), signingOut: z.boolean() }),
+        },
       },
     },
   },
@@ -244,7 +256,7 @@ const leaveRoute = createRoute({
 const widgetRoute = createRoute({
   method: "get",
   path: "/v1/widget/{key}/presence",
-  summary: "Say whether the team is online. It names nobody.",
+  summary: "Say whether the team is online, and which of the header's members are",
   request: { params: z.object({ key: z.string() }) },
   responses: {
     200: {
@@ -257,6 +269,9 @@ const widgetRoute = createRoute({
             // header can mark their faces. Empty when this server cannot tell.
             members: z.array(z.string()),
             emailReplies: z.boolean(),
+            // The header's usual reply time: the 30-day median first reply, in seconds. Null when
+            // nobody is online, when the header shows "Online" instead, or with no reply to measure.
+            replySeconds: z.number().nullable(),
           }),
         },
       },
@@ -310,20 +325,32 @@ export function registerOperatorPresence(app: App, db: Database, presence: Prese
   });
 
   app.openapi(leaveRoute, async (c) => {
-    const { conversationId } = c.req.valid("json");
-    await presence.leave(c.get("memberWorkspaceId"), c.get("operatorId"), conversationId);
+    const { conversationId, signingOut } = c.req.valid("json");
+    const workspaceId = c.get("memberWorkspaceId");
+    const operatorId = c.get("operatorId");
+    if (signingOut) await presence.leave(workspaceId, operatorId, conversationId);
+    else if (conversationId !== null) await presence.close(workspaceId, operatorId, conversationId);
     return c.json({ ok: true as const }, 200);
   });
 }
 
-export function registerWidgetPresence(app: App, presence: Presence, emailReplies: boolean): void {
+/** Only an open panel asks, every 30 seconds, so the reply time costs a page view nothing. */
+export function registerWidgetPresence(
+  app: App,
+  db: Database,
+  presence: Presence,
+  emailReplies: boolean,
+): void {
   app.openapi(widgetRoute, async (c) => {
-    const members = await presence.online(c.get("workspace").id);
+    const workspaceId = c.get("workspace").id;
+    const members = await presence.online(workspaceId);
+    const isOnline = members === null ? null : members.length > 0;
     return c.json(
       {
-        online: members === null ? null : members.length > 0,
+        online: isOnline,
         members: (members ?? []).map(visitorAuthorId),
         emailReplies,
+        replySeconds: isOnline === true ? await headerReplySeconds(db, workspaceId) : null,
       },
       200,
     );

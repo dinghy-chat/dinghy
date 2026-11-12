@@ -304,10 +304,14 @@ function knownTimeZone(timeZone: string | undefined): string | null {
   }
 }
 
-/** Only the origin of where the visitor came from, never its path. */
-function referrerOrigin(referrer: string | undefined): string | null {
+/**
+ * Only the origin of where the visitor came from, never its path. The site's own pages are no
+ * source: each page load is a new tab, and a click from one page to the next sends the last one.
+ */
+function referrerOrigin(referrer: string | undefined, page: string): string | null {
   if (referrer === undefined || !URL.canParse(referrer)) return null;
   const { origin, protocol } = new URL(referrer);
+  if (origin === new URL(page).origin) return null;
   return protocol === "http:" || protocol === "https:" ? origin : null;
 }
 
@@ -1347,7 +1351,7 @@ export function registerWidgetRoutes(
       tab,
       page: path,
       title: pageTitle(title),
-      referrer: referrerOrigin(referrer),
+      referrer: referrerOrigin(referrer, path),
       country,
       timeZone: zone,
       device: deviceLine(c.req.header("user-agent")),

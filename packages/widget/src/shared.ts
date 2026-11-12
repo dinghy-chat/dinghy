@@ -69,10 +69,11 @@ export interface SavedAppearance extends WidgetSettings {
   logoUrl: string | null;
   /** Up to HEADER_FACES_MAX members, the ones who sent the latest replies, newest first. */
   team: TeamFace[];
-  /** The header's faces for `online` or `chosen`, in order, up to HEADER_FACES_MAX. Else empty. */
+  /**
+   * The header's candidates, in order: every member for `online`, which the widget cuts to the
+   * members online now, the latest repliers for `repliers`, the chosen members for `chosen`.
+   */
   faces: TeamFace[];
-  /** The 30-day median first reply time, for the `reply_time` status. Null without it or data. */
-  replySeconds: number | null;
 }
 
 /** The longest title an owner can save. */
@@ -111,7 +112,6 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   logoUrl: null,
   team: [],
   faces: [],
-  replySeconds: null,
 };
 
 /**

@@ -166,7 +166,7 @@ export function Inbox({
           workspaceId={workspaceId}
           canCreate={canCreate}
           view={view}
-          onProfile={view === "settings" && settingsPage === "profile"}
+          isProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
           waitingBy={{ ...data.waitingElsewhere, [workspaceId]: waiting }}
           liveCount={data.liveCount}

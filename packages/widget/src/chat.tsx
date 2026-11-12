@@ -272,7 +272,7 @@ function Chat({
     return () => clearTimeout(timer);
   }, [newReply]);
 
-  const { online, members, emailReplies } = usePresence(
+  const { online, members, emailReplies, replySeconds } = usePresence(
     client,
     fullPage ? token : null,
     open && visible,
@@ -673,6 +673,7 @@ function Chat({
         scene={sceneState}
         online={online}
         members={members}
+        replySeconds={replySeconds}
         mascot={mascot}
         saved={saved}
         say={say}

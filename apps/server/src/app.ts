@@ -371,7 +371,7 @@ export function createApp({
     ownOrigin,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
-  registerWidgetPresence(app, presence, alerts?.emailAvailable ?? false);
+  registerWidgetPresence(app, db, presence, alerts?.emailAvailable ?? false);
   if (ownOrigin !== undefined) {
     registerChatPage(app, { db, rateLimit, imagesOrigin: images?.origin });
   }

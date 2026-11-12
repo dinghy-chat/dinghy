@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { etag } from "hono/etag";
 import {
   firstName,
@@ -105,11 +105,10 @@ const SavedAppearanceSchema = WidgetSettingsSchema.extend({
   logoUrl: z.string().nullable(),
   // Up to 5 members, the ones who sent the latest replies. Who is on the team, not who is online.
   team: z.array(TeamFaceSchema),
-  // The header's faces for `online` (every member, latest repliers first) or `chosen`, in order.
-  // The widget's presence answer says which are online now.
+  // The header's candidates: every member for `online` (latest repliers first), the latest
+  // repliers for `repliers`, the chosen members in order for `chosen`, none for `none`. The widget's
+  // presence answer says which are online now.
   faces: z.array(TeamFaceSchema),
-  // The 30-day median first reply time, in seconds, while `headerStatus` is `reply_time`.
-  replySeconds: z.number().nullable(),
 }).openapi("WidgetAppearance") satisfies z.ZodType<SavedAppearance>;
 
 /** What any site reads: the operators' IDs stay in the operator app. */
@@ -212,49 +211,26 @@ const memberFace = {
   name: operator.name,
   pictureUpdatedAt: operator.pictureUpdatedAt,
 };
-type MemberFace = { id: string; name: string; pictureUpdatedAt: Date | null };
 
 /**
- * The workspace's members by their last reply, newest first, and with `everyone` those who never
- * replied after them. Each needs one short read of an index.
+ * Every member, the latest repliers first, then those who never replied by when they joined. Each
+ * needs one short read of an index. `lastReply` is null for a member who never replied.
  */
-function membersByLastReply(tx: Transaction, workspaceId: string, everyone: boolean) {
-  const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId} and ${isChat()})`;
+function membersByLastReply(tx: Transaction, workspaceId: string) {
+  const lastReply = sql<
+    string | null
+  >`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId} and ${isChat()})`;
   return tx
-    .select(memberFace)
+    .select({ ...memberFace, lastReply: lastReply.as("last_reply") })
     .from(workspaceMember)
     .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-    .where(
-      and(
-        eq(workspaceMember.workspaceId, workspaceId),
-        isNull(workspaceMember.removedAt),
-        everyone ? undefined : isNotNull(lastReply),
-      ),
-    )
-    .orderBy(sql`${lastReply} desc nulls last`, workspaceMember.createdAt)
-    .limit(HEADER_FACES_MAX);
+    .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)))
+    .orderBy(sql`"last_reply" desc nulls last`, workspaceMember.createdAt);
 }
 
-/** The chosen operators who are members now, in the owner's order. */
-async function chosenMembers(
-  tx: Transaction,
-  workspaceId: string,
-  ids: string[],
-): Promise<MemberFace[]> {
-  if (ids.length === 0) return [];
-  const rows = await tx
-    .select(memberFace)
-    .from(workspaceMember)
-    .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-    .where(
-      and(
-        eq(workspaceMember.workspaceId, workspaceId),
-        isNull(workspaceMember.removedAt),
-        inArray(workspaceMember.operatorId, ids),
-      ),
-    );
-  return ids.flatMap((id) => rows.find((row) => row.id === id) ?? []);
-}
+/** The members with these IDs, in the IDs' order. An ID that is no member's is skipped. */
+const pickInOrder = <Member extends { id: string }>(ids: string[], members: Member[]) =>
+  ids.flatMap((id) => members.find((member) => member.id === id) ?? []);
 
 /** The settings as the widget reads them. Run it in the workspace's context. */
 async function readAppearance(
@@ -275,30 +251,38 @@ async function readAppearance(
     headerMembers,
     ...settings
   } = row.settings;
-  const toFace = (member: MemberFace) => ({
+  const toFace = (member: { id: string; name: string; pictureUpdatedAt: Date | null }) => ({
     id: visitorAuthorId(member.id),
     name: firstName(member.name),
     pictureUrl: urls.picture(member.id, member.pictureUpdatedAt),
   });
-  const team = await membersByLastReply(tx, workspaceId, false);
-  const chosen = await chosenMembers(tx, workspaceId, headerMembers);
-  const faces =
-    settings.headerFaces === "online"
-      ? await membersByLastReply(tx, workspaceId, true)
-      : settings.headerFaces === "chosen"
-        ? chosen
-        : [];
+  const members = await membersByLastReply(tx, workspaceId);
+  const team = members.filter((member) => member.lastReply !== null).slice(0, HEADER_FACES_MAX);
+  const chosen = pickInOrder(headerMembers, members);
+  const faces = { online: members, repliers: team, chosen, none: [] }[settings.headerFaces];
   return {
     ...settings,
     headerMembers: chosen.map((member) => member.id),
     logoUrl: urls.logo(row.publicKey, logoUpdatedAt),
     team: team.map(toFace),
     faces: faces.map(toFace),
-    replySeconds:
-      settings.headerStatus === "reply_time"
-        ? await medianFirstReplySeconds(tx, workspaceId, REPLY_TIME_DAYS)
-        : null,
   };
+}
+
+/**
+ * The 30-day median first reply time, in seconds, for a header that shows it. Null when the header
+ * shows "Online" instead, or with no reply in those days.
+ */
+export function headerReplySeconds(db: Database, workspaceId: string): Promise<number | null> {
+  return withWorkspace(db, workspaceId, async (tx) => {
+    const [row] = await tx
+      .select({ headerStatus: widgetSettings.headerStatus })
+      .from(widgetSettings)
+      .where(eq(widgetSettings.workspaceId, workspaceId));
+    return row?.headerStatus === "reply_time"
+      ? medianFirstReplySeconds(tx, workspaceId, REPLY_TIME_DAYS)
+      : null;
+  });
 }
 
 /**

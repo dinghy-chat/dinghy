@@ -191,7 +191,7 @@ export function Sidebar({
   workspaceId,
   canCreate,
   view,
-  onProfile: isProfile,
+  isProfile,
   waiting,
   waitingBy,
   liveCount,
@@ -211,7 +211,7 @@ export function Sidebar({
   canCreate: boolean;
   view: View;
   /** Settings shows the Profile page, which the user menu opens. */
-  onProfile: boolean;
+  isProfile: boolean;
   /** Open conversations that wait for a reply, in the whole workspace. */
   waiting: number;
   /** The same count in each of the operator's workspaces, by workspace ID. */

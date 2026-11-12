@@ -10,7 +10,10 @@ const PRESENCE_EVERY_MS = 10_000;
 /**
  * Says which conversation is open, and learns who else has one open. This follows what is open, and
  * no operator's keystroke. A hidden tab keeps the operator online, as the inbox often waits in one,
- * and has no conversation open. `leave` is for a sign-out: no beat follows it.
+ * and has no conversation open. A closing tab ends only its conversation's mark, as another tab can
+ * keep the operator online, and the online mark expires on its own. `leave` is for a sign-out: it
+ * ends the online mark too, and no beat follows it. Presence is best effort, so a failed request is
+ * dropped: the next beat, or the expiry, puts it right.
  */
 export function usePresence(api: WorkspaceApi, selected: string | null, visible: boolean) {
   const [viewers, setViewers] = useState<Record<string, string[]>>({});
@@ -40,17 +43,19 @@ export function usePresence(api: WorkspaceApi, selected: string | null, visible:
   }, [api, selected, visible]);
 
   useEffect(() => {
-    const onHide = () => void api.leave(open.current).catch(() => {});
+    const onHide = () => {
+      if (open.current !== null) api.leave(open.current, false).catch(() => {});
+    };
     addEventListener("pagehide", onHide);
     return () => removeEventListener("pagehide", onHide);
   }, [api]);
 
   const leave = useCallback(() => {
     signedOut.current = true;
-    return api.leave(open.current).then(
-      () => {},
-      () => {},
-    );
+    return api
+      .leave(open.current, true)
+      .then(() => {})
+      .catch(() => {});
   }, [api]);
 
   return { viewers, leave };

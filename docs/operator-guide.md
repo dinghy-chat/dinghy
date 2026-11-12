@@ -57,6 +57,8 @@ Every number is about the conversations that started in that period:
 | **First reply within 5 minutes** | The share of all of them, answered or not, with a first reply within 5 minutes |
 | **Started in this period and now closed** | How many of them are closed now |
 
+Under a number, a change compares it with the period of the same length just before, so a week that ends now is compared with the 7 days before it.
+
 A first reply can come from a person on your team or from software that uses an [API key](api.md#api-keys). Both count. On Dinghy Cloud, the welcome chat counts nowhere.
 
 Below are the conversations per day, **Who sent the first reply**, by person or API key, and the busiest hours, as a grid of weekdays by hours where a darker square means more conversations started then. Hold the pointer over a bar or a square to see its number. With no conversation in the period, the page says so.

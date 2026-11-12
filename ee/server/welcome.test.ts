@@ -639,7 +639,7 @@ describe("alerts and analytics", () => {
         { cookie },
       );
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ started: 0, answered: 0, operators: [] });
+      expect(await response.json()).toMatchObject({ started: 0, answered: 0, repliers: [] });
     }
   });
 });

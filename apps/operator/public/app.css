@@ -28,6 +28,9 @@
   --map-sea: light-dark(#0b2239, #08182a);
   --map-land: light-dark(#2f5d93, #2a5283);
   --map-dot: #ffc917;
+  /* Text on the map's white chips and cards, and on its yellow dots, in both themes. */
+  --map-ink: #0b2239;
+  --map-ink-mute: #44546a;
   /* Focus: the navy (off-white at night) for the line, and the warm sand for a field's halo. */
   --focus: var(--navy);
   --focus-halo: light-dark(#e8e6e0, #243344);
@@ -1356,6 +1359,22 @@ button.workspace[aria-expanded="true"],
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+@media (max-width: 560px) {
+  /* A segmented control in a page's head, such as the period, takes its own full row under the
+     line of context, as its pills would not fit beside the title. */
+  .page-actions:has(> .choices.outlined) {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    margin-top: 12px;
+  }
+  .page-actions > .choices.outlined {
+    flex: 1;
+  }
+  .page-actions > .choices.outlined label {
+    flex: 1;
+    justify-content: center;
+  }
 }
 
 /* A dropdown or a menu: a white card under (or over) its button. */
@@ -3127,9 +3146,11 @@ button.quote:hover {
   margin: 0;
   min-width: 0;
 }
+.per-day {
+  --scale-gutter: 28px;
+}
 /* The scale's labels sit in the left gutter, and the lines at the top, middle and floor. */
 .day-bars {
-  --scale-gutter: 28px;
   position: relative;
   display: flex;
   align-items: flex-end;
@@ -3167,7 +3188,7 @@ button.quote:hover {
 .day-axis {
   display: flex;
   justify-content: space-between;
-  margin: 6px 0 0 28px;
+  margin: 6px 0 0 var(--scale-gutter);
   color: var(--mute);
   font-size: 12px;
 }
@@ -3253,20 +3274,18 @@ button.quote:hover {
     0 0 0 2px var(--surface),
     0 0 0 4px var(--map-dot);
 }
-.heat .level-1,
-.heat-legend .level-1 {
+/* A cell's level, in the grid and in its legend. Level 0, an hour with none, keeps the cell's own
+   background. */
+.hours .level-1 {
   background: var(--heat-1);
 }
-.heat .level-2,
-.heat-legend .level-2 {
+.hours .level-2 {
   background: var(--heat-2);
 }
-.heat .level-3,
-.heat-legend .level-3 {
+.hours .level-3 {
   background: var(--heat-3);
 }
-.heat .level-4,
-.heat-legend .level-4 {
+.hours .level-4 {
   background: var(--heat-4);
 }
 .heat-legend {
@@ -3309,23 +3328,8 @@ button.quote:hover {
   .stats {
     grid-template-columns: minmax(0, 1fr);
   }
-  .stat + .stat,
-  .stat:nth-child(4) {
+  .stat + .stat {
     box-shadow: 0 -1px 0 var(--line);
-  }
-  /* A segmented control in a page's head, such as the period, takes its own full row under the
-     line of context, as its pills would not fit beside the title. */
-  .page-actions:has(> .choices.outlined) {
-    grid-row: 3;
-    grid-column: 1 / -1;
-    margin-top: 12px;
-  }
-  .page-actions > .choices.outlined {
-    flex: 1;
-  }
-  .page-actions > .choices.outlined label {
-    flex: 1;
-    justify-content: center;
   }
   .heat {
     grid-template-columns: 28px repeat(24, minmax(0, 1fr));
@@ -3672,7 +3676,7 @@ button.quote:hover {
   justify-self: start;
 }
 .color-field,
-.radius-field {
+.range-field {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -3725,14 +3729,14 @@ button.quote:hover {
 .color-box .mono:focus-visible {
   outline: none;
 }
-.radius-field input {
+.range-field input {
   width: 180px;
   min-height: 0;
   padding: 0;
   border: 0;
   accent-color: var(--fill);
 }
-.radius-field output {
+.range-field output {
   min-width: 44px;
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
@@ -3745,15 +3749,15 @@ button.quote:hover {
   }
   .setting-row > .choices,
   .color-field,
-  .radius-field {
+  .range-field {
     justify-self: start;
     justify-content: flex-start;
   }
-  .radius-field input {
+  .range-field input {
     width: auto;
     flex: 1;
   }
-  .radius-field {
+  .range-field {
     justify-self: stretch;
   }
 }
@@ -4772,7 +4776,7 @@ button.quote:hover {
   padding: 0;
   border-radius: 50%;
   background: var(--map-dot);
-  color: #0b2239;
+  color: var(--map-ink);
   font: 700 10.5px / 1 var(--body);
   box-shadow: 0 0 0 3px rgb(255 201 23 / 0.22);
   transition:
@@ -4845,7 +4849,7 @@ button.quote:hover {
   padding: 0 12px;
   border-radius: 999px;
   background: #fff;
-  color: #0b2239;
+  color: var(--map-ink);
   font-size: 13.5px;
   font-weight: 600;
   box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
@@ -4867,7 +4871,7 @@ button.quote:hover {
   padding: 10px 12px;
   border-radius: 14px;
   background: #fff;
-  color: #0b2239;
+  color: var(--map-ink);
   font-size: 13px;
   box-shadow: 0 10px 30px rgb(0 0 0 / 0.3);
   transform: translate(-50%, calc(-100% - 16px));
@@ -4890,13 +4894,13 @@ button.quote:hover {
   justify-content: space-between;
   gap: 10px;
   padding: 2px 0;
-  color: #44546a;
+  color: var(--map-ink-mute);
 }
 .live-card em {
   overflow: hidden;
   font-style: normal;
   font-weight: 600;
-  color: #0b2239;
+  color: var(--map-ink);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

@@ -80,23 +80,22 @@ export interface Analytics {
   firstReply: {
     medianSeconds: number | null;
     p90Seconds: number | null;
-    /** From 0 to 1, of the conversations started. */
-    within5Minutes: number | null;
+    /** Of the conversations started, the ones with a first reply within 5 minutes. */
+    fast: number;
   };
-  /** The same numbers for as many whole days just before the period. */
+  /** The same numbers for a period of the same length just before. */
   previous: {
     started: number;
-    firstReply: { medianSeconds: number | null; within5Minutes: number | null };
+    firstReply: { medianSeconds: number | null; fast: number };
   };
   perDay: { date: string; conversations: number }[];
-  /** By who sent the first reply. */
-  operators: {
-    /** One of the two is set: a member, or an API key that sent the first reply. */
-    operatorId: string | null;
-    apiKeyId: string | null;
-    name: string | null;
-    conversations: number;
-  }[];
+  /** By who sent the first reply, most first. */
+  repliers: (
+    | { kind: "operator"; operatorId: string; name: string; conversations: number }
+    | { kind: "api_key"; apiKeyId: string; name: string; conversations: number }
+    /** Deleted operators, all in one. */
+    | { kind: "former"; conversations: number }
+  )[];
   /** Weekday (Monday first) by hour. */
   hours: number[][];
 }
@@ -604,12 +603,12 @@ export function workspaceApi(workspaceId: string) {
         method: "PUT",
         body: JSON.stringify({ viewing, left, hidden }),
       }),
-    /** keepalive, so this still goes out while the page closes. */
-    leave: (conversationId: string | null) =>
+    /** keepalive, so this still goes out while the page closes. A sign-out also ends the online mark. */
+    leave: (conversationId: string | null, signingOut: boolean) =>
       call<{ ok: true }>(`${base}/presence/leave`, {
         method: "POST",
         keepalive: true,
-        body: JSON.stringify({ conversationId }),
+        body: JSON.stringify({ conversationId, signingOut }),
       }),
     alerts: () => call<AlertSettings>(`${base}/alerts`),
     setAlerts: (change: { email: boolean }) =>

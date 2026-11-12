@@ -67,29 +67,24 @@ const EMAIL_ASKS: Option<WidgetSettings["emailAsk"]>[] = [
   { value: "before_first", label: "widgetEmailBefore" },
 ];
 
-const HEADER_FACES: { value: WidgetSettings["headerFaces"]; label: TextId }[] = [
-  { value: "online", label: "widgetFacesOnline" },
-  { value: "repliers", label: "widgetFacesRepliers" },
-  { value: "chosen", label: "widgetFacesChosen" },
-  { value: "none", label: "widgetFacesNone" },
-];
-const HEADER_FACES_HELP: Record<WidgetSettings["headerFaces"], TextId> = {
-  online: "widgetFacesOnlineHelp",
-  repliers: "widgetFacesRepliersHelp",
-  chosen: "widgetFacesChosenHelp",
-  none: "widgetFacesNoneHelp",
+type FacesMode = WidgetSettings["headerFaces"];
+/** Each choice of faces, in the menu's order, with the words under it. */
+const HEADER_FACES: Record<FacesMode, { label: TextId; help: TextId }> = {
+  online: { label: "widgetFacesOnline", help: "widgetFacesOnlineHelp" },
+  repliers: { label: "widgetFacesRepliers", help: "widgetFacesRepliersHelp" },
+  chosen: { label: "widgetFacesChosen", help: "widgetFacesChosenHelp" },
+  none: { label: "widgetFacesNone", help: "widgetFacesNoneHelp" },
 };
 const HEADER_STATUSES: Option<WidgetSettings["headerStatus"]>[] = [
   { value: "presence", label: "widgetStatusPresence" },
   { value: "reply_time", label: "widgetStatusReplyTime" },
 ];
 
-/** What the form edits: the saved answer without the logo, the faces and the reply time. */
+/** What the form edits: the saved answer without the logo and the faces. */
 function editable({
   logoUrl: _logo,
   team: _team,
   faces: _faces,
-  replySeconds: _reply,
   ...settings
 }: OperatorAppearance): AppearanceSettings {
   return settings;
@@ -414,7 +409,7 @@ function LayoutFields({
       </SettingRow>
       <SettingRow label={t("widgetRadius")}>
         {() => (
-          <div className="radius-field">
+          <div className="range-field">
             <input
               type="range"
               aria-label={t("widgetRadius")}
@@ -449,7 +444,7 @@ function ChosenMembers({
   members: Member[];
   onChange(ids: string[]): void;
 }) {
-  const picked = chosen.flatMap((id) => members.find((member) => member.id === id) ?? []);
+  const picked = pickInOrder(chosen, members);
   const others = members.filter((member) => !chosen.includes(member.id));
   const move = (from: number, to: number) => {
     const next = [...chosen];
@@ -530,13 +525,16 @@ function HeaderFields({
   const mode = settings.headerFaces;
   return (
     <div className="setting-rows">
-      <SettingRow label={t("widgetFaces")} hint={t(HEADER_FACES_HELP[mode])}>
+      <SettingRow label={t("widgetFaces")} hint={t(HEADER_FACES[mode].help)}>
         {() => (
           <Select
             label={t("widgetFaces")}
             side="end"
             value={mode}
-            choices={HEADER_FACES.map((choice) => ({ ...choice, label: t(choice.label) }))}
+            choices={(Object.keys(HEADER_FACES) as FacesMode[]).map((value) => ({
+              value,
+              label: t(HEADER_FACES[value].label),
+            }))}
             onChange={(headerFaces) => onChange({ headerFaces })}
           />
         )}
@@ -552,7 +550,7 @@ function HeaderFields({
         <>
           <SettingRow label={t("widgetFaceCount")}>
             {() => (
-              <div className="radius-field">
+              <div className="range-field">
                 <input
                   type="range"
                   aria-label={t("widgetFaceCount")}
@@ -599,17 +597,27 @@ function HeaderFields({
   );
 }
 
+/** The members with these IDs, in the IDs' order. An ID that is no member's is skipped. */
+const pickInOrder = (ids: string[], members: Member[]) =>
+  ids.flatMap((id) => members.find((member) => member.id === id) ?? []);
+
 /**
- * The faces the preview shows for the form's choice, before a save: the chosen members, or for
- * Online now, the whole team. The preview marks two of them online.
+ * The faces the preview shows for the form's choice, before a save, as the server would send them:
+ * the whole team for Online now, the latest repliers, or the chosen members. The preview marks two
+ * of them online.
  */
-function previewFaces(settings: AppearanceSettings, members: Member[]): TeamFace[] {
-  if (settings.headerFaces === "online") return members.map(memberFace);
-  if (settings.headerFaces !== "chosen") return [];
-  return settings.headerMembers.flatMap((id) => {
-    const member = members.find((one) => one.id === id);
-    return member === undefined ? [] : [memberFace(member)];
-  });
+function previewFaces(
+  settings: AppearanceSettings,
+  members: Member[],
+  team: TeamFace[],
+): TeamFace[] {
+  const faces = {
+    online: () => members.map(memberFace),
+    repliers: () => team,
+    chosen: () => pickInOrder(settings.headerMembers, members).map(memberFace),
+    none: () => [],
+  };
+  return faces[settings.headerFaces]();
 }
 
 /** The chat as visitors will see it, drawn by the widget's own code in a Shadow DOM. */
@@ -756,7 +764,7 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
           ...saved,
           ...draft,
           // The saved faces are for the saved choice. The team gives them for the form's.
-          ...(members !== null && { faces: previewFaces(draft, members) }),
+          ...(members !== null && { faces: previewFaces(draft, members, saved.team) }),
         }}
         me={me}
       />
