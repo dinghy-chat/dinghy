@@ -759,7 +759,7 @@ const en = {
   messageAlreadyEmailed: "Already sent by email",
   messageDeleted: "Message deleted",
   messageEdited: "edited",
-  messageSeen: "The visitor has already seen this reply, so it can no longer change.",
+  messageSeen: "This reply may already have reached the visitor, so it can no longer change.",
   messageDeleteTitle: "Delete this message?",
   messageDeleteText:
     'It becomes "Message deleted" for everyone, the visitor too, and its image is removed. This can\'t be undone.',
