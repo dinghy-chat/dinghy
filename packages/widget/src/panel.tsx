@@ -97,7 +97,7 @@ textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inh
 .quote b{display:block;font-size:12px}
 .chip{display:flex;align-items:center;gap:4px;margin-bottom:6px}
 .chip .quote{flex:1;margin:0;-webkit-line-clamp:2}
-.shot{display:block;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
+.shot{flex:none;display:block;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
 .shot.mine{align-self:flex-end}
 .shot img{display:block;max-width:100%;height:auto}
 dialog{padding:0;border:0;background:transparent;max-width:95vw;max-height:95vh;overflow:auto}
