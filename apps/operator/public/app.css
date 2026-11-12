@@ -4427,79 +4427,447 @@ button.quote:hover {
   gap: 8px;
 }
 
-/* Visitors: the world in dots on a navy sea, with a yellow dot for each country that has people. */
-.world-map {
-  position: relative;
-  max-width: 980px;
-  aspect-ratio: 360 / 142;
-  margin: 8px 0 20px;
-  overflow: hidden;
-  border-radius: 18px;
-  background: var(--map-sea);
+/* Visitors: the map and the tiles on the left, the people on the right in a column that stays in
+   view. On a narrow screen the people come between the map and the tiles. */
+.live-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
-.world-land {
+.live-pulse {
+  position: relative;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.live-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--green);
+  animation: live-ping 1.8s ease-out infinite;
+}
+@keyframes live-ping {
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+.live-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 24px;
+  align-items: start;
+  padding-top: 10px;
+}
+.live-side {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* The world on a navy sea, which pans and zooms inside its box. */
+.live-map {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 360 / 150;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--map-sea);
+  cursor: grab;
+  user-select: none;
+  touch-action: pan-y;
+}
+/* Zoomed, a drag pans the map, so it no longer scrolls the page. */
+.live-map.zoomed {
+  touch-action: none;
+}
+.live-map.dragging {
+  cursor: grabbing;
+}
+.live-zoom {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.live-map.dragging .live-zoom {
+  transition: none;
+}
+/* The land starts a little below the top, as WORLD_TOP in visitors.tsx says. */
+.live-world {
+  position: absolute;
+  inset: 4% 0 0;
+}
+.live-land {
   position: absolute;
   inset: 0;
   background: var(--map-land);
   mask: url("world.svg") center / 100% 100% no-repeat;
 }
-.world-map .map-dot {
+.live-dot {
   position: absolute;
+  display: grid;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+  padding: 0;
   border-radius: 50%;
   background: var(--map-dot);
-  box-shadow: 0 0 0 4px rgb(255 201 23 / 0.25);
-  transform: translate(-50%, -50%);
+  color: #0b2239;
+  font: 700 10.5px / 1 var(--body);
+  box-shadow: 0 0 0 3px rgb(255 201 23 / 0.22);
+  transition:
+    box-shadow 0.15s,
+    transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.live-list {
+.live-dot.group {
+  width: 18px;
+  height: 18px;
+}
+.live-dot::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1.5px solid var(--map-dot);
+  border-radius: 50%;
+  opacity: 0;
+  animation: live-ring 2.4s ease-out infinite;
+}
+@keyframes live-ring {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+.live-dot:hover,
+.live-dot.lit {
+  box-shadow:
+    0 0 0 3px rgb(255 201 23 / 0.35),
+    0 0 0 7px rgb(255 201 23 / 0.16);
+}
+.live-dot.dim {
+  opacity: 0.35;
+}
+.live-dot:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.live-tools {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
   display: grid;
+  gap: 4px;
+}
+.live-tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+.live-tool:hover {
+  background: rgb(255 255 255 / 0.2);
+}
+.live-reset {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0b2239;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+}
+.live-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 14px;
+  max-width: calc(100% - 80px);
+  color: rgb(255 255 255 / 0.55);
+  font-size: 12px;
+}
+/* The card over a dot, white on the sea in both themes, as the reset chip is. */
+.live-card {
+  position: absolute;
+  z-index: 3;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #fff;
+  color: #0b2239;
+  font-size: 13px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.3);
+  transform: translate(-50%, calc(-100% - 16px));
+  pointer-events: none;
+}
+.live-card.below {
+  transform: translate(-50%, 16px);
+}
+.live-card b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.live-card ul {
   padding: 0;
   list-style: none;
 }
-.live-row {
+.live-card-row {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 14px 4px;
-  border-top: 1px solid var(--line);
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  color: #44546a;
 }
-.live-flag {
-  flex: none;
-  width: 28px;
-  font-size: 22px;
-  line-height: 1.2;
-  text-align: center;
-}
-.live-text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.live-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.live-text b {
-  color: var(--navy);
-}
-.live-page {
+.live-card em {
   overflow: hidden;
-  color: var(--blue-deep);
+  font-style: normal;
+  font-weight: 600;
+  color: #0b2239;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.live-text small {
+
+/* Pages now and Came from, as bars behind the counts. */
+.live-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.live-tile {
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.live-tile h3,
+.live-people h3 {
+  margin-bottom: 10px;
+  color: var(--navy);
+  font: 700 16px / 1.2 var(--display);
+}
+.live-bars {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+.live-bars-row {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  color: var(--navy);
+  font-size: 13.5px;
+}
+.live-bars span {
+  position: relative;
+}
+.live-bars span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-bars span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.live-bars .live-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 9px;
+  background: var(--tile-blue);
+}
+
+/* The people, in a column that scrolls on its own beside the map. */
+.live-people {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+  min-width: 0;
+}
+.live-list {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.live-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  transition:
+    background 0.12s,
+    box-shadow 0.12s;
+}
+.live-row:hover,
+.live-row.lit {
+  background: var(--row-hover);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.live-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--soft);
   color: var(--mute);
-  font-size: 13px;
+  font-size: 21px;
 }
-.live-chat {
-  cursor: pointer;
+.live-face.known {
+  background: var(--tile-yellow);
+  color: var(--navy);
+  font: 700 14px var(--body);
 }
-.map-credit {
-  margin-top: 18px;
+.live-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  font-size: 14px;
+  line-height: 1;
+}
+.live-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.live-who b {
+  overflow: hidden;
+  color: var(--navy);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip.live-chatting {
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+  font-size: 12px;
+}
+.chip.live-chatting::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.live-page {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 2px;
+  font-size: 14px;
+}
+.live-page a {
+  overflow: hidden;
+  color: var(--blue-deep);
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-page a:hover {
+  text-decoration: underline;
+}
+.live-page span {
+  overflow: hidden;
+  padding-top: 1px;
+  color: var(--mute);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+  color: var(--mute);
   font-size: 12.5px;
 }
-.credit-link {
+.live-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.live-actions .pill {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.live-credit {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.live-credit a {
   color: var(--mute);
+}
+
+@media (max-width: 1100px) {
+  .live-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live-side {
+    display: contents;
+  }
+  .live-tiles {
+    order: 3;
+  }
+  .live-people {
+    position: static;
+    max-height: none;
+  }
+}
+@media (max-width: 640px) {
+  .live-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live-map {
+    aspect-ratio: 360 / 190;
+  }
+  .live-hint {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-pulse::after,
+  .live-dot::before {
+    animation: none;
+  }
+  .live-zoom,
+  .live-dot {
+    transition: none;
+  }
 }

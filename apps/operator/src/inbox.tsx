@@ -141,7 +141,7 @@ export function Inbox({
     setFilter({ status: nextStatus, who: nextWho });
   };
 
-  /** Opens a contact's page, from a conversation's panel. */
+  /** Opens a contact's page, from a conversation's panel or from Visitors. */
   const openContact = (visitorId: string) =>
     leave(() => {
       setContactId(visitorId);
@@ -225,7 +225,11 @@ export function Inbox({
             )}
             {view === "analytics" && <AnalyticsPage api={api} />}
             {view === "visitors" && (
-              <VisitorsPage api={api} onOpenConversation={(id) => openConversation(id, "open")} />
+              <VisitorsPage
+                api={api}
+                onOpenConversation={(id) => openConversation(id, "open")}
+                onOpenContact={openContact}
+              />
             )}
             {view === "contacts" && (
               <ContactsPage

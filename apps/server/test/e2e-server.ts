@@ -30,6 +30,7 @@ import {
 import { type Database, withWorkspace } from "../src/db/tenant.ts";
 import { createImages } from "../src/images.ts";
 import { createLive, createSignals, OPERATORS } from "../src/live.ts";
+import { createLiveVisitors, type LiveVisitors } from "../src/live-visitors.ts";
 import { appendMessage } from "../src/messages.ts";
 import { createPush } from "../src/push.ts";
 import { localStore } from "../src/storage.ts";
@@ -240,6 +241,29 @@ export async function startE2EServer(
       }
     },
     workspaceId: () => workspace.id,
+    /** Opens tabs of the site as their beats would, each with a new contact when it has a name. */
+    async openTabs(
+      tabs: (Omit<Parameters<LiveVisitors["beat"]>[1], "tab" | "visitorId" | "conversationId"> & {
+        name?: string;
+      })[],
+    ) {
+      const liveVisitors = createLiveVisitors(valkey, logger);
+      for (const { name, ...details } of tabs) {
+        const [contact] =
+          name === undefined
+            ? []
+            : await owner
+                .insert(visitor)
+                .values({ workspaceId: workspace.id, name, tokenHash: randomUUID() })
+                .returning({ id: visitor.id });
+        await liveVisitors.beat(workspace.id, {
+          ...details,
+          tab: randomUUID(),
+          visitorId: contact?.id ?? null,
+          conversationId: null,
+        });
+      }
+    },
     async blockVisitors(count: number) {
       await owner.insert(visitor).values(
         Array.from({ length: count }, () => ({
