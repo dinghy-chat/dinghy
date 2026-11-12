@@ -15,7 +15,7 @@ import { IMAGE_TYPES } from "../../../packages/widget/src/compose.ts";
 import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
-import { isMarkdownPaste, linkHref, toMarkdown } from "./rich-text.ts";
+import { hasFormatting, linkHref, toMarkdown } from "./rich-text.ts";
 import { type TextId, t } from "./text.ts";
 import { Choices, EmojiButton, type Option } from "./ui.tsx";
 
@@ -42,7 +42,10 @@ interface Latest {
 const run = (editor: Editor, commands: (chain: ChainedCommands) => ChainedCommands) =>
   commands(editor.chain().focus()).run();
 
-/** Several lines, or a code block already, toggle a code block, and words in a line inline code. */
+/**
+ * Code over several lines, or in a code block already, toggles code blocks, and code inside a line
+ * toggles inline code.
+ */
 function toggleCode(editor: Editor) {
   const { from, to } = editor.state.selection;
   const isBlock =
@@ -106,13 +109,13 @@ const shortcutLabel = (name: TextId, key: string | undefined) =>
     ? t(name)
     : t("withShortcut", {
         name: t(name),
-        keys: ON_MAC ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`,
+        keys: `${ON_MAC ? "⌘" : "Ctrl+"}${key.toUpperCase()}`,
       });
 
 /**
  * The composer's keys: Enter sends, Shift+Enter starts a line or a list item, Escape cancels, and
  * each format's key does what its button does. It also keeps the Markdown within a message's
- * length, as a textarea's maxLength did.
+ * length, so a reply cannot fail on the server for its size.
  */
 const composerExtension = (latest: RefObject<Latest>) =>
   Extension.create({
@@ -121,19 +124,13 @@ const composerExtension = (latest: RefObject<Latest>) =>
     priority: 1000,
     addKeyboardShortcuts: () => ({
       ...Object.fromEntries(
-        FORMATS.flatMap((one) =>
-          one.key === undefined
-            ? []
-            : [
-                [
-                  `Mod-${one.key}`,
-                  ({ editor }: { editor: Editor }) => {
-                    one.apply(editor, latest.current);
-                    return true;
-                  },
-                ],
-              ],
-        ),
+        FORMATS.filter((one) => one.key !== undefined).map((one) => [
+          `Mod-${one.key}`,
+          ({ editor }: { editor: Editor }) => {
+            one.apply(editor, latest.current);
+            return true;
+          },
+        ]),
       ),
       Enter() {
         latest.current.send();
@@ -141,8 +138,8 @@ const composerExtension = (latest: RefObject<Latest>) =>
       },
       "Shift-Enter": ({ editor }) =>
         editor.commands.first(({ commands }) => [
-          () => commands.splitListItem("listItem"),
           () => commands.newlineInCode(),
+          () => commands.splitListItem("listItem"),
           () => commands.setHardBreak(),
         ]),
       Escape() {
@@ -153,8 +150,12 @@ const composerExtension = (latest: RefObject<Latest>) =>
     }),
     addProseMirrorPlugins: () => [
       new Plugin({
-        filterTransaction: (transaction) =>
-          !transaction.docChanged || toMarkdown(transaction.doc.toJSON()).length <= MESSAGE_MAX,
+        // A change that does not lengthen the Markdown, such as a deletion, always goes through.
+        filterTransaction: (transaction, state) => {
+          if (!transaction.docChanged) return true;
+          const length = toMarkdown(transaction.doc.toJSON()).length;
+          return length <= MESSAGE_MAX || length <= toMarkdown(state.doc.toJSON()).length;
+        },
       }),
     ],
   });
@@ -202,10 +203,17 @@ function useComposerEditor(draft: string, latest: RefObject<Latest>, autofocus: 
           onFiles(data.files);
           return true;
         }
-        // Code keeps its stars and dashes as they are.
-        if (view.state.selection.$from.parent.type.spec.code) return false;
-        if (!isMarkdownPaste(text, data?.getData("text/html") ?? "")) return false;
-        // pasteHTML sends no paste event, so this handler does not run again.
+        // pasteHTML below pastes again with an empty event, which the default paste takes.
+        if (text === "") return false;
+        const { selection } = view.state;
+        const keepsDefault =
+          // Code keeps its stars and dashes, as typed.
+          selection.$from.parent.type.spec.code ||
+          hasFormatting(data?.getData("text/html") ?? "") ||
+          // A link pasted over words makes them a link.
+          (!selection.empty && SAFE_LINK.test(text.trim()));
+        if (keepsDefault) return false;
+        // As Markdown, which also keeps the text's single line breaks.
         view.pasteHTML(markdownHtml(text));
         return true;
       },
@@ -218,7 +226,12 @@ function useComposerEditor(draft: string, latest: RefObject<Latest>, autofocus: 
   useEffect(() => {
     if (draft === shown.current) return;
     shown.current = draft;
-    editor.commands.setContent(markdownHtml(draft), { emitUpdate: false });
+    // Outside the undo history, so Cmd+Z after a send cannot bring the sent text back.
+    editor
+      .chain()
+      .setMeta("addToHistory", false)
+      .setContent(markdownHtml(draft), { emitUpdate: false })
+      .run();
   }, [draft, editor]);
   return editor;
 }
@@ -291,18 +304,21 @@ export function Composer({
   };
   const saveLink = () => {
     if (href === undefined) return;
-    const isNew = editor.state.selection.empty && !editor.isActive("link");
+    const { empty } = editor.state.selection;
+    const isNew = empty && !editor.isActive("link");
     run(editor, (chain) => {
-      const link = chain.extendMarkRange("link");
-      if (href === "") return link.unsetLink();
-      if (isNew)
-        return link.insertContent({
-          type: "text",
-          text: href,
-          marks: [{ type: "link", attrs: { href } }],
-        });
-      return link.setLink({ href });
+      // A caret inside a link changes the whole link, and a selection changes what it selects.
+      const target = empty ? chain.extendMarkRange("link") : chain;
+      if (href === "") return target.unsetLink();
+      if (isNew) {
+        const text = { type: "text", text: href, marks: [{ type: "link", attrs: { href } }] };
+        return target.insertContent(text);
+      }
+      return target.setLink({ href });
     });
+    // The caret goes after the link, and the link ends there: a Tiptap link takes in the words
+    // typed at its end.
+    run(editor, (chain) => chain.setTextSelection(editor.state.selection.to).unsetMark("link"));
     setTypedLink(null);
   };
 
@@ -398,7 +414,7 @@ export function Composer({
               </button>
             </>
           )}
-          <EmojiButton onPick={(emoji) => editor.chain().focus().insertContent(emoji).run()} />
+          <EmojiButton onPick={(emoji) => run(editor, (chain) => chain.insertContent(emoji))} />
           <button
             type="button"
             className="icon-button format-toggle"

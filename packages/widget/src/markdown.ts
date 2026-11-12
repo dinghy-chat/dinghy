@@ -19,7 +19,7 @@ export type Block =
 const MAX_DEPTH = 4;
 export const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
 // A bare link stops before trailing punctuation, so "see https://a.example." keeps its period.
-export const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
+const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
 const FENCE = /^\s*```/;
 const LIST_ITEM = /^\s*(?:[-*+]|(\d{1,9})[.)])\s+(.*)$/;
 const QUOTE = /^\s*> ?(.*)$/;
@@ -47,8 +47,8 @@ function inline(source: string, depth = 0): Inline[] {
       const from = at + mark.length;
       let end = source.indexOf(mark, from + 1);
       // In `***both***` the bold holds an italic, an odd star inside, so it closes after its star.
-      if (source[end + 2] === "*" && mark[1] && source.slice(from, end).split("*").length % 2 < 1)
-        end++;
+      const isItalicOpen = source.slice(from, end).split("*").length % 2 === 0;
+      if (mark === "**" && end > 0 && source[end + 2] === "*" && isItalicOpen) end++;
       // Like Markdown, a marker next to a space is a plain star, as in "2 * 3 * 4".
       if (end > 0 && source[from]?.trim() && source[end - 1]?.trim()) {
         add({
@@ -82,6 +82,12 @@ function inline(source: string, depth = 0): Inline[] {
   }
   if (text !== "") parts.push(text);
   return parts;
+}
+
+/** Whether the parser makes the whole address a link with no brackets around it. */
+export function isBareLink(href: string): boolean {
+  BARE_LINK.lastIndex = 0;
+  return BARE_LINK.exec(href)?.[0] === href;
 }
 
 /** Splits a message into paragraphs, code blocks and lists. */

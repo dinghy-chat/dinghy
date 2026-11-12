@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
 import { expect, test } from "vitest";
 import { markdownHtml } from "../../../packages/widget/src/markdown.ts";
-import { isMarkdownPaste, linkHref, toMarkdown } from "./rich-text.ts";
+import { hasFormatting, linkHref, toMarkdown } from "./rich-text.ts";
 
 const text = (words: string, ...marks: (string | [string, string])[]): JSONContent => ({
   type: "text",
@@ -48,6 +48,9 @@ test("bold and italic together, and next to each other, read back as they were",
 });
 
 test("a link keeps its words, and only an address the parser links by itself stays bare", () => {
+  expect(toMarkdown(doc(paragraph(text("Boats", ["link", "https://w.org/Boat_(small)"]))))).toBe(
+    "[Boats](https://w.org/Boat_%28small%29)",
+  );
   const link = (href: string) => text(href, ["link", href]);
   const href = "https://dinghy.chat";
   const mail = "mailto:hello@dinghy.chat";
@@ -95,16 +98,16 @@ test("paragraphs, line breaks, lists, quotes and code blocks", () => {
   );
 });
 
-test("a paste goes in as Markdown when its text has formatting and its HTML has none", () => {
-  expect(isMarkdownPaste("Click **Send transfer**.", "")).toBe(true);
-  expect(isMarkdownPaste("1. Pay\n2. Send", '<span style="color:red">1. Pay</span>')).toBe(true);
-  expect(isMarkdownPaste("Just words, 2 * 3 * 4", "")).toBe(false);
-  expect(isMarkdownPaste("**Pay** now", "<b>Pay</b> now")).toBe(false);
+test("pasted HTML has formatting of its own only with formatting tags", () => {
+  expect(hasFormatting("<b>Pay</b> now")).toBe(true);
+  expect(hasFormatting('<a href="https://dinghy.chat">Docs</a>')).toBe(true);
+  expect(hasFormatting('<span style="color:red">**Pay** now</span><br>')).toBe(false);
 });
 
 test("a typed link gets https, an empty one removes the link, and only safe ones are kept", () => {
   expect(linkHref(" dinghy.chat/docs ")).toBe("https://dinghy.chat/docs");
   expect(linkHref("mailto:hello@dinghy.chat")).toBe("mailto:hello@dinghy.chat");
+  expect(linkHref("hello@dinghy.chat")).toBe("mailto:hello@dinghy.chat");
   expect(linkHref("localhost:3000/inbox")).toBe("https://localhost:3000/inbox");
   expect(linkHref("")).toBe("");
   expect(linkHref("javascript:alert(1)")).toBeUndefined();

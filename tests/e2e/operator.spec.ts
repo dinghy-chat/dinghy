@@ -119,8 +119,10 @@ test("the reply shows its formatting, typed or pasted as Markdown, and sends Mar
   await field.pressSequentially("Click **Send transfer** now");
   await expect(field.locator("strong")).toHaveText("Send transfer");
   await expect(field).toHaveText("Click Send transfer now");
+  await field.press("Enter");
+  await expect(customer.locator(".msg:not(.mine) strong")).toHaveText("Send transfer");
+  await expect(field).toHaveText("");
 
-  await field.fill("");
   await field.evaluate((element) => {
     const data = new DataTransfer();
     data.setData("text/plain", "1. Pay the **open** invoice\n2. Download your *past* invoices");
@@ -133,6 +135,27 @@ test("the reply shows its formatting, typed or pasted as Markdown, and sends Mar
   await expect(field.locator("ol strong")).toHaveText("open");
   await field.press("Enter");
   await expect(customer.locator(".msg:not(.mine) ol em", { hasText: "past" })).toBeVisible();
+
+  // The link field links the selected words, Shift+Enter starts a line, and Code formats it.
+  await field.pressSequentially("Read the docs");
+  for (const _ of "docs") await field.press("Shift+ArrowLeft");
+  await page.getByRole("button", { name: /^Link/ }).click();
+  await page.getByRole("textbox", { name: "Link address" }).fill("dinghy.chat/docs");
+  await page.locator(".link-field").getByRole("button", { name: "Save" }).click();
+  await expect(field.locator('a[href="https://dinghy.chat/docs"]')).toHaveText("docs");
+  // Save puts the caret after the link, in the text again, and words typed there stay out of it.
+  await expect(field).toBeFocused();
+  await field.pressSequentially(" now");
+  await expect(field.locator("a")).toHaveText("docs");
+  await field.press("Shift+Enter");
+  await field.pressSequentially("npm i");
+  for (const _ of "npm i") await field.press("Shift+ArrowLeft");
+  await page.getByRole("button", { name: /^Code/ }).click();
+  await expect(field.locator("p code")).toHaveText("npm i");
+  await field.press("Enter");
+  const sent = customer.locator(".msg:not(.mine)", { hasText: "Read the docs now" });
+  await expect(sent.locator('a[href="https://dinghy.chat/docs"]')).toHaveText("docs");
+  await expect(sent.locator("code")).toHaveText("npm i");
   await customer.context().close();
   await page.context().close();
 });

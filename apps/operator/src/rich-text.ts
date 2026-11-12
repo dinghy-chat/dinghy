@@ -1,7 +1,8 @@
 // The composer edits rich text, and messages and drafts stay in the small Markdown that
-// packages/widget/src/markdown.ts reads. This writes the editor's content as that Markdown.
+// packages/widget/src/markdown.ts reads. This writes the editor's content as that Markdown, and
+// holds the composer's rules for pastes and link addresses.
 import type { JSONContent } from "@tiptap/react";
-import { BARE_LINK, parseMarkdown, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
+import { isBareLink, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 
 type Mark = NonNullable<JSONContent["marks"]>[number];
 
@@ -26,12 +27,6 @@ function around(text: string, open: string, close: string): string {
   return core === "" ? text : `${lead}${open}${core}${close}${trail}`;
 }
 
-/** Whether the parser reads the whole address as a link with no brackets. */
-function isBareLink(href: string): boolean {
-  BARE_LINK.lastIndex = 0;
-  return BARE_LINK.exec(href)?.[0] === href;
-}
-
 /** Bold or italic: a group of the runs with the mark, between `mark`s. */
 const emphasis = (type: string, mark: string) => ({
   group: (run: Run) => (hasMark(run, type) ? mark : undefined),
@@ -47,7 +42,10 @@ const LEVELS: { group(run: Run): string | undefined; wrap(text: string, group: s
     {
       group: hrefOf,
       wrap: (text, href) =>
-        text.trim() === href && isBareLink(href) ? text : around(text, "[", `](${href})`),
+        text.trim() === href && isBareLink(href)
+          ? text
+          : // The parser ends the address at its first ")".
+            around(text, "[", `](${href.replace(/\(/g, "%28").replace(/\)/g, "%29")})`),
     },
     emphasis("bold", "**"),
     emphasis("italic", "*"),
@@ -131,22 +129,22 @@ export function toMarkdown(doc: JSONContent): string {
 const FORMATTED_HTML = /<(strong|b|em|i|a|code|pre|ul|ol|blockquote)[\s>]/i;
 
 /**
- * Whether a paste goes in as Markdown: its text has Markdown formatting, and its HTML, if any,
- * has none of its own, as a copy from a code editor holds the marks as plain text.
+ * Whether pasted HTML has formatting of its own. Without it, the paste's text is read as Markdown,
+ * as a code editor's HTML holds the marks as plain text.
  */
-export const isMarkdownPaste = (text: string, html: string): boolean =>
-  !FORMATTED_HTML.test(html) &&
-  parseMarkdown(text).some(
-    (part) => part.tag !== "p" || part.children.some((child) => typeof child !== "string"),
-  );
+export const hasFormatting = (html: string): boolean => FORMATTED_HTML.test(html);
+
+const EMAIL = /^[^\s@/:]+@[^\s@/]+\.[^\s@/]+$/;
 
 /**
- * The address for a typed link: https:// in front when it has no scheme, "" to remove the link,
+ * The address for a typed link: mailto: in front of an email address and https:// in front of
+ * any other address with no scheme, "" to remove the link,
  * or undefined when no message could hold it.
  */
 export function linkHref(typed: string): string | undefined {
   const trimmed = typed.trim();
   if (trimmed === "") return "";
+  if (EMAIL.test(trimmed)) return `mailto:${trimmed}`;
   // A scheme, but not the port in "localhost:3000".
   const href = /^[a-z][a-z+.-]*:(?!\d)/i.test(trimmed) ? trimmed : `https://${trimmed}`;
   return SAFE_LINK.test(href) ? href : undefined;
