@@ -25,6 +25,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - API keys can read the analytics, and Setup keys can read and change the widget's look.
 - `close_conversation` is marked destructive, so an MCP client asks the person first.
 
+### Fixed
+
+- Text you select in the widget stays readable. A site that styled its own selection made the selected text in the chat invisible, because Chrome passes the page's selection style into the widget.
+
 ## [0.23.0] - 2026-11-12
 
 ### Added
