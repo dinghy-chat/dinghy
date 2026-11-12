@@ -43,6 +43,7 @@ import { type Live, OPERATORS } from "./live.ts";
 import { type Mailer, recipientRejected } from "./mailer.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { assignConversation, recordTeamChange, recordWorkspaceChange } from "./messages.ts";
+import { revokeGrantsOf } from "./oauth-grants.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { MINUTE_MS } from "./time.ts";
@@ -586,6 +587,10 @@ async function changeMember(
           isNull(invite.revokedAt),
         ),
       );
+  }
+  // An app they connected acts with their approval, which ends when they can no longer give it.
+  if (change.kind === "remove" || !allowed.settings(change.role)) {
+    await revokeGrantsOf(tx, workspaceId, targetId);
   }
   await recordTeamChange(tx, workspaceId);
   return "ok";

@@ -157,6 +157,59 @@ describe("managing keys", () => {
   });
 });
 
+describe("reply mode and changes", () => {
+  test("a new key drafts unless told to send, and Settings shows it as a static key", async () => {
+    const drafting = await makeKey("Drafter");
+    expect(drafting).toMatchObject({ replyMode: "draft", source: "static", clientHost: null });
+    const made = await asOperator(ownerA.cookie, "POST", inA("/api-keys"), {
+      name: "Sender",
+      replyMode: "send",
+    });
+    expect(await made.json()).toMatchObject({ replyMode: "send" });
+    const listed = (await (await asOperator(ownerA.cookie, "GET", inA("/api-keys"))).json()) as {
+      apiKeys: { name: string; replyMode: string; source: string }[];
+    };
+    expect(listed.apiKeys.find((key) => key.name === "Sender")).toMatchObject({
+      replyMode: "send",
+      source: "static",
+    });
+  });
+
+  test("an owner changes a key's name, reply mode and level, and the key acts by them", async () => {
+    const made = await makeKey("Changing");
+    const path = inA(`/api-keys/${made.id}`);
+    const changed = await asOperator(ownerA.cookie, "PATCH", path, {
+      name: "Changed",
+      replyMode: "send",
+      level: "setup",
+    });
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toMatchObject({
+      id: made.id,
+      name: "Changed",
+      replyMode: "send",
+      level: "setup",
+      createdByName: "Olivia",
+    });
+    expect((await withKey(made.token, "GET", inA("/webhooks"))).status).toBe(200);
+    const [row] = await owner.select().from(apiKey).where(eq(apiKey.id, made.id));
+    expect(row).toMatchObject({ name: "Changed", replyMode: "send", level: "setup" });
+  });
+
+  test("a change needs a field, an owner or admin, and a key that is not revoked", async () => {
+    const made = await makeKey("Fixed");
+    const path = inA(`/api-keys/${made.id}`);
+    expect((await asOperator(ownerA.cookie, "PATCH", path, {})).status).toBe(400);
+    expect((await asOperator(ownerA.cookie, "PATCH", path, { replyMode: "shout" })).status).toBe(
+      400,
+    );
+    expect((await asOperator(agentA.cookie, "PATCH", path, { name: "Mine" })).status).toBe(403);
+    expect((await withKey(made.token, "PATCH", path, { name: "Mine" })).status).toBe(403);
+    await asOperator(ownerA.cookie, "DELETE", path);
+    expect((await asOperator(ownerA.cookie, "PATCH", path, { name: "Back" })).status).toBe(404);
+  });
+});
+
 describe("what a key can do", () => {
   test("it reads, searches, replies, closes, reopens and assigns in its own workspace", async () => {
     const key = await makeKey("Helper bot");

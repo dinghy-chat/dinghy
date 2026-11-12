@@ -23,9 +23,21 @@ import type { Webhooks } from "./webhooks.ts";
 // MCP over Streamable HTTP, stateless: each POST holds one JSON-RPC message and gets one JSON answer.
 // There is no session and no event stream, so GET answers 405, as the spec allows.
 
+/**
+ * 2026-07-28 has no `initialize`: each request names its version in `params._meta`, and its headers
+ * repeat the version, the method and the tool's name.
+ */
+const STATELESS_VERSION = "2026-07-28";
 /** Newest first. An `initialize` that asks for another version gets the newest. */
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
+const SUPPORTED_VERSIONS = [STATELESS_VERSION, ...PROTOCOL_VERSIONS];
 const PATH = "/v1/mcp";
+const META_VERSION = "io.modelcontextprotocol/protocolVersion";
+const META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
+const HEADER_MISMATCH = -32020;
+const UNSUPPORTED_VERSION = -32022;
+/** How long a client may keep the tool list. It depends on the key's level, so it is private. */
+const TOOLS_TTL_MS = 5 * 60_000;
 
 const RpcMessage = z.object({
   jsonrpc: z.literal("2.0"),
@@ -35,10 +47,10 @@ const RpcMessage = z.object({
 });
 type RpcId = string | number | null;
 
-const rpcError = (id: RpcId, code: number, message: string) => ({
+const rpcError = (id: RpcId, code: number, message: string, data?: Record<string, unknown>) => ({
   jsonrpc: "2.0" as const,
   id,
-  error: { code, message },
+  error: { code, message, ...(data === undefined ? {} : { data }) },
 });
 const rpcResult = (id: RpcId, result: Record<string, unknown>) => ({
   jsonrpc: "2.0" as const,
@@ -347,25 +359,73 @@ interface McpOptions {
   /** The server's own origin. A browser request from any other is refused. */
   publicOrigin: string;
   version: string;
+  /** Where a client learns to get an OAuth token, or null when OAuth is off. */
+  resourceMetadata: string | null;
+}
+
+type Params = Record<string, unknown>;
+
+/** The `_meta` of a request's params, where a 2026-07-28 request names its version. */
+const metaOf = (params: Params): Params => {
+  const meta = params._meta;
+  return typeof meta === "object" && meta !== null && !Array.isArray(meta) ? (meta as Params) : {};
+};
+
+/**
+ * Whether a 2026-07-28 request's headers differ from its body. A proxy routes on the headers,
+ * so they must say what the body does.
+ */
+function headerMismatch(
+  headers: { version: string | undefined; method: string | undefined; name: string | undefined },
+  method: string | undefined,
+  params: Params,
+): boolean {
+  if (headers.version !== STATELESS_VERSION || metaOf(params)[META_VERSION] !== STATELESS_VERSION) {
+    return true;
+  }
+  if (method !== undefined && headers.method !== method) return true;
+  return method === "tools/call" && headers.name !== params.name;
+}
+
+/** The protocol version a request asks for: its body's, or else its header's. */
+function versionOf(params: Params, header: string | undefined): string | undefined {
+  const asked = metaOf(params)[META_VERSION];
+  return typeof asked === "string" ? asked : header;
+}
+
+/** The 401 that tells an OAuth client where to get a token (RFC 9728), and that a token failed. */
+function challenge(resourceMetadata: string | null, tokenSent: boolean): string {
+  if (resourceMetadata === null) return 'Bearer realm="dinghy"';
+  const failed = tokenSent ? 'error="invalid_token", ' : "";
+  return `Bearer ${failed}resource_metadata="${resourceMetadata}", scope="conversations"`;
 }
 
 export function registerMcp(
   app: App,
-  { db, webhooks, live, rateLimit, inbox, publicOrigin, version }: McpOptions,
+  { db, webhooks, live, rateLimit, inbox, publicOrigin, version, resourceMetadata }: McpOptions,
 ): void {
   const everyKey = tools(inbox, db, live);
   const setupOnly = setupTools(webhooks);
   /** A Conversations key does not see the webhook tools at all. */
   const toolsFor = (actor: KeyActor) =>
     actor.level === "setup" ? [...everyKey, ...setupOnly] : everyKey;
+  const serverInfo = { name: "dinghy", title: "Dinghy", version };
+  const capabilities = { tools: { listChanged: false } };
+  const instructions = (actor: KeyActor) =>
+    actor.level === "setup"
+      ? "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's, and set up its webhooks. Replies show the key's name as their author."
+      : "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's. Replies show the key's name as their author.";
+  const listTools = (actor: KeyActor) =>
+    toolsFor(actor).map(({ call: _call, ...listed }) => listed);
+  const callTool = async (id: RpcId, params: Params, actor: KeyActor) => {
+    const found = toolsFor(actor).find((one) => one.name === params.name);
+    if (found === undefined) return rpcError(id, -32602, "There is no tool with this name.");
+    const outcome = await found.call(params.arguments, { workspaceId: actor.workspaceId, actor });
+    return rpcResult(id, toolResult(outcome));
+  };
 
-  /** Answers one JSON-RPC request. Null for a notification, which gets no answer. */
-  const answer = async (
-    id: RpcId,
-    method: string,
-    params: Record<string, unknown>,
-    actor: KeyActor,
-  ) => {
+  /** Answers one request of the versions with a session handshake. */
+  const answerLegacy = async (id: RpcId, method: string, params: Params, actor: KeyActor) => {
     if (method === "initialize") {
       const asked = params.protocolVersion;
       return rpcResult(id, {
@@ -373,30 +433,42 @@ export function registerMcp(
           typeof asked === "string" && PROTOCOL_VERSIONS.includes(asked)
             ? asked
             : PROTOCOL_VERSIONS[0],
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "dinghy", title: "Dinghy", version },
-        instructions:
-          actor.level === "setup"
-            ? "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's, and set up its webhooks. Replies show the key's name as their author."
-            : "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's. Replies show the key's name as their author.",
+        capabilities,
+        serverInfo,
+        instructions: instructions(actor),
       });
     }
     if (method === "ping") return rpcResult(id, {});
-    if (method === "tools/list") {
-      return rpcResult(id, {
-        tools: toolsFor(actor).map(({ call: _call, ...listed }) => listed),
+    if (method === "tools/list") return rpcResult(id, { tools: listTools(actor) });
+    if (method === "tools/call") return callTool(id, params, actor);
+    return rpcError(id, -32601, "This method does not exist.");
+  };
+
+  /** Answers one 2026-07-28 request, whose every result says it is complete and who answered. */
+  const answerStateless = async (id: RpcId, method: string, params: Params, actor: KeyActor) => {
+    const complete = (result: Record<string, unknown>) =>
+      rpcResult(id, {
+        ...result,
+        resultType: "complete",
+        _meta: { [META_SERVER_INFO]: serverInfo },
       });
+    if (method === "server/discover") {
+      return complete({
+        supportedVersions: SUPPORTED_VERSIONS,
+        capabilities,
+        serverInfo,
+        instructions: instructions(actor),
+      });
+    }
+    if (method === "ping") return complete({});
+    if (method === "tools/list") {
+      return complete({ tools: listTools(actor), ttlMs: TOOLS_TTL_MS, cacheScope: "private" });
     }
     if (method === "tools/call") {
-      const found = toolsFor(actor).find((one) => one.name === params.name);
-      if (found === undefined) return rpcError(id, -32602, "There is no tool with this name.");
-      const outcome = await found.call(params.arguments, {
-        workspaceId: actor.workspaceId,
-        actor,
-      });
-      return rpcResult(id, toolResult(outcome));
+      const answer = await callTool(id, params, actor);
+      return "result" in answer ? complete(answer.result) : answer;
     }
-    return rpcError(id, -32601, "This method does not exist.");
+    return null;
   };
 
   app.use(PATH, bodyLimit({ maxSize: 64 * 1024 }));
@@ -408,15 +480,12 @@ export function registerMcp(
     const token = apiKeyToken(c.req.header("authorization"));
     const actor = token === null ? null : await authenticateApiKey(db, token);
     if (actor === null) {
-      c.header("www-authenticate", 'Bearer realm="dinghy"');
+      const tokenSent = c.req.header("authorization") !== undefined;
+      c.header("www-authenticate", challenge(resourceMetadata, tokenSent));
       return c.json(KEY_INVALID, 401);
     }
     const wait = await rateLimit.hit("api-key", actor.apiKeyId, KEY_REQUESTS_PER_MINUTE, 60);
     if (wait !== null) return tooManyRequests(c, wait);
-    const asked = c.req.header("mcp-protocol-version");
-    if (asked !== undefined && !PROTOCOL_VERSIONS.includes(asked)) {
-      return c.json(rpcError(null, -32600, "This protocol version is not supported."), 400);
-    }
     const raw: unknown = await c.req.json().catch(() => undefined);
     if (raw === undefined) return c.json(rpcError(null, -32700, "The body is not JSON."), 400);
     const parsed = RpcMessage.safeParse(raw);
@@ -424,9 +493,35 @@ export function registerMcp(
       return c.json(rpcError(null, -32600, "Send one JSON-RPC 2.0 message."), 400);
     }
     const { id, method, params = {} } = parsed.data;
+    const header = c.req.header("mcp-protocol-version");
+    const asked = versionOf(params, header);
+    if (asked !== undefined && !SUPPORTED_VERSIONS.includes(asked)) {
+      const data = { supported: SUPPORTED_VERSIONS, requested: asked };
+      return c.json(
+        rpcError(id ?? null, UNSUPPORTED_VERSION, "This protocol version is not supported.", data),
+        400,
+      );
+    }
+    const stateless = asked === STATELESS_VERSION || header === STATELESS_VERSION;
+    if (stateless) {
+      const headers = {
+        version: header,
+        method: c.req.header("mcp-method"),
+        name: c.req.header("mcp-name"),
+      };
+      if (headerMismatch(headers, method, params)) {
+        return c.json(
+          rpcError(id ?? null, HEADER_MISMATCH, "The MCP headers do not match the body."),
+          400,
+        );
+      }
+    }
     // A notification, such as notifications/initialized, or a response: accepted, with no answer.
     if (id === undefined || method === undefined) return c.body(null, 202);
-    return c.json(await answer(id, method, params, actor), 200);
+    if (!stateless) return c.json(await answerLegacy(id, method, params, actor), 200);
+    const answer = await answerStateless(id, method, params, actor);
+    if (answer === null) return c.json(rpcError(id, -32601, "This method does not exist."), 404);
+    return c.json(answer, 200);
   });
 
   // No event stream and no session, so there is nothing to GET or DELETE.
@@ -441,7 +536,7 @@ export function registerMcp(
     security: API_KEY,
     summary: "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
     description:
-      "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+      "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
     request: {
       body: {
         required: true,
@@ -465,7 +560,12 @@ export function registerMcp(
       },
       202: { description: "A notification was accepted" },
       400: errorAnswer("A JSON-RPC parse error or invalid request, in JSON-RPC form"),
-      401: errorAnswer("unauthorized: the API key is not valid or was revoked"),
+      401: errorAnswer(
+        "unauthorized: the API key or OAuth access token is not valid, expired or was revoked. With OAuth on, `WWW-Authenticate` names the resource metadata",
+      ),
+      404: {
+        description: "A 2026-07-28 request for a method that does not exist, in JSON-RPC form",
+      },
       403: errorAnswer("origin_not_allowed: a browser on another site sent this"),
       ...RATE_LIMITED,
     },

@@ -30,6 +30,8 @@ import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
 import { registerModerationRoutes } from "./moderation.ts";
+import { oauthIssuer, registerOAuth, resourceMetadataUrl } from "./oauth.ts";
+import { type FetchClientDocument, fetchClientDocument } from "./oauth-client.ts";
 import { registerOperatorRoutes } from "./operator.ts";
 import { registerOperatorApp } from "./operator-app.ts";
 import {
@@ -98,6 +100,8 @@ export interface AppOptions {
   webhooks?: WebhookPolicy;
   /** The country of an address, for the live view. Without it, every country is unknown. */
   countryOf?: CountryOf;
+  /** Fetches an OAuth client's metadata document. Tests replace it, because it needs the internet. */
+  fetchClientDocument?: FetchClientDocument;
 }
 
 export interface AppEnv {
@@ -212,6 +216,7 @@ export function createApp({
   publicUrl,
   webhooks = PUBLIC_ONLY,
   countryOf = NO_COUNTRIES,
+  fetchClientDocument: fetchDocument = fetchClientDocument,
 }: AppOptions): App {
   const app: App = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -421,6 +426,19 @@ export function createApp({
       visitorPresence,
     });
     registerApiKeyRoutes(app, db, logger);
+    // On https or a loopback address only, because OAuth 2.1 allows no other http issuer.
+    const issuer = oauthIssuer(String(auth.options.baseURL));
+    if (issuer !== null) {
+      registerOAuth(app, {
+        db,
+        logger,
+        rateLimit,
+        valkey,
+        secret: auth.options.secret ?? ipSecret,
+        issuer,
+        fetchDocument,
+      });
+    }
     const webhookManager = createWebhooks({ db, logger, policy: webhooks });
     registerWebhookRoutes(app, { db, webhooks: webhookManager });
     registerMcp(app, {
@@ -438,6 +456,7 @@ export function createApp({
       }),
       publicOrigin: new URL(String(auth.options.baseURL)).origin,
       version,
+      resourceMetadata: issuer === null ? null : resourceMetadataUrl(issuer),
     });
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, db, presence);

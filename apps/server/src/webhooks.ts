@@ -103,7 +103,7 @@ const REFUSED_ADDRESS =
 const WRONG_SCHEME = "Dinghy cannot use this webhook URL. Use an HTTPS address.";
 
 /** Why this address cannot take webhooks, from the address alone, or null. */
-function endpointProblem(url: URL, policy: WebhookPolicy): string | null {
+export function endpointProblem(url: URL, policy: WebhookPolicy): string | null {
   if (url.protocol !== "https:" && !(policy.allowPrivate && url.protocol === "http:")) {
     return WRONG_SCHEME;
   }
@@ -114,7 +114,7 @@ function endpointProblem(url: URL, policy: WebhookPolicy): string | null {
 }
 
 /** Resolves a name the way a request would, and refuses it if any address it gives is private. */
-function guardedLookup(policy: WebhookPolicy): LookupFunction {
+export function guardedLookup(policy: WebhookPolicy): LookupFunction {
   return (hostname, options, callback) => {
     dnsLookup(hostname, { ...options, all: true }, (error, addresses: LookupAddress[]) => {
       if (error !== null) return callback(error, []);

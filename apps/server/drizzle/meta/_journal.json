@@ -610,6 +610,13 @@
       "when": 1794495909030,
       "tag": "0086_agent_experience_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1794496562522,
+      "tag": "0087_oauth_grant_prune",
+      "breakpoints": true
     }
   ]
 }

@@ -103,6 +103,10 @@ interface World {
   /** An API key in each workspace, and a webhook in the other one. */
   keyA: { id: string; token: string };
   keyB: { id: string; token: string };
+  /** An OAuth client, connected to each workspace by its owner. */
+  oauthClientId: string;
+  grantA: Grant;
+  grantB: Grant;
   hookB: { id: string; secret: string; url: string };
   /** Strings that belong to someone else, for each kind of caller. */
   secrets: { two: string; b: string };
@@ -120,6 +124,44 @@ interface World {
 }
 
 const inWorkspace = (id: string, path = "") => `/v1/operator/workspaces/${id}${path}`;
+
+interface Grant {
+  clientId: string;
+  access: string;
+  refresh: string;
+}
+
+/** Registers an OAuth client. A world registers one, so the hourly limit per address holds. */
+const registerClient = async (server: App) => {
+  const registered = await server.request("/v1/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: "Agent", redirect_uris: ["http://127.0.0.1/cb"] }),
+  });
+  return ((await registered.json()) as { client_id: string }).client_id;
+};
+
+/** The consent page's query for the client, with a new PKCE pair. */
+const authorizeQuery = (clientId: string) => {
+  const verifier = randomUUID() + randomUUID();
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const query = new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: "http://127.0.0.1/cb",
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+  }).toString();
+  return { verifier, query };
+};
+
+/** A request to an OAuth endpoint, which takes a form. */
+const oauthForm = (server: App, path: string, form: Record<string, string>) =>
+  server.request(path, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(form).toString(),
+  });
 
 /** Reads a stream until the marker, then closes it. */
 async function readStream(response: Response, until = "event: ready"): Promise<string> {
@@ -1342,7 +1384,8 @@ const ATTACKS: Record<string, Attack> = {
       (await as(anna, "GET", inWorkspace(b.id, `/webhooks/${hookB.id}/deliveries`))).status,
     ).toBe(404);
   },
-  "POST /v1/mcp": async ({ withKey, keyA, other, secrets }) => {
+  "POST /v1/mcp": async (world) => {
+    const { withKey, keyA, grantA, other, secrets } = world;
     const call = async (name: string, args: unknown) =>
       (await (
         await withKey(keyA.token, "POST", "/v1/mcp", {
@@ -1369,6 +1412,14 @@ const ATTACKS: Record<string, Attack> = {
     expect(JSON.stringify(await call("search_conversations", { q: "written" }))).toContain(
       "written by one",
     );
+    // An access token renamed to another workspace finds nothing.
+    const renamed = grantA.access.replace(grantA.access.slice(4, 40), world.b.id);
+    const crossedGrant = await withKey(renamed, "POST", "/v1/mcp", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "ping",
+    });
+    expect(crossedGrant.status).toBe(401);
     // Without a key, nothing.
     const bare = await withKey("dk_none", "POST", "/v1/mcp", {
       jsonrpc: "2.0",
@@ -1382,6 +1433,110 @@ const ATTACKS: Record<string, Attack> = {
   },
   "DELETE /v1/mcp": async ({ withKey, keyA }) => {
     expect((await withKey(keyA.token, "DELETE", "/v1/mcp")).status).toBe(405);
+  },
+
+  // ---- OAuth.
+  "POST /v1/oauth/register": async ({ server, a, secrets }) => {
+    // Registration stores nothing and names no workspace.
+    const before = await owner.select().from(apiKey);
+    const answer = await server.request("/v1/oauth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ redirect_uris: ["http://127.0.0.1/cb"] }),
+    });
+    const text = await answer.text();
+    expect(text).not.toContain(a.id);
+    expect(text).not.toContain(secrets.b);
+    expect(await owner.select().from(apiKey)).toHaveLength(before.length);
+  },
+  "POST /v1/oauth/token": async ({ server, withKey, b, grantA, grantB }) => {
+    // A's tokens renamed to B's workspace find nothing there.
+    for (const refresh of [grantA.refresh.replace(grantA.refresh.slice(4, 40), b.id)]) {
+      const answer = await oauthForm(server, "/v1/oauth/token", {
+        grant_type: "refresh_token",
+        refresh_token: refresh,
+      });
+      expect(((await answer.json()) as { error: string }).error).toBe("invalid_grant");
+    }
+    const code = grantA.access.replace("dko_", "dkc_").replace(grantA.access.slice(4, 40), b.id);
+    const exchanged = await oauthForm(server, "/v1/oauth/token", {
+      grant_type: "authorization_code",
+      code,
+      code_verifier: "x".repeat(43),
+      client_id: grantB.clientId,
+      redirect_uri: "http://127.0.0.1/cb",
+    });
+    expect(((await exchanged.json()) as { error: string }).error).toBe("invalid_grant");
+    expect((await withKey(grantB.access, "GET", inWorkspace(b.id, "/conversations"))).status).toBe(
+      200,
+    );
+  },
+  // A renamed token finds nothing, and another client cannot end B's grant.
+  "POST /v1/oauth/revoke": async ({ server, withKey, b, grantA, grantB }) => {
+    const renamed = grantA.access.replace(grantA.access.slice(4, 40), b.id);
+    for (const form of [
+      { token: renamed },
+      { token: grantB.access, client_id: "https://other.example/client" },
+    ]) {
+      expect((await oauthForm(server, "/v1/oauth/revoke", form)).status).toBe(200);
+    }
+    expect((await withKey(grantB.access, "GET", inWorkspace(b.id, "/conversations"))).status).toBe(
+      200,
+    );
+  },
+  "GET /v1/operator/oauth/authorize-info": async (world) => {
+    const { operator: as, withKey, sam, anna, a, b, decoy, keyA, grantA } = world;
+    const { query } = authorizeQuery(world.oauthClientId);
+    const path = `/v1/operator/oauth/authorize-info?${query}`;
+    const listed = async (who: { cookie: string }) =>
+      ((await (await as(who, "GET", path)).json()) as { workspaces: { id: string }[] }).workspaces
+        .map((one) => one.id)
+        .sort();
+    expect(await listed(anna)).toEqual([a.id]);
+    // Sam manages both, and sees no workspace he is not in.
+    expect(await listed(sam)).not.toContain(decoy.id);
+    expect((await listed(sam)).every((id) => id === a.id || id === b.id)).toBe(true);
+    for (const token of [keyA.token, grantA.access]) {
+      expect((await withKey(token, "GET", path)).status).toBe(403);
+    }
+  },
+  "POST /v1/operator/oauth/deny": async (world) => {
+    const { operator: as, withKey, anna, keyA, grantA } = world;
+    const { query } = authorizeQuery(world.oauthClientId);
+    expect((await as(anna, "POST", "/v1/operator/oauth/deny", { request: query })).status).toBe(
+      200,
+    );
+    for (const token of [keyA.token, grantA.access]) {
+      expect(
+        (await withKey(token, "POST", "/v1/operator/oauth/deny", { request: query })).status,
+      ).toBe(403);
+    }
+  },
+  "POST /v1/operator/workspaces/:workspaceId/oauth/grants": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, grantA } = world;
+    const inB = async () => owner.select().from(apiKey).where(eq(apiKey.workspaceId, b.id));
+    const before = await inB();
+    const body = { request: authorizeQuery(world.oauthClientId).query, level: "setup" };
+    expect((await as(anna, "POST", inWorkspace(b.id, "/oauth/grants"), body)).status).toBe(404);
+    for (const token of [keyA.token, grantA.access]) {
+      expect((await withKey(token, "POST", inWorkspace(a.id, "/oauth/grants"), body)).status).toBe(
+        403,
+      );
+    }
+    expect(await inB()).toEqual(before);
+  },
+  "PATCH /v1/operator/workspaces/:workspaceId/api-keys/:keyId": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, keyB } = world;
+    const body = { name: "Stolen", replyMode: "send" };
+    for (const space of [a.id, b.id]) {
+      const path = inWorkspace(space, `/api-keys/${keyB.id}`);
+      expect((await as(anna, "PATCH", path, body)).status).toBe(404);
+    }
+    expect(
+      (await withKey(keyA.token, "PATCH", inWorkspace(a.id, `/api-keys/${keyA.id}`), body)).status,
+    ).toBe(403);
+    const [row] = await owner.select().from(apiKey).where(eq(apiKey.id, keyB.id));
+    expect(row?.name).toBe("Helper B");
   },
 };
 
@@ -1518,6 +1673,25 @@ async function buildWorld(db: Database): Promise<World> {
       id: string;
       token: string;
     };
+  const oauthClientId = await registerClient(server);
+  const madeGrant = async (as: { cookie: string }, space: NewWorkspace): Promise<Grant> => {
+    const clientId = oauthClientId;
+    const { verifier, query } = authorizeQuery(clientId);
+    const approved = await operatorCall(as, "POST", inWorkspace(space.id, "/oauth/grants"), {
+      request: query,
+      level: "setup",
+    });
+    const { redirectTo } = (await approved.json()) as { redirectTo: string };
+    const answer = await oauthForm(server, "/v1/oauth/token", {
+      grant_type: "authorization_code",
+      code: new URL(redirectTo).searchParams.get("code") ?? "",
+      code_verifier: verifier,
+      client_id: clientId,
+      redirect_uri: "http://127.0.0.1/cb",
+    });
+    const tokens = (await answer.json()) as { access_token: string; refresh_token: string };
+    return { clientId, access: tokens.access_token, refresh: tokens.refresh_token };
+  };
   const madeHook = await operatorCall(bea, "POST", inWorkspace(b.id, "/webhooks"), {
     url: "https://93.184.215.14/b-hook",
     events: ["message.created"],
@@ -1536,6 +1710,9 @@ async function buildWorld(db: Database): Promise<World> {
     inviteB: (await madeInvite.json()) as { id: string; email: string; token: string },
     keyA: await madeKey(anna, a, "Helper A"),
     keyB: await madeKey(bea, b, "Helper B"),
+    oauthClientId,
+    grantA: await madeGrant(anna, a),
+    grantB: await madeGrant(bea, b),
     hookB: (await madeHook.json()) as { id: string; secret: string; url: string },
     secrets: { two: "written by two", b: "written in the other workspace" },
     widget,
