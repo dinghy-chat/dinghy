@@ -176,11 +176,16 @@ test("a draft stays with its conversation when the operator opens another", asyn
   await reply.fill("Half a sentence for one");
   await row(operator, "Draft two").click();
   await expect(reply).toHaveValue("");
+  // The list shows the unsent reply in place of the visitor's last message.
+  await expect(row(operator, "Half a sentence for one")).toContainText("Draft:");
   await reply.fill("For two");
-  await row(operator, "Draft one").click();
+  await row(operator, "Half a sentence for one").click();
   await expect(reply).toHaveValue("Half a sentence for one");
-  await row(operator, "Draft two").click();
+  await row(operator, "For two").click();
   await expect(reply).toHaveValue("For two");
+  // A reload of the tab keeps both.
+  await operator.reload();
+  await expect(row(operator, "Half a sentence for one")).toContainText("Draft:");
   for (const page of [one, two, operator]) await page.context().close();
 });
 
