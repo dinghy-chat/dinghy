@@ -11,7 +11,6 @@ import {
   planDelivery,
   postponeDelivery,
   pruneOnce,
-  RETENTION_MS,
   releaseDelivery,
   retryDelivery,
   sendToOperator,
@@ -29,6 +28,7 @@ import {
   type ObjectStore,
   retryDeletion,
 } from "./storage.ts";
+import { MINUTE_MS, RETENTION_MS } from "./time.ts";
 import {
   abandonWebhook,
   claimWebhookDeliveries,
@@ -89,10 +89,10 @@ const BATCH = 10;
 /** Sends in flight at once. Each finished one frees a slot, so a slow device holds only its own. */
 const IN_FLIGHT = 20;
 /** How long a claimed delivery or deletion stays with this worker before another may take it. */
-const CLAIM_MS = 60_000;
+const CLAIM_MS = MINUTE_MS;
 const FAN_OUT_BATCH = 50;
-const PRUNE_EVERY_MS = 60 * 60_000;
-const LIFECYCLE_EVERY_MS = 60_000;
+const PRUNE_EVERY_MS = 60 * MINUTE_MS;
+const LIFECYCLE_EVERY_MS = MINUTE_MS;
 const MAIL_TIMEOUT_MS = 20_000;
 /** How long an idle worker waits before its next pass, unless a finished send wakes it. */
 const POLL_MS = 2000;

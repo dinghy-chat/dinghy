@@ -283,16 +283,18 @@ describe("chat migrate", () => {
     ]);
   });
 
-  test("a reply emailed before ranges were recorded stays sent by email, and cannot change", async () => {
+  test("replies emailed before ranges were recorded stay sent by email, and cannot change", async () => {
     await run(await migrationsBefore("0082_"));
     const workspace = "00000000-0000-4000-8000-0000000000f1";
     const visitor = "00000000-0000-4000-8000-0000000000f2";
     const conversation = "00000000-0000-4000-8000-0000000000f3";
     const reply = "00000000-0000-4000-8000-0000000000f4";
     const anna = "00000000-0000-4000-8000-0000000000f5";
+    // Written after the reply that queued the email, and carried by it all the same.
+    const later = "00000000-0000-4000-8000-0000000000f6";
     await query(
       `insert into workspace (id, name, public_key, signing_secret, event_seq)
-       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000003', 'secret', 2)`,
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000003', 'secret', 3)`,
     );
     await query(
       `insert into operator (id, name, email, email_verified)
@@ -312,7 +314,8 @@ describe("chat migrate", () => {
     );
     await query(
       `insert into message (workspace_id, id, conversation_id, seq, kind, author_operator_id, client_id, body)
-       values ('${workspace}', '${reply}', '${conversation}', 2, 'text', '${anna}', 'c2', 'Answer')`,
+       values ('${workspace}', '${reply}', '${conversation}', 2, 'text', '${anna}', 'c2', 'Answer'),
+              ('${workspace}', '${later}', '${conversation}', 3, 'text', '${anna}', 'c3', 'And more')`,
     );
     await query(
       `insert into alert_delivery (workspace_id, event_seq, conversation_id, message_id, visitor_id,
@@ -326,17 +329,19 @@ describe("chat migrate", () => {
         "select channel, covered_from_seq, covered_to_seq from alert_delivery order by channel",
       ),
     ).toEqual([
-      { channel: "email", covered_from_seq: "2", covered_to_seq: "2" },
-      { channel: "transcript", covered_from_seq: "0", covered_to_seq: "2" },
+      { channel: "email", covered_from_seq: "0", covered_to_seq: "3" },
+      { channel: "transcript", covered_from_seq: "0", covered_to_seq: "3" },
     ]);
     const app = database.connect("app").db;
     const line = { conversationId: conversation, seq: 2n };
     const after = await withWorkspace(app, workspace, async (tx) => ({
       sentAt: await emailedAt(tx, workspace, visitor, line),
       edit: await editMessage(tx, workspace, conversation, reply, anna, "Changed"),
+      laterEdit: await editMessage(tx, workspace, conversation, later, anna, "Changed"),
     }));
     expect(after.sentAt).toBeInstanceOf(Date);
     expect(after.edit.kind).toBe("seen");
+    expect(after.laterEdit.kind).toBe("seen");
   });
 
   test("page addresses longer than 2,000 characters are shortened", async () => {

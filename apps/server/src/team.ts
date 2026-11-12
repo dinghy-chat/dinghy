@@ -45,6 +45,7 @@ import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { assignConversation, recordTeamChange, recordWorkspaceChange } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
+import { MINUTE_MS } from "./time.ts";
 import { isOnlyWorkspace } from "./workspace-delete.ts";
 
 export type Role = "owner" | "admin" | "member";
@@ -1060,7 +1061,7 @@ export function registerTeamRoutes(
     await db.insert(verification).values({
       identifier: `${JOIN_LINK}${sha256Hex(linkToken)}`,
       value: JSON.stringify(pending),
-      expiresAt: new Date(Date.now() + LINK_MINUTES * 60_000),
+      expiresAt: new Date(Date.now() + LINK_MINUTES * MINUTE_MS),
     });
     const mail = joinMail(
       confirmUrl(publicUrl, "join", linkToken),

@@ -23,13 +23,14 @@ import {
 import { sha256Hex } from "./identity.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { allowed } from "./team.ts";
+import { MINUTE_MS } from "./time.ts";
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}";
 const TOKEN_PREFIX = "dk_";
 /** Requests a minute for one API key, across every instance, the operator API and MCP together. */
 export const KEY_REQUESTS_PER_MINUTE = 300;
 /** A key's last use is noted to the minute, so a busy key does not write on every request. */
-const LAST_USED_STEP_MS = 60_000;
+const LAST_USED_STEP_MS = MINUTE_MS;
 
 /** Who makes a request: a signed-in operator, or a workspace API key. */
 export type Actor =

@@ -27,7 +27,7 @@ import {
 } from "./messages.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
-import { DAY_MS, MINUTE_MS } from "./time.ts";
+import { MINUTE_MS } from "./time.ts";
 import { requestedTranscriptRows, transcriptPlan, transcriptRows } from "./transcripts.ts";
 import {
   emailStopped,
@@ -51,7 +51,6 @@ const REPLIES_IN_EMAIL = 5;
 // A reply email due while a transcript waits looks again this long after the transcript is due.
 const AFTER_TRANSCRIPT_MS = 30_000;
 const PUSH_BODY_CHARACTERS = 200;
-export const RETENTION_MS = 30 * DAY_MS;
 const PRUNE_BATCH = 1000;
 
 // Every string a person reads has a key, so a locale can be added later.
@@ -599,19 +598,19 @@ export function replyLetter(
   replies: { body: string | null; quote: Quote | null }[],
   links: { chatUrl: string; stopUrl: string },
 ): { subject: string; text: string; html: string } {
-  const body = <Replies>(written: Replies) =>
-    text.replyBody(placeName, written, links.chatUrl, links.stopUrl);
+  const letterBody = <Replies>(rendered: Replies) =>
+    text.replyBody(placeName, rendered, links.chatUrl, links.stopUrl);
   const written = replies.map((reply) => ({ ...reply, body: messageText(reply.body) }));
   return {
     subject: text.replySubject(placeName),
     text: letter(
-      body(written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n")),
+      letterBody(written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n")),
       undefined,
       placeName,
     ),
     // The replies' Markdown shows as formatting here, and stays as typed in the text version.
     html: letterHtml(
-      body({
+      letterBody({
         html: written.map((reply) => quotedHtml(reply.quote, markdownHtml(reply.body))).join(""),
       }),
       placeName,

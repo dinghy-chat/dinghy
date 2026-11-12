@@ -63,10 +63,18 @@ function usedKeys(file: string, keys: string[]): Set<string> {
   return used;
 }
 
-test.each(TEXTS)("every key in %s is shown somewhere", (file) => {
-  const keys = [...readFileSync(join(ROOT, file), "utf8").matchAll(KEY)].map(
-    (match) => match[1] ?? "",
-  );
-  const used = usedKeys(file, keys);
-  expect(keys.filter((key) => !used.has(key))).toEqual([]);
-});
+// It runs the type checker over the operator app, which takes seconds while the database tests
+// load the machine.
+const TYPE_CHECK_TIMEOUT_MS = 60_000;
+
+test.each(TEXTS)(
+  "every key in %s is shown somewhere",
+  { timeout: TYPE_CHECK_TIMEOUT_MS },
+  (file) => {
+    const keys = [...readFileSync(join(ROOT, file), "utf8").matchAll(KEY)].map(
+      (match) => match[1] ?? "",
+    );
+    const used = usedKeys(file, keys);
+    expect(keys.filter((key) => !used.has(key))).toEqual([]);
+  },
+);

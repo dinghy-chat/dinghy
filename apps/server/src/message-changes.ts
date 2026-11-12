@@ -22,6 +22,7 @@ import {
   stored,
   wantsWebhook,
 } from "./messages.ts";
+import { RETENTION_MS } from "./time.ts";
 
 interface EmailCoverage {
   fromSeq: bigint;
@@ -178,17 +179,20 @@ async function lockChatLine(
  * Whether the visitor may have seen a reply: read it in the chat, or got an email that carried it,
  * sent or being sent now. The caller holds the visitor's row lock, which a read takes too, so a read
  * cannot slip in before the edit commits. An email that has not been planned reads the new body.
+ * The record of an email is pruned after RETENTION_MS, and an email always goes after the reply it
+ * carries, so a reply older than that counts as seen.
  */
 async function visitorMaySee(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
   reader: { id: string; lastReadSeq: bigint },
-  seq: bigint,
+  line: { seq: bigint; createdAt: Date },
 ): Promise<boolean> {
-  if (reader.lastReadSeq >= seq) return true;
+  if (reader.lastReadSeq >= line.seq) return true;
+  if (Date.now() - line.createdAt.getTime() >= RETENTION_MS) return true;
   const coverage = await emailCoverage(tx, workspaceId, conversationId, reader.id);
-  return carrying(coverage, seq).some((email) => email.state !== "failed");
+  return carrying(coverage, line.seq).some((email) => email.state !== "failed");
 }
 
 type EditOutcome =
@@ -215,7 +219,7 @@ export async function editMessage(
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined || line.deletedAt !== null) return { kind: "missing" };
   if (line.authorOperatorId !== operatorId || line.kind !== "text") return { kind: "not_yours" };
-  if (await visitorMaySee(tx, workspaceId, conversationId, reader, line.seq)) {
+  if (await visitorMaySee(tx, workspaceId, conversationId, reader, line)) {
     return { kind: "seen" };
   }
   const [row] = await tx

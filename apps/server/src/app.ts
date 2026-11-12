@@ -43,6 +43,7 @@ import type { Push } from "./push.ts";
 import { createRateLimit, createSlots } from "./rate-limit.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
+import { MINUTE_MS } from "./time.ts";
 import { registerExportRoute } from "./transfer.ts";
 import {
   createWebhooks,
@@ -157,7 +158,7 @@ async function settled(check: () => Promise<void>): Promise<"ok" | "failed"> {
 }
 
 /** A worker records a pass every 30 seconds at most, and one pass rarely takes a minute. */
-const WORKER_STALE_MS = 5 * 60_000;
+const WORKER_STALE_MS = 5 * MINUTE_MS;
 
 /** Whether the worker's passes still finish: `none` until a worker first runs. */
 async function workerState(db: Database): Promise<"ok" | "stale" | "none" | "unknown"> {

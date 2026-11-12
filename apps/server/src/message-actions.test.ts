@@ -26,6 +26,7 @@ import type { Live } from "./live.ts";
 import { appendMessage, listConversationMessages } from "./messages.ts";
 import { localStore } from "./storage.ts";
 import type { Role } from "./team.ts";
+import { DAY_MS, RETENTION_MS } from "./time.ts";
 import { exportArchive } from "./transfer.ts";
 import { fanOutWebhooksOne } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
@@ -371,6 +372,24 @@ describe("editing a reply", () => {
     expect((await widget(token, "POST", "read", { seq: sent.seq })).status).toBe(200);
     const response = await send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
       body: "Too late",
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "message_seen" } });
+  });
+
+  test("a reply older than the record of its emails can no longer change", async () => {
+    const { conversationId } = await visitorStarts("Hi");
+    const sent = await reply(ana.cookie, conversationId, "Long ago");
+    // The record of what an email carried is pruned after RETENTION_MS, so an older reply may
+    // have reached the visitor's inbox with no trace left.
+    await withWorkspace(db, space.id, (tx) =>
+      tx
+        .update(message)
+        .set({ createdAt: new Date(Date.now() - RETENTION_MS - DAY_MS) })
+        .where(and(eq(message.workspaceId, space.id), eq(message.id, sent.id))),
+    );
+    const response = await send(ana.cookie, "PATCH", `${thread(conversationId)}/${sent.id}`, {
+      body: "Rewritten",
     });
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: "message_seen" } });
