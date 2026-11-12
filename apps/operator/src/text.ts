@@ -156,6 +156,8 @@ const en = {
   imageFailed:
     "Dinghy could not read or accept this image. Choose a PNG, JPEG, or WebP under 5 MB and 16 megapixels.",
   imageView: "View the image at full size",
+  imageSave: "Save image",
+  imageSaveFailed: "Dinghy could not save this image. Try again.",
   imageRemoved: "Image removed after 12 months",
   imageNoRoom: "Image storage is full. Ask an owner or admin to delete conversations with images.",
   settings: "Settings",

@@ -224,6 +224,8 @@ describe.each([
     expect(file.headers.get("content-type")).toBe("image/png");
     expect(file.headers.get("x-content-type-options")).toBe("nosniff");
     expect(file.headers.get("content-security-policy")).toContain("sandbox");
+    // The app reads the file to save it on the device.
+    expect(file.headers.get("access-control-allow-origin")).toBe("*");
     const metadata = await sharp(Buffer.from(await file.arrayBuffer())).metadata();
     expect(metadata.format).toBe("png");
   });

@@ -434,6 +434,8 @@ export function registerImageFiles(app: App, db: Database, images: Images, logge
       "content-disposition": "inline",
       "content-security-policy": "default-src 'none'; sandbox",
       "cross-origin-resource-policy": "cross-origin",
+      // The app reads the file to save it. The signed URL is the only key, and no cookie goes along.
+      "access-control-allow-origin": "*",
       "referrer-policy": "no-referrer",
     };
     // Before opening the file, because Hono drops a HEAD response's body without closing it.
