@@ -254,7 +254,8 @@ const listRoute = createRoute({
           schema: z.object({
             conversations: z.array(Conversation),
             hasMore: z.boolean(),
-            // Open conversations whose newest message is from the visitor, across all pages.
+            // Open conversations whose newest message is from the visitor, across all pages: for an
+            // operator, those assigned to them or to no one.
             waiting: z.number().int(),
             // Open conversations for each assignee filter. `mine` is 0 for an API key.
             openBy: z.object({
@@ -852,7 +853,7 @@ export function createInbox({
         return {
           ...listed,
           pictures: await welcomePictures(tx, workspaceId, listed.conversations, founderPicture),
-          waiting: await countWaiting(tx, workspaceId),
+          waiting: await countWaiting(tx, workspaceId, operatorId),
           openBy: await countOpenByAssignee(tx, workspaceId, operatorId),
         };
       });

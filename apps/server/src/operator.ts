@@ -396,11 +396,14 @@ export function registerOperatorRoutes(
   });
   // One short count per workspace, each in its own workspace's context. An operator has few.
   app.openapi(waitingRoute, async (c) => {
-    const memberships = await operatorWorkspaces(db, c.get("operatorId"));
+    const operatorId = c.get("operatorId");
+    const memberships = await operatorWorkspaces(db, operatorId);
     const workspaces = await Promise.all(
       memberships.map(async ({ workspaceId }) => ({
         workspaceId,
-        waiting: await withWorkspace(db, workspaceId, (tx) => countWaiting(tx, workspaceId)),
+        waiting: await withWorkspace(db, workspaceId, (tx) =>
+          countWaiting(tx, workspaceId, operatorId),
+        ),
       })),
     );
     return c.json({ workspaces }, 200);

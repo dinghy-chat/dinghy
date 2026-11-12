@@ -49,6 +49,7 @@ async function answer(page: Page, text: string) {
 
 const row = (page: Page, text: string) => page.locator(".row", { hasText: text });
 const openCount = (page: Page) => page.locator(".nav .count:not(.live)");
+const favicon = (page: Page) => page.locator('link[rel="icon"]');
 
 test("each reply shows who sent it, and your own say You", async ({ browser }) => {
   const customer = await visitor(browser, "Who is answering?");
@@ -87,7 +88,7 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
   for (const page of [customer, alice, bob]) await page.context().close();
 });
 
-test("the Inbox item and the tab title count the conversations that wait for a reply", async ({
+test("the Inbox item, the tab title and the favicon count the conversations that wait for a reply", async ({
   browser,
 }) => {
   const operator = await signedIn(browser, server, "alice@example.com");
@@ -123,6 +124,16 @@ test("the Inbox item and the tab title count the conversations that wait for a r
   await operator.getByRole("button", { name: "Close", exact: true }).click();
   await expect(openCount(operator)).toHaveText("1");
   await expect(operator).toHaveTitle("(1) Dinghy");
+  await expect(favicon(operator)).toHaveAttribute("href", /^data:image\/png/);
+
+  // A teammate's conversation is not theirs to answer, so it leaves their count.
+  await row(operator, "Second question").click();
+  await operator.getByRole("button", { name: /^Assign to/ }).click();
+  await operator.getByRole("option", { name: "alice@example.com" }).click();
+  await expect(openCount(teammate)).toHaveCount(0);
+  await expect(teammate).toHaveTitle("Dinghy");
+  await expect(favicon(teammate)).toHaveAttribute("href", "/assets/icon.svg");
+  await expect(openCount(operator)).toHaveText("1");
 
   for (const page of [first, second, operator, teammate]) await page.context().close();
 });

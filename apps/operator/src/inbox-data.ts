@@ -15,6 +15,7 @@ import { useLiveCount, useWaitingBy } from "./live-counts.ts";
 import { useLatestLoad } from "./load.ts";
 import { chime, prepareSound } from "./sound.ts";
 import { readStored, store } from "./stored.ts";
+import { useWaitingBadge } from "./tab-badge.ts";
 import { t } from "./text.ts";
 
 const PAGE_SIZE = 50;
@@ -193,12 +194,7 @@ export function useInboxData({
     onSignedOut,
     onWelcome,
   });
-  // A count in the tab's title, so a waiting visitor shows from another tab.
-  useEffect(() => {
-    document.title = list.waiting > 0 ? `(${list.waiting}) ${t("appName")}` : t("appName");
-    return () => {
-      document.title = t("appName");
-    };
-  }, [list.waiting]);
+  // A waiting visitor shows from another tab, and on the installed app's icon.
+  useWaitingBadge(list.waiting);
   return { ...live, ...team, ...list, isTeam, who };
 }

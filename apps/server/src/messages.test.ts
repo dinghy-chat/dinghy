@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -659,7 +660,30 @@ describe("status lines", () => {
     );
     const listed = conversations.find((one) => one.id === sent.conversationId);
     expect(listed?.lastMessage).toMatchObject({ body: "still there?", fromVisitor: true });
-    const waiting = await withWorkspace(db, a.id, (tx) => countWaiting(tx, a.id));
+    const waiting = await withWorkspace(db, a.id, (tx) => countWaiting(tx, a.id, null));
     expect(waiting).toBeGreaterThan(0);
+  });
+
+  test("an operator's waiting count leaves out a teammate's conversations", async () => {
+    const { token } = await newVisitor();
+    const sent = (await (await send(token, "w1", "anyone there?")).json()) as WireMessage;
+    const counts = () =>
+      withWorkspace(db, a.id, async (tx) => ({
+        key: await countWaiting(tx, a.id, null),
+        assignee: await countWaiting(tx, a.id, OPERATOR),
+        teammate: await countWaiting(tx, a.id, randomUUID()),
+      }));
+    const unassigned = await counts();
+    await withWorkspace(db, a.id, (tx) =>
+      tx
+        .update(conversation)
+        .set({ assigneeOperatorId: OPERATOR })
+        .where(and(eq(conversation.workspaceId, a.id), eq(conversation.id, sent.conversationId))),
+    );
+    const assigned = await counts();
+    // Everyone sees an unassigned one. Once assigned, only its assignee and an API key do.
+    expect(assigned.key).toBe(unassigned.key);
+    expect(assigned.assignee).toBe(unassigned.assignee);
+    expect(assigned.teammate).toBe(unassigned.teammate - 1);
   });
 });
