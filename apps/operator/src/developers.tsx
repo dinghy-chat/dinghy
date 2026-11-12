@@ -175,7 +175,7 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
       help={t("apiKeysHelp")}
       docs={[
         { path: "api#api-keys", text: "apiDocsLink" },
-        { path: "api#mcp", text: "mcpDocsLink" },
+        { path: "agents", text: "mcpDocsLink" },
       ]}
     >
       {list.length > 0 && (

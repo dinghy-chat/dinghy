@@ -71,7 +71,7 @@ function AgentRow({ workspace, waiting }: { workspace: string; waiting: boolean 
     <PageRow
       title={t("agentTitle")}
       help={t("agentHelp")}
-      docs={[{ path: "api#mcp", text: "mcpDocsLink" }]}
+      docs={[{ path: "agents", text: "mcpDocsLink" }]}
     >
       <div className="agent-copy">
         <CopyButton value={prompt} label={t("agentCopy")} />
