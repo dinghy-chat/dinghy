@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { markdownHtml, markdownText, parseMarkdown, quoteExcerpt } from "./markdown.ts";
+import { markdownHtml, markdownText, parseMarkdown, plainText } from "./markdown.ts";
 
 test("bold, italic and inline code", () => {
   expect(markdownHtml("**Hi** *there* `npm i`")).toBe(
@@ -57,6 +57,13 @@ test("lists, bulleted and numbered, with their start", () => {
   expect(markdownHtml("3. a")).toBe('<ol start="3"><li>a</li></ol>');
 });
 
+test("lines that start with > make one quote, which keeps its formatting", () => {
+  expect(markdownHtml("> so the request\n>goes **out**\n\nOk")).toBe(
+    "<blockquote>so the request<br>goes <strong>out</strong></blockquote><p>Ok</p>",
+  );
+  expect(markdownHtml("a > b")).toBe("<p>a &gt; b</p>");
+});
+
 test("line breaks stay inside a paragraph, and a blank line starts a new one", () => {
   expect(markdownHtml("one\ntwo\n\nthree")).toBe("<p>one<br>two</p><p>three</p>");
 });
@@ -107,9 +114,9 @@ test("markdownText keeps the words and drops the marks, for a preview", () => {
   expect(markdownText("[Docs](https://a.example) <b>")).toBe("Docs <b>");
 });
 
-test("a quote's excerpt drops the marks, keeps link words and snake_case, and stops at 140 characters", () => {
-  expect(quoteExcerpt("**Bold** and *it* `code` [docs](https://x.y)\n- item_one")).toBe(
-    "Bold and it code docs item_one",
+test("a quote's text drops the marks, keeps link words, snake_case and line breaks, and is whole", () => {
+  expect(plainText("**Bold** and *it* `code` [docs](https://x.y)\n- item_one\n- two")).toBe(
+    "Bold and it code docs\nitem_one\ntwo",
   );
-  expect(Array.from(quoteExcerpt("é".repeat(300)))).toHaveLength(140);
+  expect(plainText("é".repeat(300))).toHaveLength(300);
 });

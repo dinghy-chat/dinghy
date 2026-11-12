@@ -13,7 +13,7 @@ describe("the reply email", () => {
     id: "q1",
     authorName: null,
     fromVisitor: true,
-    excerpt: "Where is my order?",
+    text: "Where is my order?",
     hasImage: false,
   };
   const letter = replyLetter(

@@ -283,6 +283,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       async run(input, { workspaceId }) {
         const found = await inbox.read(
           workspaceId,
+          null,
           input.conversationId,
           BigInt(input.after),
           input.limit,

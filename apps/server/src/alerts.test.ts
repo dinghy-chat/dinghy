@@ -719,6 +719,13 @@ describe("email", () => {
     expect(mails[0]?.text).toContain(
       `${PUBLIC_URL}/?workspace=${space.id}&conversation=${written.message.conversationId}`,
     );
+    // The HTML puts the message in a bubble under who wrote it, with a button to the conversation.
+    expect(mails[0]?.html).toContain(">visitor@example.com wrote in Acme:</p>");
+    expect(mails[0]?.html).toMatch(/border-radius:4px 18px 18px 18px[^>]*><p[^>]*>First<\/p>/);
+    expect(mails[0]?.html).toContain(
+      `href="${PUBLIC_URL}/?workspace=${space.id}&amp;conversation=${written.message.conversationId}"`,
+    );
+    expect(mails[0]?.html).toContain("under Alerts.");
   });
 
   test("a mail server that never answers becomes a retry, and push alerts still go out", async () => {

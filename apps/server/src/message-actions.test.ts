@@ -66,7 +66,7 @@ interface Quote {
   id: string | null;
   authorName: string | null;
   fromVisitor: boolean;
-  excerpt: string;
+  text: string;
   hasImage: boolean;
 }
 interface Line {
@@ -206,7 +206,7 @@ describe("a reply with a quote", () => {
       id: first.id,
       authorName: null,
       fromVisitor: true,
-      excerpt: "Do you have a yearly plan? See pricing",
+      text: "Do you have a yearly plan? See pricing",
       hasImage: false,
     };
     expect(sent.replyTo).toEqual(quote);
@@ -223,15 +223,16 @@ describe("a reply with a quote", () => {
       replyToMessageId: answer.id,
     });
     expect(response.status).toBe(201);
-    const excerpt = "x".repeat(140);
+    // The whole message, however long.
+    const text = "x".repeat(300);
     expect((await operatorLines(conversationId)).at(-1)?.replyTo).toMatchObject({
       id: answer.id,
       authorName: "Ana Lee",
-      excerpt,
+      text,
     });
     expect((await widgetLines(token)).messages.at(-1)?.replyTo).toMatchObject({
       authorName: "Ana",
-      excerpt,
+      text,
     });
   });
 
@@ -280,7 +281,7 @@ describe("a reply with a quote", () => {
     const { cursor } = await widgetLines(token);
     const removed = await send(ana.cookie, "DELETE", `${thread(conversationId)}/${first.id}`);
     expect(removed.status).toBe(200);
-    const deleted = { id: null, fromVisitor: true, excerpt: "", hasImage: false };
+    const deleted = { id: null, fromVisitor: true, text: "", hasImage: false };
     expect((await operatorLines(conversationId)).at(-1)?.replyTo).toMatchObject(deleted);
     // An open chat gets the reply that quotes it again, with its new quote, after the delete.
     const live = await widgetLines(token, cursor);
@@ -352,7 +353,7 @@ describe("editing a reply", () => {
       body: "The **answer**",
     });
     const live = await widgetLines(token, cursor);
-    expect(live.messages.map((line) => [line.id, line.replyTo?.excerpt ?? null])).toEqual([
+    expect(live.messages.map((line) => [line.id, line.replyTo?.text ?? null])).toEqual([
       [sent.id, null],
       [quoting.id, "The answer"],
     ]);

@@ -184,7 +184,8 @@ function App() {
   }
   return (
     <Inbox
-      key={first.workspaceId}
+      // The operator too, so a sign-in as someone else in another tab cannot carry the drafts over.
+      key={`${me.id}:${first.workspaceId}`}
       me={me}
       workspaceId={first.workspaceId}
       canCreate={meta.signup !== null}

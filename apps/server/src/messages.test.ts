@@ -656,7 +656,7 @@ describe("status lines", () => {
       "reopened",
     ]);
     const { conversations } = await withWorkspace(db, a.id, (tx) =>
-      listConversations(tx, a.id, "open", { kind: "all" }, undefined, 50),
+      listConversations(tx, a.id, null, "open", { kind: "all" }, undefined, 50),
     );
     const listed = conversations.find((one) => one.id === sent.conversationId);
     expect(listed?.lastMessage).toMatchObject({ body: "still there?", fromVisitor: true });

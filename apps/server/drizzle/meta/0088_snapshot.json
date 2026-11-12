@@ -1,6 +1,6 @@
 {
-  "id": "a05dce2d-c556-49d1-9baf-00e3d72997ff",
-  "prevId": "083d23a9-013f-49d7-a54b-3bfa4052a992",
+  "id": "df48ddde-f0d0-4293-be94-f033d0a645f3",
+  "prevId": "9556080a-b0d3-4fcc-8d61-47252bbf7918",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1284,6 +1284,98 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.conversation_read": {
+      "name": "conversation_read",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operator_id": {
+          "name": "operator_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "read_seq": {
+          "name": "read_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "conversation_read_member_idx": {
+          "name": "conversation_read_member_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "operator_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "conversation_read_workspace_id_workspace_id_fk": {
+          "name": "conversation_read_workspace_id_workspace_id_fk",
+          "tableFrom": "conversation_read",
+          "columnsFrom": ["workspace_id"],
+          "tableTo": "workspace",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "conversation_read_conversation_fk": {
+          "name": "conversation_read_conversation_fk",
+          "tableFrom": "conversation_read",
+          "columnsFrom": ["workspace_id", "conversation_id"],
+          "tableTo": "conversation",
+          "columnsTo": ["workspace_id", "id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "conversation_read_member_fk": {
+          "name": "conversation_read_member_fk",
+          "tableFrom": "conversation_read",
+          "columnsFrom": ["workspace_id", "operator_id"],
+          "tableTo": "workspace_member",
+          "columnsTo": ["workspace_id", "operator_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "conversation_read_workspace_id_conversation_id_operator_id_pk": {
+          "name": "conversation_read_workspace_id_conversation_id_operator_id_pk",
+          "columns": ["workspace_id", "conversation_id", "operator_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.draft_reply": {
       "name": "draft_reply",
       "schema": "",
@@ -2250,6 +2342,34 @@
           "with": {},
           "method": "btree",
           "where": "\"message\".\"changed_seq\" is not null",
+          "concurrently": false
+        },
+        "message_api_key_conversation_idx": {
+          "name": "message_api_key_conversation_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"message\".\"author_api_key_id\" is not null",
           "concurrently": false
         },
         "message_operator_seq_idx": {

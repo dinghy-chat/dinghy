@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useState } from "react";
-import { quoteExcerpt } from "../../../packages/widget/src/markdown.ts";
+import { plainText } from "../../../packages/widget/src/markdown.ts";
 import type { Message, Quote, ReplyReceipts, WorkspaceApi } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import type { MenuItem } from "./popup.tsx";
@@ -14,7 +14,7 @@ export const quoteOf = (line: Line, author: string): Quote => ({
   id: line.id,
   authorName: line.fromVisitor ? null : author,
   fromVisitor: line.fromVisitor,
-  excerpt: quoteExcerpt(line.body),
+  text: plainText(line.body),
   hasImage: line.image !== null,
 });
 

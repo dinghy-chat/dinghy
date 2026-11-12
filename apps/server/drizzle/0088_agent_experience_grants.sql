@@ -103,3 +103,28 @@ CREATE OR REPLACE FUNCTION purge_deleted_workspaces()
       RETURN removed;
     END
   $$;
+--> statement-breakpoint
+-- An owner, an admin or a Setup key replays a delivery: the app inserts its new row, under the
+-- tenant policy that already covers dinghy_app.
+GRANT INSERT ON webhook_delivery TO dinghy_app;
+--> statement-breakpoint
+-- The worker deletes an OAuth grant that nobody ever used, such as one approved and never redeemed.
+-- A grant that was never used authored nothing, so no message, note, draft or webhook names it.
+GRANT DELETE ON api_key TO dinghy_worker;
+--> statement-breakpoint
+CREATE POLICY worker_find_unused_grants ON api_key FOR SELECT TO dinghy_worker
+  USING (source = 'oauth' AND last_used_at IS NULL);
+--> statement-breakpoint
+CREATE POLICY worker_prune_unused_grants ON api_key FOR DELETE TO dinghy_worker
+  USING (source = 'oauth' AND last_used_at IS NULL);
+--> statement-breakpoint
+-- A webhook's conversation names its handler: the key that took part last, by a message, a note or a
+-- draft. The worker builds that payload, so it reads drafts too, under the tenant policy.
+GRANT SELECT ON draft_reply TO dinghy_worker;
+--> statement-breakpoint
+-- The event `conversation.bot_resumed` is now `conversation.given_back`. Only builds before a
+-- release could store the old name.
+UPDATE webhook SET events = array_replace(events, 'conversation.bot_resumed', 'conversation.given_back')
+  WHERE 'conversation.bot_resumed' = ANY(events);
+--> statement-breakpoint
+UPDATE webhook_delivery SET type = 'conversation.given_back' WHERE type = 'conversation.bot_resumed';

@@ -141,28 +141,28 @@ export function visitorLetterHtml(
   });
 }
 
-/** A quoted message's lines above a reply: who wrote it, and its start. */
+/** A quoted message's lines above a reply: who wrote it, and its text. */
 function quoteParts(quote: Quote): [string, string] {
   const standIn = quoteStandIn(quote);
   return [
     quote.authorName ?? visitorEmailText.you,
-    standIn === null ? quote.excerpt : visitorEmailText[standIn],
+    standIn === null ? quote.text : visitorEmailText[standIn],
   ];
 }
 
 /** A reply in an email's plain text: its quote as `> ` lines, then the text. */
 export function quotedText(quote: Quote | null, body: string): string {
   if (quote === null) return body;
-  const [who, excerpt] = quoteParts(quote);
-  return `> ${who}:\n> ${excerpt}\n\n${body}`;
+  const [who, text] = quoteParts(quote);
+  return `> ${who}:\n${text.replace(/^/gm, "> ")}\n\n${body}`;
 }
 
 /** A reply in an email's HTML: its quote as a short block with the author's name. */
 export function quotedHtml(quote: Quote | null, html: string): string {
   if (quote === null) return html;
-  const [who, excerpt] = quoteParts(quote);
+  const [who, text] = quoteParts(quote);
   return (
     `<div style="margin:0 0 8px;padding:8px 12px;background:${EMAIL_COLORS.quote};border-radius:8px;color:${EMAIL_COLORS.muted};font-size:13px">` +
-    `<strong>${escapeHtml(who)}</strong><br>${escapeHtml(excerpt)}</div>${html}`
+    `<strong>${escapeHtml(who)}</strong><br>${escapeHtml(text).replace(/\n/g, "<br>")}</div>${html}`
   );
 }

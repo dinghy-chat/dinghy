@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Dinghy API",
-    "version": "0.22.0",
+    "version": "0.23.0",
     "description": "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie, or a workspace API key on the routes whose security lists `apiKey`). MCP lives at `/v1/mcp`, with an API key. Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`, a BetterAuth pass-through that is not part of the versioned API."
   },
   "components": {
@@ -329,14 +329,14 @@
           "fromVisitor": {
             "type": "boolean"
           },
-          "excerpt": {
+          "text": {
             "type": "string"
           },
           "hasImage": {
             "type": "boolean"
           }
         },
-        "required": ["id", "authorName", "fromVisitor", "excerpt", "hasImage"]
+        "required": ["id", "authorName", "fromVisitor", "text", "hasImage"]
       },
       "Message": {
         "type": "object",
@@ -737,6 +737,9 @@
               }
             },
             "required": ["body", "fromVisitor", "createdAt"]
+          },
+          "unread": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -749,7 +752,8 @@
           "handler",
           "pageContext",
           "visitor",
-          "lastMessage"
+          "lastMessage",
+          "unread"
         ]
       },
       "ConversationHandler": {
@@ -904,7 +908,7 @@
             "id": "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
             "authorName": "Ada",
             "fromVisitor": true,
-            "excerpt": "Do you have a yearly plan?",
+            "text": "Do you have a yearly plan?",
             "hasImage": false
           },
           "editedAt": null,
@@ -4765,7 +4769,8 @@
                         "body": "Do you have a yearly plan?",
                         "fromVisitor": true,
                         "createdAt": "2026-11-08T09:30:00.000Z"
-                      }
+                      },
+                      "unread": true
                     }
                   ],
                   "hasMore": false,
@@ -6136,6 +6141,137 @@
           },
           "503": {
             "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/read": {
+      "post": {
+        "x-workspace-access": "closed",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Mark a conversation read up to a message, for the signed-in operator",
+        "description": "Moves the operator's read position forward to `seq`, a message's `seq`. It never moves back, and it stops at the conversation's newest message. API keys have no read position.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "seq": "43"
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "string",
+                    "pattern": "^\\d{1,18}$"
+                  }
+                },
+                "required": ["seq"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The position is at least `seq`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
             "content": {
               "application/json": {
                 "schema": {

@@ -27,6 +27,7 @@ import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
 import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
+import { markHistoryRead } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
 import { WidgetSettingsSchema } from "./widget-settings.ts";
@@ -769,6 +770,7 @@ export async function importArchive(
     const images = await storeImages(entries, data, store, stored);
     const newOperators = await withWorkspace(db, workspaceId, async (tx) => {
       const created = await insertWorkspace(tx, data, images, logo);
+      await markHistoryRead(tx, workspaceId);
       reachedCommit = true;
       return created;
     });

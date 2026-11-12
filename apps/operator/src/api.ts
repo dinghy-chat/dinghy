@@ -127,6 +127,8 @@ export interface Conversation {
     | { kind: "person"; operatorId: string; name: string; since: string }
     | { kind: "team"; since: string }
     | null;
+  /** A visitor message is past this operator's read position. */
+  unread: boolean;
 }
 
 /** A reply that an API key in draft mode wrote. No visitor has seen it. */
@@ -806,6 +808,8 @@ export function workspaceApi(workspaceId: string) {
       post<Note>(`${conversation(id)}/notes`, { clientId, body }),
     /** Lets bots that send directly answer this conversation again. */
     giveBack: (id: string) => post<{ ok: true }>(`${conversation(id)}/give-back`, {}),
+    /** Moves this operator's read position in the conversation forward to a message's seq. */
+    markRead: (id: string, seq: string) => post<{ ok: true }>(`${conversation(id)}/read`, { seq }),
     setStatus: (id: string, status: "open" | "closed") =>
       call<{ ok: true }>(conversation(id), {
         method: "PATCH",

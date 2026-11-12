@@ -401,7 +401,6 @@ function PersonRow({
             <a href={page} target="_blank" rel="noopener noreferrer" title={page}>
               {pageTitle(one)}
             </a>
-            <span>{new URL(page).pathname}</span>
           </div>
         )}
         <div className="live-meta">

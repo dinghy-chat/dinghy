@@ -25,6 +25,17 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - API keys can read the analytics, and Setup keys can read and change the widget's look.
 - `close_conversation` is marked destructive, so an MCP client asks the person first.
 
+## [0.23.0] - 2026-11-12
+
+### Added
+
+- The Inbox shows which conversations you have not read: the name and the last message are bold, with a blue dot beside the time. Each member reads on their own, and opening a conversation marks it read. Conversations from before the upgrade start read. API: `unread` on each conversation, and `POST .../conversations/{conversationId}/read`.
+- A message whose lines start with `>` shows them as a quote.
+
+### Changed
+
+- A reply's quote shows the whole quoted message, with its line breaks, in the Inbox, the widget and emails. API: a message's `replyTo.excerpt`, the first 140 characters, is now `replyTo.text`, the whole text.
+
 ## [0.22.0] - 2026-11-12
 
 ### Added
@@ -429,7 +440,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/dinghy-chat/dinghy/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/dinghy-chat/dinghy/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/dinghy-chat/dinghy/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/dinghy-chat/dinghy/compare/v0.19.0...v0.20.0

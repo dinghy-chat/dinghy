@@ -35,6 +35,8 @@
   --focus: var(--navy);
   --focus-halo: light-dark(#e8e6e0, #243344);
   --blue-deep: light-dark(#1457d6, #8ab8ff);
+  /* Links: an ocean blue between the navy and the brand blue, calmer than a browser's default. */
+  --link: light-dark(#2a5d94, #9cc3f5);
   --red: #e5352b;
   --red-deep: #bf241b;
   --cream: #fff8df;
@@ -307,7 +309,7 @@ textarea {
 }
 .link {
   padding-inline: 6px;
-  color: var(--blue-deep);
+  color: var(--link);
   font-weight: 600;
 }
 .link:hover {
@@ -980,6 +982,16 @@ button.workspace[aria-expanded="true"],
 }
 .workspace-menu {
   margin-bottom: 14px;
+}
+/* The current workspace has a ring around its tile instead of a check, so the waiting counts all
+   end at the same edge. */
+.workspace-menu .item[aria-checked="true"] > svg:last-child {
+  display: none;
+}
+.workspace-menu .item[aria-checked="true"] .ws-tile {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--blue-deep);
 }
 .side > .workspace {
   margin-bottom: 10px;
@@ -1839,6 +1851,25 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.row.unread strong,
+.row.unread .preview {
+  font-weight: 700;
+}
+.row.unread .preview {
+  color: var(--navy);
+}
+/* The dot sits right after the time, so the time gives up the space between them. */
+.row.unread time {
+  margin-left: auto;
+}
+.unread-dot {
+  flex: none;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+}
 .row-meta {
   display: flex;
   flex-wrap: wrap;
@@ -2151,12 +2182,15 @@ img.ws-tile {
   flex: 1;
   min-width: 0;
 }
+/* A long name or email takes a second line before it is cut. */
 .panel-name h3 {
+  display: -webkit-box;
   overflow: hidden;
   font-size: 18px;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .panel-name p {
   overflow: hidden;
@@ -2176,10 +2210,10 @@ img.ws-tile {
 .panel-who .icon-button:hover {
   background: var(--surface);
 }
-/* Facts as tiles, two to a row. An odd last tile takes the whole row. */
+/* Facts as tiles, one to a row, as the panel is too narrow for two values side by side. */
 .place-tiles {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2202,9 +2236,6 @@ img.ws-tile {
 .panel-head .place-tiles > div {
   background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
-.place-tiles > div:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
 .place-tiles dl {
   min-width: 0;
 }
@@ -2224,18 +2255,22 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Links that are data, such as a visitor's pages: the link color, with a faint underline that
+   turns solid on hover. */
 .place-tiles a,
-.journey a,
-.context a {
-  text-decoration: none;
+.journey a.page-name,
+.context a,
+.live-page a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  text-underline-offset: 3px;
 }
 .place-tiles a:hover,
-.journey a:hover,
-.context a:hover {
-  text-decoration: underline;
-}
-.place-tiles a {
-  color: var(--blue-deep);
+.journey a.page-name:hover,
+.context a:hover,
+.live-page a:hover {
+  text-decoration-color: currentColor;
 }
 /* The assignee fills the row, and the status sits beside it. */
 .panel-bar {
@@ -2412,9 +2447,6 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.journey a.page-name {
-  color: var(--blue-deep);
-}
 .journey time {
   flex: none;
   color: var(--mute);
@@ -2488,9 +2520,6 @@ img.ws-tile {
 .note-field::placeholder {
   color: color-mix(in srgb, var(--warn-ink) 75%, transparent);
 }
-.context a {
-  color: var(--blue-deep);
-}
 .who-text .welcome-off {
   color: var(--warn-ink);
 }
@@ -2542,11 +2571,17 @@ img.ws-tile {
   white-space: pre-wrap;
 }
 /* The small Markdown a message may use. */
-.msg :where(p, ul, ol, pre) {
+.msg :where(p, ul, ol, pre, blockquote) {
   margin: 0;
 }
+/* A quoted passage: a tinted block, like a quoted reply, with no bar at its side. */
+.msg :where(blockquote) {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgb(127 127 127 / 0.14);
+}
 .msg > * + * {
-  margin-top: 6px;
+  margin-top: 10px;
 }
 .msg :where(ul, ol) {
   padding-left: 22px;
@@ -2673,6 +2708,10 @@ img.ws-tile {
     transform: translateY(-3px);
   }
 }
+.preview .draft-label {
+  color: var(--bad);
+  font-weight: 600;
+}
 .preview.typing {
   color: var(--blue-deep);
   font-style: italic;
@@ -2746,16 +2785,21 @@ img.ws-tile {
   padding: 4px 8px;
   border-radius: 8px;
 }
+/* A small raised chip, so it reads as a button against the thread's background. */
 .msg-more {
   display: grid;
   place-items: center;
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  color: var(--mute);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 1px 2px rgb(11 34 57 / 0.08);
+  color: var(--text-strong);
 }
 .msg-more:is(:hover, [aria-expanded="true"]) {
-  background: var(--soft);
+  background: var(--soft-hover);
   color: var(--navy);
 }
 .shot-stack {
@@ -2807,10 +2851,7 @@ button.quote:hover {
   font-weight: 700;
 }
 .quote-text {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: pre-line;
 }
 .quote-text.gone {
   font-style: italic;
@@ -2897,8 +2938,9 @@ button.quote:hover {
 .thread > .bad {
   margin: 0 28px 10px;
 }
+/* 6px on top holds the box's 5.5px focus ring, which the log's bubbles could otherwise cover. */
 .compose {
-  padding: 0 28px 24px;
+  padding: 6px 28px 24px;
 }
 /* The composer: one rounded box, the text on top and a row of tools under it. */
 .box {
@@ -3040,20 +3082,24 @@ button.quote:hover {
   font: 700 22px / 1.2 var(--display);
   letter-spacing: -0.02em;
 }
+/* The image at full size, scaled down to fit the screen whole. The dialog drops a browser's own
+   size limits, which are smaller than the image's on a phone. */
 .viewer {
-  max-width: 95vw;
-  max-height: 95vh;
+  max-width: none;
+  max-height: none;
   padding: 0;
-  overflow: auto;
+  overflow: hidden;
   border: 0;
   background: transparent;
 }
 .viewer::backdrop {
   background: rgb(11 34 57 / 0.85);
 }
+/* svh leaves out a phone browser's toolbar, which could otherwise cover the image's edge. */
 .viewer img {
   display: block;
-  max-width: none;
+  max-width: 95vw;
+  max-height: 95svh;
 }
 
 /* Pages in the panel, such as each Settings page. Rows with thin lines, no cards in cards. */
@@ -3109,7 +3155,7 @@ button.quote:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--blue-deep);
+  color: var(--link);
   font-size: 13.5px;
   font-weight: 600;
   text-decoration: none;
@@ -5239,7 +5285,7 @@ button.quote:hover {
     max-width: calc(84% + 34px);
   }
   .compose {
-    padding: 0 8px 8px;
+    padding: 6px 8px 8px;
   }
   .compose .box {
     position: relative;
@@ -5552,7 +5598,6 @@ button.quote:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
   gap: 24px;
-  align-items: start;
   padding-top: 10px;
 }
 .live-side {
@@ -5790,14 +5835,14 @@ button.quote:hover {
   background: var(--tile-blue);
 }
 
-/* The people, in a column that scrolls on its own beside the map. */
+/* The people, in a column as tall as the map and its tiles, which scrolls on its own. Its size
+   containment keeps a long list from making the row taller. */
 .live-people {
-  position: sticky;
-  top: 16px;
   display: flex;
   flex-direction: column;
-  max-height: calc(100dvh - 32px);
   min-width: 0;
+  min-height: 420px;
+  contain: size;
 }
 .live-list {
   display: grid;
@@ -5863,30 +5908,14 @@ button.quote:hover {
   background: currentColor;
 }
 .live-page {
-  display: flex;
-  gap: 6px;
-  min-width: 0;
   margin-top: 2px;
+  overflow: hidden;
   font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .live-page a {
-  overflow: hidden;
-  color: var(--blue-deep);
   font-weight: 500;
-  text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.live-page a:hover {
-  text-decoration: underline;
-}
-.live-page span {
-  overflow: hidden;
-  padding-top: 1px;
-  color: var(--mute);
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .live-meta {
   display: flex;
@@ -5931,8 +5960,8 @@ button.quote:hover {
     order: 3;
   }
   .live-people {
-    position: static;
-    max-height: none;
+    min-height: 0;
+    contain: none;
   }
 }
 @media (max-width: 640px) {

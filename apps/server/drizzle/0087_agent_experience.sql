@@ -99,6 +99,7 @@ CREATE INDEX "draft_reply_sent_message_idx" ON "draft_reply" USING btree ("works
 CREATE INDEX "note_conversation_idx" ON "note" USING btree ("workspace_id","conversation_id","seq");--> statement-breakpoint
 ALTER TABLE "conversation" ADD CONSTRAINT "conversation_handoff_api_key_fk" FOREIGN KEY ("workspace_id","handoff_by_api_key_id") REFERENCES "public"."api_key"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "conversation_handoff_api_key_idx" ON "conversation" USING btree ("workspace_id","handoff_by_api_key_id");--> statement-breakpoint
+CREATE INDEX "message_api_key_conversation_idx" ON "message" USING btree ("workspace_id","conversation_id","seq") WHERE "message"."author_api_key_id" is not null;--> statement-breakpoint
 CREATE INDEX "visitor_test_idx" ON "visitor" USING btree ("workspace_id") WHERE "visitor"."is_test";--> statement-breakpoint
 ALTER TABLE "api_key" ADD CONSTRAINT "api_key_source" CHECK ("api_key"."source" in ('static', 'oauth'));--> statement-breakpoint
 ALTER TABLE "api_key" ADD CONSTRAINT "api_key_reply_mode" CHECK ("api_key"."reply_mode" in ('send', 'draft'));--> statement-breakpoint

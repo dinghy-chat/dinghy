@@ -19,7 +19,7 @@ import {
 } from "./db/schema.ts";
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { prunePageViews } from "./journey.ts";
-import { EMAIL_COLORS, letter } from "./letter.ts";
+import { EMAIL_COLORS, letter, letterHtml } from "./letter.ts";
 import {
   conversationVisitor,
   isChat,
@@ -68,20 +68,12 @@ const text = {
   testBody: "Alerts work on this device.",
   operatorSubject: (name: string) => `New message in ${name}`,
   handoffSubject: (name: string) => `A bot handed a conversation to your team in ${name}`,
-  handoffBody: (place: string, why: string, url: string) => [
-    `A bot handed a conversation in ${place} to a person:`,
-    why,
-    `Open the conversation: ${url}`,
+  handoffWrote: (place: string) => `A bot handed a conversation in ${place} to a person:`,
+  operatorWrote: (who: string, place: string) => `${who} wrote in ${place}:`,
+  operatorOpen: "Open the conversation",
+  operatorWhy:
     "You get these because email alerts are on for you. You can turn them off in Settings, " +
-      "under Alerts.",
-  ],
-  operatorBody: (who: string, place: string, body: string, url: string) => [
-    `${who} wrote in ${place}:`,
-    body,
-    `Open the conversation: ${url}`,
-    "You get these because email alerts are on for you. You can turn them off in Settings, " +
-      "under Alerts.",
-  ],
+    "under Alerts.",
   replySubject: (name: string) => `${name} replied to your message`,
   replied: (who: string) => `${who} replied`,
   replyInChat: "Reply in the chat",
@@ -515,11 +507,11 @@ export function planDelivery(
       .from(message)
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, row.messageId)));
     if (place === undefined || written === undefined) return null;
+    const from: Place = {
+      name: place.name,
+      logoUrl: imageUrls(options.imageOrigin).logo(place.publicKey, place.logoUpdatedAt),
+    };
     if (row.visitorId !== null) {
-      const from: Place = {
-        name: place.name,
-        logoUrl: imageUrls(options.imageOrigin).logo(place.publicKey, place.logoUpdatedAt),
-      };
       // A reply email is not skipped when its own reply was deleted: it carries every unread one.
       const plan =
         row.channel === "transcript"
@@ -532,10 +524,10 @@ export function planDelivery(
     }
     const threadUrl = new URL(threadPath(workspaceId, conversationId), publicUrl).href;
     const handoff = await handoffNote(tx, workspaceId, row.eventSeq);
-    if (handoff !== null) return operatorPlan(tx, row, place.name, { handoff }, threadUrl);
+    if (handoff !== null) return operatorPlan(tx, row, from, { handoff }, threadUrl);
     // A visitor's message deleted while its alert waited has nothing to alert about.
     if (written.deletedAt !== null) return null;
-    return operatorPlan(tx, row, place.name, { body: written.body }, threadUrl);
+    return operatorPlan(tx, row, from, { body: written.body }, threadUrl);
   });
 }
 
@@ -676,9 +668,19 @@ async function replyEmailPlan(
 // Markdown's paragraphs come bare, and a mail app's default margins would pad the bubble unevenly.
 const bubbleParagraphs = (html: string) => html.replaceAll("<p>", '<p style="margin:0 0 8px">');
 
+// The quiet line above a chat bubble that says who wrote it.
+const authorLineHtml = (words: string, top: number) =>
+  `<p style="margin:${top}px 0 6px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(words)}</p>`;
+
+/** A message in an email's HTML: a chat bubble with its quote and its Markdown as formatting. */
+const bubbleHtml = (body: string, quote: Quote | null) =>
+  '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px"><tr>' +
+  `<td style="background:${EMAIL_COLORS.bubble};border-radius:4px 18px 18px 18px;padding:12px 16px 4px;font-size:16px;line-height:1.45">` +
+  `${quotedHtml(quote, bubbleParagraphs(markdownHtml(body)))}</td></tr></table>`;
+
 /**
- * A reply in the HTML: a chat bubble with its quote and its text, under who replied when the reply
- * before it had another author, as a chat groups one person's messages.
+ * A reply in the HTML: its bubble, under who replied when the reply before it had another author,
+ * as a chat groups one person's messages.
  */
 const replyHtml = (
   reply: { author: string; body: string; quote: Quote | null },
@@ -687,10 +689,8 @@ const replyHtml = (
 ) =>
   (replies[index - 1]?.author === reply.author
     ? ""
-    : `<p style="margin:${index === 0 ? 0 : 12}px 0 6px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(text.replied(reply.author))}</p>`) +
-  '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px"><tr>' +
-  `<td style="background:${EMAIL_COLORS.bubble};border-radius:4px 18px 18px 18px;padding:12px 16px 4px;font-size:16px;line-height:1.45">` +
-  `${quotedHtml(reply.quote, bubbleParagraphs(markdownHtml(reply.body)))}</td></tr></table>`;
+    : authorLineHtml(text.replied(reply.author), index === 0 ? 0 : 12)) +
+  bubbleHtml(reply.body, reply.quote);
 
 /**
  * The reply email's words: each reply under its quote. The visitor typed this address, and nobody
@@ -752,10 +752,11 @@ type AlertText = { body: string | null } | { handoff: string };
 async function operatorPlan(
   tx: Transaction,
   row: ClaimedDelivery,
-  placeName: string,
+  place: Place,
   said: AlertText,
   threadUrl: string,
 ): Promise<AlertPlan | null> {
+  const placeName = place.name;
   const { workspaceId, conversationId } = row;
   const operatorId = row.operatorId;
   if (operatorId === null) return null;
@@ -792,24 +793,30 @@ async function operatorPlan(
   }
   // The operator may have turned email off while this row waited for a retry.
   if (!member.wantsEmail) return null;
-  if ("handoff" in said) {
-    return {
-      channel: "email",
-      to: member.email,
-      subject: text.handoffSubject(placeName),
-      text: letter(text.handoffBody(placeName, said.handoff, threadUrl), member.name),
-    };
-  }
-  const body = said.body;
-  const from = await conversationVisitor(tx, workspaceId, conversationId);
+  const isHandoff = "handoff" in said;
+  const body = isHandoff ? said.handoff : messageText(said.body);
+  const wrote = isHandoff
+    ? text.handoffWrote(placeName)
+    : text.operatorWrote(
+        (await conversationVisitor(tx, workspaceId, conversationId))?.email ?? text.visitor,
+        placeName,
+      );
   return {
     channel: "email",
     to: member.email,
-    subject: text.operatorSubject(placeName),
+    subject: isHandoff ? text.handoffSubject(placeName) : text.operatorSubject(placeName),
     text: letter(
-      text.operatorBody(from?.email ?? text.visitor, placeName, messageText(body), threadUrl),
+      [wrote, body, `${text.operatorOpen}: ${threadUrl}`, text.operatorWhy],
       member.name,
     ),
+    // The message sits in a bubble, so it stands out from the lines around it.
+    html: letterHtml({
+      team: placeName,
+      logoUrl: place.logoUrl,
+      html: authorLineHtml(wrote, 0) + bubbleHtml(body, null),
+      action: { label: text.operatorOpen, url: threadUrl },
+      footer: [escapeHtml(text.operatorWhy)],
+    }),
   };
 }
 

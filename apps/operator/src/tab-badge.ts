@@ -2,9 +2,16 @@ import { useEffect } from "react";
 import { t } from "./text.ts";
 
 const ICON = "/assets/icon.svg";
-/** The favicon's size in the drawing, and its red dot, as fractions of it. */
-const SIZE = 64;
-const DOT = { x: 0.76, y: 0.24, radius: 0.22, ring: 0.06 };
+/** The favicon's drawing size. */
+const ICON_SIZE_PX = 64;
+/**
+ * The red dot, as fractions of the icon. It and its ring stay 0.04 inside the edge, as a browser
+ * can round the icon's corners and would cut it.
+ */
+const DOT = { x: 0.78, y: 0.22, radius: 0.13, ring: 0.05 };
+/** As --red in app.css, with a white ring that keeps it apart from the navy icon. */
+const DOT_COLOR = "#e5352b";
+const DOT_RING_COLOR = "#fff";
 
 /** The app's icon with a red dot in its corner, drawn once, or null if the browser cannot. */
 let dotted: Promise<string | null> | null = null;
@@ -13,19 +20,24 @@ function dottedIcon(): Promise<string | null> {
     const image = new Image();
     image.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = SIZE;
+      canvas.width = canvas.height = ICON_SIZE_PX;
       const context = canvas.getContext("2d");
       if (context === null) return resolve(null);
-      context.drawImage(image, 0, 0, SIZE, SIZE);
-      // A white ring keeps the dot apart from the navy icon behind it.
-      context.beginPath();
-      context.arc(DOT.x * SIZE, DOT.y * SIZE, (DOT.radius + DOT.ring) * SIZE, 0, 2 * Math.PI);
-      context.fillStyle = "#fff";
-      context.fill();
-      context.beginPath();
-      context.arc(DOT.x * SIZE, DOT.y * SIZE, DOT.radius * SIZE, 0, 2 * Math.PI);
-      context.fillStyle = "#e5352b";
-      context.fill();
+      context.drawImage(image, 0, 0, ICON_SIZE_PX, ICON_SIZE_PX);
+      const circle = (radius: number, color: string) => {
+        context.beginPath();
+        context.arc(
+          DOT.x * ICON_SIZE_PX,
+          DOT.y * ICON_SIZE_PX,
+          radius * ICON_SIZE_PX,
+          0,
+          2 * Math.PI,
+        );
+        context.fillStyle = color;
+        context.fill();
+      };
+      circle(DOT.radius + DOT.ring, DOT_RING_COLOR);
+      circle(DOT.radius, DOT_COLOR);
       resolve(canvas.toDataURL("image/png"));
     };
     image.onerror = () => resolve(null);
@@ -47,17 +59,18 @@ function setFavicon(href: string) {
 export function useWaitingBadge(waiting: number) {
   useEffect(() => {
     let current = true;
-    document.title = waiting > 0 ? `(${waiting}) ${t("appName")}` : t("appName");
+    // Only an installed app shows the app badge, and a browser may refuse. Neither is worth a message.
     if (waiting > 0) {
+      document.title = `(${waiting}) ${t("appName")}`;
       void dottedIcon().then((href) => {
         if (current && href !== null) setFavicon(href);
       });
+      navigator.setAppBadge?.(waiting).catch(() => {});
     } else {
+      document.title = t("appName");
       setFavicon(ICON);
+      navigator.clearAppBadge?.().catch(() => {});
     }
-    // Only an installed app shows it, and a browser may refuse. Neither is worth a message.
-    if (waiting > 0) navigator.setAppBadge?.(waiting).catch(() => {});
-    else navigator.clearAppBadge?.().catch(() => {});
     return () => {
       current = false;
     };

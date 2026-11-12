@@ -5,6 +5,7 @@ import { AnalyticsPage } from "./analytics.tsx";
 import { type Me, workspaceApi } from "./api.ts";
 import { pauseBots } from "./bots.tsx";
 import { ContactsPage } from "./contacts.tsx";
+import { useDrafts } from "./drafts.ts";
 import { GetStarted } from "./get-started.tsx";
 import { InboxBanners } from "./inbox-banners.tsx";
 import { useInboxData } from "./inbox-data.ts";
@@ -86,8 +87,7 @@ export function Inbox({
   useDeviceSync();
   const [filter, setFilter] = useState(filterInAddress);
   const { status } = filter;
-  // In memory only, so a reload or a sign-out clears them.
-  const drafts = useRef(new Map<string, string>()).current;
+  const [drafts, setDraft] = useDrafts(me.id, workspaceId);
   // A notification opens the app on its conversation.
   const [selected, setSelected] = useState(() => {
     const params = new URLSearchParams(location.search);
@@ -271,6 +271,8 @@ export function Inbox({
                 members={members}
                 selected={selected}
                 typing={data.typing}
+                drafts={drafts}
+                reads={data.reads}
                 replying={data.replying}
                 onFilter={showFilter}
                 onSelect={setSelected}
@@ -285,7 +287,8 @@ export function Inbox({
                   key={selected}
                   api={api}
                   meId={me.id}
-                  drafts={drafts}
+                  draft={drafts[selected] ?? ""}
+                  setDraft={(text) => setDraft(selected, text)}
                   members={members}
                   replying={data.replying(selected)}
                   mayDeleteAnyone={role !== "member" && !readOnly && !suspended}
@@ -303,6 +306,8 @@ export function Inbox({
                   draftsVersion={data.draftsVersion(selected)}
                   onBack={() => setSelected(null)}
                   onChanged={reload}
+                  inView={view === "inbox"}
+                  onRead={data.markedRead}
                   onLoaded={(conversation) => {
                     if (linked.current !== conversation.id) return;
                     linked.current = null;

@@ -461,6 +461,30 @@ describe("inviting by email", () => {
     );
   });
 
+  test("a teammate who joins starts with the history read", async () => {
+    const boss = await person("owner");
+    const visitorId = randomUUID();
+    await owner.execute(
+      sql`insert into visitor (workspace_id, id, token_hash) values (${space.id}, ${visitorId}, ${randomUUID()})`,
+    );
+    const { message } = await withWorkspace(db, space.id, (tx) =>
+      appendMessage(
+        tx,
+        space.id,
+        { kind: "visitor", visitorId },
+        { clientId: randomUUID(), body: "Hi" },
+      ),
+    );
+    const cookie = await joinNew(await newInvite(boss, "member", newEmail()));
+    const listed = await app.request(`/v1/operator/workspaces/${space.id}/conversations`, {
+      headers: { cookie },
+    });
+    const { conversations } = (await listed.json()) as {
+      conversations: { id: string; unread: boolean }[];
+    };
+    expect(conversations.find((row) => row.id === message.conversationId)?.unread).toBe(false);
+  });
+
   test("with no mail server, an existing account cannot join without signing in", async () => {
     const existing = await person(null);
     const boss = await person("owner");

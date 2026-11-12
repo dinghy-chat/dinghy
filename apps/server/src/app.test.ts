@@ -200,7 +200,12 @@ describe("/v1", () => {
       }
     };
     const workspace = "/v1/operator/workspaces/{workspaceId}";
-    const allowedWhileReadOnly = ["", "/presence", "/presence/leave"];
+    const allowedWhileReadOnly = [
+      "",
+      "/presence",
+      "/presence/leave",
+      "/conversations/{conversationId}/read",
+    ];
     for (const [path, operations] of Object.entries(document.paths)) {
       for (const [method, { responses, security }] of Object.entries(operations)) {
         const operation = `${method.toUpperCase()} ${path}`;
