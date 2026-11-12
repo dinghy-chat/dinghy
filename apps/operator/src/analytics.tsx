@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
+import { duration } from "./format.ts";
 import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
@@ -15,20 +16,6 @@ const PERIODS: readonly Option<Period>[] = [
 
 /** The browser's zone, which the server checks. Days and hours read in it. */
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-
-/** "45 sec", "4 min", "1.5 hr", in the browser's words. */
-function duration(seconds: number): string {
-  const unit = (value: number, name: "second" | "minute" | "hour") =>
-    new Intl.NumberFormat([], {
-      style: "unit",
-      unit: name,
-      unitDisplay: "short",
-      maximumFractionDigits: name === "hour" ? 1 : 0,
-    }).format(value);
-  if (seconds < 60) return unit(Math.round(seconds), "second");
-  if (seconds < 3600) return unit(Math.round(seconds / 60), "minute");
-  return unit(seconds / 3600, "hour");
-}
 
 const percent = (share: number) =>
   new Intl.NumberFormat([], { style: "percent", maximumFractionDigits: 0 }).format(share);

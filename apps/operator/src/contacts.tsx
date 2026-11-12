@@ -1,17 +1,36 @@
 /** @jsxImportSource react */
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Contact, ContactDetail, ContactSort, Role, WorkspaceApi } from "./api.ts";
-import { shortDate } from "./format.ts";
+import { duration, shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
-import { countryName, flag } from "./place.ts";
-import { Confirm, Select } from "./popup.tsx";
+import { countryName, flag, zoneCity, zoneClock } from "./place.ts";
+import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { EmptyArt } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Avatar, ErrorNote, failureText, Loading, Page, PageRow } from "./ui.tsx";
-import { ago, avatarLetters, visitorName } from "./visitor.ts";
-import { ContactFolds } from "./visitor-panel.tsx";
+import {
+  Avatar,
+  Choices,
+  CopyIcon,
+  ErrorNote,
+  FlagBadge,
+  failureText,
+  Loading,
+  Page,
+  Tip,
+  useModal,
+} from "./ui.tsx";
+import { ago, avatarLetters, bare, presenceLine, visitorName, webLink } from "./visitor.ts";
+import {
+  ContactDetails,
+  hasDetails,
+  NoteField,
+  PageJourney,
+  Tile,
+  useNow,
+} from "./visitor-panel.tsx";
 
 const SEARCH_WAIT_MS = 250;
 const SORTS: { value: ContactSort; label: TextId }[] = [
@@ -172,14 +191,20 @@ function ContactList({ api, onOpen }: { api: WorkspaceApi; onOpen(visitorId: str
   );
 }
 
-/** A signed-out contact's name and email, which the team may correct. */
+type ContactConversation = ContactDetail["conversations"][number];
+
+/** A signed-out contact's name and email, which the team may correct, in a dialog. */
 function IdentityForm({
   contact,
   onSave,
+  onClose,
 }: {
   contact: ContactDetail;
   onSave(change: { name: string | null; email: string | null }): Promise<unknown>;
+  onClose(): void;
 }) {
+  const dialog = useModal();
+  const titleId = useId();
   const [name, setName] = useState(contact.name ?? "");
   const [email, setEmail] = useState(contact.email ?? "");
   const [failure, setFailure] = useState<TextId | null>(null);
@@ -192,34 +217,220 @@ function IdentityForm({
         email: email.trim() === "" ? null : email.trim(),
       });
       toast("saved");
+      dialog.current?.close();
     } catch (error) {
       setFailure(failureText(error, {}, "actionFailed"));
     }
   };
   return (
-    <form className="stack identity-form" onSubmit={(event) => void save(event)}>
-      <label className="identity-field">
-        {t("contactNameLabel")}
-        <input value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
-      </label>
-      <label className="identity-field">
-        {t("email")}
-        <input
-          type="email"
-          value={email}
-          maxLength={320}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </label>
-      <button type="submit" className="pill dark">
-        {t("contactSave")}
-      </button>
-      <ErrorNote text={failure} />
-    </form>
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
+    <dialog
+      ref={dialog}
+      className="dialog"
+      aria-labelledby={titleId}
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) dialog.current?.close();
+      }}
+    >
+      <form className="dialog-body" onSubmit={(event) => void save(event)}>
+        <h2 id={titleId}>{t("contactEdit")}</h2>
+        <p className="dialog-text">{t("contactIdentityHelp")}</p>
+        <label className="identity-field">
+          {t("contactNameLabel")}
+          <input value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="identity-field">
+          {t("email")}
+          <input
+            type="email"
+            value={email}
+            maxLength={320}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+        <ErrorNote text={failure} />
+        <div className="dialog-actions">
+          <button type="button" className="pill" onClick={() => dialog.current?.close()}>
+            {t("cancel")}
+          </button>
+          <button type="submit" className="pill dark">
+            {t("contactSave")}
+          </button>
+        </div>
+      </form>
+    </dialog>
   );
 }
 
-/** One person: what the team knows, every conversation, the note, and the delete. */
+/** On the site now with the page, or when last seen. */
+function LiveLine({ contact }: { contact: ContactDetail }) {
+  const page = webLink(contact.lastPage);
+  if (contact.online === true) {
+    return (
+      <p className="contact-seen">
+        <span className="live-pulse" aria-hidden="true" />
+        <span>
+          {t("contactOnline")}
+          {page !== null && " ·"}
+        </span>
+        {page !== null && (
+          <a
+            className="contact-seen-link"
+            href={page}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={page}
+          >
+            {bare(page)}
+          </a>
+        )}
+      </p>
+    );
+  }
+  const seen = presenceLine(contact.lastSeenAt, contact.online);
+  return seen === null ? null : <p className="contact-seen">{seen}</p>;
+}
+
+/** Who the contact is: the avatar, name, chips, email and presence, and the page's actions. */
+function ContactHero({ contact, actions }: { contact: ContactDetail; actions: ReactNode }) {
+  const name = visitorName(contact);
+  return (
+    <header className="contact-hero">
+      <span className="avatar-wrap">
+        <Avatar name={name} letters={avatarLetters(contact)} />
+        {contact.country !== null && <FlagBadge country={contact.country} />}
+      </span>
+      <div className="contact-who">
+        <div className="contact-name">
+          <h2>{name}</h2>
+          {contact.signedIn && (
+            <Tip text={t("contactSignedInTip")}>
+              {(tipId) => (
+                // biome-ignore lint/a11y/noNoninteractiveTabindex: the tip shows on keyboard focus.
+                <span className="chip signed" tabIndex={0} aria-describedby={tipId}>
+                  {t("contactSignedIn")}
+                </span>
+              )}
+            </Tip>
+          )}
+          {contact.company !== null && <span className="chip">{contact.company}</span>}
+          {contact.blocked && <span className="chip bad">{t("contactBlocked")}</span>}
+        </div>
+        {contact.email !== null && contact.email !== name && (
+          <p className="contact-email">
+            <a className="contact-email-link" href={`mailto:${contact.email}`}>
+              {contact.email}
+            </a>
+            <CopyIcon value={contact.email} label={t("copyValue", { name: t("emailLabel") })} />
+          </p>
+        )}
+        <LiveLine contact={contact} />
+      </div>
+      <div className="contact-actions">{actions}</div>
+    </header>
+  );
+}
+
+/** The facts as tiles, each left out when unknown. */
+function ContactTiles({ contact }: { contact: ContactDetail }) {
+  const now = useNow();
+  const clock = contact.timeZone === null ? null : zoneClock(contact.timeZone, now);
+  const open = contact.conversations.filter((one) => one.status === "open").length;
+  // The server writes the device as "Chrome on macOS", or one of the two alone.
+  const [browser, system] = contact.device?.split(" on ") ?? [];
+  const device = browser === undefined ? null : { browser, system };
+  return (
+    <div className="contact-tiles">
+      {clock !== null && contact.timeZone !== null && (
+        <Tile label={t("localTimeLabel")} sub={`${zoneCity(contact.timeZone)} · ${clock.utc}`}>
+          {clock.time}
+        </Tile>
+      )}
+      {contact.country !== null && (
+        <Tile label={t("contactLocation")} sub={t("contactLocationFrom")}>
+          <span aria-hidden="true">{flag(contact.country)} </span>
+          {countryName(contact.country)}
+        </Tile>
+      )}
+      {device !== null && (
+        <Tile label={t("deviceLabel")} sub={device.system}>
+          <span title={contact.device ?? undefined}>{device.browser}</span>
+        </Tile>
+      )}
+      <Tile label={t("contactFirstSeen")} sub={ago(contact.createdAt)}>
+        {shortDate(contact.createdAt)}
+      </Tile>
+      <Tile
+        label={t("contactConversations")}
+        sub={open > 0 ? t("contactOpenCount", { count: open }) : undefined}
+      >
+        {contact.conversations.length}
+      </Tile>
+    </div>
+  );
+}
+
+/** The second line of a conversation's card: who has or closed it, its size and the first reply. */
+function conversationFacts(one: ContactConversation): string {
+  const who =
+    one.status === "open"
+      ? one.assigneeName
+      : one.closedBy === null
+        ? null
+        : t("contactClosedBy", { name: one.closedBy });
+  return [
+    who,
+    one.messageCount === 1
+      ? t("contactMessagesOne")
+      : t("contactMessagesMany", { count: one.messageCount }),
+    one.firstReplySeconds === null
+      ? null
+      : t("contactRepliedIn", { time: duration(one.firstReplySeconds) }),
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
+}
+
+/** Every conversation as a card that opens it, newest activity first. */
+function ConversationCards({
+  conversations,
+  onOpen,
+}: {
+  conversations: ContactConversation[];
+  onOpen(id: string, status: "open" | "closed"): void;
+}) {
+  return (
+    <ol className="contact-conversations">
+      {conversations.map((one) => (
+        <li key={one.id}>
+          <button
+            type="button"
+            className="conversation-card"
+            onClick={() => onOpen(one.id, one.status)}
+          >
+            <span className="conversation-top">
+              <span className={one.status === "open" ? "chip warn" : "chip"}>{t(one.status)}</span>
+              <b>{one.lastBody === null ? t("image") : markdownText(one.lastBody)}</b>
+              <time dateTime={one.updatedAt} title={new Date(one.updatedAt).toLocaleString()}>
+                {ago(one.updatedAt, Date.now(), "narrow")}
+              </time>
+            </span>
+            <span className="conversation-facts">{conversationFacts(one)}</span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+type ContactTab = "conversations" | "pages";
+
+/** The conversation to open from the page: the newest open one, or else the newest. */
+const conversationToOpen = (conversations: ContactConversation[]) =>
+  conversations.find((one) => one.status === "open") ?? conversations[0];
+
+/** One person: who they are, their conversations and pages, the note and their details. */
 function ContactView({
   api,
   visitorId,
@@ -237,6 +448,8 @@ function ContactView({
 }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   const loaded = useLoad(() => api.contact(visitorId), [api, visitorId, version]);
+  const [tab, setTab] = useState<ContactTab>("conversations");
+  const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [failure, setFailure] = useState<TextId | null>(null);
   const contact = loaded.data;
@@ -260,59 +473,122 @@ function ContactView({
     );
   }
   const name = visitorName(contact);
-  const context = [
-    contact.email !== name ? contact.email : null,
-    contact.externalId === null ? null : t("contactUserId", { id: contact.externalId }),
-  ]
-    .filter((part) => part !== null)
-    .join(" · ");
+  const newest = conversationToOpen(contact.conversations);
+  // A block goes through a conversation, so it needs one.
+  const setBlocked = async (conversationId: string, blocked: boolean) => {
+    setFailure(null);
+    try {
+      await (blocked ? api.block(conversationId) : api.unblock(conversationId));
+      loaded.setData({ ...contact, blocked });
+    } catch (error) {
+      setFailure(failureText(error, {}, "actionFailed"));
+    }
+  };
+  const more: MenuItem[] = [
+    ...(contact.signedIn
+      ? []
+      : [
+          {
+            label: t("contactEdit"),
+            lead: <Icon name="pencil" size={18} />,
+            onSelect: () => setEditing(true),
+          },
+        ]),
+    ...(newest === undefined
+      ? []
+      : [
+          {
+            label: contact.blocked ? t("unblockVisitor") : t("blockVisitor"),
+            lead: <Icon name="prohibit" size={18} />,
+            onSelect: () => void setBlocked(newest.id, !contact.blocked),
+          },
+        ]),
+    ...(role === "member"
+      ? []
+      : [
+          {
+            label: t("deleteContact"),
+            lead: <Icon name="trash" size={18} />,
+            danger: true,
+            divider: true,
+            onSelect: () => setConfirming(true),
+          },
+        ]),
+  ];
+  const details = { ...contact, userId: contact.externalId };
   return (
-    <Page
-      title={name}
-      context={
-        <>
-          <button type="button" className="text-button back-link" onClick={onBack}>
-            <Icon name="back" size={14} />
-            {t("contacts")}
-          </button>
-          {context !== "" && <span> {context}</span>}
-        </>
-      }
-    >
-      <div className="contact-page">
-        <div className="contact-folds">
-          <ContactFolds
-            contact={contact}
-            visitor={{ ...contact, userId: null }}
-            place
-            pages={contact.pages}
-            conversationId={null}
-            onOpenConversation={onOpenConversation}
-            onNote={(note) => change({ note })}
-          />
-        </div>
-        <div className="contact-rows">
-          <PageRow
-            title={t("contactIdentityTitle")}
-            help={t(contact.signedIn ? "contactIdentitySigned" : "contactIdentityHelp")}
-          >
-            {!contact.signedIn && <IdentityForm contact={contact} onSave={change} />}
-          </PageRow>
-          {role !== "member" && (
-            <PageRow title={t("deleteContact")} help={t("deleteContactHelp")}>
+    <section className="page contact-page" aria-label={name}>
+      <button type="button" className="text-button back-link" onClick={onBack}>
+        <Icon name="back" size={14} />
+        {t("contacts")}
+      </button>
+      <ContactHero
+        contact={contact}
+        actions={
+          <>
+            {newest !== undefined && (
               <button
                 type="button"
-                className="pill danger-soft"
-                onClick={() => setConfirming(true)}
+                className="pill dark"
+                onClick={() => onOpenConversation(newest.id, newest.status)}
               >
-                <Icon name="trash" size={18} />
-                {t("deleteContact")}
+                {t("contactOpenConversation")}
               </button>
-              <ErrorNote text={failure} />
-            </PageRow>
+            )}
+            {more.length > 0 && (
+              <Menu label={t("moreActions")} items={more} buttonClass="round">
+                <Icon name="dots" />
+              </Menu>
+            )}
+          </>
+        }
+      />
+      <ErrorNote text={failure} />
+      <ContactTiles contact={contact} />
+      <div className="contact-columns">
+        <section
+          className="contact-main"
+          aria-label={t(tab === "pages" ? "pagesVisited" : "contactConversations")}
+        >
+          <Choices<ContactTab>
+            label={t("contactViewTabs")}
+            variant="tabs"
+            value={tab}
+            options={[
+              {
+                value: "conversations",
+                label: "contactConversations",
+                count: contact.conversations.length,
+              },
+              { value: "pages", label: "pagesVisited", count: contact.pages.length },
+            ]}
+            onChange={setTab}
+          />
+          {tab === "conversations" ? (
+            <ConversationCards conversations={contact.conversations} onOpen={onOpenConversation} />
+          ) : contact.pages.length === 0 ? (
+            <p className="quiet">{t("contactNoPages")}</p>
+          ) : (
+            <PageJourney pages={contact.pages} online={contact.online === true} />
           )}
-        </div>
+        </section>
+        <aside className="contact-side">
+          <section className="contact-note" aria-label={t("panelNote")}>
+            <h3>{t("panelNote")}</h3>
+            <NoteField note={contact.note} onSave={(note) => change({ note })} />
+            <small>{t("contactNoteSaved")}</small>
+          </section>
+          {hasDetails(details) && (
+            <section className="contact-details" aria-label={t("contactDetails")}>
+              <h3>{t("contactDetails")}</h3>
+              <ContactDetails {...details} />
+            </section>
+          )}
+        </aside>
       </div>
+      {editing && (
+        <IdentityForm contact={contact} onSave={change} onClose={() => setEditing(false)} />
+      )}
       {confirming && (
         <Confirm
           title={t("deleteContactTitle", { name })}
@@ -322,7 +598,7 @@ function ContactView({
           onCancel={() => setConfirming(false)}
         />
       )}
-    </Page>
+    </section>
   );
 }
 

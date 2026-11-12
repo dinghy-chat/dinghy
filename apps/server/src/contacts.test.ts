@@ -8,7 +8,7 @@ import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { csvCell } from "./contacts.ts";
-import { conversation, message, visitor } from "./db/schema.ts";
+import { conversation, message, operator, visitor } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -159,6 +159,34 @@ describe("one contact", () => {
       note: null,
       conversations: [{ id: conversationId, status: "open", lastBody: "Where is my order?" }],
       pages: [],
+    });
+  });
+
+  test("each conversation's message count, assignee, closer and first reply time", async () => {
+    const { visitorId, conversationId } = await visitorChats("Can I pay yearly?");
+    await owner.update(operator).set({ name: "Sam" }).where(eq(operator.id, boss.id));
+    const conversationPath = `/v1/operator/workspaces/${space.id}/conversations/${conversationId}`;
+    const reply = await send("POST", `${conversationPath}/messages`, {
+      clientId: crypto.randomUUID(),
+      body: "Yes",
+    });
+    expect(reply.status).toBe(201);
+    // The reply came two minutes after the start.
+    await owner
+      .update(conversation)
+      .set({ createdAt: sql`created_at - interval '2 minutes'` })
+      .where(eq(conversation.id, conversationId));
+    expect(
+      (await send("PUT", `${conversationPath}/assignee`, { operatorId: boss.id })).status,
+    ).toBe(200);
+    const open = { id: conversationId, status: "open", messageCount: 2, assigneeName: "Sam" };
+    expect(await (await get(path(`/${visitorId}`))).json()).toMatchObject({
+      online: null,
+      conversations: [{ ...open, closedBy: null, firstReplySeconds: 120 }],
+    });
+    expect((await send("PATCH", conversationPath, { status: "closed" })).status).toBe(200);
+    expect(await (await get(path(`/${visitorId}`))).json()).toMatchObject({
+      conversations: [{ ...open, status: "closed", closedBy: "Sam" }],
     });
   });
 

@@ -2217,7 +2217,7 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.copy-id .icon-button {
+.copy-icon {
   flex: none;
   width: 26px;
   height: 26px;
@@ -2280,24 +2280,25 @@ img.ws-tile {
   color: var(--mute);
 }
 .context dd {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   min-width: 0;
-  overflow: hidden;
   color: var(--navy);
+}
+.detail-value {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* What the page sent, which nobody verified. */
+.context dd.unsigned {
+  font-style: italic;
 }
 /* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
 .page-context {
   display: grid;
   gap: 4px;
-}
-.page-context h4 {
-  margin: 0;
-  color: var(--mute);
-  font: 600 13.5px / 1.4 var(--body);
-}
-.page-context .context {
-  padding-top: 6px;
 }
 /* The visitor's pages, newest first: a title as a link, and how long ago on the right. */
 .journey ol {
@@ -2360,6 +2361,28 @@ img.ws-tile {
   min-height: 28px;
   margin-top: 4px;
   padding: 0 0 0 20px;
+}
+/* Where an online visitor is now. */
+.journey li.now::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 20%, transparent);
+  background: var(--green);
+}
+.journey .here-now {
+  flex: none;
+  color: var(--green);
+  font-weight: 600;
+}
+/* An earlier visit starts under its own label, with no line to the page above. */
+.journey li.visit-gap {
+  padding-top: 8px;
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 600;
+}
+.journey li.visit-gap::before,
+.journey li.visit-gap::after,
+.journey li.visit-gap + li::after {
+  display: none;
 }
 .conversation-links {
   display: grid;
@@ -3784,6 +3807,22 @@ button.quote:hover {
   justify-content: center;
   padding: 0 8px;
 }
+/* Tabs: a row of words over a line, the chosen one underlined. */
+.choices.tabs {
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.choices.tabs label {
+  min-height: 0;
+  padding: 8px 12px 10px;
+  border-radius: 8px 8px 0 0;
+  color: var(--mute);
+}
+.choices.tabs label:has(:checked) {
+  background: none;
+  box-shadow: inset 0 -2px 0 var(--navy);
+  color: var(--navy);
+}
 .choice-count {
   color: var(--mute);
   font-variant-numeric: tabular-nums;
@@ -4045,41 +4084,10 @@ button.quote:hover {
 .contacts time {
   white-space: nowrap;
 }
-/* One contact: the folds on the left, and the name and the delete beside them. */
-.contact-page {
-  display: grid;
-  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
-  gap: 24px 40px;
-  align-items: start;
-}
-.contact-folds {
-  border-radius: 16px;
-  box-shadow: inset 0 0 0 1px var(--line);
-  overflow: hidden;
-}
-.contact-folds > .fold:last-child {
-  border-bottom: 0;
-}
-.contact-rows .page-row {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-}
-.contact-rows .page-row:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-.identity-form {
-  display: grid;
-  gap: 12px;
-  max-width: 420px;
-}
 .identity-field {
   display: grid;
   gap: 6px;
   font-weight: 600;
-}
-.identity-form .pill {
-  justify-self: start;
 }
 .back-link {
   display: inline-flex;
@@ -4088,6 +4096,245 @@ button.quote:hover {
   min-height: 0;
   padding: 0;
   vertical-align: baseline;
+}
+/* One contact: who they are on a blue band, the facts as tiles, then the conversations and pages
+   beside the note and the details. */
+.contact-page {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 20px 32px 32px;
+}
+.contact-page > .back-link {
+  justify-self: start;
+  color: var(--blue-deep);
+  font-size: 14px;
+}
+.contact-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 22px;
+  background: var(--tile-blue);
+}
+.contact-hero .avatar {
+  width: 72px;
+  height: 72px;
+  box-shadow: 0 0 0 3px var(--surface);
+  font-size: 28px;
+}
+.contact-hero .flag-badge {
+  right: -6px;
+  bottom: 0;
+  width: 28px;
+  height: 21px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 3px var(--tile-blue);
+  font-size: 19px;
+}
+.contact-who {
+  flex: 1;
+  min-width: 240px;
+}
+.contact-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.contact-name h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--navy);
+  font: 700 32px / 1.1 var(--display);
+}
+.contact-name .chip {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--navy);
+}
+.contact-name .chip.signed {
+  color: var(--green);
+}
+.contact-name .chip.bad {
+  color: var(--bad);
+}
+.contact-email {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.contact-email-link {
+  overflow: hidden;
+  color: var(--text-strong);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-email-link:hover {
+  text-decoration: underline;
+}
+.contact-seen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 13.5px;
+}
+.contact-seen-link {
+  color: var(--blue-deep);
+  text-decoration: none;
+}
+.contact-seen-link:hover {
+  text-decoration: underline;
+}
+.contact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.contact-actions .round {
+  background: var(--surface);
+}
+.contact-actions .round:hover,
+.contact-actions .round[aria-expanded="true"] {
+  background: var(--soft);
+}
+/* As many tiles to a row as fit. */
+.contact-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.contact-tiles .tile {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.contact-tiles dt {
+  color: var(--mute);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.contact-tiles dd {
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--navy);
+  font: 700 19px / 1.2 var(--display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-tiles .tile-sub {
+  margin-top: 0;
+  color: var(--mute);
+  font: 400 12.5px / 1.45 var(--body);
+}
+.contact-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 24px;
+  align-items: start;
+}
+.contact-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.contact-conversations {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.conversation-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  text-align: left;
+  transition: background-color 0.12s;
+}
+.conversation-card:hover {
+  background: var(--row-hover);
+}
+.conversation-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.conversation-top b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--navy);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-top time {
+  flex: none;
+  color: var(--mute);
+  font-size: 13px;
+}
+.conversation-facts {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-main .journey {
+  font-size: 14px;
+}
+.contact-side {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+.contact-side h3 {
+  margin-bottom: 10px;
+  color: var(--navy);
+  font: 700 16px / 1.2 var(--display);
+}
+.contact-details {
+  padding: 16px;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.contact-details .page-context {
+  margin-top: 12px;
+  font-size: 12.5px;
+}
+/* The note as a sticky note: the field takes the card's yellow. */
+.contact-note {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--warn-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn-fill) 30%, transparent);
+}
+.contact-note .note-field {
+  width: 100%;
+  min-height: 96px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.contact-note small {
+  color: var(--mute);
+  font-size: 12px;
 }
 .members th {
   padding: 14px 12px 10px;
@@ -4582,13 +4829,45 @@ button.quote:hover {
   }
 }
 
+/* The contact page: the note and details above the conversations, side by side, then stacked on a
+   phone. */
+@media (max-width: 1100px) {
+  .contact-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contact-side {
+    order: -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .contact-page {
+    padding: 16px;
+  }
+  .contact-hero {
+    padding: 16px;
+  }
+  .contact-name h2 {
+    font-size: 26px;
+  }
+  .contact-actions {
+    width: 100%;
+  }
+  .contact-actions .pill.dark {
+    flex: 1;
+  }
+  .contact-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .contact-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Phone: one pane at a time. */
 @media (max-width: 760px) {
   .app {
     padding: 0 8px 8px;
-  }
-  .contact-page {
-    grid-template-columns: minmax(0, 1fr);
   }
   .contacts .wide-cell {
     display: none;

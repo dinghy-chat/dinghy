@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { countryName, flag, localTime } from "./place.ts";
+import { countryName, flag, localTime, zoneCity, zoneClock } from "./place.ts";
 
 test("flag turns a country code into its emoji, and anything else into nothing", () => {
   expect(flag("PT")).toBe("🇵🇹");
@@ -18,4 +18,12 @@ test("localTime gives the time there and the offset from UTC", () => {
   expect(localTime("Europe/Paris", winter)).toMatch(/7:52.*UTC\+1$|19:52, UTC\+1$/);
   expect(localTime("UTC", winter)).toMatch(/UTC$/);
   expect(localTime("Mars/Olympus", winter)).toBeNull();
+});
+
+test("zoneClock splits the time from the offset, and zoneCity names the zone's place", () => {
+  const winter = new Date("2026-01-15T18:52:00Z");
+  expect(zoneClock("Asia/Kolkata", winter)?.utc).toBe("UTC+5:30");
+  expect(zoneClock("Mars/Olympus", winter)).toBeNull();
+  expect(zoneCity("America/Sao_Paulo")).toBe("Sao Paulo");
+  expect(zoneCity("UTC")).toBe("UTC");
 });

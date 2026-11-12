@@ -4,14 +4,14 @@
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Contact, ContactDetail, Conversation, Member, PageView } from "./api.ts";
-import { MINUTE_MS } from "./format.ts";
+import { MINUTE_MS, shortTime } from "./format.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { countryName, flag, localTime } from "./place.ts";
 import { Select } from "./popup.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Avatar, CopyId, DocLink, ErrorNote, failureText } from "./ui.tsx";
+import { Avatar, CopyIcon, CopyId, DocLink, ErrorNote, failureText } from "./ui.tsx";
 import {
   ago,
   avatarLetters,
@@ -62,14 +62,19 @@ function Section({
   );
 }
 
-/** The time where the visitor is, kept current. */
-function LocalTime({ timeZone }: { timeZone: string }) {
+/** The time now, kept current to the minute. */
+export function useNow(): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), MINUTE_MS);
     return () => clearInterval(timer);
   }, []);
-  return <>{localTime(timeZone, now)}</>;
+  return now;
+}
+
+/** The time where the visitor is, kept current. */
+function LocalTime({ timeZone }: { timeZone: string }) {
+  return <>{localTime(timeZone, useNow())}</>;
 }
 
 type Place = Pick<Contact, "country" | "timeZone" | "device" | "lastPage">;
@@ -80,14 +85,25 @@ const hasPlace = (visitor: Place) =>
   visitor.device !== null ||
   webLink(visitor.lastPage) !== null;
 
-/** One fact of the visitor's place, as a small tile: an icon, a label and the value. */
-function Tile({ icon, label, children }: { icon: IconName; label: string; children: ReactNode }) {
+/** One fact about the visitor, as a tile: an icon, a label, the value and a line under it. */
+export function Tile({
+  icon,
+  label,
+  sub,
+  children,
+}: {
+  icon?: IconName;
+  label: string;
+  sub?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div>
-      <Icon name={icon} size={16} />
+    <div className="tile">
+      {icon !== undefined && <Icon name={icon} size={16} />}
       <dl>
         <dt>{label}</dt>
         <dd>{children}</dd>
+        {sub !== undefined && <dd className="tile-sub">{sub}</dd>}
       </dl>
     </div>
   );
@@ -135,31 +151,38 @@ function PlaceTiles({ visitor, online }: { visitor: Place; online: boolean }) {
 }
 
 /**
- * Named values about the visitor. With `links`, a web address opens in a new tab. Only signed values
- * get links, because anyone can put an address in what a page sends.
+ * Named values about the visitor, each cut to its line with the whole value on hover. With
+ * `signed`, a web address opens in a new tab: anyone can put an address in what a page sends, so
+ * unsigned values stay text, in italics. A link or an ID has a copy button.
  */
-function DetailList({ values, links }: { values: Record<string, unknown> | null; links: boolean }) {
-  const rows = detailRows(values);
-  if (rows.length === 0) return null;
-  return (
-    <dl className="context">
-      {rows.map(([name, value, link]) => (
-        <Fragment key={`${name}=${value}`}>
-          <dt>{name}</dt>
-          <dd title={value}>
-            {link === null || !links ? (
-              value
-            ) : (
-              <a href={link} target="_blank" rel="noopener noreferrer" title={link}>
-                {bare(link)}
-              </a>
-            )}
-          </dd>
-        </Fragment>
-      ))}
-    </dl>
-  );
+function DetailRows({
+  values,
+  signed,
+}: {
+  values: Record<string, unknown> | null;
+  signed: boolean;
+}) {
+  return detailRows(values).map(([name, value, link]) => (
+    <Fragment key={`${name}=${value}`}>
+      <dt>{name}</dt>
+      <dd title={value} className={signed ? undefined : "unsigned"}>
+        {link === null || !signed ? (
+          <span className="detail-value">{value}</span>
+        ) : (
+          <a className="detail-value" href={link} target="_blank" rel="noopener noreferrer">
+            {bare(link)}
+          </a>
+        )}
+        {(link !== null || ID_NAME.test(name)) && (
+          <CopyIcon value={value} label={t("copyValue", { name })} />
+        )}
+      </dd>
+    </Fragment>
+  ));
 }
+
+/** A name such as "id", "orgId" or "account_id", whose value someone may paste elsewhere. */
+const ID_NAME = /(^|_)(id|ID)$|[a-z0-9](Id|ID)$/;
 
 /** Signed attributes, and the page's unsigned context. */
 interface Details {
@@ -169,69 +192,96 @@ interface Details {
   pageContext: Record<string, unknown> | null;
 }
 
-const hasDetails = ({ userId, attributes, pageContext }: Details) =>
+export const hasDetails = ({ userId, attributes, pageContext }: Details) =>
   userId !== null || detailRows(attributes).length > 0 || detailRows(pageContext).length > 0;
 
-/** The signed attributes, then what the page sent with setContext(), which says it is unverified. */
-function DetailsFold({ userId, attributes, pageContext }: Details) {
+/**
+ * The user ID and the signed attributes, then what the page sent with setContext() in italics,
+ * with a note that nobody verified it.
+ */
+export function ContactDetails({ userId, attributes, pageContext }: Details) {
+  const unsigned = detailRows(pageContext).length > 0;
   return (
     <>
-      {userId !== null && (
-        <dl className="context">
-          <dt>{t("userIdTitle")}</dt>
-          <dd>
-            <CopyId value={userId} label="userIdLabel" />
-          </dd>
-        </dl>
-      )}
-      <DetailList values={attributes} links />
-      {detailRows(pageContext).length > 0 && (
+      <dl className="context">
+        {userId !== null && (
+          <>
+            <dt>{t("userIdTitle")}</dt>
+            <dd>
+              <CopyId value={userId} label="userIdLabel" />
+            </dd>
+          </>
+        )}
+        <DetailRows values={attributes} signed />
+        <DetailRows values={pageContext} signed={false} />
+      </dl>
+      {unsigned && (
         <div className="page-context">
-          <h4>{t("pageContextTitle")}</h4>
-          <p className="quiet">{t("pageContextNote")}</p>
+          <p className="quiet">
+            {t("pageContextItalics")} {t("pageContextNote")}
+          </p>
           <DocLink
             path="add-to-your-site#tell-operators-about-the-page"
             text="pageContextDocsLink"
           />
-          <DetailList values={pageContext} links={false} />
         </div>
       )}
     </>
   );
 }
 
+/** A pause longer than this between two pages starts a new visit. */
+const VISIT_GAP_MS = 30 * MINUTE_MS;
+
 /**
  * The pages the visitor went through, newest first: the title, or the address when the page has
- * none, as a link, and when. Five at first, and the rest of the 20 on request.
+ * none, as a link, and when. A long pause starts an earlier visit, and the newest page is where an
+ * online visitor is now. Five at first, and the rest of the 20 on request.
  */
-function PageJourney({ pages }: { pages: PageView[] }) {
+export function PageJourney({ pages, online }: { pages: PageView[]; online: boolean }) {
   const [all, setAll] = useState(false);
   const shown = all ? pages : pages.slice(0, PAGES_FIRST);
   return (
     <div className="journey">
       <ol>
-        {shown.map((page) => {
+        {shown.map((page, index) => {
           const link = webLink(page.path);
           const name = page.title ?? bare(page.path);
+          const newer = shown[index - 1];
+          const isNow = online && index === 0;
+          const startsVisit =
+            newer !== undefined &&
+            Date.parse(newer.viewedAt) - Date.parse(page.viewedAt) > VISIT_GAP_MS;
           return (
-            <li key={`${page.path} ${page.viewedAt}`}>
-              {link === null ? (
-                <span className="page-name">{name}</span>
-              ) : (
-                <a
-                  className="page-name"
-                  href={link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={bare(link)}
-                >
-                  {name}
-                </a>
+            <Fragment key={`${page.path} ${page.viewedAt}`}>
+              {startsVisit && (
+                <li className="visit-gap">
+                  {t("earlierVisit", { date: shortTime(page.viewedAt) })}
+                </li>
               )}
-              <time dateTime={page.viewedAt} title={new Date(page.viewedAt).toLocaleString()}>
-                {ago(page.viewedAt, Date.now(), "narrow")}
-              </time>
-            </li>
+              <li className={isNow ? "now" : undefined}>
+                {link === null ? (
+                  <span className="page-name">{name}</span>
+                ) : (
+                  <a
+                    className="page-name"
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={bare(link)}
+                  >
+                    {name}
+                  </a>
+                )}
+                {isNow ? (
+                  <span className="here-now">{t("hereNow")}</span>
+                ) : (
+                  <time dateTime={page.viewedAt} title={new Date(page.viewedAt).toLocaleString()}>
+                    {ago(page.viewedAt, Date.now(), "narrow")}
+                  </time>
+                )}
+              </li>
+            </Fragment>
           );
         })}
       </ol>
@@ -271,7 +321,7 @@ function ConversationLinks({
 }
 
 /** The team's private note. It saves when the field loses focus. */
-function NoteField({
+export function NoteField({
   note,
   onSave,
 }: {
@@ -313,11 +363,11 @@ function NoteField({
   );
 }
 
-/** The sections both views share, each hidden when it has nothing to show. */
-export function ContactFolds({
+/** What the team knows about the visitor, each section hidden when it has nothing to show. */
+function ContactFolds({
   contact,
   visitor,
-  place,
+  online,
   pages,
   conversationId,
   onOpenConversation,
@@ -325,40 +375,30 @@ export function ContactFolds({
 }: {
   /** Null until it loads: the sections from it wait. */
   contact: ContactDetail | null;
-  /** The newest facts, from the conversation when there is one. */
-  visitor: Place & Details;
-  /** Whether the place shows as a fold. The conversation's panel shows it in its head instead. */
-  place: boolean;
+  /** The newest facts, from the conversation. */
+  visitor: Details;
+  online: boolean;
   pages: PageView[];
-  /** The conversation on screen, left out of the list. Null on the contact page. */
-  conversationId: string | null;
+  /** The conversation on screen, left out of the list. */
+  conversationId: string;
   onOpenConversation(id: string, status: "open" | "closed"): void;
   onNote(note: string | null): Promise<unknown>;
 }) {
   const others = contact?.conversations.filter((one) => one.id !== conversationId) ?? [];
   return (
     <>
-      {place && hasPlace(visitor) && (
-        <Section id="visitor" title="panelVisitor">
-          <PlaceTiles visitor={visitor} online={false} />
-        </Section>
-      )}
       {hasDetails(visitor) && (
         <Section id="details" title="panelDetails">
-          <DetailsFold {...visitor} />
+          <ContactDetails {...visitor} />
         </Section>
       )}
       {pages.length > 0 && (
         <Section id="journey" title="pagesVisited" count={pages.length}>
-          <PageJourney pages={pages} />
+          <PageJourney pages={pages} online={online} />
         </Section>
       )}
       {others.length > 0 && (
-        <Section
-          id="conversations"
-          title={conversationId === null ? "panelAllConversations" : "panelOtherConversations"}
-          count={others.length}
-        >
+        <Section id="conversations" title="panelOtherConversations" count={others.length}>
           <ConversationLinks conversations={others} onOpen={onOpenConversation} />
         </Section>
       )}
@@ -479,11 +519,11 @@ export function VisitorPanel({
       <ContactFolds
         contact={contact}
         visitor={{
-          ...visitor,
           userId: visitor.externalId,
+          attributes: visitor.attributes,
           pageContext: conversation.pageContext,
         }}
-        place={false}
+        online={online === true}
         pages={pages}
         conversationId={conversation.id}
         onOpenConversation={onOpenConversation}

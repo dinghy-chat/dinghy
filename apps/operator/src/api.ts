@@ -193,6 +193,8 @@ export interface Contact extends VisitorIdentity {
 }
 
 export interface ContactDetail extends Contact {
+  /** A widget stream of the visitor's is open now. Null when the server cannot tell. */
+  online: boolean | null;
   attributes: Record<string, unknown> | null;
   pageContext: PageContext | null;
   note: string | null;
@@ -202,6 +204,11 @@ export interface ContactDetail extends Contact {
     createdAt: string;
     updatedAt: string;
     lastBody: string | null;
+    messageCount: number;
+    assigneeName: string | null;
+    /** The member or key that closed it. Null while open, or when the visitor closed it. */
+    closedBy: string | null;
+    firstReplySeconds: number | null;
   }[];
   pages: PageView[];
 }

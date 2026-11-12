@@ -1283,6 +1283,9 @@
           {
             "type": "object",
             "properties": {
+              "online": {
+                "type": ["boolean", "null"]
+              },
               "attributes": {
                 "type": ["object", "null"],
                 "additionalProperties": {}
@@ -1320,9 +1323,31 @@
                     },
                     "lastBody": {
                       "type": ["string", "null"]
+                    },
+                    "messageCount": {
+                      "type": "integer"
+                    },
+                    "assigneeName": {
+                      "type": ["string", "null"]
+                    },
+                    "closedBy": {
+                      "type": ["string", "null"]
+                    },
+                    "firstReplySeconds": {
+                      "type": ["integer", "null"]
                     }
                   },
-                  "required": ["id", "status", "createdAt", "updatedAt", "lastBody"]
+                  "required": [
+                    "id",
+                    "status",
+                    "createdAt",
+                    "updatedAt",
+                    "lastBody",
+                    "messageCount",
+                    "assigneeName",
+                    "closedBy",
+                    "firstReplySeconds"
+                  ]
                 }
               },
               "pages": {
@@ -1344,7 +1369,7 @@
                 }
               }
             },
-            "required": ["attributes", "pageContext", "note", "conversations", "pages"]
+            "required": ["online", "attributes", "pageContext", "note", "conversations", "pages"]
           }
         ]
       },

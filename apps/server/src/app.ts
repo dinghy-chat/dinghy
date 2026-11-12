@@ -442,7 +442,7 @@ export function createApp({
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, db, presence);
     registerModerationRoutes(app, db, live);
-    registerContactRoutes(app, db, live);
+    registerContactRoutes(app, { db, live, visitorPresence });
     registerLiveVisitorRoutes(app, db, liveVisitors);
     registerGetStartedRoutes(app, db);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);

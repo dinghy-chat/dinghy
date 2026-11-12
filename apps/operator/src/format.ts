@@ -28,3 +28,17 @@ export function timeOrDate(iso: string): string {
   const at = new Date(iso);
   return isToday(at) ? clockTime(at) : at.toLocaleString([], { ...SHORT_DATE, ...CLOCK });
 }
+
+/** "45 sec", "4 min", "1.5 hr", in the browser's words. */
+export function duration(seconds: number): string {
+  const unit = (value: number, name: "second" | "minute" | "hour") =>
+    new Intl.NumberFormat([], {
+      style: "unit",
+      unit: name,
+      unitDisplay: "short",
+      maximumFractionDigits: name === "hour" ? 1 : 0,
+    }).format(value);
+  if (seconds < 60) return unit(Math.round(seconds), "second");
+  if (seconds < 3600) return unit(Math.round(seconds / 60), "minute");
+  return unit(seconds / 3600, "hour");
+}

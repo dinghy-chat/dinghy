@@ -225,21 +225,28 @@ function CopyText({ value }: { value: string }) {
   );
 }
 
+/** A small icon button that copies a value. The label names what it copies. */
+export function CopyIcon({ value, label }: { value: string; label: string }) {
+  const [done, copy] = useCopy(value);
+  return (
+    <button
+      type="button"
+      className="icon-button copy-icon"
+      aria-label={done ? t("copied") : label}
+      title={done ? t("copied") : label}
+      onClick={copy}
+    >
+      <Icon name={done ? "check" : "copy"} size={14} />
+    </button>
+  );
+}
+
 /** An ID, such as the site's user ID: monospace, cut to its line, with a button that copies it. */
 export function CopyId({ value, label }: { value: string; label: TextId }) {
-  const [done, copy] = useCopy(value);
   return (
     <p className="copy-id">
       <code title={value}>{value}</code>
-      <button
-        type="button"
-        className="icon-button"
-        aria-label={done ? t("copied") : t("copyValue", { name: t(label) })}
-        title={done ? t("copied") : t("copy")}
-        onClick={copy}
-      >
-        <Icon name={done ? "check" : "copy"} size={14} />
-      </button>
+      <CopyIcon value={value} label={t("copyValue", { name: t(label) })} />
     </p>
   );
 }
@@ -754,7 +761,7 @@ export type Option<T> = {
 
 /**
  * Radio buttons drawn as pills, named by a legend for screen readers. Outlined draws them as one
- * segmented control.
+ * segmented control, and tabs as a row of tabs over a line.
  */
 export function Choices<T extends string>({
   label,
@@ -766,7 +773,7 @@ export function Choices<T extends string>({
   onChange,
 }: {
   label: string;
-  variant?: "outlined";
+  variant?: "outlined" | "tabs";
   /** Fills the width, in equal parts. */
   full?: boolean;
   /** The ID of a hint that says more about the choice. */
