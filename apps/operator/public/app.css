@@ -4069,6 +4069,29 @@ button.quote:hover {
 .meter.full .meter-note {
   color: var(--bad);
 }
+/* Appearance: the members the header shows, in order, each with its buttons. */
+.chosen-members {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chosen-members > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chosen-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chosen-members .down svg {
+  transform: rotate(180deg);
+}
 /* Blocked visitors, API keys and webhooks: one item a row, with a line between rows. */
 .item-list {
   display: grid;
@@ -5129,27 +5152,4 @@ button.quote:hover {
   .live-dot {
     transition: none;
   }
-}
-/* Appearance: the members the header shows, in order, each with its buttons. */
-.chosen-members {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.chosen-members li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.chosen-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chosen-members .down svg {
-  transform: rotate(180deg);
 }
