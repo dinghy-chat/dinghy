@@ -8,6 +8,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 - Internal notes: choose **Note** above the reply box to write a message that only your team sees, never the visitor. API: `"note": true` on `POST .../conversations/{conversationId}/messages`, a message `kind` of `note`, and the MCP tool `add_note`.
 
+### Fixed
+
+- Text you select in the widget stays readable. A site that styled its own selection made the selected text in the chat invisible, because Chrome passes the page's selection style into the widget.
+
 ## [0.23.0] - 2026-11-12
 
 ### Added
