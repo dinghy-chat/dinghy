@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { inboxFilter } from "./filters.ts";
 import { signedIn } from "./links.ts";
 import { openSettings, openSettingsList, settingsList } from "./settings.ts";
 
@@ -206,24 +207,22 @@ test("a Settings link names its workspace, which wins over the one remembered", 
 
 test("Back brings back the Inbox's filters with their list", async ({ browser }) => {
   const page = await signedIn(browser, server, "owner@example.com");
-  const status = page.getByRole("group", { name: "Conversations to show" });
-  const whose = page.getByRole("group", { name: "Whose conversations" });
   await page.goto(`${server.apiOrigin}/?view=closed&who=mine`);
-  await expect(status.getByRole("radio", { name: "Closed" })).toBeChecked();
-  await expect(whose.getByRole("radio", { name: "Mine" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
+  await expect(await inboxFilter(page, "Mine")).toBeChecked();
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Inbox", exact: true }).click();
-  await status.getByRole("radio", { name: "Open" }).check();
-  await whose.getByRole("radio", { name: "All" }).check();
+  await (await inboxFilter(page, "Open")).check();
+  await (await inboxFilter(page, "All")).check();
   await expect(page).toHaveURL(`${server.apiOrigin}/`);
 
   await page.goBack();
   await expect(settingsList(page)).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(`${server.apiOrigin}/?view=closed&who=mine`);
-  await expect(status.getByRole("radio", { name: "Closed" })).toBeChecked();
-  await expect(whose.getByRole("radio", { name: "Mine" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
+  await expect(await inboxFilter(page, "Mine")).toBeChecked();
   await expect(page.getByText("Nothing is assigned to you.")).toBeVisible();
   await page.context().close();
 });

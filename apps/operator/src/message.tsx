@@ -89,7 +89,14 @@ export function QuoteChip({
 export function MessageMenu({ items, side }: { items: MenuItem[]; side: "start" | "end" }) {
   if (items.length === 0) return null;
   return (
-    <Menu label={t("messageActions")} items={items} buttonClass="msg-more" side={side}>
+    <Menu
+      label={t("messageActions")}
+      items={items}
+      buttonClass="msg-more"
+      side={side}
+      floating
+      className="msg-menu"
+    >
       <Icon name="dots" size={18} />
     </Menu>
   );

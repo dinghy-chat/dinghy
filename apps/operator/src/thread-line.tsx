@@ -60,6 +60,7 @@ export function ThreadLine({
   editor,
   flash,
   receipt,
+  receiptOnHover,
   onView,
   onImageError,
   onRetry,
@@ -73,6 +74,11 @@ export function ThreadLine({
   flash: boolean;
   /** How far the visitor has seen this reply, under its bubble. */
   receipt: ReactNode;
+  /**
+   * An earlier reply's receipt shows beside its bubble while the pointer is on it, over the empty
+   * side, so nothing in the thread moves.
+   */
+  receiptOnHover: boolean;
   onView(): void;
   onImageError(): void;
   onRetry(): void;
@@ -86,9 +92,10 @@ export function ThreadLine({
         <div className={row} id={`message-${line.id}`}>
           <Bubble line={line} quote={quote} onView={onView} onImageError={onImageError} />
           {menu}
+          {receiptOnHover && receipt}
         </div>
       )}
-      {receipt}
+      {!receiptOnHover && receipt}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}
       {line.status === "failed" && (
         <button type="button" className="retry" onClick={onRetry}>

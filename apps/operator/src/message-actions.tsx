@@ -45,7 +45,7 @@ export function lineMenu(
   if (line.seq === null || line.note !== undefined) return [];
   const item = (label: TextId, icon: IconName, onSelect: () => void): MenuItem => ({
     label: t(label),
-    lead: <Icon name={icon} size={18} />,
+    lead: <Icon name={icon} size={16} />,
     onSelect,
   });
   const info = item("messageInfo", "info", act.info);

@@ -162,7 +162,7 @@ function listContext(status: Status, waiting: number): string {
   return t("waitingMany", { count: waiting });
 }
 
-/** The Inbox's list: its filters, the search, and a row for each conversation. */
+/** The Inbox's list: the search and its filters, and a row for each conversation. */
 export function InboxList({
   api,
   status,
@@ -210,8 +210,16 @@ export function InboxList({
         title={t("inbox")}
         context={found === null ? listContext(status, waiting) : foundContext(found.length)}
       />
-      <ListFilters status={status} who={who} isTeam={isTeam} openBy={openBy} onChange={onFilter} />
-      <SearchField value={query} searching={searching} onChange={setQuery} />
+      <div className="list-tools">
+        <SearchField value={query} searching={searching} onChange={setQuery} />
+        <ListFilters
+          status={status}
+          who={who}
+          isTeam={isTeam}
+          openBy={openBy}
+          onChange={onFilter}
+        />
+      </div>
       {(searchTooShort || searchFailed) && (
         <p className={searchFailed ? "bad search-note" : "hint search-note"} role="status">
           {t(searchFailed ? "searchFailed" : "searchTooShort")}

@@ -1,5 +1,7 @@
 /** @jsxImportSource react */
 import type { Assignee, OpenCounts } from "./api.ts";
+import { Icon } from "./icons.tsx";
+import { Popover } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Choices, type Option } from "./ui.tsx";
 
@@ -58,8 +60,9 @@ export function emptyLook(status: Status, who: Who): { empty: TextId; hint: Text
 }
 
 /**
- * Open and Closed, and for a team All, Mine and Unassigned under them, each with its count of open
- * conversations. The assignee counts show only on the Open list.
+ * The filter button beside the search, and its card: Open or Closed, and for a team All, Mine or
+ * Unassigned, each with its count of open conversations. The assignee counts show only on the Open
+ * list. A dot on the button says the list is not the default one.
  */
 export function ListFilters({
   status,
@@ -74,8 +77,17 @@ export function ListFilters({
   openBy: OpenCounts | null;
   onChange(status: Status, who: Who): void;
 }) {
+  const filtered = status !== "open" || who !== "all";
   return (
-    <div className="list-filters">
+    <Popover
+      label={t(filtered ? "listFiltered" : "listFilter")}
+      title={t("listFilter")}
+      buttonClass={filtered ? "filter-button filtered" : "filter-button"}
+      buttonContent={<Icon name="filter" size={18} />}
+    >
+      <p className="popover-label" aria-hidden="true">
+        {t("listStatus")}
+      </p>
       <Choices
         label={t("listStatus")}
         variant="outlined"
@@ -87,19 +99,24 @@ export function ListFilters({
         onChange={(next) => onChange(next, who)}
       />
       {isTeam && (
-        <Choices
-          label={t("listAssignee")}
-          variant="quiet"
-          full
-          value={who}
-          options={WHO_OPTIONS.map((option) =>
-            status === "open" && openBy !== null
-              ? { ...option, count: openBy[option.value] }
-              : option,
-          )}
-          onChange={(next) => onChange(status, next)}
-        />
+        <>
+          <p className="popover-label" aria-hidden="true">
+            {t("listAssignee")}
+          </p>
+          <Choices
+            label={t("listAssignee")}
+            variant="outlined"
+            full
+            value={who}
+            options={WHO_OPTIONS.map((option) =>
+              status === "open" && openBy !== null
+                ? { ...option, count: openBy[option.value] }
+                : option,
+            )}
+            onChange={(next) => onChange(status, next)}
+          />
+        </>
       )}
-    </div>
+    </Popover>
   );
 }

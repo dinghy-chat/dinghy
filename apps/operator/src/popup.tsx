@@ -2,6 +2,8 @@
 import {
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -39,6 +41,7 @@ function usePopup(labels: string[], start: () => number) {
     setOpen(false);
     if (refocus) button.current?.focus();
   };
+  const close = useCallback(() => setOpen(false), []);
 
   useLayoutEffect(() => {
     if (open) popup.current?.focus();
@@ -126,11 +129,60 @@ function usePopup(labels: string[], start: () => number) {
     popup,
     show,
     hide,
+    close,
     onButtonKey,
     onPopupKey,
     itemId,
     id,
   };
+}
+
+const EDGE = 8;
+
+/**
+ * Places an open popup in the window, out of any area that scrolls or clips it, such as the thread
+ * above the reply field: under its button, or over it when there is more room there, lined up with
+ * `side` of the button and kept inside the window. A scroll outside the popup closes it, as it
+ * would no longer sit by its button.
+ */
+function useFloating(
+  open: boolean,
+  button: RefObject<HTMLButtonElement | null>,
+  popup: RefObject<HTMLDivElement | null>,
+  side: Side,
+  close: () => void,
+) {
+  useLayoutEffect(() => {
+    const element = popup.current;
+    const anchor = button.current?.getBoundingClientRect();
+    if (!open || element === null || anchor === undefined) return;
+    const gap = 6;
+    const below = innerHeight - anchor.bottom - gap - EDGE;
+    const above = anchor.top - gap - EDGE;
+    const down = element.offsetHeight <= below || below >= above;
+    const width = element.offsetWidth;
+    const left = side === "end" ? anchor.right - width : anchor.left;
+    Object.assign(element.style, {
+      top: down ? `${anchor.bottom + gap}px` : "auto",
+      bottom: down ? "auto" : `${innerHeight - anchor.top + gap}px`,
+      left: `${Math.max(EDGE, Math.min(left, innerWidth - width - EDGE))}px`,
+      maxHeight: `${Math.max(down ? below : above, 120)}px`,
+    });
+    element.classList.toggle("up", !down);
+  }, [open, button, popup, side]);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: Event) => {
+      if (!popup.current?.contains(event.target as Node)) close();
+    };
+    addEventListener("scroll", away, true);
+    addEventListener("resize", close);
+    return () => {
+      removeEventListener("scroll", away, true);
+      removeEventListener("resize", close);
+    };
+  }, [open, popup, close]);
 }
 
 interface Choice<V extends string> {
@@ -261,11 +313,14 @@ export function Menu({
   buttonClass,
   side = "end",
   direction = "down",
+  floating = false,
   className = "",
 }: {
   /** The button's accessible name. */
   label: string;
   items: MenuItem[];
+  /** Placed in the window, so an area that scrolls, such as the thread, never cuts it off. */
+  floating?: boolean;
   /** What the button shows. */
   children: ReactNode;
   buttonClass: string;
@@ -277,6 +332,7 @@ export function Menu({
     items.map((item) => item.label),
     () => 0,
   );
+  useFloating(floating && popup.open, popup.button, popup.popup, side, popup.close);
   const choose = (index: number) => {
     const item = items[index];
     if (item?.unavailable !== undefined) return;
@@ -300,7 +356,7 @@ export function Menu({
       {popup.open && (
         <div
           ref={popup.popup}
-          className={`popup side-${side} ${direction}`}
+          className={floating ? "popup" : `popup side-${side} ${direction}`}
           role="menu"
           tabIndex={-1}
           aria-label={label}
@@ -411,5 +467,86 @@ export function Confirm({
         </div>
       </form>
     </dialog>
+  );
+}
+
+/**
+ * A button that opens a small card of controls under it, such as the Inbox's filters. A click
+ * outside, Escape or Tab past its last control closes it, and Escape gives the focus back.
+ */
+export function Popover({
+  label,
+  title,
+  children,
+  buttonClass,
+  buttonContent,
+  side = "end",
+}: {
+  /** The button's accessible name. */
+  label: string;
+  /** The card's heading. */
+  title: string;
+  children: ReactNode;
+  buttonClass: string;
+  buttonContent: ReactNode;
+  side?: Side;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  useLayoutEffect(() => {
+    if (open) card.current?.querySelector<HTMLElement>("input:checked, input, button")?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+
+  return (
+    <div className="menu-wrap" ref={wrap}>
+      <button
+        ref={button}
+        type="button"
+        className={buttonClass}
+        aria-label={label}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {buttonContent}
+      </button>
+      {open && (
+        <div
+          ref={card}
+          className={`popup popover side-${side}`}
+          role="dialog"
+          aria-labelledby={titleId}
+          onBlur={(event) => {
+            // Tab past the last control. A click on the card's padding moves the focus nowhere.
+            const to = event.relatedTarget;
+            if (to !== null && !wrap.current?.contains(to)) setOpen(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.stopPropagation();
+            setOpen(false);
+            button.current?.focus();
+          }}
+        >
+          <h3 id={titleId} className="popover-title">
+            {title}
+          </h3>
+          {children}
+        </div>
+      )}
+    </div>
   );
 }

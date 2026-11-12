@@ -114,7 +114,7 @@ dialog img{display:block;max-width:none}
 .emojis{position:absolute;left:8px;right:8px;bottom:100%;margin:0;min-width:0;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:6px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgb(13 34 64/.18)}
 .emojis button{height:36px;padding:0;border:0;border-radius:8px;background:none;font-size:20px;cursor:pointer}
 .emojis button:hover{background:var(--fog)}
-.file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+.file{position:absolute;width:1px;height:1px;padding:0;border:0;opacity:0;overflow:hidden;pointer-events:none}
 .card{display:block;align-self:stretch;margin:6px 0;padding:12px 14px;border:0;border-radius:16px;background:color-mix(in srgb,var(--primary) 7%,var(--paper));box-shadow:0 1px 2px rgb(13 34 64/.08)}
 .card .who{margin:0;color:var(--ink);font-weight:600}
 .card p{margin:4px 0 0;font-size:13px;line-height:18px;color:var(--mute)}

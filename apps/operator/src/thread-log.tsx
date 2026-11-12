@@ -162,6 +162,7 @@ export function ThreadLog({
           }
           flash={flashId === line.id}
           receipt={receipt}
+          receiptOnHover={index !== lastReply}
           onView={() => setViewing(line.id)}
           onImageError={onImageError}
           onRetry={() => onRetry(line)}

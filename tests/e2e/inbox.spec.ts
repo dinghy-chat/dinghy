@@ -1,5 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { inboxFilter } from "./filters.ts";
 import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -194,15 +195,15 @@ test("the Closed switch lists closed conversations, by keyboard too, and a reloa
   // A conversation that stops matching leaves the list.
   await expect(row(page, "Close this one")).toHaveCount(0);
 
-  const open = page.getByRole("radio", { name: "Open" });
+  const open = await inboxFilter(page, "Open");
   await open.focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
   await expect(row(page, "Close this one")).toBeVisible();
   await expect(page).toHaveURL(/[?&]view=closed/);
 
   await page.reload();
-  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
   await expect(row(page, "Close this one")).toBeVisible();
   for (const one of [customer, page]) await one.context().close();
 });
@@ -217,10 +218,10 @@ test("Mine and Unassigned follow assignments as they change", async ({ browser }
     await alice.getByRole("option", { name }).click();
   };
 
-  await bob.getByRole("radio", { name: "Unassigned" }).click();
+  await (await inboxFilter(bob, "Unassigned")).click();
   await expect(row(bob, "For Alice")).toBeVisible();
   await expect(row(bob, "For Bob")).toBeVisible();
-  await bob.getByRole("radio", { name: "Mine" }).click();
+  await (await inboxFilter(bob, "Mine")).click();
   await expect(bob.getByText("Nothing is assigned to you.")).toBeVisible();
   await expect(bob).toHaveURL(/[?&]who=mine/);
 
@@ -233,11 +234,11 @@ test("Mine and Unassigned follow assignments as they change", async ({ browser }
   // Reassigned away, it leaves.
   await assign("For Bob", "alice@example.com");
   await expect(row(bob, "For Bob")).toHaveCount(0);
-  await bob.getByRole("radio", { name: "Unassigned" }).click();
+  await (await inboxFilter(bob, "Unassigned")).click();
   await expect(bob.getByText("Every open conversation has someone on it.")).toBeVisible();
 
   await bob.reload();
-  await expect(bob.getByRole("radio", { name: "Unassigned" })).toBeChecked();
+  await expect(await inboxFilter(bob, "Unassigned")).toBeChecked();
   for (const one of [...customers, alice, bob]) await one.context().close();
 });
 
@@ -252,7 +253,7 @@ test("an old Closed link opens the Inbox with Closed picked, and a conversation 
 
   await page.goto(`${server.apiOrigin}/?view=closed`);
   await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
   await expect(row(page, "Linked and closed")).toBeVisible();
 
   const workspaceId = server.workspaceId();
@@ -265,6 +266,6 @@ test("an old Closed link opens the Inbox with Closed picked, and a conversation 
   const linked = conversations.find((one) => one.lastMessage?.body === "Linked and closed");
   await page.goto(`${server.apiOrigin}/?workspace=${workspaceId}&conversation=${linked?.id}`);
   await expect(page.getByText("This conversation is closed.")).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
   for (const one of [customer, page]) await one.context().close();
 });

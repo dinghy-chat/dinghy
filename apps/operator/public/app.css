@@ -1561,12 +1561,63 @@ img.ws-tile {
 .list .page-head {
   padding: 26px 24px 14px;
 }
+/* The search field, and the filter button beside it. */
+.list-tools {
+  display: flex;
+  gap: 8px;
+  margin: 0 16px 12px;
+}
 .search {
   position: relative;
-  margin: 0 24px 12px;
+  flex: 1;
+  min-width: 0;
+}
+.filter-button {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+  color: var(--navy);
+  transition: background-color 0.15s;
+}
+.filter-button:is(:hover, [aria-expanded="true"]) {
+  background: var(--soft);
+}
+/* A filter other than Open and All: a dot on the button. */
+.filter-button.filtered::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+/* The filter card: Status, and in a team Assigned to, each one segmented control. */
+.popover {
+  display: grid;
+  gap: 6px;
+  width: 300px;
+  padding: 12px 12px 14px;
+}
+.popover-title {
+  margin: 0 2px 4px;
+  font-size: 15px;
+}
+.popover-label {
+  margin: 6px 2px 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 .search-note {
-  margin: -4px 24px 12px;
+  margin: -4px 16px 12px;
   font-size: 13.5px;
 }
 .search svg {
@@ -2137,6 +2188,7 @@ img.ws-tile {
   min-height: 0;
   padding: 24px 28px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 .empty {
   margin: auto;
@@ -2226,20 +2278,20 @@ img.ws-tile {
 .receipt.emailFailed {
   color: var(--bad);
 }
-/* An earlier reply's line shows with the pointer on its bubble, and screen readers always read it. */
+/* An earlier reply's line shows beside its bubble, past the "…", with the pointer on it. It sits
+   over the empty side of the thread, so nothing moves, and screen readers always read it. */
 .receipt.later {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+  right: 100%;
+  bottom: 6px;
+  margin: 0 4px 0 0;
   white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
 }
-.bubble-row:hover + .receipt.later {
-  position: static;
-  width: auto;
-  height: auto;
-  clip-path: none;
+.bubble-row:hover > .receipt.later {
+  opacity: 1;
 }
 /* A visitor's unsent words, faded, with three dots that move. */
 .msg.draft {
@@ -2311,6 +2363,7 @@ img.ws-tile {
 }
 /* A message and its "…": the button sits on the bubble's inner side and shows on hover or focus. */
 .bubble-row {
+  position: relative;
   display: flex;
   flex-direction: row-reverse;
   align-self: flex-end;
@@ -2341,6 +2394,22 @@ img.ws-tile {
   .bubble-row .menu-wrap {
     opacity: 1;
   }
+}
+/* A message's menu: smaller than the app's other menus, and placed in the window, so the thread
+   never cuts it off. Its script sets where. */
+.msg-menu .popup {
+  position: fixed;
+  margin: 0;
+  min-width: 168px;
+  padding: 4px;
+  border-radius: 12px;
+  font-size: 13.5px;
+}
+.msg-menu .item {
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 8px;
 }
 .msg-more {
   display: grid;
@@ -3229,20 +3298,10 @@ button.quote:hover {
   box-shadow: inset 0 0 0 1.5px var(--soft-edge);
   color: var(--navy);
 }
-/* Open or Closed, and below it, in a team, whose: All, Mine or Unassigned. */
-.list-filters {
-  display: grid;
-  justify-items: stretch;
-  gap: 8px;
-  margin: 0 24px 14px;
-}
 /* One segmented control in an outline, such as Open or Closed. */
-.choices.outlined,
-.choices.quiet {
+.choices.outlined {
   flex-wrap: nowrap;
   gap: 2px;
-}
-.choices.outlined {
   padding: 3px;
   border-radius: 999px;
   box-shadow: inset 0 0 0 1.5px var(--field-line);
@@ -3252,34 +3311,18 @@ button.quote:hover {
   padding: 0 14px;
   font-size: 14px;
 }
-/* Quieter than an outlined one: small muted words, and the chosen one navy on a soft pill. */
-.choices.quiet label {
-  gap: 5px;
-  min-height: 28px;
-  padding: 0 10px;
-  color: var(--mute);
-  font-size: 13px;
-}
-.choices.quiet label:has(:checked) {
-  box-shadow: none;
-  color: var(--navy);
-}
-/* Under Open and Closed, the same width, with its edges inside the outline's. */
-.list-filters > .choices.quiet {
-  padding: 0 3px;
-}
-/* Open and Closed, as two equal halves as wide as the search field. */
+/* Open and Closed, or All, Mine and Unassigned, in equal parts across the filter card. */
 .choices.full label {
   flex: 1;
   justify-content: center;
 }
+/* In the filter card, narrower, so All, Mine and Unassigned fit on one line. */
+.popover .choices.outlined label {
+  padding: 0 8px;
+}
 .choice-count {
   color: var(--mute);
   font-variant-numeric: tabular-nums;
-}
-.choices.quiet .choice-count {
-  font-size: 12px;
-  font-weight: 500;
 }
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
    preview comes first, so on a narrow screen it sits above the form. */
@@ -4190,8 +4233,8 @@ button.quote:hover {
   .list .page-head {
     padding: 22px 18px 12px;
   }
-  .search {
-    margin-inline: 18px;
+  .list-tools {
+    margin-inline: 12px;
   }
   .page-head h2 {
     font-size: 25px;

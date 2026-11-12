@@ -738,7 +738,7 @@ export type Option<T> = {
 
 /**
  * Radio buttons drawn as pills, named by a legend for screen readers. Outlined draws them as one
- * segmented control, and quiet as small words.
+ * segmented control.
  */
 export function Choices<T extends string>({
   label,
@@ -750,7 +750,7 @@ export function Choices<T extends string>({
   onChange,
 }: {
   label: string;
-  variant?: "outlined" | "quiet";
+  variant?: "outlined";
   /** Fills the width, in equal parts. */
   full?: boolean;
   /** The ID of a hint that says more about the choice. */

@@ -25,7 +25,7 @@ export function receiptOf(seq: bigint, receipts: ReplyReceipts): Receipt {
 
 /**
  * The small line under a reply: a check and what happened to it. Under the last reply it always
- * shows. Under an earlier one it shows when the pointer is on its bubble, and screen readers
+ * shows. An earlier one shows beside its bubble while the pointer is on it, and screen readers
  * read it either way.
  */
 export function ReceiptLine({ receipt, later }: { receipt: Receipt; later: boolean }) {
