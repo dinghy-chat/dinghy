@@ -31,6 +31,8 @@ export interface Line {
   /** Held until the server confirms it, so a retry can send it again. */
   file?: File;
   fromVisitor: boolean;
+  /** `closed` and `reopened` are status lines, and a `note` is the team's own. */
+  kind: Message["kind"];
   /** When the server saved it. A pending line has none yet. */
   createdAt?: string;
   /** The operator who sent it. A pending line is this operator's own. */
@@ -39,8 +41,6 @@ export interface Line {
   authorApiKeyId: string | null;
   authorName: string | null;
   status: "sent" | "sending" | "failed";
-  /** A status line: someone closed or reopened the conversation. */
-  note?: "closed" | "reopened";
   /** The message this one quotes. */
   replyTo: Quote | null;
   editedAt: string | null;
@@ -50,15 +50,14 @@ export interface Line {
 
 /** Adds a confirmed message in commit order, and replaces its pending line if it has one. */
 function merge(lines: Line[], message: Message): Line[] {
-  const { kind } = message;
   const line: Line = {
-    ...((kind === "closed" || kind === "reopened") && { note: kind }),
     id: message.id,
     seq: BigInt(message.seq),
     body: message.body ?? "",
     image: message.image,
     imageRemoved: message.imageRemoved,
     fromVisitor: message.fromVisitor,
+    kind: message.kind,
     createdAt: message.createdAt,
     authorOperatorId: message.authorOperatorId,
     authorApiKeyId: message.authorApiKeyId,
@@ -161,14 +160,15 @@ export function useThreadLines({
     reloadAll();
   };
 
-  const deliver = async (id: string, body: string, file?: File, replyToId?: string) => {
+  const deliver = async ({ id, body, file, replyTo, kind }: Line) => {
     setLines((current) =>
       current.map((line) => (line.id === id ? { ...line, status: "sending" } : line)),
     );
+    const replyToId = replyTo?.id ?? undefined;
     try {
       const sent =
         file === undefined
-          ? await api.reply(conversationId, id, body, replyToId)
+          ? await api.reply(conversationId, id, body, replyToId, kind === "note")
           : await api.replyImage(conversationId, id, file, replyToId);
       setLines((current) => merge(current, sent));
       onChanged();
@@ -187,13 +187,14 @@ export function useThreadLines({
   };
 
   /** A line this operator is sending, before the server confirms it. */
-  const pending = (id: string, body: string, replyTo: Quote | null): Line => ({
-    id,
+  const pending = (body: string, replyTo: Quote | null, kind: "text" | "image" | "note"): Line => ({
+    id: newClientId(),
     seq: null,
     body,
     image: null,
     imageRemoved: false,
     fromVisitor: false,
+    kind,
     authorOperatorId: meId,
     authorApiKeyId: null,
     authorName: null,
@@ -204,10 +205,11 @@ export function useThreadLines({
     via: null,
   });
 
-  const sendText = (body: string, quote: Quote | null) => {
-    const id = newClientId();
-    setLines((current) => [...current, pending(id, body, quote)]);
-    void deliver(id, body, undefined, quote?.id ?? undefined);
+  /** Sends a reply, or a note that only the team sees. */
+  const sendText = (body: string, quote: Quote | null, isNote: boolean) => {
+    const line = pending(body, quote, isNote ? "note" : "text");
+    setLines((current) => [...current, line]);
+    void deliver(line);
   };
 
   const sendFiles = (files: Iterable<File>) => {
@@ -219,9 +221,9 @@ export function useThreadLines({
         setProblem(problem);
         continue;
       }
-      const id = newClientId();
-      setLines((current) => [...current, { ...pending(id, "", null), file }]);
-      void deliver(id, "", file);
+      const line = { ...pending("", null, "image"), file };
+      setLines((current) => [...current, line]);
+      void deliver(line);
     }
   };
 
@@ -238,8 +240,7 @@ export function useThreadLines({
     lines,
     loadFailure,
     refreshImages,
-    retry: (line: Line) =>
-      void deliver(line.id, line.body, line.file, line.replyTo?.id ?? undefined),
+    retry: (line: Line) => void deliver(line),
     sendText,
     sendFiles,
     keep,

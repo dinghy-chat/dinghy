@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState } from "react";
 import type { Conversation, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
-import { Composer } from "./composer.tsx";
+import { type ComposeMode, Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
@@ -9,7 +9,7 @@ import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
 import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
-import { receiptOf } from "./receipts.tsx";
+import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
 import { ThreadHead } from "./thread-head.tsx";
 import { type Line, useThreadLines } from "./thread-lines.ts";
@@ -59,7 +59,7 @@ function infoOf(line: Line, author: string, receipts: ReplyReceipts | null): Inf
     author,
     via: line.via,
     receipt:
-      line.fromVisitor || receipts === null || line.seq === null
+      !hasReceipt(line) || receipts === null || line.seq === null
         ? null
         : { isRead: receiptOf(line.seq, receipts) === "read" },
   };
@@ -172,7 +172,9 @@ export function Thread({
     : readOnly && welcome === null
       ? "readOnlyHelp"
       : null;
-  const imagesOn = !readOnly && !suspended;
+  // A new thread starts on Reply, as the inbox keys each thread by its conversation.
+  const [mode, setMode] = useState<ComposeMode>("reply");
+  const imagesOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
 
   if (conversation === null) {
@@ -190,6 +192,7 @@ export function Thread({
     thread.sendText(
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
+      mode === "note",
     );
     setQuoting(null);
   };
@@ -204,7 +207,7 @@ export function Thread({
   return (
     <div className="conversation-view">
       <section
-        className={dropping && !closed ? "thread drop" : "thread"}
+        className={dropping && !closed && imagesOn ? "thread drop" : "thread"}
         aria-label={visitorName}
         onDragOver={(event) => {
           // A drag of selected text keeps its normal behavior.
@@ -247,7 +250,7 @@ export function Thread({
         {deleting !== null && (
           <Confirm
             title={t("messageDeleteTitle")}
-            text={t("messageDeleteText")}
+            text={t(deleting.kind === "note" ? "noteDeleteText" : "messageDeleteText")}
             confirm={t("messageDeleteYes")}
             onConfirm={() => void actions.removeMessage(deleting)}
             onCancel={() => setDeleting(null)}
@@ -300,6 +303,7 @@ export function Thread({
             setDraft={setDraft}
             onSend={send}
             onFiles={imagesOn ? sendFiles : undefined}
+            mode={{ value: mode, onChange: setMode }}
             onEscape={quoting === null ? undefined : () => setQuoting(null)}
             above={
               quoting === null ? undefined : (

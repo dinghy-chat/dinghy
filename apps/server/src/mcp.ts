@@ -102,6 +102,22 @@ function tool<S extends z.ZodType>(spec: {
 }
 
 const conversationId = z.uuid().describe("The conversation's ID");
+const messageBody = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MESSAGE_MAX)
+  .regex(/^[^\0]*$/);
+const clientId = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,64}$/)
+  .describe(
+    "Your own ID for this message, up to 64 letters, digits, - or _. Send the same one on a retry",
+  );
+const replyToMessageId = z
+  .uuid()
+  .optional()
+  .describe("An earlier message of this conversation to quote, from get_conversation");
 const CURSOR = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\|([0-9a-f-]{36})$/;
 
 const replyAnswer = (outcome: ReplyOutcome): Outcome => {
@@ -195,25 +211,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       title: "Reply to a visitor",
       description:
         "Sends a reply in an open conversation. The visitor sees the API key's name as its author. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message.",
-      input: z.object({
-        conversationId,
-        body: z
-          .string()
-          .trim()
-          .min(1)
-          .max(MESSAGE_MAX)
-          .regex(/^[^\0]*$/),
-        clientId: z
-          .string()
-          .regex(/^[A-Za-z0-9_-]{1,64}$/)
-          .describe(
-            "Your own ID for this reply, up to 64 letters, digits, - or _. Send the same one on a retry",
-          ),
-        replyToMessageId: z
-          .uuid()
-          .optional()
-          .describe("An earlier message of this conversation to quote, from get_conversation"),
-      }),
+      input: z.object({ conversationId, body: messageBody, clientId, replyToMessageId }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
         replyAnswer(
@@ -222,6 +220,25 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
             clientId: input.clientId,
             replyToMessageId: input.replyToMessageId,
             via: "mcp",
+            note: false,
+          }),
+        ),
+    }),
+    tool({
+      name: "add_note",
+      title: "Add an internal note",
+      description:
+        "Adds a note to a conversation, open or closed, that only the team sees. The visitor never sees it, and it alerts nobody. Pass the same `clientId` when you retry. Pass `replyToMessageId` to quote an earlier message or note.",
+      input: z.object({ conversationId, body: messageBody, clientId, replyToMessageId }),
+      idempotent: true,
+      run: async (input, { workspaceId, actor }) =>
+        replyAnswer(
+          await inbox.reply(workspaceId, actor, input.conversationId, {
+            body: input.body,
+            clientId: input.clientId,
+            replyToMessageId: input.replyToMessageId,
+            via: "mcp",
+            note: true,
           }),
         ),
     }),
@@ -378,8 +395,8 @@ export function registerMcp(
         serverInfo: { name: "dinghy", title: "Dinghy", version },
         instructions:
           actor.level === "setup"
-            ? "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's, and set up its webhooks. Replies show the key's name as their author."
-            : "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's. Replies show the key's name as their author.",
+            ? "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's, add notes that only the team sees, and set up its webhooks. Replies and notes show the key's name as their author."
+            : "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's, and add notes that only the team sees. Replies and notes show the key's name as their author.",
       });
     }
     if (method === "ping") return rpcResult(id, {});
@@ -442,7 +459,7 @@ export function registerMcp(
     security: API_KEY,
     summary: "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
     description:
-      "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+      "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `add_note`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
     request: {
       body: {
         required: true,

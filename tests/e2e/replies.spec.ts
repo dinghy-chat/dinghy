@@ -196,3 +196,45 @@ test("a deleted reply leaves the widget's unread count", async ({ browser }) => 
 
   for (const page of [customer, alice]) await page.context().close();
 });
+
+test("an operator adds a note that the visitor never sees, and a new thread starts on Reply", async ({
+  browser,
+}) => {
+  const customer = await visitor(browser, "Can I get a refund?");
+  const alice = await signedIn(browser, server, "alice@example.com");
+  await alice.locator(".row", { hasText: "Can I get a refund?" }).click();
+
+  await alice.getByRole("radio", { name: "Note" }).check();
+  await expect(alice.getByRole("button", { name: "Attach an image" })).toHaveCount(0);
+  const box = alice.getByRole("textbox", { name: "Your note" });
+  await box.fill("Refund approved by finance");
+  await alice.getByRole("button", { name: "Add note" }).click();
+  const note = alice.locator(".msg.note", { hasText: "Refund approved by finance" });
+  await expect(note).toBeVisible();
+  await expect(note.locator(".note-label")).toHaveText("Internal note · You");
+
+  // A note cannot be quoted in a reply, as the visitor would see the quote.
+  await note.hover();
+  await alice
+    .locator(".bubble-row", { has: note })
+    .getByRole("button", { name: "Message actions" })
+    .click();
+  await expect(alice.getByRole("menuitem", { name: "Edit" })).toBeVisible();
+  await expect(alice.getByRole("menuitem", { name: "Reply" })).toHaveCount(0);
+  await alice.keyboard.press("Escape");
+
+  await alice.getByRole("radio", { name: "Reply" }).check();
+  await answer(alice, "Yes, it is on its way.");
+  await expect(customer.locator(".msg", { hasText: "Yes, it is on its way." })).toBeVisible();
+  await expect(customer.getByText("Refund approved")).toHaveCount(0);
+
+  // Another conversation's composer starts on Reply.
+  const other = await visitor(browser, "Another question");
+  await alice.locator(".row", { hasText: "Another question" }).click();
+  await alice.getByRole("radio", { name: "Note" }).check();
+  await alice.locator(".row", { hasText: "Yes, it is on its way." }).click();
+  await expect(alice.getByRole("radio", { name: "Reply" })).toBeChecked();
+  await expect(alice.getByRole("textbox", { name: "Your reply" })).toBeVisible();
+
+  for (const page of [customer, other, alice]) await page.context().close();
+});

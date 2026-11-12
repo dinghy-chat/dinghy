@@ -31,6 +31,7 @@ import {
   type MessagePayload,
   message,
   operator,
+  type VISITOR_KINDS,
   visitor,
   webhook,
   workspace,
@@ -53,6 +54,9 @@ type MessageKind = (typeof message.$inferSelect)["kind"];
  * hand passes its own column, such as sql`m.kind`.
  */
 export const isChat = (kind: SQLWrapper = message.kind) => inArray(kind, [...CHAT_KINDS]);
+
+/** What people wrote: the chat, and the notes only the team sees. */
+export const isWritten = () => inArray(message.kind, [...CHAT_KINDS, "note"]);
 
 /** Who closed or reopened a conversation, as the author of its status line. */
 export type StatusActor =
@@ -169,6 +173,10 @@ export interface StoredMessage {
   createdAt: Date;
 }
 
+/** A message the visitor may get: any kind but a note. */
+export type VisitorMessage = StoredMessage & { kind: (typeof VISITOR_KINDS)[number] };
+export const isVisitorMessage = (one: StoredMessage): one is VisitorMessage => one.kind !== "note";
+
 export const messageColumns = {
   id: message.id,
   conversationId: message.conversationId,
@@ -277,19 +285,26 @@ export interface NewImage {
   height: number;
 }
 
-/** The quoted message is not a message people wrote in this conversation, or it was deleted. */
+/**
+ * The quoted message is not a message people wrote in this conversation, or it was deleted. A reply
+ * cannot quote a note, as the visitor would see the quote.
+ */
 export class InvalidReplyToError extends Error {
   constructor() {
     super("The quoted message is not in this conversation.");
   }
 }
 
-/** Throws InvalidReplyToError unless the quoted message is a live chat line of this conversation. */
+/**
+ * Throws InvalidReplyToError unless the quoted message is a live chat line of this conversation, or
+ * for a note, a live note too.
+ */
 async function checkQuote(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
   messageId: string,
+  isNote: boolean,
 ): Promise<void> {
   const [found] = await tx
     .select({ id: message.id })
@@ -299,7 +314,7 @@ async function checkQuote(
         eq(message.workspaceId, workspaceId),
         eq(message.id, messageId),
         eq(message.conversationId, conversationId),
-        isChat(),
+        isNote ? isWritten() : isChat(),
         isNull(message.deletedAt),
       ),
     );
@@ -377,7 +392,6 @@ export async function appendMessage(
   input: {
     clientId: string;
     body?: string;
-    image?: NewImage;
     page?: string | null;
     /** False for a message that nobody needs to hear about, such as the cloud's welcome. */
     alert?: boolean;
@@ -385,7 +399,7 @@ export async function appendMessage(
     replyToMessageId?: string | undefined;
     /** A key's reply that came through MCP, which the message's info names. */
     via?: "mcp";
-  },
+  } & ({ image?: NewImage; note?: false } | { image?: undefined; note: true }),
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
   const seq = await nextSeq(tx, workspaceId);
@@ -425,9 +439,11 @@ export async function appendMessage(
   }
 
   // After the retry lookup, and under the lock, so a close cannot slip in before this reply and a
-  // retry of a reply that already committed still gets its original message.
+  // retry of a reply that already committed still gets its original message. A note goes in a
+  // closed conversation too, and never assigns it.
+  const isNote = input.note === true;
   let assignsReplier = false;
-  if (author.kind !== "visitor") {
+  if (author.kind !== "visitor" && !isNote) {
     const [target] = await tx
       .select({ status: conversation.status, assignee: conversation.assigneeOperatorId })
       .from(conversation)
@@ -453,7 +469,7 @@ export async function appendMessage(
       : { id: author.conversationId, created: false };
   const conversationId = target.id;
   if (input.replyToMessageId !== undefined) {
-    await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId);
+    await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId, isNote);
   }
   const metadata: MessageMetadata = {
     ...(input.image !== undefined && {
@@ -471,7 +487,7 @@ export async function appendMessage(
       workspaceId,
       conversationId,
       seq,
-      kind: input.image === undefined ? "text" : "image",
+      kind: isNote ? "note" : input.image === undefined ? "text" : "image",
       clientId: input.clientId,
       body: input.body ?? null,
       metadata,
@@ -508,13 +524,17 @@ export async function appendMessage(
       fromVisitor: author.kind === "visitor",
       ...(target.created ? { conversationCreated: true } : {}),
     } satisfies MessagePayload,
-    needsAlert: input.alert ?? true,
+    // A note alerts nobody, and its visitor never hears of it.
+    needsAlert: !isNote && (input.alert ?? true),
     needsWebhook: wantsWebhook(workspaceId),
   });
-  await tx
-    .update(conversation)
-    .set({ updatedAt: sql`now()` })
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  // A note is not activity in the chat, so the inbox keeps the conversation in its place.
+  if (!isNote) {
+    await tx
+      .update(conversation)
+      .set({ updatedAt: sql`now()` })
+      .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  }
   // The operator who answers an unassigned conversation first takes it. A key's reply never does.
   if (assignsReplier && author.kind === "operator") {
     await assignConversation(tx, workspaceId, conversationId, author.operatorId);
@@ -649,7 +669,7 @@ export function parseCursor(value: string): Cursor {
 }
 
 interface MessagePage {
-  messages: StoredMessage[];
+  messages: VisitorMessage[];
   cursor: Cursor;
   hasMore: boolean;
   /** The cursor is from before a restore or an import, so the client must load from the start. */
@@ -677,6 +697,7 @@ export async function listVisitorMessages(
   const position = after ?? start;
   // An edit or a delete sends the message again, at its change's position. New rows and changed
   // rows are read apart, so each read follows an index: message_seq_key and message_changed_idx.
+  // A note is the team's own, so the visitor never gets it.
   const read = (condition: SQL | undefined, order: AnyColumn) =>
     tx
       .select(messageColumns)
@@ -689,7 +710,12 @@ export async function listVisitorMessages(
         ),
       )
       .where(
-        and(eq(message.workspaceId, workspaceId), eq(conversation.visitorId, visitorId), condition),
+        and(
+          eq(message.workspaceId, workspaceId),
+          eq(conversation.visitorId, visitorId),
+          ne(message.kind, "note"),
+          condition,
+        ),
       )
       .orderBy(asc(order))
       .limit(limit + 1);
@@ -700,6 +726,7 @@ export async function listVisitorMessages(
   const changed = await read(gt(message.changedSeq, position.seq), message.changedSeq);
   const rows = [...fresh, ...changed]
     .map(stored)
+    .filter(isVisitorMessage)
     .sort((one, other) => (one.changeSeq < other.changeSeq ? -1 : 1));
   const page = rows.slice(0, limit);
   const last = page.at(-1);

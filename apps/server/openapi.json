@@ -741,7 +741,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["text", "image", "closed", "reopened"]
+            "enum": ["text", "image", "closed", "reopened", "note"]
           },
           "fromVisitor": {
             "type": "boolean"
@@ -4571,7 +4571,8 @@
             "apiKey": []
           }
         ],
-        "summary": "Reply. A retry with the same clientId returns the original",
+        "summary": "Reply, or add a note. A retry with the same clientId returns the original",
+        "description": "With `note: true` the message is a note that only the team sees. It never reaches the visitor, an alert or an email. A note goes in a closed conversation too, and never assigns the conversation.",
         "parameters": [
           {
             "schema": {
@@ -4616,7 +4617,12 @@
                   "replyToMessageId": {
                     "type": "string",
                     "format": "uuid",
-                    "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message."
+                    "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message. A reply cannot quote a note, and a note can quote any of them."
+                  },
+                  "note": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "True for a note that only the team sees. A note is text only."
                   }
                 },
                 "required": ["clientId", "body"]
@@ -4696,7 +4702,7 @@
             }
           },
           "409": {
-            "description": "conversation_closed: reopen it to reply",
+            "description": "conversation_closed: reopen it to reply. A note does not need it",
             "content": {
               "application/json": {
                 "schema": {
@@ -4887,10 +4893,10 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message."
+              "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message. A reply cannot quote a note, and a note can quote any of them."
             },
             "required": false,
-            "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message.",
+            "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message. A reply cannot quote a note, and a note can quote any of them.",
             "name": "replyToMessageId",
             "in": "query"
           }
@@ -5036,8 +5042,8 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Change the text of your own reply, before the visitor has seen it",
-        "description": "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. API keys cannot edit.",
+        "summary": "Change the text of your own reply, before the visitor has seen it, or of your own note",
+        "description": "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. A note's author can change it at any time. API keys cannot edit.",
         "parameters": [
           {
             "schema": {
@@ -5128,7 +5134,7 @@
             }
           },
           "403": {
-            "description": "forbidden: not your own text reply, or an API key",
+            "description": "forbidden: not your own text reply or note, or an API key",
             "content": {
               "application/json": {
                 "schema": {
@@ -7180,7 +7186,7 @@
           }
         ],
         "summary": "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
-        "description": "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+        "description": "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `add_note`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
         "requestBody": {
           "required": true,
           "content": {

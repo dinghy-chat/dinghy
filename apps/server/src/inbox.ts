@@ -100,7 +100,7 @@ const messageParams = conversationParams.extend({ messageId: z.uuid() });
 
 const REPLY_TO = z.uuid().optional().openapi({
   description:
-    "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message.",
+    "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message. A reply cannot quote a note, and a note can quote any of them.",
 });
 
 /** A message's text, as a send and an edit take it. Postgres text cannot hold a NUL byte. */
@@ -116,7 +116,8 @@ const InboxMessage = z
     id: z.string(),
     conversationId: z.string(),
     seq: z.string(),
-    // `closed` and `reopened` are status lines a close or a reopen writes, with no body.
+    // `closed` and `reopened` are status lines a close or a reopen writes, with no body. A `note`
+    // is text that only the team sees, never the visitor.
     kind: z.enum(MESSAGE_KINDS),
     fromVisitor: z.boolean(),
     // The operator who sent it, or null for a visitor's message or an API key's.
@@ -132,7 +133,7 @@ const InboxMessage = z
     imageRemoved: z.boolean(),
     // The message this one quotes, or null.
     replyTo: QuoteSchema.nullable(),
-    // When its author last changed its text. Only an operator's text reply can change.
+    // When its author last changed its text. Only an operator's text reply or note can change.
     editedAt: z.string().nullable(),
     // An operator deleted it: its body and image are gone, and its row stays in place.
     deleted: z.boolean(),
@@ -418,7 +419,9 @@ const replyRoute = createRoute({
   ...OPEN_TO_WELCOME,
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages`,
   security: SESSION_OR_KEY,
-  summary: "Reply. A retry with the same clientId returns the original",
+  summary: "Reply, or add a note. A retry with the same clientId returns the original",
+  description:
+    "With `note: true` the message is a note that only the team sees. It never reaches the visitor, an alert or an email. A note goes in a closed conversation too, and never assigns the conversation.",
   request: {
     params: conversationParams,
     body: {
@@ -429,6 +432,9 @@ const replyRoute = createRoute({
             clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
             body: BODY,
             replyToMessageId: REPLY_TO,
+            note: z.boolean().default(false).openapi({
+              description: "True for a note that only the team sees. A note is text only.",
+            }),
           }),
           example: { clientId: "r_81b3d0", body: "Yes, it is two months free." },
         },
@@ -446,7 +452,7 @@ const replyRoute = createRoute({
       content: { "application/json": { schema: InboxMessage } },
     },
     ...MEMBER_WRITE_ERRORS,
-    ...CLOSED_ANSWER,
+    409: errorAnswer("conversation_closed: reopen it to reply. A note does not need it"),
     ...INVALID_REPLY_TO_ANSWER,
   },
 });
@@ -455,9 +461,9 @@ const editRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/messages/{messageId}`,
   security: SESSION,
-  summary: "Change the text of your own reply, before the visitor has seen it",
+  summary: "Change the text of your own reply, before the visitor has seen it, or of your own note",
   description:
-    "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. API keys cannot edit.",
+    "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. A note's author can change it at any time. API keys cannot edit.",
   request: {
     params: messageParams,
     body: {
@@ -471,7 +477,7 @@ const editRoute = createRoute({
       content: { "application/json": { schema: InboxMessage } },
     },
     ...MEMBER_WRITE_ERRORS,
-    403: errorAnswer("forbidden: not your own text reply, or an API key"),
+    403: errorAnswer("forbidden: not your own text reply or note, or an API key"),
     409: errorAnswer("message_seen: the visitor read it, or an email carried it"),
   },
 });
@@ -520,7 +526,8 @@ const replyImageRoute = createRoute({
     "Reply with an image as the raw request body. A retry with the same clientId returns the original",
   request: {
     params: conversationParams,
-    query: z.object({
+    // Strict, so a `note` here is refused rather than sent to the visitor: a note is text only.
+    query: z.strictObject({
       clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
       replyToMessageId: REPLY_TO,
     }),
@@ -774,6 +781,10 @@ const replyAuthor = (actor: Actor, conversationId: string): Author =>
     ? { kind: "operator", operatorId: actor.operatorId, conversationId }
     : { kind: "key", apiKeyId: actor.apiKeyId, conversationId };
 
+/** Wakes the operators, and the visitor's stream too unless the message is a note. */
+const wakeFor = (live: Live, workspaceId: string, visitorId: string, isNote: boolean) =>
+  isNote ? live.wake(workspaceId, OPERATORS) : wakeConversation(live, workspaceId, visitorId);
+
 const actorId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : actor.apiKeyId);
 
 /** The operator whose read positions apply, or null for an API key, which has none. */
@@ -845,15 +856,20 @@ export function createInbox({
   InboxOptions,
   "db" | "images" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
 >) {
-  /** Writes a reply in the caller's transaction, and wakes the clients after the commit. */
+  /**
+   * Writes a reply or a note in the caller's transaction, and wakes the clients after the commit. A
+   * note stays in this workspace, so a welcome chat does not copy it.
+   */
   const reply = async (
     workspaceId: string,
     actor: Actor,
     conversationId: string,
-    image: NewImage | undefined,
+    content: { image: NewImage | undefined; isNote: boolean },
     write: (tx: Transaction, author: Author) => Promise<Appended>,
   ): Promise<ReplyOutcome> => {
-    const copy = (await copyReply?.(workspaceId, conversationId, image)) ?? null;
+    const copy = content.isNote
+      ? null
+      : ((await copyReply?.(workspaceId, conversationId, content.image)) ?? null);
     let outcome: CommitOutcome = "rolled_back";
     const result = await catchClosed(
       withWorkspace(db, workspaceId, async (tx) => {
@@ -879,7 +895,7 @@ export function createInbox({
     }
     if (result instanceof WorkspaceClosedError) return { kind: "refused", access: result.access };
     // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.
-    if (result.created) wakeConversation(live, workspaceId, result.visitorId);
+    if (result.created) wakeFor(live, workspaceId, result.visitorId, content.isNote);
     const names = new Map([[actorId(actor), actor.name]]);
     return {
       kind: "sent",
@@ -997,14 +1013,23 @@ export function createInbox({
       };
     },
 
+    /** A text reply, or with `note` a note that only the team sees. */
     reply(
       workspaceId: string,
       actor: Actor,
       conversationId: string,
-      input: { clientId: string; body: string; replyToMessageId?: string | undefined; via?: "mcp" },
+      input: {
+        clientId: string;
+        body: string;
+        replyToMessageId?: string | undefined;
+        via?: "mcp";
+        note: boolean;
+      },
     ) {
-      return reply(workspaceId, actor, conversationId, undefined, (tx, author) =>
-        appendMessage(tx, workspaceId, author, input),
+      const { note, ...text } = input;
+      const content = { image: undefined, isNote: note };
+      return reply(workspaceId, actor, conversationId, content, (tx, author) =>
+        appendMessage(tx, workspaceId, author, note ? { ...text, note } : text),
       );
     },
 
@@ -1024,7 +1049,7 @@ export function createInbox({
         workspaceId,
         actor,
         conversationId,
-        input.image,
+        { image: input.image, isNote: false },
         async (tx, author) => {
           await check(tx);
           return appendMessage(tx, workspaceId, author, input, limits);
@@ -1204,7 +1229,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
     if (outcome.kind === "not_yours") return c.json(NOT_YOURS, 403);
     if (outcome.kind === "seen") return c.json(MESSAGE_SEEN, 409);
-    wakeConversation(live, id, outcome.visitorId);
+    wakeFor(live, id, outcome.visitorId, outcome.message.kind === "note");
     return c.json(outcome.view, 200);
   });
 
@@ -1220,7 +1245,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     );
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
     if (outcome.kind === "not_yours") return c.json(FORBIDDEN, 403);
-    wakeConversation(live, id, outcome.visitorId);
+    wakeFor(live, id, outcome.visitorId, outcome.isNote);
     return c.json({ ok: true as const }, 200);
   });
 
@@ -1231,7 +1256,8 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       const found = await findConversation(tx, id, conversationId);
       const line = await findMessage(tx, id, messageId);
       if (found === null || line === null || line.conversationId !== conversationId) return null;
-      const sent = await emailedAt(tx, id, found.visitorId, line);
+      // An email can carry a range that a note is inside, but never the note.
+      const sent = line.kind === "note" ? null : await emailedAt(tx, id, found.visitorId, line);
       return { readAt: line.readAt?.toISOString() ?? null, emailedAt: sent?.toISOString() ?? null };
     });
     if (receipt === null) return c.json(NOT_FOUND, 404);

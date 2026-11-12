@@ -4,12 +4,13 @@ import type { Conversation, ReplyReceipts } from "./api.ts";
 import { Composer } from "./composer.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
-import { receiptOf } from "./receipts.tsx";
+import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { t } from "./text.ts";
 import {
   dayLabel,
   dayOf,
   groupMeta,
+  isStatusLine,
   StatusNote,
   sameSender,
   ThreadLine,
@@ -18,7 +19,7 @@ import {
 import type { Line } from "./thread-lines.ts";
 import { toast } from "./toast.tsx";
 import { ErrorNote, useModal } from "./ui.tsx";
-import { title } from "./visitor.ts";
+import { replyAuthor, title } from "./visitor.ts";
 
 function ImageViewer({
   url,
@@ -110,11 +111,7 @@ export function ThreadLog({
   const { editing, setEditing } = actions;
   const visitorName = title(conversation);
   const face = conversation.visitor.pictureUrl;
-  const lastReply = lines.reduce(
-    (last, line, index) =>
-      !line.fromVisitor && line.note === undefined && line.seq !== null ? index : last,
-    -1,
-  );
+  const lastReply = lines.reduce((last, line, index) => (hasReceipt(line) ? index : last), -1);
   const openQuote = (id: string) => {
     if (!jump(id)) toast("quoteMissing", false);
   };
@@ -122,7 +119,7 @@ export function ThreadLog({
   const renderLine = (line: Line, index: number) => {
     const meta = groupMeta(lines, index, who.meId);
     const receipt =
-      line.fromVisitor || line.seq === null || receipts === null
+      !hasReceipt(line) || line.seq === null || receipts === null
         ? null
         : receiptOf(line.seq, receipts);
     return (
@@ -136,6 +133,7 @@ export function ThreadLog({
         )}
         <ThreadLine
           line={line}
+          noteBy={line.kind === "note" ? replyAuthor(line, who.meId) : null}
           quote={
             line.replyTo === null ? null : (
               <QuoteBlock quote={line.replyTo} visitorName={visitorName} onOpen={openQuote} />
@@ -181,8 +179,8 @@ export function ThreadLog({
             {line.createdAt !== undefined && dayOf(line) !== dayOf(lines[index - 1]) && (
               <div className="day">{dayLabel(line.createdAt)}</div>
             )}
-            {line.note !== undefined ? (
-              <StatusNote line={line} note={line.note} meId={who.meId} />
+            {isStatusLine(line) ? (
+              <StatusNote line={line} meId={who.meId} />
             ) : (
               renderLine(line, index)
             )}

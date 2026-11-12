@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Internal notes: choose **Note** above the reply box to write a message that only your team sees, never the visitor. API: `"note": true` on `POST .../conversations/{conversationId}/messages`, a message `kind` of `note`, and the MCP tool `add_note`.
+
 ## [0.23.0] - 2026-11-12
 
 ### Added
