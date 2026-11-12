@@ -2509,43 +2509,44 @@ img.ws-tile {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-/* The small Markdown a message may use. */
-.msg :where(p, ul, ol, pre, blockquote) {
+/* The small Markdown a message may use, which the composer shows as it will look. */
+:is(.msg, .compose-field) :where(p, ul, ol, pre, blockquote) {
   margin: 0;
 }
 /* A quoted passage: a tinted block, like a quoted reply, with no bar at its side. */
-.msg :where(blockquote) {
+:is(.msg, .compose-field) :where(blockquote) {
   padding: 6px 10px;
   border-radius: 10px;
   background: rgb(127 127 127 / 0.14);
 }
-.msg > * + * {
+.msg > * + *,
+.compose-field > * + * {
   margin-top: 10px;
 }
-.msg :where(ul, ol) {
+:is(.msg, .compose-field) :where(ul, ol) {
   padding-left: 22px;
 }
 /* The app's own lists have no markers, but a message's list is the visitor's or the operator's. */
-.msg :where(ul) {
+:is(.msg, .compose-field) :where(ul) {
   list-style: disc;
 }
-.msg :where(ol) {
+:is(.msg, .compose-field) :where(ol) {
   list-style: decimal;
 }
-.msg :where(pre, code) {
+:is(.msg, .compose-field) :where(pre, code) {
   font: 13.5px / 1.45 var(--mono);
 }
-.msg :where(code) {
+:is(.msg, .compose-field) :where(code) {
   padding: 1px 4px;
   border-radius: 5px;
   background: rgb(127 127 127 / 0.18);
 }
-.msg :where(pre code) {
+:is(.msg, .compose-field) :where(pre code) {
   display: block;
   padding: 8px 10px;
   overflow-x: auto;
 }
-.msg :where(a) {
+:is(.msg, .compose-field) :where(a) {
   color: inherit;
 }
 .msg.visitor {
@@ -2927,19 +2928,56 @@ button.quote:hover {
   margin-left: auto;
   padding: 0 14px;
 }
-.box textarea {
-  width: 100%;
+/* The rich text editor: it formats as the operator types, and grows up to its height. */
+.compose-field {
   min-height: 44px;
   max-height: 240px;
+  overflow-y: auto;
   padding: 8px 6px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  resize: none;
-  field-sizing: content;
+  color: var(--navy);
+  overflow-wrap: anywhere;
 }
-.box textarea:focus-visible {
+/* Tiptap's own styles, which it cannot add itself under the content security policy. */
+.compose-field {
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+}
+.compose-field pre {
+  white-space: pre-wrap;
+}
+.compose-field img.ProseMirror-separator {
+  display: inline;
+  width: 0;
+  height: 0;
+}
+.compose-field:focus-visible {
   outline: 0;
+}
+.compose-field .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--mute);
+  pointer-events: none;
+}
+.format-tools .icon-button[aria-pressed="true"] {
+  background: var(--soft);
+  color: var(--navy);
+}
+/* The address for a link, under the text, with Cancel and Save. */
+.link-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 4px;
+}
+.link-field input {
+  min-height: 36px;
+}
+.link-field .pill {
+  flex: none;
+  min-height: 34px;
+  padding: 0 14px;
 }
 .box .icon-button {
   width: 34px;
@@ -5169,7 +5207,7 @@ button.quote:hover {
   .compose .emoji-picker {
     position: static;
   }
-  .compose .box textarea {
+  .compose .compose-field {
     min-height: 40px;
     max-height: 160px;
   }
@@ -5195,7 +5233,7 @@ button.quote:hover {
   .compose:not(.editing) .compose-tools > * {
     grid-row: 3;
   }
-  .compose:not(.editing) .box textarea {
+  .compose:not(.editing) .compose-text {
     grid-row: 3;
     grid-column: 4;
   }
@@ -5209,6 +5247,13 @@ button.quote:hover {
     overflow-x: auto;
     scrollbar-width: none;
     border-bottom: 1px solid var(--line);
+  }
+  /* The link's address takes the formats' row while it is open. */
+  .compose:not(.editing) .link-field {
+    grid-row: 2;
+  }
+  .compose.linking .format-tools {
+    display: none;
   }
   .compose.editing .compose-tools {
     flex-wrap: wrap;
@@ -5287,7 +5332,8 @@ button.quote:hover {
     :is(
       input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
       textarea,
-      select
+      select,
+      .compose-field
     ) {
     font-size: 16px;
   }

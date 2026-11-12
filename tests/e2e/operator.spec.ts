@@ -109,6 +109,34 @@ test("a message in another conversation does not reload the open thread", async 
   for (const page of [operator, open, other]) await page.context().close();
 });
 
+test("the reply shows its formatting, typed or pasted as Markdown, and sends Markdown", async ({
+  browser,
+}) => {
+  const customer = await visitor(browser, "Format my answer");
+  const page = await signedIn(browser, server, "anna@example.com");
+  await row(page, "Format my answer").click();
+  const field = reply(page);
+  await field.pressSequentially("Click **Send transfer** now");
+  await expect(field.locator("strong")).toHaveText("Send transfer");
+  await expect(field).toHaveText("Click Send transfer now");
+
+  await field.fill("");
+  await field.evaluate((element) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "1. Pay the **open** invoice\n2. Download your *past* invoices");
+    // A plain event, because Firefox ignores clipboardData in the ClipboardEvent constructor.
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: data });
+    element.dispatchEvent(event);
+  });
+  await expect(field.locator("ol li")).toHaveCount(2);
+  await expect(field.locator("ol strong")).toHaveText("open");
+  await field.press("Enter");
+  await expect(customer.locator(".msg:not(.mine) ol em", { hasText: "past" })).toBeVisible();
+  await customer.context().close();
+  await page.context().close();
+});
+
 test("a draft survives closing and reopening the conversation", async ({ browser }) => {
   const customer = await visitor(browser, "Keep my draft");
   const page = await signedIn(browser, server, "anna@example.com");
@@ -118,7 +146,7 @@ test("a draft survives closing and reopening the conversation", async ({ browser
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(reply).toHaveCount(0);
   await page.getByRole("button", { name: "Reopen" }).click();
-  await expect(reply).toHaveValue("Half a sentence");
+  await expect(reply).toHaveText("Half a sentence");
   await customer.context().close();
   await page.context().close();
 });
@@ -393,7 +421,7 @@ test("on a phone, the sections sit in a tab bar and the formats wait behind Aa",
   await reply(operator).fill("Phone");
   await reply(operator).selectText();
   await bold.click();
-  await expect(reply(operator)).toHaveValue("**Phone**");
+  await expect(reply(operator).locator("strong")).toHaveText("Phone");
   const overflow = await operator.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth,
   );

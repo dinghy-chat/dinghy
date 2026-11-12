@@ -17,7 +17,7 @@ export type Block =
 
 /** Bold inside italic inside a link is plenty, and a limit stops a stack of markers. */
 const MAX_DEPTH = 4;
-const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
+export const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
 // A bare link stops before trailing punctuation, so "see https://a.example." keeps its period.
 const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
 const FENCE = /^\s*```/;
@@ -45,7 +45,10 @@ function inline(source: string, depth = 0): Inline[] {
     } else if (char === "*" && depth < MAX_DEPTH) {
       const mark = source[at + 1] === "*" ? "**" : "*";
       const from = at + mark.length;
-      const end = source.indexOf(mark, from + 1);
+      let end = source.indexOf(mark, from + 1);
+      // In `***both***` the bold holds an italic, an odd star inside, so it closes after its star.
+      if (source[end + 2] === "*" && mark[1] && source.slice(from, end).split("*").length % 2 < 1)
+        end++;
       // Like Markdown, a marker next to a space is a plain star, as in "2 * 3 * 4".
       if (end > 0 && source[from]?.trim() && source[end - 1]?.trim()) {
         add({

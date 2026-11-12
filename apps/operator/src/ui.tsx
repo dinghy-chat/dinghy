@@ -496,7 +496,11 @@ export function Field({
         </label>
         <div className="emoji-field">
           {box}
-          <EmojiButton field={control} onPick={onChange} />
+          <EmojiButton
+            onPick={(emoji) => {
+              if (control.current !== null) onChange(insertEmoji(control.current, emoji));
+            }}
+          />
         </div>
         {note}
       </div>
@@ -548,13 +552,8 @@ export function TypeToConfirm({
 }
 
 /** A button that opens the shared emoji grid, and puts the chosen emoji in the field at its caret. */
-export function EmojiButton({
-  field,
-  onPick,
-}: {
-  field: RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
-  onPick(value: string): void;
-}) {
+/** The emoji button and its grid. The caller puts the picked emoji where its caret is. */
+export function EmojiButton({ onPick }: { onPick(emoji: string): void }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   // A click anywhere else closes it.
@@ -594,7 +593,7 @@ export function EmojiButton({
               key={emoji}
               type="button"
               onClick={() => {
-                if (field.current !== null) onPick(insertEmoji(field.current, emoji));
+                onPick(emoji);
                 setOpen(false);
               }}
             >

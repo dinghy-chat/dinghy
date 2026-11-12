@@ -176,7 +176,7 @@ test("an edit that fails keeps the editor and its text, with the reason", async 
   await expect(alice.locator(".receipt", { hasText: "Read in chat" })).toBeVisible();
   await editor.press("Enter");
   await expect(alice.locator(".compose.editing [role=alert]")).toBeVisible();
-  await expect(editor).toHaveValue("It left on Tuesday.");
+  await expect(editor).toHaveText("It left on Tuesday.");
 
   for (const page of [customer, alice]) await page.context().close();
 });
@@ -239,7 +239,7 @@ test("an operator adds a note that the visitor never sees, and a note draft keep
   // The list shows the draft in place of the last message.
   await alice.locator(".row", { hasText: "Ask Ben about this one" }).click();
   await expect(alice.getByRole("radio", { name: "Note" })).toBeChecked();
-  await expect(alice.getByRole("textbox", { name: "Your note" })).toHaveValue(
+  await expect(alice.getByRole("textbox", { name: "Your note" })).toHaveText(
     "Ask Ben about this one",
   );
 
