@@ -2788,10 +2788,7 @@ button.quote:hover {
   font-weight: 700;
 }
 .quote-text {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: pre-line;
 }
 .quote-text.gone {
   font-style: italic;

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { markdownHtml, markdownText, parseMarkdown, quoteExcerpt } from "./markdown.ts";
+import { markdownHtml, markdownText, parseMarkdown, plainText } from "./markdown.ts";
 
 test("bold, italic and inline code", () => {
   expect(markdownHtml("**Hi** *there* `npm i`")).toBe(
@@ -114,9 +114,9 @@ test("markdownText keeps the words and drops the marks, for a preview", () => {
   expect(markdownText("[Docs](https://a.example) <b>")).toBe("Docs <b>");
 });
 
-test("a quote's excerpt drops the marks, keeps link words and snake_case, and stops at 140 characters", () => {
-  expect(quoteExcerpt("**Bold** and *it* `code` [docs](https://x.y)\n- item_one")).toBe(
-    "Bold and it code docs item_one",
+test("a quote's text drops the marks, keeps link words, snake_case and line breaks, and is whole", () => {
+  expect(plainText("**Bold** and *it* `code` [docs](https://x.y)\n- item_one\n- two")).toBe(
+    "Bold and it code docs\nitem_one\ntwo",
   );
-  expect(Array.from(quoteExcerpt("é".repeat(300)))).toHaveLength(140);
+  expect(plainText("é".repeat(300))).toHaveLength(300);
 });

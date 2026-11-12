@@ -18,7 +18,7 @@ import {
   type SQLWrapper,
   sql,
 } from "drizzle-orm";
-import { quoteExcerpt } from "../../../packages/widget/src/markdown.ts";
+import { plainText } from "../../../packages/widget/src/markdown.ts";
 import { firstName } from "../../../packages/widget/src/shared.ts";
 import {
   apiKey,
@@ -76,13 +76,13 @@ export const QuoteSchema = z
     // The operator's or the API key's name, or the visitor's. Null for a visitor with no name.
     authorName: z.string().nullable(),
     fromVisitor: z.boolean(),
-    // The first 140 characters of its text, on one line, without Markdown marks.
-    excerpt: z.string(),
+    // Its whole text, with its line breaks and without Markdown marks.
+    text: z.string(),
     hasImage: z.boolean(),
   })
   .openapi("Quote");
 
-/** The quote as the database reads it, before the excerpt is cut. */
+/** The quote as the database reads it, before its Markdown marks go. */
 export interface QuoteRow {
   id: string;
   deleted: boolean;
@@ -93,9 +93,6 @@ export interface QuoteRow {
   body: string | null;
   hasImage: boolean;
 }
-
-// Enough to fill the excerpt after the Markdown marks go.
-const QUOTE_BODY_CHARACTERS = 600;
 
 /**
  * The quoted message, read in the same statement as each listed row, so a list costs one query.
@@ -108,7 +105,7 @@ const quoteColumn = sql<QuoteRow | null>`(
     'fromVisitor', q.author_visitor_id is not null,
     'byOperator', o.id is not null and o.deleted_at is null,
     'authorName', coalesce(o.name, k.name, v.name),
-    'body', left(q.body, ${QUOTE_BODY_CHARACTERS}),
+    'body', q.body,
     'hasImage', q.kind = 'image')
   from message as q
   left join operator as o on o.id = q.author_operator_id
@@ -123,8 +120,8 @@ export function quoteView(
 ): Quote | null {
   if (row === null) return null;
   const shown = { authorName: name(row), fromVisitor: row.fromVisitor };
-  if (row.deleted) return { id: null, ...shown, excerpt: "", hasImage: false };
-  return { id: row.id, ...shown, excerpt: quoteExcerpt(row.body ?? ""), hasImage: row.hasImage };
+  if (row.deleted) return { id: null, ...shown, text: "", hasImage: false };
+  return { id: row.id, ...shown, text: plainText(row.body ?? ""), hasImage: row.hasImage };
 }
 
 /**

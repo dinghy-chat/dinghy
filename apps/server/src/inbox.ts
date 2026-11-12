@@ -160,7 +160,7 @@ const InboxMessage = z
         id: "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
         authorName: "Ada",
         fromVisitor: true,
-        excerpt: "Do you have a yearly plan?",
+        text: "Do you have a yearly plan?",
         hasImage: false,
       },
       editedAt: null,

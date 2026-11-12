@@ -165,12 +165,15 @@ export function renderMarkdown<Node>(source: string, h: CreateElement<Node>): (N
   );
 }
 
-/** The message's words without their marks, for a one-line preview. */
-export function markdownText(source: string): string {
+/** The message's words without their marks, keeping its line breaks, as a quote shows it. */
+export function plainText(source: string): string {
   const h: CreateElement<string> = (tag, _props, ...children) =>
-    `${children.join("")}${tag === "li" ? " " : ""}`;
-  return renderMarkdown(source, h).join(" ").replace(/\s+/g, " ").trim();
+    children.join(tag === "ul" || tag === "ol" ? "\n" : "");
+  return renderMarkdown(source, h).join("\n").trim();
 }
+
+/** The message's words without their marks, on one line, for a preview. */
+export const markdownText = (source: string): string => plainText(source).replace(/\s+/g, " ");
 
 const ESCAPES: Record<string, string> = {
   "&": "&amp;",
@@ -196,9 +199,3 @@ export function markdownHtml(source: string): string {
   };
   return renderMarkdown(source, h).map(text).join("");
 }
-
-const QUOTE_EXCERPT_CHARACTERS = 140;
-
-/** A quoted message's start as plain text, on one line, cut by code points so no emoji breaks. */
-export const quoteExcerpt = (body: string): string =>
-  Array.from(markdownText(body)).slice(0, QUOTE_EXCERPT_CHARACTERS).join("");

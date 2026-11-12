@@ -92,11 +92,11 @@ textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inh
 .re{position:absolute;left:100%;top:50%;margin:-16px 0 0 2px;opacity:0}
 .msg:hover .re,.re:focus-visible{opacity:1}
 @media (hover:none){.re{opacity:.7}}
-.quote{margin:0 0 6px;padding:5px 9px;border-radius:10px;background:var(--fog);font-size:13px;white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.quote{display:block;margin:0 0 6px;padding:5px 9px;border-radius:10px;background:var(--fog);font-size:13px;white-space:pre-line}
 .mine .quote{background:rgb(255 255 255/.18)}
 .quote b{display:block;font-size:12px}
 .chip{display:flex;align-items:center;gap:4px;margin-bottom:6px}
-.chip .quote{flex:1;margin:0;-webkit-line-clamp:2}
+.chip .quote{flex:1;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .shot{flex:none;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
 .shot.mine{align-self:flex-end}
 .shot img{display:block;max-width:100%;height:auto}
@@ -425,13 +425,13 @@ export function ChatHead({
   );
 }
 
-/** A quoted message: who wrote it, and its first words. */
+/** A quoted message: who wrote it, and its whole text. */
 function Quoted({ quote }: { quote: Quote }) {
   const standIn = quoteStandIn(quote);
   return (
     <span class="quote">
       <b>{quote.fromVisitor ? t("you") : quote.authorName}</b>
-      {standIn ? t(standIn) : quote.excerpt}
+      {standIn ? t(standIn) : quote.text}
     </span>
   );
 }
