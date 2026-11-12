@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-12
+
 ### Changed
 
 - The **…** menu has one **Snooze** item, which opens its choices in place, with a row to go back. The right arrow opens it and the left arrow goes back.
@@ -464,7 +466,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/dinghy-chat/dinghy/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/dinghy-chat/dinghy/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/dinghy-chat/dinghy/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/dinghy-chat/dinghy/compare/v0.21.0...v0.22.0
