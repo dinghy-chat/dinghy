@@ -96,7 +96,8 @@ describe("health", () => {
     } finally {
       await database.drop();
     }
-  });
+    // It migrates its own database, which takes seconds while the other test files run.
+  }, 30_000);
 });
 
 describe("/v1", () => {

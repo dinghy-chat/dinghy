@@ -568,9 +568,9 @@ const en = {
   apiKeyLevelConversations: "Conversations",
   apiKeyLevelSetup: "Setup",
   apiKeyLevelConversationsHelp:
-    "Reads, searches, answers, closes, reopens and assigns conversations, in the API and in MCP.",
+    "Reads, answers, hands off and closes conversations, writes notes, and reads contacts and analytics, in the API and in MCP.",
   apiKeyLevelSetupHelp:
-    "All of Conversations, and it can add, change, test and delete webhooks, so an agent can connect Dinghy by itself. It never reaches keys, members, billing or deletion.",
+    "All of Conversations, and it installs Dinghy on a site: the snippet, allowed sites, the widget's look, webhooks and test visitors. It never reaches keys, members, billing or deletion.",
   webhookByKey: "Added by the key {name}",
   webhookByOperator: "Added by {name}",
   apiKeyCopy: "Copy the key {name}",

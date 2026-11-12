@@ -152,3 +152,24 @@ test("notes, a bot's handoff, giving it back, and the bot typing", async ({ brow
 
   await alice.context().close();
 });
+
+test("an operator's reply takes the conversation from the bot, and the header follows live", async ({
+  browser,
+}) => {
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const token = await newBot(alice, "Order bot");
+  const chat = await testVisitorSays(alice, "Is my parcel lost?");
+  await draft(alice, token, chat, "Let me check.");
+  await alice.locator(".row", { hasText: "Is my parcel lost?" }).click();
+  const handler = alice.locator(".thread-head .handler");
+  await expect(handler).toContainText("Bot: Order bot");
+
+  // Sent from elsewhere, so only the live stream can tell this tab.
+  await asOperator(alice, `/conversations/${chat}/messages`, {
+    clientId: "takeover-1",
+    body: "I'll look into it myself.",
+  });
+  await expect(handler).toContainText("alice@example.com");
+  await expect(handler).not.toContainText("Bot:");
+  await alice.context().close();
+});

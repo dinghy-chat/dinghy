@@ -57,7 +57,7 @@ Connect with the **Setup** level, then ask your coding agent to add Dinghy to th
 7. Optional: `create_webhook` and `get_webhook_verification`, if your server should get events.
 8. `simulate_visitor_message` to send a test chat, then `delete_test_visitors` to clean up. See [Test a bot](#test-a-bot).
 
-The Install page in the operator app has a "Set up with an agent" prompt to copy, with these steps.
+The **Install** page in the operator app has a "Set up with an agent" card with a prompt to copy, with these steps, and a short block for your site's `AGENTS.md`.
 
 ## Answer chats
 
@@ -92,7 +92,7 @@ Call `handoff` when you cannot or should not answer: the visitor asks for a pers
 - `operatorId`: a member to assign it to. Leave it out to alert the whole team;
 - `clientId`, so a retry changes nothing again.
 
-In one step, Dinghy sends `visitorMessage`, assigns the conversation, adds a note with the reason and the summary, and alerts the assignee, or every member with alerts on when there is none. From then on a person handles it, and a bot that sends directly gets `human_handling`. An operator's reply has the same effect.
+In one step, Dinghy sends `visitorMessage` (as a draft if the bot drafts, and not at all while bots are paused), assigns the conversation, adds a note with the reason and the summary, and alerts the assignee, or every member with alerts on when there is none. From then on a person handles it, and a bot that sends directly gets `human_handling`. An operator's own reply has the same effect. A draft that an operator sends does not, because it approves the bot's words.
 
 A bot cannot take a conversation back. A person does it with **Give back to bot** in the conversation's menu.
 

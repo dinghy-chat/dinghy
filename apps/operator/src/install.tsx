@@ -59,13 +59,8 @@ function CodeBlock({
 
 /** A prompt to paste into a coding agent, which then installs the chat through MCP. */
 function AgentRow({ workspace, waiting }: { workspace: string; waiting: boolean }) {
-  if (waiting) {
-    return (
-      <PageRow title={t("agentTitle")}>
-        <p className="quiet">{t("snippetWaiting")}</p>
-      </PageRow>
-    );
-  }
+  // The code row below already says why nothing can be installed yet.
+  if (waiting) return null;
   const { prompt, notes } = agentTexts(location.origin, workspace);
   return (
     <PageRow
