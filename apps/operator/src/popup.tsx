@@ -148,12 +148,12 @@ function usePopup(labels: string[], start: () => number) {
   };
 }
 
-/** The nearest box around `element` that scrolls or clips what it holds, or the window. */
-function clippingBox(element: Element): { top: number; bottom: number } {
+/** The nearest element around `element` that scrolls or clips what it holds, or null: the window. */
+function clippingElement(element: Element): Element | null {
   for (let box = element.parentElement; box !== null; box = box.parentElement) {
-    if (getComputedStyle(box).overflowY !== "visible") return box.getBoundingClientRect();
+    if (getComputedStyle(box).overflowY !== "visible") return box;
   }
-  return { top: 0, bottom: innerHeight };
+  return null;
 }
 
 /**
@@ -170,13 +170,15 @@ function useFloating(
   close: () => void,
 ) {
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || button.current === null) return;
+    // Found once, as reading the styles on each scroll event would cost too much.
+    const clipping = clippingElement(button.current);
     const place = () => {
       const element = popup.current;
       const anchor = button.current;
       if (element === null || anchor === null) return;
       const at = anchor.getBoundingClientRect();
-      const view = clippingBox(anchor);
+      const view = clipping?.getBoundingClientRect() ?? { top: 0, bottom: innerHeight };
       if (at.bottom < view.top || at.top > view.bottom) return close();
       const below = innerHeight - at.bottom - POPUP_GAP_PX - WINDOW_MARGIN_PX;
       const above = at.top - POPUP_GAP_PX - WINDOW_MARGIN_PX;

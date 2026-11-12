@@ -21,9 +21,10 @@ export function usePresence(client: Client, token: string | null, asking: boolea
   useEffect(() => {
     if (!asking) return;
     const ask = () => {
-      client
-        .presence(token)
-        .then(setState, () => setState((current) => ({ ...current, online: null })));
+      client.presence(token).then(setState, () =>
+        // Nothing the failed answer would have said stays, so no face keeps an old green dot.
+        setState((current) => ({ ...current, online: null, members: [], replySeconds: null })),
+      );
     };
     ask();
     const timer = setInterval(ask, PRESENCE_EVERY_MS);

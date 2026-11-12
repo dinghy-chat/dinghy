@@ -14,6 +14,7 @@ import { EMOJIS, insertEmoji } from "../../../packages/widget/src/emoji.ts";
 import { ApiError, type Role } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { navigate } from "./nav.ts";
+import { countryName, flag } from "./place.ts";
 import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
@@ -683,6 +684,21 @@ export function Avatar({
   return (
     <span className={`avatar tint-${sum % TINT_COUNT}`} aria-hidden="true">
       {letters ?? initials(name)}
+    </span>
+  );
+}
+
+/**
+ * A country's flag in a small round badge, for the bottom corner of an avatar in an `avatar-wrap`.
+ * It names the country, so a row that says it nowhere else still does. Nothing for an unknown code.
+ */
+export function FlagBadge({ country }: { country: string }) {
+  const emoji = flag(country);
+  if (emoji === "") return null;
+  const name = countryName(country);
+  return (
+    <span className="flag-badge" role="img" aria-label={name} title={name}>
+      {emoji}
     </span>
   );
 }

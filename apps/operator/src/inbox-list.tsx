@@ -7,7 +7,7 @@ import { Icon } from "./icons.tsx";
 import { emptyLook, ListFilters, type Status, type Who } from "./inbox-filters.tsx";
 import { EmptyArt } from "./scene.tsx";
 import { t } from "./text.ts";
-import { Avatar, PageHead } from "./ui.tsx";
+import { Avatar, FlagBadge, PageHead } from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
 
 const SEARCH_WAIT_MS = 250;
@@ -41,11 +41,16 @@ function ConversationRow({
   return (
     <li>
       <button type="button" className="row" aria-current={selected} onClick={onSelect}>
-        <Avatar
-          name={title(conversation)}
-          letters={avatarLetters(conversation.visitor)}
-          pictureUrl={conversation.visitor.pictureUrl}
-        />
+        <span className="avatar-wrap">
+          <Avatar
+            name={title(conversation)}
+            letters={avatarLetters(conversation.visitor)}
+            pictureUrl={conversation.visitor.pictureUrl}
+          />
+          {conversation.visitor.country !== null && (
+            <FlagBadge country={conversation.visitor.country} />
+          )}
+        </span>
         <span className="row-text">
           <span className="row-top">
             <strong>{title(conversation)}</strong>

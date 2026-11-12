@@ -141,6 +141,7 @@ test("a hidden tab keeps its operator online, and the header marks them", async 
 
   const context = await browser.newContext();
   const visitor = await context.newPage();
+  await visitor.clock.install();
   await visitor.goto(`${server.hostOrigin}/plain`);
   await visitor.getByRole("button", { name: "Open chat" }).click();
   await expect(visitor.getByText("Online", { exact: true })).toBeVisible();
@@ -148,6 +149,12 @@ test("a hidden tab keeps its operator online, and the header marks them", async 
   const benFace = visitor.locator(".faces > span", { hasText: "B" });
   await expect(benFace).toHaveCount(1);
   await expect(benFace.locator("i")).toHaveCount(1);
+
+  // The next check fails: no face keeps its dot.
+  await visitor.route("**/presence", (route) => route.abort());
+  await visitor.clock.runFor(30_000);
+  await expect(visitor.getByText("Online", { exact: true })).toHaveCount(0);
+  await expect(visitor.locator(".faces i")).toHaveCount(0);
   await ben.context().close();
   await context.close();
 });

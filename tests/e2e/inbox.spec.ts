@@ -138,6 +138,35 @@ test("the Inbox item, the tab title and the favicon count the conversations that
   for (const page of [first, second, operator, teammate]) await page.context().close();
 });
 
+test("a hidden tab's title counts a visitor who writes while it is hidden", async ({ browser }) => {
+  const operator = await signedIn(browser, server, "alice@example.com");
+  // The waiting counts load every minute while the tab is hidden, which the fake clock skips.
+  await operator.clock.install();
+  await operator.reload();
+  await expect(operator).toHaveTitle("Dinghy");
+  await operator.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  const writer = await visitor(browser, "Written while hidden");
+  await operator.clock.runFor(60_000);
+  await expect(operator).toHaveTitle("(1) Dinghy");
+  for (const page of [writer, operator]) await page.context().close();
+});
+
+test("a row shows the visitor's country as a flag on the avatar, and names it", async ({
+  browser,
+}) => {
+  await server.seedConversations(1, "from-portugal", "PT");
+  await server.seedConversations(1, "from-nowhere");
+  const operator = await signedIn(browser, server, "alice@example.com");
+  const flagged = row(operator, "from-portugal message 0");
+  await expect(flagged.locator(".avatar-wrap .flag-badge")).toHaveText("🇵🇹");
+  await expect(flagged.getByRole("img", { name: "Portugal" })).toBeVisible();
+  await expect(row(operator, "from-nowhere message 0").locator(".flag-badge")).toHaveCount(0);
+  await operator.context().close();
+});
+
 test("a draft stays with its conversation when the operator opens another", async ({ browser }) => {
   const one = await visitor(browser, "Draft one");
   const two = await visitor(browser, "Draft two");

@@ -1920,10 +1920,29 @@ img.ws-tile {
   flex: none;
   display: grid;
 }
+.row .avatar-wrap {
+  align-self: flex-start;
+}
 .who-is .avatar {
   width: 40px;
   height: 40px;
   font-size: 14px;
+}
+/* The flag cut to a circle, with a ring that parts it from the avatar. */
+/* The whole flag, as emoji draw it: a circle would crop most flags past recognition. */
+.flag-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 15px;
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--surface);
+  font-size: 14px;
+  line-height: 1;
 }
 .presence-dot {
   position: absolute;
@@ -4781,13 +4800,6 @@ button.quote:hover {
   .cloud-b {
     top: 11%;
   }
-  /* Two figures a row, and an odd last one takes the full row, so no card sits beside a gap. */
-  .figures {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .figures div:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-  }
   .signin {
     padding-bottom: 150px;
   }
@@ -5209,13 +5221,6 @@ button.quote:hover {
   background: var(--tile-yellow);
   color: var(--navy);
   font: 700 14px var(--body);
-}
-.live-badge {
-  position: absolute;
-  right: -4px;
-  bottom: -3px;
-  font-size: 14px;
-  line-height: 1;
 }
 .live-who {
   display: flex;

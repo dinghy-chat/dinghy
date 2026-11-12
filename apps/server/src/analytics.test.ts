@@ -5,11 +5,11 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { addOperator, signIn } from "../test/operators.ts";
-import { type AnalyticsResult, isTimeZone } from "./analytics.ts";
+import { type AnalyticsResult, isTimeZone, readAnalytics } from "./analytics.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import { apiKey, conversation, message, operator, visitor } from "./db/schema.ts";
-import type { Database } from "./db/tenant.ts";
+import { type Database, withWorkspace } from "./db/tenant.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -342,6 +342,21 @@ test("the previous period is as long as the current one, which ends now", async 
   await seed(space.id, { startedAt: new Date(Date.now() - 7 * DAY - MINUTE) });
   const { body } = await analytics(space.id, owen.cookie, "days=7&tz=UTC");
   expect(body.previous.started).toBe(1);
+});
+
+test("a change of clocks makes neither period longer", async () => {
+  const space = await createWorkspace(db, "Clocks", []);
+  // Paris leaves summer time on 25 October 2026, between the two periods' first days. The current
+  // period, from 26 October 00:00 in Paris (23:00 UTC), lasts 157 hours, so the previous one, from
+  // 19 October 00:00 (18 October 22:00 UTC), ends at 25 October 11:00 UTC.
+  const now = new Date("2026-11-01T12:00:00Z");
+  await seed(space.id, { startedAt: new Date("2026-10-25T10:30:00Z") });
+  await seed(space.id, { startedAt: new Date("2026-10-25T11:30:00Z") });
+  const numbers = await withWorkspace(db, space.id, (tx) =>
+    readAnalytics(tx, space.id, { days: 7, timeZone: "Europe/Paris", now }),
+  );
+  expect(numbers.previous.started).toBe(1);
+  expect(numbers.started).toBe(0);
 });
 
 test("a time zone is an IANA name that this Node knows", () => {

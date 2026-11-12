@@ -213,23 +213,29 @@ export async function medianFirstReplySeconds(
   return result.rows[0]?.median ?? null;
 }
 
-/** One statement, so every number reads the same rows. */
-async function readAnalytics(
+/** One statement, so every number reads the same rows. The periods end at `now`. */
+export async function readAnalytics(
   tx: Transaction,
   workspaceId: string,
-  days: number,
-  timeZone: string,
+  { days, timeZone, now }: { days: number; timeZone: string; now: Date },
 ): Promise<AnalyticsResult> {
   const result = await tx.execute<Row>(sql`
-    WITH local_today AS (
-      SELECT (now() AT TIME ZONE ${timeZone})::date AS day
-    ), bounds AS (
+    WITH clock AS (
+      SELECT ${now.toISOString()}::timestamptz AS now
+    ), local_today AS (
+      SELECT (clock.now AT TIME ZONE ${timeZone})::date AS day FROM clock
+    ), local_bounds AS (
       SELECT day - ${days - 1}::int AS first_day,
              ((day - ${days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS since,
-             ((day - ${2 * days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS previous_since,
-             -- The current period ends now, so the previous one ends as long ago, and both are as long.
-             now() - make_interval(days => ${days}::int) AS previous_until
+             ((day - ${2 * days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS previous_since
       FROM local_today
+    ), bounds AS (
+      -- The previous period lasts as many real seconds as the current one, which ends now, so a
+      -- change of clocks in either period does not make one longer. LEAST keeps them apart.
+      SELECT b.*,
+             LEAST(b.since, b.previous_since + make_interval(
+               secs => extract(epoch FROM clock.now - b.since)::double precision)) AS previous_until
+      FROM local_bounds AS b, clock
     ), replies AS MATERIALIZED (
       SELECT f.*, (f.created_at AT TIME ZONE ${timeZone}) AS local_at,
              f.created_at >= bounds.since AS is_current
@@ -304,10 +310,15 @@ export function registerAnalyticsRoute(app: App, db: Database): void {
     const id = c.get("memberWorkspaceId");
     const { days, tz } = c.req.valid("query");
     try {
-      const numbers = await withWorkspace(db, id, (tx) => readAnalytics(tx, id, days, tz), {
-        isolationLevel: "repeatable read",
-        accessMode: "read only",
-      });
+      const numbers = await withWorkspace(
+        db,
+        id,
+        (tx) => readAnalytics(tx, id, { days, timeZone: tz, now: new Date() }),
+        {
+          isolationLevel: "repeatable read",
+          accessMode: "read only",
+        },
+      );
       return c.json(numbers, 200);
     } catch (error) {
       if (!isUnknownZone(error)) throw error;

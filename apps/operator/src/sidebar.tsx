@@ -212,7 +212,7 @@ export function Sidebar({
   view: View;
   /** Settings shows the Profile page, which the user menu opens. */
   isProfile: boolean;
-  /** Open conversations that wait for a reply, in the whole workspace. */
+  /** Open conversations that wait for a reply from this operator or from anyone, as unassigned. */
   waiting: number;
   /** The same count in each of the operator's workspaces, by workspace ID. */
   waitingBy: Record<string, number>;

@@ -144,13 +144,13 @@ describe("a hidden tab", () => {
     expect(await short.online(workspace)).toEqual([]);
   });
 
-  test("a visible beat after it does not cut its mark short", async () => {
+  test("a visible beat from another of the operator's tabs does not cut its mark short", async () => {
     const short = createPresence(connect(), logger, 100);
     const workspace = space();
     const anna = randomUUID();
     await short.beat(workspace, anna, hidden(null));
-    // Another tab of the team, visible, beats after the hidden one.
-    await short.beat(workspace, randomUUID(), visible(null, null));
+    // Anna's other tab, visible, beats after the hidden one and then closes.
+    await short.beat(workspace, anna, visible(null, null));
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(await short.online(workspace)).toEqual([anna]);
   });

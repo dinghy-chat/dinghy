@@ -223,13 +223,13 @@ export async function startE2EServer(
       }
       live.wake(workspace.id, OPERATORS);
     },
-    /** Adds conversations with one message each, for paging tests. */
-    async seedConversations(count: number, prefix: string) {
+    /** Adds conversations with one message each, from visitors in `country` when it is given. */
+    async seedConversations(count: number, prefix: string, country: string | null = null) {
       for (let i = 0; i < count; i++) {
         await withWorkspace(db, workspace.id, async (tx) => {
           const [row] = await tx
             .insert(visitor)
-            .values({ workspaceId: workspace.id, externalId: `${prefix}-${i}` })
+            .values({ workspaceId: workspace.id, externalId: `${prefix}-${i}`, country })
             .returning({ id: visitor.id });
           await appendMessage(
             tx,

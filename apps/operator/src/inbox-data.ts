@@ -194,7 +194,10 @@ export function useInboxData({
     onSignedOut,
     onWelcome,
   });
-  // A waiting visitor shows from another tab, and on the installed app's icon.
-  useWaitingBadge(list.waiting);
+  // A waiting visitor shows from another tab, and on the installed app's icon. A hidden tab holds
+  // no stream, so its list stands still and the minute's count takes over.
+  useWaitingBadge(
+    live.visible ? list.waiting : (live.waitingElsewhere[workspaceId] ?? list.waiting),
+  );
   return { ...live, ...team, ...list, isTeam, who };
 }

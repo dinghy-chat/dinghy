@@ -30,9 +30,9 @@ import {
   readToken,
   rememberOpen,
   type SavedAppearance,
-  WIDGET_DEFAULTS,
   type WidgetContext,
   wasOpen,
+  withDefaults,
   writeToken,
 } from "./shared.ts";
 import { chime, prepareSound } from "./sound.ts";
@@ -775,7 +775,7 @@ function Root({ context }: { context: WidgetContext }) {
   // no launcher, but its chat link's page still needs words.
   useEffect(() => {
     context.appearance.then((answer) => {
-      const found = answer ?? WIDGET_DEFAULTS;
+      const found = withDefaults(answer);
       context.shadow.host.setAttribute("data-theme", found.theme);
       setSaved(found);
     });

@@ -84,11 +84,12 @@ export function createPresence(
         const online = memberFor(operatorId, null);
         const batch = client.multi().zremrangebyscore(key, "-inf", now);
         if (left !== null && left !== viewing) batch.zrem(key, memberFor(operatorId, left));
+        // GT: another of the operator's tabs, hidden and so marked for longer, keeps its mark.
         if (away) batch.zrem(key, online);
-        else batch.zadd(key, expires, online);
+        else batch.zadd(key, "GT", expires, online);
         if (viewing !== null) batch.zadd(key, expires, memberFor(operatorId, viewing));
-        // A workspace that everyone left does not keep its key. As long as the longest mark, so a
-        // visible tab's beat never cuts a hidden one's short.
+        // A workspace that everyone left does not keep its key. Twice the longest mark, so the key
+        // outlives every mark in it.
         batch.pexpire(key, ttlMs * HIDDEN_TTL_FACTOR * 2);
         batch.zrange(key, 0, -1);
         const results = await batch.exec();

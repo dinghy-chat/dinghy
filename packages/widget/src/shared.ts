@@ -115,6 +115,17 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
 };
 
 /**
+ * The saved settings over the defaults. A tab that loaded before an upgrade, or the five-minute
+ * cache, can hand over an answer without the fields that came later.
+ */
+export const withDefaults = (
+  answer: Partial<SavedAppearance> | null | undefined,
+): SavedAppearance => ({
+  ...WIDGET_DEFAULTS,
+  ...answer,
+});
+
+/**
  * The first word of a name, which is all a visitor learns of an operator. It stops at an @ too, so
  * a name typed as an email never shows one.
  */

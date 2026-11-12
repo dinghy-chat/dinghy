@@ -36,7 +36,7 @@ function dottedIcon(): Promise<string | null> {
 
 function setFavicon(href: string) {
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-  if (link !== null && link.href !== href) link.href = href;
+  if (link !== null && link.getAttribute("href") !== href) link.href = href;
 }
 
 /**
@@ -60,9 +60,15 @@ export function useWaitingBadge(waiting: number) {
     else navigator.clearAppBadge?.().catch(() => {});
     return () => {
       current = false;
+    };
+  }, [waiting]);
+  // Only on unmount, so a change of count does not swap the favicon twice.
+  useEffect(
+    () => () => {
       document.title = t("appName");
       setFavicon(ICON);
       navigator.clearAppBadge?.().catch(() => {});
-    };
-  }, [waiting]);
+    },
+    [],
+  );
 }

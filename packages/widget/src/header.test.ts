@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { headerFaces } from "./panel.tsx";
-import { type SavedAppearance, type TeamFace, WIDGET_DEFAULTS } from "./shared.ts";
+import { type SavedAppearance, type TeamFace, WIDGET_DEFAULTS, withDefaults } from "./shared.ts";
 
 const face = (id: string): TeamFace => ({ id, name: id, pictureUrl: null });
 const maya = face("maya");
@@ -44,4 +44,9 @@ describe("the header's faces", () => {
   test("None shows nobody", () => {
     expect(headerFaces(saved({ headerFaces: "none", faces: [] }), ["maya"])).toEqual([]);
   });
+});
+
+test("an answer from before the header settings still shows a header", () => {
+  const { headerFaces: _mode, headerFaceCount: _count, faces: _faces, ...old } = saved({});
+  expect(ids(headerFaces(withDefaults(old), []))).toEqual(["sam", "maya"]);
 });

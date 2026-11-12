@@ -15,7 +15,7 @@ import { useLatestLoad } from "./load.ts";
 import { countryName, flag, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { Choices, initials, Loading, type Option, Page } from "./ui.tsx";
+import { Choices, FlagBadge, initials, Loading, type Option, Page } from "./ui.tsx";
 import { bare, visitorName, webLink } from "./visitor.ts";
 
 /** The live list loads again this often while the page shows. */
@@ -109,7 +109,10 @@ function pageTitle(one: LiveVisitor): string {
 function byCountry(visitors: LiveVisitor[]): Map<string, LiveVisitor[]> {
   const groups = new Map<string, LiveVisitor[]>();
   for (const one of visitors) {
-    if (one.country !== null) groups.set(one.country, [...(groups.get(one.country) ?? []), one]);
+    if (one.country === null) continue;
+    const group = groups.get(one.country);
+    if (group === undefined) groups.set(one.country, [one]);
+    else group.push(one);
   }
   return groups;
 }
@@ -340,18 +343,17 @@ function WorldMap({
 
 /** Initials on a tile with a flag badge for a known person, or the flag alone for anyone else. */
 function Face({ one }: { one: LiveVisitor }) {
-  const badge = one.country === null ? null : flag(one.country);
   if (one.visitor !== null) {
     return (
       <span className="live-face known" aria-hidden="true">
         {initials(visitorName(one.visitor))}
-        {badge !== null && <span className="live-badge">{badge}</span>}
+        {one.country !== null && <FlagBadge country={one.country} />}
       </span>
     );
   }
   return (
     <span className="live-face" aria-hidden="true">
-      {badge ?? <Icon name="globe" size={20} />}
+      {one.country === null ? <Icon name="globe" size={20} /> : flag(one.country)}
     </span>
   );
 }
