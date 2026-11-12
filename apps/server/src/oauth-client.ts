@@ -146,16 +146,18 @@ function isMetadataUrl(clientId: string): boolean {
 }
 
 /**
- * What Settings shows for a grant's client, from its client ID alone: a metadata URL's host, or a
- * registered client's first redirect host. The ID was checked when the grant was approved.
+ * What Settings shows for a grant's client, from its client ID alone: a metadata URL's host, or the
+ * one place a registered client returns to. A client that registered several hosts names none,
+ * because the ID does not say which one its grant used.
  */
 export function clientOrigin(clientId: string): ClientOrigin | null {
   if (isMetadataUrl(clientId)) return metadataOrigin(clientId);
   const parts = decodeClientId(clientId);
-  const first = parts === null ? undefined : readPayload(parts.payload)?.r[0];
-  return first === undefined || !URL.canParse(first)
-    ? null
-    : { kind: "dcr", ...redirectHost(first) };
+  const uris = (parts === null ? undefined : readPayload(parts.payload)?.r) ?? [];
+  if (uris.length === 0 || !uris.every((uri) => URL.canParse(uri))) return null;
+  const [first, ...rest] = uris.map(redirectHost);
+  const same = rest.every((one) => one.host === first?.host && one.local === first?.local);
+  return first === undefined || !same ? null : { kind: "dcr", ...first };
 }
 
 /** A metadata document's host, which the fetch proved serves it. */

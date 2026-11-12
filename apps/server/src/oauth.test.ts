@@ -444,6 +444,16 @@ describe("redirect URIs", () => {
     expect(clientOrigin(CLAUDE_CODE)).toEqual({ kind: "cimd", host: "claude.ai", local: false });
   });
 
+  test("a registered client names the one host it returns to, and no host when it has several", async () => {
+    const one = await registered(["https://app.example/a", "https://app.example/b"]);
+    expect(clientOrigin(one)).toEqual({ kind: "dcr", host: "app.example", local: false });
+    // The grant may have used either, so Settings must not name the first as if it were the one.
+    const two = await registered(["https://claude.ai/cb", "https://evil.example/cb"]);
+    expect(clientOrigin(two)).toBeNull();
+    const mixed = await registered(["http://127.0.0.1/cb", "https://evil.example/cb"]);
+    expect(clientOrigin(mixed)).toBeNull();
+  });
+
   test("a loopback redirect matches on any port, and nothing else does", () => {
     expect(redirectMatches("http://127.0.0.1/cb", "http://127.0.0.1:53111/cb")).toBe(true);
     expect(redirectMatches("http://localhost:1/cb", "http://localhost:2/cb")).toBe(true);
