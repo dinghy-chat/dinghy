@@ -1,4 +1,4 @@
-import { quoteExcerpt } from "./markdown.ts";
+import { plainText } from "./markdown.ts";
 
 /** A quoted message as the server shows it. Its `id` is null when that message was deleted. */
 export interface Quote {
@@ -6,8 +6,8 @@ export interface Quote {
   /** The author's name as this side shows it. Null for the visitor's own message in the widget. */
   authorName: string | null;
   fromVisitor: boolean;
-  /** Its first words, on one line, without Markdown marks. */
-  excerpt: string;
+  /** Its whole text, with its line breaks and without Markdown marks. */
+  text: string;
   hasImage: boolean;
 }
 
@@ -17,11 +17,11 @@ export interface Quote {
  * both keys, so this one rule serves them all.
  */
 export const quoteStandIn = (quote: Quote): "quoteDeleted" | "quoteImage" | null =>
-  quote.id === null ? "quoteDeleted" : quote.excerpt === "" && quote.hasImage ? "quoteImage" : null;
+  quote.id === null ? "quoteDeleted" : quote.text === "" && quote.hasImage ? "quoteImage" : null;
 
 /**
  * The quote of a team reply the visitor answers, shown at once until the server's copy replaces it.
- * Its excerpt is the server's, so a long formatted reply never shows its Markdown. Only a text
+ * Its text is made as the server makes it, so a formatted reply never shows its Markdown. Only a text
  * bubble has the reply button, so it has no image.
  */
 export const quoteOfReply = (reply: {
@@ -32,6 +32,6 @@ export const quoteOfReply = (reply: {
   id: reply.id,
   authorName: reply.author?.name ?? null,
   fromVisitor: false,
-  excerpt: quoteExcerpt(reply.body),
+  text: plainText(reply.body),
   hasImage: false,
 });

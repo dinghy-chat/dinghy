@@ -62,7 +62,7 @@ export const CSS = `
 .port{width:150px;height:100px;border-radius:26px}
 .sun{position:absolute;left:calc(78% - 12px);top:34px;width:24px;height:24px;border-radius:50%;background:#fff8df;box-shadow:0 0 0 5px rgb(255 248 223/.4)}
 .msg{align-self:flex-start;max-width:84%;padding:9px 13px;border-radius:18px 18px 18px 5px;background:var(--paper);box-shadow:0 1px 2px rgb(13 34 64/.08);overflow-wrap:anywhere;white-space:pre-wrap}
-.msg p,.msg ul,.msg ol,.msg pre{margin:0}.msg>*+*{margin-top:6px}.msg ul,.msg ol{padding-left:20px}
+.msg p,.msg ul,.msg ol,.msg pre,.msg blockquote{margin:0}.msg blockquote{padding:6px 10px;border-radius:10px;background:rgb(127 127 127/.14)}.msg>*+*{margin-top:10px}.msg ul,.msg ol{padding-left:20px}
 .msg pre,.msg code{font:13px/1.4 ui-monospace,monospace}.msg code{padding:0 3px;border-radius:4px;background:rgb(127 127 127/.18)}.msg pre code{display:block;padding:6px 8px;overflow-x:auto}.msg a{color:inherit}
 .mine{align-self:flex-end;border-radius:18px 18px 5px 18px;background:var(--primary);color:var(--d-primary-text,#fff);box-shadow:none}
 .note{align-self:center;margin:6px 0;font-size:12px;line-height:16px;color:var(--mute);text-align:center}
@@ -92,17 +92,17 @@ textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inh
 .re{position:absolute;left:100%;top:50%;margin:-16px 0 0 2px;opacity:0}
 .msg:hover .re,.re:focus-visible{opacity:1}
 @media (hover:none){.re{opacity:.7}}
-.quote{margin:0 0 6px;padding:5px 9px;border-radius:10px;background:var(--fog);font-size:13px;white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.quote{display:block;margin:0 0 6px;padding:5px 9px;border-radius:10px;background:var(--fog);font-size:13px;white-space:pre-line}
 .mine .quote{background:rgb(255 255 255/.18)}
 .quote b{display:block;font-size:12px}
 .chip{display:flex;align-items:center;gap:4px;margin-bottom:6px}
-.chip .quote{flex:1;margin:0;-webkit-line-clamp:2}
-.shot{display:block;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
+.chip .quote{flex:1;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.shot{flex:none;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
 .shot.mine{align-self:flex-end}
 .shot img{display:block;max-width:100%;height:auto}
-dialog{padding:0;border:0;background:transparent;max-width:95vw;max-height:95vh;overflow:auto}
+dialog{max-width:none;max-height:none;padding:0;border:0;background:transparent;overflow:hidden}
 dialog::backdrop{background:rgb(11 34 57/.85)}
-dialog img{display:block;max-width:none}
+dialog img{display:block;max-width:95vw;max-height:95svh}
 .panel.page{inset:0;margin:auto;width:100%;max-width:720px;height:auto;max-height:none;border-radius:0}
 @media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}textarea,input{font-size:16px}.panel:not(.page) .head{padding-top:max(10px,env(safe-area-inset-top))}.panel:not(.page)>:last-child{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
 .panel:focus{outline:none}
@@ -425,13 +425,13 @@ export function ChatHead({
   );
 }
 
-/** A quoted message: who wrote it, and its first words. */
+/** A quoted message: who wrote it, and its whole text. */
 function Quoted({ quote }: { quote: Quote }) {
   const standIn = quoteStandIn(quote);
   return (
     <span class="quote">
       <b>{quote.fromVisitor ? t("you") : quote.authorName}</b>
-      {standIn ? t(standIn) : quote.excerpt}
+      {standIn ? t(standIn) : quote.text}
     </span>
   );
 }

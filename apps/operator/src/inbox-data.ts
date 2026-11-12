@@ -143,7 +143,16 @@ function useConversationList({
   // biome-ignore lint/correctness/useExhaustiveDependencies: each of these asks for a load.
   useEffect(reload, [reload, status, assignee, limit, version]);
   const loadMore = () => setLimit((current) => current + PAGE_SIZE);
-  return { conversations, listed, waiting, openBy, hasMore, reload, loadMore };
+  // Grows with each read, so a search, which is a snapshot, asks again.
+  const [reads, setReads] = useState(0);
+  /** The operator read this conversation, so its row is read before the next load says so. */
+  const markedRead = useCallback((conversationId: string) => {
+    setConversations((current) =>
+      current.map((row) => (row.id === conversationId ? { ...row, unread: false } : row)),
+    );
+    setReads((current) => current + 1);
+  }, []);
+  return { conversations, listed, waiting, openBy, hasMore, reload, loadMore, markedRead, reads };
 }
 
 /**

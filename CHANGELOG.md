@@ -4,6 +4,15 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- The Inbox shows which conversations you have not read: the name and the last message are bold, with a blue dot beside the time. Each member reads on their own, and opening a conversation marks it read. Conversations from before the upgrade start read. API: `unread` on each conversation, and `POST .../conversations/{conversationId}/read`.
+- A message whose lines start with `>` shows them as a quote.
+
+### Changed
+
+- A reply's quote shows the whole quoted message, with its line breaks, in the Inbox, the widget and emails. API: a message's `replyTo.excerpt`, the first 140 characters, is now `replyTo.text`, the whole text.
+
 ## [0.22.0] - 2026-11-12
 
 ### Added

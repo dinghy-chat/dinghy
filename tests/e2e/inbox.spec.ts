@@ -176,11 +176,16 @@ test("a draft stays with its conversation when the operator opens another", asyn
   await reply.fill("Half a sentence for one");
   await row(operator, "Draft two").click();
   await expect(reply).toHaveValue("");
+  // The list shows the unsent reply in place of the visitor's last message.
+  await expect(row(operator, "Half a sentence for one")).toContainText("Draft:");
   await reply.fill("For two");
-  await row(operator, "Draft one").click();
+  await row(operator, "Half a sentence for one").click();
   await expect(reply).toHaveValue("Half a sentence for one");
-  await row(operator, "Draft two").click();
+  await row(operator, "For two").click();
   await expect(reply).toHaveValue("For two");
+  // A reload of the tab keeps both.
+  await operator.reload();
+  await expect(row(operator, "Half a sentence for one")).toContainText("Draft:");
   for (const page of [one, two, operator]) await page.context().close();
 });
 
@@ -311,4 +316,35 @@ test("an old Closed link opens the Inbox with Closed picked, and a conversation 
   await expect(page.getByText("This conversation is closed.")).toBeVisible();
   await expect(await inboxFilter(page, "Closed")).toBeChecked();
   for (const one of [customer, page]) await one.context().close();
+});
+
+test("each operator sees the conversations they have not read, with a dot", async ({ browser }) => {
+  const customer = await visitor(browser, "Is anyone reading?");
+  const other = await visitor(browser, "Another question");
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const bob = await signedIn(browser, server, "bob@example.com");
+  const dot = (page: Page, text: string) =>
+    row(page, text).getByRole("img", { name: "Unread", exact: true });
+
+  for (const page of [alice, bob]) {
+    await expect(row(page, "Is anyone reading?")).toHaveClass(/\bunread\b/);
+    await expect(dot(page, "Is anyone reading?")).toBeVisible();
+  }
+
+  // Alice opens it and moves on: it stays read for her, and Bob has still not read it.
+  await row(alice, "Is anyone reading?").click();
+  await expect(alice.locator(".log")).toContainText("Is anyone reading?");
+  await row(alice, "Another question").click();
+  await expect(row(alice, "Is anyone reading?")).not.toHaveClass(/\bunread\b/);
+  await expect(dot(alice, "Is anyone reading?")).toHaveCount(0);
+  await alice.reload();
+  await expect(row(alice, "Another question")).toBeVisible();
+  await expect(row(alice, "Is anyone reading?")).not.toHaveClass(/\bunread\b/);
+  await expect(dot(bob, "Is anyone reading?")).toBeVisible();
+
+  // The visitor writes again, so it is unread again.
+  await say(customer, "Hello again");
+  await expect(dot(alice, "Hello again")).toBeVisible();
+
+  for (const page of [customer, other, alice, bob]) await page.context().close();
 });

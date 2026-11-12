@@ -117,6 +117,24 @@ test("the list shows that the last message is an image", async ({ browser }) => 
   await operatorContext.close();
 });
 
+test("an image keeps its height in a conversation long enough to scroll", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await openWidget(page);
+  const field = page.getByRole("textbox", { name: "Your message" });
+  await field.fill(Array.from({ length: 40 }, (_, line) => `Line ${line + 1}`).join("\n"));
+  await field.press("Enter");
+  await expect(page.locator(".msg.mine")).toHaveCount(1);
+  await page.getByLabel("Attach an image").first().setInputFiles(pngFile());
+  const image = page.locator(".shot.mine img").first();
+  await expectLoaded(image);
+  // The button around it keeps the image's height. The scrolling log once squeezed it to nothing,
+  // which hid the image.
+  const shown = await page.locator(".shot.mine").first().boundingBox();
+  expect(shown?.height).toBe(Number(await image.getAttribute("height")));
+  await context.close();
+});
+
 test("the widget's images work on a hostile page with a strict CSP", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();

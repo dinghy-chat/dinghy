@@ -162,7 +162,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
         "Finds open and closed conversations whose visitor's name, email or user ID, or one of whose messages, holds the text, ignoring case. At most 50, newest activity first.",
       input: z.object({ q: z.string().trim().min(3).max(100).describe("At least 3 characters") }),
       readOnly: true,
-      run: async ({ q }, { workspaceId }) => ({ data: await inbox.search(workspaceId, q) }),
+      run: async ({ q }, { workspaceId }) => ({ data: await inbox.search(workspaceId, null, q) }),
     }),
     tool({
       name: "get_conversation",
@@ -182,6 +182,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       async run(input, { workspaceId }) {
         const found = await inbox.read(
           workspaceId,
+          null,
           input.conversationId,
           BigInt(input.after),
           input.limit,

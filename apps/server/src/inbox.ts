@@ -23,6 +23,7 @@ import {
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
+  OPERATOR_WRITE_ERRORS,
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
@@ -30,7 +31,12 @@ import { ImageSchema, type Images, imageView, lostConnection, refuseImage } from
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
-import { closedFailure, OPEN_TO_WELCOME, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import {
+  closedFailure,
+  OPEN_TO_WELCOME,
+  OPEN_WHILE_CLOSED,
+  WORKSPACE_PREFIX as PREFIX,
+} from "./member.ts";
 import { deleteMessage, editMessage, emailedAt, replyReceipts } from "./message-changes.ts";
 import {
   type AssigneeFilter,
@@ -39,6 +45,7 @@ import {
   authorNames,
   ConversationClosedError,
   type ConversationRow,
+  type ConversationSummary,
   CURSOR_PATTERN,
   catchClosed,
   countOpenByAssignee,
@@ -46,9 +53,11 @@ import {
   findConversation,
   findMessage,
   InvalidReplyToError,
+  isUnread,
   listConversationMessages,
   listConversations,
   listWorkspaceEvents,
+  markConversationRead,
   type NewImage,
   parseCursor,
   QuoteSchema,
@@ -151,7 +160,7 @@ const InboxMessage = z
         id: "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
         authorName: "Ada",
         fromVisitor: true,
-        excerpt: "Do you have a yearly plan?",
+        text: "Do you have a yearly plan?",
         hasImage: false,
       },
       editedAt: null,
@@ -197,6 +206,9 @@ const Conversation = z
     lastMessage: z
       .object({ body: z.string().nullable(), fromVisitor: z.boolean(), createdAt: z.string() })
       .nullable(),
+    // A visitor message is past the signed-in operator's read position. Always false for an API
+    // key, which has no read position.
+    unread: z.boolean(),
   })
   .openapi("Conversation");
 
@@ -291,6 +303,7 @@ const listRoute = createRoute({
                   fromVisitor: true,
                   createdAt: "2026-11-08T09:30:00.000Z",
                 },
+                unread: true,
               },
             ],
             hasMore: false,
@@ -579,6 +592,34 @@ const statusRoute = createRoute({
   },
 });
 
+const readRoute = createRoute({
+  method: "post",
+  // Reading is still allowed while the workspace is read-only or suspended.
+  ...OPEN_WHILE_CLOSED,
+  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/read`,
+  security: SESSION,
+  summary: "Mark a conversation read up to a message, for the signed-in operator",
+  description:
+    "Moves the operator's read position forward to `seq`, a message's `seq`. It never moves back, and it stops at the conversation's newest message. API keys have no read position.",
+  request: {
+    params: conversationParams,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({ seq: z.string().regex(/^\d{1,18}$/) }),
+          example: { seq: "43" },
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "The position is at least `seq`", content: okContent },
+    ...MEMBER_ERRORS,
+    ...OPERATOR_WRITE_ERRORS,
+  },
+});
+
 const streamRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/stream`,
@@ -664,7 +705,7 @@ async function welcomePictures(
   return url === null ? new Map() : new Map(ours.map((one) => [one.id, url]));
 }
 
-/** A conversation as the operator API shows it. */
+/** A conversation as the operator API and webhooks show it. */
 export function conversationView(
   row: ConversationRow,
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null,
@@ -699,6 +740,12 @@ export function conversationView(
   };
 }
 
+/** A conversation in a list, with whether the signed-in operator has read it. */
+const listedView = (row: ConversationSummary, pictureUrl: string | null) => ({
+  ...conversationView(row, row.lastMessage, pictureUrl),
+  unread: row.unread,
+});
+
 /** The session ended or the operator left the workspace during an upload. Its transaction rolls back. */
 class AccessEndedError extends Error {}
 
@@ -728,6 +775,9 @@ const replyAuthor = (actor: Actor, conversationId: string): Author =>
     : { kind: "key", apiKeyId: actor.apiKeyId, conversationId };
 
 const actorId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : actor.apiKeyId);
+
+/** The operator whose read positions apply, or null for an API key, which has none. */
+const readerId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : null);
 
 type Appended = Awaited<ReturnType<typeof appendMessage>>;
 
@@ -839,7 +889,10 @@ export function createInbox({
   };
 
   return {
-    /** `operatorId` counts the operator's own open conversations, and is null for an API key. */
+    /**
+     * `operatorId` counts the operator's own open conversations and reads their unread ones. It is
+     * null for an API key.
+     */
     async list(
       workspaceId: string,
       operatorId: string | null,
@@ -849,7 +902,15 @@ export function createInbox({
       limit: number,
     ) {
       const page = await withWorkspace(db, workspaceId, async (tx) => {
-        const listed = await listConversations(tx, workspaceId, status, assignee, before, limit);
+        const listed = await listConversations(
+          tx,
+          workspaceId,
+          operatorId,
+          status,
+          assignee,
+          before,
+          limit,
+        );
         return {
           ...listed,
           pictures: await welcomePictures(tx, workspaceId, listed.conversations, founderPicture),
@@ -859,7 +920,7 @@ export function createInbox({
       });
       return {
         conversations: page.conversations.map((row) =>
-          conversationView(row, row.lastMessage, page.pictures.get(row.id) ?? null),
+          listedView(row, page.pictures.get(row.id) ?? null),
         ),
         hasMore: page.hasMore,
         waiting: page.waiting,
@@ -867,11 +928,21 @@ export function createInbox({
       };
     },
 
-    /** One conversation with a page of its messages, or null when it does not exist. */
-    async read(workspaceId: string, conversationId: string, after: bigint, limit: number) {
+    /**
+     * One conversation with a page of its messages, or null when it does not exist. `operatorId`
+     * reads whether it is unread, and is null for an API key.
+     */
+    async read(
+      workspaceId: string,
+      operatorId: string | null,
+      conversationId: string,
+      after: bigint,
+      limit: number,
+    ) {
       const result = await withWorkspace(db, workspaceId, async (tx) => {
         const found = await findConversation(tx, workspaceId, conversationId);
         if (found === null) return null;
+        const unread = await isUnread(tx, workspaceId, conversationId, operatorId);
         const page = await listConversationMessages(tx, workspaceId, conversationId, after, limit);
         const names = await authorNames(tx, workspaceId, page.messages);
         const pages = await visitorPages(tx, workspaceId, found.visitorId);
@@ -879,15 +950,18 @@ export function createInbox({
           ? await welcomeChat(tx, conversationId, founderPicture)
           : null;
         const receipts = await replyReceipts(tx, workspaceId, conversationId, found.visitorId);
-        return { found, page, names, pages, welcome, receipts };
+        return { found, unread, page, names, pages, welcome, receipts };
       });
       if (result === null) return null;
       return {
-        conversation: conversationView(
-          result.found,
-          null,
-          result.welcome?.with === "founder" ? result.welcome.pictureUrl : null,
-        ),
+        conversation: {
+          ...conversationView(
+            result.found,
+            null,
+            result.welcome?.with === "founder" ? result.welcome.pictureUrl : null,
+          ),
+          unread: result.unread,
+        },
         messages: result.page.messages.map((message) =>
           messageView(images, workspaceId, result.names, message),
         ),
@@ -909,18 +983,17 @@ export function createInbox({
       };
     },
 
-    async search(workspaceId: string, q: string) {
+    /** `operatorId` reads which conversations are unread, and is null for an API key. */
+    async search(workspaceId: string, operatorId: string | null, q: string) {
       const { rows, pictures } = await withWorkspace(db, workspaceId, async (tx) => {
-        const found = await searchConversations(tx, workspaceId, q, 50);
+        const found = await searchConversations(tx, workspaceId, operatorId, q, 50);
         return {
           rows: found,
           pictures: await welcomePictures(tx, workspaceId, found, founderPicture),
         };
       });
       return {
-        conversations: rows.map((row) =>
-          conversationView(row, row.lastMessage, pictures.get(row.id) ?? null),
-        ),
+        conversations: rows.map((row) => listedView(row, pictures.get(row.id) ?? null)),
       };
     },
 
@@ -1021,10 +1094,9 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       beforeUpdatedAt === undefined || beforeId === undefined
         ? undefined
         : { updatedAt: new Date(beforeUpdatedAt), id: beforeId };
-    const operatorId = actor.kind === "operator" ? actor.operatorId : null;
     const page = await inbox.list(
       c.get("memberWorkspaceId"),
-      operatorId,
+      readerId(actor),
       status,
       filter,
       before,
@@ -1038,6 +1110,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     const { after, limit } = c.req.valid("query");
     const result = await inbox.read(
       c.get("memberWorkspaceId"),
+      readerId(c.get("actor")),
       conversationId,
       BigInt(after),
       limit,
@@ -1048,7 +1121,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
 
   app.openapi(searchRoute, async (c) => {
     const { q } = c.req.valid("query");
-    return c.json(await inbox.search(c.get("memberWorkspaceId"), q), 200);
+    return c.json(await inbox.search(c.get("memberWorkspaceId"), readerId(c.get("actor")), q), 200);
   });
 
   app.openapi(replyRoute, async (c) => {
@@ -1173,6 +1246,17 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       c.get("actor"),
       conversationId,
       status,
+    );
+    if (!found) return c.json(NOT_FOUND, 404);
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(readRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { conversationId } = c.req.valid("param");
+    const { seq } = c.req.valid("json");
+    const found = await withWorkspace(db, id, (tx) =>
+      markConversationRead(tx, id, conversationId, c.get("operatorId"), BigInt(seq)),
     );
     if (!found) return c.json(NOT_FOUND, 404);
     return c.json({ ok: true as const }, 200);

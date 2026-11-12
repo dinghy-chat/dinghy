@@ -42,7 +42,12 @@ import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { type Mailer, recipientRejected } from "./mailer.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
-import { assignConversation, recordTeamChange, recordWorkspaceChange } from "./messages.ts";
+import {
+  assignConversation,
+  markHistoryRead,
+  recordTeamChange,
+  recordWorkspaceChange,
+} from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { MINUTE_MS } from "./time.ts";
@@ -478,6 +483,7 @@ async function consumeInvite(
     .returning({ operatorId: workspaceMember.operatorId });
   if (joined === undefined) throw new AlreadyMemberError();
   if (!(await limits.operatorsFit(tx, workspaceId))) throw new OperatorLimitError();
+  await markHistoryRead(tx, workspaceId, operatorId);
   await recordTeamChange(tx, workspaceId);
 }
 

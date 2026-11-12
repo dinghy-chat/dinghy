@@ -1,9 +1,10 @@
 /** @jsxImportSource react */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Conversation, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
 import { Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import { Icon } from "./icons.tsx";
+import { useTabVisible } from "./live.ts";
 import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
 import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
@@ -17,16 +18,36 @@ import { ErrorNote, failureText, Loading } from "./ui.tsx";
 import { replyAuthor, title } from "./visitor.ts";
 import { usePanel, VisitorPanel } from "./visitor-panel.tsx";
 
-/** The unsent reply, kept in `drafts` while the operator looks at another conversation. */
-function useDraft(drafts: Map<string, string>, conversationId: string) {
-  // Here and not in the composer, which unmounts while the conversation is closed.
-  const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
-  const setDraft = (next: string) => {
-    setDraftState(next);
-    if (next === "") drafts.delete(conversationId);
-    else drafts.set(conversationId, next);
-  };
-  return [draft, setDraft] as const;
+/**
+ * Marks the conversation read up to its newest saved line while the operator can see it, and
+ * again for each newer line. A failure is silent: the next line or visit tries again.
+ */
+function useMarkRead(
+  api: WorkspaceApi,
+  conversationId: string,
+  lines: Line[],
+  inView: boolean,
+  onRead: (conversationId: string) => void,
+) {
+  const visible = useTabVisible();
+  const newest = lines.reduce<bigint | null>(
+    (max, line) => (line.seq !== null && (max === null || line.seq > max) ? line.seq : max),
+    null,
+  );
+  const sent = useRef<bigint | null>(null);
+  useEffect(() => {
+    if (!visible || !inView || newest === null) return;
+    if (sent.current !== null && sent.current >= newest) return;
+    sent.current = newest;
+    onRead(conversationId);
+    // Again once saved, as a list load that left before the save may have brought the dot back.
+    api.markRead(conversationId, newest.toString()).then(
+      () => onRead(conversationId),
+      () => {
+        if (sent.current === newest) sent.current = null;
+      },
+    );
+  }, [api, conversationId, newest, visible, inView, onRead]);
 }
 
 /** What the info dialog says about a line: its time, its author and, for a reply, its receipt. */
@@ -55,20 +76,24 @@ export function Thread({
   emailAvailable,
   readOnly,
   suspended,
-  drafts,
+  draft,
+  setDraft,
   receiptsVersion,
   rewriteVersion,
   typingDraft,
   onBack,
   onChanged,
   onLoaded,
+  inView,
+  onRead,
   onOpenContact,
   onOpenConversation,
 }: {
   api: WorkspaceApi;
   meId: string;
-  /** Unsent replies by conversation, kept while the operator looks at another one. */
-  drafts: Map<string, string>;
+  /** The operator's unsent reply here, or "". The inbox keeps it, so it outlives this thread. */
+  draft: string;
+  setDraft(text: string): void;
   members: Member[];
   replying: string | null;
   /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
@@ -91,6 +116,10 @@ export function Thread({
   onChanged(): void;
   /** The conversation as each load finds it. */
   onLoaded(conversation: Conversation): void;
+  /** The Inbox shows this thread, and not another page over it. */
+  inView: boolean;
+  /** The operator read this conversation. */
+  onRead(conversationId: string): void;
   onOpenContact(visitorId: string): void;
   onOpenConversation(id: string, status: "open" | "closed"): void;
 }) {
@@ -119,6 +148,7 @@ export function Thread({
     onLoaded,
   });
   const { conversation, online, welcome, receipts, lines, sendFiles } = thread;
+  useMarkRead(api, conversationId, lines, inView, onRead);
   const actions = useMessageActions({ api, conversationId, act, keep: thread.keep });
   const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
   const change = useConversationActions({
@@ -143,7 +173,6 @@ export function Thread({
       ? "readOnlyHelp"
       : null;
   const imagesOn = !readOnly && !suspended;
-  const [draft, setDraft] = useDraft(drafts, conversationId);
   const [dropping, setDropping] = useState(false);
 
   if (conversation === null) {

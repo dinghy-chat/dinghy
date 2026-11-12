@@ -297,12 +297,12 @@ describe("conversations", () => {
       logger: { logQuery: (query, params) => queries.push({ query, params }) },
     });
     const page = await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, "open", { kind: "all" }, undefined, 2),
+      listConversations(tx, own.id, null, "open", { kind: "all" }, undefined, 2),
     );
     const last = page.conversations.at(-1);
     queries.length = 0;
     await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, "open", { kind: "all" }, last, 2),
+      listConversations(tx, own.id, null, "open", { kind: "all" }, last, 2),
     );
     const list = queries.filter((one) => one.query.includes('from "conversation"'));
     expect(list).toHaveLength(1);
@@ -439,11 +439,11 @@ describe("the assignee filter", () => {
     });
     const mine = { kind: "operator", operatorId: ann.id } as const;
     const page = await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, "open", mine, undefined, 2),
+      listConversations(tx, own.id, null, "open", mine, undefined, 2),
     );
     queries.length = 0;
     await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, "open", mine, page.conversations.at(-1), 2),
+      listConversations(tx, own.id, null, "open", mine, page.conversations.at(-1), 2),
     );
     const list = queries.filter((one) => one.query.includes('from "conversation"'));
     const client = await database.connect("migrator", 1).pool.connect();
@@ -1244,5 +1244,125 @@ describe("waiting counts across workspaces", () => {
 
   test("it needs a session", async () => {
     expect((await app.request("/v1/operator/waiting")).status).toBe(401);
+  });
+});
+
+describe("unread conversations", () => {
+  type Listed = { conversations: { id: string; unread: boolean }[] };
+
+  /** A workspace of two operators, Ann and Bo, and helpers that read as either. */
+  async function team() {
+    const own = await createWorkspace(db, "Unread", [WIDGET_ORIGIN]);
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const ann = await signedInOperator({ app, auth, owner, name: "Ann", workspaceId: own.id });
+    const bo = await signedInOperator({ app, auth, owner, name: "Bo", workspaceId: own.id });
+    const base = `/v1/operator/workspaces/${own.id}/conversations`;
+    const unread = async (conversationId: string, as: string) => {
+      const listed = (await (await get(base, as)).json()) as Listed;
+      return listed.conversations.find((row) => row.id === conversationId)?.unread;
+    };
+    const markRead = (conversationId: string, seq: string, as: string) =>
+      write("POST", `${base}/${conversationId}/read`, { seq }, as);
+    const newestSeq = async (conversationId: string) => {
+      const read = await get(`${base}/${conversationId}/messages`, ann.cookie);
+      const { messages } = (await read.json()) as { messages: { seq: string }[] };
+      return messages.at(-1)?.seq ?? "0";
+    };
+    return { own, ann, bo, base, unread, markRead, newestSeq };
+  }
+
+  const visitorWritesAgain = (key: string, token: string, clientId: string) =>
+    app.request(`/v1/widget/${key}/messages`, {
+      method: "POST",
+      headers: {
+        origin: WIDGET_ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ clientId, body: "One more thing" }),
+    });
+
+  test("each operator reads on their own, and a later visitor message is unread again", async () => {
+    const { own, ann, bo, base, unread, markRead, newestSeq } = await team();
+    const { token, conversationId } = await visitorSends(own.publicKey, "Hello");
+    expect(await unread(conversationId, ann.cookie)).toBe(true);
+    expect(await unread(conversationId, bo.cookie)).toBe(true);
+
+    const marked = await markRead(conversationId, await newestSeq(conversationId), ann.cookie);
+    expect(marked.status).toBe(200);
+    expect(await marked.json()).toEqual({ ok: true });
+    expect(await unread(conversationId, ann.cookie)).toBe(false);
+    expect(await unread(conversationId, bo.cookie)).toBe(true);
+    // Search and a single read say the same.
+    const found = (await (await get(`${base}/search?q=Hello`, ann.cookie)).json()) as Listed;
+    expect(found.conversations.map((row) => row.unread)).toEqual([false]);
+    const one = await get(`${base}/${conversationId}/messages`, bo.cookie);
+    expect(((await one.json()) as { conversation: { unread: boolean } }).conversation.unread).toBe(
+      true,
+    );
+
+    expect((await visitorWritesAgain(own.publicKey, token, "again")).status).toBe(201);
+    expect(await unread(conversationId, ann.cookie)).toBe(true);
+  });
+
+  test("an operator's own reply does not make a conversation unread", async () => {
+    const { own, ann, base, unread, markRead, newestSeq } = await team();
+    const { conversationId } = await visitorSends(own.publicKey, "Hi");
+    await markRead(conversationId, await newestSeq(conversationId), ann.cookie);
+    const replied = await write(
+      "POST",
+      `${base}/${conversationId}/messages`,
+      { clientId: "r1", body: "Hello there" },
+      ann.cookie,
+    );
+    expect(replied.status).toBe(201);
+    expect(await unread(conversationId, ann.cookie)).toBe(false);
+  });
+
+  test("a lower seq does not move the position back, and a higher one stops at the newest", async () => {
+    const { own, ann, unread, markRead, newestSeq } = await team();
+    const { token, conversationId } = await visitorSends(own.publicKey, "First");
+    const first = await newestSeq(conversationId);
+    await visitorWritesAgain(own.publicKey, token, "second");
+    await markRead(conversationId, await newestSeq(conversationId), ann.cookie);
+    expect((await markRead(conversationId, first, ann.cookie)).status).toBe(200);
+    expect(await unread(conversationId, ann.cookie)).toBe(false);
+
+    // A position past the newest message does not hide the next one.
+    await markRead(conversationId, "999999999999", ann.cookie);
+    await visitorWritesAgain(own.publicKey, token, "third");
+    expect(await unread(conversationId, ann.cookie)).toBe(true);
+  });
+
+  test("a conversation of another workspace is not found", async () => {
+    const { ann, markRead } = await team();
+    const { conversationId } = await visitorSends(a.publicKey, "Elsewhere");
+    expect((await markRead(conversationId, "1", ann.cookie)).status).toBe(404);
+  });
+
+  test("an API key sees nothing unread and has no read position", async () => {
+    const { own, ann, base } = await team();
+    const { conversationId } = await visitorSends(own.publicKey, "For the key");
+    const made = await write(
+      "POST",
+      `/v1/operator/workspaces/${own.id}/api-keys`,
+      { name: "Bot" },
+      ann.cookie,
+    );
+    const { token } = (await made.json()) as { token: string };
+    const asKey = (path: string, init: RequestInit = {}) =>
+      app.request(path, {
+        ...init,
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      });
+    const listed = (await (await asKey(base)).json()) as Listed;
+    expect(listed.conversations.map((row) => row.unread)).toEqual([false]);
+    const found = (await (await asKey(`${base}/search?q=For the key`)).json()) as Listed;
+    expect(found.conversations.map((row) => row.unread)).toEqual([false]);
+    const marked = await asKey(`${base}/${conversationId}/read`, {
+      method: "POST",
+      body: JSON.stringify({ seq: "1" }),
+    });
+    expect(marked.status).toBe(403);
   });
 });

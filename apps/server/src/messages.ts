@@ -18,13 +18,14 @@ import {
   type SQLWrapper,
   sql,
 } from "drizzle-orm";
-import { quoteExcerpt } from "../../../packages/widget/src/markdown.ts";
+import { plainText } from "../../../packages/widget/src/markdown.ts";
 import { firstName } from "../../../packages/widget/src/shared.ts";
 import {
   apiKey,
   attachment,
   CHAT_KINDS,
   conversation,
+  conversationRead,
   type EventKind,
   event,
   type MessagePayload,
@@ -33,6 +34,7 @@ import {
   visitor,
   webhook,
   workspace,
+  workspaceMember,
 } from "./db/schema.ts";
 import {
   type Transaction,
@@ -74,13 +76,13 @@ export const QuoteSchema = z
     // The operator's or the API key's name, or the visitor's. Null for a visitor with no name.
     authorName: z.string().nullable(),
     fromVisitor: z.boolean(),
-    // The first 140 characters of its text, on one line, without Markdown marks.
-    excerpt: z.string(),
+    // Its whole text, with its line breaks and without Markdown marks.
+    text: z.string(),
     hasImage: z.boolean(),
   })
   .openapi("Quote");
 
-/** The quote as the database reads it, before the excerpt is cut. */
+/** The quote as the database reads it, before its Markdown marks go. */
 export interface QuoteRow {
   id: string;
   deleted: boolean;
@@ -91,9 +93,6 @@ export interface QuoteRow {
   body: string | null;
   hasImage: boolean;
 }
-
-// Enough to fill the excerpt after the Markdown marks go.
-const QUOTE_BODY_CHARACTERS = 600;
 
 /**
  * The quoted message, read in the same statement as each listed row, so a list costs one query.
@@ -106,7 +105,7 @@ const quoteColumn = sql<QuoteRow | null>`(
     'fromVisitor', q.author_visitor_id is not null,
     'byOperator', o.id is not null and o.deleted_at is null,
     'authorName', coalesce(o.name, k.name, v.name),
-    'body', left(q.body, ${QUOTE_BODY_CHARACTERS}),
+    'body', q.body,
     'hasImage', q.kind = 'image')
   from message as q
   left join operator as o on o.id = q.author_operator_id
@@ -121,8 +120,8 @@ export function quoteView(
 ): Quote | null {
   if (row === null) return null;
   const shown = { authorName: name(row), fromVisitor: row.fromVisitor };
-  if (row.deleted) return { id: null, ...shown, excerpt: "", hasImage: false };
-  return { id: row.id, ...shown, excerpt: quoteExcerpt(row.body ?? ""), hasImage: row.hasImage };
+  if (row.deleted) return { id: null, ...shown, text: "", hasImage: false };
+  return { id: row.id, ...shown, text: plainText(row.body ?? ""), hasImage: row.hasImage };
 }
 
 /**
@@ -782,8 +781,93 @@ export async function conversationVisitor(
   return row;
 }
 
-interface ConversationSummary extends ConversationRow {
+export interface ConversationSummary extends ConversationRow {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null;
+  unread: boolean;
+}
+
+/**
+ * Whether the conversation in the query has a visitor message past this operator's read position.
+ * An API key, null here, has no position, so nothing is unread for it. The probe walks
+ * message_conversation_idx from the position up.
+ */
+function unreadBy(operatorId: string | null) {
+  if (operatorId === null) return sql<boolean>`false`;
+  // Aliased, because Drizzle leaves the table off a column when a query has no join.
+  return sql<boolean>`exists (
+    select 1 from ${message} as m
+    where m.workspace_id = ${conversation}.workspace_id and m.conversation_id = ${conversation}.id
+      and m.author_visitor_id is not null and m.deleted_at is null
+      and m.seq > coalesce((
+        select r.read_seq from ${conversationRead} as r
+        where r.workspace_id = ${conversation}.workspace_id and r.conversation_id = ${conversation}.id
+          and r.operator_id = ${operatorId}
+      ), 0)
+  )`;
+}
+
+/** Whether one conversation is unread for this operator. False for an API key, as null. */
+export async function isUnread(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  operatorId: string | null,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({ unread: unreadBy(operatorId) })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  return row?.unread === true;
+}
+
+/**
+ * Moves an operator's read position in a conversation forward to `seq`. It never moves back, as
+ * tabs can report out of order, and it stops at the conversation's newest message. False when the
+ * conversation does not exist.
+ */
+export async function markConversationRead(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  operatorId: string,
+  seq: bigint,
+): Promise<boolean> {
+  const result = await tx.execute(sql`
+    insert into ${conversationRead} (workspace_id, conversation_id, operator_id, read_seq)
+    select c.workspace_id, c.id, ${operatorId}, least(${seq}::bigint, coalesce((
+             select max(m.seq) from ${message} as m
+             where m.workspace_id = c.workspace_id and m.conversation_id = c.id
+           ), 0))
+    from ${conversation} as c
+    where c.workspace_id = ${workspaceId} and c.id = ${conversationId}
+    on conflict (workspace_id, conversation_id, operator_id) do update
+      set read_seq = greatest(${conversationRead}.read_seq, excluded.read_seq)
+    returning 1`);
+  return result.rows.length > 0;
+}
+
+/**
+ * Marks every conversation read up to its newest message, for one member or for every current one,
+ * so a teammate who joins or a workspace that arrives by import does not start with all its
+ * history unread. A position never moves back.
+ */
+export async function markHistoryRead(
+  tx: Transaction,
+  workspaceId: string,
+  operatorId?: string,
+): Promise<void> {
+  await tx.execute(sql`
+    insert into ${conversationRead} (workspace_id, conversation_id, operator_id, read_seq)
+    select ${workspaceId}, newest.conversation_id, member.operator_id, newest.seq
+    from (
+      select m.conversation_id, max(m.seq) as seq from ${message} as m
+      where m.workspace_id = ${workspaceId} group by m.conversation_id
+    ) as newest
+    join ${workspaceMember} as member
+      on member.workspace_id = ${workspaceId} and member.removed_at is null
+      ${operatorId === undefined ? sql`` : sql`and member.operator_id = ${operatorId}`}
+    on conflict (workspace_id, conversation_id, operator_id) do update
+      set read_seq = greatest(${conversationRead}.read_seq, excluded.read_seq)`);
 }
 
 /** Whose conversations a list holds: everyone's, one operator's, or no one's. */
@@ -802,6 +886,7 @@ function assigneeCondition(assignee: AssigneeFilter) {
 export async function listConversations(
   tx: Transaction,
   workspaceId: string,
+  operatorId: string | null,
   status: "open" | "closed",
   assignee: AssigneeFilter,
   before: { updatedAt: Date; id: string } | undefined,
@@ -829,6 +914,7 @@ export async function listConversations(
   const rows = await tx
     .select({
       ...conversationColumns,
+      unread: unreadBy(operatorId),
       lastBody: newest.body,
       lastAuthorVisitorId: newest.authorVisitorId,
       lastCreatedAt: newest.createdAt,
@@ -1228,6 +1314,7 @@ export const containing = (text: string) => `%${text.replace(/[\\%_]/g, "\\$&")}
 export async function searchConversations(
   tx: Transaction,
   workspaceId: string,
+  operatorId: string | null,
   text: string,
   limit: number,
 ): Promise<ConversationSummary[]> {
@@ -1291,6 +1378,7 @@ export async function searchConversations(
   const rows = await tx
     .select({
       ...conversationColumns,
+      unread: unreadBy(operatorId),
       hitBody: hit.body,
       lastBody: newest.body,
       lastAuthorVisitorId: newest.authorVisitorId,

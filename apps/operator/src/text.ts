@@ -101,6 +101,7 @@ const en = {
   you: "You",
   aTeammate: "A teammate",
   waiting: "Waiting for a reply",
+  unread: "Unread",
   waitingCount: "{count} waiting for you",
   actionFailed: "That did not work. Check the connection and try again.",
   accountHelp:
@@ -720,6 +721,7 @@ const en = {
   receiptEmailed: "Sent by email",
   receiptEmailFailed: "Email failed",
   visitorTyping: "typing…",
+  draft: "Draft:",
   visitorTypingLabel: "The visitor is typing",
   typingPreviewTitle: "Typing preview",
   typingPreviewHelp:

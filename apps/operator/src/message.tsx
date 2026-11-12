@@ -15,11 +15,11 @@ const quoteAuthor = (quote: Quote, visitorName: string) =>
 /** The quoted words, or what stands in for them. */
 function quoteText(quote: Quote): string {
   const standIn = quoteStandIn(quote);
-  return standIn === null ? quote.excerpt : t(standIn);
+  return standIn === null ? quote.text : t(standIn);
 }
 
 /**
- * The quote inside a reply's bubble: who wrote the original and its first words. A click scrolls to
+ * The quote inside a reply's bubble: who wrote the original and its whole text. A click scrolls to
  * the original, unless it was deleted.
  */
 export function QuoteBlock({
