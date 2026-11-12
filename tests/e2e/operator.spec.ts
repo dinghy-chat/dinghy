@@ -685,11 +685,22 @@ test("the … menu blocks with the keyboard too", async ({ browser }) => {
   await expect(menu.getByRole("menuitem")).toHaveText([
     "Block",
     "Email transcriptThe visitor gave no email",
-    "Snooze until they reply",
-    "Snooze until tomorrow",
-    "Snooze until next week",
+    "Snooze",
     "Delete",
   ]);
+  // Snooze opens its choices in place, under a row that goes back, and the left arrow goes back.
+  await operator.keyboard.press("End");
+  await operator.keyboard.press("ArrowUp");
+  await operator.keyboard.press("ArrowRight");
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "Snooze",
+    "Until they reply",
+    "Until tomorrow",
+    "Until next week",
+  ]);
+  await operator.keyboard.press("ArrowLeft");
+  await expect(menu.getByRole("menuitem")).toHaveCount(4);
+  await operator.keyboard.press("Home");
   await operator.keyboard.press("Enter");
   await expect(operator.getByText("This visitor is blocked")).toBeVisible();
   await expect(more).toBeFocused();

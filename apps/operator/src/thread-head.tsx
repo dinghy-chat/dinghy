@@ -47,18 +47,18 @@ function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
   );
 }
 
-/** Snooze choices for an open conversation, or Unsnooze for a snoozed one. None when closed. */
+/** Snooze, with its choices in a submenu, or Unsnooze for a snoozed one. None when closed. */
 function snoozeItems(conversation: Conversation, onSnooze: (snooze: Snooze | null) => void) {
   if (conversation.status === "closed") return [];
   const lead = <Icon name="clock" size={18} />;
   if (conversation.snooze !== null) {
     return [{ label: t("unsnooze"), lead, onSelect: () => onSnooze(null) }];
   }
-  return SNOOZE_CHOICES.map((choice) => ({
+  const submenu = SNOOZE_CHOICES.map((choice) => ({
     label: t(choice.text),
-    lead,
     onSelect: () => onSnooze({ until: choice.until(new Date()) }),
   }));
+  return [{ label: t("snooze"), lead, submenu }];
 }
 
 /** What the operator can do with this conversation. */

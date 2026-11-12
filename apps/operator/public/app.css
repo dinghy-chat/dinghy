@@ -116,6 +116,15 @@
   --bot-line: light-dark(rgb(31 107 255 / 0.28), rgb(138 184 255 / 0.32));
   /* A suggested reply that is not sent yet: the operator's bubble, washed out to a pale blue. */
   --suggest: light-dark(#eef4ff, #172a44);
+  /* A menu, a popover or a modal over the page. At night a lighter card with a pale edge, as a
+     navy shadow is lost on the dark panel. */
+  --raised: light-dark(#fff, #1a2736);
+  /* --soft and --soft-hover inside a raised card, which would be lost on it at night. */
+  --raised-soft: light-dark(#f1f0ec, #26364a);
+  --raised-soft-hover: light-dark(#e8e6e0, #30425a);
+  --raised-edge: light-dark(rgb(11 34 57 / 0.08), rgb(255 255 255 / 0.12));
+  --raised-shadow: light-dark(rgb(11 34 57 / 0.1), rgb(0 0 0 / 0.5));
+  --backdrop: light-dark(rgb(11 34 57 / 0.32), rgb(0 0 0 / 0.6));
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -386,10 +395,10 @@ textarea {
   grid-template-columns: repeat(8, 36px);
   gap: 2px;
   padding: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--raised-edge);
   border-radius: 14px;
-  background: var(--surface);
-  box-shadow: 0 12px 32px rgb(11 34 57 / 0.18);
+  background: var(--raised);
+  box-shadow: 0 12px 32px var(--raised-shadow);
 }
 .emoji-grid button {
   height: 36px;
@@ -1488,12 +1497,14 @@ button.workspace[aria-expanded="true"],
   margin-top: 6px;
   padding: 6px;
   overflow-y: auto;
+  --soft: var(--raised-soft);
+  --soft-hover: var(--raised-soft-hover);
   border-radius: 16px;
-  background: var(--surface);
+  background: var(--raised);
   box-shadow:
-    0 0 0 1px rgb(11 34 57 / 0.08),
+    0 0 0 1px var(--raised-edge),
     0 4px 8px rgb(11 34 57 / 0.05),
-    0 12px 32px rgb(11 34 57 / 0.1);
+    0 12px 32px var(--raised-shadow);
   color: var(--navy);
   font-size: 14.5px;
   text-align: left;
@@ -1688,14 +1699,18 @@ img.ws-tile {
   padding: 0;
   overflow: visible;
   border: 0;
+  --soft: var(--raised-soft);
+  --soft-hover: var(--raised-soft-hover);
   border-radius: 20px;
-  background: var(--surface);
-  box-shadow: 0 24px 64px rgb(11 34 57 / 0.28);
+  background: var(--raised);
+  box-shadow:
+    0 0 0 1px var(--raised-edge),
+    0 24px 64px var(--raised-shadow);
   color: var(--text);
   animation: card-in 0.18s ease-out both;
 }
 .dialog::backdrop {
-  background: rgb(11 34 57 / 0.32);
+  background: var(--backdrop);
 }
 .dialog-body {
   display: grid;
@@ -2306,6 +2321,30 @@ img.ws-tile {
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The visitor's email copies itself when clicked. */
+.copy-email {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: inherit;
+  cursor: copy;
+}
+/* As the name, it never cuts: the heading measures it to shrink it to fit. */
+.panel-email .copy-email {
+  overflow: visible;
+}
+.copy-email:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--soft-edge);
+  text-underline-offset: 3px;
 }
 .panel-who .icon-button {
   align-self: flex-start;
@@ -4139,14 +4178,39 @@ button.quote:hover {
   box-shadow: inset 0 -2px 0 var(--navy);
   color: var(--navy);
 }
-/* Reply or Note, over the box. */
-.compose > .choices.tabs {
-  margin-bottom: 4px;
-  border-bottom: 0;
+/* Reply or Note, over the box: a small segmented pill, the note one in the note's yellow. The
+   8px under it clears the box's focus ring. */
+.compose > .choices {
+  flex-wrap: nowrap;
+  gap: 2px;
+  width: fit-content;
+  margin-bottom: 8px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--soft);
 }
-.compose > .choices.tabs label {
-  padding: 4px 10px 6px;
-  font-size: 13.5px;
+.compose > .choices label {
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px 0 10px;
+  color: var(--mute);
+  font-size: 13px;
+}
+.compose > .choices label:hover {
+  background: none;
+  color: var(--text-strong);
+}
+.compose > .choices label:has(:checked) {
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 1px 2px rgb(11 34 57 / 0.08);
+  color: var(--navy);
+}
+.compose > .choices label:last-child:has(:checked) {
+  background: var(--note);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn-ink) 25%, transparent);
+  color: var(--warn-ink);
 }
 .choice-count {
   color: var(--mute);

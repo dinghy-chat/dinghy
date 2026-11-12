@@ -57,6 +57,12 @@ async function moreAction(page: Page, name: string) {
   await page.getByRole("menuitem", { name, exact: true }).click();
 }
 
+/** Opens the … menu's Snooze submenu and picks a choice in it. */
+async function snooze(page: Page, name: string) {
+  await moreAction(page, "Snooze");
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
 test("a snoozed conversation leaves the count until the visitor writes again", async ({
   browser,
 }) => {
@@ -65,14 +71,14 @@ test("a snoozed conversation leaves the count until the visitor writes again", a
   await expect(openCount(operator)).toHaveText("1");
   await row(operator, "Snooze me").click();
 
-  await moreAction(operator, "Snooze until they reply");
+  await snooze(operator, "Until they reply");
   await expect(openCount(operator)).toHaveCount(0);
   await expect(row(operator, "Snooze me").locator(".chip")).toHaveText("Snoozed");
 
   // A snooze with a time says when it ends, and Unsnooze ends it.
   await moreAction(operator, "Unsnooze");
   await expect(openCount(operator)).toHaveText("1");
-  await moreAction(operator, "Snooze until tomorrow");
+  await snooze(operator, "Until tomorrow");
   await expect(row(operator, "Snooze me").locator(".chip")).toHaveText(/^Snoozed until \w+ 9:00/);
 
   // A close ends the snooze, so a reopen offers to snooze it again.
@@ -80,7 +86,8 @@ test("a snoozed conversation leaves the count until the visitor writes again", a
   await operator.getByRole("button", { name: "Reopen" }).click();
   await operator.getByRole("button", { name: "More actions" }).click();
   await expect(operator.getByRole("menuitem", { name: "Unsnooze" })).toHaveCount(0);
-  await operator.getByRole("menuitem", { name: "Snooze until tomorrow", exact: true }).click();
+  await operator.getByRole("menuitem", { name: "Snooze", exact: true }).click();
+  await operator.getByRole("menuitem", { name: "Until tomorrow", exact: true }).click();
 
   // The visitor writes again, so it waits again.
   await say(customer, "Any news?");

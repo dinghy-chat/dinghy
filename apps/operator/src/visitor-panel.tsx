@@ -17,8 +17,8 @@ import {
   bare,
   conversationPreview,
   detailRows,
+  linkText,
   pageName,
-  pagePath,
   presenceLine,
   visitorName,
   webLink,
@@ -79,13 +79,29 @@ function LocalTime({ timeZone }: { timeZone: string }) {
   return <>{localTime(timeZone, useNow())}</>;
 }
 
-type Place = Pick<Contact, "country" | "timeZone" | "device" | "lastPage">;
+type Place = Pick<Contact, "country" | "timeZone" | "device">;
 
 const hasPlace = (visitor: Place) =>
   visitor.country !== null ||
   (visitor.timeZone !== null && localTime(visitor.timeZone) !== null) ||
-  visitor.device !== null ||
-  webLink(visitor.lastPage) !== null;
+  visitor.device !== null;
+
+/** Copies the visitor's email, and says so. */
+const copyEmail = (email: string) =>
+  navigator.clipboard
+    ?.writeText(email)
+    .then(() => toast("emailCopied"))
+    .catch(() => {});
+
+/** The visitor's email, which copies itself when clicked. */
+function EmailButton({ email, children }: { email: string; children: ReactNode }) {
+  const label = t("copyValue", { name: t("emailLabel") });
+  return (
+    <button type="button" className="copy-email" title={label} onClick={() => copyEmail(email)}>
+      {children}
+    </button>
+  );
+}
 
 /**
  * The visitor's name as the panel's title. An email in its place shrinks until it fits on one line,
@@ -120,8 +136,10 @@ function PanelName({ name }: { name: string }) {
   // Two blocks rather than a <wbr>, which Chrome breaks at even on a line that may not wrap.
   return (
     <h3 ref={ref} className="panel-email">
-      <span className="email-part">{name.slice(0, at + 1)}</span>
-      <span className="email-part">{name.slice(at + 1)}</span>
+      <EmailButton email={name}>
+        <span className="email-part">{name.slice(0, at + 1)}</span>
+        <span className="email-part">{name.slice(at + 1)}</span>
+      </EmailButton>
     </h3>
   );
 }
@@ -150,12 +168,8 @@ export function Tile({
   );
 }
 
-/**
- * Where the visitor is and what with: country and local time, device and the last page, which is
- * the current one while the visitor is online.
- */
-function PlaceTiles({ visitor, online }: { visitor: Place; online: boolean }) {
-  const page = webLink(visitor.lastPage);
+/** Where the visitor is and what with: country and local time, and device. The pages come below. */
+function PlaceTiles({ visitor }: { visitor: Place }) {
   const { country, timeZone } = visitor;
   const zone = timeZone !== null && localTime(timeZone) !== null ? timeZone : null;
   return (
@@ -180,21 +194,15 @@ function PlaceTiles({ visitor, online }: { visitor: Place; online: boolean }) {
           <span title={visitor.device}>{visitor.device}</span>
         </Tile>
       )}
-      {page !== null && (
-        <Tile icon="link" label={t(online ? "currentPageLabel" : "lastPageLabel")}>
-          <a href={page} target="_blank" rel="noopener noreferrer" title={page}>
-            {pagePath(page)}
-          </a>
-        </Tile>
-      )}
     </div>
   );
 }
 
 /**
  * Named values about the visitor, each cut to its line with the whole value on hover. With
- * `signed`, a web address opens in a new tab: anyone can put an address in what a page sends, so
- * unsigned values stay text, in italics. A link or an ID has a copy button.
+ * `signed`, a web address opens in a new tab, and shows the ID it ends with when it has one:
+ * anyone can put an address in what a page sends, so unsigned values stay text, in italics. A link
+ * or an ID has a copy button, which copies what the row shows.
  */
 function DetailRows({
   values,
@@ -203,23 +211,26 @@ function DetailRows({
   values: Record<string, unknown> | null;
   signed: boolean;
 }) {
-  return detailRows(values).map(([name, value, link]) => (
-    <Fragment key={`${name}=${value}`}>
-      <dt>{name}</dt>
-      <dd title={value} className={signed ? undefined : "unsigned"}>
-        {link === null || !signed ? (
-          <span className="detail-value">{value}</span>
-        ) : (
-          <a className="detail-value" href={link} target="_blank" rel="noopener noreferrer">
-            {bare(link)}
-          </a>
-        )}
-        {(link !== null || ID_NAME.test(name)) && (
-          <CopyIcon value={value} label={t("copyValue", { name })} />
-        )}
-      </dd>
-    </Fragment>
-  ));
+  return detailRows(values).map(([name, value, link]) => {
+    const shown = link === null || !signed ? value : linkText(link);
+    return (
+      <Fragment key={`${name}=${value}`}>
+        <dt>{name}</dt>
+        <dd title={value} className={signed ? undefined : "unsigned"}>
+          {link === null || !signed ? (
+            <span className="detail-value">{value}</span>
+          ) : (
+            <a className="detail-value" href={link} target="_blank" rel="noopener noreferrer">
+              {shown}
+            </a>
+          )}
+          {(link !== null || ID_NAME.test(name)) && (
+            <CopyIcon value={shown} label={t("copyValue", { name })} />
+          )}
+        </dd>
+      </Fragment>
+    );
+  });
 }
 
 /** A name such as "id", "orgId" or "account_id", whose value someone may paste elsewhere. */
@@ -506,7 +517,11 @@ export function VisitorPanel({
           </span>
           <div className="panel-name">
             <PanelName key={name} name={name} />
-            {visitor.email !== null && visitor.email !== name && <p>{visitor.email}</p>}
+            {visitor.email !== null && visitor.email !== name && (
+              <p>
+                <EmailButton email={visitor.email}>{visitor.email}</EmailButton>
+              </p>
+            )}
             {presence !== null && (
               <p className={online === true ? "online" : undefined}>{presence}</p>
             )}
@@ -532,7 +547,7 @@ export function VisitorPanel({
             </button>
           )}
         </div>
-        {hasPlace(visitor) && <PlaceTiles visitor={visitor} online={online === true} />}
+        {hasPlace(visitor) && <PlaceTiles visitor={visitor} />}
       </header>
       <div className="panel-bar">
         <HandlerSelect

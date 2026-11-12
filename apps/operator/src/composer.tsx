@@ -23,8 +23,8 @@ import { Choices, EmojiButton, type Option } from "./ui.tsx";
 export type ComposeMode = "reply" | "note";
 
 const MODES: Option<ComposeMode>[] = [
-  { value: "reply", label: "composeReply" },
-  { value: "note", label: "composeNote" },
+  { value: "reply", label: "composeReply", icon: "reply" },
+  { value: "note", label: "composeNote", icon: "lock" },
 ];
 
 /** What the editor's keys, paste and formats read from the composer's latest render. */
@@ -341,7 +341,6 @@ export function Composer({
       {mode?.onChange !== undefined && (
         <Choices
           label={t("composeMode")}
-          variant="tabs"
           value={mode.value}
           options={MODES}
           onChange={mode.onChange}
