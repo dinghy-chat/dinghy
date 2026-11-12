@@ -20,6 +20,7 @@ import type { Database } from "./db/tenant.ts";
 import type { Images } from "./images.ts";
 import { noLive, type Signals } from "./live.ts";
 import { MAIL_CONNECTIONS, type Mailer } from "./mailer.ts";
+import { pruneOAuth } from "./oauth-grants.ts";
 import type { Push } from "./push.ts";
 import {
   type ClaimedDeletion,
@@ -351,6 +352,7 @@ export function startWorker({
         pruneAt = Date.now() + PRUNE_EVERY_MS;
         await stage("prune", async () => {
           await pruneOnce(db, new Date(Date.now() - RETENTION_MS));
+          await pruneOAuth(db);
         });
       }
       if (Date.now() >= lifecycleAt) {

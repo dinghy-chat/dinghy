@@ -223,6 +223,7 @@ describe("the protocol", () => {
       { "mcp-protocol-version": "1999-01-01" },
     );
     expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: -32022 } });
   });
 
   test("GET and DELETE answer 405, because there is no event stream or session", async () => {
@@ -234,6 +235,123 @@ describe("the protocol", () => {
       expect(response.status).toBe(405);
       expect(response.headers.get("allow")).toBe("POST");
     }
+  });
+});
+
+describe("protocol 2026-07-28, with no session", () => {
+  const VERSION = "2026-07-28";
+  const meta = { "io.modelcontextprotocol/protocolVersion": VERSION };
+  /** A request with the version in its body and its headers, which may be overridden. */
+  const stateless = (
+    method: string,
+    params: Record<string, unknown> = {},
+    headers: Record<string, string> = {},
+  ) =>
+    post(
+      { jsonrpc: "2.0", id: 9, method, params: { ...params, _meta: meta } },
+      {
+        "mcp-protocol-version": VERSION,
+        "mcp-method": method,
+        ...(typeof params.name === "string" ? { "mcp-name": params.name } : {}),
+        ...headers,
+      },
+    );
+  const resultOf = async (response: Response) =>
+    ((await response.json()) as { result: Record<string, unknown> }).result;
+
+  test("server/discover names the versions, and every result is complete and signed", async () => {
+    const response = await stateless("server/discover");
+    expect(response.status).toBe(200);
+    expect(await resultOf(response)).toMatchObject({
+      supportedVersions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"],
+      capabilities: { tools: { listChanged: false } },
+      serverInfo: { name: "dinghy" },
+      resultType: "complete",
+      _meta: { "io.modelcontextprotocol/serverInfo": { name: "dinghy" } },
+    });
+    expect(await resultOf(await stateless("ping"))).toMatchObject({ resultType: "complete" });
+  });
+
+  test("tools/list keeps its order and may be cached privately for 5 minutes", async () => {
+    const result = await resultOf(await stateless("tools/list"));
+    const legacy = (await rpc("tools/list")).result as { tools: { name: string }[] };
+    expect((result.tools as { name: string }[]).map((tool) => tool.name)).toEqual(
+      legacy.tools.map((tool) => tool.name),
+    );
+    expect(result).toMatchObject({ ttlMs: 300_000, cacheScope: "private", resultType: "complete" });
+  });
+
+  test("tools/call answers as before, marked complete", async () => {
+    const result = await resultOf(
+      await stateless("tools/call", { name: "get_conversation", arguments: { conversationId } }),
+    );
+    expect(result).toMatchObject({ isError: false, resultType: "complete" });
+  });
+
+  test("a tool name header may come base64-encoded", async () => {
+    const name = `=?base64?${Buffer.from("get_conversation").toString("base64")}?=`;
+    const response = await stateless(
+      "tools/call",
+      { name: "get_conversation", arguments: { conversationId } },
+      { "mcp-name": name },
+    );
+    expect(response.status).toBe(200);
+  });
+
+  test("headers that do not match the body are refused with HeaderMismatch", async () => {
+    const call = { name: "get_conversation", arguments: { conversationId } };
+    for (const response of [
+      await stateless("tools/list", {}, { "mcp-method": "tools/call" }),
+      await stateless("tools/call", call, { "mcp-name": "reply" }),
+      await post(
+        { jsonrpc: "2.0", id: 9, method: "tools/list", params: { _meta: meta } },
+        { "mcp-protocol-version": VERSION },
+      ),
+      await post(
+        { jsonrpc: "2.0", id: 9, method: "tools/list", params: { _meta: meta } },
+        { "mcp-method": "tools/list" },
+      ),
+      // The header alone names the version, but the body does not.
+      await post(
+        { jsonrpc: "2.0", id: 9, method: "tools/list" },
+        { "mcp-protocol-version": VERSION, "mcp-method": "tools/list" },
+      ),
+    ]) {
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ id: 9, error: { code: -32020 } });
+    }
+  });
+
+  test("an unknown method is 404, and initialize does not exist in this version", async () => {
+    for (const method of ["resources/list", "initialize"]) {
+      const response = await stateless(method);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ error: { code: -32601 } });
+    }
+  });
+
+  test("an unknown version is refused with the supported list", async () => {
+    const response = await post({
+      jsonrpc: "2.0",
+      id: 9,
+      method: "tools/list",
+      params: { _meta: { "io.modelcontextprotocol/protocolVersion": "2099-01-01" } },
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: -32022,
+        data: { supported: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"] },
+      },
+    });
+  });
+
+  test("a notification is accepted with no body", async () => {
+    const response = await post(
+      { jsonrpc: "2.0", method: "notifications/cancelled", params: { _meta: meta } },
+      { "mcp-protocol-version": VERSION, "mcp-method": "notifications/cancelled" },
+    );
+    expect(response.status).toBe(202);
   });
 });
 

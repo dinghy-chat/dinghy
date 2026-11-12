@@ -14,6 +14,8 @@ import type { Role } from "./team.ts";
 
 export const WORKSPACE_PREFIX = "/v1/operator/workspaces";
 
+/** RFC 6750's answer for a token that lacks a scope, here the Setup level. */
+const INSUFFICIENT_SCOPE = 'Bearer error="insufficient_scope", scope="setup"';
 const PAYMENT_REQUIRED = failure("payment_required", "This workspace waits for payment.");
 const READ_ONLY = failure("read_only", "This workspace is read-only until its owner pays again.");
 const SUSPENDED = failure("suspended", "This workspace is suspended. Nobody can send messages.");
@@ -114,6 +116,8 @@ export function registerMemberCheck(app: App, db: Database): void {
     const { access } = membership;
     const { rule, keyAllowed, setupKeyAllowed } = routeOf(c);
     if (actor.kind === "key" && !keyAllowed && !(setupKeyAllowed && actor.level === "setup")) {
+      // A Conversations key or grant on a Setup route: an OAuth client may ask for Setup instead.
+      if (setupKeyAllowed) c.header("www-authenticate", INSUFFICIENT_SCOPE);
       return c.json(FORBIDDEN, 403);
     }
     // A cloud signup that waits for payment: only its owner's Checkout works until then.

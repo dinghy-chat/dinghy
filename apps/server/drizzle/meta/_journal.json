@@ -617,6 +617,13 @@
       "when": 1794497057099,
       "tag": "0087_webhook_replay_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1794497157099,
+      "tag": "0088_oauth_grant_prune",
+      "breakpoints": true
     }
   ]
 }
