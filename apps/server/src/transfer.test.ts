@@ -23,6 +23,7 @@ import {
   emailStop,
   event,
   message,
+  note,
   operator,
   pageView,
   visitor,
@@ -200,6 +201,11 @@ async function makeSource(): Promise<Source> {
     method: "POST",
     headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
     body: JSON.stringify({ clientId: "from-key", body: "Reply from the bot" }),
+  });
+  await app.request(`${inSpace}/conversations/${conversationId}/notes`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ clientId: "note-from-key", body: "Asked about **pricing**" }),
   });
   await app.request(`/v1/widget/${space.publicKey}/context`, {
     method: "POST",
@@ -391,6 +397,21 @@ describe("a round trip onto a fresh install", () => {
     expect(messages.filter((one) => one.authorApiKeyId === source.key.id)).toHaveLength(1);
     expect(messages[0]?.createdAt.getTime()).toBe(
       original.find((one) => one.id === messages[0]?.id)?.createdAt.getTime(),
+    );
+  });
+
+  test("keeps the team's notes, in their place in the feed", async () => {
+    const rows = await target.owner
+      .select()
+      .from(note)
+      .where(eq(note.conversationId, source.conversationId));
+    const original = await source.install.owner
+      .select()
+      .from(note)
+      .where(eq(note.conversationId, source.conversationId));
+    expect(original).toHaveLength(1);
+    expect(rows.map((one) => [one.seq, one.body, one.authorApiKeyId])).toEqual(
+      original.map((one) => [one.seq, one.body, one.authorApiKeyId]),
     );
   });
 
