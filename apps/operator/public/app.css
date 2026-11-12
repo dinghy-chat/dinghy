@@ -2512,7 +2512,7 @@ img.ws-tile {
   margin: 0;
 }
 .msg > * + * {
-  margin-top: 6px;
+  margin-top: 10px;
 }
 .msg :where(ul, ol) {
   padding-left: 22px;
