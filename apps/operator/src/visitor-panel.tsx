@@ -85,6 +85,19 @@ const hasPlace = (visitor: Place) =>
   visitor.device !== null ||
   webLink(visitor.lastPage) !== null;
 
+/** An email shown as a name wraps after its @, not in the middle of the domain. */
+function breakAfterAt(name: string): ReactNode {
+  const at = name.indexOf("@");
+  if (at < 0) return name;
+  return (
+    <>
+      {name.slice(0, at + 1)}
+      <wbr />
+      {name.slice(at + 1)}
+    </>
+  );
+}
+
 /** One fact about the visitor, as a tile: an icon, a label, the value and a line under it. */
 export function Tile({
   icon,
@@ -463,7 +476,7 @@ export function VisitorPanel({
             {online === true && <i className="presence-dot" />}
           </span>
           <div className="panel-name">
-            <h3>{name}</h3>
+            <h3>{breakAfterAt(name)}</h3>
             {visitor.email !== null && visitor.email !== name && <p>{visitor.email}</p>}
             {presence !== null && (
               <p className={online === true ? "online" : undefined}>{presence}</p>

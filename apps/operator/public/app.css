@@ -2117,12 +2117,15 @@ img.ws-tile {
   flex: 1;
   min-width: 0;
 }
+/* A long name or email takes a second line before it is cut. */
 .panel-name h3 {
+  display: -webkit-box;
   overflow: hidden;
   font-size: 18px;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .panel-name p {
   overflow: hidden;
@@ -2142,10 +2145,10 @@ img.ws-tile {
 .panel-who .icon-button:hover {
   background: var(--surface);
 }
-/* Facts as tiles, two to a row. An odd last tile takes the whole row. */
+/* Facts as tiles, one to a row, as the panel is too narrow for two values side by side. */
 .place-tiles {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2167,9 +2170,6 @@ img.ws-tile {
 }
 .panel-head .place-tiles > div {
   background: color-mix(in srgb, var(--surface) 80%, transparent);
-}
-.place-tiles > div:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
 }
 .place-tiles dl {
   min-width: 0;
@@ -5424,7 +5424,6 @@ button.quote:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
   gap: 24px;
-  align-items: start;
   padding-top: 10px;
 }
 .live-side {
@@ -5662,14 +5661,14 @@ button.quote:hover {
   background: var(--tile-blue);
 }
 
-/* The people, in a column that scrolls on its own beside the map. */
+/* The people, in a column as tall as the map and its tiles, which scrolls on its own. Its size
+   containment keeps a long list from making the row taller. */
 .live-people {
-  position: sticky;
-  top: 16px;
   display: flex;
   flex-direction: column;
-  max-height: calc(100dvh - 32px);
   min-width: 0;
+  min-height: 420px;
+  contain: size;
 }
 .live-list {
   display: grid;
@@ -5735,30 +5734,19 @@ button.quote:hover {
   background: currentColor;
 }
 .live-page {
-  display: flex;
-  gap: 6px;
-  min-width: 0;
   margin-top: 2px;
+  overflow: hidden;
   font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .live-page a {
-  overflow: hidden;
   color: var(--blue-deep);
   font-weight: 500;
   text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .live-page a:hover {
   text-decoration: underline;
-}
-.live-page span {
-  overflow: hidden;
-  padding-top: 1px;
-  color: var(--mute);
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .live-meta {
   display: flex;
@@ -5803,8 +5791,8 @@ button.quote:hover {
     order: 3;
   }
   .live-people {
-    position: static;
-    max-height: none;
+    min-height: 0;
+    contain: none;
   }
 }
 @media (max-width: 640px) {
