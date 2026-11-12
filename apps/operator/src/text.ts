@@ -690,6 +690,7 @@ const en = {
   localTimeLabel: "Local time",
   deviceLabel: "Device",
   currentPageLabel: "Current page",
+  lastPageLabel: "Last page",
   statusLabel: "Status",
   contacts: "Contacts",
   contactsContext: "Everyone who started a conversation with you.",

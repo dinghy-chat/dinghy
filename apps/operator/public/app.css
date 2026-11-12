@@ -1912,6 +1912,18 @@ img.ws-tile {
   border-left: 1px solid var(--line);
   background: var(--surface);
 }
+/* A toggle slides the panel in from the right edge, and the thread makes room as it comes. */
+.visitor-panel.entering {
+  animation: panel-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.visitor-panel.leaving {
+  animation: panel-in 0.18s cubic-bezier(0.4, 0, 1, 1) reverse forwards;
+}
+@keyframes panel-in {
+  from {
+    margin-right: -300px;
+  }
+}
 /* Below 1200px the panel is a drawer over the thread. */
 .visitor-panel.overlay {
   position: absolute;
@@ -1922,6 +1934,15 @@ img.ws-tile {
   max-width: calc(100% - 24px);
   border-left: 0;
   box-shadow: -12px 0 32px rgb(11 34 57 / 0.16);
+}
+.visitor-panel.overlay.entering,
+.visitor-panel.overlay.leaving {
+  animation-name: drawer-in;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
 }
 /* The panel's head: who the visitor is, and their place as tiles, on a soft blue. */
 .panel-head {
@@ -4297,7 +4318,7 @@ button.quote:hover {
     flex-basis: 100%;
     gap: 8px;
   }
-  .avatar-wrap {
+  .who-is .avatar-wrap {
     display: none;
   }
   .thread-head .actions {

@@ -93,8 +93,11 @@ function Tile({ icon, label, children }: { icon: IconName; label: string; childr
   );
 }
 
-/** Where the visitor is and what with: country and local time, device and the last page. */
-function PlaceTiles({ visitor }: { visitor: Place }) {
+/**
+ * Where the visitor is and what with: country and local time, device and the last page, which is
+ * the current one while the visitor is online.
+ */
+function PlaceTiles({ visitor, online }: { visitor: Place; online: boolean }) {
   const page = webLink(visitor.lastPage);
   const { country, timeZone } = visitor;
   const zone = timeZone !== null && localTime(timeZone) !== null ? timeZone : null;
@@ -121,7 +124,7 @@ function PlaceTiles({ visitor }: { visitor: Place }) {
         </Tile>
       )}
       {page !== null && (
-        <Tile icon="link" label={t("currentPageLabel")}>
+        <Tile icon="link" label={t(online ? "currentPageLabel" : "lastPageLabel")}>
           <a href={page} target="_blank" rel="noopener noreferrer" title={page}>
             {bare(page)}
           </a>
@@ -337,7 +340,7 @@ export function ContactFolds({
     <>
       {place && hasPlace(visitor) && (
         <Section id="visitor" title="panelVisitor">
-          <PlaceTiles visitor={visitor} />
+          <PlaceTiles visitor={visitor} online={false} />
         </Section>
       )}
       {hasDetails(visitor) && (
@@ -376,6 +379,8 @@ export function VisitorPanel({
   pages,
   members,
   overlay,
+  motion,
+  onMoved,
   onAssign,
   onOpenContact,
   onOpenConversation,
@@ -389,6 +394,10 @@ export function VisitorPanel({
   members: Member[];
   /** A drawer over the thread, on a narrow screen. */
   overlay: boolean;
+  /** Slides in or out after a toggle. Null when it is still. */
+  motion: PanelMotion;
+  /** The slide ended. */
+  onMoved(): void;
   onAssign(operatorId: string | null): void;
   onOpenContact(): void;
   onOpenConversation(id: string, status: "open" | "closed"): void;
@@ -402,7 +411,13 @@ export function VisitorPanel({
     ? (conversation.assigneeOperatorId ?? "")
     : "";
   return (
-    <aside className={overlay ? "visitor-panel overlay" : "visitor-panel"} aria-label={name}>
+    <aside
+      className={["visitor-panel", overlay && "overlay", motion].filter(Boolean).join(" ")}
+      aria-label={name}
+      onAnimationEnd={(event) => {
+        if (event.target === event.currentTarget) onMoved();
+      }}
+    >
       <header className="panel-head">
         <div className="panel-who">
           <span className="avatar-wrap">
@@ -437,13 +452,12 @@ export function VisitorPanel({
             </button>
           )}
         </div>
-        {hasPlace(visitor) && <PlaceTiles visitor={visitor} />}
+        {hasPlace(visitor) && <PlaceTiles visitor={visitor} online={online === true} />}
       </header>
       <div className="panel-bar">
         <Select
           label={t("assignTo")}
           className="assignee"
-          side="end"
           value={assignee}
           choices={[
             { value: "", label: t("unassigned"), lead: <span className="avatar nobody" /> },
@@ -481,10 +495,14 @@ export function VisitorPanel({
 
 const PANEL_KEY = "dinghy.panel.open";
 const WIDE = "(min-width: 1200px)";
+const STILL = "(prefers-reduced-motion: reduce)";
+
+type PanelMotion = "entering" | "leaving" | null;
 
 /**
  * Whether the visitor's panel shows. On a wide screen it remembers this device's choice, and starts
- * open. On a narrower one it opens as a drawer over the thread, and starts closed each time.
+ * open. On a narrower one it opens as a drawer over the thread, and starts closed each time. A
+ * toggle slides it in or out, and `shown` keeps it on screen until it has slid out.
  */
 export function usePanel() {
   const [wide, setWide] = useState(() => matchMedia(WIDE).matches);
@@ -498,9 +516,12 @@ export function usePanel() {
     query.addEventListener("change", changed);
     return () => query.removeEventListener("change", changed);
   }, []);
+  const [motion, setMotion] = useState<PanelMotion>(null);
   const toggle = () => {
     if (wide) store(PANEL_KEY, open ? "closed" : null);
+    setMotion(matchMedia(STILL).matches ? null : open ? "leaving" : "entering");
     setOpen(!open);
   };
-  return { open, wide, toggle };
+  const moved = () => setMotion(null);
+  return { open, shown: open || motion === "leaving", motion, wide, toggle, moved };
 }
