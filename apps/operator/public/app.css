@@ -1917,7 +1917,8 @@ img.ws-tile {
   animation: panel-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .visitor-panel.leaving {
-  animation: panel-in 0.18s cubic-bezier(0.4, 0, 1, 1) reverse forwards;
+  /* Reversed, so this curve speeds up as the panel leaves. */
+  animation: panel-in 0.18s cubic-bezier(0, 0, 0.6, 1) reverse forwards;
 }
 @keyframes panel-in {
   from {
@@ -2072,6 +2073,9 @@ img.ws-tile {
 }
 .panel-bar .select-value {
   flex: 1;
+}
+.panel-bar .popup {
+  max-width: 100%;
 }
 .panel-bar .chip {
   min-height: 36px;
