@@ -13,6 +13,7 @@ import {
   lt,
   lte,
   ne,
+  notExists,
   or,
   type SQL,
   type SQLWrapper,
@@ -248,6 +249,33 @@ export function stored({
 }
 
 /**
+ * Unassigns a conversation whose assignee left the team. Such an assignee hides it from everyone's
+ * waiting count and lists, and a reply would not take it over.
+ */
+async function dropDepartedAssignee(tx: Transaction, workspaceId: string, conversationId: string) {
+  const stillMember = tx
+    .select({ operatorId: workspaceMember.operatorId })
+    .from(workspaceMember)
+    .where(
+      and(
+        eq(workspaceMember.workspaceId, workspaceId),
+        eq(workspaceMember.operatorId, conversation.assigneeOperatorId),
+        isNull(workspaceMember.removedAt),
+      ),
+    );
+  await tx
+    .update(conversation)
+    .set({ assigneeOperatorId: null })
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        eq(conversation.id, conversationId),
+        notExists(stillMember),
+      ),
+    );
+}
+
+/**
  * The conversation a visitor's message goes to: their open one, else their newest closed one,
  * reopened with its assignee, else a new one. No time limit applies, so a visitor keeps one thread.
  * The workspace lock makes this safe to race.
@@ -267,18 +295,7 @@ async function visitorConversation(
   if (newest?.status === "open") return { id: newest.id, started: null };
   if (newest !== undefined) {
     await setConversationStatus(tx, workspaceId, newest.id, "open", { kind: "visitor", visitorId });
-    // An assignee who left the team would hide it from everyone's waiting count and lists.
-    await tx
-      .update(conversation)
-      .set({ assigneeOperatorId: null })
-      .where(
-        and(
-          eq(conversation.workspaceId, workspaceId),
-          eq(conversation.id, newest.id),
-          sql`not exists (select 1 from ${workspaceMember} where ${workspaceMember.workspaceId} = ${workspaceId}
-            and ${workspaceMember.operatorId} = ${conversation.assigneeOperatorId} and ${workspaceMember.removedAt} is null)`,
-        ),
-      );
+    await dropDepartedAssignee(tx, workspaceId, newest.id);
     return { id: newest.id, started: "reopened" };
   }
   const [created] = await tx
@@ -783,9 +800,13 @@ export interface ConversationRow {
   visitorLastSeenAt: Date | null;
   visitorCountry: string | null;
   visitorTimeZone: string | null;
-  /** Snoozed now. Its end is in `snoozedUntil`, or null until the visitor writes. */
-  snoozed: boolean;
-  snoozedUntil: Date | null;
+  /** Null unless it is snoozed now. */
+  snooze: Snooze | null;
+}
+
+/** How long a snooze lasts: until a time, or with null until the visitor writes. */
+export interface Snooze {
+  until: Date | null;
 }
 
 /**
@@ -818,6 +839,15 @@ const conversationColumns = {
   snoozed: snoozedNow(),
   snoozedUntil: conversation.snoozedUntil,
 };
+
+/** A row with its snooze as one value, so an ended snooze's time never reads as a snooze. */
+function withSnooze<Row extends { snoozed: boolean; snoozedUntil: Date | null }>({
+  snoozed,
+  snoozedUntil,
+  ...row
+}: Row) {
+  return { ...row, snooze: snoozed ? { until: snoozedUntil } : null };
+}
 
 /** Joins a conversation to its visitor, inside the same workspace. */
 export function joinVisitor() {
@@ -1005,7 +1035,7 @@ export async function listConversations(
     conversations: rows
       .slice(0, limit)
       .map(({ lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
-        ...row,
+        ...withSnooze(row),
         lastMessage:
           lastCreatedAt === null
             ? null
@@ -1044,9 +1074,9 @@ export async function countOpenByAssignee(
 
 /**
  * How many open conversations wait for a reply: their newest message is from the visitor, and they
- * are not snoozed. For an
- * operator, only the ones assigned to them or to no one, as a teammate's are not theirs to answer.
- * An API key, with no assignments, counts them all. It is not a per-operator read state.
+ * are not snoozed. For an operator, only the ones assigned to them or to no one, as a teammate's are
+ * not theirs to answer. An API key, with no assignments, counts them all. It is not a per-operator
+ * read state.
  */
 export async function countWaiting(
   tx: Transaction,
@@ -1071,7 +1101,8 @@ export async function countWaiting(
 
 /**
  * How long until the workspace's next timed snooze ends, by the database's clock, or null with none.
- * A snooze ends with no event, so a client loads the list again then.
+ * A snooze ends with no event, so a client loads the list again then. Only an open conversation has
+ * a snooze, which the conversation_snooze check holds, so conversation_snooze_end_idx serves this.
  */
 export async function nextSnoozeEndMs(
   tx: Transaction,
@@ -1080,7 +1111,7 @@ export async function nextSnoozeEndMs(
   const result = await tx.execute<{ ms: number | null }>(sql`
     select ceil(extract(epoch from min(snoozed_until) - now()) * 1000)::float8 as ms
     from ${conversation}
-    where workspace_id = ${workspaceId} and status = 'open' and snoozed_until > now()`);
+    where workspace_id = ${workspaceId} and snoozed_until > now()`);
   return result.rows[0]?.ms ?? null;
 }
 
@@ -1182,7 +1213,7 @@ export async function findConversation(
     .from(conversation)
     .innerJoin(visitor, joinVisitor())
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  return row ?? null;
+  return row === undefined ? null : withSnooze(row);
 }
 
 /** One conversation's messages after a position, in commit order. */
@@ -1261,11 +1292,6 @@ export async function setConversationStatus(
     needsAlert: status === "closed",
     needsWebhook: wantsWebhook(workspaceId),
   });
-}
-
-/** How long a snooze lasts: until a time, or with null until the visitor writes. */
-export interface Snooze {
-  until: Date | null;
 }
 
 /**
@@ -1518,7 +1544,7 @@ export async function searchConversations(
   // The matching message's text is the preview. Who wrote last and when still come from the
   // newest message, so a conversation shows as waiting only when the visitor wrote last.
   return rows.map(({ hitBody, lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
-    ...row,
+    ...withSnooze(row),
     lastMessage:
       lastCreatedAt === null
         ? null

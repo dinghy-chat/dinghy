@@ -124,7 +124,7 @@ export const isStatusLine = (line: Line) => line.kind === "closed" || line.kind 
 
 /**
  * A centered line where someone closed or reopened the conversation: who, and when. A reopen with
- * no operator or key, as the cloud's welcome chat does, names nobody.
+ * no operator or key, by the visitor's message, names nobody.
  */
 export function StatusNote({ line, meId }: { line: Line; meId: string }) {
   const byPerson = line.authorOperatorId !== null || line.authorApiKeyId !== null;

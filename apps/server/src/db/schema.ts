@@ -338,6 +338,10 @@ export const conversation = pgTable(
     ),
     // Analytics read the conversations started in a period.
     index("conversation_created_idx").on(table.workspaceId, table.createdAt),
+    // The list asks when the workspace's next timed snooze ends.
+    index("conversation_snooze_end_idx")
+      .on(table.workspaceId, table.snoozedUntil)
+      .where(sql`${table.snoozedUntil} is not null`),
     // Only an open conversation is snoozed, and a snooze's end needs a snooze.
     check(
       "conversation_snooze",

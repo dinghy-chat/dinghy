@@ -1,5 +1,5 @@
 {
-  "id": "dfffdaf5-8292-4979-bb14-866bfb4dd50c",
+  "id": "16122f92-3a48-4720-b376-9c3cac4cedd7",
   "prevId": "c036217a-e869-423d-b980-56186d788080",
   "version": "7",
   "dialect": "postgresql",
@@ -1010,6 +1010,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "conversation_snooze_end_idx": {
+          "name": "conversation_snooze_end_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "snoozed_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"conversation\".\"snoozed_until\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

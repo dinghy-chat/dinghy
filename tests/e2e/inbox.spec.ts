@@ -75,6 +75,13 @@ test("a snoozed conversation leaves the count until the visitor writes again", a
   await moreAction(operator, "Snooze until tomorrow");
   await expect(row(operator, "Snooze me").locator(".chip")).toHaveText(/^Snoozed until \w+ 9:00/);
 
+  // A close ends the snooze, so a reopen offers to snooze it again.
+  await operator.getByRole("button", { name: "Close", exact: true }).click();
+  await operator.getByRole("button", { name: "Reopen" }).click();
+  await operator.getByRole("button", { name: "More actions" }).click();
+  await expect(operator.getByRole("menuitem", { name: "Unsnooze" })).toHaveCount(0);
+  await operator.getByRole("menuitem", { name: "Snooze until tomorrow", exact: true }).click();
+
   // The visitor writes again, so it waits again.
   await say(customer, "Any news?");
   await expect(openCount(operator)).toHaveText("1");

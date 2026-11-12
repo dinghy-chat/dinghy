@@ -13,7 +13,14 @@ import type { App } from "./app.ts";
 import { WEBHOOK_EVENTS } from "./db/schema.ts";
 import { type Database, writable } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND, RATE_LIMITED, WRONG_ORIGIN } from "./errors.ts";
-import { type Inbox, parseSnooze, type ReplyOutcome, SNOOZE_CLOSED } from "./inbox.ts";
+import {
+  CLOSED,
+  type Inbox,
+  parseSnooze,
+  type ReplyOutcome,
+  SNOOZE_CLOSED,
+  type SnoozeOutcome,
+} from "./inbox.ts";
 import type { Live } from "./live.ts";
 import { closedFailure } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
@@ -123,9 +130,7 @@ const CURSOR = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\|([0-9a-f-]{36})$/;
 const replyAnswer = (outcome: ReplyOutcome): Outcome => {
   if (outcome.kind === "sent") return { data: { message: outcome.message } };
   if (outcome.kind === "missing") return { error: NOT_FOUND };
-  if (outcome.kind === "closed") {
-    return { error: failure("conversation_closed", "Reopen this conversation to reply.") };
-  }
+  if (outcome.kind === "closed") return { error: CLOSED };
   if (outcome.kind === "invalid_reply_to") {
     return {
       error: failure(
@@ -137,7 +142,7 @@ const replyAnswer = (outcome: ReplyOutcome): Outcome => {
   return { error: closedFailure(outcome.access).body };
 };
 
-const snoozeAnswer = (outcome: "done" | "missing" | "closed"): Outcome => {
+const snoozeAnswer = (outcome: SnoozeOutcome): Outcome => {
   if (outcome === "missing") return { error: NOT_FOUND };
   if (outcome === "closed") return { error: SNOOZE_CLOSED };
   return { data: { ok: true } };

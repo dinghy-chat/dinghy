@@ -55,7 +55,8 @@ export function useConversationActions({
 
   const setStatus = async (status: "open" | "closed") => {
     if (!(await act(() => api.setStatus(conversationId, status)))) return;
-    change((current) => ({ ...current, status }));
+    // A close ends a snooze, and a reopen starts with none.
+    change((current) => ({ ...current, status, snooze: null }));
   };
 
   const setSnooze = async (snooze: Snooze | null) => {

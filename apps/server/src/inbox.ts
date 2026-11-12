@@ -76,7 +76,7 @@ import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs }
 import { allowed } from "./team.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
-const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
+export const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
 export const SNOOZE_CLOSED = failure(
   "conversation_closed",
   "Reopen this conversation to snooze it.",
@@ -178,6 +178,9 @@ const InboxMessage = z
       createdAt: "2026-11-08T09:31:00.000Z",
     },
   });
+
+/** What a snooze or an unsnooze did. */
+export type SnoozeOutcome = "changed" | "unchanged" | "missing" | "closed";
 
 /** A snooze: until a time, or with null until the visitor writes. */
 const SnoozeSchema = z.object({ until: z.iso.datetime().nullable() }).openapi("Snooze");
@@ -597,7 +600,7 @@ const searchRoute = createRoute({
   },
 });
 
-const statusRoute = createRoute({
+const changeRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}`,
   security: SESSION_OR_KEY,
@@ -775,7 +778,7 @@ export function conversationView(
       lastMessage === null
         ? null
         : { ...lastMessage, createdAt: lastMessage.createdAt.toISOString() },
-    snooze: row.snoozed ? { until: row.snoozedUntil?.toISOString() ?? null } : null,
+    snooze: row.snooze && { until: row.snooze.until?.toISOString() ?? null },
   };
 }
 
@@ -1117,14 +1120,14 @@ export function createInbox({
       workspaceId: string,
       conversationId: string,
       snooze: Snooze | null,
-    ): Promise<"done" | "missing" | "closed"> {
+    ): Promise<SnoozeOutcome> {
       const outcome = await withWorkspace(db, workspaceId, async (tx) => {
         if ((await findConversation(tx, workspaceId, conversationId)) === null) return "missing";
-        const changed = await snoozeConversation(tx, workspaceId, conversationId, snooze);
-        // A closed conversation has no snooze to end.
-        return changed || snooze === null ? "done" : "closed";
+        if (await snoozeConversation(tx, workspaceId, conversationId, snooze)) return "changed";
+        // A closed conversation has no snooze to end, so an unsnooze there is already done.
+        return snooze === null ? "unchanged" : "closed";
       });
-      if (outcome === "done") live.wake(workspaceId, OPERATORS);
+      if (outcome === "changed") live.wake(workspaceId, OPERATORS);
       return outcome;
     },
   };
@@ -1314,7 +1317,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     return c.json(receipt, 200);
   });
 
-  app.openapi(statusRoute, async (c) => {
+  app.openapi(changeRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
     const change = c.req.valid("json");
