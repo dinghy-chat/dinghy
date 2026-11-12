@@ -11,6 +11,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Fixed
 
 - Text you select in the widget stays readable. A site that styled its own selection made the selected text in the chat invisible, because Chrome passes the page's selection style into the widget.
+- A visitor who left only their email shows it on one line at the top of the conversation's side panel, a little smaller when it is long, instead of split across two lines. Only a very long email wraps, after its @.
 
 ## [0.23.0] - 2026-11-12
 
