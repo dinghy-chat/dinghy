@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { type CodeLanguage, highlight } from "../../../packages/widget/src/highlight.ts";
+import { agentTexts } from "./agent-prompt.ts";
 import type { WorkspaceApi, WorkspaceSettings } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
@@ -53,6 +54,36 @@ function CodeBlock({
         <code>{codeNodes(value, language)}</code>
       </pre>
     </div>
+  );
+}
+
+/** A prompt to paste into a coding agent, which then installs the chat through MCP. */
+function AgentRow({ workspace, waiting }: { workspace: string; waiting: boolean }) {
+  if (waiting) {
+    return (
+      <PageRow title={t("agentTitle")}>
+        <p className="quiet">{t("snippetWaiting")}</p>
+      </PageRow>
+    );
+  }
+  const { prompt, notes } = agentTexts(location.origin, workspace);
+  return (
+    <PageRow
+      title={t("agentTitle")}
+      help={t("agentHelp")}
+      docs={[{ path: "api#mcp", text: "mcpDocsLink" }]}
+    >
+      <div className="agent-copy">
+        <CopyButton value={prompt} label={t("agentCopy")} />
+        <span className="hint">{t("agentCopyHint")}</span>
+      </div>
+      <details className="prompt-preview">
+        <summary>{t("agentPreview")}</summary>
+        <pre>{prompt}</pre>
+      </details>
+      <p className="hint">{t("agentNotesHelp")}</p>
+      <CodeBlock value={notes} language="text" title={t("agentNotesTitle")} />
+    </PageRow>
   );
 }
 
@@ -302,21 +333,24 @@ function SecretRow({
   );
 }
 
-/** Install: the code, the sites that may show the chat, and the optional identity secret. */
+/** Install: a prompt for a coding agent, the code, the sites that may show the chat, and the optional identity secret. */
 export function InstallPage({
   api,
   settings,
+  workspaceName,
   waiting,
   onSaved,
 }: {
   api: WorkspaceApi;
   settings: WorkspaceSettings;
+  workspaceName: string;
   /** The workspace waits for the cloud to open, so its widget is off. */
   waiting: boolean;
   onSaved(saved: WorkspaceSettings): void;
 }) {
   return (
     <Page title={t("pageInstall")} context={t("installContext")}>
+      <AgentRow workspace={workspaceName} waiting={waiting} />
       <SnippetRow publicKey={settings.publicKey} waiting={waiting} />
       <OriginsRow api={api} settings={settings} onSaved={onSaved} />
       <SecretRow api={api} settings={settings} onSaved={onSaved} />

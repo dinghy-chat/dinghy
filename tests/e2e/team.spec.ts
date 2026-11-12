@@ -105,7 +105,11 @@ test("an owner invites a member, assigns a chat to them, then removes them @smok
 test("an owner changes the allowed sites and replaces the secret", async ({ browser }) => {
   const boss = await signedIn(browser, server, "owner@example.com");
   await openSettings(boss, "Install");
-  await expect(boss.locator(".page pre").first()).toContainText("data-key=");
+  await expect(
+    boss
+      .locator(".page-row", { has: boss.getByRole("heading", { name: "Install code" }) })
+      .locator("pre"),
+  ).toContainText("data-key=");
 
   // Each saved site is a card, and the field shows only after "Add a site".
   const cards = boss.locator(".site-card");

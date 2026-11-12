@@ -3,6 +3,7 @@ import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useStat
 import { useBilling } from "../../../ee/operator/billing.tsx";
 import { AnalyticsPage } from "./analytics.tsx";
 import { type Me, workspaceApi } from "./api.ts";
+import { pauseBots } from "./bots.tsx";
 import { ContactsPage } from "./contacts.tsx";
 import { GetStarted } from "./get-started.tsx";
 import { InboxBanners } from "./inbox-banners.tsx";
@@ -116,6 +117,10 @@ export function Inbox({
   const readOnly = membership?.readOnly ?? false;
   const suspended = membership?.suspended ?? false;
   const waitsForCloud = membership?.waiting ?? false;
+  const botsPaused = membership?.botsPaused ?? false;
+  // Only owners and admins pause or resume the bots.
+  const setBotsPaused =
+    role === "member" ? null : (paused: boolean) => void pauseBots(api, paused, onAccountChanged);
   const billing = useBilling(api, me.billing && role === "owner", accountVersion);
   // The conversation a link opened, whose status picks Open or Closed once it loads.
   const linked = useRef(selected);
@@ -170,6 +175,8 @@ export function Inbox({
           waiting={waiting}
           waitingBy={{ ...data.waitingElsewhere, [workspaceId]: waiting }}
           liveCount={data.liveCount}
+          botsPaused={botsPaused}
+          onBotsPaused={setBotsPaused}
           steps={
             role === "member" ? null : (
               <GetStarted api={api} version={version} onOpen={openSettings} />
@@ -198,6 +205,8 @@ export function Inbox({
             suspended={suspended}
             waitsForCloud={waitsForCloud}
             billing={billing}
+            botsPaused={botsPaused}
+            onResumeBots={setBotsPaused && (() => setBotsPaused(false))}
           />
           <main className="panel">
             {view === "settings" && (
@@ -212,6 +221,8 @@ export function Inbox({
                 logoUrl={logoUrl}
                 billing={billing}
                 waiting={waitsForCloud}
+                botsPaused={botsPaused}
+                onBotsPaused={setBotsPaused}
                 emailAvailable={emailAvailable}
                 page={settingsPage}
                 onPage={openSettings}

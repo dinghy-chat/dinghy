@@ -80,6 +80,8 @@
   --side-tint-hover: light-dark(rgb(11 34 57 / 0.09), rgb(255 255 255 / 0.09));
   --side-mute: light-dark(#6f6c63, #8693a2);
   --warn-soft: light-dark(#fdf3d7, #3a3115);
+  /* A soft warm fill for text to read, such as a prompt. */
+  --cream-soft: light-dark(#fbf5e3, #1f2a36);
   --warn-ink: light-dark(#7a5600, #ffd66b);
   /* A meter close to its limit. */
   --warn-fill: #d99a00;
@@ -863,6 +865,43 @@ textarea {
 }
 .billing-banner .bad {
   padding: 4px 10px;
+}
+/* Bots are paused: a state to notice, in the warm fill, with Resume for owners and admins. */
+.bots-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 14px;
+  padding-block: 6px;
+  background: var(--warn-soft);
+  color: var(--navy);
+}
+/* The workspace menu's bots switch: a small track that shows the state, as the Settings switch. */
+.mini-switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--switch-off);
+}
+.mini-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+}
+.mini-switch.on {
+  background: var(--fill);
+}
+.mini-switch.on::after {
+  left: 14px;
+  background: var(--on-fill);
 }
 .app {
   display: grid;
@@ -4679,6 +4718,97 @@ button.quote:hover {
   align-items: center;
   gap: 4px 10px;
   overflow-wrap: anywhere;
+}
+/* A delivery's Replay sits at the end of its line, and its failed answer opens below it. */
+.delivery-replay {
+  margin-left: auto;
+}
+.excerpt {
+  flex-basis: 100%;
+}
+.excerpt summary,
+.prompt-preview summary {
+  width: max-content;
+  color: var(--blue-deep);
+  font-weight: 600;
+  cursor: pointer;
+}
+.excerpt pre {
+  max-height: 220px;
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--text-strong);
+  font: 12.5px / 1.5 var(--mono);
+  white-space: pre-wrap;
+}
+/* A key's reply mode and Revoke, side by side, wrapping under the name on a narrow screen. */
+.key-item {
+  flex-wrap: wrap;
+}
+/* The name and its line keep room to read, and the controls move under them when they lack it. */
+.item-list .key-item .who-lines {
+  flex: 1 1 240px;
+}
+.key-item .who-lines strong {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.chip.connected {
+  background: var(--tile-blue);
+  color: var(--blue-deep);
+}
+/* Set up with an agent: the copy button, then the prompt to read when opened. */
+.agent-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.agent-copy .copy {
+  background: var(--fill);
+  color: var(--on-fill);
+}
+.agent-copy .copy:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+.agent-copy .hint {
+  margin: 0;
+}
+.prompt-preview pre {
+  max-height: 420px;
+  margin: 10px 0 0;
+  padding: 14px 16px;
+  overflow: auto;
+  border-radius: 14px;
+  background: var(--cream-soft);
+  color: var(--navy);
+  font: 14px / 1.55 var(--body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* The consent card: the app's own name in a muted line, and each choice with its label. */
+.consent-client {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  color: var(--mute);
+}
+.consent-choice {
+  display: grid;
+  gap: 6px;
+}
+.consent-choice .hint {
+  margin: 0;
 }
 .check {
   display: flex;

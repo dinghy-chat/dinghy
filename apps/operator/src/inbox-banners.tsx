@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { BillingBanner, WaitingBanner } from "../../../ee/operator/billing.tsx";
 import type { BillingState, Me, WorkspaceApi } from "./api.ts";
+import { BotsPausedBanner } from "./bots.tsx";
 import { Icon } from "./icons.tsx";
 import { t } from "./text.ts";
 
@@ -64,17 +65,25 @@ function PlanBanner({
   );
 }
 
-/** The banners above every page: a lost stream, a workspace just deleted, and the plan. */
+/**
+ * The banners above every page: a lost stream, a workspace just deleted, the plan, and paused
+ * bots.
+ */
 export function InboxBanners({
   lost,
   deletedName,
   onCloseDeleted,
+  botsPaused,
+  onResumeBots,
   ...plan
 }: PlanProps & {
   lost: boolean;
   /** The workspace the operator just deleted, for a note, or null. */
   deletedName: string | null;
   onCloseDeleted(): void;
+  botsPaused: boolean;
+  /** Null for a member, who cannot resume them. */
+  onResumeBots: (() => void) | null;
 }) {
   return (
     <>
@@ -97,6 +106,7 @@ export function InboxBanners({
         </div>
       )}
       <PlanBanner {...plan} />
+      {botsPaused && <BotsPausedBanner onResume={onResumeBots} />}
     </>
   );
 }

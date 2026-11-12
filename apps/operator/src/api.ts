@@ -268,6 +268,8 @@ export interface Me {
     name: string;
     /** The workspace's logo, for the workspace menu. Null with none. */
     logoUrl: string | null;
+    /** An owner or admin paused every bot: API keys and connected apps may not reply or type. */
+    botsPaused: boolean;
     active: boolean;
     /** The subscription ended: operators can read and export, and cannot reply. */
     readOnly: boolean;
@@ -339,6 +341,11 @@ export interface ApiKey {
   name: string;
   /** Conversations, or Setup, which also reaches the webhooks. */
   level: ApiKeyLevel;
+  /** `static`, a key made in Settings, or `oauth`, an app that an owner or admin connected. */
+  source: "static" | "oauth";
+  replyMode: ReplyMode;
+  /** A connected app's host. Null for a static key. */
+  clientHost: string | null;
   createdByName: string | null;
   createdAt: string;
   lastUsedAt: string | null;
@@ -359,6 +366,8 @@ export const WEBHOOK_EVENTS = [
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export type ApiKeyLevel = "conversations" | "setup";
+/** `send`: replies go to the visitor. `draft`: they wait for a person to send them. */
+export type ReplyMode = "send" | "draft";
 
 export interface Webhook {
   id: string;
@@ -379,6 +388,10 @@ export interface WebhookDelivery {
   /** The HTTP status of the last attempt, or null when it got no answer. */
   lastStatus: number | null;
   lastError: string | null;
+  /** The start of the receiver's last refusing answer, up to 2 KB. */
+  responseExcerpt: string | null;
+  /** The delivery this one sends again, when it is a replay. */
+  replayOf: string | null;
   createdAt: string;
   finishedAt: string | null;
 }
@@ -542,6 +555,27 @@ export const joinWithInvite = (token: string, name?: string) =>
   post<{ workspaceId: string | null }>("/v1/invites/join", { token, name });
 export const acceptInvite = (token: string) =>
   post<{ workspaceId: string }>("/v1/operator/invites/accept", { token });
+/** What the consent page shows for an OAuth request, or where to send the browser back. */
+export type AuthorizeInfo =
+  | {
+      kind: "consent";
+      client: { name: string; host: string; kind: "dcr" | "cimd"; loopback: boolean };
+      level: ApiKeyLevel;
+      /** Where this operator is an owner or admin. */
+      workspaces: { id: string; name: string }[];
+    }
+  | { kind: "redirect"; redirectTo: string };
+
+/** `request` is the consent page's query string, as the app sent it. */
+export const authorizeInfo = (request: string) =>
+  call<AuthorizeInfo>(`/v1/operator/oauth/authorize-info${request}`);
+export const approveApp = (
+  workspaceId: string,
+  choice: { request: string; level: ApiKeyLevel; replyMode: ReplyMode },
+) => post<{ redirectTo: string }>(`/v1/operator/workspaces/${workspaceId}/oauth/grants`, choice);
+export const denyApp = (request: string) =>
+  post<{ redirectTo: string }>("/v1/operator/oauth/deny", { request });
+
 export const testPush = () => post<{ sent: number; failed: number }>("/v1/operator/push-test", {});
 
 export function workspaceApi(workspaceId: string) {
@@ -604,8 +638,18 @@ export function workspaceApi(workspaceId: string) {
     deleteContact: (visitorId: string) =>
       call<{ ok: true }>(`${base}/contacts/${visitorId}`, { method: "DELETE" }),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
-    createApiKey: (name: string, level: ApiKeyLevel) =>
-      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, level }),
+    createApiKey: (name: string, level: ApiKeyLevel, replyMode: ReplyMode) =>
+      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, level, replyMode }),
+    setReplyMode: (id: string, replyMode: ReplyMode) =>
+      call<ApiKey>(`${base}/api-keys/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ replyMode }),
+      }),
+    setBotsPaused: (paused: boolean) =>
+      call<{ paused: boolean }>(`${base}/bots-paused`, {
+        method: "PUT",
+        body: JSON.stringify({ paused }),
+      }),
     revokeApiKey: (id: string) =>
       call<{ ok: true }>(`${base}/api-keys/${id}`, { method: "DELETE" }),
     webhooks: () => call<{ webhooks: Webhook[] }>(`${base}/webhooks`),
@@ -620,6 +664,11 @@ export function workspaceApi(workspaceId: string) {
     testWebhook: (id: string) => post<WebhookTest>(`${base}/webhooks/${id}/test`, {}),
     webhookDeliveries: (id: string) =>
       call<{ deliveries: WebhookDelivery[] }>(`${base}/webhooks/${id}/deliveries`),
+    replayDelivery: (id: string, deliveryId: string) =>
+      post<{ delivery: WebhookDelivery }>(
+        `${base}/webhooks/${id}/deliveries/${deliveryId}/replay`,
+        {},
+      ),
     billing: () => call<BillingState>(`${base}/billing`),
     analytics: (days: AnalyticsDays, timeZone: string) =>
       call<Analytics>(`${base}/analytics?days=${days}&tz=${encodeURIComponent(timeZone)}`),

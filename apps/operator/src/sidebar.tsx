@@ -47,6 +47,8 @@ function WorkspaceSwitcher({
   workspaceId,
   canCreate,
   waitingBy,
+  botsPaused,
+  onBotsPaused,
   onSwitch,
 }: {
   me: Me;
@@ -55,9 +57,14 @@ function WorkspaceSwitcher({
   workspaceId: string;
   canCreate: boolean;
   waitingBy: Record<string, number>;
+  botsPaused: boolean;
+  /** Pauses or resumes every bot. Null for a member. */
+  onBotsPaused: ((paused: boolean) => void) | null;
   onSwitch(id: string): void;
 }) {
-  if (me.workspaces.length < 2 && !canCreate) {
+  // The menu switches workspaces, makes one, or pauses the bots.
+  const switches = me.workspaces.length > 1 || canCreate;
+  if (!switches && onBotsPaused === null) {
     return (
       <div className="workspace">
         <WorkspaceTile name={name} logoUrl={logoUrl} />
@@ -72,7 +79,7 @@ function WorkspaceSwitcher({
   const elsewhere = me.workspaces.some(
     (one) => one.workspaceId !== workspaceId && waitingIn(one.workspaceId) > 0,
   );
-  const items: MenuItem[] = me.workspaces.map((one) => ({
+  const items: MenuItem[] = (switches ? me.workspaces : []).map((one) => ({
     label: one.name,
     lead: <WorkspaceTile name={one.name} logoUrl={one.logoUrl} />,
     trail: waitingIn(one.workspaceId) > 0 && (
@@ -91,6 +98,16 @@ function WorkspaceSwitcher({
       lead: <Icon name="plusCircle" size={18} />,
       divider: true,
       onSelect: () => navigate("/signup"),
+    });
+  }
+  if (onBotsPaused !== null) {
+    items.push({
+      label: t(botsPaused ? "botsResumeMenu" : "botsPauseMenu"),
+      lead: <Icon name="prohibit" size={18} />,
+      // A small switch that shows the state. The label says what choosing it does.
+      trail: <i className={botsPaused ? "mini-switch on" : "mini-switch"} aria-hidden="true" />,
+      divider: items.length > 0,
+      onSelect: () => onBotsPaused(!botsPaused),
     });
   }
   return (
@@ -195,6 +212,8 @@ export function Sidebar({
   waiting,
   waitingBy,
   liveCount,
+  botsPaused,
+  onBotsPaused,
   steps,
   onView,
   onProfileOpen,
@@ -218,6 +237,9 @@ export function Sidebar({
   waitingBy: Record<string, number>;
   /** Tabs of the site open now, or null when unknown. */
   liveCount: number | null;
+  botsPaused: boolean;
+  /** Pauses or resumes every bot. Null for a member. */
+  onBotsPaused: ((paused: boolean) => void) | null;
   /** Above the user menu: the Get started steps, while they show. */
   steps: ReactNode;
   onView(view: View): void;
@@ -242,6 +264,8 @@ export function Sidebar({
         workspaceId={workspaceId}
         canCreate={canCreate}
         waitingBy={waitingBy}
+        botsPaused={botsPaused}
+        onBotsPaused={onBotsPaused}
         onSwitch={onSwitch}
       />
       <nav className="nav" aria-label={t("mainMenu")}>

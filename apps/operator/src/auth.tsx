@@ -3,15 +3,44 @@ import { type FormEvent, useState } from "react";
 import { askSignInLink, confirmAccountDelete, redeemJoinLink, redeemSignInLink } from "./api.ts";
 import { navigate } from "./nav.ts";
 import { AuthPage } from "./scene.tsx";
+import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { AppLink, DocLink, ErrorNote, Field, failureText } from "./ui.tsx";
+
+const RETURN_KEY = "dinghy.return";
+/** A sign-in link lasts this long, and so does the page to return to after it. */
+const LINK_LIFETIME_MS = 15 * 60_000;
+
+/** Keeps a page of this app, such as the consent page, to open after the emailed link signs in. */
+function rememberReturn(path: string) {
+  store(RETURN_KEY, JSON.stringify({ path, until: Date.now() + LINK_LIFETIME_MS }));
+}
+
+/** The page to open after sign-in, once. Only a path on this origin, never another site. */
+function takeReturn(): string | null {
+  const saved = readStored(RETURN_KEY);
+  store(RETURN_KEY, null);
+  if (saved === null) return null;
+  try {
+    const { path, until } = JSON.parse(saved) as { path?: unknown; until?: unknown };
+    if (typeof path !== "string" || typeof until !== "number" || until < Date.now()) return null;
+    const url = new URL(path, location.origin);
+    if (!path.startsWith("/") || url.origin !== location.origin) return null;
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+}
 
 export function SignIn({
   emailAvailable,
   signup = false,
+  returnTo,
 }: {
   emailAvailable: boolean;
   signup?: boolean;
+  /** A path of this app to open after the emailed link signs in. */
+  returnTo?: string;
 }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<TextId | null>(null);
@@ -24,6 +53,7 @@ export function SignIn({
     setBusy(true);
     try {
       await askSignInLink(email.trim());
+      if (returnTo !== undefined) rememberReturn(returnTo);
       setSentTo(email.trim());
     } catch (failure) {
       setError(failureText(failure, { 429: "tooManyAttempts" }));
@@ -156,7 +186,7 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
         return;
       }
       await redeemSignInLink(token);
-      navigate(kind === "add-workspace" ? "/signup" : "/");
+      navigate(kind === "add-workspace" ? "/signup" : (takeReturn() ?? "/"));
     } catch (failure) {
       setBusy(false);
       setError(failureText(failure, { 400: "linkInvalid", 404: "inviteInvalid" }));
