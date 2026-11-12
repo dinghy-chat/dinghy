@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
 import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
+import { ConsentPage } from "./consent.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate, replaceAddress } from "./nav.ts";
@@ -86,6 +87,17 @@ function App() {
   const inviteToken = query.get("token");
   if (path === "/invite" && inviteToken !== null) {
     return <InvitePage token={inviteToken} me={me} />;
+  }
+  if (path === "/oauth/authorize") {
+    if (me !== null) return <ConsentPage request={address.search} />;
+    // After the emailed link, sign-in comes back here with the same request.
+    return (
+      <SignIn
+        emailAvailable={meta.email}
+        signup={meta.signup !== null}
+        returnTo={`${path}${address.search}`}
+      />
+    );
   }
   const returnWorkspace = query.get("workspace");
   if (path === "/billing/return" && me !== null && returnWorkspace !== null) {

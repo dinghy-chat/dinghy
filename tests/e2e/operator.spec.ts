@@ -646,7 +646,10 @@ test("the install code is one colored line, and a webhook's events are checkboxe
 }) => {
   const page = await signedIn(browser, server, "anna@example.com");
   await openSettings(page, "Install");
-  const code = page.locator(".code-block code");
+  // The install code's row: the agent prompt above it has code blocks of its own.
+  const code = page
+    .locator(".page-row", { has: page.getByRole("heading", { name: "Install code" }) })
+    .locator(".code-block code");
   await expect(code).toHaveText(
     /^<script src="[^"]+\/widget\/loader\.js" data-key="wk_[^"]+" async><\/script>$/,
   );
@@ -664,7 +667,7 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(events).toHaveCount(0);
   await page.getByRole("button", { name: "New webhook" }).click();
-  await expect(events).toHaveCount(7);
+  await expect(events).toHaveCount(10);
   await expect(
     page.getByRole("checkbox", { name: /A message is sent\s*message\.created/ }),
   ).toBeChecked();

@@ -38,6 +38,9 @@ const BY_CODE: Record<string, TextId> = {
   email_mismatch: "emailMismatch",
   message_seen: "messageSeen",
   invalid_reply_to: "quoteInvalid",
+  invalid_client: "consentInvalidClient",
+  invalid_redirect_uri: "consentInvalidRedirect",
+  grant_limit: "grantLimit",
 };
 
 /**

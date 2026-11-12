@@ -125,6 +125,8 @@ export function Settings({
   logoUrl,
   billing,
   waiting,
+  botsPaused,
+  onBotsPaused,
   emailAvailable,
   page,
   onPage,
@@ -146,6 +148,9 @@ export function Settings({
   billing: BillingState | null;
   /** The workspace waits for the cloud to open, so its widget is off. */
   waiting: boolean;
+  botsPaused: boolean;
+  /** Pauses or resumes every bot. Null for a member. */
+  onBotsPaused: ((paused: boolean) => void) | null;
   /** The server sends email, so invites and the account's delete go by email. */
   emailAvailable: boolean;
   /** The page in the address. Null shows the list on a phone, and the first page beside it. */
@@ -235,12 +240,13 @@ export function Settings({
           <InstallPage
             api={api}
             settings={settings.data}
+            workspaceName={workspaceName}
             waiting={waiting}
             onSaved={settings.setData}
           />
         );
       case "developers":
-        return <DevelopersPage api={api} />;
+        return <DevelopersPage api={api} botsPaused={botsPaused} onBotsPaused={onBotsPaused} />;
     }
   };
 
