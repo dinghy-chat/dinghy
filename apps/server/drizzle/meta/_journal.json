@@ -610,6 +610,13 @@
       "when": 1794492923469,
       "tag": "0086_conversation_read_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1794501237465,
+      "tag": "0087_message_note",
+      "breakpoints": true
     }
   ]
 }

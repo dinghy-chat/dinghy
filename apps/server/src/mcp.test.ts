@@ -147,6 +147,7 @@ describe("the protocol", () => {
       "search_conversations",
       "get_conversation",
       "reply",
+      "add_note",
       "close_conversation",
       "reopen_conversation",
       "assign_conversation",

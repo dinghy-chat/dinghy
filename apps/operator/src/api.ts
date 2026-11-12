@@ -124,8 +124,11 @@ export interface Message {
   id: string;
   conversationId: string;
   seq: string;
-  /** `closed` and `reopened` are status lines that a close or a reopen wrote, with no body. */
-  kind: "text" | "image" | "closed" | "reopened";
+  /**
+   * `closed` and `reopened` are status lines that a close or a reopen wrote, with no body. A `note`
+   * is text that only the team sees.
+   */
+  kind: "text" | "image" | "closed" | "reopened" | "note";
   fromVisitor: boolean;
   /** The operator who sent it, and their current name. Both null for a visitor's message. */
   authorOperatorId: string | null;
@@ -676,8 +679,14 @@ export function workspaceApi(workspaceId: string) {
         `${base}/conversations/search?q=${encodeURIComponent(query)}`,
         { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) },
       ),
-    reply: (id: string, clientId: string, body: string, replyToMessageId?: string) =>
-      post<Message>(`${conversation(id)}/messages`, { clientId, body, replyToMessageId }),
+    /** A reply, or with `note` a note that only the team sees. */
+    reply: (
+      id: string,
+      clientId: string,
+      body: string,
+      replyToMessageId: string | undefined,
+      note: boolean,
+    ) => post<Message>(`${conversation(id)}/messages`, { clientId, body, replyToMessageId, note }),
     replyImage: async (id: string, clientId: string, file: File, replyToMessageId?: string) => {
       const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
       const response = await fetch(`${conversation(id)}/images?clientId=${clientId}${quote}`, {

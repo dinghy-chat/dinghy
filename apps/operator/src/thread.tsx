@@ -1,15 +1,16 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState } from "react";
 import type { Conversation, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
-import { Composer } from "./composer.tsx";
+import { type ComposeMode, Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
+import type { Draft } from "./drafts.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
 import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
 import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
-import { receiptOf } from "./receipts.tsx";
+import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
 import { ThreadHead } from "./thread-head.tsx";
 import { type Line, useThreadLines } from "./thread-lines.ts";
@@ -59,7 +60,7 @@ function infoOf(line: Line, author: string, receipts: ReplyReceipts | null): Inf
     author,
     via: line.via,
     receipt:
-      line.fromVisitor || receipts === null || line.seq === null
+      !hasReceipt(line) || receipts === null
         ? null
         : { isRead: receiptOf(line.seq, receipts) === "read" },
   };
@@ -91,9 +92,9 @@ export function Thread({
 }: {
   api: WorkspaceApi;
   meId: string;
-  /** The operator's unsent reply here, or "". The inbox keeps it, so it outlives this thread. */
-  draft: string;
-  setDraft(text: string): void;
+  /** The operator's unsent reply or note here. The inbox keeps it, so it outlives this thread. */
+  draft: Draft;
+  setDraft(draft: Draft): void;
   members: Member[];
   replying: string | null;
   /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
@@ -172,7 +173,11 @@ export function Thread({
     : readOnly && welcome === null
       ? "readOnlyHelp"
       : null;
-  const imagesOn = !readOnly && !suspended;
+  // A closed conversation takes notes only. The choice lives with the draft, so a note typed
+  // here never comes back as a reply after a reload or a visit to another conversation.
+  const closed = conversation?.status === "closed";
+  const mode: ComposeMode = closed || draft.isNote ? "note" : "reply";
+  const imagesOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
 
   if (conversation === null) {
@@ -182,7 +187,6 @@ export function Thread({
       </div>
     );
   }
-  const closed = conversation.status === "closed";
   const visitorName = title(conversation);
   /** Who wrote a line, as this thread names them. */
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
@@ -190,6 +194,7 @@ export function Thread({
     thread.sendText(
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
+      mode === "note",
     );
     setQuoting(null);
   };
@@ -204,7 +209,7 @@ export function Thread({
   return (
     <div className="conversation-view">
       <section
-        className={dropping && !closed ? "thread drop" : "thread"}
+        className={dropping && !closed && imagesOn ? "thread drop" : "thread"}
         aria-label={visitorName}
         onDragOver={(event) => {
           // A drag of selected text keeps its normal behavior.
@@ -247,7 +252,7 @@ export function Thread({
         {deleting !== null && (
           <Confirm
             title={t("messageDeleteTitle")}
-            text={t("messageDeleteText")}
+            text={t(deleting.kind === "note" ? "noteDeleteText" : "messageDeleteText")}
             confirm={t("messageDeleteYes")}
             onConfirm={() => void actions.removeMessage(deleting)}
             onCancel={() => setDeleting(null)}
@@ -289,28 +294,39 @@ export function Thread({
         <ErrorNote text={problem} />
         {repliesOffReason !== null ? (
           <p className="closed">{t(repliesOffReason)}</p>
-        ) : closed ? (
-          <p className="closed">
-            <Icon name="done" size={18} />
-            {t("closedHelp")}
-          </p>
         ) : (
-          <Composer
-            draft={draft}
-            setDraft={setDraft}
-            onSend={send}
-            onFiles={imagesOn ? sendFiles : undefined}
-            onEscape={quoting === null ? undefined : () => setQuoting(null)}
-            above={
-              quoting === null ? undefined : (
-                <QuoteChip
-                  quote={quoteOf(quoting, authorOf(quoting))}
-                  visitorName={visitorName}
-                  onCancel={() => setQuoting(null)}
-                />
-              )
-            }
-          />
+          <>
+            {closed && (
+              <p className="closed">
+                <Icon name="done" size={18} />
+                {t("closedHelp")}
+              </p>
+            )}
+            <Composer
+              draft={draft.text}
+              setDraft={(text) => setDraft({ text, isNote: mode === "note" })}
+              onSend={send}
+              onFiles={imagesOn ? sendFiles : undefined}
+              mode={
+                closed
+                  ? { value: "note" }
+                  : {
+                      value: mode,
+                      onChange: (next) => setDraft({ ...draft, isNote: next === "note" }),
+                    }
+              }
+              onEscape={quoting === null ? undefined : () => setQuoting(null)}
+              above={
+                quoting === null ? undefined : (
+                  <QuoteChip
+                    quote={quoteOf(quoting, authorOf(quoting))}
+                    visitorName={visitorName}
+                    onCancel={() => setQuoting(null)}
+                  />
+                )
+              }
+            />
+          </>
         )}
       </section>
       {/* A welcome chat's visitor is another workspace, with no visit to show. */}

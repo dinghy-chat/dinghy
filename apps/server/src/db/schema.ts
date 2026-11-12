@@ -36,14 +36,21 @@ const workspaceId = () =>
 export const memberRole = pgEnum("member_role", ["owner", "admin", "member"]);
 export const conversationStatus = pgEnum("conversation_status", ["open", "closed"]);
 /**
- * A message's kind. `closed` and `reopened` are status lines that a close or a reopen writes, with
- * the event's own sequence, so both sides see them in order. They are not chat: no alert, no
- * preview, no unread count.
+ * The kinds a visitor sees. `closed` and `reopened` are status lines that a close or a reopen
+ * writes, with the event's own sequence, so both sides see them in order. They are not chat: no
+ * alert, no preview, no unread count.
  */
-export const MESSAGE_KINDS = ["text", "image", "closed", "reopened"] as const;
+export const VISITOR_KINDS = ["text", "image", "closed", "reopened"] as const;
+/**
+ * A message's kind. A `note` is text that only the workspace's team sees. It never reaches the
+ * visitor, an alert or an email, and it is not chat either.
+ */
+export const MESSAGE_KINDS = [...VISITOR_KINDS, "note"] as const;
 export const messageKind = pgEnum("message_kind", MESSAGE_KINDS);
-/** The kinds that people wrote. */
+/** The kinds that people wrote in the chat, which both sides see. */
 export const CHAT_KINDS = ["text", "image"] as const;
+/** What people wrote: the chat, and the notes only the team sees. */
+export const WRITTEN_KINDS = [...CHAT_KINDS, "note"] as const;
 // `transcript` is the email of a whole conversation to its visitor, after a close or on request.
 export const alertChannel = pgEnum("alert_channel", ["push", "email", "transcript"]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);

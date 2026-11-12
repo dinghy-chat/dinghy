@@ -8,7 +8,7 @@ import { firstName, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
-import { conversation, MESSAGE_KINDS, visitor, widgetSettings, workspace } from "./db/schema.ts";
+import { conversation, VISITOR_KINDS, visitor, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { deviceLine } from "./device.ts";
 import {
@@ -56,7 +56,8 @@ import {
   parseCursor,
   QuoteSchema,
   readState,
-  type StoredMessage,
+  type VisitorMessage,
+  visitorMessage,
   visitorQuote,
   WorkspaceClosedError,
 } from "./messages.ts";
@@ -358,7 +359,7 @@ const MessageSchema = z
     // The position in commit order, as a string because it can exceed a JSON number.
     seq: z.string(),
     // `closed` and `reopened` are status lines, with no body: the team closed or reopened the chat.
-    kind: z.enum(MESSAGE_KINDS),
+    kind: z.enum(VISITOR_KINDS),
     fromVisitor: z.boolean(),
     clientId: z.string().nullable(),
     body: z.string().nullable(),
@@ -574,7 +575,7 @@ function messageView(
     readAt: _read,
     via: _via,
     ...message
-  }: StoredMessage,
+  }: VisitorMessage,
 ) {
   const authorId = authorOperatorId ?? authorApiKeyId;
   const author = authorId === null ? undefined : authors.get(authorId);
@@ -1017,7 +1018,7 @@ export function registerWidgetRoutes(
     countryOf,
   }: WidgetOptions,
 ): void {
-  const view = (workspaceId: string, message: StoredMessage, authors = NO_AUTHORS) =>
+  const view = (workspaceId: string, message: VisitorMessage, authors = NO_AUTHORS) =>
     messageView(images, urls, workspaceId, authors, message);
 
   /** A page of the visitor's messages, with the authors of its replies. */
@@ -1106,7 +1107,10 @@ export function registerWidgetRoutes(
       wakeConversation(live, found.id, identified.visitorId);
     }
     return c.json(
-      { ...view(found.id, result.message), conversationStarted: result.conversationStarted },
+      {
+        ...view(found.id, visitorMessage(result.message)),
+        conversationStarted: result.conversationStarted,
+      },
       result.created ? 201 : 200,
     );
   });
@@ -1259,7 +1263,10 @@ export function registerWidgetRoutes(
       }
       const { result } = outcome;
       return c.json(
-        { ...view(found.id, result.message), conversationStarted: result.conversationStarted },
+        {
+          ...view(found.id, visitorMessage(result.message)),
+          conversationStarted: result.conversationStarted,
+        },
         result.created ? 201 : 200,
       );
     });

@@ -1958,3 +1958,63 @@ describe("transcripts", () => {
     expect(await transcripts()).toEqual([]);
   });
 });
+
+describe("notes", () => {
+  const noteWrites = (operatorId: string, conversationId: string, body: string) =>
+    withWorkspace(app, space.id, (tx) =>
+      appendMessage(
+        tx,
+        space.id,
+        { kind: "operator", operatorId, conversationId },
+        { clientId: randomUUID(), body, note: true },
+      ),
+    );
+
+  test("a note alerts nobody: no push, no email to the team, no reply email to the visitor", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`, { alertEmail: true });
+    await addDevice(anna, "anna-phone");
+    const written = await visitorWrites(await addVisitor("visitor@example.com"), "Hello");
+    await fanOutAll();
+    const before = await deliveries();
+    const note = await noteWrites(anna, written.message.conversationId, "Refund approved");
+    await fanOutAll();
+    expect(await deliveries()).toEqual(before);
+    expect((await deliveries()).some((row) => row.messageId === note.message.id)).toBe(false);
+  });
+
+  test("a reply email and a transcript carry the replies and never a note", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("visitor@example.com");
+    const written = await visitorWrites(from, "How do I export my data?");
+    const { conversationId } = written.message;
+    await operatorWrites(anna, conversationId, "Open Settings, then Export.");
+    await noteWrites(anna, conversationId, "SECRET: customer is on a legacy plan");
+    await operatorWrites(anna, conversationId, "Anything else?");
+    await fanOutAll();
+    runWorker({ mail: true });
+    await untilDue(
+      async () => (await deliveries()).every((row) => row.finishedAt !== null),
+      "the reply email",
+    );
+    await withWorkspace(app, space.id, (tx) =>
+      setConversationStatus(tx, space.id, conversationId, "closed", {
+        kind: "operator",
+        operatorId: anna,
+      }),
+    );
+    await fanOutAll();
+    await untilDue(
+      async () => mails.some((mail) => mail.subject.startsWith("Your conversation")),
+      "the transcript",
+    );
+    expect(mails.map((mail) => mail.subject)).toEqual([
+      "Acme replied to your message",
+      "Your conversation with Acme",
+    ]);
+    for (const mail of mails) {
+      expect(mail.text).toContain("Anything else?");
+      expect(mail.text).not.toContain("SECRET");
+      expect(mail.html ?? "").not.toContain("SECRET");
+    }
+  });
+});

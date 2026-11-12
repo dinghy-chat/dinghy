@@ -4,6 +4,10 @@ import { Icon, type IconName } from "./icons.tsx";
 import { type TextId, t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
 
+/** A team reply that the visitor may have seen, so it has a receipt. Not a note, which they never see. */
+export const hasReceipt = (line: Line): line is Line & { seq: bigint } =>
+  !line.fromVisitor && line.seq !== null && (line.kind === "text" || line.kind === "image");
+
 export type Receipt = "sent" | "emailed" | "emailFailed" | "read";
 
 const RECEIPTS: Record<Receipt, { text: TextId; icon: IconName }> = {
@@ -40,7 +44,7 @@ export function ReceiptLine({ receipt, later }: { receipt: Receipt; later: boole
 
 /** Why the visitor may have seen this reply, so it can no longer change, or null. */
 export function seenReason(line: Line, receipts: ReplyReceipts | null): TextId | null {
-  if (receipts === null || line.seq === null) return null;
+  if (receipts === null || !hasReceipt(line)) return null;
   const receipt = receiptOf(line.seq, receipts);
   if (receipt === "read") return "messageAlreadyRead";
   return receipt === "emailed" ? "messageAlreadyEmailed" : null;

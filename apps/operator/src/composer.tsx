@@ -5,7 +5,15 @@ import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { code, type Edit, link, list, wrap } from "./markdown-edit.ts";
 import { type TextId, t } from "./text.ts";
-import { EmojiButton } from "./ui.tsx";
+import { Choices, EmojiButton, type Option } from "./ui.tsx";
+
+/** A reply goes to the visitor, and a note stays with the team. */
+export type ComposeMode = "reply" | "note";
+
+const MODES: Option<ComposeMode>[] = [
+  { value: "reply", label: "composeReply" },
+  { value: "note", label: "composeNote" },
+];
 
 /** Each formatting button: its text, its icon, its key with Cmd or Ctrl, and what it does. */
 const FORMATS: {
@@ -40,6 +48,7 @@ export function Composer({
   onFiles,
   onEscape,
   above,
+  mode,
   editing = false,
 }: {
   draft: string;
@@ -51,6 +60,8 @@ export function Composer({
   onEscape?: (() => void) | undefined;
   /** Above the text, such as the quote a reply carries. */
   above?: ReactNode;
+  /** Reply or Note, for a new message. With no onChange it is fixed, as in a closed conversation. */
+  mode?: { value: ComposeMode; onChange?(mode: ComposeMode): void } | undefined;
   /** It edits a sent reply, in place of its bubble. */
   editing?: boolean;
 }) {
@@ -78,6 +89,7 @@ export function Composer({
     onSend(body);
   };
 
+  const isNote = mode?.value === "note";
   const format = (apply: (typeof FORMATS)[number]["apply"]) => {
     const field = input.current;
     if (field === null) return;
@@ -88,11 +100,20 @@ export function Composer({
 
   return (
     <form
-      className={["compose", editing && "editing", showsFormats && "formatting"]
+      className={["compose", editing && "editing", isNote && "note", showsFormats && "formatting"]
         .filter(Boolean)
         .join(" ")}
       onSubmit={submit}
     >
+      {mode?.onChange !== undefined && (
+        <Choices
+          label={t("composeMode")}
+          variant="tabs"
+          value={mode.value}
+          options={MODES}
+          onChange={mode.onChange}
+        />
+      )}
       <div className="box">
         {above}
         <textarea
@@ -108,8 +129,10 @@ export function Composer({
             event.preventDefault();
             onFiles(data.files);
           }}
-          aria-label={t(editing ? "editLabel" : "replyLabel")}
-          placeholder={editing ? undefined : t("replyPlaceholder")}
+          aria-label={t(editing ? "editLabel" : isNote ? "composeNoteLabel" : "replyLabel")}
+          placeholder={
+            editing ? undefined : t(isNote ? "composeNotePlaceholder" : "replyPlaceholder")
+          }
           maxLength={MESSAGE_MAX}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -198,6 +221,10 @@ export function Composer({
                 {t("saveEdit")}
               </button>
             </span>
+          ) : isNote ? (
+            <button type="submit" className="pill dark send-note">
+              {t("addNote")}
+            </button>
           ) : (
             <button type="submit" className="send" aria-label={t("send")} title={t("send")}>
               <Icon name="arrowUp" size={16} />
