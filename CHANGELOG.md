@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-12
+
 ### Added
 
 - **Settings > Appearance** has a **Header** section: the faces beside the chat's title are the members online now (the default, with the latest repliers when nobody is), the latest repliers, members you choose and order, or none, 1 to 5 of them, with a green dot on each member online. The status line can say "Usually replies in 2 min", from the 30-day median first reply time. API: the widget settings have `headerFaces`, `headerFaceCount`, `headerDot`, `headerStatus` and `headerMembers`, the appearance answers `faces`, and the widget's presence answers `members` and `replySeconds`.
@@ -406,7 +408,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/dinghy-chat/dinghy/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/dinghy-chat/dinghy/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/dinghy-chat/dinghy/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/dinghy-chat/dinghy/compare/v0.18.0...v0.19.0
