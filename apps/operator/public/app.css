@@ -35,6 +35,8 @@
   --focus: var(--navy);
   --focus-halo: light-dark(#e8e6e0, #243344);
   --blue-deep: light-dark(#1457d6, #8ab8ff);
+  /* Links: an ocean blue between the navy and the brand blue, calmer than a browser's default. */
+  --link: light-dark(#2a5d94, #9cc3f5);
   --red: #e5352b;
   --red-deep: #bf241b;
   --cream: #fff8df;
@@ -302,7 +304,7 @@ textarea {
 }
 .link {
   padding-inline: 6px;
-  color: var(--blue-deep);
+  color: var(--link);
   font-weight: 600;
 }
 .link:hover {
@@ -2190,18 +2192,22 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Links that are data, such as a visitor's pages: the link color, with a faint underline that
+   turns solid on hover. */
 .place-tiles a,
-.journey a,
-.context a {
-  text-decoration: none;
+.journey a.page-name,
+.context a,
+.live-page a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  text-underline-offset: 3px;
 }
 .place-tiles a:hover,
-.journey a:hover,
-.context a:hover {
-  text-decoration: underline;
-}
-.place-tiles a {
-  color: var(--blue-deep);
+.journey a.page-name:hover,
+.context a:hover,
+.live-page a:hover {
+  text-decoration-color: currentColor;
 }
 /* The assignee fills the row, and the status sits beside it. */
 .panel-bar {
@@ -2378,9 +2384,6 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.journey a.page-name {
-  color: var(--blue-deep);
-}
 .journey time {
   flex: none;
   color: var(--mute);
@@ -2453,9 +2456,6 @@ img.ws-tile {
 }
 .note-field::placeholder {
   color: color-mix(in srgb, var(--warn-ink) 75%, transparent);
-}
-.context a {
-  color: var(--blue-deep);
 }
 .who-text .welcome-off {
   color: var(--warn-ink);
@@ -3085,7 +3085,7 @@ button.quote:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--blue-deep);
+  color: var(--link);
   font-size: 13.5px;
   font-weight: 600;
   text-decoration: none;
@@ -5741,12 +5741,7 @@ button.quote:hover {
   white-space: nowrap;
 }
 .live-page a {
-  color: var(--blue-deep);
   font-weight: 500;
-  text-decoration: none;
-}
-.live-page a:hover {
-  text-decoration: underline;
 }
 .live-meta {
   display: flex;
