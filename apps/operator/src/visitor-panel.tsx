@@ -5,7 +5,7 @@ import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Contact, ContactDetail, Conversation, Member, PageView } from "./api.ts";
 import { MINUTE_MS } from "./format.ts";
-import { Icon } from "./icons.tsx";
+import { Icon, type IconName } from "./icons.tsx";
 import { countryName, flag, localTime } from "./place.ts";
 import { Select } from "./popup.tsx";
 import { readStored, store } from "./stored.ts";
@@ -25,7 +25,18 @@ import {
 const PAGES_FIRST = 5;
 
 /** A fold, open or closed as this device last left it. */
-function Section({ id, title, children }: { id: string; title: TextId; children: ReactNode }) {
+function Section({
+  id,
+  title,
+  count,
+  children,
+}: {
+  id: string;
+  title: TextId;
+  /** How many items the fold holds, shown beside its title. */
+  count?: number;
+  children: ReactNode;
+}) {
   const key = `dinghy.panel.${id}`;
   const [open, setOpen] = useState(() => readStored(key) !== "closed");
   return (
@@ -40,6 +51,7 @@ function Section({ id, title, children }: { id: string; title: TextId; children:
           }}
         >
           {t(title)}
+          {count !== undefined && <span className="fold-count">{count}</span>}
           <span className="fold-chevron">
             <Icon name="chevron" size={12} />
           </span>
@@ -47,16 +59,6 @@ function Section({ id, title, children }: { id: string; title: TextId; children:
       </h3>
       {open && <div className="fold-body">{children}</div>}
     </section>
-  );
-}
-
-/** A name and its value, as one line of a fold. */
-function Fact({ name, children }: { name: TextId; children: ReactNode }) {
-  return (
-    <>
-      <dt>{t(name)}</dt>
-      <dd>{children}</dd>
-    </>
   );
 }
 
@@ -78,31 +80,54 @@ const hasPlace = (visitor: Place) =>
   visitor.device !== null ||
   webLink(visitor.lastPage) !== null;
 
-/** Where the visitor is and what with: country, local time, device and the last page. */
-function PlaceFacts({ visitor }: { visitor: Place }) {
-  const page = webLink(visitor.lastPage);
+/** One fact of the visitor's place, as a small tile: an icon, a label and the value. */
+function Tile({ icon, label, children }: { icon: IconName; label: string; children: ReactNode }) {
   return (
-    <dl className="facts">
-      {visitor.country !== null && (
-        <Fact name="countryLabel">
-          <span aria-hidden="true">{flag(visitor.country)} </span>
-          {countryName(visitor.country)}
-        </Fact>
+    <div>
+      <Icon name={icon} size={16} />
+      <dl>
+        <dt>{label}</dt>
+        <dd>{children}</dd>
+      </dl>
+    </div>
+  );
+}
+
+/** Where the visitor is and what with: country and local time, device and the last page. */
+function PlaceTiles({ visitor }: { visitor: Place }) {
+  const page = webLink(visitor.lastPage);
+  const { country, timeZone } = visitor;
+  const zone = timeZone !== null && localTime(timeZone) !== null ? timeZone : null;
+  return (
+    <div className="place-tiles">
+      {(country !== null || zone !== null) && (
+        <Tile
+          icon="globe"
+          label={
+            country === null
+              ? t("localTimeLabel")
+              : zone === null
+                ? t("countryLabel")
+                : countryName(country)
+          }
+        >
+          {country !== null && <span aria-hidden="true">{flag(country)} </span>}
+          {zone === null ? countryName(country ?? "") : <LocalTime timeZone={zone} />}
+        </Tile>
       )}
-      {visitor.timeZone !== null && localTime(visitor.timeZone) !== null && (
-        <Fact name="localTimeLabel">
-          <LocalTime timeZone={visitor.timeZone} />
-        </Fact>
+      {visitor.device !== null && (
+        <Tile icon="monitor" label={t("deviceLabel")}>
+          <span title={visitor.device}>{visitor.device}</span>
+        </Tile>
       )}
-      {visitor.device !== null && <Fact name="deviceLabel">{visitor.device}</Fact>}
       {page !== null && (
-        <Fact name="currentPageLabel">
+        <Tile icon="link" label={t("currentPageLabel")}>
           <a href={page} target="_blank" rel="noopener noreferrer" title={page}>
             {bare(page)}
           </a>
-        </Fact>
+        </Tile>
       )}
-    </dl>
+    </div>
   );
 }
 
@@ -118,7 +143,7 @@ function DetailList({ values, links }: { values: Record<string, unknown> | null;
       {rows.map(([name, value, link]) => (
         <Fragment key={`${name}=${value}`}>
           <dt>{name}</dt>
-          <dd>
+          <dd title={value}>
             {link === null || !links ? (
               value
             ) : (
@@ -135,17 +160,27 @@ function DetailList({ values, links }: { values: Record<string, unknown> | null;
 
 /** Signed attributes, and the page's unsigned context. */
 interface Details {
+  /** The site's ID for a signed-in visitor, with a copy button. */
+  userId: string | null;
   attributes: Record<string, unknown> | null;
   pageContext: Record<string, unknown> | null;
 }
 
-const hasDetails = ({ attributes, pageContext }: Details) =>
-  detailRows(attributes).length > 0 || detailRows(pageContext).length > 0;
+const hasDetails = ({ userId, attributes, pageContext }: Details) =>
+  userId !== null || detailRows(attributes).length > 0 || detailRows(pageContext).length > 0;
 
 /** The signed attributes, then what the page sent with setContext(), which says it is unverified. */
-function DetailsFold({ attributes, pageContext }: Details) {
+function DetailsFold({ userId, attributes, pageContext }: Details) {
   return (
     <>
+      {userId !== null && (
+        <dl className="context">
+          <dt>{t("userIdTitle")}</dt>
+          <dd>
+            <CopyId value={userId} label="userIdLabel" />
+          </dd>
+        </dl>
+      )}
       <DetailList values={attributes} links />
       {detailRows(pageContext).length > 0 && (
         <div className="page-context">
@@ -279,6 +314,7 @@ function NoteField({
 export function ContactFolds({
   contact,
   visitor,
+  place,
   pages,
   conversationId,
   onOpenConversation,
@@ -288,6 +324,8 @@ export function ContactFolds({
   contact: ContactDetail | null;
   /** The newest facts, from the conversation when there is one. */
   visitor: Place & Details;
+  /** Whether the place shows as a fold. The conversation's panel shows it in its head instead. */
+  place: boolean;
   pages: PageView[];
   /** The conversation on screen, left out of the list. Null on the contact page. */
   conversationId: string | null;
@@ -297,18 +335,18 @@ export function ContactFolds({
   const others = contact?.conversations.filter((one) => one.id !== conversationId) ?? [];
   return (
     <>
-      {hasPlace(visitor) && (
+      {place && hasPlace(visitor) && (
         <Section id="visitor" title="panelVisitor">
-          <PlaceFacts visitor={visitor} />
+          <PlaceTiles visitor={visitor} />
         </Section>
       )}
       {hasDetails(visitor) && (
         <Section id="details" title="panelDetails">
-          <DetailsFold attributes={visitor.attributes} pageContext={visitor.pageContext} />
+          <DetailsFold {...visitor} />
         </Section>
       )}
       {pages.length > 0 && (
-        <Section id="journey" title="pagesVisited">
+        <Section id="journey" title="pagesVisited" count={pages.length}>
           <PageJourney pages={pages} />
         </Section>
       )}
@@ -316,6 +354,7 @@ export function ContactFolds({
         <Section
           id="conversations"
           title={conversationId === null ? "panelAllConversations" : "panelOtherConversations"}
+          count={others.length}
         >
           <ConversationLinks conversations={others} onOpen={onOpenConversation} />
         </Section>
@@ -365,59 +404,72 @@ export function VisitorPanel({
   return (
     <aside className={overlay ? "visitor-panel overlay" : "visitor-panel"} aria-label={name}>
       <header className="panel-head">
-        <Avatar name={name} letters={avatarLetters(visitor)} pictureUrl={visitor.pictureUrl} />
         <div className="panel-who">
-          <h3>{name}</h3>
-          {visitor.email !== null && visitor.email !== name && <p>{visitor.email}</p>}
-          {visitor.externalId !== null && <CopyId value={visitor.externalId} label="userIdLabel" />}
-          {presence !== null && (
-            <p className={online === true ? "online" : undefined}>{presence}</p>
-          )}
-        </div>
-        {overlay && (
+          <span className="avatar-wrap">
+            <Avatar name={name} letters={avatarLetters(visitor)} pictureUrl={visitor.pictureUrl} />
+            {online === true && <i className="presence-dot" />}
+          </span>
+          <div className="panel-name">
+            <h3>{name}</h3>
+            {visitor.email !== null && visitor.email !== name && <p>{visitor.email}</p>}
+            {presence !== null && (
+              <p className={online === true ? "online" : undefined}>{presence}</p>
+            )}
+          </div>
           <button
             type="button"
             className="icon-button"
-            aria-label={t("hidePanel")}
-            onClick={onClose}
+            aria-label={t("viewContact")}
+            title={t("viewContact")}
+            onClick={onOpenContact}
           >
-            <Icon name="close" size={18} />
+            <Icon name="contacts" size={18} />
           </button>
-        )}
-        <button type="button" className="pill soft panel-contact" onClick={onOpenContact}>
-          {t("viewContact")}
-        </button>
+          {overlay && (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t("hidePanel")}
+              title={t("hidePanel")}
+              onClick={onClose}
+            >
+              <Icon name="close" size={18} />
+            </button>
+          )}
+        </div>
+        {hasPlace(visitor) && <PlaceTiles visitor={visitor} />}
       </header>
-      <Section id="conversation" title="panelConversation">
-        <dl className="facts">
-          <dt>{t("assignTo")}</dt>
-          <dd>
-            <Select
-              label={t("assignTo")}
-              className="assignee"
-              side="end"
-              value={assignee}
-              choices={[
-                { value: "", label: t("unassigned"), lead: <span className="avatar nobody" /> },
-                ...members.map((member) => ({
-                  value: member.id,
-                  label: member.name,
-                  lead: <Avatar name={member.name} pictureUrl={member.pictureUrl} />,
-                })),
-              ]}
-              onChange={(value) => onAssign(value === "" ? null : value)}
-            />
-          </dd>
-          <Fact name="statusLabel">
-            <span className={conversation.status === "open" ? "chip warn" : "chip"}>
-              {t(conversation.status)}
-            </span>
-          </Fact>
-        </dl>
-      </Section>
+      <div className="panel-bar">
+        <Select
+          label={t("assignTo")}
+          className="assignee"
+          side="end"
+          value={assignee}
+          choices={[
+            { value: "", label: t("unassigned"), lead: <span className="avatar nobody" /> },
+            ...members.map((member) => ({
+              value: member.id,
+              label: member.name,
+              lead: <Avatar name={member.name} pictureUrl={member.pictureUrl} />,
+            })),
+          ]}
+          onChange={(value) => onAssign(value === "" ? null : value)}
+        />
+        <span
+          className={conversation.status === "open" ? "chip warn" : "chip"}
+          title={t("statusLabel")}
+        >
+          {t(conversation.status)}
+        </span>
+      </div>
       <ContactFolds
         contact={contact}
-        visitor={{ ...visitor, pageContext: conversation.pageContext }}
+        visitor={{
+          ...visitor,
+          userId: visitor.externalId,
+          pageContext: conversation.pageContext,
+        }}
+        place={false}
         pages={pages}
         conversationId={conversation.id}
         onOpenConversation={onOpenConversation}
