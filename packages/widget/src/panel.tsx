@@ -102,7 +102,7 @@ textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inh
 .shot img{display:block;max-width:100%;height:auto}
 dialog{max-width:none;max-height:none;padding:0;border:0;background:transparent;overflow:hidden}
 dialog::backdrop{background:rgb(11 34 57/.85)}
-dialog img{display:block;max-width:95vw;max-height:95vh}
+dialog img{display:block;max-width:95vw;max-height:95svh}
 .panel.page{inset:0;margin:auto;width:100%;max-width:720px;height:auto;max-height:none;border-radius:0}
 @media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}textarea,input{font-size:16px}.panel:not(.page) .head{padding-top:max(10px,env(safe-area-inset-top))}.panel:not(.page)>:last-child{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
 .panel:focus{outline:none}

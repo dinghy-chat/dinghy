@@ -3035,10 +3035,11 @@ button.quote:hover {
 .viewer::backdrop {
   background: rgb(11 34 57 / 0.85);
 }
+/* svh leaves out a phone browser's toolbar, which could otherwise cover the image's edge. */
 .viewer img {
   display: block;
   max-width: 95vw;
-  max-height: 95vh;
+  max-height: 95svh;
 }
 
 /* Pages in the panel, such as each Settings page. Rows with thin lines, no cards in cards. */
