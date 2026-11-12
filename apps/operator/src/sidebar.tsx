@@ -26,7 +26,7 @@ const NAV: { view: View; label: TextId; icon: IconName }[] = [
  * The workspace's logo, or two letters: "Acme" gives "AC", and "Harbor Labs" gives "HL". The name
  * sits beside it, so the logo needs no text of its own.
  */
-function WorkspaceTile({ name, logoUrl = null }: { name: string; logoUrl?: string | null }) {
+export function WorkspaceTile({ name, logoUrl = null }: { name: string; logoUrl?: string | null }) {
   if (logoUrl !== null) return <img className="ws-tile" src={logoUrl} alt="" />;
   const letters = initials(name);
   return (

@@ -1,6 +1,8 @@
 /** @jsxImportSource react */
 import type { ReactNode } from "react";
 import type { ApiKeyLevel, ReplyMode, WorkspaceApi } from "./api.ts";
+import { clockTime } from "./format.ts";
+import { Icon } from "./icons.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { Choices, type Option } from "./ui.tsx";
@@ -94,25 +96,36 @@ export function pauseBots(api: WorkspaceApi, paused: boolean, onChanged: () => v
 }
 
 /**
- * Above every page while the bots are paused, with who paused them. Owners and admins can resume
- * them here. A phone shows the short line.
+ * Above every page while the bots are paused, with who paused them and when. Owners and admins can
+ * resume them here. A phone shows the short line.
  */
 export function BotsPausedBanner({
   pausedBy,
+  pausedAt,
   onResume,
 }: {
   pausedBy: string | null;
+  pausedAt: string | null;
   onResume: (() => void) | null;
 }) {
   return (
     <div className="banner bots-banner" role="status">
+      <span className="bots-banner-mark" aria-hidden="true">
+        <Icon name="pause" size={13} />
+      </span>
       <span className="bots-banner-long">
-        {t("botsPausedBanner")}
-        {pausedBy !== null && ` ${t("botsPausedBy", { name: pausedBy })}.`}
+        <b>{t("botsPausedBanner")}</b> {t("botsPausedBannerMore")}
+        {pausedBy !== null && pausedAt !== null && (
+          <span className="bots-banner-by">
+            {" "}
+            {t("botsPausedByAt", { name: pausedBy, time: clockTime(pausedAt) })}
+          </span>
+        )}
       </span>
       <span className="bots-banner-short">{t("botsPausedShort")}</span>
       {onResume !== null && (
-        <button type="button" className="pill dark small" onClick={onResume}>
+        <button type="button" className="pill dark small bots-resume" onClick={onResume}>
+          <Icon name="play" size={13} />
           {t("botsResume")}
         </button>
       )}

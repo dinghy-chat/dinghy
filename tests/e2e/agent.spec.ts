@@ -44,8 +44,8 @@ async function connect(page: Page): Promise<string> {
     route.fulfill({ contentType: "text/plain", body: "connected" }),
   );
   await page.goto(`${server.apiOrigin}/oauth/authorize?${query}`);
-  await page.getByRole("radio", { name: "Setup" }).check();
-  await page.getByRole("radio", { name: "Drafts only" }).check();
+  await page.getByRole("radio", { name: /^Full access/ }).check();
+  await page.getByRole("radio", { name: /^Drafts only/ }).check();
   await page.getByRole("button", { name: "Approve" }).click();
   await page.waitForURL(/^http:\/\/127\.0\.0\.1:9\/callback\?/);
   const answer = new URL(page.url()).searchParams;
@@ -161,9 +161,9 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   // An operator reads the suggestion and sends it.
   await page.goto(server.apiOrigin);
   await page.locator(".row", { hasText: "Tess Test" }).click();
-  const card = page.locator(".draft-card");
+  const card = page.locator(".sugg");
   await expect(card).toContainText(`Suggested by ${AGENT}`);
-  await expect(page.locator(".thread-head .handler")).toContainText(`Bot: ${AGENT}`);
+  await expect(page.getByRole("button", { name: /^Who answers/ })).toContainText(AGENT);
   await card.getByRole("button", { name: "Send" }).click();
   await expect(
     page.locator(".bubble-row", { hasText: "Yes, in Settings > Billing." }),
@@ -183,7 +183,7 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   // The owner lets the agent send directly, so a person's handling is what stops its replies.
   await openSettings(page, "API & webhooks");
   const replies = page
-    .locator(".key-item", { hasText: AGENT })
+    .locator(".item-row", { hasText: AGENT })
     .getByRole("button", { name: /Replies from/ });
   await replies.click();
   await page.getByRole("option", { name: "Send directly" }).click();
@@ -205,10 +205,11 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
 
   await page.goto(server.apiOrigin);
   await page.locator(".row", { hasText: "Tess Test" }).click();
-  await expect(page.locator(".thread-head .handler")).toContainText("owner@example.com");
-  await expect(
-    page.locator(".msg.note", { hasText: "Handed off: Plan changes need a person" }),
-  ).toContainText(AGENT);
+  await expect(page.getByRole("button", { name: /^Who answers/ })).toContainText(
+    "owner@example.com",
+  );
+  const handoff = page.locator(".handoff", { hasText: "Handed off: Plan changes need a person" });
+  await expect(handoff.locator(".handoff-line")).toContainText(`${AGENT} handed this to you`);
 
   const cleaned = await mcp.call("delete_test_visitors");
   expect(cleaned.structuredContent.deleted).toBe(1);

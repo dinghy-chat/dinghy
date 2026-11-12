@@ -12,7 +12,13 @@ import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
-import { DraftCards, DraftChip, useSuggestedReplies } from "./thread-drafts.tsx";
+import {
+  DraftCards,
+  DraftChip,
+  OlderDrafts,
+  staleBefore,
+  useSuggestedReplies,
+} from "./thread-drafts.tsx";
 import { ThreadHead } from "./thread-head.tsx";
 import { type Line, useThreadLines } from "./thread-lines.ts";
 import { ThreadLog } from "./thread-log.tsx";
@@ -227,6 +233,28 @@ export function Thread({
     setDraft({ text: chosen.body, isNote: false });
   };
   const canReply = repliesOffReason === null && !closed;
+  const draftHandlers = {
+    // A suggestion says who can't see it yet: the visitor's first name, as a reply would greet them.
+    visitor: conversation.visitor.name?.split(" ")[0] ?? visitorName,
+    canSend: canReply,
+    onSend: (chosen: SuggestedReply) => suggestions.send(chosen),
+    onEdit: editDraft,
+    onDiscard: (chosen: SuggestedReply) => {
+      if (editingDraft?.id === chosen.id) setEditingDraft(null);
+      return suggestions.discard(chosen);
+    },
+  };
+  const assign = (operatorId: string | null) =>
+    void change.assign(
+      operatorId,
+      members.find((member) => member.id === operatorId)?.name ?? null,
+    );
+  // A person handles it and a bot took part, so the bot can have it back.
+  const canGiveBack =
+    repliesOffReason === null &&
+    conversation.bot !== null &&
+    conversation.handler !== null &&
+    conversation.handler.kind !== "bot";
   const infoLine =
     info === null
       ? null
@@ -259,20 +287,16 @@ export function Thread({
           welcome={welcome}
           online={online}
           members={members}
+          meId={meId}
           mayDeleteAnyone={mayDeleteAnyone}
           onBack={onBack}
-          onAssign={(operatorId) => void change.assign(operatorId)}
+          onAssign={assign}
           onStatus={(status) => void change.setStatus(status)}
           onBlocked={(blocked) => void change.setBlocked(blocked)}
           onDelete={() => change.setConfirming(true)}
           onTranscript={() => void change.sendTranscript()}
-          onGiveBack={
-            conversation.handler === null ||
-            conversation.handler.kind === "bot" ||
-            repliesOffReason !== null
-              ? undefined
-              : () => void change.giveBack()
-          }
+          canGiveBack={canGiveBack}
+          onGiveBack={() => void change.giveBack()}
           emailAvailable={emailAvailable}
           panel={welcome === null ? panel : null}
         />
@@ -314,6 +338,7 @@ export function Thread({
         )}
         <ThreadLog
           conversation={conversation}
+          members={members}
           lines={lines}
           receipts={receipts}
           who={{ meId, mayDeleteAnyone, canWrite: repliesOffReason === null, canReply }}
@@ -321,18 +346,11 @@ export function Thread({
           typingDraft={typingDraft}
           botTyping={botTyping}
           draftCount={suggestions.drafts.length}
-          drafts={
-            <DraftCards
-              drafts={suggestions.drafts}
-              canSend={canReply}
-              onSend={(chosen) => suggestions.send(chosen)}
-              onEdit={editDraft}
-              onDiscard={(chosen) => {
-                if (editingDraft?.id === chosen.id) setEditingDraft(null);
-                return suggestions.discard(chosen);
-              }}
-            />
-          }
+          drafts={<DraftCards drafts={suggestions.drafts} {...draftHandlers} />}
+          olderDrafts={{
+            node: <OlderDrafts drafts={suggestions.drafts} {...draftHandlers} />,
+            before: staleBefore(suggestions.drafts),
+          }}
           onImageError={thread.refreshImages}
           onRetry={thread.retry}
         />
@@ -396,7 +414,9 @@ export function Thread({
           overlay={!panel.wide}
           motion={panel.motion}
           onMoved={panel.moved}
-          onAssign={(operatorId) => void change.assign(operatorId)}
+          meId={meId}
+          onAssign={assign}
+          onGiveBack={() => void change.giveBack()}
           onOpenContact={() => onOpenContact(conversation.visitor.id)}
           onOpenConversation={onOpenConversation}
           onNote={async (note) => {

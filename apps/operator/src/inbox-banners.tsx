@@ -75,6 +75,7 @@ export function InboxBanners({
   onCloseDeleted,
   botsPaused,
   botsPausedBy,
+  botsPausedAt,
   onResumeBots,
   ...plan
 }: PlanProps & {
@@ -85,6 +86,8 @@ export function InboxBanners({
   botsPaused: boolean;
   /** Who paused them, or null. */
   botsPausedBy: string | null;
+  /** When they were paused, or null. */
+  botsPausedAt: string | null;
   /** Null for a member, who cannot resume them. */
   onResumeBots: (() => void) | null;
 }) {
@@ -109,7 +112,9 @@ export function InboxBanners({
         </div>
       )}
       <PlanBanner {...plan} />
-      {botsPaused && <BotsPausedBanner pausedBy={botsPausedBy} onResume={onResumeBots} />}
+      {botsPaused && (
+        <BotsPausedBanner pausedBy={botsPausedBy} pausedAt={botsPausedAt} onResume={onResumeBots} />
+      )}
     </>
   );
 }

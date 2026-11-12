@@ -1,24 +1,34 @@
 import { t } from "./text.ts";
 
-/** The MCP server's address, the command that adds it to Claude Code, and the JSON for others. */
-function mcpSetup(origin: string) {
-  const url = `${origin}/v1/mcp`;
-  return {
-    url,
-    command: `claude mcp add --transport http dinghy ${url}`,
+/** The coding agents the Install page has a prompt for. Other is any client that speaks MCP. */
+export type AgentClient = "claude" | "cursor" | "other";
+
+/** How each client adds Dinghy's MCP server, and how the person approves it. */
+function connectSteps(client: AgentClient, url: string) {
+  if (client === "claude") {
+    const command = `claude mcp add --transport http dinghy ${url}`;
+    return { connect: t("agentConnectClaude", { command }), approve: t("agentApproveClaude") };
+  }
+  if (client === "cursor") {
     // Indented under its step, as the prompt shows it.
-    config: JSON.stringify({ mcpServers: { dinghy: { type: "http", url } } }, null, 2).replace(
+    const config = JSON.stringify({ mcpServers: { dinghy: { url } } }, null, 2).replace(
       /^/gm,
       "   ",
-    ),
-  };
+    );
+    return { connect: t("agentConnectCursor", { config }), approve: t("agentApproveCursor") };
+  }
+  return { connect: t("agentConnectOther", { url }), approve: t("agentApproveOther") };
 }
 
 /**
- * The prompt that has a coding agent install the chat through MCP. Its last step adds `notes`, the
- * block for the site repository's AGENTS.md.
+ * The prompt that has a coding agent install the chat through MCP, in the words of its client. Its
+ * last step adds `notes`, the block for the site repository's AGENTS.md.
  */
-export function agentPrompt(origin: string, workspace: string) {
-  const mcp = mcpSetup(origin);
-  return t("agentPrompt", { workspace, ...mcp, notes: t("agentNotes", { url: mcp.url }) });
+export function agentPrompt(origin: string, workspace: string, client: AgentClient) {
+  const url = `${origin}/v1/mcp`;
+  return t("agentPrompt", {
+    workspace,
+    ...connectSteps(client, url),
+    notes: t("agentNotes", { url }),
+  });
 }

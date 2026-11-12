@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import {
+  Fragment,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -212,6 +213,12 @@ interface Choice<V extends string> {
   label: string;
   /** A picture before the label, such as an avatar. */
   lead?: ReactNode;
+  /** A second line under the label, in the list. */
+  detail?: string;
+  /** Small words at the end, in the button and the list, such as a role. */
+  note?: string;
+  /** A heading over the first choice of a group, such as "People". */
+  group?: string;
 }
 
 /**
@@ -273,6 +280,7 @@ export function Select<V extends string>({
         <span id={valueId} className="select-value">
           {current?.label}
         </span>
+        {current?.note !== undefined && <small className="select-note">{current.note}</small>}
         {/* A locked choice shows a lock: the page says why next to it. */}
         <Icon name={disabled ? "lock" : "chevron"} size={disabled ? 14 : 12} />
       </button>
@@ -287,23 +295,39 @@ export function Select<V extends string>({
           onKeyDown={(event) => popup.onPopupKey(event, choose)}
         >
           {choices.map((choice, index) => (
-            // biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles the keys.
-            <div
-              key={choice.value}
-              id={popup.itemId(index)}
-              data-index={index}
-              role="option"
-              // Focus stays on the listbox, which names this option as its active one.
-              tabIndex={-1}
-              aria-selected={choice.value === value}
-              className={index === popup.active ? "item active" : "item"}
-              onPointerMove={() => popup.setActive(index)}
-              onClick={() => choose(index)}
-            >
-              {choice.lead}
-              <span className="item-label">{choice.label}</span>
-              {choice.value === value && <Icon name="check" size={16} />}
-            </div>
+            <Fragment key={choice.value}>
+              {choice.group !== undefined && choice.group !== choices[index - 1]?.group && (
+                // Each option names itself, so the heading is only for the eye.
+                <p className="menu-label" aria-hidden="true">
+                  {choice.group}
+                </p>
+              )}
+              {/* biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles the keys. */}
+              <div
+                id={popup.itemId(index)}
+                data-index={index}
+                role="option"
+                // Focus stays on the listbox, which names this option as its active one.
+                tabIndex={-1}
+                aria-selected={choice.value === value}
+                aria-describedby={
+                  choice.detail === undefined ? undefined : `${popup.itemId(index)}-detail`
+                }
+                className={index === popup.active ? "item active" : "item"}
+                onPointerMove={() => popup.setActive(index)}
+                onClick={() => choose(index)}
+              >
+                {choice.lead}
+                <span className="item-label">
+                  {choice.label}
+                  {choice.detail !== undefined && (
+                    <small id={`${popup.itemId(index)}-detail`}>{choice.detail}</small>
+                  )}
+                </span>
+                {choice.note !== undefined && <small className="select-note">{choice.note}</small>}
+                {choice.value === value && <Icon name="check" size={16} />}
+              </div>
+            </Fragment>
           ))}
         </div>
       )}

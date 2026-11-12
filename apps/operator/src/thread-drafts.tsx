@@ -81,7 +81,7 @@ function DraftBody({ body, compact }: { body: string; compact: boolean }) {
   );
 }
 
-/** A suggested reply's buttons. A stale one asks once before it goes. */
+/** A suggested reply's buttons: Discard, Edit and Send. A stale one asks once before it goes. */
 function DraftActions({
   isStale,
   canSend,
@@ -101,59 +101,67 @@ function DraftActions({
   // Keys keep React from turning one button into another, which showed a half-drawn pill.
   if (asking) {
     return (
-      <div key="ask" className="draft-actions" role="alert">
+      <div key="ask" className="sugg-actions" role="alert">
         <span className="draft-ask">{t("draftStaleAsk")}</span>
-        <button type="button" className="pill dark small" disabled={busy} onClick={onSend}>
-          {t("draftSendAnyway")}
-        </button>
         <button type="button" className="pill small" onClick={() => setAsking(false)}>
           {t("cancel")}
+        </button>
+        <button type="button" className="pill dark small" disabled={busy} onClick={onSend}>
+          {t("draftSendAnyway")}
         </button>
       </div>
     );
   }
   return (
-    <div key="actions" className="draft-actions">
+    <div key="actions" className="sugg-actions">
+      <button type="button" className="sugg-discard" disabled={busy} onClick={onDiscard}>
+        {t("draftDiscard")}
+      </button>
       {canSend && (
         <>
+          <button type="button" className="pill small" disabled={busy} onClick={onEdit}>
+            <Icon name="pencil" size={15} />
+            {t("draftEdit")}
+          </button>
           <button
             type="button"
             className="pill dark small"
             disabled={busy}
             onClick={isStale ? () => setAsking(true) : onSend}
           >
-            <Icon name="arrowUp" size={14} />
+            <Icon name="arrowUp" size={15} />
             {t("draftSend")}
-          </button>
-          <button type="button" className="pill small" disabled={busy} onClick={onEdit}>
-            <Icon name="pencil" size={14} />
-            {t("draftEdit")}
           </button>
         </>
       )}
-      <button type="button" className="pill small" disabled={busy} onClick={onDiscard}>
-        {t("draftDiscard")}
-      </button>
     </div>
   );
 }
 
-/** One suggested reply: who wrote it, its text, and Send, Edit and Discard. */
+/** What a suggested reply's card needs from the thread. */
+interface DraftHandlers {
+  /** The visitor's name, as the card says who cannot see it yet. */
+  visitor: string;
+  /** The conversation is open and replies are on. */
+  canSend: boolean;
+  onSend(draft: SuggestedReply): Promise<boolean>;
+  onEdit(draft: SuggestedReply): void;
+  onDiscard(draft: SuggestedReply): Promise<boolean>;
+}
+
+/**
+ * One suggested reply, on the operator's side, shaped like the reply it becomes but pale: who wrote
+ * it and when, a line that says the visitor cannot see it, its text, and Discard, Edit and Send.
+ */
 function DraftCard({
   draft,
   compact,
-  canSend,
-  onSend,
-  onEdit,
-  onDiscard,
+  handlers,
 }: {
   draft: SuggestedReply;
   /** One of several, so it takes less room. */
   compact: boolean;
-  canSend: boolean;
-  onSend(): Promise<boolean>;
-  onEdit(): void;
-  onDiscard(): Promise<boolean>;
+  handlers: DraftHandlers;
 }) {
   const [busy, setBusy] = useState(false);
   const isStale = draft.status === "stale";
@@ -162,80 +170,89 @@ function DraftCard({
     // The card goes on success, so only a failure needs the buttons back.
     if (!(await work())) setBusy(false);
   };
-  const className = ["draft-card", compact && "compact", isStale && "stale"]
-    .filter(Boolean)
-    .join(" ");
   return (
-    <article className={className} aria-label={t("draftLabel", { name: draft.authorName })}>
-      <header className="draft-head">
-        <Icon name="robot" size={16} />
-        <strong className="draft-author">{t("draftBy", { name: draft.authorName })}</strong>
-        <time className="draft-time" dateTime={draft.createdAt}>
-          {clockTime(draft.createdAt)}
+    <article
+      className={isStale ? "sugg stale" : "sugg"}
+      aria-label={t("draftLabel", { name: draft.authorName })}
+    >
+      <header className="sugg-head">
+        <span className="sugg-mark">
+          <Icon name="robot" size={11} />
+        </span>
+        {t("draftBy", { name: draft.authorName })}
+        <time className="sugg-time" dateTime={draft.createdAt}>
+          · {clockTime(draft.createdAt)}
         </time>
       </header>
-      {isStale && <p className="draft-stale">{t("draftStale")}</p>}
-      <DraftBody body={draft.body} compact={compact} />
+      <div className={compact ? "sugg-bubble compact" : "sugg-bubble"}>
+        <p className="sugg-private">
+          <Icon name="eyeOff" size={13} />
+          {isStale ? t("draftStale") : t("draftPrivate", { name: handlers.visitor })}
+        </p>
+        <DraftBody body={draft.body} compact={compact} />
+      </div>
       <DraftActions
         isStale={isStale}
-        canSend={canSend}
+        canSend={handlers.canSend}
         busy={busy}
-        onSend={() => void run(onSend)}
-        onEdit={onEdit}
-        onDiscard={() => void run(onDiscard)}
+        onSend={() => void run(() => handlers.onSend(draft))}
+        onEdit={() => handlers.onEdit(draft)}
+        onDiscard={() => void run(() => handlers.onDiscard(draft))}
       />
     </article>
   );
 }
 
-/**
- * The suggested replies under the last message, oldest first. Stale ones wait behind a button, so
- * the one that answers the latest message stands out.
- */
-export function DraftCards({
-  drafts,
-  canSend,
-  onSend,
-  onEdit,
-  onDiscard,
-}: {
-  drafts: SuggestedReply[];
-  /** The conversation is open and replies are on. */
-  canSend: boolean;
-  onSend(draft: SuggestedReply): Promise<boolean>;
-  onEdit(draft: SuggestedReply): void;
-  onDiscard(draft: SuggestedReply): Promise<boolean>;
-}) {
-  const [showsStale, setShowsStale] = useState(false);
-  if (drafts.length === 0) return null;
-  const stale = drafts.filter((draft) => draft.status === "stale");
-  const shown = showsStale ? drafts : drafts.filter((draft) => draft.status !== "stale");
+/** The suggested replies that answer the newest message, under it, oldest first. */
+export function DraftCards({ drafts, ...handlers }: DraftHandlers & { drafts: SuggestedReply[] }) {
+  const waiting = drafts.filter((draft) => draft.status !== "stale");
+  if (waiting.length === 0) return null;
   return (
     <div className="drafts">
-      {stale.length > 0 && (
-        <button
-          type="button"
-          className="pill small drafts-older"
-          aria-expanded={showsStale}
-          onClick={() => setShowsStale((current) => !current)}
-        >
-          <Icon name="chevronRight" size={12} />
-          {stale.length === 1 ? t("draftsOlderOne") : t("draftsOlder", { count: stale.length })}
-        </button>
-      )}
-      {shown.map((draft) => (
-        <DraftCard
-          key={draft.id}
-          draft={draft}
-          compact={shown.length > 1}
-          canSend={canSend}
-          onSend={() => onSend(draft)}
-          onEdit={() => onEdit(draft)}
-          onDiscard={() => onDiscard(draft)}
-        />
+      {waiting.map((draft) => (
+        <DraftCard key={draft.id} draft={draft} compact={waiting.length > 1} handlers={handlers} />
       ))}
     </div>
   );
+}
+
+/**
+ * The suggestions that a newer visitor message made stale, folded into one stacked card where they
+ * were written. It opens to show them.
+ */
+export function OlderDrafts({ drafts, ...handlers }: DraftHandlers & { drafts: SuggestedReply[] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const stale = drafts.filter((draft) => draft.status === "stale");
+  if (stale.length === 0) return null;
+  return (
+    <div className="drafts older">
+      <button
+        type="button"
+        className="sugg-stack"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span className="sugg-mark">
+          <Icon name="robot" size={13} />
+        </span>
+        {stale.length === 1 ? t("draftsOlderOne") : t("draftsOlder", { count: stale.length })}
+        <small className="sugg-why">{t("draftsOlderWhy", { name: handlers.visitor })}</small>
+        <span className="sugg-caret">
+          <Icon name="chevron" size={12} />
+        </span>
+      </button>
+      {isOpen &&
+        stale.map((draft) => (
+          <DraftCard key={draft.id} draft={draft} compact handlers={handlers} />
+        ))}
+    </div>
+  );
+}
+
+/** Where the folded suggestions go: before the visitor message that made them stale. */
+export function staleBefore(drafts: SuggestedReply[]): string | null {
+  const stale = drafts.filter((draft) => draft.status === "stale");
+  return stale.at(-1)?.createdAt ?? null;
 }
 
 /** Above the message box while it holds a draft's text: sending it sends the draft. */

@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
 import { Fragment, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
-import type { Conversation, ReplyReceipts } from "./api.ts";
+import type { Conversation, Member, ReplyReceipts } from "./api.ts";
 import { Composer } from "./composer.tsx";
+import { HandoffNote } from "./handoff-note.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
@@ -93,6 +94,7 @@ function useLogScroll(lines: Line[], bottom: (string | number | boolean)[]) {
  */
 export function ThreadLog({
   conversation,
+  members,
   lines,
   receipts,
   who,
@@ -100,11 +102,14 @@ export function ThreadLog({
   typingDraft,
   botTyping,
   drafts,
+  olderDrafts,
   draftCount,
   onImageError,
   onRetry,
 }: {
   conversation: Conversation;
+  /** The team, to name whom a bot handed the conversation to. */
+  members: Member[];
   lines: Line[];
   receipts: ReplyReceipts | null;
   who: Rights;
@@ -114,6 +119,11 @@ export function ThreadLog({
   botTyping: string | null;
   /** The suggested replies, under the last message. */
   drafts: ReactNode;
+  /**
+   * The stale suggestions, folded, before the first visitor message after `before`, the newest
+   * one's time. At the end when no such message is loaded.
+   */
+  olderDrafts: { node: ReactNode; before: string | null };
   draftCount: number;
   onImageError(): void;
   onRetry(line: Line): void;
@@ -128,6 +138,13 @@ export function ThreadLog({
   const visitorName = title(conversation);
   const face = conversation.visitor.pictureUrl;
   const lastReply = lines.reduce((last, line, index) => (hasReceipt(line) ? index : last), -1);
+  const { before } = olderDrafts;
+  const staleAt =
+    before === null
+      ? -1
+      : lines.findIndex(
+          (line) => line.fromVisitor && line.createdAt !== undefined && line.createdAt > before,
+        );
   const openQuote = (id: string) => {
     if (!jump(id)) toast("quoteMissing", false);
   };
@@ -189,16 +206,20 @@ export function ThreadLog({
         {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
         {lines.map((line, index) => (
           <Fragment key={line.id}>
+            {index === staleAt && olderDrafts.node}
             {line.createdAt !== undefined && dayOf(line) !== dayOf(lines[index - 1]) && (
               <div className="day">{dayLabel(line.createdAt)}</div>
             )}
             {isStatusLine(line) ? (
               <StatusNote line={line} meId={who.meId} />
+            ) : line.handoff !== null && !line.deleted ? (
+              <HandoffNote line={line} meId={who.meId} members={members} />
             ) : (
               renderLine(line, index)
             )}
           </Fragment>
         ))}
+        {staleAt < 0 && olderDrafts.node}
         {typingDraft !== null && <TypingDraft draft={typingDraft} />}
         {drafts}
         {botTyping !== null && <BotTyping name={botTyping} />}

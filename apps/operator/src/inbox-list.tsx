@@ -4,6 +4,7 @@ import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Conversation, Member, OpenCounts, WorkspaceApi } from "./api.ts";
 import type { Draft } from "./drafts.ts";
 import { shortTime } from "./format.ts";
+import { rowHandler } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
 import { emptyLook, ListFilters, type Status, type Who } from "./inbox-filters.tsx";
 import { EmptyArt } from "./scene.tsx";
@@ -42,9 +43,8 @@ function ConversationRow({
     body != null ? markdownText(body) : conversation.lastMessage === null ? "" : t("image");
   const waits = isWaiting(conversation);
   const closed = showClosed && conversation.status === "closed";
-  const { handler } = conversation;
   const isTest = conversation.visitor.isTest;
-  const bot = handler?.kind === "bot" ? handler.name : null;
+  const handler = rowHandler(conversation, assignee);
   // The open conversation shows its draft in the composer, and is read. A blank draft is no draft.
   const shownDraft = selected || draft?.trim() === "" ? undefined : draft;
   const unread = conversation.unread && !selected;
@@ -81,35 +81,18 @@ function ConversationRow({
           ) : (
             <span className="preview">{preview}</span>
           )}
-          {(waits ||
-            closed ||
-            isTest ||
-            bot !== null ||
-            replying !== null ||
-            assignee !== undefined) && (
+          {(waits || closed || isTest || replying !== null || handler !== null) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
               {closed && <span className="chip">{t("closed")}</span>}
-              {isTest && <span className="chip info">{t("testChip")}</span>}
-              {bot !== null && (
-                <span className="chip" title={t("handledByBot", { name: bot })}>
-                  <Icon name="robot" size={13} />
-                  <span className="visually-hidden">{t("handlerLabel")}: </span>
-                  {bot}
-                </span>
-              )}
-              {assignee !== undefined && (
-                <span className="chip">
-                  {handler?.kind === "person" && (
-                    <span className="chip-mark" title={t("handledByPerson")}>
-                      <Icon name="user" size={13} />
-                      <span className="visually-hidden">{t("handledByPerson")}</span>
-                    </span>
-                  )}
-                  {assignee.name}
+              {isTest && (
+                <span className="chip test">
+                  <Icon name="flask" size={12} />
+                  {t("testChip")}
                 </span>
               )}
               {replying !== null && <em>{replying}</em>}
+              {handler}
             </span>
           )}
         </span>

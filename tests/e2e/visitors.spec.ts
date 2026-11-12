@@ -80,14 +80,14 @@ test("the operator sees the visitor's draft, the read receipt and the visitor's 
 
   // The first reply assigned the conversation to the operator.
   const panel = operator.locator(".visitor-panel");
-  await expect(panel.getByRole("button", { name: /^Assign to/ })).toContainText("vera");
+  await expect(panel.getByRole("button", { name: /^Who answers/ })).toContainText("vera");
   await expect(panel.locator(".place-tiles")).toContainText("Chrome on Linux");
   await picture(operator, "thread");
 
   // The panel hides, and the header holds the assignee again.
   await operator.getByRole("button", { name: "Hide the visitor's details" }).click();
   await expect(panel).toHaveCount(0);
-  await expect(operator.getByRole("button", { name: /^Assign to/ })).toBeVisible();
+  await expect(operator.getByRole("button", { name: /^Who answers/ })).toBeVisible();
   await operator.getByRole("button", { name: "Show the visitor's details" }).click();
 
   // The note saves when the field loses focus, and the contact page shows it.

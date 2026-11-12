@@ -208,6 +208,7 @@ export function Inbox({
             billing={billing}
             botsPaused={botsPaused}
             botsPausedBy={botsPausedBy}
+            botsPausedAt={membership?.botsPausedAt ?? null}
             onResumeBots={setBotsPaused && (() => setBotsPaused(false))}
           />
           <main className="panel">

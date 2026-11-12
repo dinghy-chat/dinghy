@@ -109,6 +109,13 @@
   --bubble: light-dark(#0b2239, #2b3f57);
   /* A note that only the team sees, in the thread and in the composer. */
   --note: light-dark(#fff3c4, #3b3318);
+  /* What a bot did: the brand blue, as a tint for fills and a deep ink for words. */
+  --bot: #1f6bff;
+  --bot-soft: light-dark(#e8f0ff, #18304f);
+  --bot-ink: light-dark(#1457d6, #9cc3ff);
+  --bot-line: light-dark(rgb(31 107 255 / 0.28), rgb(138 184 255 / 0.32));
+  /* A suggested reply that is not sent yet: the operator's bubble, washed out to a pale blue. */
+  --suggest: light-dark(#eef4ff, #172a44);
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -876,22 +883,41 @@ textarea {
 /* Bots are paused: a state to notice, in the warm fill, with Resume for owners and admins. */
 .bots-banner {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 6px 14px;
-  padding-block: 6px;
+  gap: 12px;
+  padding: 7px 8px 7px 14px;
   background: var(--warn-soft);
   color: var(--navy);
+  text-align: left;
+}
+.bots-banner-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--warn-fill);
+  color: #fff;
+}
+.bots-banner b {
+  font-weight: 650;
+}
+.bots-banner-by {
+  color: var(--warn-ink);
+}
+.pill.bots-resume {
+  min-height: 32px;
+  margin-left: 6px;
+  padding: 0 14px;
+  font-size: 13.5px;
 }
 .bots-banner-short {
   display: none;
 }
 /* A phone keeps the banner to one line: "Bots paused" and Resume. */
 @media (max-width: 760px) {
-  .bots-banner {
-    flex-wrap: nowrap;
-  }
   .bots-banner-long {
     display: none;
   }
@@ -1537,8 +1563,30 @@ button.workspace[aria-expanded="true"],
 }
 .item-label small {
   display: block;
+  color: var(--mute);
   font-size: 12.5px;
-  font-weight: 400;
+  font-weight: 500;
+}
+/* A heading over a group of choices, such as Bot and People. */
+.menu-label {
+  margin: 6px 10px 4px;
+  color: var(--mute);
+  font: 700 11px / 1.3 var(--body);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.menu-label:not(:first-child) {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+/* Small words at the end of a choice, such as the operator's role in a workspace. */
+.select-note {
+  flex: none;
+  margin-left: auto;
+  color: var(--mute);
+  font-size: 13px;
+  font-weight: 500;
 }
 .item[aria-selected="true"],
 .item[aria-checked="true"] {
@@ -1869,12 +1917,61 @@ img.ws-tile {
   border-radius: 50%;
   background: var(--blue);
 }
+/* One line: the chips on the left, and the handler's mark at the right end. */
 .row-meta {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   margin-top: 4px;
+  overflow: hidden;
+}
+.row-handler {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+}
+.row-handler :is(.avatar, .handler-mark) {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+}
+.row-handler svg {
+  width: 12px;
+  height: 12px;
+}
+/* A test chat keeps its word, in an outline, as a lone flask says nothing. */
+.chip.test {
+  padding: 2px 9px 2px 7px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--soft-edge);
+}
+/* Who handles a conversation: a bot's blue mark, the team's navy one, or a person's avatar. */
+.handler-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+.handler-mark.bot {
+  background: var(--bot);
+  color: #fff;
+}
+.handler-mark.team {
+  background: var(--navy);
+  color: var(--on-navy);
+}
+.assignee .popup {
+  min-width: 250px;
+}
+.assignee .item :is(.avatar, .handler-mark) {
+  width: 26px;
+  height: 26px;
+}
+.select-button:has(.handler-mark) {
+  padding-left: 6px;
 }
 .row em {
   color: var(--blue-deep);
@@ -2570,42 +2667,42 @@ img.ws-tile {
   white-space: pre-wrap;
 }
 /* The small Markdown a message may use, which the composer shows as it will look. */
-:is(.msg, .draft-body, .compose-field) :where(p, ul, ol, pre, blockquote) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(p, ul, ol, pre, blockquote) {
   margin: 0;
 }
 /* A quoted passage: a tinted block, like a quoted reply, with no bar at its side. */
-:is(.msg, .draft-body, .compose-field) :where(blockquote) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(blockquote) {
   padding: 6px 10px;
   border-radius: 10px;
   background: rgb(127 127 127 / 0.14);
 }
-:is(.msg, .draft-body, .compose-field) > * + * {
+:is(.msg, .draft-body, .handoff-text, .compose-field) > * + * {
   margin-top: 10px;
 }
-:is(.msg, .draft-body, .compose-field) :where(ul, ol) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(ul, ol) {
   padding-left: 22px;
 }
 /* The app's own lists have no markers, but a message's list is the visitor's or the operator's. */
-:is(.msg, .draft-body, .compose-field) :where(ul) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(ul) {
   list-style: disc;
 }
-:is(.msg, .draft-body, .compose-field) :where(ol) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(ol) {
   list-style: decimal;
 }
-:is(.msg, .draft-body, .compose-field) :where(pre, code) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(pre, code) {
   font: 13.5px / 1.45 var(--mono);
 }
-:is(.msg, .draft-body, .compose-field) :where(code) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(code) {
   padding: 1px 4px;
   border-radius: 5px;
   background: rgb(127 127 127 / 0.18);
 }
-:is(.msg, .draft-body, .compose-field) :where(pre code) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(pre code) {
   display: block;
   padding: 8px 10px;
   overflow-x: auto;
 }
-:is(.msg, .draft-body, .compose-field) :where(a) {
+:is(.msg, .draft-body, .handoff-text, .compose-field) :where(a) {
   color: inherit;
 }
 .msg.visitor {
@@ -4772,15 +4869,6 @@ button.quote:hover {
 .item-list .who-lines strong {
   overflow-wrap: anywhere;
 }
-.item-list > .hook {
-  display: grid;
-  gap: 8px;
-}
-.hook-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 .check.hook-switch {
   width: auto;
 }
@@ -4831,17 +4919,6 @@ button.quote:hover {
 }
 /* The address on one line, cut with an ellipsis. Pointing at it, or moving into its row with the
    keyboard, shows it in full. */
-.item-list .who-lines .hook-url {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.item-list .who-lines .hook-url:hover,
-.hook:focus-within .hook-url {
-  overflow: visible;
-  white-space: normal;
-}
 .hook-events {
   font-family: var(--mono);
   font-size: 12.5px;
@@ -4865,8 +4942,7 @@ button.quote:hover {
 .excerpt {
   flex-basis: 100%;
 }
-.excerpt summary,
-.prompt-preview summary {
+.excerpt summary {
   width: max-content;
   color: var(--blue-deep);
   font-weight: 600;
@@ -4883,84 +4959,35 @@ button.quote:hover {
   font: 12.5px / 1.5 var(--mono);
   white-space: pre-wrap;
 }
-/* A key's reply mode and Revoke, side by side, wrapping under the name on a narrow screen. */
-.key-item {
-  flex-wrap: wrap;
+/* Set up with an agent: the client's tabs, the whole prompt in the code style, and a big Copy. */
+.agent-prompt {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  min-width: 0;
 }
-/* A new key's token, under its own name. */
-.key-item .created {
-  flex: 1 0 100%;
-}
-/* The name and its line keep room to read, and the controls move under them when they lack it. */
-.item-list .key-item .who-lines {
-  flex: 1 1 240px;
-}
-.key-item .who-lines strong {
-  flex-wrap: wrap;
-  gap: 4px 8px;
-}
-.key-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-/* A neutral mark on a row: a connected app, a test visitor. */
-.chip.info {
-  background: var(--tile-blue);
-  color: var(--blue-deep);
-}
-/* Set up with an agent: the copy button, then the prompt to read when opened. */
-.agent-copy {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-.agent-copy .copy {
-  background: var(--fill);
-  color: var(--on-fill);
-}
-.agent-copy .copy:hover:not(:disabled) {
-  background: var(--fill-hover);
-}
-.agent-copy .hint {
+.prompt-text {
+  width: 100%;
   margin: 0;
-}
-.prompt-preview pre {
-  max-height: 420px;
-  margin: 10px 0 0;
-  padding: 14px 16px;
-  overflow: auto;
-  border-radius: 14px;
-  background: var(--cream-soft);
-  color: var(--navy);
-  font: 13.5px / 1.55 var(--mono);
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: var(--code);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--code-ink);
+  font: 13px / 1.65 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* The consent card: the app's own name in a muted line, and each choice with its label. */
-.consent-client {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  color: var(--mute);
+.agent-prompt .copy {
+  gap: 9px;
+  min-height: 48px;
+  padding: 0 24px;
+  background: var(--fill);
+  color: var(--on-fill);
+  font-size: 15.5px;
 }
-.consent-choice {
-  display: grid;
-  gap: 6px;
-}
-.consent-choice .hint {
-  margin: 0;
-}
-/* The workspace choice spans the card, so its chevron sits at the right edge. */
-.consent-choice > .select > .select-button {
-  justify-content: space-between;
-}
-.consent-workspace {
-  color: var(--navy);
-  font-weight: 600;
+.agent-prompt .copy:hover:not(:disabled) {
+  background: var(--fill-hover);
 }
 .check {
   display: flex;
@@ -5580,7 +5607,7 @@ button.quote:hover {
   .check input::after,
   .get-started-button,
   .fold-chevron,
-  .pill.drafts-older svg {
+  .sugg-caret {
     transition: none;
   }
 }
@@ -6066,124 +6093,796 @@ button.quote:hover {
     transition: none;
   }
 }
-.draft-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-  color: var(--blue-deep);
-  font-size: 12.5px;
-}
-.draft-author {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--navy);
-  font-weight: 600;
-}
-.draft-time {
-  color: var(--mute);
-}
 /* A draft's Markdown shows as the message it becomes: the .msg rules cover it too. */
 .draft-body {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-/* Who answers, after the visitor's presence in the thread's header. */
-.who-text .handler {
+
+/* The consent page: one card in two parts over the sky and the sea. The app and who approves it on
+   the left, the choices on the right. A phone stacks the two parts. */
+.consent-main {
+  place-items: start center;
+  padding-top: 44px;
+}
+.consent {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  width: 100%;
+  max-width: 940px;
+  overflow: hidden;
+  border-radius: 26px;
+  background: var(--surface);
+  box-shadow:
+    0 2px 4px rgb(11 34 57 / 0.06),
+    0 24px 60px light-dark(rgb(11 34 57 / 0.16), rgb(0 0 0 / 0.35));
+}
+.consent-about {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 22px;
+  padding: 30px 30px 26px;
+  background: var(--cream-soft);
+}
+.consent-choices {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  padding: 30px 32px 28px;
+}
+.link-visual {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-top: 4px;
+}
+.app-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+}
+.app-tile.client {
+  background: #262624;
+  box-shadow: 0 0 0 1px light-dark(transparent, rgb(255 255 255 / 0.12));
+  color: #f4efe6;
+}
+.app-tile.dinghy {
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgb(11 34 57 / 0.08),
+    0 2px 6px rgb(11 34 57 / 0.06);
+}
+.link-line {
+  position: relative;
+  display: grid;
+  flex: 1;
+  place-items: center;
+  max-width: 84px;
+  height: 60px;
+}
+.link-line::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  left: 6px;
+  border-top: 2px dotted var(--field-line);
+}
+.link-line span {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--navy);
+}
+.consent-about h1 {
+  font-size: 26px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.consent-about .lede {
+  margin-top: 8px;
+  color: var(--text-strong);
+  font-size: 15px;
+}
+.signed-in {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  color: var(--text-strong);
+  font-size: 14px;
+}
+.signed-in b {
+  color: var(--navy);
+  font-weight: 650;
+}
+.consent-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.field-label {
+  display: block;
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 650;
+}
+/* The workspace dropdown spans the card, like a field, with the workspace's tile and its role. */
+.consent-workspace {
+  display: grid;
+}
+.select.consent-workspace .select-button {
+  min-height: 48px;
+  padding: 0 14px 0 10px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+  font-weight: 650;
+}
+.select.consent-workspace .select-button:hover:not(:disabled),
+.select.consent-workspace .select-button[aria-expanded="true"] {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--navy);
+}
+.select.consent-workspace .select-value {
+  flex: 1;
+  text-align: left;
+}
+.select.consent-workspace .select-button .ws-tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 10.5px;
+}
+/* Access and Replies: two cards side by side, each a radio button. */
+.opts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.opt {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 14px 16px 15px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  cursor: pointer;
+}
+.opt:hover {
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+}
+.opt:has(:checked) {
+  background: light-dark(#fbfaf7, #172331);
+  box-shadow: inset 0 0 0 2px var(--navy);
+}
+.opt:has(:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.opt-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.opt input {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+  appearance: none;
+  cursor: pointer;
+}
+.opt input:focus-visible {
+  outline: 0;
+}
+.opt input:checked {
+  background: var(--fill);
+  box-shadow: none;
+}
+.opt input:checked::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--on-fill);
+}
+.opt-top b {
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.opt .tag {
   display: inline-flex;
   align-items: center;
+  height: 22px;
+  margin-left: auto;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--bot-soft);
+  color: var(--bot-ink);
+  font: 700 11.5px / 1 var(--body);
+  white-space: nowrap;
+}
+.opt-text {
+  padding-left: 27px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.can {
+  display: grid;
   gap: 4px;
-  color: var(--mute);
-  font-weight: 500;
-  vertical-align: bottom;
+  margin: 8px 0 0;
+  padding: 10px 0 0 27px;
+  border-top: 1px solid var(--line);
 }
-.who-text .handler svg {
+.can-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.can .can-item svg {
   flex: none;
+  margin-top: 1px;
+  color: var(--green);
 }
-/* A bot's suggested replies, on the operator's side: a white card in a dashed blue outline,
-   because nothing has reached the visitor yet. */
+.can-item.cannot {
+  color: var(--mute);
+}
+.can-item.cannot svg {
+  color: var(--bad);
+}
+.consent-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+.consent-actions .primary {
+  flex: 1;
+}
+.btn.quiet {
+  min-width: 120px;
+  background: none;
+  color: var(--text-strong);
+}
+.btn.quiet:hover:not(:disabled) {
+  background: var(--soft);
+}
+@media (max-width: 760px) {
+  .consent-main {
+    padding-top: 20px;
+  }
+  .consent {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .consent-about {
+    gap: 16px;
+    padding: 24px 22px 20px;
+  }
+  .consent-choices {
+    padding: 24px 22px;
+  }
+  .signed-in {
+    margin-top: 0;
+  }
+  .opts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* API & webhooks: the bots' status with the pause switch, then connected apps, API keys and
+   webhooks as plain rows between thin lines. */
+.status-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 22px;
+  border-radius: 22px;
+  background: var(--bot-soft);
+}
+.status-card.paused {
+  background: var(--warn-soft);
+}
+.status-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--navy);
+}
+.status-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--warn-fill);
+  color: #fff;
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+.status-card h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 20px;
+  line-height: 1.2;
+}
+.state-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px 0 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--warn-ink);
+  font: 700 13px / 1 var(--body);
+  letter-spacing: 0;
+}
+.state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn-fill);
+}
+.status-card p {
+  margin-top: 5px;
+  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.status-card b {
+  color: var(--navy);
+  font-weight: 650;
+}
+/* The big switch, with its label under it. */
+.check.big-switch {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: auto;
+}
+.check.big-switch input {
+  width: 64px;
+  height: 36px;
+  border-radius: 18px;
+}
+.check.big-switch input::after {
+  top: 4px;
+  left: 4px;
+  width: 28px;
+  height: 28px;
+}
+.check.big-switch input:checked::after {
+  left: 32px;
+}
+.check.big-switch input:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.check.big-switch small {
+  color: var(--text-strong);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.sec {
+  margin-top: 22px;
+}
+.sec-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+}
+.sec-head h3 {
+  font-size: 18px;
+  line-height: 1.2;
+}
+.sec-head p {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 13.5px;
+}
+.sec-head .pill {
+  flex: none;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+.sec-empty {
+  padding: 14px 2px;
+  border-top: 1px solid var(--line);
+  color: var(--mute);
+  font-size: 14px;
+}
+.items {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+.item-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 14px 2px;
+  border-bottom: 1px solid var(--line);
+}
+/* A new key's token, the row's error and a webhook's settings take the row's full width. */
+.item-row > :nth-child(n + 4) {
+  grid-column: 1 / -1;
+}
+.item-ic {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--soft);
+  color: var(--navy);
+}
+.item-ic.client {
+  background: #262624;
+  color: #f4efe6;
+}
+.item-ic.bot {
+  background: var(--bot-soft);
+  color: var(--bot-ink);
+}
+.item-text {
+  display: grid;
+  min-width: 0;
+}
+.item-name {
+  overflow: hidden;
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 13px;
+}
+.item-line .sep {
+  opacity: 0.6;
+}
+.item-line .active {
+  color: var(--green);
+  font-weight: 600;
+}
+.lvl {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: var(--soft);
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 650;
+}
+.item-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.item-tools .select .select-button,
+.item-tools .pill.small {
+  min-height: 34px;
+  font-size: 13.5px;
+}
+.hook-edit {
+  display: grid;
+  gap: 12px;
+  padding: 4px 0 2px 54px;
+}
+@media (max-width: 760px) {
+  .status-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .check.big-switch {
+    grid-column: 1 / -1;
+    grid-template-columns: auto 1fr;
+    justify-items: start;
+    align-items: center;
+  }
+  .item-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  .item-tools {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+  .hook-edit {
+    padding-left: 0;
+  }
+}
+/* A bot's suggested reply, on the operator's side: a pale blue bubble shaped like the reply it
+   becomes, as nothing has reached the visitor yet. Who wrote it is above, the buttons below. */
 .drafts {
   display: grid;
   align-self: flex-end;
-  gap: 8px;
-  width: min(100%, 560px);
-  margin: 4px 0 8px;
+  justify-items: end;
+  gap: 10px;
+  max-width: 84%;
+  margin: 6px 0 4px;
 }
-.draft-card {
-  padding: 12px 14px;
-  border: 1.5px dashed var(--blue);
-  border-radius: 18px;
-  background: var(--surface);
+/* The folded stack may take the log's width, as its one line names the visitor. */
+.drafts.older {
+  max-width: 100%;
+}
+.sugg {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+.sugg-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  color: var(--bot-ink);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.sugg-time {
+  color: var(--mute);
+  font-weight: 500;
+}
+.sugg-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bot);
+  color: #fff;
+}
+.sugg-bubble {
+  padding: 10px 14px;
+  border-radius: 18px 18px 6px 18px;
+  background: var(--suggest);
+  box-shadow: inset 0 0 0 1.5px var(--bot-line);
   color: var(--navy);
   font-size: 15px;
   line-height: 1.4;
 }
-.draft-card.compact {
-  padding: 10px 12px;
-  font-size: 14px;
-}
-.draft-card.compact .draft-body {
+.sugg-bubble.compact .draft-body {
   max-height: 4.3em;
   overflow: hidden;
   mask-image: linear-gradient(to bottom, #000 60%, transparent);
 }
-.draft-card.stale {
-  border-color: var(--soft-edge);
-}
-/* "2 older suggestions": a soft pill above the cards. Its chevron turns down while the stale ones
-   show. */
-.drafts-older {
-  justify-self: start;
-  gap: 6px;
-}
-.pill.drafts-older svg {
-  transition: transform 0.15s;
-}
-.pill.drafts-older[aria-expanded="true"] svg {
-  transform: rotate(90deg);
-}
 /* A cut draft shows all of it once asked, or while a key moved focus to one of its buttons. A
    click does not, so the button under the pointer stays where it is. */
-.draft-card.compact .draft-body.open,
-.draft-card.compact:has(:focus-visible) .draft-body {
+.sugg-bubble.compact .draft-body.open,
+.sugg:has(:focus-visible) .sugg-bubble.compact .draft-body {
   max-height: none;
   mask-image: none;
+}
+.sugg-private {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  color: var(--bot-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sugg.stale .sugg-bubble {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--mute);
+}
+.sugg.stale .sugg-private {
+  color: var(--mute);
+}
+.sugg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+.sugg-actions .pill.small {
+  min-height: 32px;
+  padding: 0 13px;
+  font-size: 13.5px;
+}
+.sugg-discard {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--text-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.sugg-discard:hover:not(:disabled) {
+  background: var(--soft);
 }
 .draft-more {
   margin-top: 4px;
   padding: 0;
   background: none;
-  color: var(--blue-deep);
+  color: var(--bot-ink);
   font: 600 13px / 1.4 var(--body);
   cursor: pointer;
 }
 .draft-more:hover {
   text-decoration: underline;
 }
-.draft-card.stale :is(.draft-head, .draft-body) {
-  color: var(--mute);
-}
-.draft-stale {
-  margin-bottom: 4px;
-  color: var(--mute);
-  font-size: 12.5px;
-  font-style: italic;
-}
-.draft-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-}
 .draft-ask {
   flex-basis: 100%;
   color: var(--warn-ink);
   font-size: 13px;
   font-weight: 600;
+  text-align: right;
 }
-.chip-mark {
+/* Older suggestions fold into one quiet card, drawn as a small stack. */
+.sugg-stack {
   display: inline-flex;
+  max-width: 100%;
+  white-space: nowrap;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 10px;
+  padding: 7px 12px 7px 7px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 4px 0 -1px var(--surface),
+    0 4px 0 0 var(--line),
+    0 8px 0 -1px var(--surface),
+    0 8px 0 0 var(--line);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+.sugg-stack .sugg-mark {
+  width: 22px;
+  height: 22px;
+  background: var(--bot-soft);
+  color: var(--bot-ink);
+}
+.sugg-why {
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 500;
+}
+.sugg-caret {
+  display: inline-flex;
+  color: var(--mute);
+  transition: transform 0.15s;
+}
+.sugg-stack[aria-expanded="true"] .sugg-caret {
+  transform: rotate(180deg);
+}
+/* A bot's handoff: one centered line, and the note that only the team sees under it. */
+.handoff {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+}
+.handoff-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  color: var(--text-strong);
+  font-size: 12.5px;
+}
+.handoff-line::before,
+.handoff-line::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+.handoff-pill {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  max-width: 100%;
+  padding: 4px 12px 4px 4px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.handoff-pill b {
+  color: var(--navy);
+  font-weight: 650;
+}
+.handoff-time {
+  color: var(--mute);
+}
+.handoff-pass {
+  display: inline-flex;
+  align-items: center;
+}
+.handoff-pass > .handler-mark,
+.handoff-pass > .avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 8.5px;
+}
+.handoff-pass > :last-child {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.handoff-card {
+  width: min(460px, 100%);
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--note);
+  color: var(--navy);
+}
+.handoff-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.handoff-card h4 {
+  margin: 0;
+  color: var(--warn-ink);
+  font: 700 12px / 1.3 var(--body);
+}
+.handoff-private {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warn-ink);
+  font-size: 12px;
+}
+.handoff-text {
+  font-size: 14.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }

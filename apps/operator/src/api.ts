@@ -127,6 +127,8 @@ export interface Conversation {
     | { kind: "person"; operatorId: string; name: string; since: string }
     | { kind: "team"; since: string }
     | null;
+  /** The bot that took part last, whoever handles it now. Null when no bot took part. */
+  bot: { apiKeyId: string; name: string } | null;
   /** A visitor message is past this operator's read position. */
   unread: boolean;
 }
@@ -172,6 +174,8 @@ export interface Message {
   deleted: boolean;
   /** A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft. */
   via: "api" | "mcp" | "draft" | null;
+  /** A bot's handoff note: the member it handed the conversation to, or null for the team. */
+  handoff: { operatorId: string | null } | null;
   createdAt: string;
 }
 
@@ -266,6 +270,8 @@ export interface Me {
     botsPaused: boolean;
     /** Who paused the bots, or null when they run or that person is gone. */
     botsPausedBy: string | null;
+    /** When the bots were paused, or null when they run. */
+    botsPausedAt: string | null;
     active: boolean;
     /** The subscription ended: operators can read and export, and cannot reply. */
     readOnly: boolean;

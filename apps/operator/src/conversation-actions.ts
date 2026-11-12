@@ -45,9 +45,18 @@ export function useConversationActions({
     onBack();
   };
 
-  const assign = async (operatorId: string | null) => {
+  /** Picking a person or the team takes the conversation over: a person handles it from now. */
+  const assign = async (operatorId: string | null, name: string | null) => {
     if (!(await act(() => api.assign(conversationId, operatorId)))) return;
-    change((current) => ({ ...current, assigneeOperatorId: operatorId }));
+    const since = new Date().toISOString();
+    change((current) => ({
+      ...current,
+      assigneeOperatorId: operatorId,
+      handler:
+        operatorId === null || name === null
+          ? { kind: "team", since }
+          : { kind: "person", operatorId, name, since },
+    }));
   };
 
   const sendTranscript = async () => {
@@ -59,13 +68,14 @@ export function useConversationActions({
     change((current) => ({ ...current, status }));
   };
 
+  /** Gives the conversation back to its bot: nobody is assigned, and the bot may answer again. */
   const giveBack = async () => {
     if (!(await act(() => api.giveBack(conversationId)))) return;
     toast("giveBackDone");
-    // No person handles it now. The next load names the bot.
     change((current) => ({
       ...current,
-      handler: current.handler?.kind === "bot" ? current.handler : null,
+      assigneeOperatorId: null,
+      handler: current.bot === null ? null : { kind: "bot", ...current.bot },
     }));
   };
 

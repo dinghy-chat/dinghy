@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   type ApiKey,
   type ApiKeyLevel,
@@ -12,20 +12,14 @@ import {
   type WorkspaceApi,
 } from "./api.ts";
 import { LEVEL_LABEL, LevelChoice, REPLY_MODES, ReplyModeChoice } from "./bots.tsx";
-import { useLoad } from "./load.ts";
+import { MINUTE_MS } from "./format.ts";
+import { Icon } from "./icons.tsx";
+import { type Loaded, useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import {
-  AddForm,
-  CopyField,
-  ErrorNote,
-  Field,
-  failureText,
-  Page,
-  PageRow,
-  StatusNote,
-} from "./ui.tsx";
+import { AddForm, CopyField, ErrorNote, Field, failureText, Page, StatusNote } from "./ui.tsx";
+import { ago, bare } from "./visitor.ts";
 
 const MAX_WEBHOOKS = 5;
 /** The server's limits on a key's name and a webhook's address. */
@@ -57,27 +51,82 @@ const when = (iso: string) =>
     hour: "numeric",
     minute: "2-digit",
   });
+const day = (iso: string) =>
+  new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 
-/**
- * One line of the key list: the app's host, who made the key or approved the app, and when it was
- * last used.
- */
-function apiKeyLine(key: ApiKey): string {
-  const date = when(key.createdAt);
+/** A key or app used this recently shows its last use in green. */
+const RECENT_USE_MS = 15 * MINUTE_MS;
+
+/** Who made the key or approved the app, and when. */
+function madeLine(key: ApiKey): string {
+  const date = day(key.createdAt);
   const app = key.source === "oauth";
-  const made =
-    key.createdByName === null
-      ? t(app ? "grantApproved" : "apiKeyMade", { date })
-      : t(app ? "grantApprovedBy" : "apiKeyMadeBy", { name: key.createdByName, date });
-  const used =
-    key.lastUsedAt === null
-      ? t("apiKeyNeverUsed")
-      : t("apiKeyUsed", { date: when(key.lastUsedAt) });
-  const host =
-    key.clientHost === null
-      ? ""
-      : `${key.clientIsLoopback ? t("thisComputer") : key.clientHost} · `;
-  return `${host}${made} ${used}`;
+  return key.createdByName === null
+    ? t(app ? "grantApproved" : "apiKeyMade", { date })
+    : t(app ? "grantApprovedBy" : "apiKeyMadeBy", { name: key.createdByName, date });
+}
+
+/** A key's or an app's row: its mark, name, access, who made it and when it was last used. */
+function KeyItem({
+  apiKey,
+  tools,
+  children,
+}: {
+  apiKey: ApiKey;
+  tools: ReactNode;
+  children?: ReactNode;
+}) {
+  const app = apiKey.source === "oauth";
+  const used = apiKey.lastUsedAt;
+  const isRecent = used !== null && Date.now() - new Date(used).getTime() < RECENT_USE_MS;
+  return (
+    <li className="item-row">
+      <span className={app ? "item-ic client" : "item-ic bot"}>
+        <Icon name={app ? "terminal" : "robot"} size={20} />
+      </span>
+      <div className="item-text">
+        <strong className="item-name">{apiKey.name}</strong>
+        <span className="item-line">
+          <span className="lvl">{t(LEVEL_LABEL[apiKey.level])}</span>
+          <span>{madeLine(apiKey)}</span>
+          <span className="sep" aria-hidden="true">
+            ·
+          </span>
+          <span className={isRecent ? "active" : undefined}>
+            {used === null ? t("apiKeyNeverUsed") : t("apiKeyUsed", { ago: ago(used) })}
+          </span>
+        </span>
+      </div>
+      <div className="item-tools">{tools}</div>
+      {children}
+    </li>
+  );
+}
+
+/** A part of the page: a heading, one line on what it is for, an action, and its rows. */
+function Section({
+  title,
+  help,
+  action,
+  children,
+}: {
+  title: string;
+  help: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="sec" aria-label={title}>
+      <div className="sec-head">
+        <div>
+          <h3>{title}</h3>
+          <p>{help}</p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
 }
 
 /** A key's or an app's reply mode, which saves as soon as it changes. */
@@ -108,9 +157,52 @@ function ReplyModeSelect({
   );
 }
 
-/** Owners and admins make keys for scripts and AI agents, and revoke them. */
-function ApiKeysRow({ api }: { api: WorkspaceApi }) {
-  const keys = useLoad(() => api.apiKeys(), [api]);
+type LoadedKeys = Loaded<{ apiKeys: ApiKey[] }>;
+
+/** A key's or an app's reply mode and its Revoke or Disconnect, which asks first. */
+function KeyTools({
+  api,
+  apiKey,
+  onSaved,
+  onFailed,
+  onRevoke,
+}: {
+  api: WorkspaceApi;
+  apiKey: ApiKey;
+  onSaved(key: ApiKey): void;
+  onFailed(error: unknown): void;
+  onRevoke(): void;
+}) {
+  const app = apiKey.source === "oauth";
+  return (
+    <>
+      <ReplyModeSelect api={api} apiKey={apiKey} onSaved={onSaved} onFailed={onFailed} />
+      <button
+        type="button"
+        className="pill small danger-soft"
+        aria-label={t(app ? "appDisconnectLabel" : "apiKeyRevokeLabel", { name: apiKey.name })}
+        onClick={onRevoke}
+      >
+        {t(app ? "appDisconnect" : "apiKeyRevoke")}
+      </button>
+    </>
+  );
+}
+
+/**
+ * The keys of one source: the apps that owners and admins approved in the browser, or the keys made
+ * here for a bot on a server, which this part also makes.
+ */
+function KeysSection({
+  api,
+  keys,
+  source,
+}: {
+  api: WorkspaceApi;
+  keys: LoadedKeys;
+  source: ApiKey["source"];
+}) {
+  const app = source === "oauth";
   const [name, setName] = useState("");
   const [level, setLevel] = useState<ApiKeyLevel>("conversations");
   const [replyMode, setReplyMode] = useState<ReplyMode>("draft");
@@ -134,6 +226,12 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
       setBusy(false);
     }
   };
+  const resetForm = () => {
+    setAdding(false);
+    setName("");
+    setLevel("conversations");
+    setReplyMode("draft");
+  };
   const create = () =>
     act(async () => {
       const { token, ...key } = await api.createApiKey(name.trim(), level, replyMode);
@@ -145,13 +243,6 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
       await api.revokeApiKey(key.id);
       setRevoking(null);
     });
-
-  const resetForm = () => {
-    setAdding(false);
-    setName("");
-    setLevel("conversations");
-    setReplyMode("draft");
-  };
   const saved = (changed: ApiKey) =>
     keys.setData(
       (current) =>
@@ -160,46 +251,44 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
         },
     );
 
-  const list = keys.data?.apiKeys ?? [];
-  return (
-    <PageRow
-      title={t("apiKeysTitle")}
-      help={t("apiKeysHelp")}
-      docs={[
-        { path: "api#api-keys", text: "apiDocsLink" },
-        { path: "agents", text: "mcpDocsLink" },
-      ]}
+  const list = (keys.data?.apiKeys ?? []).filter((key) => key.source === source);
+  const newKey = (
+    <button
+      type="button"
+      className="pill dark"
+      onClick={() => {
+        setMade(null);
+        setAdding(true);
+      }}
     >
-      {list.length > 0 && (
-        <ul className="item-list">
+      <Icon name="plusBold" size={14} />
+      {t("apiKeyNew")}
+    </button>
+  );
+  return (
+    <Section
+      title={t(app ? "appsTitle" : "apiKeysTitle")}
+      help={t(app ? "appsHelp" : "apiKeysHelp")}
+      action={app || adding ? undefined : newKey}
+    >
+      {list.length === 0 && keys.data !== null ? (
+        <p className="sec-empty">{t(app ? "appsNone" : "apiKeysNone")}</p>
+      ) : (
+        <ul className="items">
           {list.map((key) => (
-            <li key={key.id} className="key-item">
-              <span className="who-lines">
-                <strong>
-                  {key.name}{" "}
-                  {key.source === "oauth" && <span className="chip info">{t("connectedApp")}</span>}
-                  <span className={key.level === "setup" ? "chip warn" : "chip"}>
-                    {t(LEVEL_LABEL[key.level])}
-                  </span>
-                </strong>
-                <span>{apiKeyLine(key)}</span>
-              </span>
-              <span className="key-actions">
-                <ReplyModeSelect
+            <KeyItem
+              key={key.id}
+              apiKey={key}
+              tools={
+                <KeyTools
                   api={api}
                   apiKey={key}
                   onSaved={saved}
                   onFailed={(error) => setFailure(failureText(error, {}))}
+                  onRevoke={() => setRevoking(key)}
                 />
-                <button
-                  type="button"
-                  className="pill small danger-soft"
-                  aria-label={t("apiKeyRevokeLabel", { name: key.name })}
-                  onClick={() => setRevoking(key)}
-                >
-                  {t("apiKeyRevoke")}
-                </button>
-              </span>
+              }
+            >
               {made?.id === key.id && (
                 <CopyField
                   hint={t("shownOnce")}
@@ -207,50 +296,49 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
                   value={made.token}
                 />
               )}
-            </li>
+            </KeyItem>
           ))}
         </ul>
       )}
-      <AddForm
-        isOpen={adding}
-        newLabel={t("apiKeyNew")}
-        submitLabel={t("apiKeyCreate")}
-        canSubmit={!busy && name.trim() !== ""}
-        onOpen={() => {
-          setMade(null);
-          setAdding(true);
-        }}
-        onCancel={() => {
-          resetForm();
-          setFailure(null);
-        }}
-        onSubmit={() => void create()}
-      >
-        <Field
-          label={t("apiKeyName")}
-          hint={t("apiKeyNameHint")}
-          placeholder={t("apiKeyNamePlaceholder")}
-          maxLength={API_KEY_NAME_MAX_LENGTH}
-          required
-          autoComplete="off"
-          value={name}
-          onChange={setName}
-        />
-        <LevelChoice className="key-level" value={level} onChange={setLevel} />
-        <ReplyModeChoice className="key-level" value={replyMode} onChange={setReplyMode} />
-      </AddForm>
+      {adding && (
+        <AddForm
+          isOpen
+          newLabel={t("apiKeyNew")}
+          submitLabel={t("apiKeyCreate")}
+          canSubmit={!busy && name.trim() !== ""}
+          onOpen={() => setAdding(true)}
+          onCancel={() => {
+            resetForm();
+            setFailure(null);
+          }}
+          onSubmit={() => void create()}
+        >
+          <Field
+            label={t("apiKeyName")}
+            hint={t("apiKeyNameHint")}
+            placeholder={t("apiKeyNamePlaceholder")}
+            maxLength={API_KEY_NAME_MAX_LENGTH}
+            required
+            autoComplete="off"
+            value={name}
+            onChange={setName}
+          />
+          <LevelChoice className="key-level" value={level} onChange={setLevel} />
+          <ReplyModeChoice className="key-level" value={replyMode} onChange={setReplyMode} />
+        </AddForm>
+      )}
       <ErrorNote text={failure ?? keys.failure} />
       {revoking !== null && (
         <Confirm
-          title={t("apiKeyRevokeTitle", { name: revoking.name })}
-          text={t("apiKeyRevokeText")}
-          confirm={t("apiKeyRevoke")}
+          title={t(app ? "appDisconnectTitle" : "apiKeyRevokeTitle", { name: revoking.name })}
+          text={t(app ? "appDisconnectText" : "apiKeyRevokeText")}
+          confirm={t(app ? "appDisconnect" : "apiKeyRevoke")}
           disabled={busy}
           onConfirm={() => void revoke(revoking)}
           onCancel={() => setRevoking(null)}
         />
       )}
-    </PageRow>
+    </Section>
   );
 }
 
@@ -382,7 +470,8 @@ function Deliveries({ api, webhookId }: { api: WorkspaceApi; webhookId: string }
 
 type Asking = { kind: "rotate" | "delete"; hook: Webhook } | null;
 
-function WebhookItem({
+/** A webhook's events, which Save changes, and its actions: test, deliveries, new secret, delete. */
+function WebhookEdit({
   api,
   hook,
   onChanged,
@@ -393,6 +482,7 @@ function WebhookItem({
   onChanged(hook: Webhook): void;
   onAsk(asking: Asking): void;
 }) {
+  const [events, setEvents] = useState<WebhookEvent[]>(hook.events);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [failure, setFailure] = useState<TextId | null>(null);
   const [showing, setShowing] = useState(false);
@@ -405,35 +495,24 @@ function WebhookItem({
       setFailure(failureText(error, { 400: "webhookBadUrl" }));
     }
   };
+  const isChanged = events.join() !== hook.events.join();
   return (
-    <li className="hook">
-      <div className="hook-head">
-        <span className="who-lines">
-          <strong className="mono hook-url" title={hook.url}>
-            {hook.url}
-          </strong>
-          <EventsSummary events={hook.events} />
-          {hook.createdBy !== null && (
-            <span>
-              {t(hook.createdBy.kind === "key" ? "webhookByKey" : "webhookByOperator", {
-                name: hook.createdBy.name,
-              })}
-            </span>
-          )}
-        </span>
-        <label className="check hook-switch">
-          <span className="visually-hidden">{t("webhookEnabledLabel", { url: hook.url })}</span>
-          <input
-            type="checkbox"
-            checked={hook.enabled}
-            onChange={(event) => {
-              const enabled = event.target.checked;
-              void run(async () => onChanged(await api.changeWebhook(hook.id, { enabled })));
-            }}
-          />
-        </label>
-      </div>
+    <div className="hook-edit">
+      <EventPicker events={events} onChange={setEvents} />
       <div className="hook-actions">
+        <button
+          type="button"
+          className="pill dark small"
+          disabled={!isChanged || events.length === 0}
+          onClick={() =>
+            void run(async () => {
+              onChanged(await api.changeWebhook(hook.id, { events }));
+              toast("saved");
+            })
+          }
+        >
+          {t("save")}
+        </button>
         <button
           type="button"
           className="pill small"
@@ -484,12 +563,82 @@ function WebhookItem({
           <p className="hint">{t("deliveriesNote")}</p>
         </>
       )}
+    </div>
+  );
+}
+
+/** A webhook's row: its address, events and who added it, its switch, and Edit. */
+function WebhookItem({
+  api,
+  hook,
+  onChanged,
+  onAsk,
+}: {
+  api: WorkspaceApi;
+  hook: Webhook;
+  onChanged(hook: Webhook): void;
+  onAsk(asking: Asking): void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [failure, setFailure] = useState<TextId | null>(null);
+  return (
+    <li className="item-row hook">
+      <span className="item-ic">
+        <Icon name="webhook" size={20} />
+      </span>
+      <div className="item-text">
+        <strong className="item-name" title={hook.url}>
+          {bare(hook.url)}
+        </strong>
+        <span className="item-line">
+          <EventsSummary events={hook.events} />
+          {hook.createdBy !== null && (
+            <>
+              <span className="sep" aria-hidden="true">
+                ·
+              </span>
+              <span>
+                {t(hook.createdBy.kind === "key" ? "webhookByKey" : "webhookByOperator", {
+                  name: hook.createdBy.name,
+                })}
+              </span>
+            </>
+          )}
+        </span>
+      </div>
+      <div className="item-tools">
+        <label className="check hook-switch">
+          <span className="visually-hidden">{t("webhookEnabledLabel", { url: hook.url })}</span>
+          <input
+            type="checkbox"
+            checked={hook.enabled}
+            onChange={(event) => {
+              const enabled = event.target.checked;
+              setFailure(null);
+              api
+                .changeWebhook(hook.id, { enabled })
+                .then(onChanged, (error: unknown) => setFailure(failureText(error, {})));
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="pill small"
+          aria-expanded={isEditing}
+          aria-label={t("webhookEditLabel", { url: hook.url })}
+          onClick={() => setIsEditing((current) => !current)}
+        >
+          {t("webhookEdit")}
+        </button>
+      </div>
+      <ErrorNote text={failure} />
+      {isEditing && <WebhookEdit api={api} hook={hook} onChanged={onChanged} onAsk={onAsk} />}
     </li>
   );
 }
 
 /** Owners and admins send the workspace's events to their own servers. */
-function WebhooksRow({ api }: { api: WorkspaceApi }) {
+function WebhooksSection({ api }: { api: WorkspaceApi }) {
   const loaded = useLoad(() => api.webhooks(), [api]);
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<WebhookEvent[]>([...WEBHOOK_EVENTS]);
@@ -538,14 +687,30 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
       setAsking(null);
     });
 
+  const isFull = hooks.length >= MAX_WEBHOOKS;
+  const newHook = (
+    <button
+      type="button"
+      className="pill"
+      onClick={() => {
+        setSecret(null);
+        setAdding(true);
+      }}
+    >
+      <Icon name="plusBold" size={14} />
+      {t("webhookNew")}
+    </button>
+  );
   return (
-    <PageRow
+    <Section
       title={t("webhooksTitle")}
       help={t("webhooksHelp")}
-      docs={[{ path: "api#webhooks", text: "webhookDocsLink" }]}
+      action={isFull || adding ? undefined : newHook}
     >
-      {hooks.length > 0 && (
-        <ul className="item-list">
+      {hooks.length === 0 && loaded.data !== null ? (
+        <p className="sec-empty">{t("webhooksNone")}</p>
+      ) : (
+        <ul className="items">
           {hooks.map((hook) => (
             <WebhookItem
               key={hook.id}
@@ -574,18 +739,14 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
           value={secret.secret}
         />
       )}
-      {hooks.length >= MAX_WEBHOOKS ? (
-        <StatusNote text="webhookLimit" />
-      ) : (
+      {isFull && <StatusNote text="webhookLimit" />}
+      {adding && !isFull && (
         <AddForm
-          isOpen={adding}
+          isOpen
           newLabel={t("webhookNew")}
           submitLabel={t("webhookAdd")}
           canSubmit={!busy && url.trim() !== "" && events.length > 0}
-          onOpen={() => {
-            setSecret(null);
-            setAdding(true);
-          }}
+          onOpen={() => setAdding(true)}
           onCancel={() => {
             closeForm();
             setFailure(null);
@@ -605,10 +766,10 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
             onChange={setUrl}
           />
           <EventPicker events={events} onChange={setEvents} />
+          <p className="hint">{t("webhookVerifyNote")}</p>
         </AddForm>
       )}
       <ErrorNote text={failure ?? loaded.failure} />
-      <p className="hint">{t("webhookVerifyNote")}</p>
       {asking !== null && (
         <Confirm
           title={t(asking.kind === "rotate" ? "webhookRotateTitle" : "webhookDeleteTitle", {
@@ -621,35 +782,75 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
           onCancel={() => setAsking(null)}
         />
       )}
-    </PageRow>
+    </Section>
   );
 }
 
-/** One switch that stops every key and connected app from replying, for owners and admins. */
-function BotsPauseRow({
+/** "1 connected app, 2 API keys", with each count in its own words. */
+function countLine(keys: ApiKey[]): string {
+  const apps = keys.filter((key) => key.source === "oauth").length;
+  const made = keys.length - apps;
+  return t("botsCount", {
+    apps: apps === 1 ? t("botsCountAppOne") : t("botsCountApps", { count: apps }),
+    keys: made === 1 ? t("botsCountKeyOne") : t("botsCountKeys", { count: made }),
+  });
+}
+
+/**
+ * How many bots can answer, whether they are paused and by whom, and one switch that stops every
+ * key and connected app from replying, for owners and admins.
+ */
+function BotsStatus({
+  keys,
   paused,
   pausedBy,
   onChange,
 }: {
+  keys: ApiKey[] | null;
   paused: boolean;
   pausedBy: string | null;
   onChange: ((paused: boolean) => void) | null;
 }) {
   return (
-    <PageRow title={t("botsPauseTitle")} help={t("botsPauseHelp")}>
-      <label className="check">
-        <span className="who-lines">
-          {t("botsPauseToggle")}
-          {paused && pausedBy !== null && <span>{t("botsPausedBy", { name: pausedBy })}</span>}
-        </span>
+    <section className={paused ? "status-card paused" : "status-card"} aria-label={t("botsTitle")}>
+      <span className="status-art">
+        <Icon name="robot" size={30} />
+        {paused && (
+          <span className="status-badge">
+            <Icon name="pause" size={12} />
+          </span>
+        )}
+      </span>
+      <div>
+        <h3>
+          {keys === null ? t("botsTitle") : countLine(keys)}
+          {paused && (
+            <span className="state-tag">
+              <span className="state-dot" />
+              {t("botsPausedTag")}
+            </span>
+          )}
+        </h3>
+        <p>
+          {t(paused ? "botsPausedHelp" : "botsRunningHelp")}
+          {paused && pausedBy !== null && (
+            <>
+              {" "}
+              <b>{t("botsPausedBy", { name: pausedBy })}.</b>
+            </>
+          )}
+        </p>
+      </div>
+      <label className="check big-switch">
         <input
           type="checkbox"
           checked={paused}
           disabled={onChange === null}
           onChange={(event) => onChange?.(event.target.checked)}
         />
+        <small>{t("botsPauseToggle")}</small>
       </label>
-    </PageRow>
+    </section>
   );
 }
 
@@ -667,11 +868,18 @@ export function DevelopersPage({
   /** Pauses or resumes every bot. Null for a member. */
   onBotsPaused: ((paused: boolean) => void) | null;
 }) {
+  const keys = useLoad(() => api.apiKeys(), [api]);
   return (
-    <Page title={t("pageDevelopers")}>
-      <BotsPauseRow paused={botsPaused} pausedBy={botsPausedBy} onChange={onBotsPaused} />
-      <ApiKeysRow api={api} />
-      <WebhooksRow api={api} />
+    <Page title={t("pageDevelopers")} context={t("developersContext")}>
+      <BotsStatus
+        keys={keys.data?.apiKeys ?? null}
+        paused={botsPaused}
+        pausedBy={botsPausedBy}
+        onChange={onBotsPaused}
+      />
+      <KeysSection api={api} keys={keys} source="oauth" />
+      <KeysSection api={api} keys={keys} source="static" />
+      <WebhooksSection api={api} />
     </Page>
   );
 }

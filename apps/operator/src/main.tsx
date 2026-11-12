@@ -89,7 +89,7 @@ function App() {
     return <InvitePage token={inviteToken} me={me} />;
   }
   if (path === "/oauth/authorize") {
-    if (me !== null) return <ConsentPage request={address.search} />;
+    if (me !== null) return <ConsentPage request={address.search} me={me} />;
     // After the emailed link, sign-in comes back here with the same request.
     return (
       <SignIn
