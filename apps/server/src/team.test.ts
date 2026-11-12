@@ -64,6 +64,7 @@ const live: Live = {
     wakes.push(subscriber);
   },
   revoke() {},
+  tell() {},
   async subscribe() {
     return () => {};
   },
@@ -358,7 +359,11 @@ describe("inviting by email", () => {
     expect(response.headers.getSetCookie()).toEqual([]);
     const link = await mail.linkTo(existing.email, 1);
     expect(link.startsWith(`${ORIGIN}/link?for=join&token=`)).toBe(true);
-    expect(mail.sent.at(-1)?.subject).toBe("Your link to join your team on Dinghy");
+    // It names the workspace and who invited, as the invite did.
+    expect(mail.sent.at(-1)?.subject).toBe("Join Acme on Dinghy");
+    expect(mail.sent.at(-1)?.text).toContain(`${boss.email} invited you to Acme.`);
+    expect(mail.sent.at(-1)?.text).toContain("Open this link to sign in and join Acme:");
+    expect(mail.sent.at(-1)?.text).toContain("for the next 15 minutes");
     // Opening the link, as a mail scanner does, uses nothing.
     await openLink(mailApp, link);
     expect(await memberRow(existing.id)).toBeUndefined();

@@ -24,6 +24,10 @@
   --fill-hover: light-dark(#17335c, #ffffff);
   --on-fill: light-dark(#fff, #0b2239);
   --blue: #1f6bff;
+  /* The live map: a navy sea, blue dots of land and the brand's yellow for people. */
+  --map-sea: light-dark(#0b2239, #08182a);
+  --map-land: light-dark(#2f5d93, #2a5283);
+  --map-dot: #ffc917;
   /* Focus: the navy (off-white at night) for the line, and the warm sand for a field's halo. */
   --focus: var(--navy);
   --focus-halo: light-dark(#e8e6e0, #243344);
@@ -47,7 +51,7 @@
   --display: "Gabarito", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --rail: 232px;
+  --rail: 200px;
   /* Around the panel: warm paper grey, or the night. */
   --sky: light-dark(#f3f2ee, #0b141d);
   /* The panel, cards, menus and fields. */
@@ -404,27 +408,63 @@ textarea {
   align-items: center;
   gap: 6px;
 }
-/* An uploaded image, with small buttons and the file rule beside it. */
+/* An uploaded image: one group of the tile, its button and the file rule, at the row's start. */
 .image-upload {
   display: flex;
   align-items: center;
+  justify-self: start;
   gap: 16px;
+}
+.image-tile {
+  position: relative;
+  flex: none;
 }
 .image-slot {
   display: grid;
-  flex: none;
   place-items: center;
   width: 64px;
   height: 64px;
+  padding: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fff;
   color: var(--mute);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
 .image-slot.empty {
-  border: 1.5px dashed var(--line);
+  border-color: transparent;
   background: var(--soft);
+}
+.image-slot.empty:hover:not(:disabled),
+.image-slot.drop {
+  background: var(--soft-hover);
+  color: var(--navy);
+}
+.image-slot.drop {
+  outline: 2px dashed var(--blue);
+  outline-offset: 2px;
+}
+.image-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 1px 3px rgb(13 34 64 / 0.12);
+  color: var(--mute);
+}
+.image-remove:hover:not(:disabled) {
+  color: var(--bad);
 }
 /* White behind it, as in the chat's header, so a transparent logo looks the same in both. */
 .image-slot img {
@@ -434,6 +474,7 @@ textarea {
 }
 .image-side {
   display: grid;
+  justify-items: start;
   gap: 6px;
   min-width: 0;
 }
@@ -526,7 +567,7 @@ textarea {
   color: var(--navy);
   font: inherit;
   font-weight: 800;
-  cursor: copy;
+  cursor: pointer;
 }
 .copy-text:hover {
   background: var(--soft-hover);
@@ -891,6 +932,25 @@ button.workspace[aria-expanded="true"],
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* In the workspace menu, how many chats wait in each workspace, as the Inbox item counts them. */
+.ws-waiting {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font: 700 11.5px / 16px var(--body);
+  text-align: center;
+}
+/* On the closed switcher: chats wait in another workspace. */
+.ws-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
 .workspace > svg:last-child,
 .me > svg:last-child {
   flex: none;
@@ -938,6 +998,11 @@ button.workspace[aria-expanded="true"],
   font: 700 12px / 18px var(--body);
   text-align: center;
 }
+/* People on the site now: quieter than the red count of those who wait. */
+.nav .count.live {
+  background: var(--navy);
+  color: var(--on-navy);
+}
 .menu-wrap {
   position: relative;
 }
@@ -948,6 +1013,133 @@ button.workspace[aria-expanded="true"],
 .me {
   min-height: 56px;
   padding: 10px;
+}
+/* Get started, above the operator: a ring that fills, the words and the count. */
+.get-started {
+  position: relative;
+  margin-top: auto;
+}
+.get-started + .me-menu {
+  margin-top: 8px;
+}
+.get-started-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px 8px 10px;
+  border-radius: 14px;
+  color: var(--navy);
+  font-weight: 650;
+  text-align: left;
+  transition: background-color 0.15s;
+}
+.get-started-button:hover,
+.get-started-button[aria-expanded="true"] {
+  background: var(--side-tint-hover);
+}
+.steps-count {
+  margin-left: auto;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.progress-ring {
+  flex: none;
+  transform: rotate(-90deg);
+}
+.progress-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+.ring-track {
+  stroke: var(--line);
+}
+.ring-fill {
+  stroke: var(--blue);
+  stroke-linecap: round;
+}
+.get-started-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  display: grid;
+  gap: 10px;
+  width: 300px;
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px rgb(11 34 57 / 0.08),
+    0 4px 8px rgb(11 34 57 / 0.05),
+    0 12px 32px rgb(11 34 57 / 0.12);
+}
+.get-started-panel header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.get-started-panel h2 {
+  font-size: 18px;
+}
+.steps-progress {
+  color: var(--mute);
+  font-size: 13.5px;
+}
+.get-started-panel .icon-button {
+  width: 32px;
+  height: 32px;
+  margin: -4px -6px 0 0;
+}
+.get-started-panel ol {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+}
+.get-started-panel li button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  color: var(--navy);
+  text-align: left;
+}
+.get-started-panel li button:hover {
+  background: var(--row-hover);
+}
+.step-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+}
+.get-started-panel li.done .step-mark {
+  background: var(--green);
+  box-shadow: none;
+  color: #fff;
+}
+.step-text {
+  flex: 1;
+}
+.get-started-panel li.done .step-text {
+  color: var(--mute);
+  text-decoration: line-through;
+}
+.get-started-panel > .text-button.quiet {
+  justify-self: start;
+  padding: 0;
+  color: var(--mute);
+  font-weight: 500;
 }
 /* The operator's own tile is navy, whatever tint their name gives it elsewhere. */
 .me .avatar {
@@ -1004,7 +1196,7 @@ button.workspace[aria-expanded="true"],
 .split {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   min-height: 0;
 }
 .app.paging .split {
@@ -1216,6 +1408,16 @@ button.workspace[aria-expanded="true"],
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* An item that cannot be chosen now, with the reason under its label. */
+.item[aria-disabled="true"] {
+  color: var(--mute);
+  cursor: default;
+}
+.item-label small {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
 }
 .item[aria-selected="true"],
 .item[aria-checked="true"] {
@@ -1490,7 +1692,12 @@ img.ws-tile {
   font-weight: 600;
 }
 .empty-boat {
-  padding-top: 48px;
+  /* Centered, a little above the middle, in a page body that fills the card. */
+  padding-bottom: 12vh;
+}
+.page-body:has(> .empty-boat) {
+  flex: 1;
+  align-content: stretch;
 }
 /* An empty list: a small drawing, a line that says the list is empty, and a hint. */
 .list-empty {
@@ -1506,35 +1713,6 @@ img.ws-tile {
   color: var(--navy);
   font-size: 15px;
   font-weight: 600;
-}
-/* The first steps under an empty inbox. A link per step, so nothing is required. */
-.start {
-  display: grid;
-  gap: 2px;
-  margin: 0 16px 20px;
-  padding: 14px 16px 10px;
-  border-radius: 14px;
-  background: var(--tile-blue);
-}
-.start h3 {
-  margin: 0 0 4px;
-  color: var(--navy);
-  font-size: 15px;
-  font-weight: 600;
-}
-.start ol {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.start .text-button {
-  padding: 0;
-}
-.start .text-button.quiet {
-  justify-self: start;
-  color: var(--mute);
-  font-weight: 500;
 }
 /* The empty-list drawing: navy line work on the paper, with the pennant the only colour. */
 .empty-art {
@@ -1594,54 +1772,111 @@ img.ws-tile {
   min-height: 0;
   background: var(--surface-dim);
 }
+/* The face and name over a run of the welcome chat founder's messages. */
+.author-face {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--mute);
+  font-size: 13px;
+}
+.author-face img {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+/* Someone closed or reopened the conversation: a quiet line, not a bubble. */
+.status-note {
+  align-self: center;
+  margin: 10px 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  text-align: center;
+}
 .thread.drop {
   outline: 3px dashed var(--blue);
   outline-offset: -10px;
 }
+/* One slim row: who, and what the operator can do. The rest of the visitor is in the panel. */
 .thread-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding: 18px 28px;
+  min-height: 64px;
+  padding: 11px 20px 11px 24px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
 .who-is {
   display: flex;
-  flex: 1 1 220px;
+  flex: 1 1 200px;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
+.avatar-wrap {
+  position: relative;
+  flex: none;
+  display: grid;
+}
 .who-is .avatar {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   font-size: 14px;
+}
+.presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2.5px var(--surface);
 }
 .who-text {
   min-width: 0;
 }
 .who-text h2 {
   overflow: hidden;
-  font-size: 19px;
-  line-height: 1.25;
+  font-size: 16px;
+  line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The lines under the name wrap, so the page where the chat started is never cut off. */
 .who-text p {
+  overflow: hidden;
   color: var(--mute);
-  font-size: 13.5px;
-  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.who-text .live {
+  color: var(--green);
+  font-weight: 500;
 }
 .thread-head .actions {
-  gap: 10px;
+  gap: 8px;
 }
 .assignee .select-button {
   min-height: 40px;
   max-width: 220px;
   padding-right: 16px;
+}
+.thread-head .pill,
+.thread-head .assignee .select-button {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+.thread-head .round {
+  width: 36px;
+  height: 36px;
 }
 .back {
   display: none;
@@ -1657,70 +1892,156 @@ img.ws-tile {
   background: var(--bad-soft);
   color: var(--bad);
 }
-/* The fold around the visitor's attributes and pages. */
-.about-visitor {
+/* A conversation: the thread, and the visitor's panel on its right. */
+.conversation-view {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.conversation-view > .thread {
+  flex: 1;
+}
+.visitor-panel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 300px;
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+/* Below 1200px the panel is a drawer over the thread. */
+.visitor-panel.overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  max-width: calc(100% - 24px);
+  border-left: 0;
+  box-shadow: -12px 0 32px rgb(11 34 57 / 0.16);
+}
+.panel-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 20px 18px 16px;
   border-bottom: 1px solid var(--line);
 }
-.about-visitor > summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 28px;
+.panel-who {
+  min-width: 0;
+}
+.panel-who h3 {
+  overflow: hidden;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-who p {
+  overflow: hidden;
   color: var(--mute);
   font-size: 13.5px;
-  font-weight: 600;
-  list-style: none;
-  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.about-visitor > summary::-webkit-details-marker {
-  display: none;
+/* An ID to copy: monospace, cut to its line. */
+.copy-id {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
 }
-.about-visitor > summary:hover {
+.copy-id code {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--mute);
+  font:
+    12.5px / 18px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.copy-id .icon-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  border-radius: 6px;
+}
+.panel-head .panel-contact {
+  grid-column: 1 / -1;
+  min-height: 36px;
+  margin-top: 8px;
+}
+/* A fold of the panel or the contact page: a title that opens or closes it. */
+.fold {
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.fold h3 button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 18px;
+  color: var(--mute);
+  font: 600 13.5px / 1.4 var(--body);
+}
+.fold h3 button:hover {
   color: var(--navy);
 }
-.about-body > :last-child {
-  border-bottom: 0;
+.fold-chevron {
+  display: grid;
+  transition: transform 0.15s;
 }
+[aria-expanded="false"] > .fold-chevron {
+  transform: rotate(-90deg);
+}
+.fold-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 14px;
+}
+.facts,
 .context {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 2px 14px;
-  padding: 10px 28px;
-  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+  gap: 6px 14px;
   font-size: 13.5px;
 }
+.facts dt,
 .context dt {
   color: var(--mute);
 }
+.facts dd,
 .context dd {
+  min-width: 0;
   overflow-wrap: anywhere;
   color: var(--navy);
 }
-/* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
-.page-context {
-  padding: 10px 28px;
-  border-bottom: 1px solid var(--line);
-  font-size: 13.5px;
+.facts a {
+  color: var(--blue-deep);
 }
-.page-context h3 {
+.facts .assignee .select-button {
+  min-height: 34px;
+  max-width: 100%;
+}
+/* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
+.page-context h4 {
   color: var(--mute);
   font: 600 13.5px / 1.4 var(--body);
 }
 .page-context .context {
-  padding: 6px 0 0;
-  border-bottom: 0;
+  padding-top: 6px;
 }
 /* The visitor's pages, newest first: a title as a link, and how long ago on the right. */
-.journey {
-  padding: 10px 28px;
-  border-bottom: 1px solid var(--line);
-  font-size: 13.5px;
-}
-.journey h3 {
-  margin-bottom: 4px;
-  color: var(--mute);
-  font: 600 13.5px / 1.4 var(--body);
-}
 .journey ol {
   display: grid;
   gap: 2px;
@@ -1754,22 +2075,42 @@ img.ws-tile {
   margin-top: 4px;
   padding: 0;
 }
-.context a,
-.who-text .visit a {
-  color: var(--blue-deep);
+.conversation-links {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
 }
-.who-text .visit {
+.conversation-links .text-button {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 10px;
+  text-align: left;
+}
+.conversation-links .text-button:hover {
+  background: var(--row-hover);
+}
+.link-preview {
+  overflow: hidden;
+  color: var(--navy);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-links small {
   color: var(--mute);
-  /* It wraps, so the last page's link never hides behind an ellipsis. */
-  white-space: normal;
+  font-weight: 400;
 }
-.who-text .visit-page {
-  display: block;
-  width: fit-content;
+.note-field {
+  min-height: 84px;
+  resize: vertical;
+  font-size: 14px;
 }
-.who-text .welcome-state,
-.who-text .welcome-off {
-  display: block;
+.context a {
+  color: var(--blue-deep);
 }
 .who-text .welcome-off {
   color: var(--warn-ink);
@@ -1820,6 +2161,32 @@ img.ws-tile {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+/* The small Markdown a message may use. */
+.msg :where(p, ul, ol, pre) {
+  margin: 0;
+}
+.msg > * + * {
+  margin-top: 6px;
+}
+.msg :where(ul, ol) {
+  padding-left: 22px;
+}
+.msg :where(pre, code) {
+  font: 13.5px / 1.45 var(--mono);
+}
+.msg :where(code) {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: rgb(127 127 127 / 0.18);
+}
+.msg :where(pre code) {
+  display: block;
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.msg :where(a) {
+  color: inherit;
+}
 .msg.visitor {
   align-self: flex-start;
   background: var(--surface);
@@ -1843,6 +2210,83 @@ img.ws-tile {
 .meta.visitor {
   align-self: flex-start;
 }
+/* What happened to a reply: sent, sent by email, failed, or read in the chat. */
+.receipt {
+  display: flex;
+  align-self: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin: -2px 6px 4px;
+  color: var(--mute);
+  font-size: 12px;
+}
+.receipt.read {
+  color: var(--blue-deep);
+}
+.receipt.emailFailed {
+  color: var(--bad);
+}
+/* An earlier reply's line shows with the pointer on its bubble, and screen readers always read it. */
+.receipt.later {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.bubble-row:hover + .receipt.later {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+}
+/* A visitor's unsent words, faded, with three dots that move. */
+.msg.draft {
+  align-self: flex-start;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--navy);
+  opacity: 0.6;
+}
+.meta.typing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+.preview.typing {
+  color: var(--blue-deep);
+  font-style: italic;
+}
 .retry {
   align-self: flex-end;
   margin: -2px 6px 8px;
@@ -1865,17 +2309,198 @@ img.ws-tile {
   width: 100%;
   height: auto;
 }
+/* A message and its "…": the button sits on the bubble's inner side and shows on hover or focus. */
+.bubble-row {
+  display: flex;
+  flex-direction: row-reverse;
+  align-self: flex-end;
+  align-items: center;
+  gap: 4px;
+  /* The bubble's width limit, with room for the "…" beside it. */
+  max-width: min(calc(60% + 34px), 594px);
+  scroll-margin: 24px;
+}
+.bubble-row > .msg {
+  max-width: none;
+  min-width: 0;
+}
+.bubble-row.visitor {
+  flex-direction: row;
+  align-self: flex-start;
+}
+.bubble-row .menu-wrap {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.bubble-row:is(:hover, :focus-within) .menu-wrap,
+.bubble-row .menu-wrap:has([aria-expanded="true"]) {
+  opacity: 1;
+}
+/* A touch screen has no hover, so the button always shows there, quietly. */
+@media (hover: none) {
+  .bubble-row .menu-wrap {
+    opacity: 1;
+  }
+}
+.msg-more {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--mute);
+}
+.msg-more:is(:hover, [aria-expanded="true"]) {
+  background: var(--soft);
+  color: var(--navy);
+}
+.shot-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+  max-width: 360px;
+}
+.bubble-row.visitor .shot-stack {
+  align-items: flex-start;
+}
+.shot-stack .shot {
+  max-width: 100%;
+}
+.msg.quote-only {
+  padding: 5px;
+}
+/* The quoted message inside a reply: a soft block, a shade off the bubble, with no side bar. */
+.quote {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border-radius: 11px;
+  background: rgb(255 255 255 / 0.16);
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+}
+.msg.quote-only .quote {
+  margin: 0;
+}
+button.quote:hover {
+  background: rgb(255 255 255 / 0.24);
+}
+.msg.visitor .quote {
+  background: var(--soft);
+}
+.msg.visitor button.quote:hover {
+  background: var(--soft-hover);
+}
+.quote strong {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.quote-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.quote-text.gone {
+  font-style: italic;
+  opacity: 0.85;
+}
+/* After a click on a quote or a link, the original shows where it is for a moment. */
+.bubble-row.flash :is(.msg, .shot) {
+  outline: 3px solid var(--map-dot);
+  outline-offset: 2px;
+  animation: flash-out 1.6s ease-in forwards;
+}
+@keyframes flash-out {
+  70% {
+    outline-color: var(--map-dot);
+  }
+  to {
+    outline-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble-row.flash :is(.msg, .shot) {
+    animation: none;
+  }
+}
+/* Above the message box while a reply quotes a message. */
+.quote-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 2px;
+  padding: 6px 4px 6px 10px;
+  border-radius: 12px;
+  background: var(--soft);
+  color: var(--mute);
+  font-size: 13px;
+}
+.quote-chip-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.quote-chip-text strong {
+  color: var(--navy);
+  font-weight: 600;
+}
+.quote-chip-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A reply being edited takes its bubble's place, with Cancel and Save for the send button. */
+.compose.editing {
+  align-self: flex-end;
+  width: min(100%, 640px);
+  padding: 0;
+}
+.edit-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.edit-actions .pill {
+  min-height: 34px;
+  padding: 0 14px;
+}
+.message-info dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.message-info dt {
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 12px;
+}
+.message-info dd {
+  margin: 0;
+  color: var(--text);
+}
+.message-info .info-time {
+  color: var(--navy);
+  font-weight: 600;
+}
 .thread > .bad {
   margin: 0 28px 10px;
 }
 .compose {
   padding: 0 28px 24px;
 }
+/* The composer: one rounded box, the text on top and a row of tools under it. */
 .box {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px 8px;
   border-radius: 18px;
   background: var(--surface);
   box-shadow:
@@ -1889,10 +2514,10 @@ img.ws-tile {
     0 6px 18px rgb(11 34 57 / 0.05);
 }
 .box textarea {
-  flex: 1;
-  min-height: 40px;
-  max-height: 200px;
-  padding: 9px 4px;
+  width: 100%;
+  min-height: 44px;
+  max-height: 240px;
+  padding: 8px 6px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1903,8 +2528,36 @@ img.ws-tile {
   outline: 0;
 }
 .box .icon-button {
+  width: 34px;
+  height: 34px;
   color: var(--mute);
 }
+.box .icon-button:hover {
+  color: var(--navy);
+}
+.compose-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.format-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.tools-divider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--line);
+}
+
 .send {
   display: grid;
   flex: none;
@@ -1918,6 +2571,9 @@ img.ws-tile {
 }
 .send:hover {
   background: var(--fill-hover);
+}
+.compose-tools .send {
+  margin-left: auto;
 }
 .box input.file {
   position: absolute;
@@ -2576,9 +3232,9 @@ img.ws-tile {
 /* Open or Closed, and below it, in a team, whose: All, Mine or Unassigned. */
 .list-filters {
   display: grid;
-  justify-items: start;
-  gap: 6px;
-  margin: 0 24px 12px;
+  justify-items: stretch;
+  gap: 8px;
+  margin: 0 24px 14px;
 }
 /* One segmented control in an outline, such as Open or Closed. */
 .choices.outlined,
@@ -2596,15 +3252,34 @@ img.ws-tile {
   padding: 0 14px;
   font-size: 14px;
 }
-/* Quieter than an outlined one: small words, and no outline around the group. */
+/* Quieter than an outlined one: small muted words, and the chosen one navy on a soft pill. */
 .choices.quiet label {
+  gap: 5px;
   min-height: 28px;
   padding: 0 10px;
-  color: var(--text);
+  color: var(--mute);
   font-size: 13px;
 }
 .choices.quiet label:has(:checked) {
   box-shadow: none;
+  color: var(--navy);
+}
+/* Under Open and Closed, the same width, with its edges inside the outline's. */
+.list-filters > .choices.quiet {
+  padding: 0 3px;
+}
+/* Open and Closed, as two equal halves as wide as the search field. */
+.choices.full label {
+  flex: 1;
+  justify-content: center;
+}
+.choice-count {
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+.choices.quiet .choice-count {
+  font-size: 12px;
+  font-weight: 500;
 }
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
    preview comes first, so on a narrow screen it sits above the form. */
@@ -2829,6 +3504,84 @@ img.ws-tile {
   border-collapse: collapse;
   font-size: 15px;
 }
+/* Contacts: search and sort above the table, and a row's person opens their page. */
+.contacts-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 6px 0 4px;
+}
+.contacts-tools .search {
+  flex: 1 1 260px;
+  max-width: 420px;
+  margin: 0;
+}
+.contact-open {
+  width: 100%;
+  min-height: 40px;
+  margin: -6px;
+  padding: 6px;
+  border-radius: 12px;
+  text-align: left;
+}
+.contact-open:hover {
+  background: var(--row-hover);
+}
+.contacts .number-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.contacts td {
+  color: var(--text-strong);
+}
+.contacts time {
+  white-space: nowrap;
+}
+/* One contact: the folds on the left, and the name and the delete beside them. */
+.contact-page {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: 24px 40px;
+  align-items: start;
+}
+.contact-folds {
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+}
+.contact-folds > .fold:last-child {
+  border-bottom: 0;
+}
+.contact-rows .page-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.contact-rows .page-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.identity-form {
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+}
+.identity-field {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+.identity-form .pill {
+  justify-self: start;
+}
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 0;
+  vertical-align: baseline;
+}
 .members th {
   padding: 14px 12px 10px;
   color: var(--text-strong);
@@ -2923,20 +3676,49 @@ img.ws-tile {
   display: grid;
   gap: 8px;
 }
+/* The new key's access: a label, the choice, and one line on what the chosen one can do. */
+.key-level {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.key-level .hint {
+  margin: 0;
+}
 .created .hint {
   margin: 0;
 }
-.invite-sent {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+/* A finished step in a dialog: a round check, a short title and one line, centered. */
+.success {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+.success-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+}
+.success p {
   margin: 0;
+  color: var(--mute);
   font-size: 15px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
-.invite-sent svg {
-  flex: none;
-  color: var(--green);
+.success b {
+  color: var(--navy);
+  font-weight: 600;
+}
+.dialog-actions.centered {
+  justify-content: center;
 }
 /* Plan and usage: one line and a thin bar for each limit. */
 .meters {
@@ -3140,25 +3922,6 @@ img.ws-tile {
 .row[aria-current="true"] .chip:not(.warn) {
   background: var(--surface);
 }
-.about-visitor > summary svg {
-  transform: rotate(-90deg);
-  transition: transform 0.15s;
-}
-.about-visitor[open] > summary svg {
-  transform: none;
-}
-
-/* A wide thread puts the visitor's attributes and pages side by side, to keep room for messages. */
-@media (min-width: 1200px) {
-  .about-body:has(> .context + .journey) {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  }
-  .about-body:has(> .context + .journey) > .context {
-    align-content: start;
-    border-bottom: 0;
-  }
-}
 
 /* Tablet: the sidebar becomes a top bar on the grey. */
 @media (max-width: 1000px) {
@@ -3207,6 +3970,30 @@ img.ws-tile {
   /* The operator shrinks to their avatar, and the menu opens down. */
   .me-menu {
     margin: 0 0 0 auto;
+  }
+  /* Get started shrinks to its ring and count, beside the operator. */
+  .get-started {
+    margin: 0 0 0 auto;
+  }
+  .get-started + .me-menu {
+    margin: 0;
+  }
+  .get-started-button {
+    min-height: 40px;
+    width: auto;
+  }
+  .get-started-button > span:not(.steps-count) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .get-started-panel {
+    top: calc(100% + 8px);
+    right: 0;
+    bottom: auto;
+    left: auto;
   }
   .me {
     min-height: 0;
@@ -3270,6 +4057,16 @@ img.ws-tile {
   .app {
     padding: 0 8px 8px;
   }
+  .contact-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contacts .wide-cell {
+    display: none;
+  }
+  .visitor-panel.overlay {
+    width: 100%;
+    max-width: none;
+  }
   .brand {
     order: 0;
   }
@@ -3282,6 +4079,21 @@ img.ws-tile {
   .me-menu {
     order: 2;
     margin: 0;
+  }
+  .get-started {
+    order: 2;
+    margin: 0;
+  }
+  /* On a phone the steps rise as a sheet from the bottom. */
+  .get-started-panel {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
   }
   .nav {
     order: 3;
@@ -3334,7 +4146,7 @@ img.ws-tile {
     flex-basis: 100%;
     gap: 8px;
   }
-  .who-is .avatar {
+  .avatar-wrap {
     display: none;
   }
   .thread-head .actions {
@@ -3352,10 +4164,7 @@ img.ws-tile {
   .assignee .select-value {
     flex: 1;
   }
-  .replying,
-  .context,
-  .journey,
-  .about-visitor > summary {
+  .replying {
     padding-inline: 14px;
   }
   .log {
@@ -3364,6 +4173,9 @@ img.ws-tile {
   .msg,
   .shot {
     max-width: 84%;
+  }
+  .bubble-row {
+    max-width: calc(84% + 34px);
   }
   .compose {
     padding: 0 10px 10px;
@@ -3403,6 +4215,10 @@ img.ws-tile {
   }
   .nav button {
     min-height: 44px;
+  }
+  .thread-head .round {
+    width: 44px;
+    height: 44px;
   }
   .thread-head .icon-button,
   .back,
@@ -3498,7 +4314,8 @@ img.ws-tile {
   .select-button,
   .check input,
   .check input::after,
-  .about-visitor > summary svg {
+  .get-started-button,
+  .fold-chevron {
     transition: none;
   }
 }
@@ -3541,7 +4358,8 @@ img.ws-tile {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .toast {
+  .toast,
+  .typing-dots i {
     animation: none;
   }
 }
@@ -3561,4 +4379,81 @@ img.ws-tile {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+}
+
+/* Visitors: the world in dots on a navy sea, with a yellow dot for each country that has people. */
+.world-map {
+  position: relative;
+  max-width: 980px;
+  aspect-ratio: 360 / 142;
+  margin: 8px 0 20px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--map-sea);
+}
+.world-land {
+  position: absolute;
+  inset: 0;
+  background: var(--map-land);
+  mask: url("world.svg") center / 100% 100% no-repeat;
+}
+.world-map .map-dot {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--map-dot);
+  box-shadow: 0 0 0 4px rgb(255 201 23 / 0.25);
+  transform: translate(-50%, -50%);
+}
+.live-list {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+.live-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 4px;
+  border-top: 1px solid var(--line);
+}
+.live-flag {
+  flex: none;
+  width: 28px;
+  font-size: 22px;
+  line-height: 1.2;
+  text-align: center;
+}
+.live-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.live-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.live-text b {
+  color: var(--navy);
+}
+.live-page {
+  overflow: hidden;
+  color: var(--blue-deep);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-text small {
+  color: var(--mute);
+  font-size: 13px;
+}
+.live-chat {
+  cursor: pointer;
+}
+.map-credit {
+  margin-top: 18px;
+  font-size: 12.5px;
+}
+.credit-link {
+  color: var(--mute);
 }

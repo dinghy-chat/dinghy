@@ -23,15 +23,15 @@ test("the widget says when the team is online, and names nobody", async ({ brows
   const visitor = await context.newPage();
   await visitor.goto(`${server.hostOrigin}/plain`);
   await visitor.getByRole("button", { name: "Open chat" }).click();
-  await expect(visitor.getByText("We are away.")).toBeVisible();
-  await expect(visitor.getByText("We are online")).toHaveCount(0);
+  await expect(visitor.getByText("Away, we reply")).toBeVisible();
+  await expect(visitor.getByText("Online", { exact: true })).toHaveCount(0);
 
   const anna = await signedIn(browser, server, "anna@example.com");
   await expect(anna.getByRole("button", { name: "Analytics" })).toBeVisible();
   await visitor.reload();
   await visitor.getByRole("button", { name: "Open chat" }).click();
-  await expect(visitor.getByText("We are online")).toBeVisible();
-  await expect(visitor.getByText("We are away.")).toHaveCount(0);
+  await expect(visitor.getByText("Online", { exact: true })).toBeVisible();
+  await expect(visitor.getByText("Away, we reply")).toHaveCount(0);
   await expect(visitor.getByText("anna@example.com")).toHaveCount(0);
   await anna.close();
   await context.close();

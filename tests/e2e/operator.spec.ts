@@ -593,7 +593,12 @@ test("the … menu blocks with the keyboard too", async ({ browser }) => {
   await operator.keyboard.press("Enter");
   const menu = operator.getByRole("menu", { name: "More actions" });
   await expect(menu).toBeFocused();
-  await expect(menu.getByRole("menuitem")).toHaveText(["Block", "Delete"]);
+  // Send transcript says why it is unavailable: this visitor gave no email.
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "Block",
+    "Send transcriptThe visitor gave no email",
+    "Delete",
+  ]);
   await operator.keyboard.press("Enter");
   await expect(operator.getByText("This visitor is blocked")).toBeVisible();
   await expect(more).toBeFocused();
@@ -624,7 +629,7 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(events).toHaveCount(0);
   await page.getByRole("button", { name: "New webhook" }).click();
-  await expect(events).toHaveCount(5);
+  await expect(events).toHaveCount(7);
   await expect(
     page.getByRole("checkbox", { name: /A message is sent\s*message\.created/ }),
   ).toBeChecked();

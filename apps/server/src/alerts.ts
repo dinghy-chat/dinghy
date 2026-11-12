@@ -1,12 +1,12 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { CHAT_LINK_DAYS, chatLinkUrl, createChatLink, pruneChatLinks } from "./chat-link.ts";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
+import { markdownHtml } from "../../../packages/widget/src/markdown.ts";
+import { chatLinkUrl, createChatLink, pruneChatLinks } from "./chat-link.ts";
 import {
   alertDelivery,
   conversation,
-  emailStop,
+  type EventKind,
   event,
-  type MessageCreatedPayload,
+  type MessagePayload,
   message,
   operator,
   pushSubscription,
@@ -15,27 +15,42 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { emailAddressHash } from "./identity.ts";
 import { prunePageViews } from "./journey.ts";
-import { letter } from "./letter.ts";
-import { joinVisitor } from "./messages.ts";
+import { letter, letterHtml } from "./letter.ts";
+import {
+  conversationVisitor,
+  isChat,
+  messageColumns,
+  type Quote,
+  type StatusPayload,
+  visitorQuote,
+} from "./messages.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
+import { MINUTE_MS } from "./time.ts";
+import { requestedTranscriptRows, transcriptPlan, transcriptRows } from "./transcripts.ts";
+import {
+  emailStopped,
+  emailStopUrl,
+  quotedHtml,
+  quotedText,
+  sentToday,
+  VISITOR_EMAILS_PER_DAY,
+  visitorEmailText,
+} from "./visitor-email.ts";
 
 // A failed send retries after 30 seconds, doubling each time, and stops after this many attempts.
 export const MAX_ATTEMPTS = 6;
-const MINUTE_MS = 60_000;
 // An email to an operator per conversation, so a burst of messages sends one.
 const OPERATOR_EMAIL_GAP_MS = 15 * MINUTE_MS;
 // The reply email waits, because a visitor who is still on the page reads the reply there.
 export const REPLY_EMAIL_DELAY_MS = 5 * MINUTE_MS;
-// The limits on reply emails, because anyone can type someone else's address into the widget.
+// The gap between reply emails, because anyone can type someone else's address into the widget.
 const REPLY_EMAIL_GAP_MS = 15 * MINUTE_MS;
-export const REPLY_EMAILS_PER_DAY = 5;
-const DAY_MS = 24 * 60 * MINUTE_MS;
 const REPLIES_IN_EMAIL = 5;
+// A reply email due while a transcript waits looks again this long after the transcript is due.
+const AFTER_TRANSCRIPT_MS = 30_000;
 const PUSH_BODY_CHARACTERS = 200;
-export const RETENTION_MS = 30 * DAY_MS;
 const PRUNE_BATCH = 1000;
 
 // Every string a person reads has a key, so a locale can be added later.
@@ -53,13 +68,12 @@ const text = {
       "under Alerts.",
   ],
   replySubject: (name: string) => `${name} replied to your message`,
-  replyBody: (name: string, replies: string, chat: string, stop: string) => [
+  replyBody: <Replies>(name: string, replies: Replies, chat: string, stop: string) => [
     `${name} replied to your message:`,
     replies,
     `Read the conversation and answer here: ${chat}`,
-    `The link works for ${CHAT_LINK_DAYS} days. Anyone who has it can read and reply, so don't forward this email.`,
-    `You got this because this address was entered in a chat with ${name}. If that wasn't you, ` +
-      `or you'd rather not get these emails, stop them here: ${stop}`,
+    visitorEmailText.linkWarning,
+    visitorEmailText.whyYouGotThis(name, stop),
   ],
 };
 
@@ -102,41 +116,16 @@ export async function sendToOperator(
   };
 }
 
-/** Signs the stop link, so nobody can stop the emails of an address they did not receive at. */
-const stopSignature = (secret: string, workspaceId: string, addressHash: string) =>
-  createHmac("sha256", secret)
-    .update(`email-stop/${workspaceId}/${addressHash}`)
-    .digest("base64url");
-
-export function emailStopUrl(
-  publicUrl: string,
-  secret: string,
-  workspaceId: string,
-  email: string,
-): string {
-  const hash = emailAddressHash(email);
-  const signature = stopSignature(secret, workspaceId, hash);
-  return new URL(`/v1/email-stop/${workspaceId}/${hash}?signature=${signature}`, publicUrl).href;
-}
-
-export function verifyEmailStop(
-  secret: string,
-  workspaceId: string,
-  addressHash: string,
-  signature: string,
-): boolean {
-  const expected = Buffer.from(stopSignature(secret, workspaceId, addressHash));
-  const given = Buffer.from(signature);
-  return given.length === expected.length && timingSafeEqual(given, expected);
-}
-
 interface Channels {
   push: boolean;
   email: boolean;
 }
 
-type DeliveryRow = typeof alertDelivery.$inferInsert;
-type DeliveryBase = Pick<DeliveryRow, "workspaceId" | "eventSeq" | "conversationId" | "messageId">;
+export type DeliveryRow = typeof alertDelivery.$inferInsert;
+export type DeliveryBase = Pick<
+  DeliveryRow,
+  "workspaceId" | "eventSeq" | "conversationId" | "messageId"
+>;
 
 /** A visitor wrote: a push and an email for each member who can get them. */
 async function operatorAlertRows(
@@ -191,86 +180,49 @@ async function operatorAlertRows(
   return rows;
 }
 
-/** The address followed a stop link in this workspace's emails. */
-async function emailStopped(tx: Transaction, workspaceId: string, email: string): Promise<boolean> {
-  const [row] = await tx
-    .select({ hash: emailStop.addressHash })
-    .from(emailStop)
-    .where(
-      and(
-        eq(emailStop.workspaceId, workspaceId),
-        eq(emailStop.addressHash, emailAddressHash(email)),
-      ),
-    )
-    .limit(1);
-  return row !== undefined;
-}
-
 /** An operator wrote: one delayed email to the visitor, within the limits on reply emails. */
 async function replyEmailRows(tx: Transaction, base: DeliveryBase): Promise<DeliveryRow[]> {
   const { workspaceId, conversationId } = base;
-  const rows: DeliveryRow[] = [];
-  const [target] = await tx
-    .select({ id: visitor.id, email: visitor.email })
-    .from(conversation)
-    .innerJoin(visitor, joinVisitor())
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  if (
-    target !== undefined &&
-    target.email !== null &&
-    !(await emailStopped(tx, workspaceId, target.email))
-  ) {
-    const now = Date.now();
-    const past = await tx
-      .select({
-        createdAt: alertDelivery.createdAt,
-        finishedAt: alertDelivery.finishedAt,
-        claimedUntil: alertDelivery.claimedUntil,
-        outcome: alertDelivery.outcome,
+  const target = await conversationVisitor(tx, workspaceId, conversationId);
+  if (target === undefined || target.email === null) return [];
+  if (await emailStopped(tx, workspaceId, target.email)) return [];
+  const now = Date.now();
+  const unfinished = and(
+    eq(alertDelivery.workspaceId, workspaceId),
+    eq(alertDelivery.visitorId, target.id),
+    eq(alertDelivery.channel, "email"),
+    isNull(alertDelivery.finishedAt),
+  );
+  const open = await tx
+    .select({ claimedUntil: alertDelivery.claimedUntil })
+    .from(alertDelivery)
+    .where(unfinished);
+  // A worker may already have read this row's text, so it cannot carry this reply.
+  const sending = open.filter((row) => (row.claimedUntil?.getTime() ?? 0) > now).length;
+  // A row still waiting will carry this reply too, because it reads what is unread at send. The
+  // reply that joins it gets the same wait as the first one.
+  if (sending < open.length) {
+    await tx
+      .update(alertDelivery)
+      .set({
+        nextAttemptAt: sql`greatest(${alertDelivery.nextAttemptAt}, ${new Date(now + REPLY_EMAIL_DELAY_MS).toISOString()}::timestamptz)`,
       })
-      .from(alertDelivery)
-      .where(
-        and(
-          eq(alertDelivery.workspaceId, workspaceId),
-          eq(alertDelivery.visitorId, target.id),
-          gt(alertDelivery.createdAt, new Date(now - DAY_MS)),
-        ),
-      )
-      .orderBy(desc(alertDelivery.createdAt));
-    // A worker may already have read this row's text, so it cannot carry this reply.
-    const sending = past.filter(
-      (row) =>
-        row.finishedAt === null && row.claimedUntil !== null && row.claimedUntil.getTime() > now,
-    );
-    // A row still waiting will carry this reply too, because it reads what is unread at send.
-    const waiting = past.some((row) => row.finishedAt === null && !sending.includes(row));
-    const sent = past.filter((row) => row.outcome === "sent");
-    // The reply that joins a waiting row gets the same wait as the first one.
-    if (waiting) {
-      await tx
-        .update(alertDelivery)
-        .set({
-          nextAttemptAt: sql`greatest(${alertDelivery.nextAttemptAt}, ${new Date(now + REPLY_EMAIL_DELAY_MS).toISOString()}::timestamptz)`,
-        })
-        .where(
-          and(
-            eq(alertDelivery.workspaceId, workspaceId),
-            eq(alertDelivery.visitorId, target.id),
-            isNull(alertDelivery.finishedAt),
-          ),
-        );
-    }
-    if (!waiting && sent.length + sending.length < REPLY_EMAILS_PER_DAY) {
-      const last = sending.length > 0 ? now : (sent[0]?.finishedAt?.getTime() ?? 0);
-      rows.push({
-        ...base,
-        visitorId: target.id,
-        channel: "email",
-        nextAttemptAt: new Date(Math.max(now + REPLY_EMAIL_DELAY_MS, last + REPLY_EMAIL_GAP_MS)),
-      });
-    }
+      .where(unfinished);
+    return [];
   }
-  return rows;
+  // Transcripts count toward the daily limit, as the planner counts them, and only reply emails
+  // set the gap.
+  const sent = await sentToday(tx, workspaceId, target.id);
+  if (sent.length + sending >= VISITOR_EMAILS_PER_DAY) return [];
+  const lastReplyEmail = sent.find((row) => row.channel === "email");
+  const last = sending > 0 ? now : (lastReplyEmail?.finishedAt.getTime() ?? 0);
+  const row: DeliveryRow = {
+    ...base,
+    visitorId: target.id,
+    channel: "email",
+    nextAttemptAt: new Date(Math.max(now + REPLY_EMAIL_DELAY_MS, last + REPLY_EMAIL_GAP_MS)),
+  };
+  return [row];
 }
 
 /**
@@ -280,7 +232,12 @@ async function replyEmailRows(tx: Transaction, base: DeliveryBase): Promise<Deli
 export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
   return db.transaction(async (tx) => {
     const [found] = await tx
-      .select({ workspaceId: event.workspaceId, seq: event.seq, payload: event.payload })
+      .select({
+        workspaceId: event.workspaceId,
+        seq: event.seq,
+        kind: event.kind,
+        payload: event.payload,
+      })
       .from(event)
       .where(eq(event.needsAlert, true))
       .orderBy(event.createdAt)
@@ -291,23 +248,18 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
     await enterWorkspace(tx, workspaceId);
     // The email limits read past rows and then write new ones, so two workers must take turns.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}))`);
-    // Only a message.created event sets needsAlert.
-    const { messageId, conversationId } = found.payload as MessageCreatedPayload;
+    // Only a message.created event, a close and a transcript request set needsAlert. Each names a
+    // message: the new one, the close's status line, or the newest message when it was asked for.
+    const { messageId, conversationId } = found.payload as MessagePayload | StatusPayload;
     const base = { workspaceId, eventSeq: seq, conversationId, messageId };
 
     const [written] = await tx
-      .select({ authorVisitorId: message.authorVisitorId })
+      .select({ authorVisitorId: message.authorVisitorId, deletedAt: message.deletedAt })
       .from(message)
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
-    // A message deleted before this step has nothing to alert about.
+    // A message whose row was deleted before this step has nothing to alert about.
     const rows =
-      written === undefined
-        ? []
-        : written.authorVisitorId !== null
-          ? await operatorAlertRows(tx, channels, base)
-          : channels.email
-            ? await replyEmailRows(tx, base)
-            : [];
+      written === undefined ? [] : await eventRows(tx, found.kind, written, channels, base);
     if (rows.length > 0) await tx.insert(alertDelivery).values(rows).onConflictDoNothing();
     await tx
       .update(event)
@@ -315,6 +267,29 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
       .where(and(eq(event.workspaceId, workspaceId), eq(event.seq, seq)));
     return true;
   });
+}
+
+/** The rows one event makes: a message alerts the other side, and a close or a request a transcript. */
+async function eventRows(
+  tx: Transaction,
+  kind: EventKind,
+  written: { authorVisitorId: string | null; deletedAt: Date | null },
+  channels: Channels,
+  base: DeliveryBase,
+): Promise<DeliveryRow[]> {
+  switch (kind) {
+    case "conversation.closed":
+      return channels.email ? transcriptRows(tx, base) : [];
+    case "transcript.requested":
+      return channels.email ? requestedTranscriptRows(tx, base) : [];
+    case "message.created":
+      // A message deleted before this step has nothing to alert about.
+      if (written.deletedAt !== null) return [];
+      if (written.authorVisitorId !== null) return operatorAlertRows(tx, channels, base);
+      return channels.email ? replyEmailRows(tx, base) : [];
+    default:
+      return [];
+  }
 }
 
 export interface ClaimedDelivery {
@@ -325,7 +300,7 @@ export interface ClaimedDelivery {
   messageId: string;
   operatorId: string | null;
   visitorId: string | null;
-  channel: "push" | "email";
+  channel: "push" | "email" | "transcript";
   attempts: number;
 }
 
@@ -347,7 +322,7 @@ export async function claimDeliveries(
     message_id: string;
     operator_id: string | null;
     visitor_id: string | null;
-    channel: "push" | "email";
+    channel: "push" | "email" | "transcript";
     attempts: number;
   }>(sql`
     WITH due AS MATERIALIZED (
@@ -433,56 +408,137 @@ export async function releaseDelivery(db: Database, row: ClaimedDelivery): Promi
 
 export type AlertPlan =
   | { channel: "push"; operatorId: string; payload: PushPayload }
-  | { channel: "email"; to: string; subject: string; text: string; stopUrl?: string }
+  | {
+      channel: "email";
+      to: string;
+      subject: string;
+      text: string;
+      /** A second version for mail apps that show HTML, with the replies' formatting. */
+      html?: string;
+      stopUrl?: string;
+      /** The first and last message a visitor's email carries, which the plan records. */
+      carries?: { fromSeq: bigint; toSeq: bigint };
+    }
   | { channel: "later"; until: Date };
 
-interface PlanOptions {
+export interface PlanOptions {
   publicUrl: string;
   secret: string;
+  /** Where the workspace's logo is served: the image origin, or the app's. */
+  imageOrigin: string;
 }
 
 /** Reads what this row should send now, or null if it should send nothing. */
 export function planDelivery(
   db: Database,
   row: ClaimedDelivery,
-  { publicUrl, secret }: PlanOptions,
+  options: PlanOptions,
 ): Promise<AlertPlan | null> {
   const { workspaceId, conversationId } = row;
+  const { publicUrl } = options;
   return withWorkspace(db, workspaceId, async (tx) => {
     const [place] = await tx
       .select({ name: workspace.name })
       .from(workspace)
       .where(eq(workspace.id, workspaceId));
     const [written] = await tx
-      .select({ seq: message.seq, body: message.body })
+      .select({ body: message.body, deletedAt: message.deletedAt })
       .from(message)
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, row.messageId)));
     if (place === undefined || written === undefined) return null;
     if (row.visitorId !== null) {
-      return replyEmailPlan(tx, row, row.visitorId, place.name, { publicUrl, secret });
+      // A reply email is not skipped when its own reply was deleted: it carries every unread one.
+      const plan =
+        row.channel === "transcript"
+          ? await transcriptPlan(tx, row, row.visitorId, place.name, options)
+          : await replyEmailPlan(tx, row, row.visitorId, place.name, options);
+      if (plan?.channel === "email" && plan.carries !== undefined) {
+        await recordCoverage(tx, row, plan.carries);
+      }
+      return plan;
     }
+    // A visitor's message deleted while its alert waited has nothing to alert about.
+    if (written.deletedAt !== null) return null;
     const threadUrl = new URL(threadPath(workspaceId, conversationId), publicUrl).href;
     return operatorPlan(tx, row, place.name, written.body, threadUrl);
   });
 }
 
-/** The email to a visitor with every reply they have not read, unless a limit says later. */
+/** When the visitor's transcript that has not finished is due, or null with none. */
+async function waitingTranscript(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+): Promise<Date | null> {
+  const [found] = await tx
+    .select({
+      due: sql<string>`greatest(${alertDelivery.nextAttemptAt}, ${alertDelivery.claimedUntil}, now())`,
+    })
+    .from(alertDelivery)
+    .where(
+      and(
+        eq(alertDelivery.workspaceId, workspaceId),
+        eq(alertDelivery.visitorId, visitorId),
+        eq(alertDelivery.channel, "transcript"),
+        isNull(alertDelivery.finishedAt),
+      ),
+    )
+    .orderBy(desc(alertDelivery.nextAttemptAt))
+    .limit(1);
+  return found === undefined ? null : new Date(found.due);
+}
+
+/** A sent transcript of the message's conversation carried this message. */
+const carriedByTranscript = (workspaceId: string, visitorId: string) =>
+  sql`(select 1 from ${alertDelivery} as carried
+       where carried.workspace_id = ${workspaceId} and carried.visitor_id = ${visitorId}
+         and carried.channel = 'transcript' and carried.outcome = 'sent'
+         and carried.conversation_id = ${message.conversationId}
+         and ${message.seq} between carried.covered_from_seq and carried.covered_to_seq)`;
+
+/**
+ * Records the first and last message an email carries, in the transaction that read them, which
+ * receipts and edits read.
+ */
+async function recordCoverage(
+  tx: Transaction,
+  row: ClaimedDelivery,
+  carries: { fromSeq: bigint; toSeq: bigint },
+): Promise<void> {
+  await tx
+    .update(alertDelivery)
+    .set({ coveredFromSeq: carries.fromSeq, coveredToSeq: carries.toSeq })
+    .where(held(row));
+}
+
+/**
+ * The email to a visitor with every reply they have not read, unless a limit says later. A transcript
+ * still waiting goes first, and the replies a sent transcript carried are left out, so the visitor
+ * never gets the same reply twice. When the transcript fails or is cancelled, this carries them.
+ */
 async function replyEmailPlan(
   tx: Transaction,
-  { workspaceId, conversationId }: ClaimedDelivery,
+  row: ClaimedDelivery,
   visitorId: string,
   placeName: string,
   { publicUrl, secret }: PlanOptions,
 ): Promise<AlertPlan | null> {
+  const { workspaceId, conversationId } = row;
   const [target] = await tx
     .select({ email: visitor.email, lastReadSeq: visitor.lastReadSeq })
     .from(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
   if (target === undefined || target.email === null) return null;
   if (await emailStopped(tx, workspaceId, target.email)) return null;
-  // Every unread reply to this visitor, because other replies waited for this row to send.
+  const transcriptDue = await waitingTranscript(tx, workspaceId, visitorId);
+  if (transcriptDue !== null) {
+    return { channel: "later", until: new Date(transcriptDue.getTime() + AFTER_TRANSCRIPT_MS) };
+  }
+  // Every unread reply to this visitor, because other replies waited for this row to send. The key
+  // share lock makes an edit or a delete wait until this email's range is recorded. It is no
+  // stronger, so a read or a resent quote, which update other columns, never waits in a cycle.
   const replies = await tx
-    .select({ body: message.body })
+    .select({ seq: message.seq, body: message.body, replyTo: messageColumns.replyTo })
     .from(message)
     .innerJoin(
       conversation,
@@ -496,54 +552,69 @@ async function replyEmailPlan(
         eq(message.workspaceId, workspaceId),
         eq(conversation.visitorId, visitorId),
         isNull(message.authorVisitorId),
+        isChat(),
+        isNull(message.deletedAt),
         gt(message.seq, target.lastReadSeq),
+        notExists(carriedByTranscript(workspaceId, visitorId)),
       ),
     )
     .orderBy(desc(message.seq))
-    .limit(REPLIES_IN_EMAIL);
-  // The visitor came back and read everything, so the email has no purpose.
+    .limit(REPLIES_IN_EMAIL)
+    .for("key share", { of: message });
+  // The visitor came back and read everything, or a transcript carried it.
   if (replies.length === 0) return null;
   // Fan-out set the due time, but a slow retry of an earlier row can have sent since then.
-  const sent = await tx
-    .select({ finishedAt: alertDelivery.finishedAt })
-    .from(alertDelivery)
-    .where(
-      and(
-        eq(alertDelivery.workspaceId, workspaceId),
-        eq(alertDelivery.visitorId, visitorId),
-        eq(alertDelivery.outcome, "sent"),
-        gt(alertDelivery.finishedAt, new Date(Date.now() - DAY_MS)),
-      ),
-    )
-    .orderBy(desc(alertDelivery.finishedAt));
-  if (sent.length >= REPLY_EMAILS_PER_DAY) return null;
-  const earliest = (sent[0]?.finishedAt?.getTime() ?? 0) + REPLY_EMAIL_GAP_MS;
+  const sent = await sentToday(tx, workspaceId, visitorId);
+  if (sent.length >= VISITOR_EMAILS_PER_DAY) return null;
+  const lastReplyEmail = sent.find((one) => one.channel === "email");
+  const earliest = (lastReplyEmail?.finishedAt.getTime() ?? 0) + REPLY_EMAIL_GAP_MS;
   if (earliest > Date.now()) return { channel: "later", until: new Date(earliest) };
+  replies.reverse();
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, target.email);
   // A new link for each email. Older ones keep working until they expire.
   const chatUrl = chatLinkUrl(
     publicUrl,
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
+  const written = replies.map((reply) => ({
+    body: reply.body,
+    quote: visitorQuote(reply.replyTo),
+  }));
   return {
     channel: "email",
     to: target.email,
+    ...replyLetter(placeName, written, { chatUrl, stopUrl }),
+    stopUrl,
+    carries: { fromSeq: replies[0]?.seq ?? 0n, toSeq: replies.at(-1)?.seq ?? 0n },
+  };
+}
+
+/**
+ * The reply email's words: each reply under its quote. The visitor typed this address, and nobody
+ * proved it, so it greets no name.
+ */
+export function replyLetter(
+  placeName: string,
+  replies: { body: string | null; quote: Quote | null }[],
+  links: { chatUrl: string; stopUrl: string },
+): { subject: string; text: string; html: string } {
+  const letterBody = <Replies>(rendered: Replies) =>
+    text.replyBody(placeName, rendered, links.chatUrl, links.stopUrl);
+  const written = replies.map((reply) => ({ ...reply, body: messageText(reply.body) }));
+  return {
     subject: text.replySubject(placeName),
-    // The visitor typed this address, and nobody proved it, so it greets no name.
     text: letter(
-      text.replyBody(
-        placeName,
-        replies
-          .reverse()
-          .map((reply) => messageText(reply.body))
-          .join("\n\n"),
-        chatUrl,
-        stopUrl,
-      ),
+      letterBody(written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n")),
       undefined,
       placeName,
     ),
-    stopUrl,
+    // The replies' Markdown shows as formatting here, and stays as typed in the text version.
+    html: letterHtml(
+      letterBody({
+        html: written.map((reply) => quotedHtml(reply.quote, markdownHtml(reply.body))).join(""),
+      }),
+      placeName,
+    ),
   };
 }
 
@@ -589,11 +660,7 @@ async function operatorPlan(
   }
   // The operator may have turned email off while this row waited for a retry.
   if (!member.wantsEmail) return null;
-  const [from] = await tx
-    .select({ email: visitor.email })
-    .from(conversation)
-    .innerJoin(visitor, joinVisitor())
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  const from = await conversationVisitor(tx, workspaceId, conversationId);
   return {
     channel: "email",
     to: member.email,

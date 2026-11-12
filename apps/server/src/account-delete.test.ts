@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, isNull, like, ne, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -54,6 +54,7 @@ const live: Live = {
     wakes.push(workspaceId);
   },
   revoke() {},
+  tell() {},
   async subscribe() {
     return () => {};
   },
@@ -147,10 +148,14 @@ const roleOf = async (workspaceId: string, operatorId: string) =>
   )[0]?.role;
 
 describe("a sole owner", () => {
-  // First in the file, while the database holds no other workspace.
   test("deletes their account and the workspace nobody else is in, unless it is the last", async () => {
     const space = await createWorkspace(db, "Solo", []);
     const solo = await person(space.id, "owner");
+    // The server's only live workspace, whatever the tests before this one made.
+    await owner
+      .update(workspace)
+      .set({ deletedAt: new Date() })
+      .where(and(ne(workspace.id, space.id), isNull(workspace.deletedAt)));
     const mine = (await (await me(solo)).json()) as MeAnswer;
     expect(mine.workspaces).toMatchObject([{ soleOwner: true, heir: null }]);
     // A self-hosted server keeps its last workspace, so its only member stays.

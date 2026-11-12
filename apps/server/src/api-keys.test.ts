@@ -185,8 +185,11 @@ describe("what a key can do", () => {
     expect(((await again.json()) as { id: string }).id).toBe(written.id);
 
     const read = (await (await withKey(key.token, "GET", path)).json()) as {
+      conversation: { assigneeOperatorId: string | null };
       messages: { body: string; authorName: string | null }[];
     };
+    // A bot's reply never takes the conversation.
+    expect(read.conversation.assigneeOperatorId).toBeNull();
     expect(read.messages.map((one) => [one.body, one.authorName])).toEqual([
       ["Where is my parcel?", null],
       ["It ships today.", "Helper bot"],

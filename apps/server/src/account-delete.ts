@@ -40,6 +40,7 @@ import { type Live, OPERATORS } from "./live.ts";
 import type { Mailer } from "./mailer.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { leaveWorkspace, type Role } from "./team.ts";
+import { MINUTE_MS } from "./time.ts";
 import { isOnlyWorkspace } from "./workspace-delete.ts";
 
 /** The name a deleted account's old replies show. */
@@ -417,7 +418,7 @@ export function registerAccountDelete(
     await db.insert(verification).values({
       identifier: `${DELETE_LINK}${sha256Hex(token)}`,
       value: JSON.stringify(pending),
-      expiresAt: new Date(Date.now() + LINK_MINUTES * 60_000),
+      expiresAt: new Date(Date.now() + LINK_MINUTES * MINUTE_MS),
     });
     const mail = deleteAccountMail(confirmUrl(publicUrl, "delete-account", token));
     mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {

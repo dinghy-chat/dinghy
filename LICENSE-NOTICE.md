@@ -13,3 +13,8 @@ Dinghy is open core. Almost all of it is open source, and one folder holds the c
 A self-hosted install has every product feature: the inbox, the widget, the team, alerts, images, exports, backups and workspace deletion are all AGPL. The Docker image ships `ee/`, and a self-hosted install never turns it on: the code stays inactive unless one of the cloud's settings (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` or `CLOUD_SIGNUP`) is set, and a self-hosted install leaves them all unset. The `ee/` license allows running it that way in production, with no agreement. Dinghy has no license key and no license check.
 
 Contributions to any part of the repository are under the [contributor license agreement](CLA.md).
+
+## Data from others
+
+- The Docker image downloads [DB-IP](https://db-ip.com)'s IP to Country Lite database when it is built, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The **Visitors** page credits it.
+- The operator app's world map, `apps/operator/public/world.svg`, and its country points in `apps/operator/src/countries.ts` come from [Natural Earth](https://www.naturalearthdata.com), which is in the public domain.

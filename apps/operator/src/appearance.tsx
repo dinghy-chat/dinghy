@@ -577,6 +577,22 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
               </SettingRow>
               <div className="setting-row setting-switch">
                 <Switch
+                  label={t("widgetTranscript")}
+                  hint={t("widgetTranscriptHelp")}
+                  checked={draft.transcript}
+                  onChange={(transcript) => change({ transcript })}
+                />
+              </div>
+              <div className="setting-row setting-switch">
+                <Switch
+                  label={t("widgetSound")}
+                  hint={t("widgetSoundHelp")}
+                  checked={draft.sound}
+                  onChange={(sound) => change({ sound })}
+                />
+              </div>
+              <div className="setting-row setting-switch">
+                <Switch
                   label={t("widgetBranding")}
                   checked={draft.branding}
                   onChange={(branding) => change({ branding })}

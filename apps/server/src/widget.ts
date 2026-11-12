@@ -1,15 +1,15 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
-import { firstName } from "../../../packages/widget/src/shared.ts";
+import { firstName, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
-import { conversation, visitor, workspace } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import { conversation, MESSAGE_KINDS, visitor, widgetSettings, workspace } from "./db/schema.ts";
+import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { deviceLine } from "./device.ts";
 import {
   BUSY,
@@ -22,6 +22,7 @@ import {
   WIDGET_TOKEN_ERRORS,
   WIDGET_WRITE_ERRORS,
 } from "./errors.ts";
+import type { CountryOf } from "./geo.ts";
 import {
   type HostIdentity,
   isBrowserToken,
@@ -40,19 +41,23 @@ import {
 } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, wakeConversation } from "./live.ts";
+import type { LiveVisitors } from "./live-visitors.ts";
 import {
   appendMessage,
   CURSOR_PATTERN,
   type Cursor,
   catchClosed,
   formatCursor,
+  InvalidReplyToError,
   listVisitorMessages,
   type MessageAuthor,
   markRead,
   messageAuthors,
   parseCursor,
+  QuoteSchema,
   readState,
   type StoredMessage,
+  visitorQuote,
   WorkspaceClosedError,
 } from "./messages.ts";
 import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moderation.ts";
@@ -173,6 +178,21 @@ const meRoute = createRoute({
 
 // The host page's address. Only its origin and path are kept, when a conversation starts.
 const PAGE = z.string().max(4096).optional();
+const REPLY_TO = z.uuid().optional().openapi({
+  description: "An earlier message of the visitor's conversation that this one quotes.",
+});
+const INVALID_REPLY_TO = failure(
+  "invalid_reply_to",
+  "Quote a message that people wrote in this conversation and that was not deleted.",
+);
+const INVALID_REPLY_TO_TEXT = "invalid_reply_to: the quoted message is not in this conversation";
+
+/** A send whose quote is not in the conversation answers 400, and anything else still throws. */
+const catchInvalidQuote = <T>(write: Promise<T>): Promise<T | InvalidReplyToError> =>
+  write.catch((error: unknown) => {
+    if (error instanceof InvalidReplyToError) return error;
+    throw error;
+  });
 
 const pageRoute = createRoute({
   method: "post",
@@ -227,6 +247,95 @@ const contextRoute = createRoute({
   },
 });
 
+/** A tab's random ID, made by the loader and kept only in the page's memory. */
+const TAB_ID = z.string().regex(/^[a-z0-9]{6,32}$/);
+
+const beatRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/beat",
+  security: VISITOR_TOKEN,
+  summary: "Say that a tab of the site is open, for the operators' live view",
+  description:
+    "The loader sends this when the page loads and once a minute while the tab is visible, with or without a token. It sets no cookie and stores no ID in the browser: the tab's ID lives in the page's memory. The server looks up the country of the request's address and drops the address, and keeps the tab only in Valkey, for 90 seconds after its last beat. For a visitor with a token, it saves the country and time zone on the visitor.",
+  request: {
+    params,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            tab: TAB_ID,
+            page: z.string().max(4096),
+            title: z.string().max(2000).optional(),
+            // Only on the tab's first beat. Only its origin is kept.
+            referrer: z.string().max(4096).optional(),
+            // IANA, as the browser gives it.
+            timeZone: z.string().max(64).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Noted, or dropped", content: okContent },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
+
+const leaveRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/leave",
+  summary: "Say that a tab of the site closed",
+  description: "The loader sends this with sendBeacon when the page goes away. It has no body.",
+  request: { params, query: z.object({ tab: TAB_ID }) },
+  responses: {
+    200: { description: "Noted", content: okContent },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
+
+/** The time zone, when the server knows it too. */
+function knownTimeZone(timeZone: string | undefined): string | null {
+  if (timeZone === undefined) return null;
+  try {
+    return new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+/** Only the origin of where the visitor came from, never its path. */
+function referrerOrigin(referrer: string | undefined): string | null {
+  if (referrer === undefined || !URL.canParse(referrer)) return null;
+  const { origin, protocol } = new URL(referrer);
+  return protocol === "http:" || protocol === "https:" ? origin : null;
+}
+
+/** The longest draft the widget sends, in characters. */
+const DRAFT_MAX = 2000;
+
+const typingRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/typing",
+  security: VISITOR_TOKEN,
+  summary: "Show operators what the visitor is typing, before they send it",
+  description:
+    "The widget sends the message box's text at most every 500 ms while a visitor who has an open conversation types, and an empty draft when the box is cleared or the message is sent. Nothing stores it: the server passes it to the workspace's open operator apps and forgets it. It does nothing when the workspace turned the preview off, for a blocked visitor, or for a visitor with no open conversation.",
+  request: {
+    params,
+    body: {
+      required: true,
+      content: {
+        "application/json": { schema: z.object({ draft: z.string().max(DRAFT_MAX) }) },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Passed on, or dropped", content: okContent },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
+
 /**
  * The page's origin and path, cut to the one limit that the starting page, the last page and the
  * journey share. Null unless it is on the site that sent the request.
@@ -244,13 +353,18 @@ const MessageSchema = z
     conversationId: z.string(),
     // The position in commit order, as a string because it can exceed a JSON number.
     seq: z.string(),
-    kind: z.enum(["text", "image"]),
+    // `closed` and `reopened` are status lines, with no body: the team closed or reopened the chat.
+    kind: z.enum(MESSAGE_KINDS),
     fromVisitor: z.boolean(),
     clientId: z.string().nullable(),
     body: z.string().nullable(),
     image: ImageSchema.nullable(),
     // The image was deleted after 12 months, on Dinghy Cloud.
     imageRemoved: z.boolean(),
+    // The message this one quotes, or null. Its author is a first name, as on replies.
+    replyTo: QuoteSchema.nullable(),
+    // An operator deleted it, so it shows as a placeholder with no body.
+    deleted: z.boolean(),
     // A reply from a workspace API key, such as the customer's own bot.
     fromBot: z.boolean(),
     // A reply's author: an operator's first name, or a key's name. Null for the visitor's own.
@@ -273,6 +387,8 @@ const MessageSchema = z
       body: "Do you have a yearly plan?",
       image: null,
       imageRemoved: false,
+      replyTo: null,
+      deleted: false,
       fromBot: false,
       authorName: null,
       authorPictureUrl: null,
@@ -305,12 +421,13 @@ const sendMessageRoute = createRoute({
           schema: z.object({
             clientId: CLIENT_ID,
             page: PAGE,
+            replyToMessageId: REPLY_TO,
             // Postgres text cannot hold a NUL byte.
             body: z
               .string()
               .trim()
               .min(1)
-              .max(10_000)
+              .max(MESSAGE_MAX)
               .regex(/^[^\0]*$/),
           }),
           example: {
@@ -332,6 +449,7 @@ const sendMessageRoute = createRoute({
       content: { "application/json": { schema: SentSchema } },
     },
     ...WIDGET_WRITE_ERRORS,
+    400: errorAnswer(`invalid_request: the request is not valid. ${INVALID_REPLY_TO_TEXT}`),
     ...BUSY,
     ...SEND_REFUSED,
   },
@@ -343,7 +461,10 @@ const sendImageRoute = createRoute({
   security: VISITOR_TOKEN,
   summary:
     "Send an image as the raw request body. A retry with the same clientId returns the original",
-  request: { params, query: z.object({ clientId: CLIENT_ID, page: PAGE }) },
+  request: {
+    params,
+    query: z.object({ clientId: CLIENT_ID, page: PAGE, replyToMessageId: REPLY_TO }),
+  },
   responses: {
     200: {
       description: "A retry. This is the original message",
@@ -355,6 +476,7 @@ const sendImageRoute = createRoute({
     },
     ...WIDGET_TOKEN_ERRORS,
     ...IMAGE_UPLOAD_ERRORS,
+    400: errorAnswer(`${IMAGE_UPLOAD_ERRORS[400].description}. ${INVALID_REPLY_TO_TEXT}`),
     ...SEND_REFUSED,
   },
 });
@@ -364,6 +486,8 @@ const listMessagesRoute = createRoute({
   path: "/v1/widget/{key}/messages",
   security: VISITOR_TOKEN,
   summary: "List the visitor's messages after a cursor, in commit order",
+  description:
+    "An edit or a delete sends a message again at the position of that change, with its `seq` unchanged. Replace the copy you have by its `id`, and keep sorting by `seq`.",
   request: {
     params,
     query: z.object({
@@ -399,7 +523,7 @@ const streamRoute = createRoute({
   security: VISITOR_TOKEN,
   summary: "Stream the visitor's messages after a cursor",
   description:
-    "Server-sent events: `message` (its id is the new cursor, its data a Message), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\n" +
+    "Server-sent events: `message` (its id is the new cursor, its data a Message, which an edit or a delete sends again: replace it by its `id`), `ready` when caught up, `resync` to load from the start, and `close` with a reason. Read this with fetch, because EventSource cannot send the bearer token.\n\n" +
     CLOSE_REASONS_TEXT,
   request: {
     params,
@@ -433,12 +557,26 @@ function messageView(
   authors: Map<string, MessageAuthor>,
   // A visitor learns a reply author's first name and picture, never an email. Only the picture's
   // address names the operator, as an <img> needs one.
-  { seq, createdAt, clientId, image, authorOperatorId, authorApiKeyId, ...message }: StoredMessage,
+  {
+    seq,
+    createdAt,
+    clientId,
+    image,
+    authorOperatorId,
+    authorApiKeyId,
+    replyTo,
+    changeSeq: _change,
+    editedAt: _edited,
+    readAt: _read,
+    via: _via,
+    ...message
+  }: StoredMessage,
 ) {
   const authorId = authorOperatorId ?? authorApiKeyId;
   const author = authorId === null ? undefined : authors.get(authorId);
   return {
     ...message,
+    replyTo: visitorQuote(replyTo),
     // A visitor gets only its own client IDs, to match a stream copy to a pending line.
     clientId: message.fromVisitor ? clientId : null,
     seq: seq.toString(),
@@ -737,6 +875,74 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
 
 const BLOCKED = failure("blocked", "You cannot send messages in this chat.");
 
+/**
+ * Saves where a visitor with a token is, when it changed, and returns their newest conversation,
+ * open first, for the live view's "Chatting" link.
+ */
+async function notePlace(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+  country: string | null,
+  timeZone: string | null,
+): Promise<string | null> {
+  if (country !== null || timeZone !== null) {
+    await tx
+      .update(visitor)
+      .set({
+        ...(country !== null && { country }),
+        ...(timeZone !== null && { timeZone }),
+      })
+      .where(
+        and(
+          eq(visitor.workspaceId, workspaceId),
+          eq(visitor.id, visitorId),
+          sql`(${visitor.country} is distinct from coalesce(${country}, ${visitor.country}) or ${visitor.timeZone} is distinct from coalesce(${timeZone}, ${visitor.timeZone}))`,
+        ),
+      );
+  }
+  const [newest] = await tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
+    .orderBy(sql`${conversation.status} = 'open' desc`, desc(conversation.updatedAt))
+    .limit(1);
+  return newest?.id ?? null;
+}
+
+/**
+ * The open conversation a visitor's draft belongs to, or null when the workspace turned the preview
+ * off, the visitor is blocked, or they have no open conversation. One statement.
+ */
+async function typingConversation(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .innerJoin(
+      visitor,
+      and(
+        eq(visitor.workspaceId, conversation.workspaceId),
+        eq(visitor.id, conversation.visitorId),
+      ),
+    )
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        eq(conversation.visitorId, visitorId),
+        eq(conversation.status, "open"),
+        isNull(visitor.blockedAt),
+        sql`exists (select 1 from ${widgetSettings} where ${widgetSettings.workspaceId} = ${workspaceId} and ${widgetSettings.typingPreview})`,
+      ),
+    )
+    .orderBy(desc(conversation.createdAt))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 // name, largest count and window in seconds. Each is per workspace and client address, so a busy
 // office shares one count and another site's visitors never share it.
 function limitFor(method: string, path: string): [string, number, number] {
@@ -747,6 +953,10 @@ function limitFor(method: string, path: string): [string, number, number] {
   // A single-page site reports each change of address, and a page should not need more.
   if (path.endsWith("/page")) return ["widget-page", 30, 60];
   if (path.endsWith("/context")) return ["widget-context", 30, 60];
+  // A beat a minute for each tab, and many tabs behind one office's address.
+  if (path.endsWith("/beat") || path.endsWith("/leave")) return ["widget-beat", 240, 60];
+  // Two drafts a second while typing, with room for a few tabs.
+  if (path.endsWith("/typing")) return ["widget-typing", 150, 60];
   return ["widget-write", 120, 60];
 }
 
@@ -769,6 +979,9 @@ interface WidgetOptions {
   visitorPresence: VisitorPresence;
   /** This server's own origin, where a chat link's page runs. */
   ownOrigin: string | undefined;
+  /** The tabs of the site open now, for the operators. */
+  liveVisitors: LiveVisitors;
+  countryOf: CountryOf;
 }
 
 /** A person with several tabs open. */
@@ -796,6 +1009,8 @@ export function registerWidgetRoutes(
     stream,
     visitorPresence,
     ownOrigin,
+    liveVisitors,
+    countryOf,
   }: WidgetOptions,
 ): void {
   const view = (workspaceId: string, message: StoredMessage, authors = NO_AUTHORS) =>
@@ -863,19 +1078,22 @@ export function registerWidgetRoutes(
     const identified = await identify(c);
     if (identified === null) return c.json(UNAUTHORIZED, 401);
     const ipHash = hashIp(ipSecret, found.id, c.get("clientIp"));
-    const result = await catchClosed(
-      withWorkspace(db, found.id, async (tx) => {
-        if (await isBlocked(tx, found.id, identified, ipHash)) return null;
-        await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
-        const { page, ...input } = c.req.valid("json");
-        return appendMessage(
-          tx,
-          found.id,
-          { kind: "visitor", visitorId: identified.visitorId },
-          { ...input, page: identified.link ? null : sitePage(page, c.req.header("origin")) },
-        );
-      }),
+    const result = await catchInvalidQuote(
+      catchClosed(
+        withWorkspace(db, found.id, async (tx) => {
+          if (await isBlocked(tx, found.id, identified, ipHash)) return null;
+          await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
+          const { page, ...input } = c.req.valid("json");
+          return appendMessage(
+            tx,
+            found.id,
+            { kind: "visitor", visitorId: identified.visitorId },
+            { ...input, page: identified.link ? null : sitePage(page, c.req.header("origin")) },
+          );
+        }),
+      ),
     );
+    if (result instanceof InvalidReplyToError) return c.json(INVALID_REPLY_TO, 400);
     // Closed since the check at the door: the same answer as an unknown key.
     if (result instanceof WorkspaceClosedError) return c.json(ORIGIN_NOT_ALLOWED, 403);
     if (result === null) return c.json(BLOCKED, 403);
@@ -996,7 +1214,7 @@ export function registerWidgetRoutes(
       const found = c.get("workspace");
       const identified = await identify(c);
       if (identified === null) return c.json(UNAUTHORIZED, 401);
-      const { clientId, page } = c.req.valid("query");
+      const { clientId, page, replyToMessageId } = c.req.valid("query");
       const ipHash = hashIp(ipSecret, found.id, c.get("clientIp"));
       const blocked = await withWorkspace(db, found.id, async (tx) => {
         const refused = await isBlocked(tx, found.id, identified, ipHash);
@@ -1004,27 +1222,31 @@ export function registerWidgetRoutes(
         return refused;
       });
       if (blocked) return c.json(BLOCKED, 403);
-      const outcome = await catchClosed(
-        images.receive(
-          c.req.raw,
-          found.id,
-          (image) =>
-            withWorkspace(db, found.id, (tx) =>
-              appendMessage(
-                tx,
-                found.id,
-                { kind: "visitor", visitorId: identified.visitorId },
-                {
-                  clientId,
-                  image,
-                  page: identified.link ? null : sitePage(page, c.req.header("origin")),
-                },
-                limits,
+      const outcome = await catchInvalidQuote(
+        catchClosed(
+          images.receive(
+            c.req.raw,
+            found.id,
+            (image) =>
+              withWorkspace(db, found.id, (tx) =>
+                appendMessage(
+                  tx,
+                  found.id,
+                  { kind: "visitor", visitorId: identified.visitorId },
+                  {
+                    clientId,
+                    image,
+                    page: identified.link ? null : sitePage(page, c.req.header("origin")),
+                    replyToMessageId,
+                  },
+                  limits,
+                ),
               ),
-            ),
-          c.get("clientIp"),
+            c.get("clientIp"),
+          ),
         ),
       );
+      if (outcome instanceof InvalidReplyToError) return c.json(INVALID_REPLY_TO, 400);
       // Closed while the image arrived: the same answer as an unknown key.
       if (outcome instanceof WorkspaceClosedError) return c.json(ORIGIN_NOT_ALLOWED, 403);
       if ("refused" in outcome) return refuseImage(c, outcome.refused);
@@ -1044,9 +1266,12 @@ export function registerWidgetRoutes(
     const identified = await identify(c);
     if (identified === null) return c.json(UNAUTHORIZED, 401);
     const { seq } = c.req.valid("json");
-    await withWorkspace(db, found.id, (tx) =>
+    const passedReply = await withWorkspace(db, found.id, (tx) =>
       markRead(tx, found.id, identified.visitorId, BigInt(seq)),
     );
+    // After the commit, so an operator's thread shows "Read in chat". A lost notice only waits
+    // for the thread's next load. A read of the visitor's own messages changes no receipt.
+    if (passedReply) live.tell(found.id, { kind: "receipts", visitorId: identified.visitorId });
     return c.json({ ok: true as const }, 200);
   });
 
@@ -1084,6 +1309,76 @@ export function registerWidgetRoutes(
         device: deviceLine(c.req.header("user-agent")),
       }),
     );
+    return c.json({ ok: true as const }, 200);
+  });
+
+  // Workspaces this process knows an allowed site has loaded, so a beat writes that once.
+  const seenWidget = new Set<string>();
+
+  app.openapi(beatRoute, async (c) => {
+    const found = c.get("workspace");
+    const token = c.get("widgetToken");
+    const { tab, page, title, referrer, timeZone } = c.req.valid("json");
+    const path = sitePage(page, c.req.header("origin"));
+    // A chat link's page is this server's, not the site's.
+    if (path === null || token.kind === "link") return c.json({ ok: true as const }, 200);
+    if (!seenWidget.has(found.id)) {
+      // The first step of Get started. It matches no row once set, so it takes no lock then.
+      await withWorkspace(db, found.id, (tx) =>
+        tx
+          .update(workspace)
+          .set({ widgetSeenAt: sql`now()` })
+          .where(and(eq(workspace.id, found.id), isNull(workspace.widgetSeenAt))),
+      );
+      seenWidget.add(found.id);
+    }
+    const country = countryOf(c.get("clientIp"));
+    const zone = knownTimeZone(timeZone);
+    // A token that no longer works still counts the tab, as a visitor with none.
+    const visitorId =
+      token.kind === null ? null : await knownVisitor(db, found, c.req.param("key"), token);
+    const conversationId =
+      visitorId == null
+        ? null
+        : await withWorkspace(db, found.id, (tx) =>
+            notePlace(tx, found.id, visitorId, country, zone),
+          );
+    await liveVisitors.beat(found.id, {
+      tab,
+      page: path,
+      title: pageTitle(title),
+      referrer: referrerOrigin(referrer),
+      country,
+      timeZone: zone,
+      device: deviceLine(c.req.header("user-agent")),
+      visitorId: visitorId ?? null,
+      conversationId,
+    });
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(leaveRoute, async (c) => {
+    await liveVisitors.leave(c.get("workspace").id, c.req.valid("query").tab);
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(typingRoute, async (c) => {
+    const found = c.get("workspace");
+    const token = c.get("widgetToken");
+    // Never creates a visitor: someone who has not chatted has no conversation to type in.
+    const visitorId =
+      token.kind === "link"
+        ? (await identify(c))?.visitorId
+        : await knownVisitor(db, found, c.req.param("key"), token);
+    if (visitorId === undefined) return c.json(UNAUTHORIZED, 401);
+    if (visitorId === null) return c.json({ ok: true as const }, 200);
+    const conversationId = await withWorkspace(db, found.id, (tx) =>
+      typingConversation(tx, found.id, visitorId),
+    );
+    if (conversationId !== null) {
+      const { draft } = c.req.valid("json");
+      live.tell(found.id, { kind: "typing", conversationId, visitorId, draft });
+    }
     return c.json({ ok: true as const }, 200);
   });
 

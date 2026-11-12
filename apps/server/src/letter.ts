@@ -1,5 +1,10 @@
+import { escapeHtml } from "../../../packages/widget/src/markdown.ts";
+
 /** How long a sign-in link works. Every email that carries one says so. */
 export const LINK_MINUTES = 15;
+
+/** The colors of the HTML emails: the text, quiet text, and a quote's background. */
+export const EMAIL_COLORS = { text: "#0b2239", muted: "#5f6e80", quote: "#f3efe4" };
 
 // Every email is plain text in one voice: a greeting, a few short paragraphs and the same sign-off.
 // Every string has a key here or next to its sender, so a locale can be added later.
@@ -23,9 +28,10 @@ const text = {
     signupUrl,
     "Didn't ask? You can ignore this email.",
   ],
-  joinSubject: "Your link to join your team on Dinghy",
-  joinBody: (url: string) => [
-    "Here's your link to finish joining your team on Dinghy:",
+  joinSubject: (workspace: string) => `Join ${workspace} on Dinghy`,
+  joinBody: (url: string, workspace: string, inviter: string) => [
+    ...(inviter === "" ? [] : [`${inviter} invited you to ${workspace}.`]),
+    `Open this link to sign in and join ${workspace}:`,
     url,
     text.linkLasts,
     "Didn't ask to join? You can ignore this email, and nothing happens.",
@@ -70,6 +76,29 @@ export function letter(
   return [greeting, ...paragraphs, signOff ?? text.signOff(oneLine(team) || "Dinghy")].join("\n\n");
 }
 
+/** A paragraph of HTML that its maker escaped, such as a message rendered from its Markdown. */
+export interface HtmlParagraph {
+  html: string;
+}
+
+/** A paragraph of plain text as HTML: escaped, with its web addresses as links. */
+function paragraphHtml(paragraph: string | HtmlParagraph): string {
+  if (typeof paragraph !== "string") return paragraph.html;
+  const escaped = escapeHtml(paragraph).replace(
+    /https?:\/\/[^\s<]+/g,
+    (url) => `<a href="${url}">${url}</a>`,
+  );
+  return `<p>${escaped.replace(/\n/g, "<br>")}</p>`;
+}
+
+/** The HTML version of `letter`, for an email whose paragraphs include formatted messages. */
+export function letterHtml(paragraphs: (string | HtmlParagraph)[], team = "Dinghy"): string {
+  const body = [text.hi, ...paragraphs, text.signOff(oneLine(team) || "Dinghy")]
+    .map(paragraphHtml)
+    .join("");
+  return `<!doctype html><html><body style="font:15px/1.5 -apple-system,'Segoe UI',sans-serif;color:${EMAIL_COLORS.text}">${body}</body></html>`;
+}
+
 /** The sign-in link that an operator asked for on the sign-in page. */
 export const signInMail = (url: string) => ({
   subject: text.signInSubject,
@@ -82,11 +111,18 @@ export const noAccountMail = (signupUrl: string) => ({
   body: letter(text.noAccountBody(signupUrl)),
 });
 
-/** The link that joins an existing account to a workspace, from an invite that was emailed to it. */
-export const joinMail = (url: string) => ({
-  subject: text.joinSubject,
-  body: letter(text.joinBody(url)),
-});
+/**
+ * The link that joins an existing account to a workspace, from an invite that was emailed to it. It
+ * names the workspace and who invited, as the invite did.
+ */
+export function joinMail(url: string, workspaceName: string, inviterName: string) {
+  const workspace = (oneLine(workspaceName) ?? "").slice(0, WORKSPACE_NAME_MAX);
+  const inviter = (oneLine(inviterName) ?? "").slice(0, WORKSPACE_NAME_MAX);
+  return {
+    subject: text.joinSubject(workspace),
+    body: letter(text.joinBody(url, workspace, inviter)),
+  };
+}
 
 /** The link that deletes the account, which its operator asked for in the app. */
 export const deleteAccountMail = (url: string) => ({

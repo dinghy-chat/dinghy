@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import type { ReactNode } from "react";
 
 import { type Me, type Role, signOut } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -10,10 +11,12 @@ import { type TextId, t } from "./text.ts";
 import { Avatar, initials, ROLE_TEXT } from "./ui.tsx";
 
 /** What the panel shows: the Inbox, or a page. */
-export type View = "inbox" | "analytics" | "settings";
+export type View = "inbox" | "contacts" | "visitors" | "analytics" | "settings";
 
 const NAV: { view: View; label: TextId; icon: IconName }[] = [
   { view: "inbox", label: "inbox", icon: "inbox" },
+  { view: "contacts", label: "contacts", icon: "contacts" },
+  { view: "visitors", label: "visitors", icon: "globe" },
   { view: "analytics", label: "analytics", icon: "chart" },
   { view: "settings", label: "settings", icon: "gear" },
 ];
@@ -42,6 +45,7 @@ function WorkspaceSwitcher({
   logoUrl,
   workspaceId,
   canCreate,
+  waitingBy,
   onSwitch,
 }: {
   me: Me;
@@ -49,6 +53,7 @@ function WorkspaceSwitcher({
   logoUrl: string | null;
   workspaceId: string;
   canCreate: boolean;
+  waitingBy: Record<string, number>;
   onSwitch(id: string): void;
 }) {
   if (me.workspaces.length < 2 && !canCreate) {
@@ -61,9 +66,19 @@ function WorkspaceSwitcher({
       </div>
     );
   }
+  const waitingIn = (id: string) => waitingBy[id] ?? 0;
+  // Another workspace's chats wait, so the closed button says so with a dot.
+  const elsewhere = me.workspaces.some(
+    (one) => one.workspaceId !== workspaceId && waitingIn(one.workspaceId) > 0,
+  );
   const items: MenuItem[] = me.workspaces.map((one) => ({
     label: one.name,
     lead: <WorkspaceTile name={one.name} logoUrl={one.logoUrl} />,
+    trail: waitingIn(one.workspaceId) > 0 && (
+      <span className="ws-waiting" title={t("waitingCount", { count: waitingIn(one.workspaceId) })}>
+        {waitingIn(one.workspaceId)}
+      </span>
+    ),
     checked: one.workspaceId === workspaceId,
     onSelect: () => {
       if (one.workspaceId !== workspaceId) leave(() => onSwitch(one.workspaceId));
@@ -79,7 +94,11 @@ function WorkspaceSwitcher({
   }
   return (
     <Menu
-      label={t("workspaceMenu", { name })}
+      label={
+        elsewhere
+          ? `${t("workspaceMenu", { name })}, ${t("waitingElsewhere")}`
+          : t("workspaceMenu", { name })
+      }
       items={items}
       buttonClass="workspace"
       side="start"
@@ -87,6 +106,7 @@ function WorkspaceSwitcher({
     >
       <WorkspaceTile name={name} logoUrl={logoUrl} />
       <span className="ws-name">{name}</span>
+      {elsewhere && <i className="ws-dot" aria-hidden="true" />}
       <Icon name="chevron" size={12} />
     </Menu>
   );
@@ -144,6 +164,9 @@ export function Sidebar({
   view,
   onProfile: isProfile,
   waiting,
+  waitingBy,
+  liveCount,
+  steps,
   onView,
   onProfileOpen,
   onSwitch,
@@ -160,6 +183,12 @@ export function Sidebar({
   onProfile: boolean;
   /** Open conversations that wait for a reply, in the whole workspace. */
   waiting: number;
+  /** The same count in each of the operator's workspaces, by workspace ID. */
+  waitingBy: Record<string, number>;
+  /** Tabs of the site open now, or null when unknown. */
+  liveCount: number | null;
+  /** Above the user menu: the Get started steps, while they show. */
+  steps: ReactNode;
   onView(view: View): void;
   onProfileOpen(): void;
   onSwitch(id: string): void;
@@ -179,11 +208,13 @@ export function Sidebar({
         logoUrl={logoUrl}
         workspaceId={workspaceId}
         canCreate={canCreate}
+        waitingBy={waitingBy}
         onSwitch={onSwitch}
       />
       <nav className="nav" aria-label={t("mainMenu")}>
         {NAV.map((item) => {
           const counted = item.view === "inbox" && waiting > 0;
+          const live = item.view === "visitors" && liveCount !== null && liveCount > 0;
           return (
             <button
               type="button"
@@ -200,6 +231,11 @@ export function Sidebar({
                   {waiting}
                 </span>
               )}
+              {live && (
+                <span className="count live" title={t("liveCount", { count: liveCount })}>
+                  {liveCount}
+                </span>
+              )}
             </button>
           );
         })}
@@ -209,6 +245,7 @@ export function Sidebar({
           {waitingText}
         </span>
       )}
+      {steps}
       <UserMenu
         me={me}
         role={role}

@@ -3,22 +3,22 @@ import { createDecipheriv, createECDH, hkdfSync, randomBytes, randomUUID } from 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { lockWaiters, untilWaiting } from "../test/locks.ts";
 import { deletedDuring, signedInOperator } from "../test/operators.ts";
 import {
   claimDeliveries,
-  emailStopUrl,
   fanOutOne,
   finishDelivery,
   MAX_ATTEMPTS,
+  planDelivery,
   pruneOnce,
   REPLY_EMAIL_DELAY_MS,
-  REPLY_EMAILS_PER_DAY,
 } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -30,14 +30,18 @@ import {
   operator,
   pushSubscription,
   visitor,
+  widgetSettings,
   workspaceMember,
 } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
 import type { Mailer } from "./mailer.ts";
-import { appendMessage, listWorkspaceEvents, setConversationStatus } from "./messages.ts";
+import { deleteMessage, editMessage, emailedAt, replyReceipts } from "./message-changes.ts";
+import { appendMessage, listWorkspaceEvents, markRead, setConversationStatus } from "./messages.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
+import { queueTranscript, TRANSCRIPT_DELAY_MS } from "./transcripts.ts";
+import { emailStopUrl, VISITOR_EMAILS_PER_DAY } from "./visitor-email.ts";
 import { startWorker, type Worker } from "./worker.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -74,10 +78,16 @@ const service = http.createServer((req, res) => {
 const serviceUrl = (path: string) =>
   `http://127.0.0.1:${(service.address() as AddressInfo).port}/${path}`;
 
-const mails: { to: string; subject: string; text: string; headers?: Record<string, string> }[] = [];
+const mails: {
+  to: string;
+  subject: string;
+  text: string;
+  headers?: Record<string, string>;
+  html?: string;
+}[] = [];
 const mailer: Mailer = {
-  async send(to, subject, text, headers) {
-    mails.push({ to, subject, text, ...(headers && { headers }) });
+  async send(to, subject, text, headers, html) {
+    mails.push({ to, subject, text, ...(headers && { headers }), ...(html && { html }) });
   },
 };
 
@@ -184,6 +194,7 @@ const operatorWrites = (operatorId: string, conversationId: string, body: string
   );
 
 const deliveries = () => owner.select().from(alertDelivery);
+const planOptions = { publicUrl: PUBLIC_URL, secret: AUTH_SECRET, imageOrigin: PUBLIC_URL };
 const fanOutAll = async (channels = { push: true, email: true }) => {
   while (await fanOutOne(workerDb, channels));
 };
@@ -194,6 +205,17 @@ const expireClaims = () =>
                     where finished_at is null and claimed_until is not null`);
 const makeDue = () =>
   owner.execute(sql`update alert_delivery set next_attempt_at = now() where finished_at is null`);
+/** Time passes: every waiting row comes due this much sooner, so they keep their real order. */
+const passes = (ms: number) =>
+  owner.execute(sql`update alert_delivery
+                    set next_attempt_at = next_attempt_at - ${ms}::float8 * interval '1 millisecond'
+                    where finished_at is null`);
+/** Waits for a check, letting time pass on each try, so every row that waits comes due. */
+const untilDue = (check: () => boolean | Promise<boolean>, what: string) =>
+  until(async () => {
+    await makeDue();
+    return check();
+  }, what);
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -269,6 +291,34 @@ describe("web push", () => {
     }
     // One row for each recipient and channel, however many devices the recipient has.
     expect(await deliveries()).toHaveLength(2);
+  });
+
+  test("a visitor's message deleted before its alert goes alerts nobody", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    await addDevice(anna, "anna-phone");
+    const remove = (written: Awaited<ReturnType<typeof visitorWrites>>) =>
+      withWorkspace(app, space.id, (tx) =>
+        deleteMessage(tx, space.id, written.message.conversationId, written.message.id, {
+          operatorId: anna,
+          mayDeleteAnyone: true,
+        }),
+      );
+    // Deleted before the fan-out: no row.
+    const early = await visitorWrites(await addVisitor(), "My card is 4242 4242 4242 4242");
+    await remove(early);
+    await fanOutAll();
+    expect(await deliveries()).toEqual([]);
+    // Deleted while its row waits: the row sends nothing.
+    const late = await visitorWrites(await addVisitor(), "My card is 4242 4242 4242 4242");
+    await fanOutAll();
+    expect(await deliveries()).toHaveLength(1);
+    await remove(late);
+    runWorker();
+    await until(
+      async () => (await deliveries()).every((row) => row.outcome === "skipped"),
+      "the row to be skipped",
+    );
+    expect(received).toEqual([]);
   });
 
   test("an operator reply and an operator with no device send no push", async () => {
@@ -644,7 +694,7 @@ describe("crashes of the real worker process", () => {
 });
 
 describe("email", () => {
-  const replyRows = async () => (await deliveries()).filter((row) => row.visitorId !== null);
+  const replyRows = async () => (await deliveries()).filter((row) => row.channel === "email");
 
   test("an operator who chose email gets one per conversation in a burst", async () => {
     const email = `anna-${randomUUID()}@example.com`;
@@ -766,7 +816,7 @@ describe("email", () => {
     const written = await visitorWrites(from, "Help");
     const conversationId = written.message.conversationId;
     await operatorWrites(anna, conversationId, "First answer");
-    await operatorWrites(anna, conversationId, "Second answer");
+    await operatorWrites(anna, conversationId, "**Second** answer <b>");
     await fanOutAll();
     const rows = await replyRows();
     // The second reply joins the pending email.
@@ -774,12 +824,19 @@ describe("email", () => {
     const wait = (rows[0]?.nextAttemptAt.getTime() ?? 0) - Date.now();
     expect(wait).toBeGreaterThan(REPLY_EMAIL_DELAY_MS - 5000);
 
-    runWorker({ mail: true });
+    const told: unknown[] = [];
+    runWorker({
+      mail: true,
+      signals: { wake() {}, revoke() {}, tell: (_workspaceId, notice) => told.push(notice) },
+    });
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(mails).toEqual([]);
 
     await makeDue();
     await until(() => mails.length === 1, "the email");
+    // The operators' threads learn that the email went, so they show "Sent by email".
+    await until(() => told.length === 1, "the receipts notice");
+    expect(told).toEqual([{ kind: "receipts", visitorId: from }]);
     const mail = mails[0];
     expect(mail?.to).toBe("v@example.com");
     expect(mail?.subject).toBe("Acme replied to your message");
@@ -792,7 +849,7 @@ describe("email", () => {
       [
         "Hi,",
         "Acme replied to your message:",
-        "First answer\n\nSecond answer",
+        "First answer\n\n**Second** answer <b>",
         `Read the conversation and answer here: ${new URL(chat ?? "", PUBLIC_URL).href}`,
         "The link works for 30 days. Anyone who has it can read and reply, so don't forward this email.",
         "You got this because this address was entered in a chat with Acme. If that wasn't you, " +
@@ -802,6 +859,44 @@ describe("email", () => {
     );
     expect(mail?.headers?.["list-unsubscribe"]).toBe(`<${stop}>`);
     expect(mail?.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
+    // The HTML version shows the Markdown as formatting, and escapes everything else.
+    expect(mail?.html).toContain(
+      "<p>First answer</p><p><strong>Second</strong> answer &lt;b&gt;</p>",
+    );
+    expect(mail?.html).toContain(`<a href="${new URL(chat ?? "", PUBLIC_URL).href}">`);
+    expect(mail?.html).not.toContain("<b>");
+  });
+
+  test("a reply email quotes what the reply answers, and carries an edit made while it waited", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Do you have a **yearly** plan?");
+    const conversationId = written.message.conversationId;
+    const reply = await withWorkspace(app, space.id, (tx) =>
+      appendMessage(
+        tx,
+        space.id,
+        { kind: "operator", operatorId: anna, conversationId },
+        {
+          clientId: randomUUID(),
+          body: "Yes, tw months free.",
+          replyToMessageId: written.message.id,
+        },
+      ),
+    );
+    await fanOutAll();
+    const edited = await withWorkspace(app, space.id, (tx) =>
+      editMessage(tx, space.id, conversationId, reply.message.id, anna, "Yes, two months free."),
+    );
+    expect(edited.kind).toBe("edited");
+    runWorker({ mail: true });
+    await makeDue();
+    await until(() => mails.length === 1, "the email");
+    expect(mails[0]?.text).toContain(
+      "> You:\n> Do you have a yearly plan?\n\nYes, two months free.",
+    );
+    expect(mails[0]?.text).not.toContain("tw months");
+    expect(mails[0]?.html).toContain("<strong>You</strong><br>Do you have a yearly plan?</div>");
   });
 
   test("a visitor who read the reply gets no email", async () => {
@@ -890,18 +985,25 @@ describe("email", () => {
     await operatorWrites(anna, conversationId, "Answer in the first");
     await fanOutAll();
     await withWorkspace(app, space.id, (tx) =>
-      setConversationStatus(tx, space.id, conversationId, "closed"),
+      setConversationStatus(tx, space.id, conversationId, "closed", {
+        kind: "operator",
+        operatorId: anna,
+      }),
     );
     const next = await visitorWrites(from, "One more thing");
     expect(next.message.conversationId).not.toBe(conversationId);
     await operatorWrites(anna, next.message.conversationId, "Answer in the second");
     await fanOutAll();
     expect(await replyRows()).toHaveLength(1);
-    await makeDue();
     runWorker({ mail: true });
-    await until(() => mails.length === 1, "the email");
+    // The first conversation's transcript goes first and carries its reply, so the reply email
+    // carries only the reply from the second conversation.
+    const replyMail = () => mails.find((one) => one.subject === "Acme replied to your message");
+    await untilDue(() => replyMail() !== undefined, "the email");
+    expect(mails[0]?.subject).toBe("Your conversation with Acme");
     expect(mails[0]?.text).toContain("Answer in the first");
-    expect(mails[0]?.text).toContain("Answer in the second");
+    expect(replyMail()?.text).not.toContain("Answer in the first");
+    expect(replyMail()?.text).toContain("Answer in the second");
   });
 
   test("a reply during a send gets its own later email", async () => {
@@ -959,7 +1061,7 @@ describe("email", () => {
     await fanOutAll();
     const old = new Date(Date.now() - 3_600_000);
     await owner.insert(alertDelivery).values(
-      Array.from({ length: REPLY_EMAILS_PER_DAY }, (_, index) => ({
+      Array.from({ length: VISITOR_EMAILS_PER_DAY }, (_, index) => ({
         workspaceId: space.id,
         eventSeq: BigInt(1000 + index),
         conversationId,
@@ -1043,11 +1145,277 @@ describe("email", () => {
     await makeDue();
     const [row] = await claimDeliveries(workerDb, 1, 60_000);
     if (row !== undefined) await finishDelivery(workerDb, row, "sent");
-    for (let index = 2; index < REPLY_EMAILS_PER_DAY; index++) await sendOne();
-    expect(await replyRows()).toHaveLength(REPLY_EMAILS_PER_DAY);
+    for (let index = 2; index < VISITOR_EMAILS_PER_DAY; index++) await sendOne();
+    expect(await replyRows()).toHaveLength(VISITOR_EMAILS_PER_DAY);
     await operatorWrites(anna, conversationId, "Over the limit");
     await fanOutAll();
-    expect(await replyRows()).toHaveLength(REPLY_EMAILS_PER_DAY);
+    expect(await replyRows()).toHaveLength(VISITOR_EMAILS_PER_DAY);
+  });
+
+  test("the daily limit counts emails sent in the last day, however long ago they were queued", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const conversationId = written.message.conversationId;
+    const hours = (count: number) => new Date(Date.now() - count * 3_600_000);
+    // Each queued more than a day ago, and sent within the last day, as the planner counts them.
+    await owner.insert(alertDelivery).values(
+      Array.from({ length: VISITOR_EMAILS_PER_DAY }, (_, index) => ({
+        workspaceId: space.id,
+        eventSeq: BigInt(1000 + index),
+        conversationId,
+        messageId: written.message.id,
+        visitorId: from,
+        channel: "email" as const,
+        outcome: "sent" as const,
+        createdAt: hours(26),
+        finishedAt: hours(23),
+      })),
+    );
+    await operatorWrites(anna, conversationId, "Over the limit");
+    await fanOutAll();
+    expect(await replyRows()).toHaveLength(VISITOR_EMAILS_PER_DAY);
+  });
+
+  test("transcripts count toward the daily limit", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const conversationId = written.message.conversationId;
+    await operatorWrites(anna, conversationId, "Answer");
+    for (let sent = 0; sent < VISITOR_EMAILS_PER_DAY; sent++) {
+      expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+      await fanOutAll();
+      const [row] = await claimDeliveries(workerDb, 1, 60_000);
+      if (row !== undefined) await finishDelivery(workerDb, row, "sent");
+      await operatorWrites(anna, conversationId, `Answer ${sent}`);
+      await fanOutAll();
+    }
+    // The reply emails that waited, and a new transcript, all stop at the limit.
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await fanOutAll();
+    runWorker({ mail: true });
+    await untilDue(
+      async () => (await deliveries()).every((row) => row.finishedAt !== null),
+      "every row to finish",
+    );
+    expect(mails).toEqual([]);
+  });
+
+  test("an email's receipt, edit lock and info cover exactly the replies it carried", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const conversationId = written.message.conversationId;
+    const replies = [];
+    for (let index = 1; index <= 6; index++) {
+      replies.push((await operatorWrites(anna, conversationId, `Answer ${index}`)).message);
+    }
+    await fanOutAll();
+    // The mail server holds the email, so a reply written during the send is not in it.
+    const sending = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const holding: Mailer = {
+      async send(to, subject, text) {
+        sending.resolve();
+        await release.promise;
+        mails.push({ to, subject, text });
+      },
+    };
+    runWorker({ mailer: holding });
+    await makeDue();
+    let during: Awaited<ReturnType<typeof operatorWrites>>["message"];
+    try {
+      // The plan, with its range, commits before the send starts.
+      await sending.promise;
+      during = (await operatorWrites(anna, conversationId, "Answer 7")).message;
+    } finally {
+      release.resolve();
+    }
+    await until(async () => (await replyRows())[0]?.outcome === "sent", "the email");
+    expect(mails[0]?.text).toContain("Answer 6");
+    expect(mails[0]?.text).not.toContain("Answer 1");
+    const [first, sixth] = [replies[0], replies[5]];
+    if (first === undefined || sixth === undefined) throw new Error("No replies");
+    const seen = await withWorkspace(app, space.id, async (tx) => ({
+      receipts: await replyReceipts(tx, space.id, conversationId, from),
+      first: await emailedAt(tx, space.id, from, first),
+      sixth: await emailedAt(tx, space.id, from, sixth),
+      during: await emailedAt(tx, space.id, from, during),
+    }));
+    expect(seen.receipts.emails).toEqual([
+      { fromSeq: replies[1]?.seq, toSeq: sixth.seq, sent: true },
+    ]);
+    expect(seen.first).toBeNull();
+    expect(seen.sixth).toBeInstanceOf(Date);
+    expect(seen.during).toBeNull();
+    const edit = (id: string, body: string) =>
+      withWorkspace(app, space.id, (tx) =>
+        editMessage(tx, space.id, conversationId, id, anna, body),
+      );
+    expect((await edit(first.id, "Answer one")).kind).toBe("edited");
+    expect((await edit(during.id, "Answer seven")).kind).toBe("edited");
+    expect((await edit(sixth.id, "Answer six")).kind).toBe("seen");
+  });
+
+  test("an email planned while an edit commits carries the edited text", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const conversationId = written.message.conversationId;
+    const reply = await operatorWrites(anna, conversationId, "Teh answer");
+    await fanOutAll();
+    await makeDue();
+    const edited = Promise.withResolvers<void>();
+    const commit = Promise.withResolvers<void>();
+    const editing = withWorkspace(app, space.id, async (tx) => {
+      const outcome = await editMessage(
+        tx,
+        space.id,
+        conversationId,
+        reply.message.id,
+        anna,
+        "The answer",
+      );
+      edited.resolve();
+      await commit.promise;
+      return outcome;
+    });
+    try {
+      await edited.promise;
+      const [row] = await claimDeliveries(workerDb, 1, 60_000);
+      if (row === undefined) throw new Error("No claim");
+      const planning = planDelivery(workerDb, row, planOptions);
+      // The plan must wait for the edit's lock, not read the old text.
+      await untilWaiting(owner);
+      commit.resolve();
+      expect((await editing).kind).toBe("edited");
+      const plan = await planning;
+      expect(plan?.channel === "email" && plan.text).toContain("The answer");
+    } finally {
+      commit.resolve();
+    }
+  });
+});
+
+describe("a plan and a change to its messages at once", () => {
+  type Change = "edit" | "delete" | "read";
+  const CHANGES: Change[] = ["edit", "delete", "read"];
+  const CHANNELS = ["email", "transcript"] as const;
+  const NAMES = { email: "an email", transcript: "a transcript" };
+  const ACTS = { edit: "an edit", delete: "a delete", read: "a read" };
+
+  /**
+   * A visitor with an email and two replies, with this channel's row claimed and ready to plan. The
+   * change acts on the newer reply.
+   */
+  async function ready(channel: (typeof CHANNELS)[number]) {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const conversationId = (await visitorWrites(from, "Help")).message.conversationId;
+    const older = (await operatorWrites(anna, conversationId, "First")).message;
+    const reply = (await operatorWrites(anna, conversationId, "Teh answer")).message;
+    if (channel === "transcript") {
+      expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    }
+    await fanOutAll();
+    await owner.delete(alertDelivery).where(ne(alertDelivery.channel, channel));
+    await makeDue();
+    const [row] = await claimDeliveries(workerDb, 1, 60_000);
+    if (row?.channel !== channel) throw new Error(`No ${channel} row to plan`);
+    const change = (tx: Transaction, kind: Change): Promise<unknown> => {
+      if (kind === "read") return markRead(tx, space.id, from, reply.seq);
+      if (kind === "edit") {
+        return editMessage(tx, space.id, conversationId, reply.id, anna, "The answer");
+      }
+      return deleteMessage(tx, space.id, conversationId, reply.id, {
+        operatorId: anna,
+        mayDeleteAnyone: false,
+      });
+    };
+    return { row, olderId: older.id, newerId: reply.id, change };
+  }
+
+  /** Holds a reply's row FOR UPDATE until released. */
+  async function holdMessage(messageId: string) {
+    const held = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const done = owner.transaction(async (tx) => {
+      await tx.execute(sql`select 1 from message
+        where workspace_id = ${space.id} and id = ${messageId} for update`);
+      held.resolve();
+      await release.promise;
+    });
+    await held.promise;
+    return { done, release: release.resolve };
+  }
+
+  /** Waits until the promise settles or this many connections wait on a lock. */
+  async function settledOrWaiting(promise: Promise<unknown>, count: number) {
+    let settled = false;
+    void promise.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await until(async () => settled || (await lockWaiters(owner)) >= count, "a lock wait");
+  }
+
+  for (const channel of CHANNELS) {
+    for (const kind of CHANGES) {
+      test(`${NAMES[channel]} plan that holds its messages, then ${ACTS[kind]}: both finish`, async () => {
+        const { row, olderId, change } = await ready(channel);
+        // A lock on the older reply stops the plan after it locked the newer one, which it reads
+        // first, and before its chat link checks the visitor's row.
+        const gate = await holdMessage(olderId);
+        try {
+          const planning = planDelivery(workerDb, row, planOptions);
+          await untilWaiting(owner);
+          const changing = withWorkspace(app, space.id, (tx) => change(tx, kind));
+          await settledOrWaiting(changing, 2);
+          gate.release();
+          await Promise.all([gate.done, planning, changing]);
+        } finally {
+          gate.release();
+        }
+      });
+
+      test(`${ACTS[kind]} that holds its rows, then ${NAMES[channel]} plan: both finish`, async () => {
+        const { row, change } = await ready(channel);
+        const changed = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const changing = withWorkspace(app, space.id, async (tx) => {
+          await change(tx, kind);
+          changed.resolve();
+          await release.promise;
+        });
+        try {
+          await changed.promise;
+          const planning = planDelivery(workerDb, row, planOptions);
+          await settledOrWaiting(planning, 1);
+          release.resolve();
+          await Promise.all([changing, planning]);
+        } finally {
+          release.resolve();
+        }
+      });
+    }
+  }
+
+  test(`${NAMES.email} plan and a read that lock the replies in opposite orders both finish`, async () => {
+    const { row, newerId, change } = await ready("email");
+    // Both wait for the newer reply. The plan, first in line, then wants the older one, which the
+    // read has updated by then.
+    const gate = await holdMessage(newerId);
+    try {
+      const planning = planDelivery(workerDb, row, planOptions);
+      await untilWaiting(owner);
+      const reading = withWorkspace(app, space.id, (tx) => change(tx, "read"));
+      await untilWaiting(owner, 2);
+      gate.release();
+      await Promise.all([gate.done, planning, reading]);
+    } finally {
+      gate.release();
+    }
   });
 });
 
@@ -1099,7 +1467,10 @@ describe("retention", () => {
     const written = await visitorWrites(from, "Waiting");
     const kept = (await feed(start)).cursor;
     await withWorkspace(app, space.id, (tx) =>
-      setConversationStatus(tx, space.id, written.message.conversationId, "closed"),
+      setConversationStatus(tx, space.id, written.message.conversationId, "closed", {
+        kind: "visitor",
+        visitorId: from,
+      }),
     );
     await owner
       .update(event)
@@ -1374,5 +1745,201 @@ describe("the routes", () => {
     expect(await stops()).toEqual([
       expect.objectContaining({ addressHash: emailAddressHash(email) }),
     ]);
+  });
+});
+
+describe("transcripts", () => {
+  const setStatus = (conversationId: string, operatorId: string, status: "open" | "closed") =>
+    withWorkspace(app, space.id, (tx) =>
+      setConversationStatus(tx, space.id, conversationId, status, { kind: "operator", operatorId }),
+    );
+  const transcripts = async () =>
+    (await deliveries()).filter((row) => row.channel === "transcript");
+  const allFinished = async () => (await deliveries()).every((row) => row.finishedAt !== null);
+  const eventsToFanOut = async () =>
+    (
+      await owner.execute<{ count: number }>(sql`
+        select count(*)::int as count from event
+        where workspace_id = ${space.id} and needs_alert`)
+    ).rows[0]?.count ?? 0;
+
+  async function chat(email: string | null = "visitor@example.com") {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor(email);
+    const written = await visitorWrites(from, "How do I export my data?");
+    const conversationId = written.message.conversationId;
+    await operatorWrites(anna, conversationId, "Open **Settings**, then Export.");
+    return { anna, from, conversationId };
+  }
+
+  /**
+   * The reply's email is due at t0 + 5 minutes, and the close 30 seconds later makes the transcript
+   * due at t0 + 5:30, so the reply email comes due first, as it does for real.
+   */
+  async function replyThenClose() {
+    const conversation = await chat();
+    await fanOutAll();
+    await passes(30_000);
+    await setStatus(conversation.conversationId, conversation.anna, "closed");
+    await fanOutAll();
+    const replyEmail = (await deliveries()).find((row) => row.channel === "email");
+    const [transcript] = await transcripts();
+    expect(transcript?.nextAttemptAt.getTime()).toBeGreaterThan(
+      Date.now() + TRANSCRIPT_DELAY_MS - 60_000,
+    );
+    expect(
+      (transcript?.nextAttemptAt.getTime() ?? 0) - (replyEmail?.nextAttemptAt.getTime() ?? 0),
+    ).toBeGreaterThan(25_000);
+    return conversation;
+  }
+  const replyEmailRow = async () => (await deliveries()).find((row) => row.channel === "email");
+
+  test("a reply email due before the close's transcript waits for it, and the reply goes once", async () => {
+    await replyThenClose();
+    runWorker({ mail: true });
+    // The reply email is due, and the transcript 30 seconds later.
+    await passes(REPLY_EMAIL_DELAY_MS - 30_000);
+    await until(async () => {
+      const row = await replyEmailRow();
+      return row?.claimedUntil === null && (row?.nextAttemptAt.getTime() ?? 0) > Date.now();
+    }, "the reply email to wait for the transcript");
+    expect(mails).toEqual([]);
+    await untilDue(allFinished, "both rows to finish");
+    expect(mails.map((mail) => mail.subject)).toEqual(["Your conversation with Acme"]);
+    const [mail] = mails;
+    expect(mail?.text).toMatch(
+      /You, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC:\nHow do I export my data\?/,
+    );
+    expect(mail?.text).toContain("anna-");
+    expect(mail?.text).toContain("Continue the chat: ");
+    expect(mail?.html).toContain("<strong>Settings</strong>");
+    expect((await replyEmailRow())?.outcome).toBe("skipped");
+  });
+
+  test("a transcript that fails or is cancelled leaves the reply email to carry the reply", async () => {
+    const failing: Mailer = {
+      async send(to, subject, text) {
+        if (subject.startsWith("Your conversation")) throw new Error("The mail server refused");
+        mails.push({ to, subject, text });
+      },
+    };
+    await replyThenClose();
+    runWorker({ mailer: failing });
+    await untilDue(allFinished, "both rows to finish");
+    expect((await transcripts())[0]?.outcome).toBe("failed");
+    expect(mails.map((mail) => mail.subject)).toEqual(["Acme replied to your message"]);
+    expect(mails[0]?.text).toContain("Open **Settings**, then Export.");
+  });
+
+  test("a reopen within the delay cancels it, and the reply email still goes", async () => {
+    const { anna, conversationId } = await replyThenClose();
+    await setStatus(conversationId, anna, "open");
+    runWorker({ mail: true });
+    await untilDue(allFinished, "both rows to finish");
+    expect((await transcripts())[0]?.outcome).toBe("skipped");
+    expect(mails.map((mail) => mail.subject)).toEqual(["Acme replied to your message"]);
+  });
+
+  test("a new close sends another only after new messages", async () => {
+    const { anna, conversationId } = await chat();
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    await setStatus(conversationId, anna, "open");
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    // The first close's transcript still waits, and holds every message.
+    expect(await transcripts()).toHaveLength(1);
+    await setStatus(conversationId, anna, "open");
+    await operatorWrites(anna, conversationId, "One more thing.");
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    expect(await transcripts()).toHaveLength(2);
+  });
+
+  test("none goes with the setting off, with no email, with no reply or with no mail server", async () => {
+    const off = await chat();
+    await owner
+      .update(widgetSettings)
+      .set({ transcript: false })
+      .where(eq(widgetSettings.workspaceId, space.id));
+    await setStatus(off.conversationId, off.anna, "closed");
+    await fanOutAll();
+    await owner
+      .update(widgetSettings)
+      .set({ transcript: true })
+      .where(eq(widgetSettings.workspaceId, space.id));
+    const noEmail = await chat(null);
+    await setStatus(noEmail.conversationId, noEmail.anna, "closed");
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const silent = await visitorWrites(await addVisitor("quiet@example.com"), "Hello?");
+    await setStatus(silent.message.conversationId, anna, "closed");
+    await fanOutAll();
+    const noServer = await chat();
+    await setStatus(noServer.conversationId, noServer.anna, "closed");
+    await fanOutAll({ push: true, email: false });
+    expect(await transcripts()).toEqual([]);
+  });
+
+  test("a close alerts no operator", async () => {
+    const { anna, conversationId } = await chat(null);
+    await addDevice(anna, "anna-phone");
+    await fanOutAll();
+    const before = (await deliveries()).length;
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    expect(await deliveries()).toHaveLength(before);
+  });
+
+  test("an operator sends one by hand, even while the conversation is open", async () => {
+    const { anna, conversationId } = await chat();
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    // A second click while the first waits adds nothing.
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await fanOutAll();
+    expect(await transcripts()).toHaveLength(1);
+    runWorker({ mail: true });
+    await until(async () => (await transcripts())[0]?.outcome === "sent", "it");
+    // A retry of the click after it went sends nothing new.
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await until(async () => (await eventsToFanOut()) === 0, "the fan-out");
+    expect(await transcripts()).toHaveLength(1);
+    // A reply written and deleted since then adds nothing to send either.
+    const gone = await operatorWrites(anna, conversationId, "Wrong chat");
+    await withWorkspace(app, space.id, (tx) =>
+      deleteMessage(tx, space.id, conversationId, gone.message.id, {
+        operatorId: anna,
+        mayDeleteAnyone: false,
+      }),
+    );
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await until(async () => (await eventsToFanOut()) === 0, "the fan-out");
+    expect(await transcripts()).toHaveLength(1);
+    expect(mails.filter((one) => one.subject === "Your conversation with Acme")).toHaveLength(1);
+  });
+
+  test("a hand-sent one that failed can be sent again", async () => {
+    const { conversationId } = await chat();
+    const refusing: Mailer = {
+      async send() {
+        throw new Error("The mail server refused");
+      },
+    };
+    const worker = runWorker({ mailer: refusing });
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await until(async () => (await transcripts())[0]?.outcome === "failed", "the failure");
+    await worker.stop();
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await fanOutAll();
+    expect(await transcripts()).toHaveLength(2);
+  });
+
+  test("a hand-sent one needs an email, and stays in its workspace", async () => {
+    const { conversationId } = await chat(null);
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("no_email");
+    const other = await createWorkspace(app, "Other", ["https://other.example.com"]);
+    const theirs = await chat();
+    expect(await queueTranscript(app, other.id, theirs.conversationId)).toBe("missing");
+    await fanOutAll();
+    expect(await transcripts()).toEqual([]);
   });
 });

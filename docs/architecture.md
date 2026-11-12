@@ -42,6 +42,8 @@ A workspace API key (`dk_...`) names its workspace in the token, so its lookup r
 
 A message and its row in the `event` table commit in one Postgres transaction. The first statement takes the workspace row's lock and increments its event sequence, so the order of the sequence matches the order of commits. A client that holds cursor N can never miss an event below N that commits later.
 
+An edit or a delete keeps the message's row and its `seq`, and writes its own event in the same transaction. The message keeps that event's sequence as its change position, and the widget's stream reads messages by change position, so a visitor's cursor also catches every later edit or delete. The operator app reloads a conversation's messages when a `message.updated` or `message.deleted` change names it.
+
 A cursor is `generation.seq`. A restore or an import gives the workspace a new random generation. A client sends its cursor when it reconnects, and the server replays the events after it. When the cursor's generation is old, or its events were pruned, the server answers `resync`, and the client loads everything again.
 
 Each send carries an ID that the client made. A retry with the same ID returns the first message, so it cannot create a duplicate.

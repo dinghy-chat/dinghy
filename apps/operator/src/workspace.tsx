@@ -2,9 +2,11 @@
 import { useState } from "react";
 import { BillingRow } from "../../../ee/operator/billing.tsx";
 import type { BillingState, Usage, WorkspaceApi, WorkspaceSettings } from "./api.ts";
+import { useLoad } from "./load.ts";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, type Team } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
+import { toast } from "./toast.tsx";
 import {
   ErrorNote,
   failureText,
@@ -23,6 +25,38 @@ const LOGO_TEXT: UploadText = {
   preview: "logoPreview",
   tooLarge: "logoTooLarge",
 };
+
+/** Whether operators see what visitors type before they send it. */
+function TypingPreviewRow({ api }: { api: WorkspaceApi }) {
+  const widget = useLoad(() => api.widget(), [api]);
+  const [failure, setFailure] = useState<TextId | null>(null);
+  const change = async (enabled: boolean) => {
+    setFailure(null);
+    try {
+      widget.setData(await api.setTypingPreview(enabled));
+      toast("saved");
+    } catch (error) {
+      setFailure(failureText(error, {}, "actionFailed"));
+    }
+  };
+  return (
+    <PageRow title={t("typingPreviewTitle")} help={t("typingPreviewHelp")}>
+      {widget.data === null ? (
+        <ErrorNote text={widget.failure} />
+      ) : (
+        <label className="check">
+          {t("typingPreviewToggle")}
+          <input
+            type="checkbox"
+            checked={widget.data.typingPreview}
+            onChange={(event) => void change(event.target.checked)}
+          />
+        </label>
+      )}
+      <ErrorNote text={failure} />
+    </PageRow>
+  );
+}
 
 /** Bytes in the decimal units the plan uses, such as 12.3 MB or 1 GB. */
 function formatBytes(bytes: number): string {
@@ -292,6 +326,7 @@ export function WorkspacePage({
           onRemove={api.removeLogo}
         />
       </PageRow>
+      <TypingPreviewRow api={api} />
       {usage !== null && <PlanRow usage={usage} />}
       {isOwner && <BillingRow api={api} workspaceId={workspaceId} billing={billing} />}
       {team.blocked.length > 0 && <BlockedRow api={api} team={team} />}

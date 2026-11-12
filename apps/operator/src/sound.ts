@@ -1,10 +1,10 @@
-// A short, soft two-note chime for a visitor's new message, made with the Web Audio API, so the app
-// ships no sound file. The setting is per device, and on until someone turns it off.
+// The chime for a visitor's new message: the widget's tone and its 2-second gap, on this app's own
+// audio. The setting is per device, and on until someone turns it off.
 
+import { chime as playChime } from "../../../packages/widget/src/sound.ts";
 import { readStored, store } from "./stored.ts";
 
 const KEY = "dinghy:sound";
-const GAP_MS = 2000;
 
 /** Without storage, the sound stays on. */
 export function soundOn(): boolean {
@@ -16,7 +16,6 @@ export function setSoundOn(on: boolean): void {
 }
 
 let audio: AudioContext | null = null;
-let lastPlayed = 0;
 
 /**
  * Browsers start audio only after the person clicks or types on the page, so the context starts on
@@ -41,25 +40,7 @@ export function prepareSound(): () => void {
   return stop;
 }
 
-/** Two notes, a fifth apart, that fade out. At most one chime every 2 seconds. */
+/** The chime, while the setting is on. */
 export function chime(): void {
-  if (!soundOn() || audio === null || audio.state !== "running") return;
-  if (Date.now() - lastPlayed < GAP_MS) return;
-  lastPlayed = Date.now();
-  const start = audio.currentTime;
-  for (const [frequency, at] of [
-    [784, 0],
-    [1175, 0.13],
-  ] as const) {
-    const tone = audio.createOscillator();
-    const volume = audio.createGain();
-    tone.type = "sine";
-    tone.frequency.value = frequency;
-    volume.gain.setValueAtTime(0, start + at);
-    volume.gain.linearRampToValueAtTime(0.08, start + at + 0.02);
-    volume.gain.exponentialRampToValueAtTime(0.0001, start + at + 0.45);
-    tone.connect(volume).connect(audio.destination);
-    tone.start(start + at);
-    tone.stop(start + at + 0.5);
-  }
+  if (soundOn()) playChime(audio);
 }

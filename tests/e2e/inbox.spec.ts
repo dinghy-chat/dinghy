@@ -47,7 +47,7 @@ async function answer(page: Page, text: string) {
 }
 
 const row = (page: Page, text: string) => page.locator(".row", { hasText: text });
-const openCount = (page: Page) => page.locator(".nav .count");
+const openCount = (page: Page) => page.locator(".nav .count:not(.live)");
 
 test("each reply shows who sent it, and your own say You", async ({ browser }) => {
   const customer = await visitor(browser, "Who is answering?");
@@ -77,8 +77,8 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
 
   // A signed-out visitor has a short code, and the thread shows the page without its query.
   await expect(alice.locator(".thread-head h2")).toHaveText(/^Visitor [0-9A-Z]{4}$/);
-  // As where it started, or as the last page, which the header does not repeat when they match.
-  await expect(alice.locator(".thread-head .who-text")).toContainText(
+  // The last page is in the visitor's panel.
+  await expect(alice.locator(".visitor-panel")).toContainText(
     `${new URL(server.hostOrigin).host}/pricing`,
   );
   await expect(alice.locator(".thread")).not.toContainText("SECRET");

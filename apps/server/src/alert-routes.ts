@@ -1,7 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, notInArray } from "drizzle-orm";
 import type { Logger } from "pino";
-import { sendToOperator, testPayload, verifyEmailStop } from "./alerts.ts";
+import { sendToOperator, testPayload } from "./alerts.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { emailStop, pushSubscription, workspaceMember } from "./db/schema.ts";
@@ -18,6 +18,8 @@ import {
 } from "./errors.ts";
 import { isPushEndpoint, isPushKeys, type Push } from "./push.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
+import { queueTranscript } from "./transcripts.ts";
+import { verifyEmailStop } from "./visitor-email.ts";
 
 const NO_PUSH = failure("push_unavailable", "This server has no push keys.");
 const BAD_ENDPOINT = failure("bad_endpoint", "This browser's push service is not supported.");
@@ -118,6 +120,25 @@ const deleteDevice = createRoute({
     },
   },
   responses: { 200: ok, ...OPERATOR_WRITE_ERRORS },
+});
+
+const NO_EMAIL_SERVER = failure("email_unavailable", "This server sends no email.");
+const NO_VISITOR_EMAIL = failure("no_email", "This visitor gave no email.");
+
+const sendTranscript = createRoute({
+  method: "post",
+  path: "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/transcript",
+  security: SESSION,
+  summary:
+    "Email the visitor the whole conversation now, through the worker. A second request before a new message sends nothing more",
+  request: { params: z.object({ workspaceId: z.uuid(), conversationId: z.uuid() }) },
+  responses: {
+    200: { description: "Queued", content: okContent },
+    ...MEMBER_WRITE_ERRORS,
+    409: errorAnswer(
+      "no_email: the visitor gave no email. email_unavailable: this server sends no email",
+    ),
+  },
 });
 
 const testPush = createRoute({
@@ -230,6 +251,15 @@ export function registerAlertRoutes(
           eq(pushSubscription.operatorId, c.get("operatorId")),
         ),
       );
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(sendTranscript, async (c) => {
+    if (!emailAvailable) return c.json(NO_EMAIL_SERVER, 409);
+    const { conversationId } = c.req.valid("param");
+    const result = await queueTranscript(db, c.get("memberWorkspaceId"), conversationId);
+    if (result === "missing") return c.json(NOT_FOUND, 404);
+    if (result === "no_email") return c.json(NO_VISITOR_EMAIL, 409);
     return c.json({ ok: true as const }, 200);
   });
 

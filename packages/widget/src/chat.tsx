@@ -1,30 +1,31 @@
-import { render } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { Fragment, render } from "preact";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ChatMessage, createClient } from "./client.ts";
 import { imageProblem, inCommitOrder, newClientId, REFRESH_LIMIT_MS, REFUSED } from "./compose.ts";
 import { cleanContext } from "./context.ts";
 import "./globals.ts";
-import { usePageReports } from "./page-reports.ts";
+import { emit, reportConversation } from "./page-events.ts";
+import { useDraftPreview, usePageReports } from "./page-reports.ts";
 import {
   Branding,
   ChatHead,
   ChatLine,
   Composer,
   CSS,
-  EmailForm,
+  EmailCard,
+  EmailSaved,
   EmptyLog,
   emailLayout,
   type Line,
-  MESSAGE_MAX,
   type SceneState,
   sayer,
   startsRun,
 } from "./panel.tsx";
 import { usePresence } from "./presence.ts";
+import { type Quote, quoteOfReply } from "./quote.ts";
 import {
   CONTEXT_VERSION,
-  type DinghyEvent,
-  type DinghyEvents,
+  MESSAGE_MAX,
   type QueuedCall,
   readToken,
   rememberOpen,
@@ -34,65 +35,36 @@ import {
   wasOpen,
   writeToken,
 } from "./shared.ts";
-import { LAUNCHER_LABEL, t } from "./text.ts";
+import { chime, prepareSound } from "./sound.ts";
+import { t } from "./text.ts";
+import { larger, useUnread } from "./use-unread.ts";
 
 const NEW_REPLY_SHOWN_MS = 5000;
 const RETRY_LIMIT_MS = 30_000;
-
-/** Calls the page's callbacks. One that throws is reported, and the others still run. */
-function emit<E extends DinghyEvent>(context: WidgetContext, event: E, data: DinghyEvents[E]) {
-  for (const callback of context.listeners[event] ?? []) {
-    try {
-      callback(data);
-    } catch (error) {
-      reportError(error);
-    }
-  }
-}
-
-/** The page's `unread` event, once for each new count. */
-function reportUnread(context: WidgetContext, count: number) {
-  if (count === context.state.unread) return;
-  context.state.unread = count;
-  emit(context, "unread", count);
-}
-
-/** The page's `conversation` event, once for each change. */
-function reportConversation(context: WidgetContext, open: boolean) {
-  if (open === context.state.conversation) return;
-  context.state.conversation = open;
-  emit(context, "conversation", open);
-}
-
-/** The launcher's count, in its badge and its label. The full-page chat has no launcher. */
-function drawBadge(shadow: ShadowRoot, count: number) {
-  const launcher = shadow.querySelector(".launcher");
-  if (launcher === null) return;
-  let badge = launcher.querySelector<HTMLElement>(".badge");
-  if (badge === null) {
-    badge = document.createElement("span");
-    badge.className = "badge";
-    launcher.append(badge);
-  }
-  badge.hidden = count === 0;
-  badge.textContent = count > 99 ? "99+" : String(count);
-  launcher.setAttribute("aria-label", count ? `${LAUNCHER_LABEL} (${count})` : LAUNCHER_LABEL);
-}
 
 /**
  * Adds a confirmed message in commit order. A pending line with the same client ID becomes this
  * message, so a send whose response was lost cannot stay marked as failed or appear twice.
  */
 function merge(lines: Line[], message: ChatMessage): Line[] {
+  const { kind } = message;
+  const note = kind === "closed" || kind === "reopened" ? kind : undefined;
   const line: Line = {
+    ...(note && { note }),
     id: message.id,
     seq: BigInt(message.seq),
-    // A removed image reads as a note where it was.
-    body: message.imageRemoved ? t("imageRemoved") : (message.body ?? ""),
+    // A removed image or a deleted message reads as a note where it was.
+    body: message.deleted
+      ? t("messageDeleted")
+      : message.imageRemoved
+        ? t("imageRemoved")
+        : (message.body ?? ""),
     image: message.image,
+    quote: message.replyTo,
+    gone: message.deleted,
     fromVisitor: message.fromVisitor,
     author:
-      message.authorId === null || message.authorName === null
+      note || message.authorId === null || message.authorName === null
         ? null
         : {
             id: message.authorId,
@@ -106,11 +78,6 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
   return inCommitOrder(others, line);
 }
 
-/** Math.max does not accept a bigint. */
-function larger(a: bigint, b: bigint): bigint {
-  return a > b ? a : b;
-}
-
 /** The page's data attribute when it has one, as data-mascot="false", or else the saved setting. */
 const pageOr = (attribute: string | undefined, saved: boolean) =>
   attribute === undefined ? saved : attribute !== "false";
@@ -121,6 +88,10 @@ interface ChatProps {
   setOpen(open: boolean): void;
   /** Opened again after a reload, so it does not take the page's focus. */
   quiet: boolean;
+  /** The chat was open in this tab before a reload, and the server has not said yet whether it reopens. */
+  restoring: boolean;
+  /** Ends the restore: the chat reopens only with an open conversation or a new, empty chat. */
+  restored(reopen: boolean): void;
   /** A message that open({ message }) puts in the composer. */
   prefill: { text: string } | null;
   /** Drops the pre-filled message once the visitor sends, so a remount does not bring it back. */
@@ -140,6 +111,8 @@ function Chat({
   open,
   setOpen,
   quiet,
+  restoring,
+  restored,
   prefill,
   clearPrefill,
   contextVersion,
@@ -157,9 +130,6 @@ function Chat({
   const [chatted, setChatted] = useState(false);
   // Whether the visitor gave an email, from the server. Undefined until it answers.
   const [hasEmail, setHasEmail] = useState<boolean>();
-  const [lastRead, setLastRead] = useState(0n);
-  // The server's count, with the read position it was computed from.
-  const [serverRead, setServerRead] = useState({ unread: 0, position: 0n });
   const [loaded, setLoaded] = useState(false);
   // The newest position the stream has delivered. A send's own response does not move this, so a
   // reply that has not arrived yet cannot be marked as read.
@@ -172,9 +142,13 @@ function Chat({
   // The newest message this chat sent. A reply after it is new even inside a stream's first replay,
   // which can hold an answer to the message that started the conversation.
   const lastSent = useRef<bigint | null>(null);
+  // The highest position the stream has sent, so a message sent again for an edit is not news.
+  const highest = useRef(0n);
   const alive = useRef(true);
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
+  // The quote the next message carries. It shows at once, and the server's copy replaces it.
+  const [quoting, setQuoting] = useState<Quote | null>(null);
   const [lost, setLost] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
@@ -202,6 +176,9 @@ function Chat({
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const panel = useRef<HTMLElement>(null);
+  // Read by the stream's handler, which outlives a render: whether a live reply chimes now.
+  const wantsChime = useRef(false);
+  wantsChime.current = saved?.sound === true && (!open || !visible);
   const creatingVisitor = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
@@ -273,9 +250,10 @@ function Chat({
   }, [prefill]);
 
   // Only a visitor with a token has the flag, so one who never chatted stores nothing.
+  // While a restore waits for the server, the flag stays, so another reload can still restore.
   useEffect(() => {
-    if (!fullPage) rememberOpen(publicKey, open && token !== null);
-  }, [fullPage, open, publicKey, token]);
+    if (!fullPage && !restoring) rememberOpen(publicKey, open && token !== null);
+  }, [fullPage, open, publicKey, restoring, token]);
 
   // The panel waits for the saved look, so its words never change after it shows.
   const shown = open && saved !== undefined;
@@ -296,6 +274,8 @@ function Chat({
 
   const { online, emailReplies } = usePresence(client, fullPage ? token : null, open && visible);
   usePageReports(client, token, chatted && !fullPage);
+  // Only into an open conversation, and only when the workspace shows drafts.
+  useDraftPreview(client, token, openConversation && saved?.typingPreview === true, draft);
 
   // Like the pages, the page's context goes only for a visitor who has chatted: after the first
   // message, on each load after that, and on each setContext().
@@ -308,6 +288,17 @@ function Chat({
       // Only a detail for operators. The next setContext() or page load tries again.
     });
   }, [chatted, client, context, contextVersion, fullPage, token]);
+
+  const serverSaid = useUnread(
+    context,
+    client,
+    token,
+    lines,
+    loaded && (open || openConversation),
+    shown && visible && loaded,
+    delivered,
+    saved,
+  );
 
   // One request when a visible tab has a token gives the unread count and says whether a stream is
   // needed. A visitor with only closed conversations holds no stream. It runs again when a tab
@@ -324,13 +315,13 @@ function Chat({
         if (replaced) return;
         renewDelay.current = 0;
         // A send during this request leaves a conversation open that this response may not show.
-        setOpenConversation(me.openConversation || sends.current !== sendsAtStart);
+        const hasOpenConversation = me.openConversation || sends.current !== sendsAtStart;
+        setOpenConversation(hasOpenConversation);
+        // Only closed conversations keep the chat closed, so a closed one does not pop up again.
+        if (restoring) restored(hasOpenConversation || !me.chatted);
         setChatted((current) => current || me.chatted);
         setHasEmail(me.hasEmail);
-        // The larger one, because this response can be older than a read in this tab.
-        const position = BigInt(me.lastReadSeq);
-        setLastRead((current) => larger(current, position));
-        setServerRead({ unread: me.unread, position });
+        serverSaid(me.unread, BigInt(me.lastReadSeq));
         readCursor.current = me.readCursor;
       })
       .catch((error: unknown) => {
@@ -338,6 +329,7 @@ function Chat({
         if (!(error instanceof ApiError) || error.status !== 401) {
           // With no answer, the widget asks for an email rather than wait for it forever.
           setHasEmail((current) => current ?? false);
+          if (restoring) restored(false);
           return;
         }
         if (identity === null) {
@@ -350,33 +342,10 @@ function Chat({
     return () => {
       replaced = true;
     };
-  }, [client, identity, publicKey, token, tokenEpoch, visible]);
+  }, [client, identity, publicKey, restored, restoring, token, tokenEpoch, visible]);
 
-  // Before the stream replays history, the server's count is the only one available.
-  // With no stream, as after an operator closes the conversation, the lines can be behind too.
-  const unread =
-    loaded && (open || openConversation)
-      ? lines.filter((line) => !line.fromVisitor && line.seq !== null && line.seq > lastRead).length
-      : lastRead > serverRead.position
-        ? 0
-        : serverRead.unread;
-  useEffect(() => reportUnread(context, unread), [context, unread]);
   // A new session after reset() starts with none, so the page hears false at once.
   useEffect(() => reportConversation(context, openConversation), [context, openConversation]);
-  // After the saved look arrives, because the loader draws the launcher only then, and a returning
-  // visitor's count can come first.
-  useEffect(() => {
-    if (saved !== undefined) drawBadge(context.shadow, unread);
-  }, [context, saved, unread]);
-
-  // A message counts as read only when the visitor can see it.
-  useEffect(() => {
-    if (!shown || !visible || !loaded || token === null || delivered <= lastRead) return;
-    setLastRead(delivered);
-    client.markRead(token, delivered.toString()).catch(() => {
-      // The count returns on the next page load, and a later read moves the position past it.
-    });
-  }, [client, delivered, lastRead, loaded, shown, token, visible]);
 
   // Only the visible tab holds a stream, because browsers allow about six HTTP/1.1 connections per
   // origin across all tabs. A tab catches up from its cursor when it becomes visible again.
@@ -404,11 +373,21 @@ function Chat({
             message(message, next) {
               if (controller.signal.aborted) return;
               cursor.current = next;
-              setDelivered((current) => larger(current, BigInt(message.seq)));
+              const seq = BigInt(message.seq);
+              // An edit or a delete sends a message again, at or below what came before.
+              const isNew = seq > highest.current;
+              if (isNew) highest.current = seq;
+              setDelivered((current) => larger(current, seq));
               const fresh =
-                replayed.current ||
-                (lastSent.current !== null && BigInt(message.seq) > lastSent.current);
-              if (fresh && !message.fromVisitor) {
+                isNew &&
+                (replayed.current || (lastSent.current !== null && seq > lastSent.current));
+              const { kind } = message;
+              // A close ends the conversation, and a reopen brings it back, with no notice.
+              if (fresh && (kind === "closed" || kind === "reopened")) {
+                setOpenConversation(kind === "reopened");
+              } else if (fresh && !message.fromVisitor) {
+                // Only a reply that arrives now, as history replays before ready.
+                if (replayed.current && wantsChime.current) chime();
                 setNewReply(true);
                 emit(context, "message:received", { body: message.body });
               }
@@ -428,6 +407,7 @@ function Chat({
               cursor.current = next;
               // It reads from the start now, so the history is whole.
               partial.current = false;
+              highest.current = 0n;
               setLines((current) => current.filter((line) => line.seq === null));
             },
           });
@@ -503,16 +483,17 @@ function Chat({
     return creatingVisitor.current;
   };
 
+  const markLine = (lineId: string, status: Line["status"]) =>
+    setLines((current) => current.map((line) => (line.id === lineId ? { ...line, status } : line)));
+
   // The line's first ID is its client ID, so a manual retry cannot create a duplicate.
-  const deliver = async (lineId: string, body: string, file?: File) => {
-    setLines((current) =>
-      current.map((line) => (line.id === lineId ? { ...line, status: "sending" } : line)),
-    );
+  const deliver = async (lineId: string, body: string, file?: File, quoteId?: string | null) => {
+    markLine(lineId, "sending");
     try {
       const first = await ensureToken();
       const post = (token: string) =>
         file === undefined
-          ? client.send(token, lineId, body)
+          ? client.send(token, lineId, body, quoteId ?? undefined)
           : client.sendImage(token, lineId, file);
       const sent = await post(first).catch(async (error: unknown) => {
         // A tab open past the token's expiry asks the host for a new one and tries once more.
@@ -547,10 +528,27 @@ function Chat({
       if (error instanceof ApiError && error.status === 403) {
         setProblem(t(error.code === "origin_not_allowed" ? "notHere" : "blocked"));
       }
-      setLines((current) =>
-        current.map((line) => (line.id === lineId ? { ...line, status: "failed" } : line)),
-      );
+      markLine(lineId, "failed");
     }
+  };
+
+  /** Shows the visitor's new line at once, before the server confirms it, and sends it. */
+  const sendLine = (body: string, extra: Pick<Line, "file" | "quote">) => {
+    const id = newClientId();
+    setLines((current) => [
+      ...current,
+      {
+        id,
+        seq: null,
+        body,
+        image: null,
+        fromVisitor: true,
+        author: null,
+        status: "sending",
+        ...extra,
+      },
+    ]);
+    void deliver(id, body, extra.file, extra.quote?.id);
   };
 
   // An image's URL expires after 15 minutes. Replaying from the start gives every line a new one.
@@ -571,12 +569,8 @@ function Chat({
     if (body === "") return;
     setDraft("");
     clearPrefill(null);
-    const id = newClientId();
-    setLines((current) => [
-      ...current,
-      { id, seq: null, body, image: null, fromVisitor: true, author: null, status: "sending" },
-    ]);
-    void deliver(id, body);
+    sendLine(body, { quote: quoting });
+    setQuoting(null);
   };
 
   const sendFiles = (files: Iterable<File>) => {
@@ -588,21 +582,7 @@ function Chat({
         setProblem(t(problem));
         continue;
       }
-      const id = newClientId();
-      setLines((current) => [
-        ...current,
-        {
-          id,
-          seq: null,
-          body: "",
-          image: null,
-          file,
-          fromVisitor: true,
-          author: null,
-          status: "sending",
-        },
-      ]);
-      void deliver(id, "", file);
+      sendLine("", { file });
     }
   };
 
@@ -642,6 +622,25 @@ function Chat({
     chatted: chatted || lines.length > 0,
     known: token === null || hasEmail !== undefined || emailState !== "idle",
   });
+  const emailCard = (
+    <EmailCard
+      face={saved.team[0] ?? null}
+      lead={email.composer ? "emailAfterFirst" : "emailBeforeFirst"}
+      email={emailDraft}
+      bad={emailState === "idle" || emailState === "saved" ? null : emailState}
+      onInput={setEmailDraft}
+      onSubmit={saveEmail}
+    />
+  );
+  // After the first message, the card, then the line that replaces it, stays in the conversation
+  // right after the visitor's first message, so it never reads as a second message box.
+  const emailInLog =
+    emailState === "saved" ? (
+      <EmailSaved email={emailDraft.trim()} />
+    ) : (
+      email.form && email.composer && emailCard
+    );
+  const emailAt = lines.findIndex((line) => line.fromVisitor);
 
   return (
     <section
@@ -676,23 +675,28 @@ function Chat({
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />
       <div class="log" role="log" aria-live="polite" ref={log}>
-        {lines.length === 0 && (
-          <EmptyLog
-            mascot={mascot}
-            // Away, the header already asks for a message.
-            greeting={sceneState !== "empty" && sceneState !== "away" ? say("empty") : null}
-          />
-        )}
+        {lines.length === 0 && <EmptyLog mascot={mascot} greeting={say("empty")} />}
         {lines.map((line, index) => (
-          <ChatLine
-            key={line.id}
-            line={line}
-            showAuthor={startsRun(lines, index)}
-            onView={() => setViewing(line.id)}
-            onImageError={refreshImages}
-            onRetry={() => void deliver(line.id, line.body, line.file)}
-          />
+          <Fragment key={line.id}>
+            <ChatLine
+              line={line}
+              showAuthor={startsRun(lines, index)}
+              onView={() => setViewing(line.id)}
+              onImageError={refreshImages}
+              onRetry={() => void deliver(line.id, line.body, line.file, line.quote?.id)}
+              onReply={
+                line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
+                  ? undefined
+                  : () => {
+                      setQuoting(quoteOfReply(line));
+                      input.current?.focus();
+                    }
+              }
+            />
+            {index === emailAt && emailInLog}
+          </Fragment>
         ))}
+        {emailAt === -1 && emailInLog}
       </div>
       {viewing !== null && (
         // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
@@ -713,19 +717,7 @@ function Chat({
           {problem}
         </div>
       )}
-      {emailState === "saved" && (
-        <div class="notice" role="status">
-          {t("emailSaved")}
-        </div>
-      )}
-      {email.form && (
-        <EmailForm
-          email={emailDraft}
-          bad={emailState === "idle" || emailState === "saved" ? null : emailState}
-          onInput={setEmailDraft}
-          onSubmit={saveEmail}
-        />
-      )}
+      {email.form && !email.composer && emailCard}
       {email.composer && (
         <Composer
           draft={draft}
@@ -733,6 +725,8 @@ function Chat({
           onDraft={setDraft}
           onSubmit={submit}
           onFiles={sendFiles}
+          quoting={quoting}
+          onUnquote={() => setQuoting(null)}
         />
       )}
       {pageOr(context.attribute("branding"), saved.branding) && <Branding />}
@@ -742,14 +736,25 @@ function Chat({
 
 function Root({ context }: { context: WidgetContext }) {
   const { publicKey } = context;
-  // A visitor with a token who had the chat open in this tab finds it open after a reload.
+  // A visitor with a token who had the chat open in this tab finds it open after a reload, once the
+  // server says it holds an open conversation. It starts closed, so it never flashes open and shut.
   const [remembered] = useState(
     () =>
       context.page !== true &&
       (context.identity !== null || readToken(publicKey) !== null) &&
       wasOpen(publicKey),
   );
-  const [open, setOpenState] = useState(remembered);
+  const [open, setOpenState] = useState(false);
+  const [restoring, setRestoring] = useState(remembered);
+  const restored = useCallback(
+    (reopen: boolean) => {
+      setRestoring(false);
+      if (!reopen) return;
+      context.state.open = true;
+      setOpenState(true);
+    },
+    [context],
+  );
   // The state changes at once, so a toggle() right after a close() sees it closed.
   const setOpen = (next: boolean) => {
     context.state.open = next;
@@ -774,12 +779,14 @@ function Root({ context }: { context: WidgetContext }) {
   useLayoutEffect(() => {
     const handlers = {
       open(message: string | undefined) {
+        setRestoring(false);
         context.state.open = true;
         setOpenState(true);
         setQuiet(false);
         if (typeof message === "string") setPrefill({ text: message.slice(0, MESSAGE_MAX) });
       },
       close: () => {
+        setRestoring(false);
         context.state.open = false;
         setOpenState(false);
       },
@@ -815,6 +822,8 @@ function Root({ context }: { context: WidgetContext }) {
       open={open}
       setOpen={setOpen}
       quiet={quiet}
+      restoring={restoring}
+      restored={restored}
       prefill={prefill}
       clearPrefill={setPrefill}
       contextVersion={contextVersion}
@@ -866,6 +875,7 @@ else if (context !== undefined) {
   for (const type of ["focusin", "focusout", "keydown", "keypress", "keyup"]) {
     context.shadow.host.addEventListener(type, (event) => event.stopPropagation());
   }
+  prepareSound(context.shadow);
   const mount = document.createElement("div");
   context.shadow.append(mount);
   render(<Root context={context} />, mount);

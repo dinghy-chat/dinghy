@@ -52,7 +52,9 @@ Each server is an MCP server at `POST /v1/mcp` (Streamable HTTP, JSON responses)
 claude mcp add --transport http dinghy https://chat.example.com/v1/mcp --header "Authorization: Bearer dk_..."
 ```
 
-Tools: `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`.
+Tools: `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`.
+
+To let an agent set up Dinghy, create a Setup key in Settings > API. A Setup key does everything a Conversations key does, and also lists, adds, changes, tests and deletes webhooks, through the same webhook routes or the MCP tools, so a coding agent can connect a site's backend without a person's session. No key can manage keys, members, billing, export or deletion.
 
 ## Optional
 

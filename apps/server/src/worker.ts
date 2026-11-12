@@ -11,7 +11,6 @@ import {
   planDelivery,
   postponeDelivery,
   pruneOnce,
-  RETENTION_MS,
   releaseDelivery,
   retryDelivery,
   sendToOperator,
@@ -29,6 +28,7 @@ import {
   type ObjectStore,
   retryDeletion,
 } from "./storage.ts";
+import { MINUTE_MS, RETENTION_MS } from "./time.ts";
 import {
   abandonWebhook,
   claimWebhookDeliveries,
@@ -89,10 +89,10 @@ const BATCH = 10;
 /** Sends in flight at once. Each finished one frees a slot, so a slow device holds only its own. */
 const IN_FLIGHT = 20;
 /** How long a claimed delivery or deletion stays with this worker before another may take it. */
-const CLAIM_MS = 60_000;
+const CLAIM_MS = MINUTE_MS;
 const FAN_OUT_BATCH = 50;
-const PRUNE_EVERY_MS = 60 * 60_000;
-const LIFECYCLE_EVERY_MS = 60_000;
+const PRUNE_EVERY_MS = 60 * MINUTE_MS;
+const LIFECYCLE_EVERY_MS = MINUTE_MS;
 const MAIL_TIMEOUT_MS = 20_000;
 /** How long an idle worker waits before its next pass, unless a finished send wakes it. */
 const POLL_MS = 2000;
@@ -137,9 +137,9 @@ function boundedMailer(mailer: Mailer, stopping: AbortSignal, timeoutMs: number)
     for (const resolve of waiters.splice(0)) resolve();
   };
   return {
-    async send(to, subject, text, headers) {
+    async send(to, subject, text, headers, html) {
       await takeConnection(deadline());
-      const sent = mailer.send(to, subject, text, headers).finally(freeConnection);
+      const sent = mailer.send(to, subject, text, headers, html).finally(freeConnection);
       // A send that fails after the worker stopped waiting must not crash the process.
       sent.catch(() => {});
       await Promise.race([sent, aborted(deadline())]);
@@ -192,8 +192,13 @@ export function startWorker({
             "list-unsubscribe": `<${plan.stopUrl}>`,
             "list-unsubscribe-post": "List-Unsubscribe=One-Click",
           };
-    await bounded.send(plan.to, plan.subject, plan.text, headers);
+    await bounded.send(plan.to, plan.subject, plan.text, headers, plan.html);
     return "sent";
+  };
+
+  /** A reply email to a visitor finished, so the operators' threads show how it went. */
+  const tellReceipts = ({ workspaceId, visitorId }: ClaimedDelivery) => {
+    if (visitorId !== null) signals.tell(workspaceId, { kind: "receipts", visitorId });
   };
 
   const deliver = async (row: ClaimedDelivery) => {
@@ -204,18 +209,24 @@ export function startWorker({
       return;
     }
     try {
-      const plan = await planDelivery(db, row, { publicUrl, secret });
+      const plan = await planDelivery(db, row, {
+        publicUrl,
+        secret,
+        imageOrigin: images?.origin ?? publicUrl,
+      });
       if (plan?.channel === "later") {
         await postponeDelivery(db, row, plan.until);
         return;
       }
       await finishDelivery(db, row, plan === null ? "skipped" : await send(plan));
+      tellReceipts(row);
     } catch (err) {
       if (stopping.signal.aborted) {
         await releaseDelivery(db, row);
       } else if (row.attempts >= MAX_ATTEMPTS) {
         logger.error({ err, deliveryId: row.id }, "alert failed for good");
         await finishDelivery(db, row, "failed");
+        tellReceipts(row);
       } else {
         logger.warn({ err, deliveryId: row.id }, "alert failed and will retry");
         await retryDelivery(db, row, retryMs);

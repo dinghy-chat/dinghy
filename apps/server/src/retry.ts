@@ -1,4 +1,6 @@
-const MAX_RETRY_DELAY_MS = 60 * 60_000;
+import { MINUTE_MS } from "./time.ts";
+
+const MAX_RETRY_DELAY_MS = 60 * MINUTE_MS;
 
 /**
  * The wait before the next try of a job, such as a file deletion or an alert: retryMs, doubling

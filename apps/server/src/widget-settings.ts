@@ -28,7 +28,7 @@ import { errorAnswer, FORBIDDEN, MEMBER_ERRORS, NOT_FOUND, ROLE_WRITE_ERRORS } f
 import { visitorAuthorId } from "./identity.ts";
 import { processLogo, refuseImage } from "./images.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { recordWorkspaceChange } from "./messages.ts";
+import { isChat, recordWorkspaceChange } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
 import { allowed } from "./team.ts";
@@ -73,10 +73,15 @@ export const WidgetSettingsSchema = z
     radius: z.number().int().min(0).max(RADIUS_MAX_PX),
     emailAsk: z.enum(widgetEmailAsk.enumValues),
     branding: z.boolean(),
+    sound: z.boolean(),
+    transcript: z.boolean(),
   })
   .openapi("WidgetSettings") satisfies z.ZodType<WidgetSettings>;
 
 const SavedAppearanceSchema = WidgetSettingsSchema.extend({
+  // The chat sends the visitor's unsent words, so operators see them as they type. Workspace
+  // settings change it, not this tab's save.
+  typingPreview: z.boolean(),
   // The logo's address, which changes with each upload. Null with no logo.
   logoUrl: z.string().nullable(),
   // Up to 3 members, the ones who sent the latest replies. Who is on the team, not who is online.
@@ -125,6 +130,22 @@ const setLogoRoute = createRoute({
   },
 });
 
+const typingPreviewRoute = createRoute({
+  method: "put",
+  path: `${PREFIX}/typing-preview`,
+  security: SESSION,
+  summary:
+    "Turn on or off whether operators see what visitors type before they send it. Sites follow within 5 minutes.",
+  request: {
+    params: workspaceParams,
+    body: {
+      required: true,
+      content: { "application/json": { schema: z.object({ enabled: z.boolean() }) } },
+    },
+  },
+  responses: { 200: appearanceAnswer, ...ROLE_WRITE_ERRORS },
+});
+
 const removeLogoRoute = createRoute({
   method: "delete",
   path: `${PREFIX}/logo`,
@@ -154,7 +175,7 @@ const appearanceRoute = createRoute({
 
 /** The members who replied last, newest first. Each needs one short read of an index. */
 function recentRepliers(tx: Transaction, workspaceId: string) {
-  const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId})`;
+  const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId} and ${isChat()})`;
   return tx
     .select({ id: operator.id, name: operator.name, pictureUpdatedAt: operator.pictureUpdatedAt })
     .from(workspaceMember)
@@ -182,7 +203,12 @@ async function readAppearance(
     .innerJoin(workspace, eq(workspace.id, widgetSettings.workspaceId))
     .where(eq(widgetSettings.workspaceId, workspaceId));
   if (row === undefined) throw new Error("The widget settings row is missing");
-  const { workspaceId: _workspace, logoUpdatedAt, ...settings } = row.settings;
+  const {
+    workspaceId: _workspace,
+    logoUpdatedAt,
+    customizedAt: _customized,
+    ...settings
+  } = row.settings;
   const team = await recentRepliers(tx, workspaceId);
   return {
     ...settings,
@@ -207,7 +233,11 @@ export function registerWidgetSettingsRoutes(
 ): void {
   // Every change takes an owner or an admin. Before the routes, so a member's logo upload is
   // refused before it is read.
-  for (const path of [putRoute.getRoutingPath(), setLogoRoute.getRoutingPath()]) {
+  for (const path of [
+    putRoute.getRoutingPath(),
+    setLogoRoute.getRoutingPath(),
+    typingPreviewRoute.getRoutingPath(),
+  ]) {
     app.use(path, async (c, next) => {
       if (c.req.method !== "GET" && !allowed.settings(c.get("memberRole"))) {
         return c.json(FORBIDDEN, 403);
@@ -244,7 +274,25 @@ export function registerWidgetSettingsRoutes(
   app.openapi(putRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const saved = await change(id, (tx) =>
-      tx.update(widgetSettings).set(c.req.valid("json")).where(eq(widgetSettings.workspaceId, id)),
+      tx
+        .update(widgetSettings)
+        .set({
+          ...c.req.valid("json"),
+          customizedAt: sql`coalesce(${widgetSettings.customizedAt}, now())`,
+        })
+        .where(eq(widgetSettings.workspaceId, id)),
+    );
+    return c.json(saved, 200);
+  });
+
+  app.openapi(typingPreviewRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { enabled } = c.req.valid("json");
+    const saved = await change(id, (tx) =>
+      tx
+        .update(widgetSettings)
+        .set({ typingPreview: enabled })
+        .where(eq(widgetSettings.workspaceId, id)),
     );
     return c.json(saved, 200);
   });

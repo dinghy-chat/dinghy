@@ -73,6 +73,22 @@ async function welcomeOperatorId(tx: Transaction, settings: WelcomeSettings) {
   return row?.id ?? null;
 }
 
+/**
+ * The founder's picture, for the new workspace's side of a welcome chat, as the operator picture
+ * route serves it. The operator table holds no tenant data, so this reads no other workspace.
+ */
+export const welcomeFace =
+  (settings: WelcomeSettings) =>
+  async (
+    tx: Transaction,
+  ): Promise<{ operatorId: string; pictureUpdatedAt: Date | null } | null> => {
+    const [row] = await tx
+      .select({ operatorId: operator.id, pictureUpdatedAt: operator.pictureUpdatedAt })
+      .from(operator)
+      .where(and(eq(operator.email, settings.operatorEmail), isNull(operator.deletedAt)));
+    return row ?? null;
+  };
+
 /** Why the server cannot start with these settings, or null when it can. */
 export async function welcomeProblem(
   db: Database,
@@ -238,7 +254,10 @@ async function copyInto(
   if (reply.body === null && image === undefined) return null;
   // A visitor's message reopens a closed chat, as the founder's side should see it.
   if (theirs.status === "closed") {
-    await setConversationStatus(tx, other.workspaceId, other.conversationId, "open");
+    await setConversationStatus(tx, other.workspaceId, other.conversationId, "open", {
+      kind: "visitor",
+      visitorId: theirs.id,
+    });
   }
   await appendMessage(
     tx,

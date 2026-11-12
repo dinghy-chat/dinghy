@@ -1,3 +1,4 @@
+import type { Quote } from "./quote.ts";
 import type { PageContext } from "./shared.ts";
 import { readStream, retryAfterMs } from "./stream.ts";
 
@@ -5,7 +6,8 @@ export interface ChatMessage {
   id: string;
   conversationId: string;
   seq: string;
-  kind: "text" | "image";
+  /** `closed` and `reopened` are status lines, with no body. */
+  kind: "text" | "image" | "closed" | "reopened";
   fromVisitor: boolean;
   clientId: string | null;
   body: string | null;
@@ -19,6 +21,10 @@ export interface ChatMessage {
   /** A reply's author: an operator's first name or a key's name. Null for the visitor's own. */
   authorName: string | null;
   authorPictureUrl: string | null;
+  /** The message this one quotes. Its author is an operator's first name or a key's name. */
+  replyTo: Quote | null;
+  /** The team deleted it, so it shows a placeholder. */
+  deleted: boolean;
   createdAt: string;
 }
 
@@ -121,6 +127,9 @@ export function createClient(
     /** The page's setContext() data. It replaces what the server kept before. */
     reportContext: (token: string, context: PageContext) =>
       call<{ ok: true }>("context", token, { method: "POST", body: JSON.stringify({ context }) }),
+    /** The message box's text, for operators to see before it is sent. Empty when it is gone. */
+    typing: (token: string, draft: string) =>
+      call<{ ok: true }>("typing", token, { method: "POST", body: JSON.stringify({ draft }) }),
     saveEmail: (token: string, email: string) =>
       call<Me>("me", token, { method: "PATCH", body: JSON.stringify({ email }) }),
     markRead: (token: string, seq: string) =>
@@ -147,10 +156,10 @@ export function createClient(
       if (!response.ok) throw await refused(response);
       return (await response.json()) as SentMessage;
     },
-    send: (token: string, clientId: string, body: string) =>
+    send: (token: string, clientId: string, body: string, replyToMessageId?: string) =>
       call<SentMessage>("messages", token, {
         method: "POST",
-        body: JSON.stringify({ clientId, body, page: page() }),
+        body: JSON.stringify({ clientId, body, page: page(), replyToMessageId }),
       }),
 
     /** Reads the stream until it ends. See readStream. */

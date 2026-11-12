@@ -6,7 +6,13 @@ import { sendOperatorMessage } from "../test/messages.ts";
 import { type App, createApp } from "./app.ts";
 import { conversation, event, message, operator, workspace, workspaceMember } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { appendMessage } from "./messages.ts";
+import { deleteMessage } from "./message-changes.ts";
+import {
+  appendMessage,
+  countWaiting,
+  listConversations,
+  setConversationStatus,
+} from "./messages.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = "https://app.example.com";
@@ -21,6 +27,7 @@ let b: NewWorkspace;
 
 interface WireMessage {
   id: string;
+  kind: string;
   conversationId: string;
   seq: string;
   clientId: string | null;
@@ -515,6 +522,34 @@ describe("history", () => {
     expect(empty.cursor).toBe(second.cursor);
   });
 
+  test("pages mix new messages and changed ones in the order of their changes", async () => {
+    const { token } = await newVisitor();
+    const sent: WireMessage[] = [];
+    for (let i = 0; i < 4; i++) {
+      sent.push((await (await send(token, `x${i}`, `m${i}`)).json()) as WireMessage);
+    }
+    const { cursor } = await history(token);
+    const remove = (line: WireMessage | undefined) =>
+      withWorkspace(db, a.id, (tx) =>
+        deleteMessage(tx, a.id, line?.conversationId ?? "", line?.id ?? "", {
+          operatorId: OPERATOR,
+          mayDeleteAnyone: true,
+        }),
+      );
+    await remove(sent[1]);
+    await send(token, "x4", "m4");
+    await remove(sent[0]);
+    const first = await history(token, cursor, 2);
+    expect(first.messages.map((m) => [m.id, m.body])).toEqual([
+      [sent[1]?.id, null],
+      [expect.any(String), "m4"],
+    ]);
+    expect(first.hasMore).toBe(true);
+    const second = await history(token, first.cursor, 2);
+    expect(second.messages.map((m) => [m.id, m.body])).toEqual([[sent[0]?.id, null]]);
+    expect(second.hasMore).toBe(false);
+  });
+
   test("a cursor from another feed generation gets a resync", async () => {
     const { token } = await newVisitor();
     await send(token, "g", "m");
@@ -550,5 +585,81 @@ describe("history", () => {
       headers: { origin: ORIGIN, authorization: "Bearer dbt_wrong" },
     });
     expect(response.status).toBe(401);
+  });
+});
+
+describe("status lines", () => {
+  const closeAs = (conversationId: string, status: "open" | "closed") =>
+    withWorkspace(db, a.id, (tx) =>
+      setConversationStatus(tx, a.id, conversationId, status, {
+        kind: "operator",
+        operatorId: OPERATOR,
+      }),
+    );
+
+  test("a close writes its line with its event's position", async () => {
+    const { token } = await newVisitor();
+    const sent = (await (await send(token, "s1", "help")).json()) as WireMessage;
+    await closeAs(sent.conversationId, "closed");
+    const rows = await withWorkspace(db, a.id, (tx) =>
+      tx
+        .select({ seq: message.seq, kind: message.kind, author: message.authorOperatorId })
+        .from(message)
+        .where(and(eq(message.workspaceId, a.id), eq(message.conversationId, sent.conversationId))),
+    );
+    const line = rows.find((row) => row.kind === "closed");
+    expect(line?.author).toBe(OPERATOR);
+    const [closed] = await withWorkspace(db, a.id, (tx) =>
+      tx
+        .select()
+        .from(event)
+        .where(and(eq(event.workspaceId, a.id), eq(event.seq, line?.seq ?? 0n))),
+    );
+    expect(closed?.kind).toBe("conversation.closed");
+    // The worker decides on a transcript from it. Its payload names the line.
+    expect(closed?.payload).toMatchObject({ conversationId: sent.conversationId });
+    // The widget's history delivers it, in order, with no body.
+    const page = await history(token);
+    expect(page.messages.map((one) => one.kind)).toEqual(["text", "closed"]);
+    expect(page.messages[1]?.body).toBeNull();
+  });
+
+  test("a line and its status change commit together or not at all", async () => {
+    const { token } = await newVisitor();
+    const sent = (await (await send(token, "s2", "help")).json()) as WireMessage;
+    const before = await count(a.id);
+    await expect(
+      withWorkspace(db, a.id, async (tx) => {
+        await setConversationStatus(tx, a.id, sent.conversationId, "closed", {
+          kind: "operator",
+          operatorId: OPERATOR,
+        });
+        throw new Error("rolled back");
+      }),
+    ).rejects.toThrow("rolled back");
+    expect(await count(a.id)).toEqual(before);
+  });
+
+  test("lines are not unread, not a preview and do not stop a conversation from waiting", async () => {
+    const { token } = await newVisitor();
+    const sent = (await (await send(token, "s3", "still there?")).json()) as WireMessage;
+    await closeAs(sent.conversationId, "closed");
+    await closeAs(sent.conversationId, "open");
+    const response = await app.request(`/v1/widget/${a.publicKey}/me`, {
+      headers: { origin: ORIGIN, authorization: `Bearer ${token}` },
+    });
+    expect(((await response.json()) as { unread: number }).unread).toBe(0);
+    expect((await history(token)).messages.map((one) => one.kind)).toEqual([
+      "text",
+      "closed",
+      "reopened",
+    ]);
+    const { conversations } = await withWorkspace(db, a.id, (tx) =>
+      listConversations(tx, a.id, "open", { kind: "all" }, undefined, 50),
+    );
+    const listed = conversations.find((one) => one.id === sent.conversationId);
+    expect(listed?.lastMessage).toMatchObject({ body: "still there?", fromVisitor: true });
+    const waiting = await withWorkspace(db, a.id, (tx) => countWaiting(tx, a.id));
+    expect(waiting).toBeGreaterThan(0);
   });
 });

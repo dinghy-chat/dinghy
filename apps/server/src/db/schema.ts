@@ -31,8 +31,17 @@ const workspaceId = () =>
 
 export const memberRole = pgEnum("member_role", ["owner", "admin", "member"]);
 export const conversationStatus = pgEnum("conversation_status", ["open", "closed"]);
-export const messageKind = pgEnum("message_kind", ["text", "image"]);
-export const alertChannel = pgEnum("alert_channel", ["push", "email"]);
+/**
+ * A message's kind. `closed` and `reopened` are status lines that a close or a reopen writes, with
+ * the event's own sequence, so both sides see them in order. They are not chat: no alert, no
+ * preview, no unread count.
+ */
+export const MESSAGE_KINDS = ["text", "image", "closed", "reopened"] as const;
+export const messageKind = pgEnum("message_kind", MESSAGE_KINDS);
+/** The kinds that people wrote. */
+export const CHAT_KINDS = ["text", "image"] as const;
+// `transcript` is the email of a whole conversation to its visitor, after a close or on request.
+export const alertChannel = pgEnum("alert_channel", ["push", "email", "transcript"]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);
 export const widgetPosition = pgEnum("widget_position", ["left", "right"]);
 export const widgetTheme = pgEnum("widget_theme", ["light", "dark", "auto"]);
@@ -77,6 +86,8 @@ export const workspace = pgTable(
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
     // Why, for the server's admin. Operators do not see it.
     suspendedReason: text("suspended_reason"),
+    // When an allowed site first loaded the widget, for the Get started steps.
+    widgetSeenAt: timestamp("widget_seen_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -191,6 +202,8 @@ export const workspaceMember = pgTable(
     alertEmail: boolean("alert_email").notNull().default(false),
     // Cloud only. The member followed the stop link in an onboarding email. Billing emails still go.
     onboardingStoppedAt: timestamp("onboarding_stopped_at", { withTimezone: true }),
+    // The member hid the Get started steps.
+    getStartedDismissedAt: timestamp("get_started_dismissed_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -230,10 +243,27 @@ export const visitor = pgTable(
     // The page the widget last reported, as origin and path, and when.
     lastPage: text("last_page"),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    // Private to operators: what the team wrote about this person.
+    note: text("note"),
+    // ISO 3166-1 alpha-2, from the address of the widget's last beat, which is not kept.
+    country: text("country"),
+    // IANA, such as Europe/Paris, from the browser's last beat.
+    timeZone: text("time_zone"),
     createdAt: createdAt(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.id] }),
+    // Contacts, newest seen first, paged by (seen, id). A visitor never seen counts from its start.
+    index("visitor_seen_idx").on(
+      table.workspaceId,
+      sql`coalesce(${table.lastSeenAt}, ${table.createdAt})`,
+      table.id,
+    ),
+    // Contacts, newest first.
+    index("visitor_created_idx").on(table.workspaceId, table.createdAt, table.id),
+    check("visitor_note_length", sql`char_length(${table.note}) <= 5000`),
+    check("visitor_country", sql`${table.country} ~ '^[A-Z]{2}$'`),
+    check("visitor_time_zone_length", sql`char_length(${table.timeZone}) <= 64`),
     index("visitor_blocked_idx").on(table.workspaceId).where(sql`${table.blockedAt} is not null`),
     unique("visitor_external_id_key").on(table.workspaceId, table.externalId),
     unique("visitor_token_hash_key").on(table.tokenHash),
@@ -304,6 +334,17 @@ export const message = pgTable(
     clientId: text("client_id").notNull(),
     body: text("body"),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    // The earlier message of the same conversation that this one quotes. Its foreign key, which
+    // sets only this column to null, is in a custom migration, because Drizzle cannot name the column.
+    replyToMessageId: uuid("reply_to_message_id"),
+    // When its author last changed its text, before the visitor saw it.
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    // A deleted message keeps its row, so positions, receipts and quotes still work, with no body.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    // When the visitor's read position first passed this reply. Null before it, and for older rows.
+    readAt: timestamp("read_at", { withTimezone: true }),
+    // The position of its last edit or delete, so the visitor's stream sends it again.
+    changedSeq: bigint("changed_seq", { mode: "bigint" }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -349,6 +390,12 @@ export const message = pgTable(
     ),
     unique("message_seq_key").on(table.workspaceId, table.seq),
     index("message_conversation_idx").on(table.workspaceId, table.conversationId, table.seq),
+    // Deleting a quoted row clears its replies' quote, which this finds.
+    index("message_reply_to_idx").on(table.workspaceId, table.replyToMessageId),
+    // The widget's stream reads the messages an edit or a delete sent again after its cursor.
+    index("message_changed_idx")
+      .on(table.workspaceId, table.changedSeq)
+      .where(sql`${table.changedSeq} is not null`),
     // The widget's header shows the members who replied last: one short read per member.
     index("message_operator_seq_idx")
       .on(table.workspaceId, table.authorOperatorId, table.seq)
@@ -398,19 +445,27 @@ export const attachment = pgTable(
  */
 const EVENT_KINDS = [
   "message.created",
+  // An operator edited a reply, or someone deleted a message. The payload is as message.created's.
+  "message.updated",
+  "message.deleted",
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
   "conversation.deleted",
   "conversation.moderated",
+  // An operator asked to email the visitor the conversation. The worker sends it.
+  "transcript.requested",
   "team.changed",
   "billing.changed",
   "workspace.changed",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
-/** The payload of a `message.created` event, which the alert and webhook fan-outs read back. */
-export interface MessageCreatedPayload {
+/**
+ * The payload of a `message.created`, `message.updated` or `message.deleted` event, which the alert
+ * and webhook fan-outs read back.
+ */
+export interface MessagePayload {
   messageId: string;
   conversationId: string;
   fromVisitor: boolean;
@@ -642,6 +697,11 @@ export const alertDelivery = pgTable(
     claimedUntil: timestamp("claimed_until", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     outcome: alertOutcome("outcome"),
+    // The positions of the first and last message a reply email or a transcript carried, set when
+    // it is planned. A reply email carries every unread reply in that range, and a transcript every
+    // message of its conversation in it, so "Sent by email" and the edit lock read them exactly.
+    coveredFromSeq: bigint("covered_from_seq", { mode: "bigint" }),
+    coveredToSeq: bigint("covered_to_seq", { mode: "bigint" }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -690,6 +750,14 @@ export const alertDelivery = pgTable(
  * A workspace API key, for scripts and AI agents. Only the token's hash is stored, and the token is
  * shown once. A revoked key keeps its row, so the replies it sent keep their author name.
  */
+/**
+ * What an API key reaches: `conversations`, the conversation routes and tools, or `setup`, those
+ * and the webhooks, so an agent can connect a workspace by itself. No key reaches keys, members,
+ * billing, export or the workspace's deletion.
+ */
+export const API_KEY_LEVELS = ["conversations", "setup"] as const;
+export type ApiKeyLevel = (typeof API_KEY_LEVELS)[number];
+
 export const apiKey = pgTable(
   "api_key",
   {
@@ -697,6 +765,7 @@ export const apiKey = pgTable(
     id: id(),
     // The author name visitors and operators see on the key's replies.
     name: text("name").notNull(),
+    level: text("level").$type<ApiKeyLevel>().notNull().default("conversations"),
     tokenHash: text("token_hash").notNull().unique(),
     createdBy: uuid("created_by").notNull(),
     // To a minute, so a busy key does not write on every request.
@@ -712,6 +781,7 @@ export const apiKey = pgTable(
       foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
     }),
     check("api_key_name_length", sql`char_length(${table.name}) between 1 and 60`),
+    check("api_key_level", sql`${table.level} in ('conversations', 'setup')`),
   ],
 );
 
@@ -719,6 +789,8 @@ export const apiKey = pgTable(
 export const WEBHOOK_EVENTS = [
   "conversation.created",
   "message.created",
+  "message.updated",
+  "message.deleted",
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
@@ -736,9 +808,28 @@ export const webhook = pgTable(
     secret: text("secret").notNull(),
     events: text("events").array().$type<WebhookEvent[]>().notNull(),
     enabled: boolean("enabled").notNull().default(true),
+    // Who added it: an operator or a Setup API key. Both null for a webhook from before this.
+    createdByOperatorId: uuid("created_by_operator_id"),
+    createdByApiKeyId: uuid("created_by_api_key_id"),
     createdAt: createdAt(),
   },
-  (table) => [primaryKey({ columns: [table.workspaceId, table.id] })],
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "webhook_created_by_operator_fk",
+      columns: [table.workspaceId, table.createdByOperatorId],
+      foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
+    }),
+    foreignKey({
+      name: "webhook_created_by_api_key_fk",
+      columns: [table.workspaceId, table.createdByApiKeyId],
+      foreignColumns: [apiKey.workspaceId, apiKey.id],
+    }),
+    check(
+      "webhook_one_creator",
+      sql`num_nonnulls(${table.createdByOperatorId}, ${table.createdByApiKeyId}) <= 1`,
+    ),
+  ],
 );
 
 /** One event for one webhook. Delivery is at-least-once: a crash can repeat a send. */
@@ -944,6 +1035,14 @@ export const widgetSettings = pgTable(
     emailAsk: widgetEmailAsk("email_ask").notNull().default(WIDGET_DEFAULTS.emailAsk),
     // The "Powered by Dinghy" line.
     branding: boolean("branding").notNull().default(WIDGET_DEFAULTS.branding),
+    // A chime in the widget for a reply the visitor is not looking at.
+    sound: boolean("sound").notNull().default(WIDGET_DEFAULTS.sound),
+    // The visitor gets the conversation by email when it closes.
+    transcript: boolean("transcript").notNull().default(WIDGET_DEFAULTS.transcript),
+    // When an owner or admin first saved these settings, for the Get started steps.
+    customizedAt: timestamp("customized_at", { withTimezone: true }),
+    // Operators see what a visitor types before they send it. Nothing stores the draft.
+    typingPreview: boolean("typing_preview").notNull().default(WIDGET_DEFAULTS.typingPreview),
   },
   (table) => [
     check("widget_settings_primary_color", sql`${table.primary} ~ '^#[0-9a-f]{6}$'`),

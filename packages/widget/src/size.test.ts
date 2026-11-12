@@ -5,12 +5,20 @@ import { buildWidget } from "../build.ts";
 // Limits in gzipped bytes. The loader runs on every page of the host site, and new chat features
 // must fit inside the chat's limit.
 const LIMITS: Record<string, number> = {
-  // 2,300 since the label and square launchers, which the owner asked for on 2026-11-11 (2,276
-  // with them, from 2,096). The full page API before them took it to 2,100.
-  "loader.js": 2300,
+  // 2,700 since the live visitors' beat, which the owner asked for on 2026-11-11 (2,631 with it,
+  // from 2,291). The label and square launchers before it took it to 2,300.
+  "loader.js": 2700,
   "page.js": 1000,
-  // 20,500 since the emoji picker, which the owner asked for on 2026-11-11 (20,398 with it).
-  "widget.js": 20_500,
+  // 23,300 since a quoted reply shows the shared plain excerpt at once, not its Markdown (23,241
+  // with it, from 23,173, 2026-11-11).
+  // 23,200 since the email question became a card in the conversation, after a visitor typed
+  // messages into the old field above the message box (23,140 with it, from 22,779, 2026-11-11).
+  // 22,800 since replies with a quote, which the owner asked for on 2026-11-11 (22,779 with
+  // them, from 22,162).
+  // 22,200 since the new composer and header, the closed line and the reply chime, which the
+  // owner asked for on 2026-11-11 (22,162 with them, from 21,585). Markdown in messages and the
+  // typing preview took it to 21,600 the same day, and the emoji picker before them to 20,500.
+  "widget.js": 23_300,
 };
 
 test("the bundles use no API that exists only on secure pages", async () => {

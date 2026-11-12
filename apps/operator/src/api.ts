@@ -1,7 +1,11 @@
 import type { BillingStateName } from "../../../ee/operator/billing.tsx";
+import type { Quote } from "../../../packages/widget/src/quote.ts";
 import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
+import type { OperatorNotice } from "../../server/src/live.ts";
+
+export type { Quote };
 
 /** A list's assignee filter: the caller's conversations, or no one's. Null lists everyone's. */
 export type Assignee = "me" | "none";
@@ -24,6 +28,12 @@ interface Visitor extends VisitorIdentity {
   /** The page the widget last reported, as origin and path. */
   lastPage: string | null;
   lastSeenAt: string | null;
+  /** ISO 3166-1 alpha-2, from the widget's last beat. */
+  country: string | null;
+  /** IANA, such as Europe/Paris. */
+  timeZone: string | null;
+  /** Only Dinghy Cloud's welcome chat has one: its founder's. */
+  pictureUrl: string | null;
 }
 
 /** A page in the visitor's journey, as the widget reported it. */
@@ -34,9 +44,16 @@ export interface PageView {
   viewedAt: string;
 }
 
+/** Open conversations for each assignee filter. */
+export interface OpenCounts {
+  all: number;
+  mine: number;
+  unassigned: number;
+}
+
 /** On Dinghy Cloud: what a welcome chat is linked to. */
 export type WelcomeChat =
-  | { with: "founder" }
+  | { with: "founder"; pictureUrl: string | null }
   | {
       with: "workspace";
       name: string;
@@ -101,7 +118,8 @@ export interface Message {
   id: string;
   conversationId: string;
   seq: string;
-  kind: "text" | "image";
+  /** `closed` and `reopened` are status lines that a close or a reopen wrote, with no body. */
+  kind: "text" | "image" | "closed" | "reopened";
   fromVisitor: boolean;
   /** The operator who sent it, and their current name. Both null for a visitor's message. */
   authorOperatorId: string | null;
@@ -113,7 +131,81 @@ export interface Message {
   image: { url: string; width: number; height: number } | null;
   /** The image was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
+  /** The message this one quotes. Its `id` is null when that message was deleted. */
+  replyTo: Quote | null;
+  /** When its author last changed its text. */
+  editedAt: string | null;
+  /** Deleted: no body and no image, and the line says so. */
+  deleted: boolean;
+  /** A key's reply: through the REST API or through MCP. */
+  via: "api" | "mcp" | null;
   createdAt: string;
+}
+
+/** Which first steps are done, for the signed-in member. */
+export interface GetStarted {
+  install: boolean;
+  logo: boolean;
+  widget: boolean;
+  team: boolean;
+  notifications: boolean;
+  chat: boolean;
+  dismissed: boolean;
+}
+
+/** One open tab of the site, from its last beat. */
+export interface LiveVisitor {
+  tab: string;
+  /** Origin and path. */
+  page: string;
+  title: string | null;
+  /** Where they came from, as an origin. */
+  referrer: string | null;
+  country: string | null;
+  timeZone: string | null;
+  device: string | null;
+  startedAt: string;
+  /** Only for a visitor who has used the chat. */
+  visitor: (VisitorIdentity & { conversationId: string | null }) | null;
+}
+
+export type ContactSort = "lastSeen" | "firstSeen";
+
+/** A person with at least one conversation. */
+export interface Contact extends VisitorIdentity {
+  /** The host site signed who this is, so the name and email are read-only. */
+  signedIn: boolean;
+  /** The signed `company` attribute. */
+  company: string | null;
+  country: string | null;
+  timeZone: string | null;
+  device: string | null;
+  lastPage: string | null;
+  lastSeenAt: string | null;
+  /** First seen. */
+  createdAt: string;
+  conversationCount: number;
+  blocked: boolean;
+}
+
+export interface ContactDetail extends Contact {
+  attributes: Record<string, unknown> | null;
+  pageContext: PageContext | null;
+  note: string | null;
+  conversations: {
+    id: string;
+    status: "open" | "closed";
+    createdAt: string;
+    updatedAt: string;
+    lastBody: string | null;
+  }[];
+  pages: PageView[];
+}
+
+/** How far the visitor has seen the replies: read up to a position, and the ranges emails carried. */
+export interface ReplyReceipts {
+  readSeq: string;
+  emails: { fromSeq: string; toSeq: string; sent: boolean }[];
 }
 
 export interface Me {
@@ -188,6 +280,8 @@ export interface ApiKey {
   id: string;
   /** Visitors and operators see this name on the key's replies. */
   name: string;
+  /** Conversations, or Setup, which also reaches the webhooks. */
+  level: ApiKeyLevel;
   createdByName: string | null;
   createdAt: string;
   lastUsedAt: string | null;
@@ -196,17 +290,23 @@ export interface ApiKey {
 export const WEBHOOK_EVENTS = [
   "conversation.created",
   "message.created",
+  "message.updated",
+  "message.deleted",
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
+export type ApiKeyLevel = "conversations" | "setup";
+
 export interface Webhook {
   id: string;
   url: string;
   events: WebhookEvent[];
   enabled: boolean;
+  /** Who added it, or null for one from before this was kept. */
+  createdBy: { kind: "operator" | "key"; name: string } | null;
   createdAt: string;
 }
 
@@ -317,6 +417,9 @@ export const redeemJoinLink = (token: string) =>
 export const signOut = () => post<unknown>("/v1/auth/sign-out", {});
 export const updateName = (name: string) => post<unknown>("/v1/auth/update-user", { name });
 export const getMe = () => call<Me>("/v1/operator/me");
+/** In each of the operator's workspaces, the open conversations that wait for a reply. */
+export const getWaiting = () =>
+  call<{ workspaces: { workspaceId: string; waiting: number }[] }>("/v1/operator/waiting");
 type Picture = { pictureUrl: string | null };
 export const setPicture = (file: Blob) => putImage<Picture>("/v1/operator/me/picture", file);
 export const removePicture = () => call<Picture>("/v1/operator/me/picture", { method: "DELETE" });
@@ -380,6 +483,7 @@ export function workspaceApi(workspaceId: string) {
   const base = `/v1/operator/workspaces/${workspaceId}`;
   const conversation = (id: string) => `${base}/conversations/${id}`;
   return {
+    workspaceId,
     rename: (name: string) =>
       call<{ name: string }>(base, { method: "PATCH", body: JSON.stringify({ name }) }),
     members: () => call<{ members: Member[] }>(`${base}/members`),
@@ -406,9 +510,37 @@ export function workspaceApi(workspaceId: string) {
       call<SavedAppearance>(`${base}/widget`, { method: "PUT", body: JSON.stringify(settings) }),
     setLogo: (file: Blob) => putImage<SavedAppearance>(`${base}/widget/logo`, file),
     removeLogo: () => call<SavedAppearance>(`${base}/widget/logo`, { method: "DELETE" }),
+    setTypingPreview: (enabled: boolean) =>
+      call<SavedAppearance>(`${base}/widget/typing-preview`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled }),
+      }),
     exportUrl: `${base}/export`,
+    contactsExportUrl: `${base}/contacts/export`,
+    getStarted: () => call<GetStarted>(`${base}/get-started`),
+    dismissGetStarted: () => post<{ ok: true }>(`${base}/get-started/dismiss`, {}),
+    liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
+    liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
+    contacts: (query: { q: string; sort: ContactSort; before: string | null }) => {
+      const search = new URLSearchParams({ sort: query.sort });
+      if (query.q.trim() !== "") search.set("q", query.q.trim());
+      if (query.before !== null) search.set("before", query.before);
+      return call<{ contacts: Contact[]; next: string | null }>(`${base}/contacts?${search}`);
+    },
+    contact: (visitorId: string) => call<ContactDetail>(`${base}/contacts/${visitorId}`),
+    changeContact: (
+      visitorId: string,
+      change: { note?: string | null; name?: string | null; email?: string | null },
+    ) =>
+      call<ContactDetail>(`${base}/contacts/${visitorId}`, {
+        method: "PATCH",
+        body: JSON.stringify(change),
+      }),
+    deleteContact: (visitorId: string) =>
+      call<{ ok: true }>(`${base}/contacts/${visitorId}`, { method: "DELETE" }),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
-    createApiKey: (name: string) => post<ApiKey & { token: string }>(`${base}/api-keys`, { name }),
+    createApiKey: (name: string, level: ApiKeyLevel) =>
+      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, level }),
     revokeApiKey: (id: string) =>
       call<{ ok: true }>(`${base}/api-keys/${id}`, { method: "DELETE" }),
     webhooks: () => call<{ webhooks: Webhook[] }>(`${base}/webhooks`),
@@ -469,6 +601,7 @@ export function workspaceApi(workspaceId: string) {
     ) {
       const conversations: Conversation[] = [];
       let waiting = 0;
+      let openBy: OpenCounts | null = null;
       const whose = assignee === null ? "" : `&assignee=${assignee}`;
       for (;;) {
         const last = conversations.at(-1);
@@ -481,12 +614,16 @@ export function workspaceApi(workspaceId: string) {
           conversations: Conversation[];
           hasMore: boolean;
           waiting: number;
+          openBy: OpenCounts;
         }>(`${base}/conversations?status=${status}${whose}&limit=${size}${before}`);
         conversations.push(...page.conversations);
         // From the first page, so the count matches the rows on screen.
-        if (last === undefined) waiting = page.waiting;
+        if (last === undefined) {
+          waiting = page.waiting;
+          openBy = page.openBy;
+        }
         if (!page.hasMore || conversations.length >= limit || cancelled()) {
-          return { conversations, hasMore: page.hasMore, waiting };
+          return { conversations, hasMore: page.hasMore, waiting, openBy };
         }
       }
     },
@@ -501,6 +638,7 @@ export function workspaceApi(workspaceId: string) {
         visitorPages: PageView[];
         /** A welcome chat on Dinghy Cloud, which has no visit or pages. Null otherwise. */
         welcome: WelcomeChat | null;
+        receipts: ReplyReceipts;
       }>(`${conversation(id)}/messages?after=${after}`),
     /** Open and closed conversations by visitor or message text. A newer search aborts this one. */
     search: (query: string, signal: AbortSignal) =>
@@ -508,10 +646,11 @@ export function workspaceApi(workspaceId: string) {
         `${base}/conversations/search?q=${encodeURIComponent(query)}`,
         { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) },
       ),
-    reply: (id: string, clientId: string, body: string) =>
-      post<Message>(`${conversation(id)}/messages`, { clientId, body }),
-    replyImage: async (id: string, clientId: string, file: File) => {
-      const response = await fetch(`${conversation(id)}/images?clientId=${clientId}`, {
+    reply: (id: string, clientId: string, body: string, replyToMessageId?: string) =>
+      post<Message>(`${conversation(id)}/messages`, { clientId, body, replyToMessageId }),
+    replyImage: async (id: string, clientId: string, file: File, replyToMessageId?: string) => {
+      const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
+      const response = await fetch(`${conversation(id)}/images?clientId=${clientId}${quote}`, {
         method: "POST",
         cache: "no-store",
         signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
@@ -521,6 +660,21 @@ export function workspaceApi(workspaceId: string) {
       if (!response.ok) return failed(response);
       return (await response.json()) as Message;
     },
+    editMessage: (id: string, messageId: string, body: string) =>
+      call<Message>(`${conversation(id)}/messages/${messageId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ body }),
+      }),
+    deleteMessage: (id: string, messageId: string) =>
+      call<{ ok: true }>(`${conversation(id)}/messages/${messageId}`, { method: "DELETE" }),
+    /** When the visitor read a reply in the chat, and when an email first carried it. */
+    messageReceipt: (id: string, messageId: string) =>
+      call<{ readAt: string | null; emailedAt: string | null }>(
+        `${conversation(id)}/messages/${messageId}/receipt`,
+      ),
+    /** Emails the visitor the whole conversation, through the worker. */
+    sendTranscript: (id: string) =>
+      call<{ ok: true }>(`${conversation(id)}/transcript`, { method: "POST" }),
     setStatus: (id: string, status: "open" | "closed") =>
       call<{ ok: true }>(conversation(id), {
         method: "PATCH",
@@ -544,6 +698,8 @@ export function workspaceApi(workspaceId: string) {
         ): void;
         ready(cursor: string | null): void;
         resync(cursor: string): void;
+        /** A visitor's draft, or a sign to load a visitor's receipts again. It may be lost. */
+        notice(notice: OperatorNotice): void;
       },
     ): Promise<string | null> {
       const query = after === null ? "" : `?after=${encodeURIComponent(after)}`;
@@ -570,6 +726,8 @@ export function workspaceApi(workspaceId: string) {
           ),
         ready: handlers.ready,
         resync: handlers.resync,
+        // This server's own stream, which sends only the notices it knows.
+        notice: (value) => handlers.notice(value as OperatorNotice),
       });
     },
   };

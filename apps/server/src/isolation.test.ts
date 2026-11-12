@@ -3,15 +3,16 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq, sql } from "drizzle-orm";
+import { Redis } from "iovalkey";
 import { SignJWT } from "jose";
 import { pino } from "pino";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
-import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { pressLinkButton, signedInOperator } from "../test/operators.ts";
-import { claimDeliveries, emailStopUrl, fanOutOne, planDelivery } from "./alerts.ts";
+import { claimDeliveries, fanOutOne, planDelivery } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import {
@@ -39,6 +40,7 @@ import { createImages } from "./images.ts";
 import { appendMessage } from "./messages.ts";
 import { createPush } from "./push.ts";
 import { localStore } from "./storage.ts";
+import { emailStopUrl } from "./visitor-email.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -53,6 +55,9 @@ const pushKeys = { ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" }
 let database: TestDatabase;
 let owner: Database;
 
+// The live view lives in Valkey, so the beat's attacks need a real one.
+const valkey = new Redis(VALKEY_URL, { lazyConnect: true });
+
 beforeAll(async () => {
   database = await createTestDatabase();
   await database.migrate();
@@ -60,6 +65,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  valkey.disconnect();
   await database.drop();
 });
 
@@ -149,6 +155,24 @@ const widgetSettingsOf = async (workspaceId: string) =>
 
 const pictureOf = async (operatorId: string) =>
   (await owner.select().from(operatorPicture).where(eq(operatorPicture.operatorId, operatorId)))[0];
+
+/** A conversation's first message, read past row-level security. */
+const firstMessageOf = async (conversationId: string) => {
+  const [row] = await owner
+    .select()
+    .from(message)
+    .where(eq(message.conversationId, conversationId))
+    .orderBy(message.seq)
+    .limit(1);
+  if (row === undefined) throw new Error("The conversation has no message");
+  return row;
+};
+
+/** Another workspace's message, through this workspace's path and through the other's. */
+const crossedMessagePaths = (mine: string, theirs: string, conversationId: string, id: string) => [
+  inWorkspace(mine, `/conversations/${conversationId}/messages/${id}`),
+  inWorkspace(theirs, `/conversations/${conversationId}/messages/${id}`),
+];
 
 /** Runs against a route as the one caller that must be refused or see only its own data. */
 const ATTACKS: Record<string, Attack> = {
@@ -338,6 +362,13 @@ const ATTACKS: Record<string, Attack> = {
     expect(text).not.toContain(b.id);
     expect(text).not.toContain(secrets.b);
   },
+  "GET /v1/operator/waiting": async ({ operator: as, anna, a, b }) => {
+    const { workspaces } = (await (await as(anna, "GET", "/v1/operator/waiting")).json()) as {
+      workspaces: { workspaceId: string }[];
+    };
+    expect(workspaces.map((one) => one.workspaceId)).toContain(a.id);
+    expect(workspaces.map((one) => one.workspaceId)).not.toContain(b.id);
+  },
   "GET /v1/operator/workspaces/:workspaceId": async ({ operator: as, anna, a, b }) => {
     expect((await as(anna, "GET", inWorkspace(b.id))).status).toBe(404);
     const own = (await (await as(anna, "GET", inWorkspace(a.id))).json()) as { id: string };
@@ -444,6 +475,59 @@ const ATTACKS: Record<string, Attack> = {
       .from(message)
       .where(eq(message.body, "an operator crossing over"));
     expect(rows).toEqual([]);
+  },
+  "PATCH /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId":
+    async ({ operator: as, anna, a, b, one, other }) => {
+      const target = await firstMessageOf(other.conversationId);
+      for (const path of crossedMessagePaths(a.id, b.id, other.conversationId, target.id)) {
+        expect((await as(anna, "PATCH", path, { body: "changed across" })).status).toBe(404);
+      }
+      // A quote cannot reach into the other workspace either.
+      const quoted = await as(
+        anna,
+        "POST",
+        inWorkspace(a.id, `/conversations/${one.conversationId}/messages`),
+        {
+          clientId: randomUUID(),
+          body: "quoting across",
+          replyToMessageId: target.id,
+        },
+      );
+      expect(quoted.status).toBe(400);
+      expect((await firstMessageOf(other.conversationId)).body).toBe(target.body);
+    },
+  "DELETE /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId":
+    async ({ operator: as, anna, a, b, other }) => {
+      const target = await firstMessageOf(other.conversationId);
+      for (const path of crossedMessagePaths(a.id, b.id, other.conversationId, target.id)) {
+        expect((await as(anna, "DELETE", path)).status).toBe(404);
+      }
+      expect((await firstMessageOf(other.conversationId)).deletedAt).toBeNull();
+    },
+  "GET /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId/receipt":
+    async ({ operator: as, anna, a, b, other }) => {
+      const target = await firstMessageOf(other.conversationId);
+      for (const path of crossedMessagePaths(a.id, b.id, other.conversationId, target.id)) {
+        expect((await as(anna, "GET", `${path}/receipt`)).status).toBe(404);
+      }
+    },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/transcript": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    const here = inWorkspace(a.id, `/conversations/${other.conversationId}/transcript`);
+    const there = inWorkspace(b.id, `/conversations/${other.conversationId}/transcript`);
+    for (const path of [here, there]) {
+      expect((await as(anna, "POST", path, {})).status).toBe(404);
+    }
+    const requested = await owner
+      .select()
+      .from(event)
+      .where(and(eq(event.workspaceId, b.id), eq(event.kind, "transcript.requested")));
+    expect(requested).toEqual([]);
   },
   "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/images": async ({
     server,
@@ -789,6 +873,153 @@ const ATTACKS: Record<string, Attack> = {
     ).not.toEqual([]);
   },
 
+  "POST /v1/widget/:key/beat": async ({ widget, operator: as, anna, a, b, one }) => {
+    const tab = `iso${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    const body = { tab, page: `${SITE_B}/secret-page` };
+    // B's site beating into B: A's operators must not see it.
+    expect((await widget(b.publicKey, "POST", "beat", null, SITE_B, body)).status).toBe(200);
+    expect(await (await as(anna, "GET", inWorkspace(a.id, "/visitors/live"))).text()).not.toContain(
+      tab,
+    );
+    // A's token sent to B's key counts the tab in B with no visitor of A's.
+    expect((await widget(b.publicKey, "POST", "beat", one.token, SITE_B, body)).status).toBe(200);
+    const [row] = await owner.select().from(visitor).where(eq(visitor.id, one.id));
+    expect(row?.country ?? null).toBeNull();
+  },
+  "POST /v1/widget/:key/leave": async ({ widget, operator: as, anna, a, b }) => {
+    const tab = `iso${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    expect(
+      (await widget(a.publicKey, "POST", "beat", null, SITE_A, { tab, page: `${SITE_A}/x` }))
+        .status,
+    ).toBe(200);
+    // A leave sent to B's key leaves A's tab alone.
+    expect((await widget(b.publicKey, "POST", `leave?tab=${tab}`, null, SITE_B)).status).toBe(200);
+    expect(await (await as(anna, "GET", inWorkspace(a.id, "/visitors/live"))).text()).toContain(
+      tab,
+    );
+  },
+  "GET /v1/operator/workspaces/:workspaceId/get-started": async ({ operator: as, anna, a, b }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/get-started"))).status).toBe(404);
+    expect((await as(anna, "GET", inWorkspace(a.id, "/get-started"))).status).toBe(200);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/get-started/dismiss": async ({
+    operator: as,
+    anna,
+    bea,
+    b,
+  }) => {
+    expect((await as(anna, "POST", inWorkspace(b.id, "/get-started/dismiss"))).status).toBe(404);
+    const [row] = await owner
+      .select({ dismissed: workspaceMember.getStartedDismissedAt })
+      .from(workspaceMember)
+      .where(and(eq(workspaceMember.workspaceId, b.id), eq(workspaceMember.operatorId, bea.id)));
+    expect(row?.dismissed ?? null).toBeNull();
+  },
+  "GET /v1/operator/workspaces/:workspaceId/visitors/live": async ({ operator: as, anna, b }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/live"))).status).toBe(404);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/visitors/live/count": async ({
+    operator: as,
+    anna,
+    b,
+  }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/live/count"))).status).toBe(404);
+  },
+  "POST /v1/widget/:key/typing": async ({ widget, a, b, one, other }) => {
+    const draft = { draft: "half a message" };
+    expect((await widget(b.publicKey, "POST", "typing", one.token, SITE_B, draft)).status).toBe(
+      401,
+    );
+    expect((await widget(a.publicKey, "POST", "typing", other.token, SITE_A, draft)).status).toBe(
+      401,
+    );
+    expect((await widget(a.publicKey, "POST", "typing", one.token, SITE_A, draft)).status).toBe(
+      200,
+    );
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/widget/typing-preview": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+  }) => {
+    const before = await widgetSettingsOf(b.id);
+    const path = "/widget/typing-preview";
+    expect((await as(anna, "PUT", inWorkspace(b.id, path), { enabled: false })).status).toBe(404);
+    expect((await as(anna, "PUT", inWorkspace(a.id, path), { enabled: false })).status).toBe(200);
+    expect(await widgetSettingsOf(b.id)).toEqual(before);
+    await as(anna, "PUT", inWorkspace(a.id, path), { enabled: true });
+  },
+  "GET /v1/operator/workspaces/:workspaceId/contacts": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/contacts"))).status).toBe(404);
+    const text = await (await as(anna, "GET", inWorkspace(a.id, "/contacts?limit=100"))).text();
+    expect(text).not.toContain(other.id);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/contacts/export": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    const email = `other-${other.id}@example.com`;
+    await owner.update(visitor).set({ email }).where(eq(visitor.id, other.id));
+    expect((await as(anna, "GET", inWorkspace(b.id, "/contacts/export"))).status).toBe(404);
+    const text = await (await as(anna, "GET", inWorkspace(a.id, "/contacts/export"))).text();
+    expect(text.startsWith("name,email")).toBe(true);
+    expect(text).not.toContain(email);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/contacts/:visitorId": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    one,
+    other,
+  }) => {
+    expect((await as(anna, "GET", inWorkspace(a.id, `/contacts/${other.id}`))).status).toBe(404);
+    expect((await as(anna, "GET", inWorkspace(b.id, `/contacts/${other.id}`))).status).toBe(404);
+    expect((await as(anna, "GET", inWorkspace(a.id, `/contacts/${one.id}`))).status).toBe(200);
+  },
+  "PATCH /v1/operator/workspaces/:workspaceId/contacts/:visitorId": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    const noteOf = async () =>
+      (await owner.select().from(visitor).where(eq(visitor.id, other.id)))[0]?.note;
+    const before = await noteOf();
+    const change = { note: "Crossing over", name: "Moved" };
+    expect(
+      (await as(anna, "PATCH", inWorkspace(a.id, `/contacts/${other.id}`), change)).status,
+    ).toBe(404);
+    expect(
+      (await as(anna, "PATCH", inWorkspace(b.id, `/contacts/${other.id}`), change)).status,
+    ).toBe(404);
+    expect(await noteOf()).toBe(before);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/contacts/:visitorId": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    expect((await as(anna, "DELETE", inWorkspace(a.id, `/contacts/${other.id}`))).status).toBe(404);
+    expect((await as(anna, "DELETE", inWorkspace(b.id, `/contacts/${other.id}`))).status).toBe(404);
+    expect(await owner.select().from(visitor).where(eq(visitor.id, other.id))).toHaveLength(1);
+    expect(
+      await owner.select().from(conversation).where(eq(conversation.id, other.conversationId)),
+    ).toHaveLength(1);
+  },
   "GET /v1/operator/workspaces/:workspaceId/blocked-visitors": async ({
     operator: as,
     anna,
@@ -1164,6 +1395,7 @@ async function buildWorld(db: Database): Promise<World> {
       publicUrl: PUBLIC_URL,
     }),
     logger,
+    valkey,
     checks: { postgres: async () => {}, valkey: async () => {} },
     stream: { heartbeatMs: 25_000, lifetimeMs: 60_000 },
   });
@@ -1569,10 +1801,21 @@ describe("the worker with no row-level security", () => {
       ),
     );
     while (await fanOutOne(worker, { push: true, email: false }));
-    const claims = await claimDeliveries(worker, 50, 60_000);
-    const mine = claims.find((claim) => claim.workspaceId === space.id);
-    if (mine === undefined) throw new Error("No claim for this workspace");
-    const plan = await planDelivery(worker, mine, { publicUrl: PUBLIC_URL, secret: AUTH_SECRET });
+    // Other tests leave due rows too, so this claims until it holds this workspace's row.
+    const claimMine = async () => {
+      for (;;) {
+        const claims = await claimDeliveries(worker, 50, 60_000);
+        const found = claims.find((claim) => claim.workspaceId === space.id);
+        if (found !== undefined) return found;
+        if (claims.length === 0) throw new Error("No claim for this workspace");
+      }
+    };
+    const mine = await claimMine();
+    const plan = await planDelivery(worker, mine, {
+      publicUrl: PUBLIC_URL,
+      secret: AUTH_SECRET,
+      imageOrigin: PUBLIC_URL,
+    });
     expect(plan?.channel === "push" && plan.payload.title).toBe("The right workspace");
   });
 });

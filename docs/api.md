@@ -25,12 +25,12 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 
 | Status | Codes | When |
 |---|---|---|
-| 400 | `invalid_request` | The request does not match its schema |
+| 400 | `invalid_request`, `invalid_reply_to` | The request does not match its schema, or a reply quotes a message that is not in its conversation |
 | 401 | `unauthorized` | No token or session, or one that is no longer valid |
 | 402 | `payment_required`, `read_only` | On the cloud plan, a workspace that is not paid for. A self-hosted install never answers 402 |
 | 403 | `origin_not_allowed`, `suspended`, `forbidden`, `blocked` | The site is not allowed or the widget is off, the workspace is suspended, the role does not allow it, or an operator blocked the visitor |
 | 404 | `not_found` | It does not exist, or it is in another workspace |
-| 409 | `conversation_closed`, `webhook_limit` | Reopen the conversation to reply, or the workspace has 5 webhooks already |
+| 409 | `conversation_closed`, `webhook_limit`, `message_seen` | Reopen the conversation to reply, the workspace has 5 webhooks already, or the visitor has seen the reply you tried to edit |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
 | 503 | `busy` | The server is overloaded for a moment. Try again |
@@ -43,15 +43,45 @@ A message or an image carries a `clientId` that the client makes, such as `m_4f9
 
 A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry of that message answers true too.
 
+A message's `body` is plain text that the widget, the operator app and reply emails show as a small Markdown: `**bold**`, `*italic*`, `` `code` ``, blocks between lines of three backticks, `[words](https://...)` links, bare `http` and `https` addresses, and lists that start with `-`, `*`, `+` or `1.`. HTML, images and headings stay text, and only `http`, `https` and `mailto` links work. The API stores and answers the body as it was sent.
+
+`POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/transcript` emails the visitor the whole conversation now, open or closed, whatever the `transcript` setting says. It answers 409 `no_email` when the visitor gave no email and `email_unavailable` when the server sends no email. It adds a `transcript.requested` event, and the worker sends it at least once, as it does reply emails. A transcript drops the visitor's waiting reply email, unless that email also carries a reply from another conversation. Transcripts go to visitors only, never to operators.
+
+A message's `kind` is `text` or `image` for what people wrote. Closing or reopening a conversation writes a status line in the same transaction as its `conversation.closed` or `conversation.reopened` event and with the event's position, so the widget and the operator app show it in order: `kind` is `closed` or `reopened`, `body` is null, and the author is whoever made the change (an operator, an API key, or no one shown on Dinghy Cloud's welcome chat). A status line has no `message.created` event, so it raises no alert, no push and no webhook, it is never a conversation's `lastMessage`, and it counts toward neither unread replies nor first replies. A client that shows only chat skips these kinds.
+
+An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
+
+### Quotes, edits and deletes
+
+A send can quote one earlier message of the same conversation: pass its ID as `replyToMessageId` in the body of a text reply or the widget's send, in the query of an image upload, or to the MCP `reply` tool. It must be text or an image that was not deleted, or the send answers 400 `invalid_reply_to`. Every message then has `replyTo`, null or `{ id, authorName, fromVisitor, excerpt, hasImage }`. `excerpt` is the first 140 characters of the quoted text on one line, with its Markdown marks removed. When the quoted message is deleted later, `id` is null and `excerpt` is empty: show "Original message deleted". The widget API gives an operator's first name as `authorName`, and null for the visitor's own message.
+
+`PATCH /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}` with `{ "body" }` changes the text of the signed-in operator's own text reply, and sets `editedAt`. It works only while the visitor has not seen the reply: it answers 409 `message_seen` once the visitor read it in the chat, or once a reply email or a transcript carried it or is being sent. A reply email still waiting reads the text when it goes, so it carries the edit. Nobody edits a visitor's message, and API keys and MCP cannot edit.
+
+`DELETE` on the same path deletes a message: an operator deletes their own, and an owner or admin deletes anyone's, a visitor's too, such as a pasted card number. The row stays, so positions, receipts and quotes keep working: `deleted` is true, and `body` and `image` are null in every answer, webhook and export. Its image goes from storage as other deleted images do. API keys cannot delete.
+
+An edit adds a `message.updated` event and a delete a `message.deleted` event, in the same transaction. The widget's stream and message list send the message again at that event's position, with its `seq` unchanged, so a client replaces its copy by `id` and keeps sorting by `seq`.
+
+An operator message has `via`: `api` or `mcp` for a key's reply, and null otherwise. `readAt` is when the visitor's read position first passed a reply, null before that and for replies read before this field existed. `GET .../messages/{messageId}/receipt` answers `{ readAt, emailedAt }`, where `emailedAt` is when the first reply email or transcript after the reply went out.
+
 ## Visitors
 
-The operator API's `Conversation` describes the visitor: `name`, `email`, `externalId`, `attributes` (the custom attributes your site signed), `blocked`, `device` (such as `"Chrome on macOS"`), `lastPage` and `lastSeenAt`. The conversation also has `pageContext`: what the page last sent with `Dinghy.setContext()`, or null. Your site does not sign it, so anyone can change it in their browser. Treat it as a hint, never as proof. A conversation's messages also answer `visitorOnline`: true while the visitor has a widget stream open, and null when the server cannot tell.
+The operator API's `Conversation` describes the visitor: `name`, `email`, `externalId`, `attributes` (the custom attributes your site signed), `blocked`, `device` (such as `"Chrome on macOS"`), `lastPage`, `lastSeenAt`, `country` (ISO 3166-1 alpha-2) and `timeZone` (IANA), the last two from the widget's beat. The conversation also has `pageContext`: what the page last sent with `Dinghy.setContext()`, or null. Your site does not sign it, so anyone can change it in their browser. Treat it as a hint, never as proof. A conversation's messages also answer `visitorOnline`: true while the visitor has a widget stream open, and null when the server cannot tell.
 
 `POST /v1/widget/{key}/page` with `{ "page", "title" }` reports the page the visitor is on. The widget sends it only for a visitor who has chatted, when it loads and when the address changes. The server keeps the origin and path, never the query string or `#` part, up to 2,000 characters, and the title on one line, up to 200 characters. It stores nothing for a visitor with no conversation, and a host token sent here never creates a visitor. Each report adds a row to the visitor's page journey, unless it repeats the newest row's address, in which case it only fills in a new title. A visitor keeps the newest 100 rows, and the worker deletes rows after 90 days. The widget's `GET /v1/widget/{key}/me` answers `chatted`, true once the visitor has a conversation.
 
 `POST /v1/widget/{key}/context` with `{ "context": { ... } }` sends what the page set with `Dinghy.setContext()`. It holds at most 20 keys of 1 to 40 characters, each with a string of up to 200 characters, a number, `true`, `false` or `null`. Each report replaces the last one. The widget sends it only for a visitor who has chatted, and again after the first message, and the server keeps it only for a visitor who has a conversation. It goes with the visitor's last conversation, as the page journey does.
 
-A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, newest first, each with `path` (origin and path), `title` (null when the page had none) and `viewedAt`. They also answer `welcome`, which is null except on Dinghy Cloud's welcome chat (see [Architecture](architecture.md#core-and-ee)).
+`POST /v1/widget/{key}/beat` with `{ "tab", "page", "title", "referrer", "timeZone" }` says a tab of the site is open, for the live view. The loader sends it on load, once a minute while the tab shows, and when a chat starts, with the visitor's token when they have one. `tab` is 6 to 32 lowercase letters and digits that the page keeps in memory only. The server keeps the page's origin and path, the title, the referrer's origin and a known time zone, looks up the country of the request's address and drops the address, and keeps the tab in Valkey for 90 seconds after its last beat, at most 2,000 tabs a workspace. For a visitor with a token, it saves `country` and `timeZone` on the visitor. `POST /v1/widget/{key}/leave?tab=` drops a tab at once, and the loader sends it with `sendBeacon`. `GET /v1/operator/workspaces/{workspaceId}/visitors/live` lists the open tabs, newest first, with `visitor` (`id`, `name`, `email`, `externalId` and `conversationId`) for a visitor who has chatted, and `/visitors/live/count` counts them. Both answer null when Valkey cannot tell.
+
+`POST /v1/widget/{key}/typing` with `{ "draft" }`, up to 2,000 characters, passes a visitor's unsent words to the workspace's open operator apps, which get it as a `notice`. It stores nothing, and does nothing for a visitor with no open conversation, a blocked visitor, or a workspace whose `typingPreview` is off. Owners and admins change that with `PUT /v1/operator/workspaces/{workspaceId}/widget/typing-preview` and `{ "enabled" }`, and the appearance answers `typingPreview`, so the widget sends nothing when it is off.
+
+`GET /v1/operator/workspaces/{workspaceId}/contacts` lists the visitors who have a conversation, newest seen first, or with `sort=firstSeen` newest first. `q` matches the name, email or user ID, and `limit` is 1 to 100. Each contact has `company` (the signed `company` attribute), `country`, `timeZone`, `lastSeenAt`, `createdAt` and `conversationCount`, and the answer's `next` goes in `before` for the next page. `GET .../contacts/export` downloads them all as CSV, with every cell that a spreadsheet would read as a formula starting with a quote mark. `GET .../contacts/{visitorId}` adds `attributes`, `pageContext`, the team's private `note`, every conversation and the pages. `PATCH` on it changes `note`, and for a visitor your site did not sign in, `name` and `email`. A signed-in visitor's name and email answer `signed_in`. Owners and admins `DELETE` a contact with all their conversations, messages and images.
+
+A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, newest first, each with `path` (origin and path), `title` (null when the page had none) and `viewedAt`. They also answer `welcome`, which is null except on Dinghy Cloud's welcome chat (see [Architecture](architecture.md#core-and-ee)). On the new workspace's side, `welcome` is `{ "with": "founder", "pictureUrl" }`, and the conversation's `visitor.pictureUrl` holds the same picture, in lists too. Every other visitor's `pictureUrl` is null. And they answer `receipts`: how far the visitor has seen the replies, as message positions. A reply at or below `readSeq` was read in the chat. Each entry of `emails` is a reply email or a transcript, with the positions of the first and last message it carried, `fromSeq` and `toSeq`, and `sent`. A reply inside a sent one's range went out by email, and one inside only failed ones' ranges was in an email that failed. A reply in none and above `readSeq` is stored only.
+
+`GET /v1/operator/workspaces/{workspaceId}/get-started` answers which first steps are done for the signed-in member: `install`, `logo`, `widget`, `team`, `notifications` and `chat`, and `dismissed`. `POST .../get-started/dismiss` hides them for that member.
+
+`GET /v1/operator/workspaces/{workspaceId}/conversations` answers `waiting`, the open conversations whose newest message is the visitor's, and `openBy`, the open conversations for each filter: `all`, `mine` (always 0 for an API key) and `unassigned`. `GET /v1/operator/waiting` answers `waiting` for each of the signed-in operator's workspaces, for the workspace menu.
 
 `GET /v1/operator/workspaces/{workspaceId}/conversations/search?q=` searches open and closed conversations by the visitor's name, email or user ID and by message text, ignoring case. `q` has 3 to 100 characters, and the answer has at most 50 conversations, newest activity first. A conversation found by a message has that message's text as `lastMessage.body`, while `fromVisitor` and `createdAt` stay those of the newest message.
 
@@ -72,6 +102,8 @@ A conversation's messages answer `visitorPages`: the visitor's newest 20 pages, 
 | `mascot` | Whether the open chat shows the boat |
 | `emailAsk` | `off`, `after_first` or `before_first`: when a signed-out visitor is asked for an email |
 | `branding` | Whether the chat shows "Powered by Dinghy" |
+| `transcript` | Whether a visitor with an email gets the whole conversation by email 5 minutes after it closes, when someone on the team replied. A reopen within the 5 minutes cancels it, and a later close sends another only after new messages |
+| `sound` | Whether the widget plays a soft chime for a reply that arrives while the chat is closed or its tab is hidden |
 
 Both answer the settings with `logoUrl` and `team`: up to 3 members who sent the latest replies, each with an `id` that matches the `authorId` on their replies, a first name and a picture's address. `PUT .../widget/logo` sets the logo from the raw body, a PNG, JPEG or WebP of at most 2 MB, and `DELETE .../widget/logo` removes it. An API key and MCP cannot reach these routes.
 
@@ -85,10 +117,11 @@ An operator sets their picture with `PUT /v1/operator/me/picture` and the raw bo
 
 A client receives with server-sent events. `GET /v1/widget/{key}/stream` and `GET /v1/operator/workspaces/{workspaceId}/stream` send:
 
-- `message` (widget) or `change` (operator) events, whose `id` is the new cursor. A `change` for a new message has `fromVisitor`, true when the visitor wrote it,
+- `message` (widget) or `change` (operator) events, whose `id` is the new cursor. A `change` for a new message has `fromVisitor`, true when the visitor wrote it. An edited or deleted message comes again as a widget `message`, and as a `message.updated` or `message.deleted` operator `change`,
 - `ready` once the stream has caught up,
 - `resync` when the client must load everything again, such as after a restore,
-- `close`, with a reason, before the server ends the stream.
+- `close`, with a reason, before the server ends the stream,
+- on the operator stream, `notice` events with no `id`: `{ "kind": "typing", conversationId, visitorId, draft }` while a visitor types, with an empty `draft` when they stop, and `{ "kind": "receipts", visitorId }` when a visitor read replies or a reply email went out. A notice can be lost, so treat it as a hint to load again.
 
 Pass the last cursor when you reconnect, and the stream replays what you missed. A stream lasts at most 15 minutes, and it sends a heartbeat every 25 seconds. The widget reads it with `fetch`, because `EventSource` cannot send a bearer token. [Architecture](architecture.md#messages-events-and-cursors) explains cursors.
 
@@ -103,13 +136,15 @@ curl https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/conversations 
   -H "Authorization: Bearer dk_..."
 ```
 
-A key has a member's permissions, in its own workspace only. It can:
+A key works in its own workspace only, at the access level chosen when it was made. **Conversations**, the default, has a member's permissions. It can:
 
 - list, search and read conversations, with the visitor and the page journey (`?assignee=none` lists the unassigned ones; a key is assigned nothing, so `assignee=me` answers 400),
 - reply with text or an image,
 - close, reopen and assign a conversation.
 
-A route that a key can call lists `apiKey` in its OpenAPI `security`. Any other route, such as settings, members, keys, webhooks, analytics, billing, export, deleting the workspace or `/v1/operator/me`, answers 403 `forbidden`. Another workspace's routes answer 404. An unknown or revoked key answers 401. Each key may send 300 requests a minute, and over that it gets 429 with `Retry-After`.
+**Setup** can do all of that, and manage the workspace's [webhooks](#webhooks): list, add, change, delete, replace a secret, send a test and read the deliveries. It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Setup key.
+
+A route that every key can call lists `apiKey` in its OpenAPI `security`, and a route that only a Setup key can call lists `setupKey`. A Conversations key on a webhook route answers 403 `forbidden`. Every other route, such as settings, members, keys, analytics, billing, export, deleting the workspace or `/v1/operator/me`, answers 403 `forbidden` to any key: no key can create, list or revoke keys. `POST .../api-keys` takes `level`, `conversations` or `setup`, and the key list answers each key's `level`. Another workspace's routes answer 404. An unknown or revoked key answers 401. Each key may send 300 requests a minute, and over that it gets 429 with `Retry-After`.
 
 A reply sent with a key has `authorApiKeyId` set and `authorOperatorId` null, and `authorName` is the key's name. Visitors see the key's name on it, with a bot icon. Revoking a key in Settings stops it at once, and its old replies keep its name. **Last used** shows to the minute.
 
@@ -117,12 +152,14 @@ A token names its workspace: it is `dk_`, the workspace's ID, a dot, and a rando
 
 ## Webhooks
 
-A webhook sends a signed `POST` to your server when something changes in a workspace. An owner or admin adds one in **Settings > API & webhooks**, with its address and the events it wants. A workspace has at most 5. The signing secret shows once, and **Replace secret** makes a new one. **Send test** sends a `webhook.test` event at once and shows the answer.
+A webhook sends a signed `POST` to your server when something changes in a workspace. An owner or admin adds one in **Settings > API & webhooks**, with its address and the events it wants, or a [Setup key](#api-keys) adds one with the same routes. Each webhook answers `createdBy`: `{ "kind": "operator" | "key", "name" }`, or null for one from an older release, and Settings shows it. A workspace has at most 5. The signing secret shows once, and **Replace secret** makes a new one. **Send test** sends a `webhook.test` event at once and shows the answer.
 
 | Event | When |
 |---|---|
 | `conversation.created` | A visitor starts a conversation. Its first message also sends `message.created` |
 | `message.created` | A visitor, an operator or an API key writes a message |
+| `message.updated` | An operator edits a reply |
+| `message.deleted` | An operator deletes a message. `data.message` has `deleted: true` and no body |
 | `conversation.closed` | A conversation is closed |
 | `conversation.reopened` | A conversation is reopened |
 | `conversation.assigned` | A conversation's assignee changes, or is cleared |
@@ -142,7 +179,7 @@ The body is JSON:
 }
 ```
 
-`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only `message.created` has `data.message`. They hold the state when the request is sent, which can be later than the change, such as after a retry.
+`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`. They hold the state when the request is sent, which can be later than the change, such as after a retry.
 
 Each request has these headers:
 
@@ -196,8 +233,14 @@ Another client that supports remote servers over HTTP takes the same address and
 | `list_conversations` | Lists open or closed conversations, newest activity first. Pass `nextCursor` back as `cursor` for the next page |
 | `search_conversations` | Finds conversations by the visitor's name, email or user ID, or by message text |
 | `get_conversation` | Reads a conversation: its messages, the visitor, `pageContext` and the pages the visitor went through |
-| `reply` | Replies in an open conversation. Pass the same `clientId` on a retry, so it is not sent twice |
+| `reply` | Replies in an open conversation, quoting an earlier message with `replyToMessageId` if you like. Pass the same `clientId` on a retry, so it is not sent twice |
 | `close_conversation`, `reopen_conversation` | Closes or reopens a conversation |
 | `assign_conversation` | Assigns a conversation to a member by operator ID, or clears it with `null` |
+| `list_webhooks` | Setup keys only. Lists the webhooks, with their events and who added them, never their secrets |
+| `create_webhook` | Setup keys only. Adds a webhook from `url` and `events`, and answers its signing secret, once |
+| `delete_webhook` | Setup keys only. Deletes a webhook |
+| `test_webhook` | Setup keys only. Sends a signed `webhook.test` now and answers what the webhook answered |
+
+A Conversations key's `tools/list` does not include the webhook tools, and calling one answers that there is no such tool.
 
 The server is stateless and answers JSON only: it keeps no session and opens no event stream, so `GET /v1/mcp` answers 405. A tool that fails answers with `isError: true` and the same stable `code` as the HTTP API, such as `not_found` or `conversation_closed`.

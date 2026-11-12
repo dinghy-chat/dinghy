@@ -39,6 +39,10 @@ export interface WidgetSettings {
   emailAsk: "off" | "after_first" | "before_first";
   /** The "Powered by Dinghy" line. */
   branding: boolean;
+  /** A chime when a reply arrives and the visitor is not looking at the chat. */
+  sound: boolean;
+  /** The visitor gets the conversation by email when it closes. The widget does not use it. */
+  transcript: boolean;
 }
 
 /** A member the widget's header shows: a first name and a picture, never an email. */
@@ -52,6 +56,8 @@ export interface TeamFace {
 
 /** The saved settings, as the widget's appearance route answers them. */
 export interface SavedAppearance extends WidgetSettings {
+  /** The chat sends the visitor's unsent words, so operators see them as they type. */
+  typingPreview: boolean;
   logoUrl: string | null;
   /** Up to 3 members, the ones who sent the latest replies. */
   team: TeamFace[];
@@ -81,6 +87,9 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   radius: 16,
   emailAsk: "after_first",
   branding: true,
+  sound: true,
+  transcript: true,
+  typingPreview: true,
   logoUrl: null,
   team: [],
 };
@@ -253,3 +262,6 @@ export function forgetVisitor(publicKey: string): void {
     // Other tabs keep their session until their next page load.
   }
 }
+
+/** The longest message, in characters: the composers' limit, which the server checks too. */
+export const MESSAGE_MAX = 10_000;

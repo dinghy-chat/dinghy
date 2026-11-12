@@ -11,6 +11,8 @@ const ASSETS: Record<string, { type: string; cache: string }> = {
   "app.css": { type: "text/css; charset=utf-8", cache: SHORT_CACHE },
   "manifest.webmanifest": { type: "application/manifest+json", cache: SHORT_CACHE },
   "icon.svg": { type: "image/svg+xml", cache: SHORT_CACHE },
+  // The Visitors page's map, drawn once from Natural Earth.
+  "world.svg": { type: "image/svg+xml", cache: SHORT_CACHE },
   "icon-180.png": { type: "image/png", cache: SHORT_CACHE },
   "icon-192.png": { type: "image/png", cache: SHORT_CACHE },
   "icon-512.png": { type: "image/png", cache: SHORT_CACHE },

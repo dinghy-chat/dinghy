@@ -4,6 +4,7 @@ import { streamSSE } from "hono/streaming";
 import type { Logger } from "pino";
 import type { CloseReason, Live, Session } from "./live.ts";
 import { type Cursor, formatCursor } from "./messages.ts";
+import { MINUTE_MS } from "./time.ts";
 
 export interface StreamOptions {
   heartbeatMs: number;
@@ -14,7 +15,7 @@ export const DEFAULT_STREAM: StreamOptions = {
   // Cloudflare drops an idle proxied connection after about 100 seconds.
   heartbeatMs: 25_000,
   // A cap, so a client recovers from any lost signal and its access gets checked again.
-  lifetimeMs: 15 * 60_000,
+  lifetimeMs: 15 * MINUTE_MS,
 };
 
 /**
@@ -22,7 +23,7 @@ export const DEFAULT_STREAM: StreamOptions = {
  * so a minute more means a slot never expires under an open stream, and the slots of an instance
  * that crashed free themselves soon after.
  */
-export const streamLeaseMs = (options: StreamOptions) => options.lifetimeMs + 60_000;
+export const streamLeaseMs = (options: StreamOptions) => options.lifetimeMs + MINUTE_MS;
 
 const CLOSE_WRITE_WAIT_MS = 1000;
 
@@ -51,6 +52,8 @@ interface LiveStream {
   subscriber: string;
   expiresAt: Date | undefined;
   after: Cursor | undefined;
+  /** Passes on operator notices as `notice` events, which carry no cursor. */
+  notices?: boolean;
   /** Frees this stream's place in the plan's count when it ends. */
   release?: (() => void) | undefined;
   /**
@@ -149,6 +152,12 @@ export function openLiveStream(c: Context, stream: LiveStream): Response {
     const session: Session = {
       wake: () => void wake(),
       close: (reason) => void close(reason),
+      ...(stream.notices && {
+        tell: (notice) => {
+          // A notice that cannot be written is lost, which a notice may be.
+          if (!closed) sse.writeSSE({ event: "notice", data: notice }).catch(() => undefined);
+        },
+      }),
     };
     sse.onAbort(() => void close("aborted"));
 

@@ -37,6 +37,7 @@ import { setSuspended, signalSuspension } from "../src/suspension.ts";
 import { createWorkspace } from "../src/workspaces.ts";
 import { createTestDatabase } from "./database.ts";
 import { AUTH_SECRET, DATABASE_URL, VALKEY_URL } from "./env.ts";
+import { clearLimits } from "./limits.ts";
 import { sendOperatorMessage } from "./messages.ts";
 import { captureMail } from "./operators.ts";
 
@@ -105,6 +106,8 @@ export async function startE2EServer(
   // Keeps what it sends, so a test opens a link the way a person would.
   const mailer = captureMail();
   const valkey = new Redis(VALKEY_URL, { enableOfflineQueue: false, maxRetriesPerRequest: 1 });
+  await new Promise((resolve) => valkey.once("ready", resolve));
+  await clearLimits(valkey);
   const pushed: string[] = [];
   const push = createPush({ ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" }, (async (
     url: string,

@@ -23,6 +23,18 @@ RUN node --input-type=module -e " \
   await buildWidget('/out/widget'); \
   await buildOperator('/out/operator');"
 
+# DB-IP's IP to Country Lite (CC BY 4.0, no account), for the live view's countries. This month's file
+# comes out during the month, so the previous month's is the fallback. Without either, the image
+# still builds, and countries are unknown.
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS geo
+RUN mkdir /geo \
+  && for month in "$(date -u +%Y-%m)" "$(date -u -d "@$(( $(date -u +%s) - 32 * 86400 ))" +%Y-%m)"; do \
+       wget -q -O /geo/country.mmdb.gz "https://download.db-ip.com/free/dbip-country-lite-$month.mmdb.gz" \
+         && gunzip /geo/country.mmdb.gz && mv /geo/country.mmdb /geo/dbip-country-lite.mmdb && break; \
+       rm -f /geo/country.mmdb.gz /geo/country.mmdb; \
+     done; \
+  ls /geo/dbip-country-lite.mmdb || echo "No DB-IP database: countries stay unknown."
+
 FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS production
 WORKDIR /repo
 COPY package.json bun.lock ./
@@ -64,13 +76,15 @@ COPY ee/server ee/server
 COPY LICENSE LICENSE-NOTICE.md ./
 COPY --from=bundles /out/widget public/widget
 COPY --from=bundles /out/operator public/operator
+COPY --from=geo /geo geo
 RUN find apps/server/src ee/server -name '*.test.ts' -delete
 ENV NODE_ENV=production \
     WIDGET_DIR=/app/public/widget \
     OPERATOR_DIR=/app/public/operator \
     STORAGE_DIR=/data/images \
     BACKUP_DIR=/data/backups \
-    MIGRATIONS_DIR=/app/apps/server/drizzle
+    MIGRATIONS_DIR=/app/apps/server/drizzle \
+    GEOIP_COUNTRY_FILE=/app/geo/dbip-country-lite.mmdb
 USER node
 EXPOSE 3000
 # `web`, `worker` or `all` starts a process, and `chat ...` runs a command. The script uses exec, so

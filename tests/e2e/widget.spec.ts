@@ -124,7 +124,8 @@ test("the host page's CSS does not change the widget", async ({ page }) => {
   await expect(launcher(page)).toBeVisible();
   await launcher(page).click();
   const box = await input(page).boundingBox();
-  expect(box?.height).toBe(44);
+  // One line of 21px and 5px above and below, inside the message box.
+  expect(box?.height).toBe(31);
   const style = await input(page).evaluate((element) => {
     const computed = getComputedStyle(element);
     return { fontSize: computed.fontSize, color: computed.color };
@@ -151,7 +152,7 @@ test("the widget works under the strictest CSP it documents", async ({ page }) =
   expect(violations).toEqual([]);
 });
 
-test("a page load with no conversation asks only for the look, and writes no row", async ({
+test("a page load with no conversation asks for the look and beats, and writes no row", async ({
   browser,
 }) => {
   const context = await browser.newContext();
@@ -161,10 +162,13 @@ test("a page load with no conversation asks only for the look, and writes no row
   const before = await server.visitorCount();
   await page.goto(`${server.hostOrigin}/plain`);
   await expect(launcher(page)).toBeVisible();
-  // Only the saved look, which carries no token and no cookie.
-  const api = requests.filter((url) => url.includes("/v1/"));
-  expect(api).toHaveLength(1);
-  expect(new URL(api[0] ?? "").pathname).toMatch(/^\/v1\/widget\/wk_\w+\/appearance$/);
+  // The saved look, then the live view's beat. Neither carries a token or a cookie.
+  await expect
+    .poll(() => requests.filter((url) => url.includes("/v1/")).map((url) => new URL(url).pathname))
+    .toEqual([
+      expect.stringMatching(/^\/v1\/widget\/wk_\w+\/appearance$/),
+      expect.stringMatching(/^\/v1\/widget\/wk_\w+\/beat$/),
+    ]);
   expect(requests.filter((url) => url.endsWith("/widget/widget.js"))).toEqual([]);
   expect(await server.visitorCount()).toBe(before);
   await context.close();
@@ -185,6 +189,43 @@ test("a visitor with only a closed conversation holds no stream", async ({ brows
   await expect.poll(() => requests.some((url) => url.endsWith("/me"))).toBe(true);
   await page.waitForTimeout(300);
   expect(requests.filter((url) => url.includes("/stream"))).toEqual([]);
+  await context.close();
+});
+
+test("a chat left open on a closed conversation stays closed after a reload", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${server.hostOrigin}/plain`);
+  await sendMessage(page, "Closed while open");
+  await server.closeConversations();
+
+  // The panel stays shut while /me is held, so it never flashes open and shut.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/me", async (route) => {
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response }).catch(() => {});
+  });
+  const answered = page.waitForResponse("**/me");
+  await page.reload();
+  await expect(launcher(page)).toBeVisible();
+  await expect(page.locator(".panel")).toHaveCount(0);
+  release();
+  await answered;
+  await page.waitForTimeout(300);
+  await expect(page.locator(".panel")).toHaveCount(0);
+  await expect(launcher(page)).toBeVisible();
+
+  // The tab's flag is gone, so the next reload does not try again.
+  await page.unroute("**/me");
+  await page.reload();
+  await page.waitForTimeout(300);
+  await expect(page.locator(".panel")).toHaveCount(0);
   await context.close();
 });
 
@@ -214,17 +255,33 @@ test("a refused stream waits for Retry-After before it tries again", async ({ br
   await context.close();
 });
 
-test("a visitor can save an email", async ({ browser }) => {
+test("after the first message, the email question is a card in the conversation", async ({
+  browser,
+}) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`${server.hostOrigin}/plain`);
   await launcher(page).click();
+  await expect(input(page)).toBeFocused();
   await expect(page.getByLabel("Your email")).toHaveCount(0);
   await input(page).fill("Hello");
   await input(page).press("Enter");
-  await page.getByLabel("Your email").fill("pat@example.com");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Thanks. We will use this email")).toBeVisible();
+
+  // The card follows the visitor's first message in the log, and the message box stays alone.
+  const card = page.getByRole("form", { name: "Get replies by email" });
+  await expect(page.getByRole("log").locator(".mine + .card")).toHaveCount(1);
+  await expect(card).toContainText("We'll email you when we reply, if you have left the page.");
+  await expect(page.locator(".compose input[type=email]")).toHaveCount(0);
+  await expect(input(page)).toBeFocused();
+
+  // Enter in the email field saves it and sends no message.
+  await card.getByLabel("Your email").fill("pat@example.com");
+  await card.getByLabel("Your email").press("Enter");
+  const saved = page.getByRole("log").getByRole("status");
+  await expect(saved).toHaveText("We'll email replies to pat@example.com");
+  await expect(saved.locator("b")).toHaveText("pat@example.com");
+  await expect(card).toHaveCount(0);
+  await expect(page.locator(".msg.mine")).toHaveCount(1);
   expect(await server.visitorEmails()).toContain("pat@example.com");
   await context.close();
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "widget_settings" ADD COLUMN "typing_preview" boolean DEFAULT true NOT NULL;

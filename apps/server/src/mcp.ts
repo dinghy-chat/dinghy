@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
+import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import {
   apiKeyToken,
   authenticateApiKey,
@@ -9,6 +10,7 @@ import {
 } from "./api-keys.ts";
 import { API_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
+import { WEBHOOK_EVENTS } from "./db/schema.ts";
 import { type Database, writable } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND, RATE_LIMITED, WRONG_ORIGIN } from "./errors.ts";
 import type { Inbox, ReplyOutcome } from "./inbox.ts";
@@ -16,6 +18,7 @@ import type { Live } from "./live.ts";
 import { closedFailure } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { assignTo, NOT_A_MEMBER } from "./team.ts";
+import type { Webhooks } from "./webhooks.ts";
 
 // MCP over Streamable HTTP, stateless: each POST holds one JSON-RPC message and gets one JSON answer.
 // There is no session and no event stream, so GET answers 405, as the spec allows.
@@ -107,14 +110,22 @@ const replyAnswer = (outcome: ReplyOutcome): Outcome => {
   if (outcome.kind === "closed") {
     return { error: failure("conversation_closed", "Reopen this conversation to reply.") };
   }
+  if (outcome.kind === "invalid_reply_to") {
+    return {
+      error: failure(
+        "invalid_reply_to",
+        "Quote a message that people wrote in this conversation and that was not deleted.",
+      ),
+    };
+  }
   return { error: closedFailure(outcome.access).body };
 };
 
 function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
   const status =
     (target: "open" | "closed") =>
-    async (input: { conversationId: string }, { workspaceId }: Context): Promise<Outcome> =>
-      (await inbox.setStatus(workspaceId, input.conversationId, target))
+    async (input: { conversationId: string }, { workspaceId, actor }: Context): Promise<Outcome> =>
+      (await inbox.setStatus(workspaceId, actor, input.conversationId, target))
         ? { data: { ok: true } }
         : { error: NOT_FOUND };
   return [
@@ -133,7 +144,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
         const match = cursor === undefined ? null : CURSOR.exec(cursor);
         const before =
           match === null ? undefined : { updatedAt: new Date(match[1] ?? ""), id: match[2] ?? "" };
-        const page = await inbox.list(workspaceId, wanted, { kind: "all" }, before, limit);
+        const page = await inbox.list(workspaceId, null, wanted, { kind: "all" }, before, limit);
         const last = page.conversations.at(-1);
         return {
           data: {
@@ -182,14 +193,14 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       name: "reply",
       title: "Reply to a visitor",
       description:
-        "Sends a reply in an open conversation. The visitor sees the API key's name as its author. Pass the same `clientId` when you retry, so a retry cannot send it twice.",
+        "Sends a reply in an open conversation. The visitor sees the API key's name as its author. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message.",
       input: z.object({
         conversationId,
         body: z
           .string()
           .trim()
           .min(1)
-          .max(10_000)
+          .max(MESSAGE_MAX)
           .regex(/^[^\0]*$/),
         clientId: z
           .string()
@@ -197,6 +208,10 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
           .describe(
             "Your own ID for this reply, up to 64 letters, digits, - or _. Send the same one on a retry",
           ),
+        replyToMessageId: z
+          .uuid()
+          .optional()
+          .describe("An earlier message of this conversation to quote, from get_conversation"),
       }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
@@ -204,6 +219,8 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
           await inbox.reply(workspaceId, actor, input.conversationId, {
             body: input.body,
             clientId: input.clientId,
+            replyToMessageId: input.replyToMessageId,
+            via: "mcp",
           }),
         ),
     }),
@@ -246,6 +263,64 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
   ];
 }
 
+const webhookId = z.uuid().describe("The webhook's ID, from list_webhooks or create_webhook");
+
+/** The webhook tools, which only a Setup key lists and calls. */
+function setupTools(webhooks: Webhooks): Tool[] {
+  return [
+    tool({
+      name: "list_webhooks",
+      title: "List webhooks",
+      description:
+        "Lists the workspace's webhooks, oldest first: each one's URL, events, whether it is on and who added it. Never the signing secrets.",
+      input: z.object({}),
+      readOnly: true,
+      run: async (_input, { workspaceId }) => ({
+        data: { webhooks: await webhooks.list(workspaceId) },
+      }),
+    }),
+    tool({
+      name: "create_webhook",
+      title: "Add a webhook",
+      description: `Adds a webhook that gets a signed POST for each event it asks for: ${WEBHOOK_EVENTS.join(", ")}. The URL must be https. The answer holds the signing secret once: store it to check the \`Dinghy-Signature\` header. A workspace has at most 5 webhooks.`,
+      input: z.object({
+        url: z.string().trim().max(2000).describe("The https address that receives the events"),
+        events: z.array(z.enum(WEBHOOK_EVENTS)).min(1).max(WEBHOOK_EVENTS.length),
+      }),
+      async run(input, { workspaceId, actor }) {
+        const made = await webhooks.create(workspaceId, actor, { ...input, enabled: true });
+        if (made.kind === "bad_endpoint") return { error: failure("bad_endpoint", made.reason) };
+        if (made.kind === "limit") {
+          return { error: failure("webhook_limit", "A workspace can have 5 webhooks.") };
+        }
+        return { data: { webhook: made.webhook, secret: made.secret } };
+      },
+    }),
+    tool({
+      name: "delete_webhook",
+      title: "Delete a webhook",
+      description: "Deletes a webhook and its deliveries. It gets no more events.",
+      input: z.object({ webhookId }),
+      idempotent: true,
+      async run(input, { workspaceId, actor }) {
+        const gone = await webhooks.remove(workspaceId, actor, input.webhookId);
+        return gone ? { data: { ok: true } } : { error: NOT_FOUND };
+      },
+    }),
+    tool({
+      name: "test_webhook",
+      title: "Test a webhook",
+      description:
+        "Sends a signed `webhook.test` event to the webhook now, and answers what it answered: `delivered`, the HTTP `status` and an `error`.",
+      input: z.object({ webhookId }),
+      async run(input, { workspaceId }) {
+        const result = await webhooks.test(workspaceId, input.webhookId);
+        return result === null ? { error: NOT_FOUND } : { data: result };
+      },
+    }),
+  ];
+}
+
 /** A tool's answer as MCP carries it: text for any client, and the same data as structured content. */
 function toolResult(outcome: Outcome): Record<string, unknown> {
   if ("data" in outcome) {
@@ -265,6 +340,7 @@ function toolResult(outcome: Outcome): Record<string, unknown> {
 
 interface McpOptions {
   db: Database;
+  webhooks: Webhooks;
   live: Live;
   rateLimit: RateLimit;
   inbox: Inbox;
@@ -275,10 +351,13 @@ interface McpOptions {
 
 export function registerMcp(
   app: App,
-  { db, live, rateLimit, inbox, publicOrigin, version }: McpOptions,
+  { db, webhooks, live, rateLimit, inbox, publicOrigin, version }: McpOptions,
 ): void {
-  const list = tools(inbox, db, live);
-  const byName = new Map(list.map((one) => [one.name, one]));
+  const everyKey = tools(inbox, db, live);
+  const setupOnly = setupTools(webhooks);
+  /** A Conversations key does not see the webhook tools at all. */
+  const toolsFor = (actor: KeyActor) =>
+    actor.level === "setup" ? [...everyKey, ...setupOnly] : everyKey;
 
   /** Answers one JSON-RPC request. Null for a notification, which gets no answer. */
   const answer = async (
@@ -297,17 +376,19 @@ export function registerMcp(
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "dinghy", title: "Dinghy", version },
         instructions:
-          "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's. Replies show the key's name as their author.",
+          actor.level === "setup"
+            ? "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's, and set up its webhooks. Replies show the key's name as their author."
+            : "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the API key's. Replies show the key's name as their author.",
       });
     }
     if (method === "ping") return rpcResult(id, {});
     if (method === "tools/list") {
       return rpcResult(id, {
-        tools: list.map(({ call: _call, ...listed }) => listed),
+        tools: toolsFor(actor).map(({ call: _call, ...listed }) => listed),
       });
     }
     if (method === "tools/call") {
-      const found = typeof params.name === "string" ? byName.get(params.name) : undefined;
+      const found = toolsFor(actor).find((one) => one.name === params.name);
       if (found === undefined) return rpcError(id, -32602, "There is no tool with this name.");
       const outcome = await found.call(params.arguments, {
         workspaceId: actor.workspaceId,
@@ -360,7 +441,7 @@ export function registerMcp(
     security: API_KEY,
     summary: "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
     description:
-      "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+      "One JSON-RPC 2.0 message per request. Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. The tools are `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation` and `assign_conversation`, in the API key's workspace. A Setup key also gets `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
     request: {
       body: {
         required: true,

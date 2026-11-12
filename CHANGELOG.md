@@ -4,6 +4,48 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Upgrading
+
+- The Docker image downloads DB-IP's free IP to Country Lite database when it is built, for the countries in the new live view. Nothing to set. A server built from source can point `GEOIP_COUNTRY_FILE` at a copy, and without one the live view shows no countries.
+
+### Added
+
+- Messages show a small Markdown: bold, italic, code, code blocks, links, bare web addresses and lists, in the widget, in the operator app and in the HTML part of reply emails. HTML, images and headings stay text, and links work only for `http`, `https` and `mailto`.
+- Under the last reply, the thread shows **Sent**, **Sent by email**, **Email failed** or **Read in chat**, and it changes live when the visitor reads. Point at an earlier reply to see its own.
+- API: `GET /v1/operator/workspaces/{id}/conversations/{conversationId}/messages` answers `receipts`, with the exact range of messages each email carried, and the operator stream sends `notice` events, which carry no cursor and may be lost.
+- Operators see what a visitor types before they send it, live, in the thread and in the Inbox list. Nothing stores it. **Settings > Workspace** turns it off, and the widget then sends nothing. API: `POST /v1/widget/{key}/typing` and `PUT /v1/operator/workspaces/{id}/widget/typing-preview`, and the appearance answers `typingPreview`.
+- **Contacts** in the sidebar lists everyone who started a conversation, with search, sorting, paging and **Export CSV**. A contact's page shows what the team knows, every conversation, the pages they visited and a private note. A signed-out contact's name and email can be corrected, and owners and admins can delete a contact with all their conversations. API: `/v1/operator/workspaces/{id}/contacts`.
+- A conversation has a panel on its right with the visitor, the assignee and status, the details, the pages visited, their other conversations and the team's note. The header's button shows or hides it, and each fold remembers whether it is open.
+- **Visitors** in the sidebar shows who is on your site now, on a world map and in a list with their country, local time, page, time on site, device and where they came from, and links to the conversation of a visitor who is chatting. The sidebar counts them. Each tab of a page with the widget sends a beat a minute while it shows, with a random ID that lives only in the page's memory. The server finds the country from the address and drops the address, and keeps the live view in Valkey only. For a visitor who has chatted, it saves their country and time zone. API: `POST /v1/widget/{key}/beat`, `POST /v1/widget/{key}/leave`, and `GET /v1/operator/workspaces/{id}/visitors/live` and `/visitors/live/count`.
+- **Get started** at the foot of the sidebar, for owners and admins, shows how many of six first steps are done, with a ring, and opens them: install the widget, add a logo, customize the widget, invite a teammate, turn on notifications, and send a test chat. The server checks each step, and **Hide for good** hides them for the member on every device. API: `GET /v1/operator/workspaces/{id}/get-started` and `POST .../get-started/dismiss`.
+- Closing or reopening a conversation writes a small centered line in both the thread and the widget, such as "Julien closed this conversation" and, for the visitor, "This conversation is closed. Write to us again any time." It stays after a reload, and it never alerts anyone or shows as the Inbox preview. API: a message's `kind` can be `closed` or `reopened`, with a null `body`.
+- The widget plays the operator app's soft two-note chime when a reply arrives while the chat is closed or its tab is hidden, at most once every 2 seconds. **Settings > Appearance** turns it off with **Play a sound for new replies**. API: the widget settings have `sound`.
+- Dinghy Cloud's welcome chat shows the founder's picture in the Inbox row, the thread's header and next to the founder's messages. API: `visitor.pictureUrl` on a conversation, null except there, and `pictureUrl` on a `founder` welcome.
+- In the Inbox, **All**, **Mine** and **Unassigned** sit under **Open** and **Closed** as one filter block, each with its count of open conversations. The workspace menu shows how many chats wait in each workspace, and a dot on the menu's button says when chats wait in another one. API: `openBy` on the conversation list, and `GET /v1/operator/waiting`.
+- An API key has an access level, chosen when it is made: **Conversations**, as before, or **Setup**, which also manages webhooks, so an agent can connect Dinghy by itself. Settings shows each key's level, and who added each webhook. MCP gives a Setup key `list_webhooks`, `create_webhook`, `delete_webhook` and `test_webhook`. API: `level` on keys, the `setupKey` security scheme on the webhook routes, and `createdBy` on webhooks. Existing keys are Conversations keys.
+- When a conversation closes, a visitor who gave an email gets the whole conversation by email 5 minutes later, with times in UTC, the workspace's logo and a link to continue the chat, if someone on the team replied. A quick reopen cancels it. A reply email due before it waits for it and leaves out the replies it carried, so the visitor does not get a reply twice, and it carries them when the transcript fails or is cancelled. Transcripts count toward the visitor's 5 emails a day. **Send transcript** in a conversation's **…** menu sends it now, and **Settings > Appearance** turns the email at close off. API: `POST .../conversations/{conversationId}/transcript`, the `transcript` widget setting and the `transcript.requested` event.
+- The reply box has a row of tools: attach, emoji, then bold, italic, code, link, bulleted and numbered lists, with Cmd or Ctrl with B, I, E and K.
+- Reply to one message with a quote, as in WhatsApp or Slack. In the operator app, the **…** beside a message has **Reply**; in the widget, visitors reply to the team's messages from the small reply button. The reply shows a quote of the message above its text, and a click on the quote scrolls to it. Reply emails and transcripts show the quote too. API: `replyToMessageId` on sends and on the MCP `reply` tool, and `replyTo` on every message.
+- Each message in the operator thread has a **…** menu: **Reply**, **Copy text**, **Edit** for your own reply until the visitor has seen it, **Info** with the time, the author and the receipt, **Copy link** to the message, and **Delete**. Operators delete their own messages, and owners and admins anyone's. A deleted message stays as "Message deleted" on both sides, and its image is removed. API: `PATCH` and `DELETE` on `.../messages/{messageId}`, `GET .../messages/{messageId}/receipt`, `editedAt`, `deleted`, `readAt` and `via` on messages, and the `message.updated` and `message.deleted` events and webhooks.
+
+### Removed
+
+- The first steps under an empty inbox, which **Get started** replaces.
+
+### Changed
+
+- The panel on the right of a conversation replaces the **Visitor details** fold above the messages.
+- An invite for an email that already has an account says, before the click, that a sign-in link comes by email first, and its button says **Email me a sign-in link**. That email is titled "Join <workspace> on Dinghy" and names who invited. A signed-in invitee still joins in one click.
+- The widget's header is one compact row with a one-line status, and its message box holds the attach, emoji and send buttons. The thread's header is one slim row; the visitor's email, user ID, device and page are in the panel, where the user ID has a copy button. The Inbox search says only **Search**. A sent invite shows a centered confirmation.
+- An operator's first reply in an unassigned conversation assigns it to them, with the usual `conversation.assigned` event. A reply from an API key never assigns, and a conversation that has an assignee keeps it.
+- The inbox's **Open** and **Closed** choice fills the list's width, and **Open** shows how many conversations are open. The sidebar and the conversation list are narrower, so the conversation gets more room.
+- The empty Analytics page centers its boat in the card.
+- API: `GET /v1/operator/workspaces/{id}/conversations` answers `open`, the open conversations for its assignee filter.
+
+### Fixed
+
+- A chat left open in a tab no longer opens again after a reload when the operator closed its conversation. After a reload, the chat opens again only for an open conversation or a new, empty chat, and only once the server answers, so it never flashes open and shut.
+
 ## [0.20.0] - 2026-11-11
 
 ### Added

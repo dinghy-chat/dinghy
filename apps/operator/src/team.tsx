@@ -9,6 +9,7 @@ import type {
   Usage,
   WorkspaceApi,
 } from "./api.ts";
+import { shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -29,8 +30,6 @@ import {
 import { visitorName } from "./visitor.ts";
 
 const teamFailure = (failure: unknown) => failureText(failure, { 409: "lastOwner" });
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
 /**
  * The team, its invites and blocked visitors, which load together, and any change to one reloads
@@ -333,7 +332,19 @@ function InviteDialog({
       }}
     >
       <form className="dialog-body" onSubmit={(event) => void send(event)}>
-        <h2 id={titleId}>{t("invitesTitle")}</h2>
+        {made?.url === null ? (
+          <div className="success" role="status">
+            <span className="success-icon">
+              <Icon name="check" size={22} />
+            </span>
+            <h2 id={titleId}>{t("inviteSentTitle")}</h2>
+            <p>
+              <b>{made.email}</b> {t("inviteSentDays")}
+            </p>
+          </div>
+        ) : (
+          <h2 id={titleId}>{t("invitesTitle")}</h2>
+        )}
         {made === null && (
           <p className="dialog-text">{t(emailAvailable ? "inviteHelpMail" : "inviteHelpLink")}</p>
         )}
@@ -355,12 +366,7 @@ function InviteDialog({
               <p className="hint">{t("inviteMemberHelp")}</p>
             )}
           </>
-        ) : made.url === null ? (
-          <p className="invite-sent" role="status">
-            <Icon name="check" size={18} />
-            <span>{t("inviteSent", { email: made.email })}</span>
-          </p>
-        ) : (
+        ) : made.url === null ? null : (
           <CopyField
             hint={t("inviteLink", { email: made.email })}
             label={t("inviteLinkLabel")}
@@ -369,7 +375,7 @@ function InviteDialog({
           />
         )}
         <ErrorNote text={error} />
-        <div className="dialog-actions">
+        <div className={made?.url === null ? "dialog-actions centered" : "dialog-actions"}>
           {made === null ? (
             <>
               <button type="button" className="pill" onClick={() => dialog.current?.close()}>

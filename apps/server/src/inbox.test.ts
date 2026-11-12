@@ -11,7 +11,7 @@ import { createAuth } from "./auth.ts";
 import * as schema from "./db/schema.ts";
 import { session } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import type { Live } from "./live.ts";
+import type { Live, OperatorNotice } from "./live.ts";
 import { listConversations } from "./messages.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -28,12 +28,16 @@ let b: NewWorkspace;
 let cookie: string;
 let otherCookie: string;
 const wakes: [string, string][] = [];
+const tells: [string, OperatorNotice][] = [];
 
 const live: Live = {
   wake(workspaceId, subscriber) {
     wakes.push([workspaceId, subscriber]);
   },
   revoke() {},
+  tell(workspaceId, notice) {
+    tells.push([workspaceId, notice]);
+  },
   async subscribe() {
     return () => {};
   },
@@ -306,7 +310,11 @@ describe("conversations", () => {
     try {
       // The test tables are tiny, so make a scan of the whole table look as costly as it would be.
       await client.query("begin");
+      // A handful of rows makes any plan cheap, and once autovacuum has counted them the planner
+      // may pick a bitmap scan and a sort. These test that the index serves the page in order.
       await client.query("set local enable_seqscan = off");
+      await client.query("set local enable_bitmapscan = off");
+      await client.query("set local enable_sort = off");
       const plan = await client.query<{ "QUERY PLAN": string }>(
         `explain ${list[0]?.query}`,
         list[0]?.params,
@@ -369,6 +377,22 @@ describe("the assignee filter", () => {
     expect(ids(await list(""))).toEqual([annOne, boOne, nobody].sort());
   });
 
+  test("every list counts the open conversations of each filter, for the caller", async () => {
+    const { ann, bo, start, list } = await team();
+    await start("one for Ann", ann.id);
+    await start("two for Ann", ann.id);
+    await start("for Bo", bo.id);
+    await start("for no one", null);
+    const counts = (page: Page) => (page as Page & { openBy: unknown }).openBy;
+    expect(counts(await list(""))).toEqual({ all: 4, mine: 2, unassigned: 1 });
+    expect(counts(await list("status=closed", bo.cookie))).toEqual({
+      all: 4,
+      mine: 1,
+      unassigned: 1,
+    });
+    expect(counts(await list("assignee=none"))).toEqual({ all: 4, mine: 2, unassigned: 1 });
+  });
+
   test("the filter applies to closed conversations too", async () => {
     const { ann, base, start, list } = await team();
     const closed = await start("closed for Ann", ann.id);
@@ -425,7 +449,11 @@ describe("the assignee filter", () => {
     const client = await database.connect("migrator", 1).pool.connect();
     try {
       await client.query("begin");
+      // A handful of rows makes any plan cheap, and once autovacuum has counted them the planner
+      // may pick a bitmap scan and a sort. These test that the index serves the page in order.
       await client.query("set local enable_seqscan = off");
+      await client.query("set local enable_bitmapscan = off");
+      await client.query("set local enable_sort = off");
       const plan = await client.query<{ "QUERY PLAN": string }>(
         `explain ${list[0]?.query}`,
         list[0]?.params,
@@ -490,6 +518,52 @@ describe("replies", () => {
     const { conversationId } = await visitorSends(a.publicKey, "Question");
     const response = await write("POST", inA(`/conversations/${conversationId}/messages`), payload);
     expect(response.status).toBe(400);
+  });
+
+  test("the first operator reply assigns an unassigned conversation, with its event", async () => {
+    const { conversationId } = await visitorSends(a.publicKey, "Who answers?");
+    const path = inA(`/conversations/${conversationId}`);
+    const assignee = async () =>
+      (
+        (await (await get(`${path}/messages`)).json()) as {
+          conversation: { assigneeOperatorId: string | null };
+        }
+      ).conversation.assigneeOperatorId;
+    const events = () =>
+      owner.execute<{ count: number }>(
+        sql`select count(*)::int as count from event
+            where workspace_id = ${a.id} and kind = 'conversation.assigned'
+              and payload->>'conversationId' = ${conversationId}`,
+      );
+    expect(await assignee()).toBeNull();
+    await write("POST", `${path}/messages`, { clientId: "first-reply", body: "Me" });
+    const [replier] = await owner
+      .select({ id: schema.operator.id })
+      .from(schema.operator)
+      .where(eq(schema.operator.email, "a@example.com"));
+    expect(await assignee()).toBe(replier?.id);
+    expect((await events()).rows[0]?.count).toBe(1);
+    // An unassign later is kept: only the first reply assigns.
+    await write("PUT", `${path}/assignee`, { operatorId: null });
+    await write("POST", `${path}/messages`, { clientId: "second-reply", body: "Again" });
+    expect(await assignee()).toBeNull();
+  });
+
+  test("a reply keeps the assignee the conversation already has", async () => {
+    const own = await createWorkspace(db, "Kept", [WIDGET_ORIGIN]);
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const ann = await signedInOperator({ app, auth, owner, name: "Ann", workspaceId: own.id });
+    const bo = await signedInOperator({ app, auth, owner, name: "Bo", workspaceId: own.id });
+    const { conversationId } = await visitorSends(own.publicKey, "Hello");
+    const path = `/v1/operator/workspaces/${own.id}/conversations/${conversationId}`;
+    await write("PUT", `${path}/assignee`, { operatorId: ann.id }, ann.cookie);
+    expect(
+      (await write("POST", `${path}/messages`, { clientId: "bo", body: "Hi" }, bo.cookie)).status,
+    ).toBe(201);
+    const read = (await (await get(`${path}/messages`, bo.cookie)).json()) as {
+      conversation: { assigneeOperatorId: string | null };
+    };
+    expect(read.conversation.assigneeOperatorId).toBe(ann.id);
   });
 
   test("a closed conversation refuses a reply, until it reopens", async () => {
@@ -941,7 +1015,7 @@ describe("waiting for a reply", () => {
     expect(await waiting("closed")).toBe(1);
 
     // The visitor writes again after the reply, so it waits again.
-    await app.request(`/v1/widget/${team.publicKey}/messages`, {
+    const again = await app.request(`/v1/widget/${team.publicKey}/messages`, {
       method: "POST",
       headers: {
         origin: WIDGET_ORIGIN,
@@ -951,6 +1025,15 @@ describe("waiting for a reply", () => {
       body: JSON.stringify({ clientId: "again", body: "Thanks, one more thing" }),
     });
     expect(await waiting()).toBe(2);
+
+    // A deleted message no longer counts, so the reply before it is the newest again.
+    const { id } = (await again.json()) as { id: string };
+    const removed = await app.request(
+      `${base}/conversations/${first.conversationId}/messages/${id}`,
+      { method: "DELETE", headers: { cookie: dee, origin: ORIGIN } },
+    );
+    expect(removed.status).toBe(200);
+    expect(await waiting()).toBe(1);
   });
 
   test("another workspace's conversations are not counted", async () => {
@@ -959,5 +1042,207 @@ describe("waiting for a reply", () => {
     await visitorSends(a.publicKey, "Not yours");
     const response = await get(`/v1/operator/workspaces/${team.id}/conversations`, eve);
     expect(((await response.json()) as { waiting: number }).waiting).toBe(0);
+  });
+});
+
+describe("reply receipts", () => {
+  type Read = {
+    messages: { id: string; seq: string; fromVisitor: boolean }[];
+    receipts: { readSeq: string; emails: { fromSeq: string; toSeq: string; sent: boolean }[] };
+  };
+  const readThread = async (conversationId: string) =>
+    (await (await get(inA(`/conversations/${conversationId}/messages`))).json()) as Read;
+
+  test("a visitor's read moves the receipt and tells the operators, once", async () => {
+    const { token, conversationId } = await visitorSends(a.publicKey, "Hi");
+    const sent = await write("POST", inA(`/conversations/${conversationId}/messages`), {
+      clientId: "receipt-1",
+      body: "Hello",
+    });
+    const reply = (await sent.json()) as { seq: string };
+    expect((await readThread(conversationId)).receipts).toEqual({
+      readSeq: expect.any(String),
+      emails: [],
+    });
+    expect(BigInt((await readThread(conversationId)).receipts.readSeq)).toBeLessThan(
+      BigInt(reply.seq),
+    );
+    tells.length = 0;
+    const markRead = () =>
+      app.request(`/v1/widget/${a.publicKey}/read`, {
+        method: "POST",
+        headers: {
+          origin: WIDGET_ORIGIN,
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ seq: reply.seq }),
+      });
+    expect((await markRead()).status).toBe(200);
+    expect((await readThread(conversationId)).receipts.readSeq).toBe(reply.seq);
+    expect(tells).toEqual([[a.id, { kind: "receipts", visitorId: expect.any(String) }]]);
+    // The same position again moves nothing, so it tells nobody.
+    expect((await markRead()).status).toBe(200);
+    expect(tells).toHaveLength(1);
+  });
+
+  test("a visitor reading only their own messages tells no thread to load again", async () => {
+    const { token } = await visitorSends(a.publicKey, "Only mine");
+    tells.length = 0;
+    const response = await app.request(`/v1/widget/${a.publicKey}/read`, {
+      method: "POST",
+      headers: {
+        origin: WIDGET_ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      // Past everything there is: the read stops at the newest position, the visitor's own message.
+      body: JSON.stringify({ seq: "1000000" }),
+    });
+    expect(response.status).toBe(200);
+    expect(tells).toEqual([]);
+  });
+
+  test("receipts show the replies each sent or failed email carried", async () => {
+    const { conversationId } = await visitorSends(a.publicKey, "Email me");
+    const reply = async (clientId: string) =>
+      (await (
+        await write("POST", inA(`/conversations/${conversationId}/messages`), {
+          clientId,
+          body: clientId,
+        })
+      ).json()) as { id: string; seq: string };
+    const first = await reply("email-first");
+    const [row] = (
+      await owner.execute<{ visitor_id: string }>(
+        sql`select visitor_id from conversation where id = ${conversationId}`,
+      )
+    ).rows;
+    const delivery = (
+      line: { id: string; seq: string },
+      outcome: "sent" | "failed" | null,
+      seq: number,
+    ) =>
+      owner.execute(sql`
+        insert into alert_delivery
+          (workspace_id, event_seq, conversation_id, message_id, visitor_id, channel,
+           finished_at, outcome, covered_from_seq, covered_to_seq)
+        values (${a.id}, ${seq}, ${conversationId}, ${line.id}, ${row?.visitor_id}, 'email',
+                ${outcome === null ? null : new Date().toISOString()}::timestamptz, ${outcome},
+                ${line.seq}, ${line.seq})`);
+    await delivery(first, "sent", 900_001);
+    const second = await reply("email-second");
+    // A row still waiting, or one that was never planned, carried nothing yet.
+    await delivery(second, null, 900_002);
+    expect((await readThread(conversationId)).receipts.emails).toEqual([
+      { fromSeq: first.seq, toSeq: first.seq, sent: true },
+    ]);
+    await delivery(second, "failed", 900_003);
+    expect((await readThread(conversationId)).receipts.emails).toEqual([
+      { fromSeq: first.seq, toSeq: first.seq, sent: true },
+      { fromSeq: second.seq, toSeq: second.seq, sent: false },
+    ]);
+  });
+});
+
+describe("the typing preview", () => {
+  const typing = (key: string, token: string, draft: string) =>
+    app.request(`/v1/widget/${key}/typing`, {
+      method: "POST",
+      headers: {
+        origin: WIDGET_ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ draft }),
+    });
+  const setPreview = (enabled: boolean, as = cookie) =>
+    write("PUT", inA("/widget/typing-preview"), { enabled }, as);
+
+  test("a visitor's draft reaches the operators, and stores nothing", async () => {
+    const { token, conversationId } = await visitorSends(a.publicKey, "First");
+    const before = await owner.execute<{ count: number }>(
+      sql`select count(*)::int as count from message where workspace_id = ${a.id}`,
+    );
+    tells.length = 0;
+    expect((await typing(a.publicKey, token, "Second, half writ")).status).toBe(200);
+    expect(tells).toEqual([
+      [
+        a.id,
+        {
+          kind: "typing",
+          conversationId,
+          visitorId: expect.any(String),
+          draft: "Second, half writ",
+        },
+      ],
+    ]);
+    expect((await typing(a.publicKey, token, "")).status).toBe(200);
+    expect(tells.at(-1)?.[1]).toMatchObject({ kind: "typing", draft: "" });
+    const after = await owner.execute<{ count: number }>(
+      sql`select count(*)::int as count from message where workspace_id = ${a.id}`,
+    );
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+  });
+
+  test("the workspace setting turns it off, and the widget reads the setting", async () => {
+    const { token } = await visitorSends(a.publicKey, "Hello");
+    expect((await setPreview(false)).status).toBe(200);
+    const look = await app.request(`/v1/widget/${a.publicKey}/appearance`);
+    expect(await look.json()).toMatchObject({ typingPreview: false });
+    tells.length = 0;
+    expect((await typing(a.publicKey, token, "secret")).status).toBe(200);
+    expect(tells).toEqual([]);
+    expect((await setPreview(true)).status).toBe(200);
+    expect((await typing(a.publicKey, token, "now")).status).toBe(200);
+    expect(tells).toHaveLength(1);
+  });
+
+  test("only an owner or an admin changes the setting", async () => {
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const member = await signedInOperator({ app, auth, owner, workspaceId: a.id, role: "member" });
+    expect((await setPreview(false, member.cookie)).status).toBe(403);
+  });
+
+  test("a visitor with no open conversation, a long draft and no token send nothing", async () => {
+    const created = await app.request(`/v1/widget/${a.publicKey}/visitors`, {
+      method: "POST",
+      headers: { origin: WIDGET_ORIGIN },
+    });
+    const { token } = (await created.json()) as { token: string };
+    tells.length = 0;
+    expect((await typing(a.publicKey, token, "hi")).status).toBe(200);
+    expect(tells).toEqual([]);
+    expect((await typing(a.publicKey, token, "x".repeat(2001))).status).toBe(400);
+    expect((await typing(a.publicKey, "vt_nothing", "hi")).status).toBe(401);
+  });
+});
+
+describe("waiting counts across workspaces", () => {
+  test("each of the operator's workspaces has its count, and no other workspace shows", async () => {
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const first = await createWorkspace(db, "First", [WIDGET_ORIGIN]);
+    const second = await createWorkspace(db, "Second", [WIDGET_ORIGIN]);
+    const stranger = await createWorkspace(db, "Stranger", [WIDGET_ORIGIN]);
+    const kim = await signedInOperator({ app, auth, owner, name: "Kim", workspaceId: first.id });
+    await owner
+      .insert(schema.workspaceMember)
+      .values({ workspaceId: second.id, operatorId: kim.id, role: "member" });
+    await visitorSends(first.publicKey, "one");
+    await visitorSends(first.publicKey, "two", "c2");
+    await visitorSends(stranger.publicKey, "not Kim's");
+    const response = await get("/v1/operator/waiting", kim.cookie);
+    expect(response.status).toBe(200);
+    const { workspaces } = (await response.json()) as {
+      workspaces: { workspaceId: string; waiting: number }[];
+    };
+    expect(workspaces.sort((x, y) => y.waiting - x.waiting)).toEqual([
+      { workspaceId: first.id, waiting: 2 },
+      { workspaceId: second.id, waiting: 0 },
+    ]);
+  });
+
+  test("it needs a session", async () => {
+    expect((await app.request("/v1/operator/waiting")).status).toBe(401);
   });
 });

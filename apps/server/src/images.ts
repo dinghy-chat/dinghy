@@ -11,6 +11,7 @@ import { failure, NOT_FOUND, safeErrorFields } from "./errors.ts";
 import { StorageFullError } from "./limits.ts";
 import type { NewImage, StoredMessage } from "./messages.ts";
 import type { ObjectStore } from "./storage.ts";
+import { MINUTE_MS } from "./time.ts";
 
 /** Whether a database call failed with its outcome unknown, because the connection went away. */
 export function lostConnection(error: unknown): boolean {
@@ -45,7 +46,7 @@ export const MAX_UPLOADS_PER_ADDRESS = 3;
 // byte every so often would hold the budget for the whole of READ_TOTAL_MS.
 const READ_IDLE_MS = 30_000;
 const READ_PROGRESS_BYTES = 64 * 1024;
-const READ_TOTAL_MS = 5 * 60_000;
+const READ_TOTAL_MS = 5 * MINUTE_MS;
 const URL_LIFETIME_SECONDS = 15 * 60;
 const URL_BUCKET_SECONDS = 5 * 60;
 

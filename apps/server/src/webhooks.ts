@@ -6,12 +6,15 @@ import { BlockList, isIP, type LookupFunction } from "node:net";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Logger } from "pino";
-import { SESSION } from "./api-security.ts";
+import type { Actor } from "./api-keys.ts";
+import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import {
+  apiKey,
   event,
-  type MessageCreatedPayload,
+  type MessagePayload,
+  operator,
   WEBHOOK_EVENTS,
   type WebhookEvent,
   webhook,
@@ -22,6 +25,7 @@ import {
   errorAnswer,
   FORBIDDEN,
   failure,
+  KEY_LIMITED,
   MEMBER_ERRORS,
   NOT_FOUND,
   okContent,
@@ -33,6 +37,7 @@ import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { authorNames, findConversation, findMessage } from "./messages.ts";
 import { retryDelayMs } from "./retry.ts";
 import { allowed } from "./team.ts";
+import { DAY_MS } from "./time.ts";
 
 /** At most this many webhooks per workspace. */
 const WEBHOOK_LIMIT = 5;
@@ -40,7 +45,6 @@ const WEBHOOK_LIMIT = 5;
 const REQUEST_TIMEOUT_MS = 10_000;
 /** The first retry waits 30 seconds, doubling to an hour: 30 attempts last about a day. */
 export const WEBHOOK_MAX_ATTEMPTS = 30;
-const DAY_MS = 24 * 60 * 60_000;
 const DELIVERIES_SHOWN = 20;
 const ERROR_MAX = 200;
 /** The type of the event that "Send test" sends. It is never stored. */
@@ -250,6 +254,8 @@ const Webhook = z
     url: z.string(),
     events: z.array(z.enum(WEBHOOK_EVENTS)),
     enabled: z.boolean(),
+    // Who added it: an operator's name, or a Setup API key's. Null for one from before this.
+    createdBy: z.object({ kind: z.enum(["operator", "key"]), name: z.string() }).nullable(),
     createdAt: z.string(),
   })
   .openapi("Webhook");
@@ -278,7 +284,10 @@ const answer = <T extends z.ZodType>(description: string, schema: T) => ({
   description,
   content: { "application/json": { schema } },
 });
-const denied = { ...MEMBER_ERRORS, 403: errorAnswer("forbidden: this role may not do this") };
+const denied = {
+  ...MEMBER_ERRORS,
+  403: errorAnswer("forbidden: this role, or a Conversations API key, may not do this"),
+};
 const BAD_ENDPOINT_ANSWER = {
   400: errorAnswer(
     "invalid_request: the request is not valid. bad_endpoint: the URL is not https, or it is a private address on a server that does not allow them",
@@ -288,10 +297,11 @@ const BAD_ENDPOINT_ANSWER = {
 const listRoute = createRoute({
   method: "get",
   path: PREFIX,
-  security: SESSION,
-  summary: "List the workspace's webhooks. Owners and admins only",
+  security: SESSION_OR_SETUP_KEY,
+  summary: "List the workspace's webhooks. Owners, admins and Setup API keys only",
   request: { params: workspaceParams },
   responses: {
+    ...KEY_LIMITED,
     200: answer("The webhooks", z.object({ webhooks: z.array(Webhook) })),
     ...denied,
   },
@@ -300,13 +310,14 @@ const listRoute = createRoute({
 const createWebhookRoute = createRoute({
   method: "post",
   path: PREFIX,
-  security: SESSION,
+  security: SESSION_OR_SETUP_KEY,
   summary: "Add a webhook. Its signing secret is shown only in this response",
   request: {
     params: workspaceParams,
     body: json(z.object({ url: Url, events: EventList, enabled: z.boolean().default(true) })),
   },
   responses: {
+    ...KEY_LIMITED,
     201: answer("The webhook, with its signing secret", WithSecret),
     ...ROLE_WRITE_ERRORS,
     ...BAD_ENDPOINT_ANSWER,
@@ -317,7 +328,7 @@ const createWebhookRoute = createRoute({
 const changeRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/{webhookId}`,
-  security: SESSION,
+  security: SESSION_OR_SETUP_KEY,
   summary: "Change a webhook's URL, events, or whether it is on",
   request: {
     params: webhookParams,
@@ -330,6 +341,7 @@ const changeRoute = createRoute({
     ),
   },
   responses: {
+    ...KEY_LIMITED,
     200: answer("The webhook", Webhook),
     ...ROLE_WRITE_ERRORS,
     ...BAD_ENDPOINT_ANSWER,
@@ -340,28 +352,37 @@ const deleteRoute = createRoute({
   method: "delete",
   ...OPEN_WHILE_CLOSED,
   path: `${PREFIX}/{webhookId}`,
-  security: SESSION,
+  security: SESSION_OR_SETUP_KEY,
   summary: "Delete a webhook and its deliveries",
   request: { params: webhookParams },
-  responses: { 200: { description: "Deleted", content: okContent }, ...ROLE_WRITE_ERRORS },
+  responses: {
+    ...KEY_LIMITED,
+    200: { description: "Deleted", content: okContent },
+    ...ROLE_WRITE_ERRORS,
+  },
 });
 
 const rotateRoute = createRoute({
   method: "post",
   path: `${PREFIX}/{webhookId}/rotate-secret`,
-  security: SESSION,
+  security: SESSION_OR_SETUP_KEY,
   summary: "Replace a webhook's signing secret. The new one is shown only in this response",
   request: { params: webhookParams },
-  responses: { 200: answer("The webhook, with its new secret", WithSecret), ...ROLE_WRITE_ERRORS },
+  responses: {
+    ...KEY_LIMITED,
+    200: answer("The webhook, with its new secret", WithSecret),
+    ...ROLE_WRITE_ERRORS,
+  },
 });
 
 const testRoute = createRoute({
   method: "post",
   path: `${PREFIX}/{webhookId}/test`,
-  security: SESSION,
+  security: SESSION_OR_SETUP_KEY,
   summary: "Send a signed `webhook.test` event to the webhook now, and wait for its answer",
   request: { params: webhookParams },
   responses: {
+    ...KEY_LIMITED,
     200: answer(
       "What the webhook answered",
       z.object({
@@ -377,10 +398,11 @@ const testRoute = createRoute({
 const deliveriesRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{webhookId}/deliveries`,
-  security: SESSION,
+  security: SESSION_OR_SETUP_KEY,
   summary: `A webhook's newest ${DELIVERIES_SHOWN} deliveries`,
   request: { params: webhookParams },
   responses: {
+    ...KEY_LIMITED,
     200: answer("The deliveries, newest first", z.object({ deliveries: z.array(Delivery) })),
     ...denied,
   },
@@ -398,135 +420,251 @@ const webhookColumns = {
   createdAt: webhook.createdAt,
 };
 type WebhookRow = Pick<typeof webhook.$inferSelect, keyof typeof webhookColumns>;
-const view = (row: WebhookRow) => ({ ...row, createdAt: row.createdAt.toISOString() });
+type Creator = { kind: "operator" | "key"; name: string } | null;
+const view = (row: WebhookRow, createdBy: Creator) => ({
+  ...row,
+  createdBy,
+  createdAt: row.createdAt.toISOString(),
+});
+
+/** The actor's ID for the audit log and a webhook's creator. */
+const actorFields = (actor: Actor) =>
+  actor.kind === "operator" ? { operatorId: actor.operatorId } : { apiKeyId: actor.apiKeyId };
+
+const ofWebhook = (workspaceId: string, webhookId: string) =>
+  and(eq(webhook.workspaceId, workspaceId), eq(webhook.id, webhookId));
+
+type Created =
+  | { kind: "created"; webhook: ReturnType<typeof view>; secret: string }
+  | { kind: "bad_endpoint"; reason: string }
+  | { kind: "limit" };
+
+/**
+ * A workspace's webhooks: what the routes do for an operator or a Setup key, and MCP's tools do for
+ * a Setup key, so both behave the same.
+ */
+export function createWebhooks({
+  db,
+  logger,
+  policy,
+}: {
+  db: Database;
+  logger: Logger;
+  policy: WebhookPolicy;
+}) {
+  return {
+    /** Oldest first, each with who added it. With `only`, that one webhook or none. */
+    async list(workspaceId: string, only?: string) {
+      const rows = await withWorkspace(db, workspaceId, (tx) =>
+        tx
+          .select({
+            ...webhookColumns,
+            operatorName: operator.name,
+            keyName: apiKey.name,
+          })
+          .from(webhook)
+          .leftJoin(operator, eq(operator.id, webhook.createdByOperatorId))
+          .leftJoin(
+            apiKey,
+            and(
+              eq(apiKey.workspaceId, webhook.workspaceId),
+              eq(apiKey.id, webhook.createdByApiKeyId),
+            ),
+          )
+          .where(
+            only === undefined
+              ? eq(webhook.workspaceId, workspaceId)
+              : ofWebhook(workspaceId, only),
+          )
+          .orderBy(webhook.createdAt),
+      );
+      return rows.map(({ operatorName, keyName, ...row }) =>
+        view(
+          row,
+          keyName !== null
+            ? { kind: "key", name: keyName }
+            : operatorName !== null
+              ? { kind: "operator", name: operatorName }
+              : null,
+        ),
+      );
+    },
+
+    async create(
+      workspaceId: string,
+      actor: Actor,
+      input: { url: string; events: WebhookEvent[]; enabled: boolean },
+    ): Promise<Created> {
+      const problem = await checkEndpoint(input.url, policy);
+      if (problem !== null) return { kind: "bad_endpoint", reason: problem };
+      const secret = newSecret();
+      const created = await withWorkspace(db, workspaceId, async (tx) => {
+        // Two adds at once take turns, so neither can pass the limit.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`webhooks:${workspaceId}`}))`);
+        const [existing] = await tx
+          .select({ n: count() })
+          .from(webhook)
+          .where(eq(webhook.workspaceId, workspaceId));
+        if ((existing?.n ?? 0) >= WEBHOOK_LIMIT) return null;
+        const [row] = await tx
+          .insert(webhook)
+          .values({
+            workspaceId,
+            url: input.url,
+            secret,
+            events: [...new Set(input.events)],
+            enabled: input.enabled,
+            ...(actor.kind === "operator"
+              ? { createdByOperatorId: actor.operatorId }
+              : { createdByApiKeyId: actor.apiKeyId }),
+          })
+          .returning(webhookColumns);
+        return row ?? null;
+      });
+      if (created === null) return { kind: "limit" };
+      audit(logger, "webhook.created", {
+        workspaceId,
+        ...actorFields(actor),
+        webhookId: created.id,
+      });
+      const createdBy = { kind: actor.kind, name: actor.name } as const;
+      return { kind: "created", webhook: view(created, createdBy), secret };
+    },
+
+    /** Changes its URL, events or whether it is on. Null when it does not exist. */
+    async change(
+      workspaceId: string,
+      actor: Actor,
+      webhookId: string,
+      input: {
+        url?: string | undefined;
+        events?: WebhookEvent[] | undefined;
+        enabled?: boolean | undefined;
+      },
+    ): Promise<{ kind: "bad_endpoint"; reason: string } | ReturnType<typeof view> | null> {
+      const { url, events, enabled } = input;
+      if (url !== undefined) {
+        const problem = await checkEndpoint(url, policy);
+        if (problem !== null) return { kind: "bad_endpoint", reason: problem };
+      }
+      const change = {
+        ...(url === undefined ? {} : { url }),
+        ...(events === undefined ? {} : { events: [...new Set(events)] }),
+        ...(enabled === undefined ? {} : { enabled }),
+      };
+      if (Object.keys(change).length > 0) {
+        await withWorkspace(db, workspaceId, (tx) =>
+          tx.update(webhook).set(change).where(ofWebhook(workspaceId, webhookId)),
+        );
+      }
+      const [found] = await this.list(workspaceId, webhookId);
+      if (found === undefined) return null;
+      audit(logger, "webhook.changed", { workspaceId, ...actorFields(actor), webhookId });
+      return found;
+    },
+
+    /** A new signing secret, shown once. Null when the webhook does not exist. */
+    async rotate(workspaceId: string, actor: Actor, webhookId: string) {
+      const secret = newSecret();
+      await withWorkspace(db, workspaceId, (tx) =>
+        tx.update(webhook).set({ secret }).where(ofWebhook(workspaceId, webhookId)),
+      );
+      const [found] = await this.list(workspaceId, webhookId);
+      if (found === undefined) return null;
+      audit(logger, "webhook.secret_rotated", { workspaceId, ...actorFields(actor), webhookId });
+      return { ...found, secret };
+    },
+
+    /** Deletes it and its deliveries. False when it does not exist. */
+    async remove(workspaceId: string, actor: Actor, webhookId: string): Promise<boolean> {
+      const gone = await withWorkspace(db, workspaceId, (tx) =>
+        tx.delete(webhook).where(ofWebhook(workspaceId, webhookId)).returning({ id: webhook.id }),
+      );
+      audit(logger, "webhook.deleted", { workspaceId, ...actorFields(actor), webhookId });
+      return gone.length > 0;
+    },
+
+    /** Sends a signed `webhook.test` now, and its answer. Null when it does not exist. */
+    async test(workspaceId: string, webhookId: string) {
+      const [row] = await withWorkspace(db, workspaceId, (tx) =>
+        tx
+          .select({ url: webhook.url, secret: webhook.secret })
+          .from(webhook)
+          .where(ofWebhook(workspaceId, webhookId)),
+      );
+      if (row === undefined) return null;
+      const eventId = randomUUID();
+      const body = webhookBody(eventId, TEST_TYPE, new Date(), workspaceId, {});
+      const result = await sendWebhook(row.url, row.secret, eventId, body, policy);
+      return { delivered: result.error === null, ...result };
+    },
+  };
+}
+export type Webhooks = ReturnType<typeof createWebhooks>;
+
+/** Owners and admins, and a Setup key, which the member check let through. */
+const mayManage = (actor: Actor, role: Parameters<typeof allowed.settings>[0]) =>
+  actor.kind === "key" || allowed.settings(role);
 
 export function registerWebhookRoutes(
   app: App,
-  { db, logger, policy }: { db: Database; logger: Logger; policy: WebhookPolicy },
+  { db, webhooks }: { db: Database; webhooks: Webhooks },
 ): void {
-  const ofWebhook = (workspaceId: string, webhookId: string) =>
-    and(eq(webhook.workspaceId, workspaceId), eq(webhook.id, webhookId));
-
   app.openapi(listRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
-    const rows = await withWorkspace(db, id, (tx) =>
-      tx
-        .select(webhookColumns)
-        .from(webhook)
-        .where(eq(webhook.workspaceId, id))
-        .orderBy(webhook.createdAt),
-    );
-    return c.json({ webhooks: rows.map(view) }, 200);
+    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    return c.json({ webhooks: await webhooks.list(c.get("memberWorkspaceId")) }, 200);
   });
 
   app.openapi(createWebhookRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
-    const { url, events, enabled } = c.req.valid("json");
-    const problem = await checkEndpoint(url, policy);
-    if (problem !== null) return c.json(BAD_ENDPOINT(problem), 400);
-    const secret = newSecret();
-    const created = await withWorkspace(db, id, async (tx) => {
-      // Two adds at once take turns, so neither can pass the limit.
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`webhooks:${id}`}))`);
-      const [existing] = await tx
-        .select({ n: count() })
-        .from(webhook)
-        .where(eq(webhook.workspaceId, id));
-      if ((existing?.n ?? 0) >= WEBHOOK_LIMIT) return null;
-      const [row] = await tx
-        .insert(webhook)
-        .values({ workspaceId: id, url, secret, events: [...new Set(events)], enabled })
-        .returning(webhookColumns);
-      return row ?? null;
-    });
-    if (created === null) return c.json(LIMIT, 409);
-    audit(logger, "webhook.created", {
-      workspaceId: id,
-      operatorId: c.get("operatorId"),
-      webhookId: created.id,
-    });
-    return c.json({ ...view(created), secret }, 201);
+    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    const made = await webhooks.create(
+      c.get("memberWorkspaceId"),
+      c.get("actor"),
+      c.req.valid("json"),
+    );
+    if (made.kind === "bad_endpoint") return c.json(BAD_ENDPOINT(made.reason), 400);
+    if (made.kind === "limit") return c.json(LIMIT, 409);
+    return c.json({ ...made.webhook, secret: made.secret }, 201);
   });
 
   app.openapi(changeRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
-    const { webhookId } = c.req.valid("param");
-    const { url, events, enabled } = c.req.valid("json");
-    if (url !== undefined) {
-      const problem = await checkEndpoint(url, policy);
-      if (problem !== null) return c.json(BAD_ENDPOINT(problem), 400);
-    }
-    const change = {
-      ...(url === undefined ? {} : { url }),
-      ...(events === undefined ? {} : { events: [...new Set(events)] }),
-      ...(enabled === undefined ? {} : { enabled }),
-    };
-    const [row] = await withWorkspace(db, id, (tx) =>
-      Object.keys(change).length === 0
-        ? tx.select(webhookColumns).from(webhook).where(ofWebhook(id, webhookId))
-        : tx.update(webhook).set(change).where(ofWebhook(id, webhookId)).returning(webhookColumns),
+    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    const changed = await webhooks.change(
+      c.get("memberWorkspaceId"),
+      c.get("actor"),
+      c.req.valid("param").webhookId,
+      c.req.valid("json"),
     );
-    if (row === undefined) return c.json(NOT_FOUND, 404);
-    audit(logger, "webhook.changed", {
-      workspaceId: id,
-      operatorId: c.get("operatorId"),
-      webhookId,
-    });
-    return c.json(view(row), 200);
+    if (changed === null) return c.json(NOT_FOUND, 404);
+    if ("kind" in changed) return c.json(BAD_ENDPOINT(changed.reason), 400);
+    return c.json(changed, 200);
   });
 
   app.openapi(deleteRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
+    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
-    await withWorkspace(db, id, (tx) => tx.delete(webhook).where(ofWebhook(id, webhookId)));
-    audit(logger, "webhook.deleted", {
-      workspaceId: id,
-      operatorId: c.get("operatorId"),
-      webhookId,
-    });
+    await webhooks.remove(c.get("memberWorkspaceId"), c.get("actor"), webhookId);
     return c.json({ ok: true as const }, 200);
   });
 
   app.openapi(rotateRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
+    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
-    const secret = newSecret();
-    const [row] = await withWorkspace(db, id, (tx) =>
-      tx.update(webhook).set({ secret }).where(ofWebhook(id, webhookId)).returning(webhookColumns),
-    );
-    if (row === undefined) return c.json(NOT_FOUND, 404);
-    audit(logger, "webhook.secret_rotated", {
-      workspaceId: id,
-      operatorId: c.get("operatorId"),
-      webhookId,
-    });
-    return c.json({ ...view(row), secret }, 200);
+    const rotated = await webhooks.rotate(c.get("memberWorkspaceId"), c.get("actor"), webhookId);
+    if (rotated === null) return c.json(NOT_FOUND, 404);
+    return c.json(rotated, 200);
   });
 
   app.openapi(testRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
-    const id = c.get("memberWorkspaceId");
+    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
-    const [row] = await withWorkspace(db, id, (tx) =>
-      tx
-        .select({ url: webhook.url, secret: webhook.secret })
-        .from(webhook)
-        .where(ofWebhook(id, webhookId)),
-    );
-    if (row === undefined) return c.json(NOT_FOUND, 404);
-    const eventId = randomUUID();
-    const body = webhookBody(eventId, TEST_TYPE, new Date(), id, {});
-    const result = await sendWebhook(row.url, row.secret, eventId, body, policy);
-    return c.json({ delivered: result.error === null, ...result }, 200);
+    const result = await webhooks.test(c.get("memberWorkspaceId"), webhookId);
+    if (result === null) return c.json(NOT_FOUND, 404);
+    return c.json(result, 200);
   });
 
   app.openapi(deliveriesRoute, async (c) => {
-    if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
+    if (!mayManage(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { webhookId } = c.req.valid("param");
     const rows = await withWorkspace(db, id, (tx) =>
@@ -561,7 +699,7 @@ export function registerWebhookRoutes(
 /** The webhook events one feed event makes: a first message also starts its conversation. */
 function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
   if (kind === "message.created") {
-    const created = (payload as MessageCreatedPayload).conversationCreated === true;
+    const created = (payload as MessagePayload).conversationCreated === true;
     return created ? ["conversation.created", "message.created"] : ["message.created"];
   }
   return WEBHOOK_EVENTS.some((one) => one === kind) ? [kind as WebhookEvent] : [];
@@ -607,7 +745,7 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
             eventId,
             type,
             conversationId: payload.conversationId,
-            messageId: type === "message.created" ? (payload.messageId ?? null) : null,
+            messageId: type.startsWith("message.") ? (payload.messageId ?? null) : null,
             createdAt: found.createdAt,
           });
         }

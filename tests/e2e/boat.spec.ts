@@ -52,7 +52,7 @@ test.describe("each state shows its boat and its text", () => {
   test("no team online", async ({ browser }) => {
     const page = await openWidget(browser);
     const scene = page.locator(".scene.away");
-    await expect(scene).toContainText("We are away.");
+    await expect(scene).toContainText("Away, we reply");
     await expect(scene.locator(".moon")).toBeVisible();
     await expect(scene.locator(".ship svg")).toBeVisible();
     await page.context().close();
@@ -70,7 +70,7 @@ test.describe("each state shows its boat and its text", () => {
     });
     await sendMessage(page, "Held on its way");
     const scene = page.locator(".scene.sending");
-    await expect(scene).toContainText("Sending your message");
+    await expect(scene).toContainText("Sending...");
     await expect(scene.locator(".parcel")).toBeVisible();
     release();
     await expect(scene).toHaveCount(0);
@@ -86,7 +86,7 @@ test.describe("each state shows its boat and its text", () => {
     await page.reload();
     // The chat was open, so it opens again after the reload.
     const scene = page.locator(".scene.lost");
-    await expect(scene).toContainText("Connection lost.");
+    await expect(scene).toContainText("Reconnecting...");
     await expect(scene.locator(".ship svg")).toBeVisible();
     await page.context().close();
   });
@@ -98,7 +98,7 @@ test.describe("each state shows its boat and its text", () => {
     await expect(operator.getByRole("button", { name: "Your account" })).toBeVisible();
 
     const page = await openWidget(browser, "/plain2");
-    await expect(page.locator(".scene.waiting")).toContainText("We are online");
+    await expect(page.locator(".scene.waiting")).toContainText("Online");
     await sendMessage(page, "Is anyone there?");
     await operator.locator(".row", { hasText: "Is anyone there?" }).click();
     await operator.getByRole("textbox", { name: "Your reply" }).fill("Yes, I am here.");
@@ -133,7 +133,7 @@ test("an empty chat with an unknown team shows the empty state", async ({ browse
   await page.reload();
   await page.getByRole("button", { name: "Open chat" }).click();
   const scene = page.locator(".scene.empty-state");
-  await expect(scene).toContainText("Send us a message.");
+  await expect(scene).toContainText("We will reply here");
   await expect(page.getByText("Send us a message.")).toHaveCount(1);
   await page.context().close();
 });
@@ -169,7 +169,7 @@ test.describe("reduced motion", () => {
     ).toBe(0);
     await launcher.click();
     // An operator from an earlier test can still be online, so either text is right here.
-    await expect(page.locator(".scene")).toContainText(/We are (away|online)/);
+    await expect(page.locator(".scene")).toContainText(/Away, we reply|Online/);
     expect(await animations(page, ".ship")).toBe(0);
     const still = await boatPlace(page);
     expect(still).not.toBe("");
@@ -220,7 +220,7 @@ test.describe("reduced motion", () => {
 test.describe("the host's options", () => {
   test("mascot off removes the boat from the chat and keeps the text", async ({ browser }) => {
     const page = await openWidget(browser, "/no-mascot");
-    await expect(page.locator(".scene")).toContainText(/We are (away|online)/);
+    await expect(page.locator(".scene")).toContainText(/Away, we reply|Online/);
     await expect(page.locator(".ship")).toHaveCount(0);
     // The launcher is a setting of its own.
     await expect(page.locator(".launcher.boat")).toHaveCount(1);
@@ -301,7 +301,7 @@ test.describe("the host's options", () => {
     await page.getByRole("button", { name: "Open chat" }).click();
     await expect(page.locator(".ship svg")).toBeVisible();
     // The computed width, because the boat's rocking tilts its bounding box.
-    await expect(page.locator(".ship svg")).toHaveCSS("width", "32px");
+    await expect(page.locator(".ship svg")).toHaveCSS("width", "26px");
     expect(violations).toEqual([]);
     await context.close();
   });

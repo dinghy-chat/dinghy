@@ -11,6 +11,7 @@ import {
   attachment,
   conversation,
   emailStop,
+  MESSAGE_KINDS,
   message,
   operator,
   pageView,
@@ -51,7 +52,12 @@ const ExportFile = z.strictObject({
     allowedOrigins: z.array(z.string().max(300)).max(200),
     eventSeq: seq,
     feedGeneration: z.number().int().min(1).max(999_999_999),
-    widget: WidgetSettingsSchema,
+    // A file from before the typing preview or the sound has no key, and each starts on.
+    widget: WidgetSettingsSchema.extend({
+      typingPreview: z.boolean().default(true),
+      sound: z.boolean().default(true),
+      transcript: z.boolean().default(true),
+    }),
     // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z
       .base64()
@@ -98,6 +104,14 @@ const ExportFile = z.strictObject({
       device: z.string().max(100).nullable(),
       lastPage: z.string().max(PAGE_PATH_MAX).nullable(),
       lastSeenAt: nullableDate,
+      // A file from before contacts has none of these.
+      note: z.string().max(5000).nullable().default(null),
+      country: z
+        .string()
+        .regex(/^[A-Z]{2}$/)
+        .nullable()
+        .default(null),
+      timeZone: z.string().max(64).nullable().default(null),
       createdAt: date,
     }),
   ),
@@ -117,13 +131,18 @@ const ExportFile = z.strictObject({
       id,
       conversationId: id,
       seq,
-      kind: z.enum(["text", "image"]),
+      kind: z.enum(MESSAGE_KINDS),
       authorOperatorId: id.nullable(),
       authorVisitorId: id.nullable(),
       authorApiKeyId: id.nullable(),
       clientId: z.string().max(128),
       body: z.string().max(100_000).nullable(),
       metadata: z.unknown(),
+      // Missing from files made before quotes, edits and deletes.
+      replyToMessageId: id.nullable().optional(),
+      editedAt: date.nullable().optional(),
+      deletedAt: date.nullable().optional(),
+      readAt: date.nullable().optional(),
       createdAt: date,
     }),
   ),
@@ -142,6 +161,7 @@ const ExportFile = z.strictObject({
 type ExportData = z.infer<typeof ExportFile>;
 const iso = (value: Date) => value.toISOString();
 const isoOrNull = (value: Date | null) => (value === null ? null : value.toISOString());
+const dateOrNull = (value: string | null | undefined) => (value == null ? null : new Date(value));
 
 type MessageRow = typeof message.$inferSelect;
 
@@ -156,6 +176,10 @@ const messageJson = (row: MessageRow): ExportData["messages"][number] => ({
   clientId: row.clientId,
   body: row.body,
   metadata: row.metadata,
+  replyToMessageId: row.replyToMessageId,
+  editedAt: isoOrNull(row.editedAt),
+  deletedAt: isoOrNull(row.deletedAt),
+  readAt: isoOrNull(row.readAt),
   createdAt: iso(row.createdAt),
 });
 
@@ -232,7 +256,12 @@ async function readWorkspace(
         .from(widgetSettings)
         .where(eq(widgetSettings.workspaceId, workspaceId));
       if (widget === undefined) return null;
-      const { workspaceId: _workspace, logoUpdatedAt: _logo, ...look } = widget;
+      const {
+        workspaceId: _workspace,
+        logoUpdatedAt: _logo,
+        customizedAt: _customized,
+        ...look
+      } = widget;
       const members = await tx
         .select({
           id: operator.id,
@@ -299,6 +328,9 @@ async function readWorkspace(
           device: row.device,
           lastPage: row.lastPage,
           lastSeenAt: isoOrNull(row.lastSeenAt),
+          note: row.note,
+          country: row.country,
+          timeZone: row.timeZone,
           createdAt: iso(row.createdAt),
         })),
         conversations: conversations.map((row) => ({
@@ -584,6 +616,9 @@ async function insertWorkspace(
         device: row.device,
         lastPage: row.lastPage,
         lastSeenAt: row.lastSeenAt === null ? null : new Date(row.lastSeenAt),
+        note: row.note,
+        country: row.country,
+        timeZone: row.timeZone,
         createdAt: new Date(row.createdAt),
       })),
     );
@@ -616,6 +651,11 @@ async function insertWorkspace(
         clientId: row.clientId,
         body: row.body,
         metadata: row.metadata ?? {},
+        // Messages go in commit order, so a quoted one is always in already.
+        replyToMessageId: row.replyToMessageId ?? null,
+        editedAt: dateOrNull(row.editedAt),
+        deletedAt: dateOrNull(row.deletedAt),
+        readAt: dateOrNull(row.readAt),
         createdAt: new Date(row.createdAt),
       })),
     );

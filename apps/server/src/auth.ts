@@ -10,6 +10,7 @@ import { account, operator, session, verification } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
 import { LINK_MINUTES } from "./letter.ts";
+import { MINUTE_MS } from "./time.ts";
 
 interface AuthOptions {
   db: Database;
@@ -114,7 +115,7 @@ async function signInToken(auth: Auth, email: string, route: LinkRoute): Promise
     await internalAdapter.createVerificationValue({
       identifier: `${SHOWN_LINK}${sha256Hex(made)}`,
       value: email.toLowerCase(),
-      expiresAt: new Date(Date.now() + LINK_MINUTES * 60_000),
+      expiresAt: new Date(Date.now() + LINK_MINUTES * MINUTE_MS),
     });
   }
   return made;

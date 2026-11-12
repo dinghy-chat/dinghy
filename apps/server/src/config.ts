@@ -41,6 +41,9 @@ const schema = z.object({
   // same server. Image URLs then use it, and the image route answers only there.
   IMAGES_ORIGIN: z.url().optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "silent"]).default("info"),
+  // DB-IP's IP to Country Lite database, which the image downloads when it is built, for the live
+  // view's countries. Without it, every country is unknown.
+  GEOIP_COUNTRY_FILE: z.string().optional(),
   // Off by default: webhooks go only to https addresses on the public internet. Set it to true on a
   // self-hosted install that sends webhooks to its own network, over http or to a private address.
   WEBHOOK_ALLOW_PRIVATE: z

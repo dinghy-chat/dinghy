@@ -158,6 +158,8 @@ describe("migrations", () => {
       alert_delivery_operator_fk: "a member's removal, at most 5 members per workspace",
       invite_created_by_fk: "a member's removal, a handful of invites per workspace",
       api_key_created_by_fk: "a member's removal, a handful of keys per workspace",
+      webhook_created_by_operator_fk: "a member's removal, at most 5 webhooks per workspace",
+      webhook_created_by_api_key_fk: "a key's delete, at most 5 webhooks per workspace",
     };
     const result = await owner.execute<{ name: string }>(sql`
       select c.conname as name from pg_constraint c

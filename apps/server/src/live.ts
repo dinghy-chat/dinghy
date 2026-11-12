@@ -20,24 +20,38 @@ export interface Session {
   /** Runs one ordered read from Postgres. A signal never carries the data itself. */
   wake(): void;
   close(reason: CloseReason): void;
+  /** Passes on a notice to an operator stream. A visitor's stream has none. */
+  tell?(notice: string): void;
 }
+
+/**
+ * Something live that operators may see, and that nothing stores, so losing one loses nothing: a
+ * visitor's unsent draft, or a sign that a visitor's read position or reply email changed, whose
+ * truth is in Postgres for the next load.
+ */
+export type OperatorNotice =
+  | { kind: "typing"; conversationId: string; visitorId: string; draft: string }
+  | { kind: "receipts"; visitorId: string };
 
 export interface Live {
   /** `subscriber` is a visitor's ID, or OPERATORS. */
   wake(workspaceId: string, subscriber: string): void;
   revoke(workspaceId: string, subscriber: string): void;
+  /** Sends a notice to every operator stream in the workspace. */
+  tell(workspaceId: string, notice: OperatorNotice): void;
   /** Resolves once the subscription is active, or after a short wait if Valkey is down. */
   subscribe(workspaceId: string, subscriber: string, session: Session): Promise<() => void>;
   stop(): void;
 }
 
 /** Sends signals, for a process such as the worker that holds no streams. */
-export type Signals = Pick<Live, "wake" | "revoke">;
+export type Signals = Pick<Live, "wake" | "revoke" | "tell">;
 
 /** For the OpenAPI document and for tests that need no live delivery. */
 export const noLive: Live = {
   wake() {},
   revoke() {},
+  tell() {},
   async subscribe() {
     return () => {};
   },
@@ -65,8 +79,14 @@ export function createSignals(publisher: Redis, logger: Logger): Signals {
     revoke(workspaceId, subscriber) {
       publish(workspaceId, `revoke:${subscriber}`);
     },
+    tell(workspaceId, notice) {
+      publish(workspaceId, `${TELL}${JSON.stringify(notice)}`);
+    },
   };
 }
+
+/** A notice's prefix. Its JSON holds colons, so it is read before the other signals are split. */
+const TELL = "tell:";
 
 interface WorkspaceEntry {
   visitors: Map<string, Set<Session>>;
@@ -110,8 +130,13 @@ export function createLive(publisher: Redis, url: string, logger: Logger): Live 
   });
   subscriber.on("message", (channel: string, payload: string) => {
     const workspaceId = channel.slice(channelFor("").length);
-    const [type, visitorId = ""] = payload.split(":");
     const visitors = workspaces.get(workspaceId)?.visitors;
+    if (payload.startsWith(TELL)) {
+      for (const session of visitors?.get(OPERATORS) ?? [])
+        session.tell?.(payload.slice(TELL.length));
+      return;
+    }
+    const [type, visitorId = ""] = payload.split(":");
     if (type === "revoke" && visitorId === VISITORS) {
       for (const [id, sessions] of visitors ?? []) {
         if (id !== OPERATORS) for (const session of sessions) session.close("revoked");

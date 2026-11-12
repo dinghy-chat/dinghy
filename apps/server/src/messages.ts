@@ -1,11 +1,33 @@
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { z } from "@hono/zod-openapi";
+import {
+  type AnyColumn,
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  type SQL,
+  type SQLWrapper,
+  sql,
+} from "drizzle-orm";
+import { quoteExcerpt } from "../../../packages/widget/src/markdown.ts";
+import { firstName } from "../../../packages/widget/src/shared.ts";
 import {
   apiKey,
   attachment,
+  CHAT_KINDS,
   conversation,
   type EventKind,
   event,
-  type MessageCreatedPayload,
+  type MessagePayload,
   message,
   operator,
   visitor,
@@ -22,16 +44,108 @@ import {
 } from "./db/tenant.ts";
 import { type Limits, NO_LIMITS, StorageFullError } from "./limits.ts";
 
+type MessageKind = (typeof message.$inferSelect)["kind"];
+
+/**
+ * Only what people wrote, without the status lines of a close or a reopen. A statement written by
+ * hand passes its own column, such as sql`m.kind`.
+ */
+export const isChat = (kind: SQLWrapper = message.kind) => inArray(kind, [...CHAT_KINDS]);
+
+/** Who closed or reopened a conversation, as the author of its status line. */
+export type StatusActor =
+  | { kind: "operator"; operatorId: string }
+  | { kind: "key"; apiKeyId: string }
+  | { kind: "visitor"; visitorId: string };
+
 export type Author =
   | { kind: "visitor"; visitorId: string }
   | { kind: "operator"; operatorId: string; conversationId: string }
   | { kind: "key"; apiKeyId: string; conversationId: string };
 
+/** The earlier message a reply quotes, as every list shows it. */
+export type Quote = z.infer<typeof QuoteSchema>;
+
+/** A quote as the API shows it. */
+export const QuoteSchema = z
+  .object({
+    // Null when the quoted message was deleted. Show "Original message deleted" then.
+    id: z.string().nullable(),
+    // The operator's or the API key's name, or the visitor's. Null for a visitor with no name.
+    authorName: z.string().nullable(),
+    fromVisitor: z.boolean(),
+    // The first 140 characters of its text, on one line, without Markdown marks.
+    excerpt: z.string(),
+    hasImage: z.boolean(),
+  })
+  .openapi("Quote");
+
+/** The quote as the database reads it, before the excerpt is cut. */
+export interface QuoteRow {
+  id: string;
+  deleted: boolean;
+  fromVisitor: boolean;
+  /** An operator who still has an account, whom the widget calls by first name. */
+  byOperator: boolean;
+  authorName: string | null;
+  body: string | null;
+  hasImage: boolean;
+}
+
+// Enough to fill the excerpt after the Markdown marks go.
+const QUOTE_BODY_CHARACTERS = 600;
+
+/**
+ * The quoted message, read in the same statement as each listed row, so a list costs one query.
+ * The outer table is named, because a RETURNING clause would otherwise read the inner one.
+ */
+const quoteColumn = sql<QuoteRow | null>`(
+  select json_build_object(
+    'id', q.id,
+    'deleted', q.deleted_at is not null,
+    'fromVisitor', q.author_visitor_id is not null,
+    'byOperator', o.id is not null and o.deleted_at is null,
+    'authorName', coalesce(o.name, k.name, v.name),
+    'body', left(q.body, ${QUOTE_BODY_CHARACTERS}),
+    'hasImage', q.kind = 'image')
+  from message as q
+  left join operator as o on o.id = q.author_operator_id
+  left join api_key as k on k.workspace_id = q.workspace_id and k.id = q.author_api_key_id
+  left join visitor as v on v.workspace_id = q.workspace_id and v.id = q.author_visitor_id
+  where q.workspace_id = "message"."workspace_id" and q.id = "message"."reply_to_message_id")`;
+
+/** The quote a client shows. `name` turns the author's name into the one this client uses. */
+export function quoteView(
+  row: QuoteRow | null,
+  name: (row: QuoteRow) => string | null = (one) => one.authorName,
+): Quote | null {
+  if (row === null) return null;
+  const shown = { authorName: name(row), fromVisitor: row.fromVisitor };
+  if (row.deleted) return { id: null, ...shown, excerpt: "", hasImage: false };
+  return { id: row.id, ...shown, excerpt: quoteExcerpt(row.body ?? ""), hasImage: row.hasImage };
+}
+
+/**
+ * The quote as the visitor reads it: an operator by first name, as on replies, and no name for the
+ * visitor's own message, which a client calls "You".
+ */
+export const visitorQuote = (row: QuoteRow | null) =>
+  quoteView(row, (quoted) =>
+    quoted.fromVisitor
+      ? null
+      : quoted.byOperator
+        ? firstName(quoted.authorName ?? "")
+        : quoted.authorName,
+  );
+
+/** How a key's reply came: through the REST API or through the MCP server. */
+type KeyChannel = "api" | "mcp";
+
 export interface StoredMessage {
   id: string;
   conversationId: string;
   seq: bigint;
-  kind: "text" | "image";
+  kind: MessageKind;
   fromVisitor: boolean;
   /** The operator who sent it, or null for a visitor's message or a key's. */
   authorOperatorId: string | null;
@@ -43,10 +157,20 @@ export interface StoredMessage {
   image: { attachmentId: string; width: number; height: number } | null;
   /** The image's file was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
+  replyTo: QuoteRow | null;
+  editedAt: Date | null;
+  /** Deleted by an operator: its body and image are gone, and it shows as a placeholder. */
+  deleted: boolean;
+  /** When the visitor's read position first passed this reply, when known. */
+  readAt: Date | null;
+  /** A key's reply: through the API or MCP. Null for an operator's or a visitor's message. */
+  via: KeyChannel | null;
+  /** Its own position, or its last edit's or delete's, for a stream that sends changes again. */
+  changeSeq: bigint;
   createdAt: Date;
 }
 
-const messageColumns = {
+export const messageColumns = {
   id: message.id,
   conversationId: message.conversationId,
   seq: message.seq,
@@ -57,6 +181,11 @@ const messageColumns = {
   clientId: message.clientId,
   body: message.body,
   metadata: message.metadata,
+  replyTo: quoteColumn,
+  editedAt: message.editedAt,
+  deletedAt: message.deletedAt,
+  readAt: message.readAt,
+  changedSeq: message.changedSeq,
   createdAt: message.createdAt,
 };
 
@@ -64,23 +193,44 @@ interface MessageRow {
   id: string;
   conversationId: string;
   seq: bigint;
-  kind: "text" | "image";
+  kind: MessageKind;
   authorOperatorId: string | null;
   authorVisitorId: string | null;
   authorApiKeyId: string | null;
   clientId: string;
   body: string | null;
   metadata: unknown;
+  replyTo: QuoteRow | null;
+  editedAt: Date | null;
+  deletedAt: Date | null;
+  readAt: Date | null;
+  changedSeq: bigint | null;
   createdAt: Date;
 }
 
-function stored({ authorVisitorId, metadata, ...row }: MessageRow): StoredMessage {
-  const meta = metadata as { image?: StoredMessage["image"]; imageRemoved?: boolean } | null;
+interface MessageMetadata {
+  image?: StoredMessage["image"];
+  imageRemoved?: boolean;
+  /** Set on a key's reply that came through MCP. */
+  via?: "mcp";
+}
+
+export function stored({
+  authorVisitorId,
+  metadata,
+  deletedAt,
+  changedSeq,
+  ...row
+}: MessageRow): StoredMessage {
+  const meta = metadata as MessageMetadata | null;
   return {
     ...row,
     image: meta?.image ?? null,
     imageRemoved: meta?.imageRemoved === true,
     fromVisitor: authorVisitorId !== null,
+    deleted: deletedAt !== null,
+    via: row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
+    changeSeq: changedSeq ?? row.seq,
   };
 }
 
@@ -116,7 +266,7 @@ async function openConversationId(
  * True when the workspace has an enabled webhook, read in the event's own insert, so a workspace
  * with none gives the worker nothing to do.
  */
-const wantsWebhook = (workspaceId: string) =>
+export const wantsWebhook = (workspaceId: string) =>
   sql<boolean>`exists (select 1 from ${webhook} where ${webhook.workspaceId} = ${workspaceId} and ${webhook.enabled})`;
 
 export interface NewImage {
@@ -126,6 +276,35 @@ export interface NewImage {
   contentType: string;
   width: number;
   height: number;
+}
+
+/** The quoted message is not a message people wrote in this conversation, or it was deleted. */
+export class InvalidReplyToError extends Error {
+  constructor() {
+    super("The quoted message is not in this conversation.");
+  }
+}
+
+/** Throws InvalidReplyToError unless the quoted message is a live chat line of this conversation. */
+async function checkQuote(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<void> {
+  const [found] = await tx
+    .select({ id: message.id })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.id, messageId),
+        eq(message.conversationId, conversationId),
+        isChat(),
+        isNull(message.deletedAt),
+      ),
+    );
+  if (found === undefined) throw new InvalidReplyToError();
 }
 
 export class ConversationClosedError extends Error {
@@ -151,7 +330,7 @@ export const catchClosed = <T>(write: Promise<T>): Promise<T | WorkspaceClosedEr
   });
 
 /** Takes the next position and the workspace row lock, which lasts until commit. */
-async function nextSeq(tx: Transaction, workspaceId: string): Promise<bigint> {
+export async function nextSeq(tx: Transaction, workspaceId: string): Promise<bigint> {
   const [next] = await tx
     .update(workspace)
     .set({ eventSeq: sql`${workspace.eventSeq} + 1` })
@@ -203,6 +382,10 @@ export async function appendMessage(
     page?: string | null;
     /** False for a message that nobody needs to hear about, such as the cloud's welcome. */
     alert?: boolean;
+    /** An earlier message of the same conversation that this one quotes. */
+    replyToMessageId?: string | undefined;
+    /** A key's reply that came through MCP, which the message's info names. */
+    via?: "mcp";
   },
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
@@ -244,14 +427,19 @@ export async function appendMessage(
 
   // After the retry lookup, and under the lock, so a close cannot slip in before this reply and a
   // retry of a reply that already committed still gets its original message.
+  let assignsReplier = false;
   if (author.kind !== "visitor") {
     const [target] = await tx
-      .select({ status: conversation.status })
+      .select({ status: conversation.status, assignee: conversation.assigneeOperatorId })
       .from(conversation)
       .where(
         and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, author.conversationId)),
       );
     if (target?.status !== "open") throw new ConversationClosedError();
+    assignsReplier =
+      author.kind === "operator" &&
+      target.assignee === null &&
+      !(await hasOperatorReply(tx, workspaceId, author.conversationId));
   }
   if (
     input.image !== undefined &&
@@ -265,6 +453,19 @@ export async function appendMessage(
       ? await openConversationId(tx, workspaceId, author.visitorId, input.page ?? null)
       : { id: author.conversationId, created: false };
   const conversationId = target.id;
+  if (input.replyToMessageId !== undefined) {
+    await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId);
+  }
+  const metadata: MessageMetadata = {
+    ...(input.image !== undefined && {
+      image: {
+        attachmentId: input.image.attachmentId,
+        width: input.image.width,
+        height: input.image.height,
+      },
+    }),
+    ...(input.via !== undefined && { via: input.via }),
+  };
   const [row] = await tx
     .insert(message)
     .values({
@@ -274,16 +475,8 @@ export async function appendMessage(
       kind: input.image === undefined ? "text" : "image",
       clientId: input.clientId,
       body: input.body ?? null,
-      metadata:
-        input.image === undefined
-          ? {}
-          : {
-              image: {
-                attachmentId: input.image.attachmentId,
-                width: input.image.width,
-                height: input.image.height,
-              },
-            },
+      metadata,
+      replyToMessageId: input.replyToMessageId ?? null,
       ...(author.kind === "visitor"
         ? { authorVisitorId: author.visitorId }
         : author.kind === "operator"
@@ -315,7 +508,7 @@ export async function appendMessage(
       conversationId,
       fromVisitor: author.kind === "visitor",
       ...(target.created ? { conversationCreated: true } : {}),
-    } satisfies MessageCreatedPayload,
+    } satisfies MessagePayload,
     needsAlert: input.alert ?? true,
     needsWebhook: wantsWebhook(workspaceId),
   });
@@ -323,7 +516,28 @@ export async function appendMessage(
     .update(conversation)
     .set({ updatedAt: sql`now()` })
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  // The operator who answers an unassigned conversation first takes it. A key's reply never does.
+  if (assignsReplier && author.kind === "operator") {
+    await assignConversation(tx, workspaceId, conversationId, author.operatorId);
+  }
   return { message: stored(row), created: true, conversationStarted: target.created };
+}
+
+/** Whether an operator has replied in this conversation. */
+async function hasOperatorReply(tx: Transaction, workspaceId: string, conversationId: string) {
+  const [found] = await tx
+    .select({ id: message.id })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversationId),
+        isNotNull(message.authorOperatorId),
+        isChat(),
+      ),
+    )
+    .limit(1);
+  return found !== undefined;
 }
 
 interface ReadState {
@@ -358,6 +572,8 @@ export async function readState(
           eq(message.workspaceId, workspaceId),
           eq(conversation.visitorId, visitorId),
           isNull(message.authorVisitorId),
+          isChat(),
+          isNull(message.deletedAt),
           gt(message.seq, row.lastReadSeq),
         ),
       ),
@@ -367,23 +583,54 @@ export async function readState(
 
 /**
  * Moves the read position forward. It never moves back, because tabs can report out of order, and
- * it stops at the feed's position, so a wrong value cannot hide messages that arrive later.
+ * it stops at the feed's position, so a wrong value cannot hide messages that arrive later. True
+ * when it passed a team reply, the only lines whose receipts change.
  */
 export async function markRead(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
   seq: bigint,
-): Promise<void> {
-  await tx
+): Promise<boolean> {
+  const target = sql`least(${seq}::bigint, (
+    select ${workspace.eventSeq} from ${workspace} where ${workspace.id} = ${workspaceId}
+  ))`;
+  const one = and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId));
+  const [before] = await tx
+    .select({ lastReadSeq: visitor.lastReadSeq })
+    .from(visitor)
+    .where(one)
+    .for("no key update");
+  if (before === undefined) return false;
+  const [moved] = await tx
     .update(visitor)
-    .set({
-      lastReadSeq: sql`greatest(${visitor.lastReadSeq}, least(${seq}::bigint, (
-        select ${workspace.eventSeq} from ${workspace} where ${workspace.id} = ${workspaceId}
-      )))`,
-    })
-    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
+    .set({ lastReadSeq: target })
+    .where(and(one, sql`${visitor.lastReadSeq} < ${target}`))
+    .returning({ lastReadSeq: visitor.lastReadSeq });
+  if (moved === undefined) return false;
+  // The replies this read passed, so their info can say when the visitor read them.
+  const passed = await tx
+    .update(message)
+    .set({ readAt: sql`now()` })
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        inArray(message.conversationId, visitorConversations(tx, workspaceId, visitorId)),
+        isNull(message.authorVisitorId),
+        isChat(),
+        gt(message.seq, before.lastReadSeq),
+        lte(message.seq, moved.lastReadSeq),
+      ),
+    )
+    .returning({ id: message.id });
+  return passed.length > 0;
 }
+
+const visitorConversations = (tx: Transaction, workspaceId: string, visitorId: string) =>
+  tx
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)));
 
 export interface Cursor {
   generation: number;
@@ -429,30 +676,37 @@ export async function listVisitorMessages(
   }
 
   const position = after ?? start;
-  const rows = await tx
-    .select(messageColumns)
-    .from(message)
-    .innerJoin(
-      conversation,
-      and(
-        eq(conversation.workspaceId, message.workspaceId),
-        eq(conversation.id, message.conversationId),
-      ),
-    )
-    .where(
-      and(
-        eq(message.workspaceId, workspaceId),
-        eq(conversation.visitorId, visitorId),
-        gt(message.seq, position.seq),
-      ),
-    )
-    .orderBy(asc(message.seq))
-    .limit(limit + 1);
+  // An edit or a delete sends the message again, at its change's position. New rows and changed
+  // rows are read apart, so each read follows an index: message_seq_key and message_changed_idx.
+  const read = (condition: SQL | undefined, order: AnyColumn) =>
+    tx
+      .select(messageColumns)
+      .from(message)
+      .innerJoin(
+        conversation,
+        and(
+          eq(conversation.workspaceId, message.workspaceId),
+          eq(conversation.id, message.conversationId),
+        ),
+      )
+      .where(
+        and(eq(message.workspaceId, workspaceId), eq(conversation.visitorId, visitorId), condition),
+      )
+      .orderBy(asc(order))
+      .limit(limit + 1);
+  const fresh = await read(
+    and(gt(message.seq, position.seq), isNull(message.changedSeq)),
+    message.seq,
+  );
+  const changed = await read(gt(message.changedSeq, position.seq), message.changedSeq);
+  const rows = [...fresh, ...changed]
+    .map(stored)
+    .sort((one, other) => (one.changeSeq < other.changeSeq ? -1 : 1));
   const page = rows.slice(0, limit);
   const last = page.at(-1);
   return {
-    messages: page.map(stored),
-    cursor: { generation: current.generation, seq: last?.seq ?? position.seq },
+    messages: page,
+    cursor: { generation: current.generation, seq: last?.changeSeq ?? position.seq },
     hasMore: rows.length > limit,
     resync: false,
   };
@@ -475,6 +729,8 @@ export interface ConversationRow {
   visitorDevice: string | null;
   visitorLastPage: string | null;
   visitorLastSeenAt: Date | null;
+  visitorCountry: string | null;
+  visitorTimeZone: string | null;
 }
 
 const conversationColumns = {
@@ -494,6 +750,8 @@ const conversationColumns = {
   visitorDevice: visitor.device,
   visitorLastPage: visitor.lastPage,
   visitorLastSeenAt: visitor.lastSeenAt,
+  visitorCountry: visitor.country,
+  visitorTimeZone: visitor.timeZone,
 };
 
 /** Joins a conversation to its visitor, inside the same workspace. */
@@ -502,6 +760,26 @@ export function joinVisitor() {
     eq(visitor.workspaceId, conversation.workspaceId),
     eq(visitor.id, conversation.visitorId),
   );
+}
+
+/**
+ * A conversation's visitor, or undefined. With `lock`, the visitor's row stays locked until commit.
+ * A change to a message takes this lock before the message's, as a read does. FOR NO KEY UPDATE still
+ * orders edits and reads, and lets a planner's chat link pass its foreign key check on this row.
+ */
+export async function conversationVisitor(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  lock?: "no key update",
+) {
+  const query = tx
+    .select({ id: visitor.id, email: visitor.email, lastReadSeq: visitor.lastReadSeq })
+    .from(conversation)
+    .innerJoin(visitor, joinVisitor())
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  const [row] = lock === undefined ? await query : await query.for(lock, { of: visitor });
+  return row;
 }
 
 interface ConversationSummary extends ConversationRow {
@@ -537,7 +815,14 @@ export async function listConversations(
       createdAt: message.createdAt,
     })
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversation.id)))
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversation.id),
+        isChat(),
+        isNull(message.deletedAt),
+      ),
+    )
     .orderBy(desc(message.seq))
     .limit(1)
     .as("newest");
@@ -582,6 +867,29 @@ export async function listConversations(
   };
 }
 
+/** Open conversations for each assignee filter, across all pages: one scan of the workspace's. */
+export interface OpenCounts {
+  all: number;
+  /** The operator's own. Always 0 for an API key, which has no assignments. */
+  mine: number;
+  unassigned: number;
+}
+
+export async function countOpenByAssignee(
+  tx: Transaction,
+  workspaceId: string,
+  operatorId: string | null,
+): Promise<OpenCounts> {
+  const result = await tx.execute<{ every: number; mine: number; unassigned: number }>(sql`
+    select count(*)::int as every,
+           count(*) filter (where assignee_operator_id = ${operatorId}::uuid)::int as mine,
+           count(*) filter (where assignee_operator_id is null)::int as unassigned
+    from ${conversation}
+    where workspace_id = ${workspaceId} and status = 'open'`);
+  const row = result.rows[0];
+  return { all: row?.every ?? 0, mine: row?.mine ?? 0, unassigned: row?.unassigned ?? 0 };
+}
+
 /**
  * How many open conversations wait for a reply: their newest message is from the visitor. It is
  * one number for the whole workspace, not a per-operator read state.
@@ -593,6 +901,7 @@ export async function countWaiting(tx: Transaction, workspaceId: string): Promis
     cross join lateral (
       select m.author_visitor_id from ${message} as m
       where m.workspace_id = c.workspace_id and m.conversation_id = c.id
+        and ${isChat(sql`m.kind`)} and m.deleted_at is null
       order by m.seq desc
       limit 1
     ) as newest
@@ -676,7 +985,7 @@ export async function authorNames(
   return new Map([...authors].map(([id, author]) => [id, author.name]));
 }
 
-/** One message, or null when it was deleted. */
+/** One message, or null when it does not exist. A deleted one is found, with `deleted` set. */
 export async function findMessage(
   tx: Transaction,
   workspaceId: string,
@@ -725,12 +1034,18 @@ export async function listConversationMessages(
   return { messages: rows.slice(0, limit).map(stored), hasMore: rows.length > limit };
 }
 
-/** Closes or reopens a conversation, and adds an event so other operators catch up on it. */
+/**
+ * Closes or reopens a conversation. Its event tells other operators, and a status line with the
+ * event's sequence tells the visitor, in the same transaction, so both see it in order. The line has
+ * no message.created event, so it raises no reply alert and no message webhook. A close asks the
+ * worker whether to email the visitor a transcript.
+ */
 export async function setConversationStatus(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
   status: "open" | "closed",
+  actor: StatusActor,
 ): Promise<void> {
   const seq = await nextSeq(tx, workspaceId);
   const changed = await tx
@@ -745,13 +1060,41 @@ export async function setConversationStatus(
     )
     .returning({ id: conversation.id });
   if (changed.length === 0) return;
+  const [line] = await tx
+    .insert(message)
+    .values({
+      workspaceId,
+      conversationId,
+      seq,
+      kind: status === "closed" ? "closed" : "reopened",
+      // One line per change, so the sequence makes it unique.
+      clientId: `status-${seq}`,
+      ...(actor.kind === "visitor"
+        ? { authorVisitorId: actor.visitorId }
+        : actor.kind === "operator"
+          ? { authorOperatorId: actor.operatorId }
+          : { authorApiKeyId: actor.apiKeyId }),
+    })
+    .returning({ id: message.id });
+  if (line === undefined) throw new Error("The status line insert returned no row");
   await tx.insert(event).values({
     workspaceId,
     seq,
     kind: status === "closed" ? "conversation.closed" : "conversation.reopened",
-    payload: { conversationId },
+    payload: { conversationId, messageId: line.id } satisfies StatusPayload,
+    // A close may email the visitor a transcript, which the worker decides.
+    needsAlert: status === "closed",
     needsWebhook: wantsWebhook(workspaceId),
   });
+}
+
+/**
+ * The payload of a close, a reopen or a transcript request: the conversation, and its status line,
+ * or for a request the newest message that is not deleted.
+ */
+export interface StatusPayload {
+  conversationId: string;
+  messageId: string;
 }
 
 /** Sets or clears the assignee. An event tells other operators. Returns false with no such row. */
@@ -870,7 +1213,7 @@ export async function listWorkspaceEvents(
 }
 
 /** `%` and `_` match anything in a LIKE pattern, so a search for them must escape them. */
-const containing = (text: string) => `%${text.replace(/[\\%_]/g, "\\$&")}%`;
+export const containing = (text: string) => `%${text.replace(/[\\%_]/g, "\\$&")}%`;
 
 /**
  * Conversations, open and closed, whose visitor's name, email or user ID, or one of whose messages,
@@ -928,7 +1271,14 @@ export async function searchConversations(
       createdAt: message.createdAt,
     })
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversation.id)))
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversation.id),
+        isChat(),
+        isNull(message.deletedAt),
+      ),
+    )
     .orderBy(desc(message.seq))
     .limit(1)
     .as("newest");

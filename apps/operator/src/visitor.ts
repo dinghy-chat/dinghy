@@ -1,4 +1,5 @@
 import type { Conversation, VisitorIdentity } from "./api.ts";
+import { MINUTE_MS } from "./format.ts";
 import { t } from "./text.ts";
 
 // Crockford's base32: no I, L, O or U, so a code read aloud is not mistaken for another.
@@ -31,12 +32,10 @@ function shownName(visitor: Omit<VisitorIdentity, "id">): string | null {
   return visitor.name ?? visitor.email ?? visitor.externalId;
 }
 
-/** The email and user ID the title does not already show, so an operator can find the account. */
-export function otherIdentity(visitor: Omit<VisitorIdentity, "id">): string[] {
-  const shown = shownName(visitor);
-  return [visitor.email, visitor.externalId].filter(
-    (part): part is string => part !== null && part !== shown,
-  );
+/** Online now, or when the visitor was last seen, or nothing when unknown. */
+export function presenceLine(lastSeenAt: string | null, online: boolean | null): string | null {
+  if (online === true) return t("onlineNow");
+  return lastSeenAt === null ? null : t("lastSeen", { time: ago(lastSeenAt) });
 }
 
 export function title(conversation: Conversation): string {
@@ -85,4 +84,17 @@ export function replyAuthor(
   }
   if (message.authorOperatorId === meId) return t("you");
   return message.authorName ?? t("aTeammate");
+}
+
+/** A page as the header shows it: with no scheme, as in "acme.example/pricing". */
+export const bare = (page: string) => page.replace(/^https?:\/\//, "");
+
+/** "5 minutes ago", "yesterday", in the browser's words. Narrow is "5m ago" in English. */
+export function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "long"): string {
+  const words = new Intl.RelativeTimeFormat([], { numeric: "auto", style });
+  const minutes = Math.round((new Date(iso).getTime() - now) / MINUTE_MS);
+  if (minutes > -60) return words.format(Math.min(minutes, 0), "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours > -24) return words.format(hours, "hour");
+  return words.format(Math.round(hours / 24), "day");
 }

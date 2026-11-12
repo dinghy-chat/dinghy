@@ -35,6 +35,8 @@ const BY_CODE: Record<string, TextId> = {
   billing_unavailable: "billingUnavailable",
   team_changed: "teamChanged",
   email_mismatch: "emailMismatch",
+  message_seen: "messageSeen",
+  invalid_reply_to: "quoteInvalid",
 };
 
 /**
@@ -123,14 +125,52 @@ export function ImageUpload({
     }
   };
   const pick = () => picker.current?.click();
+  const [dropping, setDropping] = useState(false);
+  const fieldId = useId();
   return (
     <>
       <div className="image-upload">
-        <span className={url === null ? "image-slot empty" : "image-slot"}>
-          {url !== null && <img src={url} alt={t(text.preview)} />}
+        <span className="image-tile">
+          {/* A label of the file field, so a click on the tile picks a file too. It takes a drop. */}
+          <label
+            htmlFor={fieldId}
+            className={`image-slot${url === null ? " empty" : ""}${dropping ? " drop" : ""}`}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault();
+              setDropping(true);
+            }}
+            onDragLeave={() => setDropping(false)}
+            onDrop={(event) => {
+              setDropping(false);
+              const file = event.dataTransfer.files[0];
+              if (file === undefined) return;
+              event.preventDefault();
+              void change(() => onUpload(file));
+            }}
+          >
+            {url === null ? (
+              <Icon name="image" size={24} />
+            ) : (
+              <img src={url} alt={t(text.preview)} />
+            )}
+          </label>
+          {url !== null && (
+            <button
+              type="button"
+              className="image-remove"
+              aria-label={t(text.remove)}
+              title={t(text.remove)}
+              disabled={busy}
+              onClick={() => void change(onRemove)}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          )}
         </span>
         <input
           ref={picker}
+          id={fieldId}
           type="file"
           accept={IMAGE_TYPES}
           hidden
@@ -143,21 +183,9 @@ export function ImageUpload({
           }}
         />
         <div className="image-side">
-          <div className="actions">
-            <button type="button" className="pill small" disabled={busy} onClick={pick}>
-              {t(url === null ? text.upload : text.replace)}
-            </button>
-            {url !== null && (
-              <button
-                type="button"
-                className="pill small quiet-danger"
-                disabled={busy}
-                onClick={() => void change(onRemove)}
-              >
-                {t(text.remove)}
-              </button>
-            )}
-          </div>
+          <button type="button" className="pill small" disabled={busy} onClick={pick}>
+            {t(url === null ? text.upload : text.replace)}
+          </button>
           <small className="image-rule">{t("imageRule")}</small>
         </div>
       </div>
@@ -193,6 +221,25 @@ function CopyText({ value }: { value: string }) {
       {value}
       {done && <small role="status">{t("copied")}</small>}
     </button>
+  );
+}
+
+/** An ID, such as the site's user ID: monospace, cut to its line, with a button that copies it. */
+export function CopyId({ value, label }: { value: string; label: TextId }) {
+  const [done, copy] = useCopy(value);
+  return (
+    <p className="copy-id">
+      <code title={value}>{value}</code>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={done ? t("copied") : t("copyValue", { name: t(label) })}
+        title={done ? t("copied") : t("copy")}
+        onClick={copy}
+      >
+        <Icon name={done ? "check" : "copy"} size={14} />
+      </button>
+    </p>
   );
 }
 
@@ -681,7 +728,13 @@ export function Page({
 }
 
 /** One choice of a Choices control, with an icon before its words if it has one. */
-export type Option<T> = { value: T; label: TextId; icon?: IconName };
+export type Option<T> = {
+  value: T;
+  label: TextId;
+  icon?: IconName;
+  /** A number after the words, such as the open conversations. */
+  count?: number;
+};
 
 /**
  * Radio buttons drawn as pills, named by a legend for screen readers. Outlined draws them as one
@@ -690,6 +743,7 @@ export type Option<T> = { value: T; label: TextId; icon?: IconName };
 export function Choices<T extends string>({
   label,
   variant,
+  full = false,
   describedBy,
   value,
   options,
@@ -697,6 +751,8 @@ export function Choices<T extends string>({
 }: {
   label: string;
   variant?: "outlined" | "quiet";
+  /** Fills the width, in equal parts. */
+  full?: boolean;
   /** The ID of a hint that says more about the choice. */
   describedBy?: string | undefined;
   value: T;
@@ -706,7 +762,7 @@ export function Choices<T extends string>({
   const name = useId();
   return (
     <fieldset
-      className={variant === undefined ? "choices" : `choices ${variant}`}
+      className={["choices", variant, full && "full"].filter(Boolean).join(" ")}
       aria-describedby={describedBy}
     >
       <legend className="visually-hidden">{label}</legend>
@@ -720,6 +776,7 @@ export function Choices<T extends string>({
           />
           {option.icon !== undefined && <Icon name={option.icon} size={16} />}
           {t(option.label)}
+          {option.count !== undefined && <span className="choice-count">{option.count}</span>}
         </label>
       ))}
     </fieldset>

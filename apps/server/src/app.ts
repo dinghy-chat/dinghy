@@ -16,12 +16,16 @@ import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
 import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
-import { AccountDeletedError, type Database } from "./db/tenant.ts";
+import { registerContactRoutes } from "./contacts.ts";
+import { AccountDeletedError, type Database, type Transaction } from "./db/tenant.ts";
 import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
+import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
+import { registerGetStartedRoutes } from "./get-started.ts";
 import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { type Live, noLive } from "./live.ts";
+import { createLiveVisitors, registerLiveVisitorRoutes } from "./live-visitors.ts";
 import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
@@ -39,8 +43,14 @@ import type { Push } from "./push.ts";
 import { createRateLimit, createSlots } from "./rate-limit.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
+import { MINUTE_MS } from "./time.ts";
 import { registerExportRoute } from "./transfer.ts";
-import { PUBLIC_ONLY, registerWebhookRoutes, type WebhookPolicy } from "./webhooks.ts";
+import {
+  createWebhooks,
+  PUBLIC_ONLY,
+  registerWebhookRoutes,
+  type WebhookPolicy,
+} from "./webhooks.ts";
 import { registerWidgetRoutes, type WidgetToken } from "./widget.ts";
 import { registerWidgetFiles } from "./widget-files.ts";
 import { registerWidgetAppearance, registerWidgetSettingsRoutes } from "./widget-settings.ts";
@@ -86,6 +96,8 @@ export interface AppOptions {
   publicUrl?: string | undefined;
   /** Whether webhooks may go over http and to private addresses. Off by default. */
   webhooks?: WebhookPolicy;
+  /** The country of an address, for the live view. Without it, every country is unknown. */
+  countryOf?: CountryOf;
 }
 
 export interface AppEnv {
@@ -146,7 +158,7 @@ async function settled(check: () => Promise<void>): Promise<"ok" | "failed"> {
 }
 
 /** A worker records a pass every 30 seconds at most, and one pass rarely takes a minute. */
-const WORKER_STALE_MS = 5 * 60_000;
+const WORKER_STALE_MS = 5 * MINUTE_MS;
 
 /** Whether the worker's passes still finish: `none` until a worker first runs. */
 async function workerState(db: Database): Promise<"ok" | "stale" | "none" | "unknown"> {
@@ -197,6 +209,7 @@ export function createApp({
   widgetDirectory,
   publicUrl,
   webhooks = PUBLIC_ONLY,
+  countryOf = NO_COUNTRIES,
 }: AppOptions): App {
   const app: App = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -335,6 +348,7 @@ export function createApp({
     await next();
   });
   const visitorPresence = createVisitorPresence(valkey, logger, presenceTtlMs);
+  const liveVisitors = createLiveVisitors(valkey, logger);
   const ownOrigin = publicUrl === undefined ? undefined : new URL(publicUrl).origin;
   // Before the widget routes, because any site may read it.
   registerWidgetAppearance(app, db, urls, rateLimit);
@@ -350,6 +364,8 @@ export function createApp({
     slots: createSlots(valkey, logger, limitScale),
     stream,
     visitorPresence,
+    liveVisitors,
+    countryOf,
     ownOrigin,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
@@ -382,8 +398,17 @@ export function createApp({
       publicUrl: String(auth.options.baseURL),
       rateLimit,
     });
+    // The founder's picture as the picture route serves it, for a new workspace's welcome chat.
+    const welcomeFace = cloud?.welcomeFace;
+    const founderPicture =
+      welcomeFace &&
+      (async (tx: Transaction) => {
+        const face = await welcomeFace(tx);
+        return face === null ? null : urls.picture(face.operatorId, face.pictureUpdatedAt);
+      });
     registerInboxRoutes(app, {
       copyReply: cloud?.copyReply,
+      founderPicture,
       db,
       images,
       imageUrls: urls,
@@ -394,18 +419,30 @@ export function createApp({
       visitorPresence,
     });
     registerApiKeyRoutes(app, db, logger);
-    registerWebhookRoutes(app, { db, logger, policy: webhooks });
+    const webhookManager = createWebhooks({ db, logger, policy: webhooks });
+    registerWebhookRoutes(app, { db, webhooks: webhookManager });
     registerMcp(app, {
       db,
+      webhooks: webhookManager,
       live,
       rateLimit,
-      inbox: createInbox({ copyReply: cloud?.copyReply, db, images, live, visitorPresence }),
+      inbox: createInbox({
+        copyReply: cloud?.copyReply,
+        founderPicture,
+        db,
+        images,
+        live,
+        visitorPresence,
+      }),
       publicOrigin: new URL(String(auth.options.baseURL)).origin,
       version,
     });
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, presence);
     registerModerationRoutes(app, db, live);
+    registerContactRoutes(app, db, live);
+    registerLiveVisitorRoutes(app, db, liveVisitors);
+    registerGetStartedRoutes(app, db);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
     registerTeamRoutes(app, {
       auth,

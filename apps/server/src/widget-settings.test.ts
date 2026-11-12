@@ -41,6 +41,8 @@ const CHANGED = {
   radius: 4,
   emailAsk: "before_first",
   branding: false,
+  sound: false,
+  transcript: false,
 };
 
 let database: TestDatabase;
@@ -110,7 +112,13 @@ describe("the widget's settings", () => {
     const { space, boss } = await workspaceWithOwner();
     const response = await saveSettings(space, boss.cookie, CHANGED);
     expect(response.status).toBe(200);
-    const expected = { ...CHANGED, accent: "#1f6bff", logoUrl: null, team: [] };
+    const expected = {
+      ...CHANGED,
+      accent: "#1f6bff",
+      typingPreview: true,
+      logoUrl: null,
+      team: [],
+    };
     expect(await response.json()).toEqual(expected);
     const read = await app.request(settingsPath(space), { headers: { cookie: boss.cookie } });
     expect(await read.json()).toEqual(expected);
