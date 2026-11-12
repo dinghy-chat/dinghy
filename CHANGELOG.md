@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- With a mouse, **Snooze** in the **…** menu opens its choices beside the menu on hover. On a phone it still opens them in place.
+
 ### Fixed
 
 - The reply box keeps its height when you switch between **Reply** and **Note**, as **Add note** is now as tall as the send button.

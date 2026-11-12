@@ -1535,6 +1535,11 @@ button.workspace[aria-expanded="true"],
   position: fixed;
   margin: 0;
 }
+/* A submenu beside its menu, lined up with its item by its script. */
+.popup.submenu {
+  min-width: 180px;
+  margin: 0;
+}
 @keyframes pop-up {
   from {
     opacity: 0;

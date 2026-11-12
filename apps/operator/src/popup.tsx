@@ -352,8 +352,74 @@ export interface MenuItem {
   trail?: ReactNode;
   /** Why it cannot be chosen now, shown under its label. */
   unavailable?: string;
-  /** Choices that take the menu's place when this item is chosen, under a row that goes back. */
+  /**
+   * Choices beside the menu, which open on hover with a mouse. On a touch screen or a narrow one
+   * they take the menu's place when this item is chosen, under a row that goes back.
+   */
   submenu?: MenuItem[];
+}
+
+/** A mouse, and room beside the menu for a submenu. */
+const SUBMENU_BESIDE = "(hover: hover) and (pointer: fine) and (min-width: 761px)";
+
+/** One row of a menu. */
+function MenuRow({
+  item,
+  id,
+  index,
+  active,
+  onPoint,
+  onChoose,
+}: {
+  item: MenuItem;
+  id: string;
+  index: number;
+  active: boolean;
+  onPoint(): void;
+  onChoose(): void;
+}) {
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
+    // biome-ignore lint/a11y/noStaticElementInteractions: the role is a menu item's.
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on the radio and checkbox items only.
+    <div
+      id={id}
+      data-index={index}
+      role={
+        item.switched !== undefined
+          ? "menuitemcheckbox"
+          : item.checked === undefined
+            ? "menuitem"
+            : "menuitemradio"
+      }
+      tabIndex={-1}
+      aria-checked={item.checked ?? item.switched}
+      aria-disabled={item.unavailable === undefined ? undefined : true}
+      aria-haspopup={item.submenu === undefined ? undefined : "menu"}
+      className={[
+        "item",
+        active && "active",
+        item.danger === true && "danger",
+        item.divider === true && "divided",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onPointerMove={onPoint}
+      onClick={onChoose}
+    >
+      {item.lead}
+      <span className="item-label">
+        {item.label}
+        {item.unavailable !== undefined && <small>{item.unavailable}</small>}
+      </span>
+      {item.trail}
+      {item.switched !== undefined && (
+        <i className={item.switched ? "mini-switch on" : "mini-switch"} aria-hidden="true" />
+      )}
+      {item.checked === true && <Icon name="check" size={16} />}
+      {item.submenu !== undefined && <Icon name="chevronRight" size={14} />}
+    </div>
+  );
 }
 
 /** A button that opens a menu of actions. */
@@ -376,42 +442,88 @@ export function Menu({
   placement?: Placement;
   className?: string;
 }) {
-  // The item whose submenu shows in place of the items, with a row that goes back first.
+  // The item whose submenu is open, beside the menu or in its place.
   const [opened, setOpened] = useState<number | null>(null);
+  // The active choice of a submenu beside the menu, or null while the keys are on the menu.
+  const [sub, setSub] = useState<number | null>(null);
+  const [beside, setBeside] = useState(false);
+  const flyout = useRef<HTMLDivElement>(null);
   const submenu = opened === null ? undefined : items[opened];
-  const shown = submenu?.submenu ?? items;
-  const offset = submenu === undefined ? 0 : 1;
+  const inPlace = submenu !== undefined && !beside;
+  const shown = inPlace ? (submenu.submenu ?? []) : items;
+  const offset = inPlace ? 1 : 0;
   const popup = usePopup(
-    [...(offset === 1 ? [t("back")] : []), ...shown.map((item) => item.label)],
+    [...(inPlace ? [t("back")] : []), ...shown.map((item) => item.label)],
     () => 0,
   );
   const floating = placement === "floating";
   useFloating(floating && popup.open, popup.button, popup.popup, side, popup.close);
   useEffect(() => {
-    if (!popup.open) setOpened(null);
+    if (popup.open) setBeside(matchMedia(SUBMENU_BESIDE).matches);
+    else {
+      setOpened(null);
+      setSub(null);
+    }
   }, [popup.open]);
+  // Lines the submenu up with its item, on the side of the menu away from the window's edge.
+  useLayoutEffect(() => {
+    const menu = popup.popup.current;
+    const element = flyout.current;
+    const row = menu?.querySelector<HTMLElement>(`[data-index="${opened}"]`);
+    if (!beside || menu == null || element === null || row == null) return;
+    const across = `${menu.offsetWidth + 4}px`;
+    Object.assign(element.style, {
+      top: `${menu.offsetTop + row.offsetTop - menu.scrollTop - 6}px`,
+      [side === "end" ? "right" : "left"]: across,
+    });
+  }, [beside, opened, side, popup.popup]);
+
+  const close = () => {
+    setOpened(null);
+    setSub(null);
+  };
   const back = () => {
     popup.setActive(opened ?? 0);
-    setOpened(null);
+    close();
   };
-  const choose = (index: number) => {
-    if (offset === 1 && index === 0) return back();
-    const item = shown[index - offset];
+  const run = (item: MenuItem | undefined) => {
     if (item === undefined || item.unavailable !== undefined) return;
-    if (item.submenu !== undefined) {
-      setOpened(index);
-      popup.setActive(1);
-      return;
-    }
     popup.hide(true);
     item.onSelect?.();
   };
+  const choose = (index: number) => {
+    if (inPlace && index === 0) return back();
+    const item = shown[index - offset];
+    if (item?.submenu === undefined) return run(item);
+    setOpened(index);
+    if (beside) setSub(0);
+    else popup.setActive(1);
+  };
+  const subItems = beside ? (submenu?.submenu ?? []) : [];
+  const onSubKey = (event: KeyboardEvent, at: number) => {
+    const moves: Record<string, number> = {
+      ArrowDown: Math.min(at + 1, subItems.length - 1),
+      ArrowUp: Math.max(at - 1, 0),
+      Home: 0,
+      End: subItems.length - 1,
+    };
+    const move = moves[event.key];
+    if (move !== undefined) setSub(move);
+    else if (event.key === "Enter" || event.key === " ") run(subItems[at]);
+    else if (event.key === "ArrowLeft" || event.key === "Escape") {
+      event.stopPropagation();
+      close();
+    } else if (event.key === "Tab") return popup.hide(false);
+    else return;
+    event.preventDefault();
+  };
   const onKey = (event: KeyboardEvent) => {
+    if (sub !== null) return onSubKey(event, sub);
     const item = shown[popup.active - offset];
     if (event.key === "ArrowRight" && item?.submenu !== undefined) {
       event.preventDefault();
       choose(popup.active);
-    } else if (offset === 1 && (event.key === "ArrowLeft" || event.key === "Escape")) {
+    } else if (inPlace && (event.key === "ArrowLeft" || event.key === "Escape")) {
       event.preventDefault();
       event.stopPropagation();
       back();
@@ -419,6 +531,14 @@ export function Menu({
       popup.onPopupKey(event, choose);
     }
   };
+  /** The pointer on an item: it becomes the active one, and opens its submenu beside the menu. */
+  const point = (index: number) => {
+    popup.setActive(index);
+    if (!beside) return;
+    setSub(null);
+    setOpened(items[index]?.submenu === undefined ? null : index);
+  };
+  const subId = (at: number) => `${popup.id}-sub-${at}`;
   return (
     <div className={`popup-wrap ${className}`} ref={popup.wrap}>
       <button
@@ -440,10 +560,10 @@ export function Menu({
           role="menu"
           tabIndex={-1}
           aria-label={label}
-          aria-activedescendant={popup.itemId(popup.active)}
+          aria-activedescendant={sub === null ? popup.itemId(popup.active) : subId(sub)}
           onKeyDown={onKey}
         >
-          {submenu !== undefined && (
+          {inPlace && (
             // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
             <div
               id={popup.itemId(0)}
@@ -462,52 +582,34 @@ export function Menu({
           {shown.map((item, at) => {
             const index = at + offset;
             return (
-              // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
-              // biome-ignore lint/a11y/noStaticElementInteractions: the role is a menu item's.
-              // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on the radio and checkbox items only.
-              <div
-                key={`${opened}-${index}`}
+              <MenuRow
+                key={`${inPlace}-${index}`}
+                item={item}
                 id={popup.itemId(index)}
-                data-index={index}
-                role={
-                  item.switched !== undefined
-                    ? "menuitemcheckbox"
-                    : item.checked === undefined
-                      ? "menuitem"
-                      : "menuitemradio"
-                }
-                tabIndex={-1}
-                aria-checked={item.checked ?? item.switched}
-                aria-disabled={item.unavailable === undefined ? undefined : true}
-                aria-haspopup={item.submenu === undefined ? undefined : "menu"}
-                className={[
-                  "item",
-                  index === popup.active && "active",
-                  item.danger === true && "danger",
-                  item.divider === true && "divided",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onPointerMove={() => popup.setActive(index)}
-                onClick={() => choose(index)}
-              >
-                {item.lead}
-                <span className="item-label">
-                  {item.label}
-                  {item.unavailable !== undefined && <small>{item.unavailable}</small>}
-                </span>
-                {item.trail}
-                {item.switched !== undefined && (
-                  <i
-                    className={item.switched ? "mini-switch on" : "mini-switch"}
-                    aria-hidden="true"
-                  />
-                )}
-                {item.checked === true && <Icon name="check" size={16} />}
-                {item.submenu !== undefined && <Icon name="chevronRight" size={14} />}
-              </div>
+                index={index}
+                active={index === popup.active && (sub === null || index === opened)}
+                onPoint={() => point(index)}
+                onChoose={() => choose(index)}
+              />
             );
           })}
+        </div>
+      )}
+      {popup.open && submenu !== undefined && beside && (
+        // The keys stay on the menu, which names the active choice here.
+        <div ref={flyout} className="popup submenu" role="menu" aria-label={submenu.label}>
+          {subItems.map((item, at) => (
+            <MenuRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: the choices never move.
+              key={at}
+              item={item}
+              id={subId(at)}
+              index={at}
+              active={at === sub}
+              onPoint={() => setSub(at)}
+              onChoose={() => run(item)}
+            />
+          ))}
         </div>
       )}
     </div>
