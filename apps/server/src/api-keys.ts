@@ -32,7 +32,7 @@ import {
 } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
-import { clientHost } from "./oauth-client.ts";
+import { clientOrigin } from "./oauth-client.ts";
 import {
   ACCESS_PREFIX,
   liveCredential,
@@ -217,10 +217,11 @@ const ApiKey = z
     source: z.enum(API_KEY_SOURCES),
     // `send` replies go to the visitor. `draft` replies wait for an operator.
     replyMode: z.enum(REPLY_MODES),
-    // A connected app's host, from its client ID. Null for a static key.
-    clientHost: z.string().nullable(),
-    // Whether that host is this computer, as a CLI agent's is.
-    clientIsLoopback: z.boolean(),
+    // A connected app's origin, from its client ID. Null for a static key. `cimd`: the host that
+    // published it. `dcr`: the host or scheme it returns to, on this computer when `local`.
+    client: z
+      .object({ kind: z.enum(["dcr", "cimd"]), host: z.string(), local: z.boolean() })
+      .nullable(),
     // Who made the key or approved the app.
     createdByName: z.string().nullable(),
     createdAt: z.string(),
@@ -356,11 +357,9 @@ async function readKeys(tx: Transaction, workspaceId: string, keyId?: string) {
     )
     .orderBy(desc(apiKey.createdAt));
   return rows.map(({ clientId, ...row }) => {
-    const client = clientId === null ? null : clientHost(clientId);
     return {
       ...row,
-      clientHost: client?.host ?? null,
-      clientIsLoopback: client?.loopback ?? false,
+      client: clientId === null ? null : clientOrigin(clientId),
       createdAt: row.createdAt.toISOString(),
       lastUsedAt: iso(row.lastUsedAt),
     };
@@ -402,8 +401,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
         level,
         source: "static" as const,
         replyMode,
-        clientHost: null,
-        clientIsLoopback: false,
+        client: null,
         createdByName: c.get("operatorName"),
         createdAt: row.createdAt.toISOString(),
         lastUsedAt: null,

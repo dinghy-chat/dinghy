@@ -84,4 +84,6 @@ ALTER TABLE "api_key" ADD CONSTRAINT "api_key_source" CHECK ("api_key"."source" 
 ALTER TABLE "api_key" ADD CONSTRAINT "api_key_reply_mode" CHECK ("api_key"."reply_mode" in ('send', 'draft'));--> statement-breakpoint
 ALTER TABLE "api_key" ADD CONSTRAINT "api_key_token" CHECK (("api_key"."source" = 'static') = ("api_key"."token_hash" is not null));--> statement-breakpoint
 ALTER TABLE "api_key" ADD CONSTRAINT "api_key_client" CHECK (("api_key"."source" = 'oauth') = ("api_key"."client_id" is not null));--> statement-breakpoint
-ALTER TABLE "webhook_delivery" ADD CONSTRAINT "webhook_delivery_response_excerpt_length" CHECK (char_length("webhook_delivery"."response_excerpt") <= 2048);
+ALTER TABLE "webhook_delivery" ADD CONSTRAINT "webhook_delivery_response_excerpt_length" CHECK (char_length("webhook_delivery"."response_excerpt") <= 2048);--> statement-breakpoint
+DROP INDEX "webhook_delivery_webhook_idx";--> statement-breakpoint
+CREATE INDEX "webhook_delivery_webhook_idx" ON "webhook_delivery" USING btree ("workspace_id","webhook_id",coalesce("replayed_at", "created_at"));

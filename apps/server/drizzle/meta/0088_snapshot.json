@@ -3793,9 +3793,9 @@
               "nulls": "last"
             },
             {
-              "expression": "created_at",
-              "isExpression": false,
+              "expression": "coalesce(\"replayed_at\", \"created_at\")",
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],

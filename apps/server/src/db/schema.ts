@@ -1112,8 +1112,12 @@ export const webhookDelivery = pgTable(
       columns: [table.workspaceId, table.messageId],
       foreignColumns: [message.workspaceId, message.id],
     }).onDelete("cascade"),
-    // A webhook's recent deliveries, for Settings.
-    index("webhook_delivery_webhook_idx").on(table.workspaceId, table.webhookId, table.createdAt),
+    // A webhook's recent deliveries, for Settings, newest first by their last send.
+    index("webhook_delivery_webhook_idx").on(
+      table.workspaceId,
+      table.webhookId,
+      sql`coalesce(${table.replayedAt}, ${table.createdAt})`,
+    ),
     index("webhook_delivery_due_idx")
       .on(table.nextAttemptAt)
       .where(sql`${table.finishedAt} is null`),

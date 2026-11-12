@@ -7,9 +7,13 @@ import { Select } from "./popup.tsx";
 import { t } from "./text.ts";
 import { Avatar } from "./ui.tsx";
 
-/** The dropdown's values for the bot and for the team. A member's value is their ID. */
+/**
+ * The dropdown's values for the bot, the team, and nobody yet. A member's value is their ID. Nobody
+ * is a value of its own, so picking the team on a conversation nobody handles still takes it over.
+ */
 const BOT = "bot";
 const TEAM = "team";
+const UNHANDLED = "unhandled";
 
 /** A bot's or the team's round mark. A person's mark is their avatar. */
 export function HandlerIcon({ kind }: { kind: "bot" | "team" }) {
@@ -45,11 +49,15 @@ export function rowHandler(conversation: Conversation, assignee: Member | undefi
   );
 }
 
-/** The value the dropdown shows: the bot while it handles the chat, else the assignee or the team. */
+/**
+ * The value the dropdown shows: the bot while it handles the chat, else the assignee, else the team
+ * once a person took it over, else nobody.
+ */
 function handlerValue(conversation: Conversation, members: Member[]): string {
-  if (conversation.handler?.kind === "bot") return BOT;
-  const assignee = conversation.assigneeOperatorId;
-  return members.some((member) => member.id === assignee) && assignee !== null ? assignee : TEAM;
+  const { handler, assigneeOperatorId: assignee } = conversation;
+  if (handler?.kind === "bot") return BOT;
+  if (assignee !== null && members.some((member) => member.id === assignee)) return assignee;
+  return handler === null ? UNHANDLED : TEAM;
 }
 
 /**
@@ -74,13 +82,16 @@ export function HandlerSelect({
   const { bot } = conversation;
   // Groups only help when the bot stands apart from the people.
   const people = bot === null ? undefined : t("handlerGroupPeople");
+  const value = handlerValue(conversation, members);
   return (
     <Select
       label={t("handlerLabel")}
       className="assignee"
       side={side}
-      value={handlerValue(conversation, members)}
+      value={value}
       choices={[
+        // Shown only while nobody handles the chat. Picking anyone else takes it over.
+        ...(value === UNHANDLED ? [{ value: UNHANDLED, label: t("unassigned") }] : []),
         ...(bot === null
           ? []
           : [
@@ -107,9 +118,9 @@ export function HandlerSelect({
           ...(people === undefined ? {} : { group: people }),
         })),
       ]}
-      onChange={(value) => {
-        if (value === BOT) onGiveBack();
-        else onAssign(value === TEAM ? null : value);
+      onChange={(picked) => {
+        if (picked === BOT) onGiveBack();
+        else if (picked !== UNHANDLED) onAssign(picked === TEAM ? null : picked);
       }}
     />
   );

@@ -15,6 +15,7 @@ import type { Database } from "./db/tenant.ts";
 import { oauthIssuer } from "./oauth.ts";
 import { resolveAuthorizeRequest } from "./oauth-authorize.ts";
 import {
+  clientOrigin,
   fetchClientDocument,
   isValidRedirectUri,
   type OAuthClient,
@@ -439,6 +440,10 @@ describe("redirect URIs", () => {
     expect(isValidRedirectUri(uri)).toBe(valid);
   });
 
+  test("a metadata URL's client was published by its host", () => {
+    expect(clientOrigin(CLAUDE_CODE)).toEqual({ kind: "cimd", host: "claude.ai", local: false });
+  });
+
   test("a loopback redirect matches on any port, and nothing else does", () => {
     expect(redirectMatches("http://127.0.0.1/cb", "http://127.0.0.1:53111/cb")).toBe(true);
     expect(redirectMatches("http://localhost:1/cb", "http://localhost:2/cb")).toBe(true);
@@ -558,7 +563,7 @@ describe("client ID metadata documents", () => {
         name: "Claude Code",
         host: "claude.ai",
         kind: "cimd",
-        loopback: false,
+        local: false,
         verified: false,
       },
       scopes: ["conversations"],
@@ -674,7 +679,7 @@ describe("consent", () => {
         name: "Claude Code",
         host: "127.0.0.1",
         kind: "dcr",
-        loopback: true,
+        local: true,
         verified: false,
       },
       scopes: ["conversations", "setup"],
@@ -688,14 +693,22 @@ describe("consent", () => {
     expect(forAgent.workspaces).toEqual([]);
   });
 
-  test("a DCR client's headline is its redirect host", async () => {
-    const clientId = await registered(["https://evil.example/cb"]);
-    const { challenge } = pkce();
-    const query = authorizeQuery({ clientId, redirectUri: "https://evil.example/cb", challenge });
-    const body = (await (await authorizeInfo(boss.cookie, query)).json()) as {
-      client: { host: string; loopback: boolean };
+  test("a DCR client shows the host it returns to, and an app's own scheme is local", async () => {
+    const clientOf = async (redirectUri: string) => {
+      const clientId = await registered([redirectUri]);
+      const query = authorizeQuery({ clientId, redirectUri, challenge: pkce().challenge });
+      return ((await (await authorizeInfo(boss.cookie, query)).json()) as { client: unknown })
+        .client;
     };
-    expect(body.client).toMatchObject({ host: "evil.example", loopback: false });
+    expect(await clientOf("https://evil.example/cb")).toMatchObject({
+      kind: "dcr",
+      host: "evil.example",
+      local: false,
+    });
+    expect(await clientOf("cursor://anysphere.cursor-retrieval/oauth")).toMatchObject({
+      kind: "dcr",
+      local: true,
+    });
   });
 
   test("a bad parameter sends the browser back with the error", async () => {
@@ -1253,7 +1266,7 @@ describe("Settings", () => {
     name: string;
     source: string;
     replyMode: string;
-    clientHost: string | null;
+    client: { kind: string; host: string; local: boolean } | null;
     createdByName: string | null;
   };
   const listed = async () =>
@@ -1281,7 +1294,7 @@ describe("Settings", () => {
     expect((await listed()).find((key) => key.name === "Agent app")).toMatchObject({
       source: "oauth",
       replyMode: "draft",
-      clientHost: "agent.example",
+      client: { kind: "dcr", host: "agent.example", local: false },
       createdByName: "Olivia",
     });
   });

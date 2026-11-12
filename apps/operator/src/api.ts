@@ -346,10 +346,8 @@ export interface ApiKey {
   /** `static`, a key made in Settings, or `oauth`, an app that an owner or admin connected. */
   source: "static" | "oauth";
   replyMode: ReplyMode;
-  /** A connected app's host. Null for a static key. */
-  clientHost: string | null;
-  /** The connected app runs on the operator's own computer. */
-  clientIsLoopback: boolean;
+  /** A connected app's origin. Null for a static key. */
+  client: ClientOrigin | null;
   createdByName: string | null;
   createdAt: string;
   lastUsedAt: string | null;
@@ -560,10 +558,20 @@ export const joinWithInvite = (token: string, name?: string) =>
 export const acceptInvite = (token: string) =>
   post<{ workspaceId: string }>("/v1/operator/invites/accept", { token });
 /** What the consent page shows for an OAuth request, or where to send the browser back. */
+/**
+ * Who an OAuth app is, as Dinghy can tell. `cimd`: the host that published its metadata document.
+ * `dcr`: the host or scheme it returns to, which is on this computer when `local`.
+ */
+export interface ClientOrigin {
+  kind: "dcr" | "cimd";
+  host: string;
+  local: boolean;
+}
+
 export type AuthorizeInfo =
   | {
       kind: "consent";
-      client: { name: string; host: string; kind: "dcr" | "cimd"; loopback: boolean };
+      client: ClientOrigin & { name: string };
       level: ApiKeyLevel;
       /** Where this operator is an owner or admin. */
       workspaces: { id: string; name: string }[];

@@ -11,9 +11,24 @@ let server: Awaited<ReturnType<typeof startE2EServer>>;
 const LOOPBACK_REDIRECT = "http://127.0.0.1:9/callback";
 // An app's own scheme, which leaves the tab where it is, as a desktop app does.
 const APP_REDIRECT = "com.example.app:/callback";
+// Claude Code's client ID metadata document, which the server reads from this fake fetch.
+const CLAUDE_CODE = "https://claude.ai/oauth/claude-code-client-metadata";
 
 test.beforeAll(async () => {
-  server = await startE2EServer({});
+  server = await startE2EServer(
+    {},
+    {
+      fetchClientDocument: async (url) =>
+        url === CLAUDE_CODE
+          ? {
+              client_id: CLAUDE_CODE,
+              client_name: "Claude Code",
+              redirect_uris: [LOOPBACK_REDIRECT],
+              token_endpoint_auth_method: "none",
+            }
+          : null,
+    },
+  );
   await server.createOperator("owner@example.com");
   await server.createOperator("member@example.com", { role: "member" });
 });
@@ -22,14 +37,22 @@ test.afterAll(async () => {
   await server.stop();
 });
 
-/** Registers an app as Claude Code does, and gives the consent page's address and its PKCE verifier. */
-async function authorizeRequest(redirectUri: string, scope = "conversations") {
+/** Registers an app with its redirect URI, and gives its client ID. */
+async function register(redirectUri: string, name: string) {
   const registered = await fetch(`${server.apiOrigin}/v1/oauth/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ client_name: "Claude Code", redirect_uris: [redirectUri] }),
+    body: JSON.stringify({ client_name: name, redirect_uris: [redirectUri] }),
   });
-  const { client_id: clientId } = (await registered.json()) as { client_id: string };
+  return ((await registered.json()) as { client_id: string }).client_id;
+}
+
+/**
+ * The consent page's address for an app and its PKCE verifier. `app` is a metadata URL, used as the
+ * client ID, or the name to register an app with, as Claude Code does.
+ */
+async function authorizeRequest(redirectUri: string, scope = "conversations", app = "Claude Code") {
+  const clientId = app.startsWith("https:") ? app : await register(redirectUri, app);
   const verifier = randomBytes(32).toString("base64url");
   const query = new URLSearchParams({
     response_type: "code",
@@ -59,6 +82,7 @@ test("an owner approves an app with Full access and Drafts only, then sees it in
   await expect(page.getByText("Signed in as owner@example.com")).toBeVisible();
   // Nothing on the page says where the app runs.
   await expect(page.getByText(/this computer|localhost|127\.0\.0\.1/i)).toHaveCount(0);
+  await expect(page.getByText(/Returns to|Published by/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Workspace/ })).toContainText("E2E");
   await expect(page.getByRole("button", { name: /^Workspace/ })).toContainText("Owner");
   await expect(page.getByRole("radio", { name: /^Full access/ })).toBeChecked();
@@ -91,6 +115,7 @@ test("an owner approves an app with Full access and Drafts only, then sees it in
   await expect(row.getByText("Full access", { exact: true })).toBeVisible();
   await expect(row.getByText(/Approved by owner@example\.com on /)).toBeVisible();
   await expect(row).not.toContainText("This computer");
+  await expect(row).not.toContainText("Returns to");
   await expect(page.locator(".status-card")).toContainText("1 connected app, 0 API keys");
   const replies = row.getByRole("button", { name: /Replies from Claude Code/ });
   await expect(replies).toContainText("Drafts only");
@@ -101,6 +126,52 @@ test("an owner approves an app with Full access and Drafts only, then sees it in
   await expect(
     page.locator(".item-row", { hasText: "Claude Code" }).getByRole("button", { name: /Replies/ }),
   ).toContainText("Send directly");
+  await page.context().close();
+});
+
+test("the consent page names who published the app, or the website it returns to", async ({
+  browser,
+}) => {
+  const page = await signedIn(browser, server, "owner@example.com");
+  const origin = page.locator(".consent-origin");
+  const cases: { request: Promise<{ url: string }>; line: string | null }[] = [
+    {
+      request: authorizeRequest(LOOPBACK_REDIRECT, "setup", CLAUDE_CODE),
+      line: "Published by claude.ai",
+    },
+    { request: authorizeRequest("https://evil.example/cb"), line: "Returns to evil.example" },
+    { request: authorizeRequest(APP_REDIRECT), line: null },
+  ];
+  for (const { request, line } of cases) {
+    await page.goto((await request).url);
+    await expect(consentHeading(page)).toBeVisible();
+    if (line === null) await expect(origin).toHaveCount(0);
+    else await expect(origin).toHaveText(line);
+  }
+
+  // Settings shows the same line once the app has used its code.
+  const remote = await authorizeRequest("https://evil.example/cb", "conversations", "Remote app");
+  await page.route("https://evil.example/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: "app" }),
+  );
+  await page.goto(remote.url);
+  await page.getByRole("button", { name: "Approve" }).click();
+  await page.waitForURL(/^https:\/\/evil\.example\/cb\?/);
+  const token = await fetch(`${server.apiOrigin}/v1/oauth/token`, {
+    method: "POST",
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code: new URL(page.url()).searchParams.get("code") ?? "",
+      redirect_uri: "https://evil.example/cb",
+      client_id: remote.clientId,
+      code_verifier: remote.verifier,
+    }),
+  });
+  expect(token.status).toBe(200);
+  await page.goto(`${server.apiOrigin}/settings/developers`);
+  await expect(page.locator(".item-row", { hasText: "Remote app" })).toContainText(
+    "Returns to evil.example",
+  );
   await page.context().close();
 });
 

@@ -386,6 +386,8 @@ const en = {
   openApp: "Open Dinghy",
   consentTitle: "Connect {name} to Dinghy?",
   consentLede: "You pick what it can do. You can disconnect it any time.",
+  appPublishedBy: "Published by {host}",
+  appReturnsTo: "Returns to {host}",
   consentSignedIn: "Signed in as",
   consentWorkspace: "Workspace",
   consentSignIn: "Sign in to connect {app}.",

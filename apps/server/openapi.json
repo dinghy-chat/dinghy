@@ -1134,11 +1134,21 @@
             "type": "string",
             "enum": ["send", "draft"]
           },
-          "clientHost": {
-            "type": ["string", "null"]
-          },
-          "clientIsLoopback": {
-            "type": "boolean"
+          "client": {
+            "type": ["object", "null"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["dcr", "cimd"]
+              },
+              "host": {
+                "type": "string"
+              },
+              "local": {
+                "type": "boolean"
+              }
+            },
+            "required": ["kind", "host", "local"]
           },
           "createdByName": {
             "type": ["string", "null"]
@@ -1156,8 +1166,7 @@
           "level",
           "source",
           "replyMode",
-          "clientHost",
-          "clientIsLoopback",
+          "client",
           "createdByName",
           "createdAt",
           "lastUsedAt"
@@ -7263,7 +7272,7 @@
                               "type": "string",
                               "enum": ["dcr", "cimd"]
                             },
-                            "loopback": {
+                            "local": {
                               "type": "boolean"
                             },
                             "verified": {
@@ -7271,7 +7280,7 @@
                               "enum": [false]
                             }
                           },
-                          "required": ["name", "host", "kind", "loopback", "verified"]
+                          "required": ["name", "host", "kind", "local", "verified"]
                         },
                         "scopes": {
                           "type": "array",

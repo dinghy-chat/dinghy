@@ -36,7 +36,7 @@ import {
   redirectWith,
   resolveAuthorizeRequest,
 } from "./oauth-authorize.ts";
-import { type FindClient, redirectHost } from "./oauth-client.ts";
+import { type FindClient, metadataOrigin, redirectHost } from "./oauth-client.ts";
 import { issueCode, liveCredential, revokeKeys } from "./oauth-grants.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { allowed } from "./team.ts";
@@ -74,12 +74,12 @@ const AuthorizeRequestText = z
 const Client = z.object({
   // What the app calls itself. Nothing verifies it.
   name: z.string(),
-  // Where the app sends people: the host of its redirect URI, or of its metadata URL.
+  // `cimd`: the host of its metadata URL, which published it. `dcr`: the host or scheme it returns to.
   host: z.string(),
   // `dcr`: registered with /v1/oauth/register. `cimd`: a client ID metadata document.
   kind: z.enum(["dcr", "cimd"]),
-  // The app returns to this computer, so its host says nothing about who made it.
-  loopback: z.boolean(),
+  // It returns to this computer, by a loopback address or its own scheme: its host names nobody.
+  local: z.boolean(),
   // Always false: Dinghy has no list of verified apps.
   verified: z.literal(false),
 });
@@ -199,14 +199,14 @@ type Approval =
   | { kind: "forbidden" }
   | { kind: "limit" };
 
-/** Where the consent page sends people, as its headline says it: the host they will return to. */
+/** The app as the consent page shows it: its name, and who published it or where it returns. */
 function clientView(request: AuthorizeRequest): z.infer<typeof Client> {
   const { client } = request;
-  const where =
+  const origin =
     client.kind === "cimd"
-      ? { host: new URL(client.id).hostname, loopback: false }
-      : redirectHost(request.redirectUri);
-  return { name: client.name, kind: client.kind, verified: false, ...where };
+      ? metadataOrigin(client.id)
+      : { kind: client.kind, ...redirectHost(request.redirectUri) };
+  return { name: client.name, verified: false, ...origin };
 }
 
 /** The workspaces where the operator may approve a grant, with their names. */

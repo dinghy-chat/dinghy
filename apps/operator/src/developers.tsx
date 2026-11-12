@@ -12,6 +12,7 @@ import {
   type WorkspaceApi,
 } from "./api.ts";
 import { LEVEL_LABEL, LevelChoice, REPLY_MODES, ReplyModeChoice } from "./bots.tsx";
+import { originLine } from "./consent.tsx";
 import { MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { type Loaded, useLoad } from "./load.ts";
@@ -79,6 +80,7 @@ function KeyItem({
   const app = apiKey.source === "oauth";
   const used = apiKey.lastUsedAt;
   const isRecent = used !== null && Date.now() - new Date(used).getTime() < RECENT_USE_MS;
+  const origin = apiKey.client === null ? null : originLine(apiKey.client);
   return (
     <li className="item-row">
       <span className={app ? "item-ic client" : "item-ic bot"}>
@@ -89,6 +91,14 @@ function KeyItem({
         <span className="item-line">
           <span className="lvl">{t(LEVEL_LABEL[apiKey.level])}</span>
           <span>{madeLine(apiKey)}</span>
+          {origin !== null && (
+            <>
+              <span className="sep" aria-hidden="true">
+                ·
+              </span>
+              <span>{origin}</span>
+            </>
+          )}
           <span className="sep" aria-hidden="true">
             ·
           </span>

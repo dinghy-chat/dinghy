@@ -74,13 +74,24 @@ export function redirectMatches(registered: string, requested: string): boolean 
   );
 }
 
-/** Where a client sends people: the host of a metadata URL or of a redirect URI, or its scheme. */
-export function redirectHost(uri: string): { host: string; loopback: boolean } {
+/**
+ * Where a redirect URI sends people: its host, or its scheme. `local` when it stays on the person's
+ * computer, as a loopback address or an app's own scheme does, so its host names nobody.
+ */
+export function redirectHost(uri: string): { host: string; local: boolean } {
   const url = new URL(uri);
   return {
     host: url.hostname === "" ? url.protocol.slice(0, -1) : url.hostname,
-    loopback: isLoopback(url),
+    // A valid redirect URI that is not https is a loopback address or a private-use scheme.
+    local: url.protocol !== "https:",
   };
+}
+
+/** Who a client is, as Dinghy can tell: where its metadata document lives, or where it returns. */
+interface ClientOrigin {
+  kind: "dcr" | "cimd";
+  host: string;
+  local: boolean;
 }
 
 const DcrPayload = z.object({ n: z.string(), r: z.array(z.string()).min(1) });
@@ -135,16 +146,24 @@ function isMetadataUrl(clientId: string): boolean {
 }
 
 /**
- * The host Settings shows for a grant's client, from its client ID alone: a metadata URL's host,
- * or a registered client's first redirect host, which may be a loopback address. The ID was checked
- * when the grant was approved.
+ * What Settings shows for a grant's client, from its client ID alone: a metadata URL's host, or a
+ * registered client's first redirect host. The ID was checked when the grant was approved.
  */
-export function clientHost(clientId: string): { host: string; loopback: boolean } | null {
-  if (isMetadataUrl(clientId)) return { host: new URL(clientId).hostname, loopback: false };
+export function clientOrigin(clientId: string): ClientOrigin | null {
+  if (isMetadataUrl(clientId)) return metadataOrigin(clientId);
   const parts = decodeClientId(clientId);
   const first = parts === null ? undefined : readPayload(parts.payload)?.r[0];
-  return first === undefined || !URL.canParse(first) ? null : redirectHost(first);
+  return first === undefined || !URL.canParse(first)
+    ? null
+    : { kind: "dcr", ...redirectHost(first) };
 }
+
+/** A metadata document's host, which the fetch proved serves it. */
+export const metadataOrigin = (clientId: string): ClientOrigin => ({
+  kind: "cimd",
+  host: new URL(clientId).hostname,
+  local: false,
+});
 
 /** Fetches a metadata document. It answers null for anything but a small JSON answer. */
 export type FetchClientDocument = (url: string) => Promise<unknown>;

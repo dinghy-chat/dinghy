@@ -32,6 +32,7 @@ import { createImages } from "../src/images.ts";
 import { createLive, createSignals, OPERATORS } from "../src/live.ts";
 import { createLiveVisitors, type LiveVisitors } from "../src/live-visitors.ts";
 import { appendMessage } from "../src/messages.ts";
+import type { FetchClientDocument } from "../src/oauth-client.ts";
 import { createPush } from "../src/push.ts";
 import { localStore } from "../src/storage.ts";
 import { setSuspended, signalSuspension } from "../src/suspension.ts";
@@ -59,6 +60,7 @@ export async function startE2EServer(
     emailAvailable = false,
     mail = true,
     cloud,
+    fetchClientDocument,
   }: {
     emailAvailable?: boolean;
     /** False for a server with no mail server, whose admin hands out sign-in links. */
@@ -67,6 +69,8 @@ export async function startE2EServer(
     cloud?:
       | CloudSettings
       | ((databases: { db: Database; owner: Database }) => Promise<CloudSettings>);
+    /** Answers OAuth client metadata URLs, so a test needs no network. */
+    fetchClientDocument?: FetchClientDocument;
   } = {},
 ) {
   const admin = new pg.Client({ connectionString: DATABASE_URL });
@@ -139,6 +143,7 @@ export async function startE2EServer(
     }),
     operatorDirectory: operatorBundle,
     publicUrl: apiOrigin,
+    ...(fetchClientDocument === undefined ? {} : { fetchClientDocument }),
   });
 
   let workspace = { id: "", publicKey: "", signingSecret: "" };

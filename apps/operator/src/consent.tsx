@@ -6,6 +6,7 @@ import {
   type AuthorizeInfo,
   approveApp,
   authorizeInfo,
+  type ClientOrigin,
   denyApp,
   type Me,
   type ReplyMode,
@@ -36,6 +37,16 @@ export function requestingApp(query: URLSearchParams): string {
   return url.protocol === "https:"
     ? t("consentAppHost", { host: url.hostname })
     : t("consentAppUnknown");
+}
+
+/**
+ * The one fact Dinghy checked about an app, when it tells the person something: the host that
+ * published its metadata, or the website a registered app returns to. Null for an app on this
+ * computer, whose loopback address or own scheme names nobody.
+ */
+export function originLine(origin: ClientOrigin): string | null {
+  if (origin.kind === "cimd") return t("appPublishedBy", { host: origin.host });
+  return origin.local ? null : t("appReturnsTo", { host: origin.host });
 }
 
 /** The card after the browser left for the app, or should have: the tab's work is done. */
@@ -177,6 +188,7 @@ function ConsentForm({ request, consent, me }: { request: string; consent: Conse
     return <DoneCard title={done} note={note} />;
   }
   const canApprove = workspaces.length > 0;
+  const origin = originLine(client);
   return (
     <main className="signin consent-main">
       <div className="consent">
@@ -200,6 +212,7 @@ function ConsentForm({ request, consent, me }: { request: string; consent: Conse
           <div>
             {/* The app's name stays on one line, so "Claude Code" never breaks in two. */}
             <h1>{t("consentTitle", { name: client.name.replaceAll(" ", "\u00a0") })}</h1>
+            {origin !== null && <p className="consent-origin">{origin}</p>}
             <p className="lede">{t("consentLede")}</p>
           </div>
           <p className="signed-in">

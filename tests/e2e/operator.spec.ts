@@ -631,7 +631,7 @@ test("the assignee dropdown works with the keyboard", async ({ browser }) => {
   const list = operator.getByRole("listbox", { name: "Who answers" });
   await expect(list).toBeFocused();
   await expect(button).toHaveAttribute("aria-expanded", "true");
-  await expect(list.getByRole("option", { name: /^Team/ })).toHaveAttribute(
+  await expect(list.getByRole("option", { name: /^Unassigned/ })).toHaveAttribute(
     "aria-selected",
     "true",
   );

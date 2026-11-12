@@ -222,3 +222,29 @@ test("an operator's reply takes the conversation from the bot, and the dropdown 
   await expect(alice.getByRole("button", { name: "1 older suggestion" })).toBeVisible();
   await alice.context().close();
 });
+
+test("picking Team on a chat nobody handles yet takes it over, so a bot's direct reply is refused", async ({
+  browser,
+}) => {
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const key = (await asOperator(alice, "/api-keys", {
+    name: "Eager bot",
+    level: "conversations",
+    replyMode: "send",
+  })) as { token: string };
+  const chat = await testVisitorSays(alice, "Anyone there?");
+  await alice.locator(".row", { hasText: "Anyone there?" }).click();
+  const handler = handlerButton(alice);
+  await expect(handler).toContainText("Unassigned");
+  await handler.click();
+  await alice.getByRole("option", { name: /^Team/ }).click();
+  await expect(handler).toContainText("Team");
+
+  const reply = await alice.request.post(`${space()}/conversations/${chat}/messages`, {
+    data: { clientId: "eager-1", body: "I can help!" },
+    headers: { authorization: `Bearer ${key.token}` },
+  });
+  expect(reply.status()).toBe(409);
+  expect(((await reply.json()) as { error: { code: string } }).error.code).toBe("human_handling");
+  await alice.context().close();
+});

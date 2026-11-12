@@ -132,7 +132,7 @@ describe("managing keys", () => {
 describe("reply mode and changes", () => {
   test("a new key drafts unless told to send, and Settings shows it as a static key", async () => {
     const drafting = await makeKey("Drafter");
-    expect(drafting).toMatchObject({ replyMode: "draft", source: "static", clientHost: null });
+    expect(drafting).toMatchObject({ replyMode: "draft", source: "static", client: null });
     const made = await asOperator(app, ownerA.cookie, "POST", inA("/api-keys"), {
       name: "Sender",
       replyMode: "send",

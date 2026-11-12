@@ -14,7 +14,7 @@ Add the server with no token:
 claude mcp add --transport http dinghy https://chat.example.com/v1/mcp
 ```
 
-Then run `/mcp` in Claude Code and pick `dinghy`. Your browser opens Dinghy's consent page. Sign in if you are not, then choose:
+Then run `/mcp` in Claude Code and pick `dinghy`. Your browser opens Dinghy's consent page. It names the app, and under the name the site that published it or the website it returns to, when that is not your own computer. Check that line: any app can call itself Claude Code. Sign in if you are not, then choose:
 
 - **The workspace.** The list shows only the workspaces where you are an owner or admin. Only they can connect an app.
 - **The access.** **Chats** reads and answers chats. **Full access** can also install Dinghy on a site: the snippet, allowed sites, the widget's look, webhooks and test visitors. The API names these levels `conversations` and `setup`.

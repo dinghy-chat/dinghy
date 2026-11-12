@@ -6188,6 +6188,12 @@ button.quote:hover {
   line-height: 1.1;
   overflow-wrap: anywhere;
 }
+.consent-origin {
+  margin-top: 6px;
+  color: var(--mute);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
 .consent-about .lede {
   margin-top: 8px;
   color: var(--text-strong);
