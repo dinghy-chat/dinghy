@@ -2853,8 +2853,9 @@ button.quote:hover {
 .thread > .bad {
   margin: 0 28px 10px;
 }
+/* 6px on top holds the box's 5.5px focus ring, which the log's bubbles could otherwise cover. */
 .compose {
-  padding: 0 28px 24px;
+  padding: 6px 28px 24px;
 }
 /* The composer: one rounded box, the text on top and a row of tools under it. */
 .box {
@@ -5092,7 +5093,7 @@ button.quote:hover {
     max-width: calc(84% + 34px);
   }
   .compose {
-    padding: 0 8px 8px;
+    padding: 6px 8px 8px;
   }
   .compose .box {
     position: relative;
