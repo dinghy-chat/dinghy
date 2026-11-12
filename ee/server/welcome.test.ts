@@ -32,7 +32,7 @@ import { purgeDeletedWorkspaces } from "../../apps/server/src/workspace-delete.t
 import { createWorkspace, type NewWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
-import { keySends } from "../../apps/server/test/keys.ts";
+import { setReplyMode } from "../../apps/server/test/keys.ts";
 import { signedInOperator } from "../../apps/server/test/operators.ts";
 import { cloudProblem } from "./index.ts";
 import {
@@ -428,7 +428,7 @@ describe("copies between the two sides", () => {
       body: { name: "Helper" },
     });
     const { id, token } = (await made.json()) as { id: string; token: string };
-    await keySends(owner, id);
+    await setReplyMode(owner, id, "send");
     const sent = await early.request(
       inWorkspace(acme.workspaceId, `/conversations/${link.customerConversationId}/messages`),
       {

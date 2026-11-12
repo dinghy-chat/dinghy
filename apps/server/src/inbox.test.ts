@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { signedInOperator, signIn } from "../test/operators.ts";
+import { readStream } from "../test/sse.ts";
+import { visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import * as schema from "./db/schema.ts";
@@ -58,25 +60,6 @@ const write = (method: string, path: string, body: unknown, as = cookie, origin 
     headers: { cookie: as, origin, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-
-async function visitorSends(key: string, body: string, clientId = "c1", page?: string) {
-  const created = await app.request(`/v1/widget/${key}/visitors`, {
-    method: "POST",
-    headers: { origin: WIDGET_ORIGIN },
-  });
-  const { token } = (await created.json()) as { token: string };
-  const sent = await app.request(`/v1/widget/${key}/messages`, {
-    method: "POST",
-    headers: {
-      origin: WIDGET_ORIGIN,
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ clientId, body, page }),
-  });
-  const message = (await sent.json()) as { conversationId: string };
-  return { token, conversationId: message.conversationId };
-}
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -172,7 +155,7 @@ describe("membership", () => {
   });
 
   test("a write from another site is refused", async () => {
-    const { conversationId } = await visitorSends(a.publicKey, "hello");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "hello");
     const response = await write(
       "PATCH",
       inA(`/conversations/${conversationId}`),
@@ -186,7 +169,7 @@ describe("membership", () => {
 
 describe("conversations", () => {
   test("a visitor's message appears with its context and last message", async () => {
-    const { conversationId } = await visitorSends(a.publicKey, "The import stops");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "The import stops");
     const response = await get(inA("/conversations"));
     const { conversations } = (await response.json()) as {
       conversations: { id: string; lastMessage: { body: string; fromVisitor: boolean } }[];
@@ -228,13 +211,13 @@ describe("conversations", () => {
   });
 
   test("the list shows no other workspace's conversations", async () => {
-    await visitorSends(b.publicKey, "Private to B");
+    await visitorStarts(app, b.publicKey, "Private to B");
     const text = await (await get(inA("/conversations"))).text();
     expect(text).not.toContain("Private to B");
   });
 
   test("another workspace's conversation is a 404", async () => {
-    const { conversationId } = await visitorSends(b.publicKey, "Private to B");
+    const { conversationId } = await visitorStarts(app, b.publicKey, "Private to B");
     expect((await get(inA(`/conversations/${conversationId}/messages`))).status).toBe(404);
     expect(
       (
@@ -252,7 +235,7 @@ describe("conversations", () => {
   test("paging skips nothing when rows share a millisecond", async () => {
     const own = await createWorkspace(db, "Ties", [WIDGET_ORIGIN]);
     const ownCookie = await operatorSession("ties@example.com", own.id);
-    for (let i = 0; i < 5; i++) await visitorSends(own.publicKey, `t${i}`);
+    for (let i = 0; i < 5; i++) await visitorStarts(app, own.publicKey, `t${i}`);
     await owner.execute(sql`
       update conversation set updated_at = '2026-01-01 00:00:00.123456+00'
       where workspace_id = ${own.id}
@@ -276,7 +259,7 @@ describe("conversations", () => {
   test("the list pages by newest activity", async () => {
     const own = await createWorkspace(db, "Paged", [WIDGET_ORIGIN]);
     const ownCookie = await operatorSession("paged@example.com", own.id);
-    for (let i = 0; i < 3; i++) await visitorSends(own.publicKey, `m${i}`);
+    for (let i = 0; i < 3; i++) await visitorStarts(app, own.publicKey, `m${i}`);
     const base = `/v1/operator/workspaces/${own.id}/conversations`;
     const first = (await (await get(`${base}?limit=2`, ownCookie)).json()) as {
       conversations: { id: string; updatedAt: string; lastMessage: { body: string } }[];
@@ -297,7 +280,7 @@ describe("conversations", () => {
 
   test("a later list page is one bounded index scan, with no sort, and one probe per last message", async () => {
     const own = await createWorkspace(db, "Planned", [WIDGET_ORIGIN]);
-    for (let i = 0; i < 3; i++) await visitorSends(own.publicKey, `p${i}`);
+    for (let i = 0; i < 3; i++) await visitorStarts(app, own.publicKey, `p${i}`);
     const queries: { query: string; params: unknown[] }[] = [];
     const traced = drizzle(database.connect("app").pool, {
       schema,
@@ -355,7 +338,7 @@ describe("the assignee filter", () => {
     const bo = await signedInOperator({ app, auth, owner, name: "Bo", workspaceId: own.id });
     const base = `/v1/operator/workspaces/${own.id}/conversations`;
     const start = async (body: string, assignee: string | null) => {
-      const { conversationId } = await visitorSends(own.publicKey, body);
+      const { conversationId } = await visitorStarts(app, own.publicKey, body);
       if (assignee !== null) {
         const assigned = await write(
           "PUT",
@@ -481,7 +464,7 @@ describe("the assignee filter", () => {
 
 describe("replies", () => {
   test("a reply reaches the visitor's history and wakes both streams", async () => {
-    const { token, conversationId } = await visitorSends(a.publicKey, "Question");
+    const { token, conversationId } = await visitorStarts(app, a.publicKey, "Question");
     wakes.length = 0;
     const response = await write("POST", inA(`/conversations/${conversationId}/messages`), {
       clientId: "reply-1",
@@ -500,7 +483,7 @@ describe("replies", () => {
   });
 
   test("a retry returns the original and creates nothing", async () => {
-    const { conversationId } = await visitorSends(a.publicKey, "Question");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Question");
     const path = inA(`/conversations/${conversationId}/messages`);
     const body = { clientId: "retry", body: "Once" };
     const first = (await (await write("POST", path, body)).json()) as { id: string };
@@ -510,7 +493,7 @@ describe("replies", () => {
   });
 
   test("a retry after a close still returns the original", async () => {
-    const { conversationId } = await visitorSends(a.publicKey, "Question");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Question");
     const path = inA(`/conversations/${conversationId}`);
     const body = { clientId: "before-close", body: "Sent before the close" };
     const first = (await (await write("POST", `${path}/messages`, body)).json()) as { id: string };
@@ -525,13 +508,13 @@ describe("replies", () => {
     ["a NUL byte", { clientId: "a", body: "a\0b" }],
     ["a bad client ID", { clientId: "a b", body: "hello" }],
   ])("%s is refused", async (_name, payload) => {
-    const { conversationId } = await visitorSends(a.publicKey, "Question");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Question");
     const response = await write("POST", inA(`/conversations/${conversationId}/messages`), payload);
     expect(response.status).toBe(400);
   });
 
   test("the first operator reply assigns an unassigned conversation, with its event", async () => {
-    const { conversationId } = await visitorSends(a.publicKey, "Who answers?");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Who answers?");
     const path = inA(`/conversations/${conversationId}`);
     const assignee = async () =>
       (
@@ -564,7 +547,7 @@ describe("replies", () => {
     const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
     const ann = await signedInOperator({ app, auth, owner, name: "Ann", workspaceId: own.id });
     const bo = await signedInOperator({ app, auth, owner, name: "Bo", workspaceId: own.id });
-    const { conversationId } = await visitorSends(own.publicKey, "Hello");
+    const { conversationId } = await visitorStarts(app, own.publicKey, "Hello");
     const path = `/v1/operator/workspaces/${own.id}/conversations/${conversationId}`;
     await write("PUT", `${path}/assignee`, { operatorId: ann.id }, ann.cookie);
     expect(
@@ -577,7 +560,7 @@ describe("replies", () => {
   });
 
   test("a closed conversation refuses a reply, until it reopens", async () => {
-    const { conversationId } = await visitorSends(a.publicKey, "Question");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Question");
     const path = inA(`/conversations/${conversationId}`);
     expect((await write("PATCH", path, { status: "closed" })).status).toBe(200);
     const refused = await write("POST", `${path}/messages`, { clientId: "late", body: "Late" });
@@ -596,8 +579,8 @@ describe("a read-only workspace's welcome chat", () => {
     const inSpace = (path: string) => `/v1/operator/workspaces/${space.id}${path}`;
     const made = await write("POST", inSpace("/api-keys"), { name: "Bot" }, as);
     const { token } = (await made.json()) as { token: string };
-    const welcome = (await visitorSends(space.publicKey, "Hi")).conversationId;
-    const other = (await visitorSends(space.publicKey, "Hello")).conversationId;
+    const welcome = (await visitorStarts(app, space.publicKey, "Hi")).conversationId;
+    const other = (await visitorStarts(app, space.publicKey, "Hello")).conversationId;
     await owner
       .update(schema.conversation)
       .set({ welcome: true })
@@ -639,7 +622,7 @@ describe("a read-only workspace's welcome chat", () => {
 
 describe("status", () => {
   test("closing moves a conversation between the lists, and adds one event", async () => {
-    const { conversationId } = await visitorSends(a.publicKey, "Question");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Question");
     const path = inA(`/conversations/${conversationId}`);
     await write("PATCH", path, { status: "closed" });
     await write("PATCH", path, { status: "closed" });
@@ -662,20 +645,11 @@ describe("the stream", () => {
   async function read(path: string, as: string, until: string) {
     const response = await get(path, as);
     expect(response.status).toBe(200);
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let text = "";
-    while (reader !== undefined && !text.includes(until)) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += decoder.decode(value);
-    }
-    await reader?.cancel();
-    return text;
+    return readStream(response, until);
   }
 
   test("with no cursor it starts at the present", async () => {
-    await visitorSends(a.publicKey, "Before connecting");
+    await visitorStarts(app, a.publicKey, "Before connecting");
     const text = await read(inA("/stream"), cookie, "event: ready");
     expect(text).not.toContain("event: change");
     expect(text).toMatch(/"cursor":"\d+\.\d+"/);
@@ -684,7 +658,7 @@ describe("the stream", () => {
   test("from a cursor, an operator catches up on messages and closes", async () => {
     const before = await read(inA("/stream"), cookie, "event: ready");
     const cursor = /"cursor":"(\d+\.\d+)"/.exec(before)?.[1];
-    const { conversationId } = await visitorSends(a.publicKey, "While away");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "While away");
     await write("PATCH", inA(`/conversations/${conversationId}`), { status: "closed" });
     const text = await read(inA(`/stream?after=${cursor}`), cookie, "event: ready");
     expect(text).toContain('"kind":"message.created"');
@@ -697,7 +671,7 @@ describe("the stream", () => {
   test("it shows no other workspace's changes", async () => {
     const before = await read(inA("/stream"), cookie, "event: ready");
     const cursor = /"cursor":"(\d+\.\d+)"/.exec(before)?.[1];
-    await visitorSends(b.publicKey, "Private to B");
+    await visitorStarts(app, b.publicKey, "Private to B");
     const text = await read(inA(`/stream?after=${cursor}`), cookie, "event: ready");
     expect(text).not.toContain("Private to B");
   });
@@ -777,7 +751,7 @@ describe("the stream", () => {
     };
     await until("event: ready");
     const before = text.length;
-    await visitorSends(a.publicKey, "Counted");
+    await visitorStarts(app, a.publicKey, "Counted");
     checkouts = 0;
     wake();
     await until("event: change", before);
@@ -888,7 +862,7 @@ describe("who sent a reply", () => {
     const team = await createWorkspace(db, "Team", [WIDGET_ORIGIN]);
     const ana = await operatorSession("ana@example.com", team.id, "Ana");
     const ben = await operatorSession("ben@example.com", team.id, "Ben");
-    const { conversationId } = await visitorSends(team.publicKey, "Hello");
+    const { conversationId } = await visitorStarts(app, team.publicKey, "Hello");
     const path = `/v1/operator/workspaces/${team.id}/conversations/${conversationId}/messages`;
     const sent = await write("POST", path, { clientId: "ana-1", body: "Hi from Ana" }, ana);
     expect(await sent.json()).toMatchObject({ authorName: "Ana", fromVisitor: false });
@@ -910,7 +884,7 @@ describe("who sent a reply", () => {
   test("a retry of a reply still names its sender", async () => {
     const team = await createWorkspace(db, "Retry team", [WIDGET_ORIGIN]);
     const cleo = await operatorSession("cleo@example.com", team.id, "Cleo");
-    const { conversationId } = await visitorSends(team.publicKey, "Hello");
+    const { conversationId } = await visitorStarts(app, team.publicKey, "Hello");
     const path = `/v1/operator/workspaces/${team.id}/conversations/${conversationId}/messages`;
     await write("POST", path, { clientId: "same", body: "Once" }, cleo);
     const retry = await write("POST", path, { clientId: "same", body: "Once" }, cleo);
@@ -921,7 +895,7 @@ describe("who sent a reply", () => {
   test("the visitor learns only the replying operator's first name, never an email or an ID", async () => {
     const team = await createWorkspace(db, "Named team", [WIDGET_ORIGIN]);
     const dana = await operatorSession("dana@example.com", team.id, "Dana Lee");
-    const { token, conversationId } = await visitorSends(team.publicKey, "Who is there?");
+    const { token, conversationId } = await visitorStarts(app, team.publicKey, "Who is there?");
     const path = `/v1/operator/workspaces/${team.id}/conversations/${conversationId}/messages`;
     await write("POST", path, { clientId: "private-sender", body: "Someone" }, dana);
     const history = await app.request(`/v1/widget/${team.publicKey}/messages`, {
@@ -937,12 +911,9 @@ describe("who sent a reply", () => {
 
 describe("where a conversation started", () => {
   test("the page is kept as origin and path, with no query string or hash", async () => {
-    const { conversationId } = await visitorSends(
-      a.publicKey,
-      "From pricing",
-      "c1",
-      `${WIDGET_ORIGIN}/pricing/team?coupon=SECRET&email=a@b.c#plans`,
-    );
+    const { conversationId } = await visitorStarts(app, a.publicKey, "From pricing", {
+      page: `${WIDGET_ORIGIN}/pricing/team?coupon=SECRET&email=a@b.c#plans`,
+    });
     const page = (await (
       await get(inA(`/conversations/${conversationId}/messages`))
     ).json()) as ThreadPage;
@@ -957,7 +928,7 @@ describe("where a conversation started", () => {
 
   test("a page on another site, or no page, is not kept", async () => {
     for (const page of ["https://evil.example/phish", "not a url", undefined]) {
-      const { conversationId } = await visitorSends(a.publicKey, "Hi", "c1", page);
+      const { conversationId } = await visitorStarts(app, a.publicKey, "Hi", { page });
       const thread = (await (
         await get(inA(`/conversations/${conversationId}/messages`))
       ).json()) as ThreadPage;
@@ -966,12 +937,9 @@ describe("where a conversation started", () => {
   });
 
   test("a later message from another page does not change it", async () => {
-    const { token, conversationId } = await visitorSends(
-      a.publicKey,
-      "First",
-      "c1",
-      `${WIDGET_ORIGIN}/start`,
-    );
+    const { token, conversationId } = await visitorStarts(app, a.publicKey, "First", {
+      page: `${WIDGET_ORIGIN}/start`,
+    });
     await app.request(`/v1/widget/${a.publicKey}/messages`, {
       method: "POST",
       headers: {
@@ -1001,9 +969,9 @@ describe("waiting for a reply", () => {
       ).waiting;
     expect(await waiting()).toBe(0);
 
-    const first = await visitorSends(team.publicKey, "One");
-    const second = await visitorSends(team.publicKey, "Two");
-    await visitorSends(team.publicKey, "Three");
+    const first = await visitorStarts(app, team.publicKey, "One");
+    const second = await visitorStarts(app, team.publicKey, "Two");
+    await visitorStarts(app, team.publicKey, "Three");
     expect(await waiting()).toBe(3);
 
     await write(
@@ -1049,7 +1017,7 @@ describe("waiting for a reply", () => {
   test("another workspace's conversations are not counted", async () => {
     const team = await createWorkspace(db, "Quiet", [WIDGET_ORIGIN]);
     const eve = await operatorSession("eve@example.com", team.id, "Eve");
-    await visitorSends(a.publicKey, "Not yours");
+    await visitorStarts(app, a.publicKey, "Not yours");
     const response = await get(`/v1/operator/workspaces/${team.id}/conversations`, eve);
     expect(((await response.json()) as { waiting: number }).waiting).toBe(0);
   });
@@ -1064,7 +1032,7 @@ describe("reply receipts", () => {
     (await (await get(inA(`/conversations/${conversationId}/messages`))).json()) as Read;
 
   test("a visitor's read moves the receipt and tells the operators, once", async () => {
-    const { token, conversationId } = await visitorSends(a.publicKey, "Hi");
+    const { token, conversationId } = await visitorStarts(app, a.publicKey, "Hi");
     const sent = await write("POST", inA(`/conversations/${conversationId}/messages`), {
       clientId: "receipt-1",
       body: "Hello",
@@ -1097,7 +1065,7 @@ describe("reply receipts", () => {
   });
 
   test("a visitor reading only their own messages tells no thread to load again", async () => {
-    const { token } = await visitorSends(a.publicKey, "Only mine");
+    const { token } = await visitorStarts(app, a.publicKey, "Only mine");
     tells.length = 0;
     const response = await app.request(`/v1/widget/${a.publicKey}/read`, {
       method: "POST",
@@ -1114,7 +1082,7 @@ describe("reply receipts", () => {
   });
 
   test("receipts show the replies each sent or failed email carried", async () => {
-    const { conversationId } = await visitorSends(a.publicKey, "Email me");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Email me");
     const reply = async (clientId: string) =>
       (await (
         await write("POST", inA(`/conversations/${conversationId}/messages`), {
@@ -1170,7 +1138,7 @@ describe("the typing preview", () => {
     write("PUT", inA("/widget/typing-preview"), { enabled }, as);
 
   test("a visitor's draft reaches the operators, and stores nothing", async () => {
-    const { token, conversationId } = await visitorSends(a.publicKey, "First");
+    const { token, conversationId } = await visitorStarts(app, a.publicKey, "First");
     const before = await owner.execute<{ count: number }>(
       sql`select count(*)::int as count from message where workspace_id = ${a.id}`,
     );
@@ -1196,7 +1164,7 @@ describe("the typing preview", () => {
   });
 
   test("the workspace setting turns it off, and the widget reads the setting", async () => {
-    const { token } = await visitorSends(a.publicKey, "Hello");
+    const { token } = await visitorStarts(app, a.publicKey, "Hello");
     expect((await setPreview(false)).status).toBe(200);
     const look = await app.request(`/v1/widget/${a.publicKey}/appearance`);
     expect(await look.json()).toMatchObject({ typingPreview: false });
@@ -1238,9 +1206,9 @@ describe("waiting counts across workspaces", () => {
     await owner
       .insert(schema.workspaceMember)
       .values({ workspaceId: second.id, operatorId: kim.id, role: "member" });
-    await visitorSends(first.publicKey, "one");
-    await visitorSends(first.publicKey, "two", "c2");
-    await visitorSends(stranger.publicKey, "not Kim's");
+    await visitorStarts(app, first.publicKey, "one");
+    await visitorStarts(app, first.publicKey, "two");
+    await visitorStarts(app, stranger.publicKey, "not Kim's");
     const response = await get("/v1/operator/waiting", kim.cookie);
     expect(response.status).toBe(200);
     const { workspaces } = (await response.json()) as {
@@ -1294,7 +1262,7 @@ describe("unread conversations", () => {
 
   test("each operator reads on their own, and a later visitor message is unread again", async () => {
     const { own, ann, bo, base, unread, markRead, newestSeq } = await team();
-    const { token, conversationId } = await visitorSends(own.publicKey, "Hello");
+    const { token, conversationId } = await visitorStarts(app, own.publicKey, "Hello");
     expect(await unread(conversationId, ann.cookie)).toBe(true);
     expect(await unread(conversationId, bo.cookie)).toBe(true);
 
@@ -1317,7 +1285,7 @@ describe("unread conversations", () => {
 
   test("an operator's own reply does not make a conversation unread", async () => {
     const { own, ann, base, unread, markRead, newestSeq } = await team();
-    const { conversationId } = await visitorSends(own.publicKey, "Hi");
+    const { conversationId } = await visitorStarts(app, own.publicKey, "Hi");
     await markRead(conversationId, await newestSeq(conversationId), ann.cookie);
     const replied = await write(
       "POST",
@@ -1331,7 +1299,7 @@ describe("unread conversations", () => {
 
   test("a note never makes a conversation unread", async () => {
     const { own, ann, bo, base, unread, markRead, newestSeq } = await team();
-    const { conversationId } = await visitorSends(own.publicKey, "Hi");
+    const { conversationId } = await visitorStarts(app, own.publicKey, "Hi");
     await markRead(conversationId, await newestSeq(conversationId), bo.cookie);
     const noted = await write(
       "POST",
@@ -1358,7 +1326,7 @@ describe("unread conversations", () => {
 
   test("a lower seq does not move the position back, and a higher one stops at the newest", async () => {
     const { own, ann, unread, markRead, newestSeq } = await team();
-    const { token, conversationId } = await visitorSends(own.publicKey, "First");
+    const { token, conversationId } = await visitorStarts(app, own.publicKey, "First");
     const first = await newestSeq(conversationId);
     await visitorWritesAgain(own.publicKey, token, "second");
     await markRead(conversationId, await newestSeq(conversationId), ann.cookie);
@@ -1373,13 +1341,13 @@ describe("unread conversations", () => {
 
   test("a conversation of another workspace is not found", async () => {
     const { ann, markRead } = await team();
-    const { conversationId } = await visitorSends(a.publicKey, "Elsewhere");
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Elsewhere");
     expect((await markRead(conversationId, "1", ann.cookie)).status).toBe(404);
   });
 
   test("an API key sees nothing unread and has no read position", async () => {
     const { own, ann, base } = await team();
-    const { conversationId } = await visitorSends(own.publicKey, "For the key");
+    const { conversationId } = await visitorStarts(app, own.publicKey, "For the key");
     const made = await write(
       "POST",
       `/v1/operator/workspaces/${own.id}/api-keys`,

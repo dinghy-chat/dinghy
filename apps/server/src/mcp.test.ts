@@ -3,15 +3,16 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { setReplyMode } from "../test/keys.ts";
 import { signedInOperator } from "../test/operators.ts";
+import { asOperator, callTool } from "../test/requests.ts";
+import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
-import { apiKey, conversation, message, visitor } from "./db/schema.ts";
+import { conversation, message, visitor } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const SITE = "https://app.example.com";
-const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 const ok = async () => {};
 
@@ -24,12 +25,6 @@ let boss: { id: string; cookie: string };
 let token: string;
 let keyId: string;
 let conversationId: string;
-
-interface ToolAnswer {
-  isError: boolean;
-  content: { type: string; text: string }[];
-  structuredContent: Record<string, unknown>;
-}
 
 const post = (body: unknown, headers: Record<string, string> = {}) =>
   app.request("/v1/mcp", {
@@ -54,11 +49,6 @@ async function rpc(method: string, params?: Record<string, unknown>) {
   };
 }
 
-async function callTool(name: string, args: Record<string, unknown>) {
-  const answer = await rpc("tools/call", { name, arguments: args });
-  return answer.result as unknown as ToolAnswer;
-}
-
 beforeAll(async () => {
   database = await createTestDatabase();
   await database.migrate();
@@ -69,35 +59,31 @@ beforeAll(async () => {
   space = await createWorkspace(db, "Acme", [SITE]);
   const made = await signedInOperator({ app, auth, owner, name: "Mona", workspaceId: space.id });
   boss = { id: made.id, cookie: made.cookie };
-  const key = await app.request(`/v1/operator/workspaces/${space.id}/api-keys`, {
-    method: "POST",
-    headers: { cookie: boss.cookie, origin: ORIGIN, "content-type": "application/json" },
-    body: JSON.stringify({ name: "Claude" }),
-  });
+  const key = await asOperator(
+    app,
+    boss.cookie,
+    "POST",
+    `/v1/operator/workspaces/${space.id}/api-keys`,
+    {
+      name: "Claude",
+    },
+  );
   const created = (await key.json()) as { id: string; token: string };
   token = created.token;
   keyId = created.id;
   // A new key drafts. The send tests switch it, and the draft tests switch it back.
-  await owner.update(apiKey).set({ replyMode: "send" }).where(eq(apiKey.id, keyId));
-  const visitor = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
+  await setReplyMode(owner, keyId, "send");
+  const visitor = await visitorStarts(app, space.publicKey, "My order never came", {
+    clientId: "v1",
   });
-  const { token: visitorToken } = (await visitor.json()) as { token: string };
-  const headers = {
-    origin: SITE,
-    authorization: `Bearer ${visitorToken}`,
-    "content-type": "application/json",
-  };
-  const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ clientId: "v1", body: "My order never came" }),
-  });
-  conversationId = ((await sent.json()) as { conversationId: string }).conversationId;
+  conversationId = visitor.conversationId;
   await app.request(`/v1/widget/${space.publicKey}/context`, {
     method: "POST",
-    headers,
+    headers: {
+      origin: SITE,
+      authorization: `Bearer ${visitor.token}`,
+      "content-type": "application/json",
+    },
     body: JSON.stringify({ context: { plan: "pro", orders: 3 } }),
   });
 }, 30_000);
@@ -358,7 +344,7 @@ describe("protocol 2026-07-28, with no session", () => {
 
 describe("the tools", () => {
   test("list_conversations and search_conversations find the visitor's conversation", async () => {
-    const listed = await callTool("list_conversations", {});
+    const listed = await callTool(app, token, "list_conversations", {});
     expect(listed.isError).toBe(false);
     expect(listed.structuredContent).toMatchObject({
       conversations: [{ id: conversationId, pageContext: { plan: "pro", orders: 3 } }],
@@ -367,31 +353,18 @@ describe("the tools", () => {
     });
     // The text holds the same data, for a client that reads only text.
     expect(JSON.parse(listed.content[0]?.text ?? "")).toEqual(listed.structuredContent);
-    const found = await callTool("search_conversations", { q: "never came" });
+    const found = await callTool(app, token, "search_conversations", { q: "never came" });
     expect(found.structuredContent).toMatchObject({ conversations: [{ id: conversationId }] });
   });
 
   test("list_conversations pages with a cursor", async () => {
     for (let index = 0; index < 3; index++) {
-      const visitor = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-        method: "POST",
-        headers: { origin: SITE },
-      });
-      const { token: visitorToken } = (await visitor.json()) as { token: string };
-      await app.request(`/v1/widget/${space.publicKey}/messages`, {
-        method: "POST",
-        headers: {
-          origin: SITE,
-          authorization: `Bearer ${visitorToken}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ clientId: `p${index}`, body: `Page ${index}` }),
-      });
+      await visitorStarts(app, space.publicKey, `Page ${index}`, { clientId: `p${index}` });
     }
     const seen: string[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < 5; page++) {
-      const answer = await callTool("list_conversations", {
+      const answer = await callTool(app, token, "list_conversations", {
         limit: 2,
         ...(cursor === undefined ? {} : { cursor }),
       });
@@ -408,7 +381,7 @@ describe("the tools", () => {
   });
 
   test("get_conversation gives the messages, the visitor, pageContext and the pages", async () => {
-    const answer = await callTool("get_conversation", { conversationId });
+    const answer = await callTool(app, token, "get_conversation", { conversationId });
     expect(answer.structuredContent).toMatchObject({
       conversation: { id: conversationId, status: "open", pageContext: { plan: "pro" } },
       messages: [{ body: "My order never came", fromVisitor: true }],
@@ -417,7 +390,7 @@ describe("the tools", () => {
   });
 
   test("reply writes under the key's name, and the same clientId does not write twice", async () => {
-    const first = await callTool("reply", {
+    const first = await callTool(app, token, "reply", {
       conversationId,
       body: "Sorry! A new one ships today.",
       clientId: "claude-1",
@@ -426,7 +399,7 @@ describe("the tools", () => {
     expect(first.structuredContent).toMatchObject({
       message: { authorName: "Claude", fromVisitor: false, clientId: "claude-1" },
     });
-    await callTool("reply", {
+    await callTool(app, token, "reply", {
       conversationId,
       body: "Sorry! A new one ships today.",
       clientId: "claude-1",
@@ -434,26 +407,35 @@ describe("the tools", () => {
     const rows = await owner.select().from(message).where(eq(message.clientId, "claude-1"));
     expect(rows).toHaveLength(1);
     // A random fallback would let a retry after a lost answer send twice, so the ID is required.
-    const second = await callTool("reply", { conversationId, body: "Anything else?" });
+    const second = await callTool(app, token, "reply", { conversationId, body: "Anything else?" });
     expect(second.isError).toBe(true);
   });
 
   test("close, reopen and assign change the conversation", async () => {
-    expect((await callTool("close_conversation", { conversationId })).isError).toBe(false);
-    const closed = await callTool("reply", { conversationId, body: "Too late", clientId: "late" });
+    expect((await callTool(app, token, "close_conversation", { conversationId })).isError).toBe(
+      false,
+    );
+    const closed = await callTool(app, token, "reply", {
+      conversationId,
+      body: "Too late",
+      clientId: "late",
+    });
     expect(closed.isError).toBe(true);
     expect(closed.content[0]?.text).toMatch(/^conversation_closed: /);
     expect(closed.structuredContent).toMatchObject({ error: { code: "conversation_closed" } });
-    expect((await callTool("reopen_conversation", { conversationId })).isError).toBe(false);
+    expect((await callTool(app, token, "reopen_conversation", { conversationId })).isError).toBe(
+      false,
+    );
     expect(
-      (await callTool("assign_conversation", { conversationId, operatorId: boss.id })).isError,
+      (await callTool(app, token, "assign_conversation", { conversationId, operatorId: boss.id }))
+        .isError,
     ).toBe(false);
     const [row] = await owner
       .select()
       .from(conversation)
       .where(eq(conversation.id, conversationId));
     expect(row).toMatchObject({ status: "open", assigneeOperatorId: boss.id });
-    const stranger = await callTool("assign_conversation", {
+    const stranger = await callTool(app, token, "assign_conversation", {
       conversationId,
       operatorId: crypto.randomUUID(),
     });
@@ -461,53 +443,29 @@ describe("the tools", () => {
   });
 
   test("a bad argument or an unknown conversation is a tool error with its code", async () => {
-    const bad = await callTool("get_conversation", { conversationId: "nope" });
+    const bad = await callTool(app, token, "get_conversation", { conversationId: "nope" });
     expect(bad).toMatchObject({
       isError: true,
       structuredContent: { error: { code: "invalid_request" } },
     });
-    const missing = await callTool("get_conversation", { conversationId: crypto.randomUUID() });
+    const missing = await callTool(app, token, "get_conversation", {
+      conversationId: crypto.randomUUID(),
+    });
     expect(missing).toMatchObject({
       isError: true,
       structuredContent: { error: { code: "not_found" } },
     });
-    const short = await callTool("search_conversations", { q: "ab" });
+    const short = await callTool(app, token, "search_conversations", { q: "ab" });
     expect(short.isError).toBe(true);
   });
 });
 
-/** A new visitor's first message, which opens a conversation. */
-async function visitorWrites(body: string) {
-  const made = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
-  });
-  const { token: visitorToken, visitorId } = (await made.json()) as {
-    token: string;
-    visitorId: string;
-  };
-  const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
-    method: "POST",
-    headers: {
-      origin: SITE,
-      authorization: `Bearer ${visitorToken}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ clientId: crypto.randomUUID(), body }),
-  });
-  const { conversationId: id } = (await sent.json()) as { conversationId: string };
-  return { conversationId: id, visitorId };
-}
-
-const setMode = (replyMode: "send" | "draft") =>
-  owner.update(apiKey).set({ replyMode }).where(eq(apiKey.id, keyId));
-
 describe("answering chats", () => {
   test("wait_for_messages gives the cursor at once, then a new visitor message, then a timeout", async () => {
-    const first = await callTool("wait_for_messages", {});
+    const first = await callTool(app, token, "wait_for_messages", {});
     expect(first.structuredContent).toEqual({ messages: [], cursor: expect.any(String) });
-    const chat = await visitorWrites("Is anyone there?");
-    const second = await callTool("wait_for_messages", {
+    const chat = await visitorStarts(app, space.publicKey, "Is anyone there?");
+    const second = await callTool(app, token, "wait_for_messages", {
       cursor: first.structuredContent.cursor,
       timeoutSeconds: 1,
     });
@@ -522,7 +480,7 @@ describe("answering chats", () => {
     ]);
     expect(second.content[0]?.text).toContain("Is anyone there?");
     const started = Date.now();
-    const third = await callTool("wait_for_messages", {
+    const third = await callTool(app, token, "wait_for_messages", {
       cursor: second.structuredContent.cursor,
       timeoutSeconds: 1,
     });
@@ -534,10 +492,10 @@ describe("answering chats", () => {
   });
 
   test("a draft-mode key's reply is a draft, which list_drafts shows", async () => {
-    const chat = await visitorWrites("Can I change my address?");
-    await setMode("draft");
+    const chat = await visitorStarts(app, space.publicKey, "Can I change my address?");
+    await setReplyMode(owner, keyId, "draft");
     try {
-      const drafted = await callTool("reply", {
+      const drafted = await callTool(app, token, "reply", {
         conversationId: chat.conversationId,
         body: "Yes, in Settings.",
         clientId: "draft-1",
@@ -546,25 +504,33 @@ describe("answering chats", () => {
         status: "drafted",
         draft: { status: "open", body: "Yes, in Settings." },
       });
-      const listed = await callTool("list_drafts", { conversationId: chat.conversationId });
+      const listed = await callTool(app, token, "list_drafts", {
+        conversationId: chat.conversationId,
+      });
       expect(listed.structuredContent.drafts).toEqual([
         expect.objectContaining({ body: "Yes, in Settings.", authorName: "Claude" }),
       ]);
     } finally {
-      await setMode("send");
+      await setReplyMode(owner, keyId, "send");
     }
   });
 
   test("notes, a handoff, and the conversation as JSON and as Markdown", async () => {
-    const chat = await visitorWrites("I was charged twice");
+    const chat = await visitorStarts(app, space.publicKey, "I was charged twice");
     const target = { conversationId: chat.conversationId };
-    const noted = await callTool("add_note", { ...target, body: "Checked Stripe", clientId: "n1" });
+    const noted = await callTool(app, token, "add_note", {
+      ...target,
+      body: "Checked Stripe",
+      clientId: "n1",
+    });
     expect(noted.structuredContent).toMatchObject({
       status: "sent",
       message: { kind: "note", authorName: "Claude", body: "Checked Stripe" },
     });
-    expect((await callTool("set_typing", target)).structuredContent).toEqual({ ok: true });
-    const handed = await callTool("hand_off", {
+    expect((await callTool(app, token, "set_typing", target)).structuredContent).toEqual({
+      ok: true,
+    });
+    const handed = await callTool(app, token, "hand_off", {
       ...target,
       clientId: "h1",
       reason: "Refund needed",
@@ -575,13 +541,21 @@ describe("answering chats", () => {
       status: "handed_off",
       visitorMessage: { status: "sent", message: { authorName: "Claude" } },
     });
-    const refused = await callTool("reply", { ...target, body: "Anything else?", clientId: "r9" });
+    const refused = await callTool(app, token, "reply", {
+      ...target,
+      body: "Anything else?",
+      clientId: "r9",
+    });
     expect(refused.structuredContent).toMatchObject({ error: { code: "human_handling" } });
     // A note still goes while a person handles the conversation.
-    const later = await callTool("add_note", { ...target, body: "Refund it", clientId: "n2" });
+    const later = await callTool(app, token, "add_note", {
+      ...target,
+      body: "Refund it",
+      clientId: "n2",
+    });
     expect(later.structuredContent).toMatchObject({ status: "sent", message: { kind: "note" } });
 
-    const json = await callTool("get_conversation", target);
+    const json = await callTool(app, token, "get_conversation", target);
     expect(json.structuredContent).toMatchObject({
       conversation: { handler: { kind: "team", since: expect.any(String) } },
       replySeconds: expect.any(Number),
@@ -592,7 +566,10 @@ describe("answering chats", () => {
       "Handed off: Refund needed\n\nTwo charges of 7 USD",
       "Refund it",
     ]);
-    const markdown = await callTool("get_conversation", { ...target, format: "markdown" });
+    const markdown = await callTool(app, token, "get_conversation", {
+      ...target,
+      format: "markdown",
+    });
     const text = String(markdown.structuredContent.markdown);
     expect(text).toContain("Handled by the team, people with no assignee, since");
     expect(text).toContain("Assignee: none.");
@@ -607,7 +584,7 @@ describe("answering chats", () => {
   });
 
   test("list_members gives each member's ID, name, role and whether they are online", async () => {
-    const listed = await callTool("list_members", {});
+    const listed = await callTool(app, token, "list_members", {});
     const { members } = listed.structuredContent as { members: Record<string, unknown>[] };
     expect(members.length).toBeGreaterThan(0);
     for (const member of members) {
@@ -617,12 +594,14 @@ describe("answering chats", () => {
   });
 
   test("get_contact reads a visitor by conversation or by ID, with their local time", async () => {
-    const chat = await visitorWrites("Hello");
+    const chat = await visitorStarts(app, space.publicKey, "Hello");
     await owner
       .update(visitor)
       .set({ timeZone: "Europe/Paris", name: "Ada" })
       .where(eq(visitor.id, chat.visitorId));
-    const byChat = await callTool("get_contact", { conversationId: chat.conversationId });
+    const byChat = await callTool(app, token, "get_contact", {
+      conversationId: chat.conversationId,
+    });
     expect(byChat.structuredContent).toMatchObject({
       contact: {
         id: chat.visitorId,
@@ -632,22 +611,22 @@ describe("answering chats", () => {
         conversations: [expect.objectContaining({ id: chat.conversationId })],
       },
     });
-    const byId = await callTool("get_contact", { visitorId: chat.visitorId });
+    const byId = await callTool(app, token, "get_contact", { visitorId: chat.visitorId });
     expect(byId.structuredContent).toEqual(byChat.structuredContent);
     for (const args of [{}, { visitorId: chat.visitorId, conversationId: chat.conversationId }]) {
-      const refused = await callTool("get_contact", args);
+      const refused = await callTool(app, token, "get_contact", args);
       expect(refused.structuredContent).toMatchObject({ error: { code: "invalid_request" } });
     }
-    const listed = await callTool("search_contacts", { q: "Ada" });
+    const listed = await callTool(app, token, "search_contacts", { q: "Ada" });
     expect(JSON.stringify(listed.structuredContent)).toContain(chat.visitorId);
-    const page = await callTool("list_contacts", { limit: 1 });
+    const page = await callTool(app, token, "list_contacts", { limit: 1 });
     expect(page.structuredContent).toMatchObject({ contacts: [expect.any(Object)] });
-    const live = await callTool("get_live_visitors", {});
+    const live = await callTool(app, token, "get_live_visitors", {});
     expect(live.structuredContent).toEqual({ visitors: null });
   });
 
   test("analytics reach keys, over MCP and over REST", async () => {
-    const numbers = await callTool("get_analytics", { days: 7, tz: "Europe/Paris" });
+    const numbers = await callTool(app, token, "get_analytics", { days: 7, tz: "Europe/Paris" });
     expect(numbers.structuredContent).toMatchObject({ days: 7, timeZone: "Europe/Paris" });
     expect(numbers.structuredContent.started).toBeGreaterThan(0);
     const rest = await app.request(

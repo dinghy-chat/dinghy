@@ -6,8 +6,10 @@ import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
-import { keySends } from "../test/keys.ts";
+import { setReplyMode } from "../test/keys.ts";
 import { signedInOperator } from "../test/operators.ts";
+import { asOperator, withKey } from "../test/requests.ts";
+import { SITE, visitorStarts } from "../test/visitors.ts";
 import { pruneOnce } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
@@ -26,8 +28,6 @@ import {
 } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const SITE = "https://app.example.com";
-const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 const ok = async () => {};
 const LOCAL: WebhookPolicy = { allowPrivate: true };
@@ -57,35 +57,13 @@ const answers: number[] = [];
 const bodies: string[] = [];
 
 const inSpace = (path = "") => `/v1/operator/workspaces/${space.id}${path}`;
-const asBoss = (method: string, path: string, body?: unknown, server = app) =>
-  server.request(path, {
-    method,
-    headers: {
-      cookie: boss.cookie,
-      origin: ORIGIN,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
 async function addWebhook(events: string[], url = receiverUrl) {
-  const response = await asBoss("POST", inSpace("/webhooks"), { url, events });
+  const response = await asOperator(app, boss.cookie, "POST", inSpace("/webhooks"), {
+    url,
+    events,
+  });
   expect(response.status).toBe(201);
   return (await response.json()) as { id: string; secret: string; url: string };
-}
-
-async function visitorSends(body: string) {
-  const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
-  });
-  const { token } = (await created.json()) as { token: string };
-  const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
-    method: "POST",
-    headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ clientId: crypto.randomUUID(), body }),
-  });
-  return ((await sent.json()) as { conversationId: string }).conversationId;
 }
 
 /** Runs the worker's webhook steps once: fan out every event, then send what is due. */
@@ -169,36 +147,52 @@ describe("managing webhooks", () => {
   test("an owner adds, lists, changes, tests, rotates and deletes a webhook", async () => {
     const made = await addWebhook(["message.created"]);
     expect(made.secret).toMatch(/^whsec_[A-Za-z0-9_-]{43}$/);
-    const listed = await (await asBoss("GET", inSpace("/webhooks"))).text();
+    const listed = await (await asOperator(app, boss.cookie, "GET", inSpace("/webhooks"))).text();
     expect(listed).toContain(made.id);
     expect(listed).not.toContain(made.secret);
 
-    const changed = await asBoss("PATCH", inSpace(`/webhooks/${made.id}`), {
+    const changed = await asOperator(app, boss.cookie, "PATCH", inSpace(`/webhooks/${made.id}`), {
       events: ["conversation.closed", "conversation.closed"],
       enabled: false,
     });
     expect(await changed.json()).toMatchObject({ events: ["conversation.closed"], enabled: false });
 
-    const tested = await asBoss("POST", inSpace(`/webhooks/${made.id}/test`), {});
+    const tested = await asOperator(
+      app,
+      boss.cookie,
+      "POST",
+      inSpace(`/webhooks/${made.id}/test`),
+      {},
+    );
     expect(await tested.json()).toEqual({ delivered: true, status: 200, error: null });
     const ping = verified(received[0] as Received, made.secret);
     expect(ping).toMatchObject({ type: "webhook.test", workspaceId: space.id, data: {} });
 
     const rotated = (await (
-      await asBoss("POST", inSpace(`/webhooks/${made.id}/rotate-secret`), {})
+      await asOperator(app, boss.cookie, "POST", inSpace(`/webhooks/${made.id}/rotate-secret`), {})
     ).json()) as { secret: string };
     expect(rotated.secret).not.toBe(made.secret);
-    await asBoss("POST", inSpace(`/webhooks/${made.id}/test`), {});
+    await asOperator(app, boss.cookie, "POST", inSpace(`/webhooks/${made.id}/test`), {});
     verified(received[1] as Received, rotated.secret);
 
-    expect((await asBoss("DELETE", inSpace(`/webhooks/${made.id}`))).status).toBe(200);
-    expect(await (await asBoss("GET", inSpace("/webhooks"))).json()).toEqual({ webhooks: [] });
+    expect(
+      (await asOperator(app, boss.cookie, "DELETE", inSpace(`/webhooks/${made.id}`))).status,
+    ).toBe(200);
+    expect(await (await asOperator(app, boss.cookie, "GET", inSpace("/webhooks"))).json()).toEqual({
+      webhooks: [],
+    });
   });
 
   test("a failed test says why", async () => {
     const made = await addWebhook(["message.created"]);
     answers.push(500);
-    const tested = await asBoss("POST", inSpace(`/webhooks/${made.id}/test`), {});
+    const tested = await asOperator(
+      app,
+      boss.cookie,
+      "POST",
+      inSpace(`/webhooks/${made.id}/test`),
+      {},
+    );
     expect(await tested.json()).toEqual({
       delivered: false,
       status: 500,
@@ -208,7 +202,7 @@ describe("managing webhooks", () => {
 
   test("a workspace has at most 5", async () => {
     for (let index = 0; index < 5; index++) await addWebhook(["message.created"]);
-    const sixth = await asBoss("POST", inSpace("/webhooks"), {
+    const sixth = await asOperator(app, boss.cookie, "POST", inSpace("/webhooks"), {
       url: receiverUrl,
       events: ["message.created"],
     });
@@ -226,16 +220,18 @@ describe("managing webhooks", () => {
       workspaceId: space.id,
       role: "member",
     });
-    const as = (method: string, path: string, body?: unknown) =>
-      app.request(path, {
-        method,
-        headers: { cookie: agent.cookie, origin: ORIGIN, "content-type": "application/json" },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-    expect((await as("GET", inSpace("/webhooks"))).status).toBe(403);
-    expect((await as("POST", inSpace(`/webhooks/${made.id}/test`), {})).status).toBe(403);
-    expect((await as("GET", inSpace(`/webhooks/${made.id}/deliveries`))).status).toBe(403);
-    expect((await as("DELETE", inSpace(`/webhooks/${made.id}`))).status).toBe(403);
+    expect((await asOperator(app, agent.cookie, "GET", inSpace("/webhooks"))).status).toBe(403);
+    expect(
+      (await asOperator(app, agent.cookie, "POST", inSpace(`/webhooks/${made.id}/test`), {}))
+        .status,
+    ).toBe(403);
+    expect(
+      (await asOperator(app, agent.cookie, "GET", inSpace(`/webhooks/${made.id}/deliveries`)))
+        .status,
+    ).toBe(403);
+    expect(
+      (await asOperator(app, agent.cookie, "DELETE", inSpace(`/webhooks/${made.id}`))).status,
+    ).toBe(403);
   });
 
   test("by default, only an https address on the public internet is taken", async () => {
@@ -250,21 +246,17 @@ describe("managing webhooks", () => {
       "ftp://93.184.215.14/hook",
       "not a url",
     ]) {
-      const response = await asBoss(
-        "POST",
-        inSpace("/webhooks"),
-        { url, events: ["message.created"] },
-        strict,
-      );
+      const response = await asOperator(strict, boss.cookie, "POST", inSpace("/webhooks"), {
+        url,
+        events: ["message.created"],
+      });
       expect([url, response.status]).toEqual([url, 400]);
       expect(await response.json()).toMatchObject({ error: { code: "bad_endpoint" } });
     }
-    const fine = await asBoss(
-      "POST",
-      inSpace("/webhooks"),
-      { url: "https://93.184.215.14/hook", events: ["message.created"] },
-      strict,
-    );
+    const fine = await asOperator(strict, boss.cookie, "POST", inSpace("/webhooks"), {
+      url: "https://93.184.215.14/hook",
+      events: ["message.created"],
+    });
     expect(fine.status).toBe(201);
   });
 
@@ -300,12 +292,12 @@ describe("delivery", () => {
       "conversation.handoff",
       "conversation.given_back",
     ]);
-    const made = await asBoss("POST", inSpace("/api-keys"), { name: "Bot" });
+    const made = await asOperator(app, boss.cookie, "POST", inSpace("/api-keys"), { name: "Bot" });
     const { id: keyId, token } = (await made.json()) as { id: string; token: string };
-    await keySends(owner, keyId);
-    const conversationId = await visitorSends("Refund please");
+    await setReplyMode(owner, keyId, "send");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Refund please");
     const path = inSpace(`/conversations/${conversationId}`);
-    await asBoss("POST", `${path}/messages`, {
+    await asOperator(app, boss.cookie, "POST", `${path}/messages`, {
       clientId: "n1",
       body: "Known customer",
       note: true,
@@ -316,7 +308,7 @@ describe("delivery", () => {
       body: JSON.stringify({ clientId: "h1", reason: "Refund" }),
     });
     expect(handed.status).toBe(201);
-    await asBoss("POST", `${path}/give-back`);
+    await asOperator(app, boss.cookie, "POST", `${path}/give-back`);
     await runWorker();
 
     const events = received.map((request) => verified(request, hook.secret));
@@ -355,12 +347,15 @@ describe("delivery", () => {
       "conversation.reopened",
       "conversation.assigned",
     ]);
-    const conversationId = await visitorSends("Is it in stock?");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Is it in stock?");
     const path = inSpace(`/conversations/${conversationId}`);
-    await asBoss("POST", `${path}/messages`, { clientId: "r1", body: "Yes, three left." });
-    await asBoss("PATCH", path, { status: "closed" });
-    await asBoss("PATCH", path, { status: "open" });
-    await asBoss("PUT", `${path}/assignee`, { operatorId: null });
+    await asOperator(app, boss.cookie, "POST", `${path}/messages`, {
+      clientId: "r1",
+      body: "Yes, three left.",
+    });
+    await asOperator(app, boss.cookie, "PATCH", path, { status: "closed" });
+    await asOperator(app, boss.cookie, "PATCH", path, { status: "open" });
+    await asOperator(app, boss.cookie, "PUT", `${path}/assignee`, { operatorId: null });
     // The first reply assigned the conversation to its sender, and the last change unassigned it.
     expect(await runWorker()).toBe(7);
 
@@ -401,9 +396,11 @@ describe("delivery", () => {
   test("a webhook gets only the events it asked for, and nothing while it is off", async () => {
     const closes = await addWebhook(["conversation.closed"]);
     const off = await addWebhook(["message.created"]);
-    await asBoss("PATCH", inSpace(`/webhooks/${off.id}`), { enabled: false });
-    const conversationId = await visitorSends("Bye");
-    await asBoss("PATCH", inSpace(`/conversations/${conversationId}`), { status: "closed" });
+    await asOperator(app, boss.cookie, "PATCH", inSpace(`/webhooks/${off.id}`), { enabled: false });
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Bye");
+    await asOperator(app, boss.cookie, "PATCH", inSpace(`/conversations/${conversationId}`), {
+      status: "closed",
+    });
     await runWorker();
     expect(received.map((request) => verified(request, closes.secret).type)).toEqual([
       "conversation.closed",
@@ -412,7 +409,7 @@ describe("delivery", () => {
   });
 
   test("a workspace with no webhook gives the worker nothing to do", async () => {
-    await visitorSends("Nobody listens");
+    await visitorStarts(app, space.publicKey, "Nobody listens");
     const flagged = await owner
       .select()
       .from(event)
@@ -422,7 +419,7 @@ describe("delivery", () => {
 
   test("a failed send waits and tries again with the same event ID", async () => {
     const hook = await addWebhook(["message.created"]);
-    await visitorSends("Try again");
+    await visitorStarts(app, space.publicKey, "Try again");
     answers.push(503);
     await runWorker();
     const [waiting] = await deliveriesOf(hook.id);
@@ -445,7 +442,7 @@ describe("delivery", () => {
     expect(received[0]?.headers["dinghy-event-id"]).toBe(done?.eventId);
 
     const listed = (await (
-      await asBoss("GET", inSpace(`/webhooks/${hook.id}/deliveries`))
+      await asOperator(app, boss.cookie, "GET", inSpace(`/webhooks/${hook.id}/deliveries`))
     ).json()) as {
       deliveries: unknown[];
     };
@@ -456,8 +453,8 @@ describe("delivery", () => {
 
   test("it gives up after its last attempt, or after a day", async () => {
     const hook = await addWebhook(["message.created"]);
-    await visitorSends("First");
-    await visitorSends("Second");
+    await visitorStarts(app, space.publicKey, "First");
+    await visitorStarts(app, space.publicKey, "Second");
     answers.push(500, 500);
     await fanOutWebhooksOne(workerDb);
     await fanOutWebhooksOne(workerDb);
@@ -498,7 +495,7 @@ describe("delivery", () => {
         events: ["message.created"],
       })
       .returning({ id: webhook.id });
-    await visitorSends("Reach inside?");
+    await visitorStarts(app, space.publicKey, "Reach inside?");
     await runWorker(PUBLIC_ONLY);
     const [refused] = await deliveriesOf(hook?.id ?? "");
     expect(refused).toMatchObject({ finishedAt: null, lastStatus: null });
@@ -512,7 +509,7 @@ describe("delivery", () => {
 
   test("a delivery goes with its conversation, and old finished ones are pruned", async () => {
     const hook = await addWebhook(["message.created"]);
-    const conversationId = await visitorSends("Delete me");
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Delete me");
     await runWorker();
     expect(await deliveriesOf(hook.id)).toHaveLength(1);
     await owner
@@ -523,9 +520,14 @@ describe("delivery", () => {
     expect(await deliveriesOf(hook.id)).toEqual([]);
 
     // A delivery that waits goes when its conversation is deleted.
-    await visitorSends("Another");
+    await visitorStarts(app, space.publicKey, "Another");
     await fanOutWebhooksOne(workerDb);
-    const deleted = await asBoss("DELETE", inSpace(`/conversations/${conversationId}`));
+    const deleted = await asOperator(
+      app,
+      boss.cookie,
+      "DELETE",
+      inSpace(`/conversations/${conversationId}`),
+    );
     expect(deleted.status).toBe(200);
     const left = await deliveriesOf(hook.id);
     expect(left.every((row) => row.conversationId !== conversationId)).toBe(true);
@@ -535,7 +537,9 @@ describe("delivery", () => {
 describe("replays and refusals", () => {
   const deliveries = async (hookId: string) =>
     (
-      (await (await asBoss("GET", inSpace(`/webhooks/${hookId}/deliveries`))).json()) as {
+      (await (
+        await asOperator(app, boss.cookie, "GET", inSpace(`/webhooks/${hookId}/deliveries`))
+      ).json()) as {
         deliveries: {
           id: string;
           eventId: string;
@@ -552,7 +556,7 @@ describe("replays and refusals", () => {
     await runWorker();
     answers.push(500);
     bodies.push(`\u0007Bad\u0000 signature\n${"é".repeat(100_000)}`);
-    await visitorSends("Hello");
+    await visitorStarts(app, space.publicKey, "Hello");
     await runWorker();
     const [row] = await deliveriesOf(hook.id);
     expect(row?.lastStatus).toBe(500);
@@ -572,10 +576,12 @@ describe("replays and refusals", () => {
 
   test("a replay sends the same event again, now, with its own delivery", async () => {
     const hook = await addWebhook(["message.created"]);
-    await visitorSends("Replay me");
+    await visitorStarts(app, space.publicKey, "Replay me");
     await runWorker();
     const [first] = await deliveries(hook.id);
-    const replayed = await asBoss(
+    const replayed = await asOperator(
+      app,
+      boss.cookie,
       "POST",
       inSpace(`/webhooks/${hook.id}/deliveries/${first?.id}/replay`),
       {},
@@ -594,7 +600,9 @@ describe("replays and refusals", () => {
       first?.eventId,
     ]);
     expect((await deliveries(hook.id)).map((one) => one.status)).toEqual(["sent", "sent"]);
-    const unknown = await asBoss(
+    const unknown = await asOperator(
+      app,
+      boss.cookie,
       "POST",
       inSpace(`/webhooks/${hook.id}/deliveries/${crypto.randomUUID()}/replay`),
       {},
@@ -604,9 +612,12 @@ describe("replays and refusals", () => {
 
   test("a Setup key lists and replays deliveries through MCP", async () => {
     const hook = await addWebhook(["message.created"]);
-    await visitorSends("Through MCP");
+    await visitorStarts(app, space.publicKey, "Through MCP");
     await runWorker();
-    const key = await asBoss("POST", inSpace("/api-keys"), { name: "Bot", level: "setup" });
+    const key = await asOperator(app, boss.cookie, "POST", inSpace("/api-keys"), {
+      name: "Bot",
+      level: "setup",
+    });
     const { token } = (await key.json()) as { token: string };
     const call = async (name: string, args: Record<string, unknown>) => {
       const response = await app.request("/v1/mcp", {
@@ -642,8 +653,11 @@ describe("replays and refusals", () => {
     await runWorker();
     received.length = 0;
     const hook = await addWebhook(["message.created"]);
-    await visitorSends("A person");
-    const key = await asBoss("POST", inSpace("/api-keys"), { name: "Bot", level: "setup" });
+    await visitorStarts(app, space.publicKey, "A person");
+    const key = await asOperator(app, boss.cookie, "POST", inSpace("/api-keys"), {
+      name: "Bot",
+      level: "setup",
+    });
     const { token } = (await key.json()) as { token: string };
     await app.request(inSpace("/test-visitors/messages"), {
       method: "POST",
@@ -671,27 +685,18 @@ test("the signature is the HMAC-SHA256 of the time and the body", () => {
 
 describe("Setup API keys", () => {
   const makeKey = async (level?: "conversations" | "setup", name = "Agent") => {
-    const response = await asBoss("POST", inSpace("/api-keys"), {
+    const response = await asOperator(app, boss.cookie, "POST", inSpace("/api-keys"), {
       name,
       ...(level === undefined ? {} : { level }),
     });
     expect(response.status).toBe(201);
     return (await response.json()) as { id: string; token: string; level: string };
   };
-  const withKey = (token: string, method: string, path: string, body?: unknown) =>
-    app.request(path, {
-      method,
-      headers: {
-        authorization: `Bearer ${token}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
   const mcpTools = async (token: string) => {
-    const response = await app.request("/v1/mcp", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    const response = await withKey(app, token, "POST", "/v1/mcp", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
     });
     const { result } = (await response.json()) as { result: { tools: { name: string }[] } };
     return result.tools.map((one) => one.name);
@@ -700,7 +705,9 @@ describe("Setup API keys", () => {
   test("a key is Conversations unless made Setup, and the list says which", async () => {
     expect((await makeKey()).level).toBe("conversations");
     expect((await makeKey("setup", "Builder")).level).toBe("setup");
-    const listed = (await (await asBoss("GET", inSpace("/api-keys"))).json()) as {
+    const listed = (await (
+      await asOperator(app, boss.cookie, "GET", inSpace("/api-keys"))
+    ).json()) as {
       apiKeys: { name: string; level: string }[];
     };
     expect(Object.fromEntries(listed.apiKeys.map((one) => [one.name, one.level]))).toEqual({
@@ -722,7 +729,7 @@ describe("Setup API keys", () => {
       ["POST", inSpace(`/webhooks/${hook.id}/deliveries/${crypto.randomUUID()}/replay`), {}],
       ["DELETE", inSpace(`/webhooks/${hook.id}`), undefined],
     ] as const) {
-      const response = await withKey(key.token, method, path, body);
+      const response = await withKey(app, key.token, method, path, body);
       expect([method, path, response.status]).toEqual([method, path, 403]);
     }
     expect(await owner.select().from(webhook).where(eq(webhook.id, hook.id))).toHaveLength(1);
@@ -730,7 +737,7 @@ describe("Setup API keys", () => {
 
   test("a Setup key adds, tests and deletes a webhook, which names it as its creator", async () => {
     const key = await makeKey("setup", "Coding agent");
-    const added = await withKey(key.token, "POST", inSpace("/webhooks"), {
+    const added = await withKey(app, key.token, "POST", inSpace("/webhooks"), {
       url: receiverUrl,
       events: ["message.created"],
     });
@@ -740,17 +747,21 @@ describe("Setup API keys", () => {
     const [row] = await owner.select().from(webhook).where(eq(webhook.id, made.id));
     expect(row).toMatchObject({ createdByApiKeyId: key.id, createdByOperatorId: null });
     // The owner's list says who added it.
-    const listed = (await (await asBoss("GET", inSpace("/webhooks"))).json()) as {
+    const listed = (await (
+      await asOperator(app, boss.cookie, "GET", inSpace("/webhooks"))
+    ).json()) as {
       webhooks: { id: string; createdBy: unknown }[];
     };
     expect(listed.webhooks.find((one) => one.id === made.id)?.createdBy).toEqual({
       kind: "key",
       name: "Coding agent",
     });
-    const tested = await withKey(key.token, "POST", inSpace(`/webhooks/${made.id}/test`), {});
+    const tested = await withKey(app, key.token, "POST", inSpace(`/webhooks/${made.id}/test`), {});
     expect(await tested.json()).toEqual({ delivered: true, status: 200, error: null });
     verified(received[0] as Received, made.secret);
-    expect((await withKey(key.token, "DELETE", inSpace(`/webhooks/${made.id}`))).status).toBe(200);
+    expect((await withKey(app, key.token, "DELETE", inSpace(`/webhooks/${made.id}`))).status).toBe(
+      200,
+    );
     expect(await owner.select().from(webhook).where(eq(webhook.id, made.id))).toEqual([]);
   });
 
@@ -758,7 +769,9 @@ describe("Setup API keys", () => {
     const made = await addWebhook(["message.created"]);
     const [row] = await owner.select().from(webhook).where(eq(webhook.id, made.id));
     expect(row).toMatchObject({ createdByOperatorId: boss.id, createdByApiKeyId: null });
-    const listed = (await (await asBoss("GET", inSpace("/webhooks"))).json()) as {
+    const listed = (await (
+      await asOperator(app, boss.cookie, "GET", inSpace("/webhooks"))
+    ).json()) as {
       webhooks: { createdBy: unknown }[];
     };
     expect(listed.webhooks[0]?.createdBy).toEqual({ kind: "operator", name: "Hana" });
@@ -776,7 +789,7 @@ describe("Setup API keys", () => {
         ["GET", inSpace("/export"), undefined],
         ["DELETE", inSpace(""), { name: "Hooks" }],
       ] as const) {
-        const response = await withKey(key.token, method, path, body);
+        const response = await withKey(app, key.token, method, path, body);
         expect([level, method, path, response.status]).toEqual([level, method, path, 403]);
       }
     }
@@ -839,8 +852,8 @@ describe("Setup API keys", () => {
     const key = await makeKey("setup");
     const other = await createWorkspace(db, "Other", [SITE]);
     const elsewhere = `/v1/operator/workspaces/${other.id}/webhooks`;
-    expect((await withKey(key.token, "GET", elsewhere)).status).toBe(404);
-    const added = await withKey(key.token, "POST", elsewhere, {
+    expect((await withKey(app, key.token, "GET", elsewhere)).status).toBe(404);
+    const added = await withKey(app, key.token, "POST", elsewhere, {
       url: receiverUrl,
       events: ["message.created"],
     });

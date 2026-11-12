@@ -12,6 +12,7 @@ import { generateVAPIDKeys } from "web-push";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { pressLinkButton, signedInOperator } from "../test/operators.ts";
+import { readStream } from "../test/sse.ts";
 import { claimDeliveries, fanOutOne, planDelivery } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -176,21 +177,6 @@ const oauthForm = (server: App, path: string, form: Record<string, string>) =>
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(form).toString(),
   });
-
-/** Reads a stream until the marker, then closes it. */
-async function readStream(response: Response, until = "event: ready"): Promise<string> {
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
-  const deadline = Date.now() + 5000;
-  while (reader !== undefined && !text.includes(until) && Date.now() < deadline) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    text += decoder.decode(value);
-  }
-  await reader?.cancel();
-  return text;
-}
 
 const png = () =>
   sharp({ create: { width: 2, height: 2, channels: 3, background: "#123456" } })

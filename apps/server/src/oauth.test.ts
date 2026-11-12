@@ -6,6 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, fromSocket, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
+import { asOperator, ORIGIN, withKey } from "../test/requests.ts";
+import { SITE } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import { apiKey, apiKeyCredential, workspace, workspaceMember } from "./db/schema.ts";
@@ -22,9 +24,7 @@ import { GRANT_LIMIT } from "./oauth-consent.ts";
 import { pruneOAuth } from "./oauth-grants.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const ORIGIN = new URL(PUBLIC_URL).origin;
 const MCP_URL = `${ORIGIN}/v1/mcp`;
-const SITE = "https://app.example.com";
 const CLAUDE_CODE = "https://claude.ai/oauth/claude-code-client-metadata";
 const CALLBACK = "http://localhost/callback";
 const logger = pino({ level: "silent" });
@@ -50,27 +50,6 @@ const fetchDocument = async (url: string) => {
 };
 
 const inWorkspace = (id: string, path = "") => `/v1/operator/workspaces/${id}${path}`;
-
-const asOperator = (cookie: string, method: string, path: string, body?: unknown, server = app) =>
-  server.request(path, {
-    method,
-    headers: {
-      cookie,
-      origin: ORIGIN,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
-const withToken = (token: string, method: string, path: string, body?: unknown) =>
-  app.request(path, {
-    method,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
 
 function pkce() {
   const verifier = randomBytes(32).toString("base64url");
@@ -121,7 +100,7 @@ const authorizeQuery = (request: Authorize) =>
   }).toString();
 
 const authorizeInfo = (cookie: string, query: string, server = app) =>
-  asOperator(cookie, "GET", `/v1/operator/oauth/authorize-info?${query}`, undefined, server);
+  asOperator(server, cookie, "GET", `/v1/operator/oauth/authorize-info?${query}`);
 
 function approve(
   cookie: string,
@@ -129,7 +108,7 @@ function approve(
   query: string,
   choice: { level?: string; replyMode?: string } = {},
 ) {
-  return asOperator(cookie, "POST", inWorkspace(workspaceId, "/oauth/grants"), {
+  return asOperator(app, cookie, "POST", inWorkspace(workspaceId, "/oauth/grants"), {
     request: query,
     level: choice.level ?? "conversations",
     ...(choice.replyMode === undefined ? {} : { replyMode: choice.replyMode }),
@@ -206,7 +185,7 @@ const refresh = (refreshToken: string, clientId?: string) =>
 const errorOf = async (response: Response) => ((await response.json()) as { error: unknown }).error;
 
 const conversationsOf = (access: string) =>
-  withToken(access, "GET", inWorkspace(a.id, "/conversations"));
+  withKey(app, access, "GET", inWorkspace(a.id, "/conversations"));
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -298,7 +277,7 @@ describe("discovery", () => {
     expect(bare.status).toBe(401);
     const metadata = `resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/v1/mcp"`;
     expect(bare.headers.get("www-authenticate")).toBe(`Bearer ${metadata}, scope="conversations"`);
-    const bad = await withToken(`dko_${a.id}.nothing`, "POST", "/v1/mcp", ping);
+    const bad = await withKey(app, `dko_${a.id}.nothing`, "POST", "/v1/mcp", ping);
     expect(bad.status).toBe(401);
     expect(bad.headers.get("www-authenticate")).toBe(
       `Bearer error="invalid_token", ${metadata}, scope="conversations"`,
@@ -764,9 +743,9 @@ describe("consent", () => {
     });
     expect(elsewhere.status).toBe(403);
     const grant = await connect({ level: "setup" });
-    const withGrant = await withToken(grant.access_token, "POST", path, JSON.parse(body));
+    const withGrant = await withKey(app, grant.access_token, "POST", path, JSON.parse(body));
     expect(withGrant.status).toBe(403);
-    const info = await withToken(grant.access_token, "GET", "/v1/operator/oauth/authorize-info");
+    const info = await withKey(app, grant.access_token, "GET", "/v1/operator/oauth/authorize-info");
     expect(info.status).toBe(403);
   });
 
@@ -855,7 +834,7 @@ describe("consent", () => {
     const clientId = await registered();
     const { challenge } = pkce();
     const query = authorizeQuery({ clientId, challenge });
-    const denied = await asOperator(boss.cookie, "POST", "/v1/operator/oauth/deny", {
+    const denied = await asOperator(app, boss.cookie, "POST", "/v1/operator/oauth/deny", {
       request: query,
     });
     expect(denied.status).toBe(200);
@@ -863,7 +842,7 @@ describe("consent", () => {
     expect(url.searchParams.get("error")).toBe("access_denied");
     expect(url.searchParams.get("state")).toBe("the-state");
     expect(url.searchParams.get("iss")).toBe(ORIGIN);
-    const nowhere = await asOperator(boss.cookie, "POST", "/v1/operator/oauth/deny", {
+    const nowhere = await asOperator(app, boss.cookie, "POST", "/v1/operator/oauth/deny", {
       request: authorizeQuery({ clientId, redirectUri: "https://evil.example/cb", challenge }),
     });
     expect(nowhere.status).toBe(400);
@@ -1074,7 +1053,12 @@ describe("refresh tokens", () => {
     const next = (await kept.json()) as Tokens;
     await owner.update(workspace).set({ deletedAt: new Date() }).where(eq(workspace.id, space.id));
     expect(await errorOf(await refresh(next.refresh_token))).toBe("invalid_grant");
-    const call = await withToken(next.access_token, "GET", inWorkspace(space.id, "/conversations"));
+    const call = await withKey(
+      app,
+      next.access_token,
+      "GET",
+      inWorkspace(space.id, "/conversations"),
+    );
     expect(call.status).toBe(401);
   });
 
@@ -1096,7 +1080,7 @@ describe("refresh tokens", () => {
 describe("an access token as a bearer", () => {
   test("it works on MCP and on a route that takes a key, with the grant's name and level", async () => {
     const grant = await connect();
-    const listed = await withToken(grant.access_token, "POST", "/v1/mcp", {
+    const listed = await withKey(app, grant.access_token, "POST", "/v1/mcp", {
       jsonrpc: "2.0",
       id: 1,
       method: "tools/list",
@@ -1113,21 +1097,21 @@ describe("an access token as a bearer", () => {
 
   test("a Conversations grant on a Setup route asks for the setup scope", async () => {
     const grant = await connect();
-    const refused = await withToken(grant.access_token, "GET", inWorkspace(a.id, "/webhooks"));
+    const refused = await withKey(app, grant.access_token, "GET", inWorkspace(a.id, "/webhooks"));
     expect(refused.status).toBe(403);
     expect(refused.headers.get("www-authenticate")).toBe(
       'Bearer error="insufficient_scope", scope="setup"',
     );
     const setup = await connect({ level: "setup" });
     expect(
-      (await withToken(setup.access_token, "GET", inWorkspace(a.id, "/webhooks"))).status,
+      (await withKey(app, setup.access_token, "GET", inWorkspace(a.id, "/webhooks"))).status,
     ).toBe(200);
   });
 
   test("a refresh token or a code never works as a bearer", async () => {
     const grant = await connect();
     expect((await conversationsOf(grant.refresh_token)).status).toBe(401);
-    const mcp = await withToken(grant.refresh_token, "POST", "/v1/mcp", {
+    const mcp = await withKey(app, grant.refresh_token, "POST", "/v1/mcp", {
       jsonrpc: "2.0",
       id: 1,
       method: "ping",
@@ -1142,10 +1126,17 @@ describe("an access token as a bearer", () => {
 
   test("it works only in its own workspace", async () => {
     const grant = await connect();
-    const theirs = await withToken(grant.access_token, "GET", inWorkspace(b.id, "/conversations"));
+    const theirs = await withKey(
+      app,
+      grant.access_token,
+      "GET",
+      inWorkspace(b.id, "/conversations"),
+    );
     expect(theirs.status).toBe(404);
     const renamed = grant.access_token.replace(a.id, b.id);
-    expect((await withToken(renamed, "GET", inWorkspace(b.id, "/conversations"))).status).toBe(401);
+    expect((await withKey(app, renamed, "GET", inWorkspace(b.id, "/conversations"))).status).toBe(
+      401,
+    );
     expect(await errorOf(await refresh(grant.refresh_token.replace(a.id, b.id)))).toBe(
       "invalid_grant",
     );
@@ -1190,9 +1181,11 @@ describe("the approver", () => {
     const hers = await connect({ as: admin, workspaceId: space.id });
     const mine = await connect({ workspaceId: space.id });
     const inSpace = (access: string) =>
-      withToken(access, "GET", inWorkspace(space.id, "/conversations"));
+      withKey(app, access, "GET", inWorkspace(space.id, "/conversations"));
     const change = (role: string) =>
-      asOperator(boss.cookie, "PATCH", inWorkspace(space.id, `/members/${admin.id}`), { role });
+      asOperator(app, boss.cookie, "PATCH", inWorkspace(space.id, `/members/${admin.id}`), {
+        role,
+      });
     expect((await change("member")).status).toBe(200);
     expect((await inSpace(hers.access_token)).status).toBe(401);
     expect(await errorOf(await refresh(hers.refresh_token))).toBe("invalid_grant");
@@ -1200,6 +1193,7 @@ describe("the approver", () => {
     expect((await change("admin")).status).toBe(200);
     const again = await connect({ as: admin, workspaceId: space.id });
     const removed = await asOperator(
+      app,
       boss.cookie,
       "DELETE",
       inWorkspace(space.id, `/members/${admin.id}`),
@@ -1224,9 +1218,9 @@ describe("the approver", () => {
     });
     const grant = await connect({ as: leaving, workspaceId: space.id });
     const inSpace = () =>
-      withToken(grant.access_token, "GET", inWorkspace(space.id, "/conversations"));
+      withKey(app, grant.access_token, "GET", inWorkspace(space.id, "/conversations"));
     expect((await inSpace()).status).toBe(200);
-    const deleted = await asOperator(leaving.cookie, "POST", "/v1/operator/account/delete", {
+    const deleted = await asOperator(app, leaving.cookie, "POST", "/v1/operator/account/delete", {
       email: leaving.email,
     });
     expect(await deleted.json()).toEqual({ deleted: true });
@@ -1240,14 +1234,16 @@ describe("the approver", () => {
       { workspaceId: space.id, operatorId: boss.id, role: "owner" },
       { workspaceId: space.id, operatorId: admin.id, role: "admin" },
     ]);
-    const made = await asOperator(admin.cookie, "POST", inWorkspace(space.id, "/api-keys"), {
+    const made = await asOperator(app, admin.cookie, "POST", inWorkspace(space.id, "/api-keys"), {
       name: "Script",
     });
     const { token: key } = (await made.json()) as { token: string };
-    await asOperator(boss.cookie, "PATCH", inWorkspace(space.id, `/members/${admin.id}`), {
+    await asOperator(app, boss.cookie, "PATCH", inWorkspace(space.id, `/members/${admin.id}`), {
       role: "member",
     });
-    expect((await withToken(key, "GET", inWorkspace(space.id, "/conversations"))).status).toBe(200);
+    expect((await withKey(app, key, "GET", inWorkspace(space.id, "/conversations"))).status).toBe(
+      200,
+    );
   });
 });
 
@@ -1262,7 +1258,9 @@ describe("Settings", () => {
   };
   const listed = async () =>
     (
-      (await (await asOperator(boss.cookie, "GET", inWorkspace(a.id, "/api-keys"))).json()) as {
+      (await (
+        await asOperator(app, boss.cookie, "GET", inWorkspace(a.id, "/api-keys"))
+      ).json()) as {
         apiKeys: Listed[];
       }
     ).apiKeys;
@@ -1292,7 +1290,7 @@ describe("Settings", () => {
     const grant = await connect();
     const [row] = await owner.select().from(apiKey).where(eq(apiKey.clientId, grant.clientId));
     const path = inWorkspace(a.id, `/api-keys/${row?.id}`);
-    const changed = await asOperator(boss.cookie, "PATCH", path, {
+    const changed = await asOperator(app, boss.cookie, "PATCH", path, {
       name: "Support agent",
       replyMode: "send",
       level: "setup",
@@ -1305,16 +1303,16 @@ describe("Settings", () => {
       source: "oauth",
     });
     expect(
-      (await withToken(grant.access_token, "GET", inWorkspace(a.id, "/webhooks"))).status,
+      (await withKey(app, grant.access_token, "GET", inWorkspace(a.id, "/webhooks"))).status,
     ).toBe(200);
-    expect((await asOperator(boss.cookie, "DELETE", path)).status).toBe(200);
+    expect((await asOperator(app, boss.cookie, "DELETE", path)).status).toBe(200);
     expect((await conversationsOf(grant.access_token)).status).toBe(401);
     const left = await owner
       .select()
       .from(apiKeyCredential)
       .where(eq(apiKeyCredential.apiKeyId, row?.id ?? ""));
     expect(left).toEqual([]);
-    expect((await asOperator(boss.cookie, "PATCH", path, { name: "Again" })).status).toBe(404);
+    expect((await asOperator(app, boss.cookie, "PATCH", path, { name: "Again" })).status).toBe(404);
   });
 });
 

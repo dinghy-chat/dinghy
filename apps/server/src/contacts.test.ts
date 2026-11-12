@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
+import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { csvCell } from "./contacts.ts";
@@ -12,7 +13,6 @@ import { apiKey, conversation, draftReply, message, operator, visitor } from "./
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const SITE = "https://app.example.com";
 const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 
@@ -32,22 +32,6 @@ const send = (method: string, url: string, body?: unknown, as = boss.cookie) =>
     headers: { cookie: as, origin: ORIGIN, "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-
-/** A signed-out visitor who sent one message, and their visitor ID. */
-async function visitorChats(body = "Hello") {
-  const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
-  });
-  const { token, visitorId } = (await created.json()) as { token: string; visitorId: string };
-  const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
-    method: "POST",
-    headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ clientId: crypto.randomUUID(), body }),
-  });
-  const { conversationId } = (await sent.json()) as { conversationId: string };
-  return { token, visitorId, conversationId };
-}
 
 type Contact = {
   id: string;
@@ -77,8 +61,8 @@ afterAll(async () => {
 
 describe("the list", () => {
   test("only people with a conversation, newest seen first, found by name, email or ID", async () => {
-    const first = await visitorChats();
-    const second = await visitorChats();
+    const first = await visitorStarts(app, space.publicKey, "Hello");
+    const second = await visitorStarts(app, space.publicKey, "Hello");
     // A visitor who never wrote is no contact.
     await app.request(`/v1/widget/${space.publicKey}/visitors`, {
       method: "POST",
@@ -107,7 +91,7 @@ describe("the list", () => {
   });
 
   test("pages by cursor skip nothing and repeat nothing, in each sort", async () => {
-    for (let index = 0; index < 5; index += 1) await visitorChats();
+    for (let index = 0; index < 5; index += 1) await visitorStarts(app, space.publicKey, "Hello");
     for (const sort of ["lastSeen", "firstSeen"]) {
       const seen: string[] = [];
       let next: string | null = null;
@@ -151,7 +135,11 @@ describe("the list", () => {
 
 describe("one contact", () => {
   test("reads the conversations, the note and the pages", async () => {
-    const { visitorId, conversationId } = await visitorChats("Where is my order?");
+    const { visitorId, conversationId } = await visitorStarts(
+      app,
+      space.publicKey,
+      "Where is my order?",
+    );
     const read = await get(path(`/${visitorId}`));
     expect(read.status).toBe(200);
     expect(await read.json()).toMatchObject({
@@ -163,7 +151,11 @@ describe("one contact", () => {
   });
 
   test("each conversation's message count, assignee, closer and first reply time", async () => {
-    const { visitorId, conversationId } = await visitorChats("Can I pay yearly?");
+    const { visitorId, conversationId } = await visitorStarts(
+      app,
+      space.publicKey,
+      "Can I pay yearly?",
+    );
     await owner.update(operator).set({ name: "Sam" }).where(eq(operator.id, boss.id));
     const conversationPath = `/v1/operator/workspaces/${space.id}/conversations/${conversationId}`;
     const reply = await send("POST", `${conversationPath}/messages`, {
@@ -193,7 +185,11 @@ describe("one contact", () => {
   });
 
   test("a deleted message is not a conversation's preview", async () => {
-    const { visitorId, conversationId } = await visitorChats("Typo with my password");
+    const { visitorId, conversationId } = await visitorStarts(
+      app,
+      space.publicKey,
+      "Typo with my password",
+    );
     const [written] = await owner
       .select({ id: message.id })
       .from(message)
@@ -209,7 +205,7 @@ describe("one contact", () => {
   });
 
   test("a member writes the note, and a signed-out contact's name and email", async () => {
-    const { visitorId } = await visitorChats();
+    const { visitorId } = await visitorStarts(app, space.publicKey, "Hello");
     const changed = await send(
       "PATCH",
       path(`/${visitorId}`),
@@ -261,7 +257,7 @@ describe("one contact", () => {
   });
 
   test("a delete removes the person, their conversations and messages, for owners and admins", async () => {
-    const { visitorId, conversationId } = await visitorChats("Forget me");
+    const { visitorId, conversationId } = await visitorStarts(app, space.publicKey, "Forget me");
     // A draft that quotes the visitor, whose foreign keys the delete must clear first.
     const [said] = await owner
       .select({ id: message.id })
@@ -300,7 +296,7 @@ describe("one contact", () => {
 
 describe("the CSV export", () => {
   test("lists every contact, with each cell safe for a spreadsheet", async () => {
-    const { visitorId } = await visitorChats();
+    const { visitorId } = await visitorStarts(app, space.publicKey, "Hello");
     await owner
       .update(visitor)
       .set({ name: '=HYPERLINK("http://evil")', email: "csv@example.com" })
