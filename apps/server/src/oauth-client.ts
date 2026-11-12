@@ -85,10 +85,14 @@ const DcrPayload = z.object({ n: z.string(), r: z.array(z.string()).min(1) });
 const dcrMac = (secret: string, payload: string) =>
   createHmac("sha256", secret).update(`dinghy-oauth-client.${payload}`).digest("base64url");
 
-/** A registered client's ID: `dcr1.` + its name and redirect URIs + their signature. */
-export function signClientId(secret: string, name: string, redirectUris: string[]): string {
+/**
+ * A registered client's ID: `dcr1.` + its name and redirect URIs + their signature. Null when it
+ * would be longer than an ID Dinghy reads back, such as with long non-ASCII redirect URIs.
+ */
+export function signClientId(secret: string, name: string, redirectUris: string[]): string | null {
   const payload = Buffer.from(JSON.stringify({ n: name, r: redirectUris })).toString("base64url");
-  return `${DCR_PREFIX}${payload}.${dcrMac(secret, payload)}`;
+  const clientId = `${DCR_PREFIX}${payload}.${dcrMac(secret, payload)}`;
+  return clientId.length > CLIENT_ID_MAX_LENGTH ? null : clientId;
 }
 
 /** The parts of a registered client's ID. Only `verifyClientId` says Dinghy signed it. */

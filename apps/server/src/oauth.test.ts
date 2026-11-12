@@ -363,6 +363,16 @@ describe("registration", () => {
     expect(await errorOf(response)).toBe("invalid_redirect_uri");
   });
 
+  test("it refuses redirect URIs too long to fit in a client ID", async () => {
+    const uris = Array.from(
+      { length: 5 },
+      (_, index) => `https://example.com/${"é".repeat(470)}${index}`,
+    );
+    const response = await register({ redirect_uris: uris });
+    expect(response.status).toBe(400);
+    expect(await errorOf(response)).toBe("invalid_redirect_uri");
+  });
+
   test("it refuses a bad name, no redirect URI, or more than 5", async () => {
     for (const body of [
       { client_name: "Two\nlines", redirect_uris: [CALLBACK] },

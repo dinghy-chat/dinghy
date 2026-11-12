@@ -312,9 +312,13 @@ function registerClientRegistration(app: App, { rateLimit, secret }: OAuthOption
           400,
         );
       }
+      const clientId = signClientId(secret, name.data, body.redirect_uris);
+      if (clientId === null) {
+        return c.json(oauthError("invalid_redirect_uri", "The redirect URIs are too long."), 400);
+      }
       return c.json(
         {
-          client_id: signClientId(secret, name.data, body.redirect_uris),
+          client_id: clientId,
           client_id_issued_at: Math.floor(Date.now() / 1000),
           client_name: name.data,
           redirect_uris: body.redirect_uris,
