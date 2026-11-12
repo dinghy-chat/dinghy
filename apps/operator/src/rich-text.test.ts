@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
 import { expect, test } from "vitest";
 import { markdownHtml } from "../../../packages/widget/src/markdown.ts";
-import { hasMarkdown, linkHref, toMarkdown } from "./rich-text.ts";
+import { isMarkdownPaste, linkHref, toMarkdown } from "./rich-text.ts";
 
 const text = (words: string, ...marks: (string | [string, string])[]): JSONContent => ({
   type: "text",
@@ -47,13 +47,15 @@ test("bold and italic together, and next to each other, read back as they were",
   );
 });
 
-test("a link keeps its words, and a link whose words are its address stays bare", () => {
+test("a link keeps its words, and only an address the parser links by itself stays bare", () => {
+  const link = (href: string) => text(href, ["link", href]);
   const href = "https://dinghy.chat";
+  const mail = "mailto:hello@dinghy.chat";
   expect(
     toMarkdown(
-      doc(paragraph(text("Docs", ["link", href]), text(" or "), text(href, ["link", href]))),
+      doc(paragraph(text("Docs", ["link", href]), text(" or "), link(href), text(" "), link(mail))),
     ),
-  ).toBe(`[Docs](${href}) or ${href}`);
+  ).toBe(`[Docs](${href}) or ${href} [${mail}](${mail})`);
 });
 
 test("paragraphs, line breaks, lists, quotes and code blocks", () => {
@@ -65,7 +67,13 @@ test("paragraphs, line breaks, lists, quotes and code blocks", () => {
         type: "orderedList",
         attrs: { start: 3 },
         content: [
-          { type: "listItem", content: [paragraph(text("Pay", "bold"))] },
+          {
+            type: "listItem",
+            content: [
+              paragraph(text("Pay", "bold")),
+              { type: "codeBlock", content: [text("4417")] },
+            ],
+          },
           {
             type: "listItem",
             content: [
@@ -83,19 +91,21 @@ test("paragraphs, line breaks, lists, quotes and code blocks", () => {
     ),
   );
   expect(markdown).toBe(
-    "One\ntwo\n\n3. **Pay**\n4. Send\n- inner\n\n> Quoted\n>\n> twice\n\n```\na *b*\nc\n```",
+    "One\ntwo\n\n3. **Pay** `4417`\n4. Send\n- inner\n\n> Quoted\n>\n> twice\n\n```\na *b*\nc\n```",
   );
 });
 
-test("pasted text counts as Markdown only when it has formatting", () => {
-  expect(hasMarkdown("Click **Send transfer**.")).toBe(true);
-  expect(hasMarkdown("1. Pay\n2. Send")).toBe(true);
-  expect(hasMarkdown("Just words, 2 * 3 * 4")).toBe(false);
+test("a paste goes in as Markdown when its text has formatting and its HTML has none", () => {
+  expect(isMarkdownPaste("Click **Send transfer**.", "")).toBe(true);
+  expect(isMarkdownPaste("1. Pay\n2. Send", '<span style="color:red">1. Pay</span>')).toBe(true);
+  expect(isMarkdownPaste("Just words, 2 * 3 * 4", "")).toBe(false);
+  expect(isMarkdownPaste("**Pay** now", "<b>Pay</b> now")).toBe(false);
 });
 
 test("a typed link gets https, an empty one removes the link, and only safe ones are kept", () => {
   expect(linkHref(" dinghy.chat/docs ")).toBe("https://dinghy.chat/docs");
   expect(linkHref("mailto:hello@dinghy.chat")).toBe("mailto:hello@dinghy.chat");
+  expect(linkHref("localhost:3000/inbox")).toBe("https://localhost:3000/inbox");
   expect(linkHref("")).toBe("");
   expect(linkHref("javascript:alert(1)")).toBeUndefined();
   expect(linkHref("two words")).toBeUndefined();

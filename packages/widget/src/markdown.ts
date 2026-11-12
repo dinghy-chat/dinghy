@@ -19,7 +19,7 @@ export type Block =
 const MAX_DEPTH = 4;
 export const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
 // A bare link stops before trailing punctuation, so "see https://a.example." keeps its period.
-const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
+export const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
 const FENCE = /^\s*```/;
 const LIST_ITEM = /^\s*(?:[-*+]|(\d{1,9})[.)])\s+(.*)$/;
 const QUOTE = /^\s*> ?(.*)$/;
@@ -189,7 +189,10 @@ const ESCAPES: Record<string, string> = {
 /** Text for HTML, with every character that could start markup escaped. */
 export const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (char) => ESCAPES[char] ?? "");
 
-/** The message as HTML, for an email. Every character of the message's own text is escaped. */
+/**
+ * The message as HTML, for an email and for the operator's composer. Every character of the
+ * message's own text is escaped.
+ */
 export function markdownHtml(source: string): string {
   type Html = { html: string };
   const text = (part: string | Html) =>

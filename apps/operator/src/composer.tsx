@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { CharacterCount, Placeholder } from "@tiptap/extensions";
+import { Placeholder } from "@tiptap/extensions";
+import { Plugin } from "@tiptap/pm/state";
 import {
   type ChainedCommands,
   type Editor,
@@ -14,7 +15,7 @@ import { IMAGE_TYPES } from "../../../packages/widget/src/compose.ts";
 import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
-import { hasMarkdown, linkHref, toMarkdown } from "./rich-text.ts";
+import { isMarkdownPaste, linkHref, toMarkdown } from "./rich-text.ts";
 import { type TextId, t } from "./text.ts";
 import { Choices, EmojiButton, type Option } from "./ui.tsx";
 
@@ -26,62 +27,74 @@ const MODES: Option<ComposeMode>[] = [
   { value: "note", label: "composeNote" },
 ];
 
-/** Runs a format on the editor, which keeps the focus. */
-const run = (command: (chain: ChainedCommands) => ChainedCommands) => (editor: Editor) =>
-  command(editor.chain().focus()).run();
+/** What the editor's keys, paste and formats read from the composer's latest render. */
+interface Latest {
+  label: string;
+  placeholder: string;
+  setDraft(draft: string): void;
+  send(): void;
+  onEscape: (() => void) | undefined;
+  onFiles: ((files: Iterable<File>) => void) | undefined;
+  openLink(): void;
+}
 
-/** A selection over several lines becomes a code block, and one inside a line inline code. */
-const toggleCode = (editor: Editor) => {
-  const { $from, $to } = editor.state.selection;
-  return run((chain) => ($from.sameParent($to) ? chain.toggleCode() : chain.toggleCodeBlock()))(
-    editor,
-  );
-};
+/** Runs commands on the editor, which keeps the focus. */
+const run = (editor: Editor, commands: (chain: ChainedCommands) => ChainedCommands) =>
+  commands(editor.chain().focus()).run();
+
+/** Several lines, or a code block already, toggle a code block, and words in a line inline code. */
+function toggleCode(editor: Editor) {
+  const { from, to } = editor.state.selection;
+  const isBlock =
+    editor.isActive("codeBlock") ||
+    editor.state.doc.textBetween(from, to, "\n", "\n").includes("\n");
+  run(editor, (chain) => (isBlock ? chain.toggleCodeBlock() : chain.toggleCode()));
+}
 
 /**
- * Each formatting button: its text, its icon, the key that Tiptap or the composer binds to it
- * with Cmd or Ctrl, the node or mark it shows as on, and what it does.
+ * Each formatting button: its text, its icon, its key with Cmd or Ctrl, the marks or nodes that
+ * show it as on, and what it does.
  */
 const FORMATS: {
   name: TextId;
   icon: IconName;
   key?: string;
-  active: string;
-  apply(editor: Editor, openLink: () => void): void;
+  active: string[];
+  apply(editor: Editor, latest: Latest): void;
 }[] = [
   {
     name: "formatBold",
     icon: "textBold",
     key: "b",
-    active: "bold",
-    apply: run((chain) => chain.toggleBold()),
+    active: ["bold"],
+    apply: (editor) => run(editor, (chain) => chain.toggleBold()),
   },
   {
     name: "formatItalic",
     icon: "textItalic",
     key: "i",
-    active: "italic",
-    apply: run((chain) => chain.toggleItalic()),
+    active: ["italic"],
+    apply: (editor) => run(editor, (chain) => chain.toggleItalic()),
   },
-  { name: "formatCode", icon: "code", key: "e", active: "code", apply: toggleCode },
+  { name: "formatCode", icon: "code", key: "e", active: ["code", "codeBlock"], apply: toggleCode },
   {
     name: "formatLink",
     icon: "link",
     key: "k",
-    active: "link",
-    apply: (_, openLink) => openLink(),
+    active: ["link"],
+    apply: (_, latest) => latest.openLink(),
   },
   {
     name: "formatBulleted",
     icon: "listBullets",
-    active: "bulletList",
-    apply: run((chain) => chain.toggleBulletList()),
+    active: ["bulletList"],
+    apply: (editor) => run(editor, (chain) => chain.toggleBulletList()),
   },
   {
     name: "formatNumbered",
     icon: "listNumbers",
-    active: "orderedList",
-    apply: run((chain) => chain.toggleOrderedList()),
+    active: ["orderedList"],
+    apply: (editor) => run(editor, (chain) => chain.toggleOrderedList()),
   },
 ];
 
@@ -96,29 +109,34 @@ const shortcutLabel = (name: TextId, key: string | undefined) =>
         keys: ON_MAC ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`,
       });
 
-/** What the editor's keys and paste call, from the composer's latest render. */
-interface Handlers {
-  label: string;
-  placeholder: string;
-  setDraft(draft: string): void;
-  send(): void;
-  onEscape: (() => void) | undefined;
-  onFiles: ((files: Iterable<File>) => void) | undefined;
-  openLink(): void;
-}
-
 /**
- * Enter sends, Shift+Enter starts a line or a list item, Escape cancels, Cmd+E formats code as the
- * button does, and Cmd+K adds a link.
+ * The composer's keys: Enter sends, Shift+Enter starts a line or a list item, Escape cancels, and
+ * each format's key does what its button does. It also keeps the Markdown within a message's
+ * length, as a textarea's maxLength did.
  */
-const composerKeys = (handlers: RefObject<Handlers>) =>
+const composerExtension = (latest: RefObject<Latest>) =>
   Extension.create({
-    name: "composerKeys",
-    // Ahead of the lists', the code block's and inline code's own keys.
+    name: "composer",
+    // Ahead of the lists', the code block's and the marks' own keys.
     priority: 1000,
     addKeyboardShortcuts: () => ({
+      ...Object.fromEntries(
+        FORMATS.flatMap((one) =>
+          one.key === undefined
+            ? []
+            : [
+                [
+                  `Mod-${one.key}`,
+                  ({ editor }: { editor: Editor }) => {
+                    one.apply(editor, latest.current);
+                    return true;
+                  },
+                ],
+              ],
+        ),
+      ),
       Enter() {
-        handlers.current.send();
+        latest.current.send();
         return true;
       },
       "Shift-Enter": ({ editor }) =>
@@ -128,20 +146,21 @@ const composerKeys = (handlers: RefObject<Handlers>) =>
           () => commands.setHardBreak(),
         ]),
       Escape() {
-        const { onEscape } = handlers.current;
+        const { onEscape } = latest.current;
         onEscape?.();
         return onEscape !== undefined;
       },
-      "Mod-e": ({ editor }) => toggleCode(editor),
-      "Mod-k"() {
-        handlers.current.openLink();
-        return true;
-      },
     }),
+    addProseMirrorPlugins: () => [
+      new Plugin({
+        filterTransaction: (transaction) =>
+          !transaction.docChanged || toMarkdown(transaction.doc.toJSON()).length <= MESSAGE_MAX,
+      }),
+    ],
   });
 
 /** The rich text editor, kept in step with the draft, which stays Markdown. */
-function useComposerEditor(draft: string, handlers: RefObject<Handlers>, autofocus: boolean) {
+function useComposerEditor(draft: string, latest: RefObject<Latest>, autofocus: boolean) {
   // The Markdown the editor shows, so a draft that changes elsewhere replaces its content.
   const shown = useRef(draft);
   const editor = useEditor({
@@ -160,9 +179,8 @@ function useComposerEditor(draft: string, handlers: RefObject<Handlers>, autofoc
           isAllowedUri: (url) => SAFE_LINK.test(url),
         },
       }),
-      Placeholder.configure({ placeholder: () => handlers.current.placeholder }),
-      CharacterCount.configure({ limit: MESSAGE_MAX }),
-      composerKeys(handlers),
+      Placeholder.configure({ placeholder: () => latest.current.placeholder }),
+      composerExtension(latest),
     ],
     // The app's content security policy refuses inline styles, so app.css holds Tiptap's.
     injectCSS: false,
@@ -172,27 +190,29 @@ function useComposerEditor(draft: string, handlers: RefObject<Handlers>, autofoc
       attributes: () => ({
         role: "textbox",
         "aria-multiline": "true",
-        "aria-label": handlers.current.label,
+        "aria-label": latest.current.label,
         class: "compose-field",
       }),
       handlePaste: (view, event) => {
         const data = event.clipboardData;
         const text = data?.getData("text/plain") ?? "";
-        const { onFiles } = handlers.current;
+        const { onFiles } = latest.current;
         // A copy from Word or Excel holds its text and a picture of it. The text is what is meant.
         if (text === "" && onFiles !== undefined && data?.files.length) {
           onFiles(data.files);
           return true;
         }
-        if (!hasMarkdown(text)) return false;
-        // With no event of its own, so this handler does not take the paste again.
+        // Code keeps its stars and dashes as they are.
+        if (view.state.selection.$from.parent.type.spec.code) return false;
+        if (!isMarkdownPaste(text, data?.getData("text/html") ?? "")) return false;
+        // pasteHTML sends no paste event, so this handler does not run again.
         view.pasteHTML(markdownHtml(text));
         return true;
       },
     },
     onUpdate: ({ editor }) => {
       shown.current = toMarkdown(editor.getJSON());
-      handlers.current.setDraft(shown.current);
+      latest.current.setDraft(shown.current);
     },
   });
   useEffect(() => {
@@ -243,7 +263,7 @@ export function Composer({
     if (!editing) setDraft("");
     onSend(body);
   };
-  const latest: Handlers = {
+  const now: Latest = {
     label: t(editing ? "editLabel" : isNote ? "composeNoteLabel" : "replyLabel"),
     placeholder: editing ? "" : t(isNote ? "composeNotePlaceholder" : "replyPlaceholder"),
     setDraft,
@@ -252,12 +272,13 @@ export function Composer({
     onFiles,
     openLink: () => setTypedLink(editor.getAttributes("link").href ?? ""),
   };
-  const handlers = useRef(latest);
-  handlers.current = latest;
-  const editor = useComposerEditor(draft, handlers, editing);
+  const latest = useRef(now);
+  latest.current = now;
+  const editor = useComposerEditor(draft, latest, editing);
   const active = useEditorState({
     editor,
-    selector: ({ editor: current }) => FORMATS.map((one) => current.isActive(one.active)),
+    selector: ({ editor: current }) =>
+      FORMATS.map((one) => one.active.some((name) => current.isActive(name))),
   });
   // The label and placeholder follow Reply and Note once the editor draws again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: isNote is what changes them.
@@ -271,7 +292,7 @@ export function Composer({
   const saveLink = () => {
     if (href === undefined) return;
     const isNew = editor.state.selection.empty && !editor.isActive("link");
-    run((chain) => {
+    run(editor, (chain) => {
       const link = chain.extendMarkRange("link");
       if (href === "") return link.unsetLink();
       if (isNew)
@@ -281,7 +302,7 @@ export function Composer({
           marks: [{ type: "link", attrs: { href } }],
         });
       return link.setLink({ href });
-    })(editor);
+    });
     setTypedLink(null);
   };
 
@@ -316,7 +337,10 @@ export function Composer({
         {typedLink !== null && (
           <div className="link-field">
             <input
-              type="url"
+              // Text, not url, so the browser's own check cannot stop the form's Send.
+              type="text"
+              inputMode="url"
+              autoComplete="off"
               // biome-ignore lint/a11y/noAutofocus: the operator asked for a link, so its address is next.
               autoFocus
               aria-label={t("linkAddress")}
@@ -337,7 +361,12 @@ export function Composer({
             <button type="button" className="pill" onClick={closeLink}>
               {t("cancel")}
             </button>
-            <button type="button" className="pill dark" onClick={saveLink}>
+            <button
+              type="button"
+              className="pill dark"
+              disabled={href === undefined}
+              onClick={saveLink}
+            >
               {t("save")}
             </button>
           </div>
@@ -395,7 +424,7 @@ export function Composer({
                   aria-pressed={active[index]}
                   // The editor keeps its selection while the button is pressed.
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => one.apply(editor, handlers.current.openLink)}
+                  onClick={() => one.apply(editor, latest.current)}
                 >
                   <Icon name={one.icon} size={18} />
                 </button>

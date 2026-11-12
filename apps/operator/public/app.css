@@ -2936,9 +2936,7 @@ button.quote:hover {
   padding: 8px 6px;
   color: var(--navy);
   overflow-wrap: anywhere;
-}
-/* Tiptap's own styles, which it cannot add itself under the content security policy. */
-.compose-field {
+  /* Tiptap's own styles, which it cannot add itself under the content security policy. */
   white-space: break-spaces;
   font-variant-ligatures: none;
 }

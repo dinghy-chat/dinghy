@@ -551,7 +551,6 @@ export function TypeToConfirm({
   );
 }
 
-/** A button that opens the shared emoji grid, and puts the chosen emoji in the field at its caret. */
 /** The emoji button and its grid. The caller puts the picked emoji where its caret is. */
 export function EmojiButton({ onPick }: { onPick(emoji: string): void }) {
   const [open, setOpen] = useState(false);
