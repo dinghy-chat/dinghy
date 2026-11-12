@@ -584,7 +584,7 @@ export async function readState(
 /**
  * Moves the read position forward. It never moves back, because tabs can report out of order, and
  * it stops at the feed's position, so a wrong value cannot hide messages that arrive later. True
- * when it moved.
+ * when it passed a team reply, the only lines whose receipts change.
  */
 export async function markRead(
   tx: Transaction,
@@ -609,7 +609,7 @@ export async function markRead(
     .returning({ lastReadSeq: visitor.lastReadSeq });
   if (moved === undefined) return false;
   // The replies this read passed, so their info can say when the visitor read them.
-  await tx
+  const passed = await tx
     .update(message)
     .set({ readAt: sql`now()` })
     .where(
@@ -621,8 +621,9 @@ export async function markRead(
         gt(message.seq, before.lastReadSeq),
         lte(message.seq, moved.lastReadSeq),
       ),
-    );
-  return true;
+    )
+    .returning({ id: message.id });
+  return passed.length > 0;
 }
 
 const visitorConversations = (tx: Transaction, workspaceId: string, visitorId: string) =>

@@ -1086,6 +1086,23 @@ describe("reply receipts", () => {
     expect(tells).toHaveLength(1);
   });
 
+  test("a visitor reading only their own messages tells no thread to load again", async () => {
+    const { token } = await visitorSends(a.publicKey, "Only mine");
+    tells.length = 0;
+    const response = await app.request(`/v1/widget/${a.publicKey}/read`, {
+      method: "POST",
+      headers: {
+        origin: WIDGET_ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      // Past everything there is: the read stops at the newest position, the visitor's own message.
+      body: JSON.stringify({ seq: "1000000" }),
+    });
+    expect(response.status).toBe(200);
+    expect(tells).toEqual([]);
+  });
+
   test("receipts show the replies each sent or failed email carried", async () => {
     const { conversationId } = await visitorSends(a.publicKey, "Email me");
     const reply = async (clientId: string) =>
