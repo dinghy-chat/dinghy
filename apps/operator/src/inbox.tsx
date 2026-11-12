@@ -289,6 +289,8 @@ export function Inbox({
                   typingDraft={data.typing[selected] ?? null}
                   onBack={() => setSelected(null)}
                   onChanged={reload}
+                  inView={view === "inbox"}
+                  onRead={data.markedRead}
                   onLoaded={(conversation) => {
                     if (linked.current !== conversation.id) return;
                     linked.current = null;

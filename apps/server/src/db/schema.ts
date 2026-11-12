@@ -1111,3 +1111,32 @@ export const welcomeLink = pgTable(
     }).onDelete("cascade"),
   ],
 );
+
+/**
+ * How far each operator has read a conversation: up to `read_seq`, a message's `seq`. A visitor
+ * message above it makes the conversation unread for that operator. An API key has no row.
+ */
+export const conversationRead = pgTable(
+  "conversation_read",
+  {
+    workspaceId: workspaceId(),
+    conversationId: uuid("conversation_id").notNull(),
+    operatorId: uuid("operator_id").notNull(),
+    readSeq: bigint("read_seq", { mode: "bigint" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.conversationId, table.operatorId] }),
+    foreignKey({
+      name: "conversation_read_conversation_fk",
+      columns: [table.workspaceId, table.conversationId],
+      foreignColumns: [conversation.workspaceId, conversation.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "conversation_read_member_fk",
+      columns: [table.workspaceId, table.operatorId],
+      foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
+    }).onDelete("cascade"),
+    index("conversation_read_member_idx").on(table.workspaceId, table.operatorId),
+  ],
+);

@@ -1786,6 +1786,25 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.row.unread strong,
+.row.unread .preview {
+  font-weight: 700;
+}
+.row.unread .preview {
+  color: var(--navy);
+}
+/* The dot sits right after the time, so the time gives up the space between them. */
+.row.unread time {
+  margin-left: auto;
+}
+.unread-dot {
+  flex: none;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+}
 .row-meta {
   display: flex;
   flex-wrap: wrap;

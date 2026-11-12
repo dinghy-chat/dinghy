@@ -60,6 +60,7 @@ describe("waiting", () => {
     },
     lastMessage: { body: "hi", fromVisitor: true, createdAt: "2026-11-07T10:00:00.000Z" },
     welcome: false,
+    unread: false,
   };
 
   test("an open conversation whose newest message is the visitor's waits", () => {

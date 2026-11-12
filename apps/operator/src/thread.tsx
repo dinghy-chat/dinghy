@@ -1,9 +1,10 @@
 /** @jsxImportSource react */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Conversation, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
 import { Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import { Icon } from "./icons.tsx";
+import { useTabVisible } from "./live.ts";
 import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
 import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
@@ -26,6 +27,38 @@ function useDraft(saved: string, onDraft: (text: string) => void) {
     onDraft(next);
   };
   return [draft, setDraft] as const;
+}
+
+/**
+ * Marks the conversation read up to its newest saved line while the operator can see it, and
+ * again for each newer line. A failure is silent: the next line or visit tries again.
+ */
+function useMarkRead(
+  api: WorkspaceApi,
+  conversationId: string,
+  lines: Line[],
+  inView: boolean,
+  onRead: (conversationId: string) => void,
+) {
+  const visible = useTabVisible();
+  const newest = lines.reduce<bigint | null>(
+    (max, line) => (line.seq !== null && (max === null || line.seq > max) ? line.seq : max),
+    null,
+  );
+  const sent = useRef<bigint | null>(null);
+  useEffect(() => {
+    if (!visible || !inView || newest === null) return;
+    if (sent.current !== null && sent.current >= newest) return;
+    sent.current = newest;
+    onRead(conversationId);
+    // Again once saved, as a list load that left before the save may have brought the dot back.
+    api.markRead(conversationId, newest.toString()).then(
+      () => onRead(conversationId),
+      () => {
+        if (sent.current === newest) sent.current = null;
+      },
+    );
+  }, [api, conversationId, newest, visible, inView, onRead]);
 }
 
 /** What the info dialog says about a line: its time, its author and, for a reply, its receipt. */
@@ -62,6 +95,8 @@ export function Thread({
   onBack,
   onChanged,
   onLoaded,
+  inView,
+  onRead,
   onOpenContact,
   onOpenConversation,
 }: {
@@ -92,6 +127,10 @@ export function Thread({
   onChanged(): void;
   /** The conversation as each load finds it. */
   onLoaded(conversation: Conversation): void;
+  /** The Inbox shows this thread, and not another page over it. */
+  inView: boolean;
+  /** The operator read this conversation. */
+  onRead(conversationId: string): void;
   onOpenContact(visitorId: string): void;
   onOpenConversation(id: string, status: "open" | "closed"): void;
 }) {
@@ -120,6 +159,7 @@ export function Thread({
     onLoaded,
   });
   const { conversation, online, welcome, receipts, lines, sendFiles } = thread;
+  useMarkRead(api, conversationId, lines, inView, onRead);
   const actions = useMessageActions({ api, conversationId, act, keep: thread.keep });
   const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
   const change = useConversationActions({

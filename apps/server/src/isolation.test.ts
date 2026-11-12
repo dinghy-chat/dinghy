@@ -19,6 +19,7 @@ import {
   apiKey,
   attachment,
   conversation,
+  conversationRead,
   emailStop,
   event,
   invite,
@@ -585,6 +586,23 @@ const ATTACKS: Record<string, Attack> = {
       .from(conversation)
       .where(eq(conversation.id, other.conversationId));
     expect(row?.assigneeOperatorId).toBeNull();
+  },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/read": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    for (const workspaceId of [a.id, b.id]) {
+      const path = inWorkspace(workspaceId, `/conversations/${other.conversationId}/read`);
+      expect((await as(anna, "POST", path, { seq: "1" })).status).toBe(404);
+    }
+    const rows = await owner
+      .select()
+      .from(conversationRead)
+      .where(eq(conversationRead.conversationId, other.conversationId));
+    expect(rows).toEqual([]);
   },
   "GET /v1/operator/workspaces/:workspaceId/stream": async ({
     operator: as,

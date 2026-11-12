@@ -25,6 +25,7 @@ import {
   attachment,
   CHAT_KINDS,
   conversation,
+  conversationRead,
   type EventKind,
   event,
   type MessagePayload,
@@ -784,6 +785,67 @@ export async function conversationVisitor(
 
 interface ConversationSummary extends ConversationRow {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null;
+  unread: boolean;
+}
+
+/**
+ * Whether the conversation in the query has a visitor message past this operator's read position.
+ * An API key, null here, has no position, so nothing is unread for it. The probe walks
+ * message_conversation_idx from the position up.
+ */
+function unreadBy(operatorId: string | null) {
+  if (operatorId === null) return sql<boolean>`false`;
+  // Aliased, because Drizzle leaves the table off a column when a query has no join.
+  return sql<boolean>`exists (
+    select 1 from ${message} as m
+    where m.workspace_id = ${conversation}.workspace_id and m.conversation_id = ${conversation}.id
+      and m.author_visitor_id is not null and m.deleted_at is null
+      and m.seq > coalesce((
+        select r.read_seq from ${conversationRead} as r
+        where r.workspace_id = ${conversation}.workspace_id and r.conversation_id = ${conversation}.id
+          and r.operator_id = ${operatorId}
+      ), 0)
+  )`;
+}
+
+/** Whether one conversation is unread for this operator. False for an API key, as null. */
+export async function isUnread(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  operatorId: string | null,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({ unread: unreadBy(operatorId) })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  return row?.unread === true;
+}
+
+/**
+ * Moves an operator's read position in a conversation forward to `seq`. It never moves back, as
+ * tabs can report out of order, and it stops at the conversation's newest message. False when the
+ * conversation does not exist.
+ */
+export async function markConversationRead(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  operatorId: string,
+  seq: bigint,
+): Promise<boolean> {
+  const result = await tx.execute(sql`
+    insert into ${conversationRead} (workspace_id, conversation_id, operator_id, read_seq)
+    select c.workspace_id, c.id, ${operatorId}, least(${seq}::bigint, coalesce((
+             select max(m.seq) from ${message} as m
+             where m.workspace_id = c.workspace_id and m.conversation_id = c.id
+           ), 0))
+    from ${conversation} as c
+    where c.workspace_id = ${workspaceId} and c.id = ${conversationId}
+    on conflict (workspace_id, conversation_id, operator_id) do update
+      set read_seq = greatest(${conversationRead}.read_seq, excluded.read_seq), updated_at = now()
+    returning 1`);
+  return result.rows.length > 0;
 }
 
 /** Whose conversations a list holds: everyone's, one operator's, or no one's. */
@@ -802,6 +864,7 @@ function assigneeCondition(assignee: AssigneeFilter) {
 export async function listConversations(
   tx: Transaction,
   workspaceId: string,
+  operatorId: string | null,
   status: "open" | "closed",
   assignee: AssigneeFilter,
   before: { updatedAt: Date; id: string } | undefined,
@@ -829,6 +892,7 @@ export async function listConversations(
   const rows = await tx
     .select({
       ...conversationColumns,
+      unread: unreadBy(operatorId),
       lastBody: newest.body,
       lastAuthorVisitorId: newest.authorVisitorId,
       lastCreatedAt: newest.createdAt,
@@ -1228,6 +1292,7 @@ export const containing = (text: string) => `%${text.replace(/[\\%_]/g, "\\$&")}
 export async function searchConversations(
   tx: Transaction,
   workspaceId: string,
+  operatorId: string | null,
   text: string,
   limit: number,
 ): Promise<ConversationSummary[]> {
@@ -1291,6 +1356,7 @@ export async function searchConversations(
   const rows = await tx
     .select({
       ...conversationColumns,
+      unread: unreadBy(operatorId),
       hitBody: hit.body,
       lastBody: newest.body,
       lastAuthorVisitorId: newest.authorVisitorId,

@@ -116,6 +116,8 @@ export interface Conversation {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: string } | null;
   /** A welcome chat on Dinghy Cloud. */
   welcome: boolean;
+  /** A visitor message is past this operator's read position. */
+  unread: boolean;
 }
 
 export interface Message {
@@ -703,6 +705,8 @@ export function workspaceApi(workspaceId: string) {
     /** Emails the visitor the whole conversation, through the worker. */
     sendTranscript: (id: string) =>
       call<{ ok: true }>(`${conversation(id)}/transcript`, { method: "POST" }),
+    /** Moves this operator's read position in the conversation forward to a message's seq. */
+    markRead: (id: string, seq: string) => post<{ ok: true }>(`${conversation(id)}/read`, { seq }),
     setStatus: (id: string, status: "open" | "closed") =>
       call<{ ok: true }>(conversation(id), {
         method: "PATCH",

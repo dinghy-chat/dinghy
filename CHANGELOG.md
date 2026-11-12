@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- The Inbox shows which conversations you have not read: the name and the last message are bold, with a blue dot beside the time. Each member reads on their own, and opening a conversation marks it read. Conversations from before the upgrade start read. API: `unread` on each conversation, and `POST .../conversations/{conversationId}/read`.
+
 ## [0.22.0] - 2026-11-12
 
 ### Added

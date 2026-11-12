@@ -41,9 +41,15 @@ function ConversationRow({
     body != null ? markdownText(body) : conversation.lastMessage === null ? "" : t("image");
   const waits = isWaiting(conversation);
   const closed = showClosed && conversation.status === "closed";
+  const unread = conversation.unread && !selected;
   return (
     <li>
-      <button type="button" className="row" aria-current={selected} onClick={onSelect}>
+      <button
+        type="button"
+        className={unread ? "row unread" : "row"}
+        aria-current={selected}
+        onClick={onSelect}
+      >
         <span className="avatar-wrap">
           <Avatar
             name={title(conversation)}
@@ -58,6 +64,7 @@ function ConversationRow({
           <span className="row-top">
             <strong>{title(conversation)}</strong>
             <time dateTime={conversation.updatedAt}>{shortTime(conversation.updatedAt)}</time>
+            {unread && <span className="unread-dot" role="img" aria-label={t("unread")} />}
           </span>
           {typing ? (
             <span className="preview typing">{t("visitorTyping")}</span>

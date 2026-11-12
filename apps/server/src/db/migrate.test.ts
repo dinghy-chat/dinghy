@@ -344,6 +344,45 @@ describe("chat migrate", () => {
     expect(after.laterEdit.kind).toBe("seen");
   });
 
+  test("existing conversations start read for their workspace's current members", async () => {
+    await run(await migrationsBefore("0085_"));
+    const workspace = "00000000-0000-4000-8000-0000000000e1";
+    const visitor = "00000000-0000-4000-8000-0000000000e2";
+    const conversation = "00000000-0000-4000-8000-0000000000e3";
+    const empty = "00000000-0000-4000-8000-0000000000e4";
+    const anna = "00000000-0000-4000-8000-0000000000e5";
+    const gone = "00000000-0000-4000-8000-0000000000e6";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret, event_seq)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000004', 'secret', 3)`,
+    );
+    await query(
+      `insert into operator (id, name, email, email_verified)
+       values ('${anna}', 'Anna', 'anna-e5@example.com', true),
+              ('${gone}', 'Gone', 'gone-e6@example.com', true)`,
+    );
+    await query(
+      `insert into workspace_member (workspace_id, operator_id, role, removed_at)
+       values ('${workspace}', '${anna}', 'member', null), ('${workspace}', '${gone}', 'member', now())`,
+    );
+    await query(
+      `insert into visitor (workspace_id, id, token_hash) values ('${workspace}', '${visitor}', 'h')`,
+    );
+    await query(
+      `insert into conversation (workspace_id, id, visitor_id)
+       values ('${workspace}', '${conversation}', '${visitor}'), ('${workspace}', '${empty}', '${visitor}')`,
+    );
+    await query(
+      `insert into message (workspace_id, conversation_id, seq, kind, author_visitor_id, client_id, body)
+       values ('${workspace}', '${conversation}', 2, 'text', '${visitor}', 'c2', 'Hello'),
+              ('${workspace}', '${conversation}', 3, 'text', '${visitor}', 'c3', 'Anyone?')`,
+    );
+    await run();
+    expect(
+      await query("select conversation_id, operator_id, read_seq from conversation_read"),
+    ).toEqual([{ conversation_id: conversation, operator_id: anna, read_seq: "3" }]);
+  });
+
   test("page addresses longer than 2,000 characters are shortened", async () => {
     await run(await migrationsBefore("0053_"));
     const workspace = "00000000-0000-4000-8000-0000000000ef";
