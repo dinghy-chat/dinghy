@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
-import type { Conversation, Member, WelcomeChat } from "./api.ts";
+import type { Conversation, Member, Snooze, WelcomeChat } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { Menu, type MenuItem, Select } from "./popup.tsx";
+import { SNOOZE_CHOICES } from "./snooze.ts";
 import { type TextId, t } from "./text.ts";
 import { Avatar } from "./ui.tsx";
 import { avatarLetters, presenceLine, title } from "./visitor.ts";
@@ -46,6 +47,20 @@ function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
 }
 
 /** What the operator can do with this conversation. */
+/** Snooze choices for an open conversation, or Unsnooze for a snoozed one. None when closed. */
+function snoozeItems(conversation: Conversation, onSnooze: (snooze: Snooze | null) => void) {
+  if (conversation.status === "closed") return [];
+  const lead = <Icon name="clock" size={18} />;
+  if (conversation.snooze !== null) {
+    return [{ label: t("unsnooze"), lead, onSelect: () => onSnooze(null) }];
+  }
+  return SNOOZE_CHOICES.map((choice) => ({
+    label: t(choice.text),
+    lead,
+    onSelect: () => onSnooze({ until: choice.until(new Date()) }),
+  }));
+}
+
 export function ThreadHead({
   conversation,
   welcome,
@@ -55,6 +70,7 @@ export function ThreadHead({
   onBack,
   onAssign,
   onStatus,
+  onSnooze,
   onBlocked,
   onDelete,
   onTranscript,
@@ -73,6 +89,8 @@ export function ThreadHead({
   onBack(): void;
   onAssign(operatorId: string | null): void;
   onStatus(status: "open" | "closed"): void;
+  /** Snoozes the open conversation, or ends its snooze with null. */
+  onSnooze(snooze: Snooze | null): void;
   onBlocked(blocked: boolean): void;
   onDelete(): void;
   onTranscript(): void;
@@ -101,6 +119,7 @@ export function ThreadHead({
       ...(noEmail === undefined ? {} : { unavailable: noEmail }),
       onSelect: onTranscript,
     },
+    ...snoozeItems(conversation, onSnooze),
   ];
   if (mayDeleteAnyone) {
     more.push({

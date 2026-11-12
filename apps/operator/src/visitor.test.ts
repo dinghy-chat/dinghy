@@ -63,6 +63,7 @@ describe("waiting", () => {
     lastMessage: { body: "hi", fromVisitor: true, createdAt: "2026-11-07T10:00:00.000Z" },
     welcome: false,
     unread: false,
+    snooze: null,
   };
 
   test("an open conversation whose newest message is the visitor's waits", () => {
@@ -74,6 +75,10 @@ describe("waiting", () => {
     expect(isWaiting({ ...base, lastMessage: reply })).toBe(false);
     expect(isWaiting({ ...base, status: "closed" })).toBe(false);
     expect(isWaiting({ ...base, lastMessage: null })).toBe(false);
+  });
+
+  test("a snoozed conversation does not wait", () => {
+    expect(isWaiting({ ...base, snooze: { until: null } })).toBe(false);
   });
 });
 

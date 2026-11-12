@@ -683,6 +683,9 @@ test("the … menu blocks with the keyboard too", async ({ browser }) => {
   await expect(menu.getByRole("menuitem")).toHaveText([
     "Block",
     "Email transcriptThe visitor gave no email",
+    "Snooze until they reply",
+    "Snooze until tomorrow",
+    "Snooze until next week",
     "Delete",
   ]);
   await operator.keyboard.press("Enter");

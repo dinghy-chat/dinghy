@@ -305,6 +305,10 @@ export const conversation = pgTable(
     // Cloud only. One side of a welcome chat between a new workspace and Dinghy's own, which
     // analytics leave out. The link below joins the two sides.
     welcome: boolean("welcome").notNull().default(false),
+    // An operator snoozed it: it stays open but waits for nobody until `snoozed_until`, or with
+    // none until the visitor writes. A visitor message, a close and a reopen clear both.
+    snoozedAt: timestamp("snoozed_at", { withTimezone: true }),
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
     createdAt: createdAt(),
     // Milliseconds, the precision of a JSON date, so a paging cursor can name a row exactly.
     updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
@@ -334,6 +338,11 @@ export const conversation = pgTable(
     ),
     // Analytics read the conversations started in a period.
     index("conversation_created_idx").on(table.workspaceId, table.createdAt),
+    // Only an open conversation is snoozed, and a snooze's end needs a snooze.
+    check(
+      "conversation_snooze",
+      sql`${table.snoozedAt} is null and ${table.snoozedUntil} is null or ${table.snoozedAt} is not null and ${table.status} = 'open'`,
+    ),
   ],
 );
 
@@ -471,6 +480,8 @@ const EVENT_KINDS = [
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
+  // Snoozed or unsnoozed. The visitor never hears of it.
+  "conversation.snoozed",
   "conversation.deleted",
   "conversation.moderated",
   // An operator asked to email the visitor the conversation. The worker sends it.

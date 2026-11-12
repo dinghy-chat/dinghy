@@ -62,9 +62,11 @@ import {
   parseCursor,
   QuoteSchema,
   quoteView,
+  type Snooze,
   type StoredMessage,
   searchConversations,
   setConversationStatus,
+  snoozeConversation,
   WorkspaceClosedError,
 } from "./messages.ts";
 import type { VisitorPresence } from "./presence.ts";
@@ -74,6 +76,10 @@ import { allowed } from "./team.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
 const CLOSED = failure("conversation_closed", "Reopen this conversation to reply.");
+export const SNOOZE_CLOSED = failure(
+  "conversation_closed",
+  "Reopen this conversation to snooze it.",
+);
 const INVALID_REPLY_TO = failure(
   "invalid_reply_to",
   "Quote a message that people wrote in this conversation and that was not deleted.",
@@ -172,6 +178,13 @@ const InboxMessage = z
     },
   });
 
+/** A snooze: until a time, or with null until the visitor writes. */
+const SnoozeSchema = z.object({ until: z.iso.datetime().nullable() }).openapi("Snooze");
+
+/** A snooze as the API sent it, with its time as a date. */
+export const parseSnooze = (snooze: z.infer<typeof SnoozeSchema> | null): Snooze | null =>
+  snooze === null ? null : { until: snooze.until === null ? null : new Date(snooze.until) };
+
 const Conversation = z
   .object({
     id: z.string(),
@@ -207,6 +220,9 @@ const Conversation = z
     lastMessage: z
       .object({ body: z.string().nullable(), fromVisitor: z.boolean(), createdAt: z.string() })
       .nullable(),
+    // Set while an operator has snoozed it: it waits for nobody until `until`, or with `until` null
+    // until the visitor writes. Null when it is not snoozed.
+    snooze: SnoozeSchema.nullable(),
     // A visitor message is past the signed-in operator's read position. Always false for an API
     // key, which has no read position.
     unread: z.boolean(),
@@ -267,8 +283,8 @@ const listRoute = createRoute({
           schema: z.object({
             conversations: z.array(Conversation),
             hasMore: z.boolean(),
-            // Open conversations whose newest message is from the visitor, across all pages: for an
-            // operator, those assigned to them or to no one.
+            // Open conversations whose newest message is from the visitor and that are not snoozed,
+            // across all pages: for an operator, those assigned to them or to no one.
             waiting: z.number().int(),
             // Open conversations for each assignee filter. `mine` is 0 for an API key.
             openBy: z.object({
@@ -304,6 +320,7 @@ const listRoute = createRoute({
                   fromVisitor: true,
                   createdAt: "2026-11-08T09:30:00.000Z",
                 },
+                snooze: null,
                 unread: true,
               },
             ],
@@ -579,23 +596,32 @@ const statusRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}`,
   security: SESSION_OR_KEY,
-  summary: "Close or reopen a conversation",
+  summary: "Close, reopen, snooze or unsnooze a conversation",
+  description:
+    "Send `status` to close or reopen it, or `snooze` to snooze an open one, or null to end its snooze. A snoozed conversation stays open and does not count as waiting until `until` passes or the visitor writes. A close ends a snooze, and the visitor hears nothing of one.",
   request: {
     params: conversationParams,
     body: {
       required: true,
       content: {
-        "application/json": { schema: z.object({ status: z.enum(["open", "closed"]) }) },
+        "application/json": {
+          schema: z.union([
+            z.strictObject({ status: z.enum(["open", "closed"]) }),
+            z.strictObject({ snooze: SnoozeSchema.nullable() }),
+          ]),
+          example: { snooze: { until: "2026-11-09T09:00:00.000Z" } },
+        },
       },
     },
   },
   responses: {
     ...KEY_LIMITED,
     200: {
-      description: "The status is now as requested",
+      description: "The conversation is now as requested",
       content: okContent,
     },
     ...MEMBER_WRITE_ERRORS,
+    409: errorAnswer("conversation_closed: reopen it to snooze it"),
   },
 });
 
@@ -634,7 +660,7 @@ const streamRoute = createRoute({
   summary: "Stream the workspace's changes after a cursor",
   description:
     "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
-    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `transcript.requested`, `team.changed` and `billing.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
     'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
@@ -744,6 +770,7 @@ export function conversationView(
       lastMessage === null
         ? null
         : { ...lastMessage, createdAt: lastMessage.createdAt.toISOString() },
+    snooze: row.snoozed ? { until: row.snoozedUntil?.toISOString() ?? null } : null,
   };
 }
 
@@ -1077,6 +1104,22 @@ export function createInbox({
       live.wake(workspaceId, row.visitorId);
       return true;
     },
+
+    /** Snoozes an open conversation, or ends its snooze with null. Only operators hear of it. */
+    async setSnooze(
+      workspaceId: string,
+      conversationId: string,
+      snooze: Snooze | null,
+    ): Promise<"done" | "missing" | "closed"> {
+      const outcome = await withWorkspace(db, workspaceId, async (tx) => {
+        if ((await findConversation(tx, workspaceId, conversationId)) === null) return "missing";
+        const changed = await snoozeConversation(tx, workspaceId, conversationId, snooze);
+        // A closed conversation has no snooze to end.
+        return changed || snooze === null ? "done" : "closed";
+      });
+      if (outcome === "done") live.wake(workspaceId, OPERATORS);
+      return outcome;
+    },
   };
 }
 export type Inbox = ReturnType<typeof createInbox>;
@@ -1265,15 +1308,16 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   });
 
   app.openapi(statusRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
-    const { status } = c.req.valid("json");
-    const found = await inbox.setStatus(
-      c.get("memberWorkspaceId"),
-      c.get("actor"),
-      conversationId,
-      status,
-    );
-    if (!found) return c.json(NOT_FOUND, 404);
+    const change = c.req.valid("json");
+    if ("status" in change) {
+      const found = await inbox.setStatus(id, c.get("actor"), conversationId, change.status);
+      return found ? c.json({ ok: true as const }, 200) : c.json(NOT_FOUND, 404);
+    }
+    const outcome = await inbox.setSnooze(id, conversationId, parseSnooze(change.snooze));
+    if (outcome === "missing") return c.json(NOT_FOUND, 404);
+    if (outcome === "closed") return c.json(SNOOZE_CLOSED, 409);
     return c.json({ ok: true as const }, 200);
   });
 

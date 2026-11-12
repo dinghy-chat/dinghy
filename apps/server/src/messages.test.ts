@@ -164,7 +164,7 @@ describe("sending", () => {
     expect(other.conversationId).not.toBe(original.conversationId);
   });
 
-  test("a closed conversation is not reused", async () => {
+  test("a closed conversation reopens with the visitor's next message", async () => {
     const { token } = await newVisitor();
     const first = (await (await send(token, "before", "one")).json()) as WireMessage;
     await withWorkspace(db, a.id, (tx) =>
@@ -174,7 +174,14 @@ describe("sending", () => {
         .where(and(eq(conversation.workspaceId, a.id), eq(conversation.id, first.conversationId))),
     );
     const second = (await (await send(token, "after", "two")).json()) as WireMessage;
-    expect(second.conversationId).not.toBe(first.conversationId);
+    expect(second.conversationId).toBe(first.conversationId);
+    const [row] = await withWorkspace(db, a.id, (tx) =>
+      tx
+        .select({ status: conversation.status })
+        .from(conversation)
+        .where(and(eq(conversation.workspaceId, a.id), eq(conversation.id, first.conversationId))),
+    );
+    expect(row?.status).toBe("open");
   });
 
   test.each([

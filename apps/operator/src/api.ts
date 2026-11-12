@@ -118,6 +118,12 @@ export interface Conversation {
   welcome: boolean;
   /** A visitor message is past this operator's read position. */
   unread: boolean;
+  /** Snoozed: it waits for nobody until `until`, or with null until the visitor writes. */
+  snooze: Snooze | null;
+}
+
+export interface Snooze {
+  until: string | null;
 }
 
 export interface Message {
@@ -720,6 +726,12 @@ export function workspaceApi(workspaceId: string) {
       call<{ ok: true }>(conversation(id), {
         method: "PATCH",
         body: JSON.stringify({ status }),
+      }),
+    /** Snoozes an open conversation, or ends its snooze with null. */
+    setSnooze: (id: string, snooze: Snooze | null) =>
+      call<{ ok: true }>(conversation(id), {
+        method: "PATCH",
+        body: JSON.stringify({ snooze }),
       }),
 
     /** Reads the stream until it ends, and resolves with the reason the server gave. */

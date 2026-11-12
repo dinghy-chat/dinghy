@@ -1,0 +1,3 @@
+ALTER TABLE "conversation" ADD COLUMN "snoozed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "conversation" ADD COLUMN "snoozed_until" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "conversation" ADD CONSTRAINT "conversation_snooze" CHECK ("conversation"."snoozed_at" is null and "conversation"."snoozed_until" is null or "conversation"."snoozed_at" is not null and "conversation"."status" = 'open');

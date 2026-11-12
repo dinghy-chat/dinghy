@@ -43,9 +43,13 @@ export function title(conversation: Conversation): string {
   return visitorName(conversation.visitor);
 }
 
-/** True when the newest message is the visitor's, in an open conversation. */
+/** True when the newest message is the visitor's, in an open conversation that is not snoozed. */
 export function isWaiting(conversation: Conversation): boolean {
-  return conversation.status === "open" && conversation.lastMessage?.fromVisitor === true;
+  return (
+    conversation.status === "open" &&
+    conversation.snooze === null &&
+    conversation.lastMessage?.fromVisitor === true
+  );
 }
 
 /** A web address that is safe to open: only http and https, which a link may point to. */

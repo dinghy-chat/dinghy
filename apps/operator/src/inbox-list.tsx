@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Conversation, Member, OpenCounts, WorkspaceApi } from "./api.ts";
 import type { Draft } from "./drafts.ts";
-import { shortTime } from "./format.ts";
+import { dayTime, shortTime } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { emptyLook, ListFilters, type Status, type Who } from "./inbox-filters.tsx";
 import { EmptyArt } from "./scene.tsx";
@@ -41,6 +41,7 @@ function ConversationRow({
   const preview =
     body != null ? markdownText(body) : conversation.lastMessage === null ? "" : t("image");
   const waits = isWaiting(conversation);
+  const { snooze } = conversation;
   const closed = showClosed && conversation.status === "closed";
   // The open conversation shows its draft in the composer, and is read. A blank draft is no draft.
   const shownDraft = selected || draft?.trim() === "" ? undefined : draft;
@@ -78,9 +79,16 @@ function ConversationRow({
           ) : (
             <span className="preview">{preview}</span>
           )}
-          {(waits || closed || replying !== null || assignee !== undefined) && (
+          {(waits || snooze !== null || closed || replying !== null || assignee !== undefined) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
+              {snooze !== null && (
+                <span className="chip">
+                  {snooze.until === null
+                    ? t("snoozed")
+                    : t("snoozedUntil", { time: dayTime(snooze.until) })}
+                </span>
+              )}
               {closed && <span className="chip">{t("closed")}</span>}
               {assignee !== undefined && <span className="chip">{assignee.name}</span>}
               {replying !== null && <em>{replying}</em>}

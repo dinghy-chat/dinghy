@@ -125,7 +125,7 @@ Dinghy.on("message:sent", ({ body }) => analytics.track("chat message sent"));
 | `conversation` | The visitor starts or ends having an open conversation, and once at once | `true` or `false` |
 | `message:sent` | The visitor's message reached Dinghy | `{ body }`, with `body` null for an image |
 | `message:received` | A reply arrives while the page is open | `{ body }`, with `body` null for an image |
-| `conversation:started` | The visitor's message started a new conversation | Nothing |
+| `conversation:started` | The visitor's message started a new conversation. A message after a close reopens the conversation instead, and does not send this | Nothing |
 
 A callback that throws does not stop the chat or the other callbacks. The browser reports its error.
 
