@@ -94,6 +94,8 @@ textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inh
 @media (hover:none){.re{opacity:.7}}
 .quote{display:block;margin:0 0 6px;padding:5px 9px;border-radius:10px;background:var(--fog);font-size:13px;white-space:pre-line}
 .mine .quote{background:rgb(255 255 255/.18)}
+.panel ::selection{background:var(--primary);color:var(--d-primary-text,#fff)}
+.mine::selection,.mine ::selection{background:var(--d-primary-text,#fff);color:var(--primary)}
 .quote b{display:block;font-size:12px}
 .chip{display:flex;align-items:center;gap:4px;margin-bottom:6px}
 .chip .quote{flex:1;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
