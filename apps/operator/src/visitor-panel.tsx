@@ -2,7 +2,6 @@
 // What the team knows about a visitor, in folds: the right panel of a conversation and the contact
 // page show the same sections.
 import { Fragment, type ReactNode, useEffect, useState } from "react";
-import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Contact, ContactDetail, Conversation, Member, PageView } from "./api.ts";
 import { MINUTE_MS, shortTime } from "./format.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -16,6 +15,7 @@ import {
   ago,
   avatarLetters,
   bare,
+  conversationPreview,
   detailRows,
   presenceLine,
   visitorName,
@@ -307,9 +307,7 @@ function ConversationLinks({
       {conversations.map((one) => (
         <li key={one.id}>
           <button type="button" className="text-button" onClick={() => onOpen(one.id, one.status)}>
-            <span className="link-preview">
-              {one.lastBody === null ? t("image") : markdownText(one.lastBody)}
-            </span>
+            <span className="link-preview">{conversationPreview(one)}</span>
             <small>
               {t(one.status)} · {ago(one.updatedAt, Date.now(), "narrow")}
             </small>

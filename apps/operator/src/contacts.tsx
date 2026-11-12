@@ -1,6 +1,5 @@
 /** @jsxImportSource react */
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
-import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Contact, ContactDetail, ContactSort, Role, WorkspaceApi } from "./api.ts";
 import { duration, shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
@@ -9,6 +8,7 @@ import { countryName, flag, zoneCity, zoneClock } from "./place.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { EmptyArt } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
+import { ONLINE_EVERY_MS } from "./thread-lines.ts";
 import { toast } from "./toast.tsx";
 import {
   Avatar,
@@ -22,7 +22,15 @@ import {
   Tip,
   useModal,
 } from "./ui.tsx";
-import { ago, avatarLetters, bare, presenceLine, visitorName, webLink } from "./visitor.ts";
+import {
+  ago,
+  avatarLetters,
+  bare,
+  conversationPreview,
+  presenceLine,
+  visitorName,
+  webLink,
+} from "./visitor.ts";
 import {
   ContactDetails,
   hasDetails,
@@ -335,22 +343,24 @@ function ContactHero({ contact, actions }: { contact: ContactDetail; actions: Re
 /** The facts as tiles, each left out when unknown. */
 function ContactTiles({ contact }: { contact: ContactDetail }) {
   const now = useNow();
-  const clock = contact.timeZone === null ? null : zoneClock(contact.timeZone, now);
+  const zone =
+    contact.timeZone === null
+      ? null
+      : { clock: zoneClock(contact.timeZone, now), city: zoneCity(contact.timeZone) };
   const open = contact.conversations.filter((one) => one.status === "open").length;
   // The server writes the device as "Chrome on macOS", or one of the two alone.
   const [browser, system] = contact.device?.split(" on ") ?? [];
   const device = browser === undefined ? null : { browser, system };
   return (
     <div className="contact-tiles">
-      {clock !== null && contact.timeZone !== null && (
-        <Tile label={t("localTimeLabel")} sub={`${zoneCity(contact.timeZone)} · ${clock.utc}`}>
-          {clock.time}
+      {zone?.clock != null && (
+        <Tile label={t("localTimeLabel")} sub={`${zone.city} · ${zone.clock.utc}`}>
+          {zone.clock.time}
         </Tile>
       )}
       {contact.country !== null && (
         <Tile label={t("contactLocation")} sub={t("contactLocationFrom")}>
-          <span aria-hidden="true">{flag(contact.country)} </span>
-          {countryName(contact.country)}
+          <CountryCell country={contact.country} />
         </Tile>
       )}
       {device !== null && (
@@ -411,7 +421,7 @@ function ConversationCards({
           >
             <span className="conversation-top">
               <span className={one.status === "open" ? "chip warn" : "chip"}>{t(one.status)}</span>
-              <b>{one.lastBody === null ? t("image") : markdownText(one.lastBody)}</b>
+              <b>{conversationPreview(one)}</b>
               <time dateTime={one.updatedAt} title={new Date(one.updatedAt).toLocaleString()}>
                 {ago(one.updatedAt, Date.now(), "narrow")}
               </time>
@@ -448,6 +458,11 @@ function ContactView({
 }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   const loaded = useLoad(() => api.contact(visitorId), [api, visitorId, version]);
+  const { reload } = loaded;
+  useEffect(() => {
+    const timer = setInterval(reload, ONLINE_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [reload]);
   const [tab, setTab] = useState<ContactTab>("conversations");
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -515,7 +530,11 @@ function ContactView({
           },
         ]),
   ];
-  const details = { ...contact, userId: contact.externalId };
+  const details = {
+    userId: contact.externalId,
+    attributes: contact.attributes,
+    pageContext: contact.pageContext,
+  };
   return (
     <section className="page contact-page" aria-label={name}>
       <button type="button" className="text-button back-link" onClick={onBack}>

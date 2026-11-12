@@ -171,10 +171,12 @@ describe("one contact", () => {
       body: "Yes",
     });
     expect(reply.status).toBe(201);
-    // The reply came two minutes after the start.
+    // The reply came exactly two minutes after the start, however long the request took.
     await owner
       .update(conversation)
-      .set({ createdAt: sql`created_at - interval '2 minutes'` })
+      .set({
+        createdAt: sql`(select ${message.createdAt} - interval '2 minutes' from ${message} where ${message.conversationId} = ${conversationId} and ${message.authorVisitorId} is null order by ${message.seq} limit 1)`,
+      })
       .where(eq(conversation.id, conversationId));
     expect(
       (await send("PUT", `${conversationPath}/assignee`, { operatorId: boss.id })).status,
