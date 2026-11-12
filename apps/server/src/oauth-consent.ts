@@ -48,7 +48,8 @@ import { allowed } from "./team.ts";
 /** A workspace keeps at most this many live grants, which bounds what a stolen session can add. */
 export const GRANT_LIMIT = 50;
 const APPROVALS_PER_MINUTE = 20;
-const REQUEST_MAX_LENGTH = 8192;
+/** Room for the longest client ID and redirect URI Dinghy accepts, percent-encoded, and the rest. */
+const REQUEST_MAX_LENGTH = 16 * 1024;
 /** When the client's metadata document cannot be fetched now: the operator's 20 a minute ran out. */
 const FETCH_WAIT_SECONDS = 60;
 

@@ -363,14 +363,34 @@ describe("registration", () => {
     expect(await errorOf(response)).toBe("invalid_redirect_uri");
   });
 
-  test("it refuses redirect URIs too long to fit in a client ID", async () => {
+  test("it refuses redirect URIs that are not encoded ASCII, and those too long together", async () => {
+    for (const uris of [
+      [`https://example.com/${"é".repeat(10)}`],
+      ["https://example.com/a b"],
+      Array.from({ length: 5 }, (_, index) => `https://example.com/${"%C3%A9".repeat(80)}${index}`),
+    ]) {
+      const response = await register({ redirect_uris: uris });
+      expect(response.status).toBe(400);
+      expect(await errorOf(response)).toBe("invalid_redirect_uri");
+    }
+  });
+
+  test("the longest client Dinghy accepts can still be approved", async () => {
     const uris = Array.from(
       { length: 5 },
-      (_, index) => `https://example.com/${"é".repeat(470)}${index}`,
+      (_, index) => `https://ex.com/${"%2F".repeat(160)}${index}`,
     );
-    const response = await register({ redirect_uris: uris });
-    expect(response.status).toBe(400);
-    expect(await errorOf(response)).toBe("invalid_redirect_uri");
+    const response = await register({ client_name: "x".repeat(60), redirect_uris: uris });
+    expect(response.status).toBe(201);
+    const { client_id: clientId } = (await response.json()) as { client_id: string };
+    const query = authorizeQuery({
+      clientId,
+      redirectUri: uris[0] ?? "",
+      challenge: pkce().challenge,
+      scope: "conversations setup",
+      resource: MCP_URL,
+    });
+    expect((await approve(boss.cookie, a.id, query)).status).toBe(201);
   });
 
   test("it refuses a bad name, no redirect URI, or more than 5", async () => {

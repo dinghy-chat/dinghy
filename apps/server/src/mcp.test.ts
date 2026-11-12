@@ -273,6 +273,16 @@ describe("protocol 2026-07-28, with no session", () => {
     expect(result).toMatchObject({ isError: false, resultType: "complete" });
   });
 
+  test("a tool name header may come base64-encoded", async () => {
+    const name = `=?base64?${Buffer.from("get_conversation").toString("base64")}?=`;
+    const response = await stateless(
+      "tools/call",
+      { name: "get_conversation", arguments: { conversationId } },
+      { "mcp-name": name },
+    );
+    expect(response.status).toBe(200);
+  });
+
   test("headers that do not match the body are refused with HeaderMismatch", async () => {
     const call = { name: "get_conversation", arguments: { conversationId } };
     for (const response of [

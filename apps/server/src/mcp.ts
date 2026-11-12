@@ -371,6 +371,12 @@ const metaOf = (params: Params): Params => {
   return typeof meta === "object" && meta !== null && !Array.isArray(meta) ? (meta as Params) : {};
 };
 
+/** An MCP header's value, which a client may send base64-encoded as `=?base64?...?=`. */
+function headerValue(value: string | undefined): string | undefined {
+  const encoded = value?.match(/^=\?base64\?([A-Za-z0-9+/]*={0,2})\?=$/)?.[1];
+  return encoded === undefined ? value : Buffer.from(encoded, "base64").toString("utf8");
+}
+
 /**
  * Whether a 2026-07-28 request's headers differ from its body. A proxy routes on the headers,
  * so they must say what the body does.
@@ -506,8 +512,8 @@ export function registerMcp(
     if (stateless) {
       const headers = {
         version: header,
-        method: c.req.header("mcp-method"),
-        name: c.req.header("mcp-name"),
+        method: headerValue(c.req.header("mcp-method")),
+        name: headerValue(c.req.header("mcp-name")),
       };
       if (headerMismatch(headers, method, params)) {
         return c.json(

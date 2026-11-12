@@ -31,6 +31,8 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
 /** Schemes that run code or read files where a browser lands, never a redirect target. */
 const REFUSED_SCHEMES = new Set(["javascript:", "data:", "file:", "vbscript:", "blob:", "about:"]);
 const PRIVATE_SCHEME = /^[a-z][a-z0-9+.-]*:$/;
+/** A redirect URI as a client sends it, already encoded, so its length bounds the client ID's. */
+const PRINTABLE_ASCII = /^[\x21-\x7e]+$/;
 
 const isLoopback = (url: URL) => url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname);
 
@@ -38,12 +40,11 @@ const isLoopback = (url: URL) => url.protocol === "http:" && LOOPBACK_HOSTS.has(
  * Whether a redirect URI is one Dinghy sends a code to: `https` on any host, `http` on a loopback
  * host (RFC 8252 section 7.3), or a private-use scheme with a dot in it or in its host, such as
  * `com.example.app:/done` or `cursor://anysphere.cursor-retrieval/oauth` (section 7.1). Never one
- * with a fragment or userinfo.
+ * with a fragment, userinfo, a space or a character that is not ASCII.
  */
 export function isValidRedirectUri(value: string): boolean {
-  if (value.length > REDIRECT_URI_MAX_LENGTH || value.includes("#") || !URL.canParse(value)) {
-    return false;
-  }
+  if (value.length > REDIRECT_URI_MAX_LENGTH || !PRINTABLE_ASCII.test(value)) return false;
+  if (value.includes("#") || !URL.canParse(value)) return false;
   const url = new URL(value);
   if (url.username !== "" || url.password !== "") return false;
   if (url.protocol === "https:") return url.hostname !== "";
