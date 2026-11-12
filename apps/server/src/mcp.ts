@@ -13,7 +13,14 @@ import type { App } from "./app.ts";
 import { WEBHOOK_EVENTS } from "./db/schema.ts";
 import { type Database, writable } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND, RATE_LIMITED, WRONG_ORIGIN } from "./errors.ts";
-import type { Inbox, ReplyOutcome } from "./inbox.ts";
+import {
+  CLOSED,
+  type Inbox,
+  parseSnooze,
+  type ReplyOutcome,
+  SNOOZE_CLOSED,
+  type SnoozeOutcome,
+} from "./inbox.ts";
 import type { Live } from "./live.ts";
 import { closedFailure } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
@@ -123,9 +130,7 @@ const CURSOR = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\|([0-9a-f-]{36})$/;
 const replyAnswer = (outcome: ReplyOutcome): Outcome => {
   if (outcome.kind === "sent") return { data: { message: outcome.message } };
   if (outcome.kind === "missing") return { error: NOT_FOUND };
-  if (outcome.kind === "closed") {
-    return { error: failure("conversation_closed", "Reopen this conversation to reply.") };
-  }
+  if (outcome.kind === "closed") return { error: CLOSED };
   if (outcome.kind === "invalid_reply_to") {
     return {
       error: failure(
@@ -135,6 +140,12 @@ const replyAnswer = (outcome: ReplyOutcome): Outcome => {
     };
   }
   return { error: closedFailure(outcome.access).body };
+};
+
+const snoozeAnswer = (outcome: SnoozeOutcome): Outcome => {
+  if (outcome === "missing") return { error: NOT_FOUND };
+  if (outcome === "closed") return { error: SNOOZE_CLOSED };
+  return { data: { ok: true } };
 };
 
 function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
@@ -245,7 +256,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
     tool({
       name: "close_conversation",
       title: "Close a conversation",
-      description: "Closes a conversation. A new message from the visitor starts a new one.",
+      description: "Closes a conversation. A new message from the visitor reopens it.",
       input: z.object({ conversationId }),
       idempotent: true,
       run: status("closed"),
@@ -257,6 +268,32 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       input: z.object({ conversationId }),
       idempotent: true,
       run: status("open"),
+    }),
+    tool({
+      name: "snooze_conversation",
+      title: "Snooze a conversation",
+      description:
+        "Snoozes an open conversation: it stays open but does not count as waiting until `until`, or with `until` null until the visitor writes. The visitor hears nothing of it. A close ends it.",
+      input: z.object({
+        conversationId,
+        until: z.iso
+          .datetime()
+          .nullable()
+          .describe("When the snooze ends, as an ISO date, or null until the visitor writes"),
+      }),
+      idempotent: true,
+      run: async ({ conversationId: id, until }, { workspaceId }) =>
+        snoozeAnswer(await inbox.setSnooze(workspaceId, id, parseSnooze({ until }))),
+    }),
+    tool({
+      name: "unsnooze_conversation",
+      title: "Unsnooze a conversation",
+      description:
+        "Ends a conversation's snooze, so it counts as waiting again when the visitor wrote last.",
+      input: z.object({ conversationId }),
+      idempotent: true,
+      run: async (input, { workspaceId }) =>
+        snoozeAnswer(await inbox.setSnooze(workspaceId, input.conversationId, null)),
     }),
     tool({
       name: "assign_conversation",

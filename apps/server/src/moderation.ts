@@ -132,7 +132,7 @@ export async function deleteConversation(
   await lockVisitor(tx, workspaceId, visitorId);
   // Then the workspace's, as in every other write. A send that holds this lock and checks the
   // conversation with a foreign key would deadlock with a delete that took the conversation first.
-  // One that waits here finds the conversation gone, and a visitor's next message starts a new one.
+  // One that waits here finds the conversation gone, and goes to another of the visitor's, or a new one.
   await recordConversationChange(tx, workspaceId, conversationId, "conversation.deleted");
   const messages = tx
     .select({ id: message.id })

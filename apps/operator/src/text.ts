@@ -101,6 +101,12 @@ const en = {
   you: "You",
   aTeammate: "A teammate",
   waiting: "Waiting for a reply",
+  snoozed: "Snoozed",
+  snoozedUntil: "Snoozed until {time}",
+  snoozeUntilReply: "Snooze until they reply",
+  snoozeUntilTomorrow: "Snooze until tomorrow",
+  snoozeUntilNextWeek: "Snooze until next week",
+  unsnooze: "Unsnooze",
   unread: "Unread",
   waitingCount: "{count} waiting for you",
   actionFailed: "That did not work. Check the connection and try again.",
@@ -552,7 +558,7 @@ const en = {
   apiKeyLevelConversations: "Conversations",
   apiKeyLevelSetup: "Setup",
   apiKeyLevelConversationsHelp:
-    "Reads, searches, answers, closes, reopens and assigns conversations, in the API and in MCP.",
+    "Reads, searches, answers, closes, reopens, snoozes and assigns conversations, in the API and in MCP.",
   apiKeyLevelSetupHelp:
     "All of Conversations, and it can add, change, test and delete webhooks, so an agent can connect Dinghy by itself. It never reaches keys, members, billing or deletion.",
   webhookByKey: "Added by the key {name}",

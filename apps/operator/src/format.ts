@@ -12,6 +12,10 @@ export const clockTime = (at: string | Date, timeZone?: string) =>
 /** "Nov 11, 2026". */
 export const shortDate = (iso: string) => new Date(iso).toLocaleDateString([], SHORT_DATE);
 
+/** "Mon 9:00 AM", for a moment in the coming days. */
+export const dayTime = (iso: string) =>
+  new Date(iso).toLocaleString([], { weekday: "short", ...CLOCK });
+
 /** Whether a moment falls on today, in this browser's time zone. */
 export const isToday = (at: Date) => at.toDateString() === new Date().toDateString();
 

@@ -28,7 +28,6 @@ import {
   joinVisitor,
   type NewImage,
   type StoredMessage,
-  setConversationStatus,
 } from "../../apps/server/src/messages.ts";
 import type { ObjectStore } from "../../apps/server/src/storage.ts";
 
@@ -215,10 +214,10 @@ async function lockBoth(tx: Transaction, ownId: string, otherId: string): Promis
   await enterWorkspace(tx, ownId);
 }
 
-/** A conversation's visitor in the current context, whether it is blocked, and the conversation's status. */
+/** A conversation's visitor in the current context, and whether it is blocked. */
 async function chatVisitor(tx: Transaction, side: Side) {
   const [row] = await tx
-    .select({ id: visitor.id, blockedAt: visitor.blockedAt, status: conversation.status })
+    .select({ id: visitor.id, blockedAt: visitor.blockedAt })
     .from(conversation)
     .innerJoin(visitor, joinVisitor())
     .where(
@@ -231,6 +230,7 @@ async function chatVisitor(tx: Transaction, side: Side) {
  * Copies a reply as a visitor message on the other side, under both locks. Nothing goes when the
  * other side blocked its visitor or the other workspace is suspended or deleted. An image goes only
  * when the other workspace has room for it, and a message with nothing left to copy goes nowhere.
+ * Like any visitor message, the copy reopens a closed chat.
  */
 async function copyInto(
   tx: Transaction,
@@ -252,13 +252,6 @@ async function copyInto(
       ? file
       : undefined;
   if (reply.body === null && image === undefined) return null;
-  // A visitor's message reopens a closed chat, as the founder's side should see it.
-  if (theirs.status === "closed") {
-    await setConversationStatus(tx, other.workspaceId, other.conversationId, "open", {
-      kind: "visitor",
-      visitorId: theirs.id,
-    });
-  }
   await appendMessage(
     tx,
     other.workspaceId,

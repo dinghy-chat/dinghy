@@ -500,9 +500,9 @@ describe("open conversations", () => {
     // A retry after a lost answer still says so, or the page would miss the start.
     expect(await send("s1")).toBe(true);
     expect(await send("s2")).toBe(false);
-    // A close from the inbox, then a send: the server starts a new conversation.
+    // A close from the inbox, then a send: the server reopens it, so nothing starts.
     await withWorkspace(db, a.id, (tx) => tx.update(conversation).set({ status: "closed" }));
-    expect(await send("s3")).toBe(true);
+    expect(await send("s3")).toBe(false);
   });
 });
 

@@ -1045,6 +1045,214 @@ describe("waiting for a reply", () => {
   });
 });
 
+/** The visitor with this token writes again. */
+const visitorWritesAgain = (key: string, token: string, clientId: string, body = "More") =>
+  app.request(`/v1/widget/${key}/messages`, {
+    method: "POST",
+    headers: {
+      origin: WIDGET_ORIGIN,
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ clientId, body }),
+  });
+
+describe("a visitor's message after a close", () => {
+  test("reopens the same conversation, with a reopened line and its assignee", async () => {
+    const team = await createWorkspace(db, "Reopen", [WIDGET_ORIGIN]);
+    const fay = await operatorSession("fay@example.com", team.id, "Fay");
+    const base = `/v1/operator/workspaces/${team.id}/conversations`;
+    const { token, conversationId } = await visitorSends(team.publicKey, "Hi");
+    // Fay's first reply assigns it to her.
+    await write("POST", `${base}/${conversationId}/messages`, { clientId: "r", body: "Hey" }, fay);
+    await write("PATCH", `${base}/${conversationId}`, { status: "closed" }, fay);
+
+    const again = await visitorWritesAgain(team.publicKey, token, "after-close");
+    expect(again.status).toBe(201);
+    const sent = (await again.json()) as { conversationId: string; conversationStarted: boolean };
+    expect(sent).toMatchObject({ conversationId, conversationStarted: false });
+
+    const thread = (await (await get(`${base}/${conversationId}/messages`, fay)).json()) as {
+      conversation: { status: string; assigneeOperatorId: string | null };
+      messages: { kind: string; fromVisitor: boolean; body: string | null; seq: string }[];
+    };
+    expect(thread.conversation.status).toBe("open");
+    expect(thread.conversation.assigneeOperatorId).not.toBeNull();
+    // The reopen's line comes before the message, by its position too.
+    const [reopened, message] = thread.messages.slice(-2);
+    expect(reopened).toMatchObject({ kind: "reopened", fromVisitor: true });
+    expect(message).toMatchObject({ kind: "text", body: "More" });
+    expect(BigInt(reopened?.seq ?? "0")).toBeLessThan(BigInt(message?.seq ?? "0"));
+    const events = await owner
+      .select({ kind: schema.event.kind, payload: schema.event.payload })
+      .from(schema.event)
+      .where(eq(schema.event.workspaceId, team.id))
+      .orderBy(schema.event.seq);
+    expect(events.slice(-2).map((one) => one.kind)).toEqual([
+      "conversation.reopened",
+      "message.created",
+    ]);
+    expect(events.at(-1)?.payload).not.toHaveProperty("conversationCreated");
+  });
+
+  test("drops an assignee who left the team, so it waits for everyone", async () => {
+    const team = await createWorkspace(db, "Left", [WIDGET_ORIGIN]);
+    const gil = await operatorSession("gil-left@example.com", team.id, "Gil");
+    const hal = await operatorSession("hal-left@example.com", team.id, "Hal");
+    const base = `/v1/operator/workspaces/${team.id}/conversations`;
+    const { token, conversationId } = await visitorSends(team.publicKey, "Hi");
+    await write("POST", `${base}/${conversationId}/messages`, { clientId: "r", body: "Hey" }, gil);
+    await write("PATCH", `${base}/${conversationId}`, { status: "closed" }, gil);
+    const [gilRow] = await owner
+      .select({ id: schema.operator.id })
+      .from(schema.operator)
+      .where(eq(schema.operator.email, "gil-left@example.com"));
+    await owner
+      .update(schema.workspaceMember)
+      .set({ removedAt: new Date() })
+      .where(eq(schema.workspaceMember.operatorId, gilRow?.id ?? ""));
+
+    await visitorWritesAgain(team.publicKey, token, "after-leave");
+    const page = (await (await get(base, hal)).json()) as {
+      waiting: number;
+      conversations: { id: string; assigneeOperatorId: string | null }[];
+    };
+    expect(page.conversations[0]).toMatchObject({ id: conversationId, assigneeOperatorId: null });
+    expect(page.waiting).toBe(1);
+  });
+
+  test("a visitor with no conversation still starts a new one", async () => {
+    const team = await createWorkspace(db, "Fresh", [WIDGET_ORIGIN]);
+    const first = await visitorSends(team.publicKey, "Hello");
+    const second = await visitorSends(team.publicKey, "Hello too");
+    expect(second.conversationId).not.toBe(first.conversationId);
+  });
+});
+
+describe("snooze", () => {
+  /** A workspace with one conversation whose visitor wrote last, and its member's session. */
+  async function waitingChat(name: string) {
+    const team = await createWorkspace(db, name, [WIDGET_ORIGIN]);
+    const member = await operatorSession(`${name.toLowerCase()}@example.com`, team.id, name);
+    const chat = await visitorSends(team.publicKey, "Help?");
+    const path = `/v1/operator/workspaces/${team.id}/conversations`;
+    const list = async () =>
+      (await (await get(path, member)).json()) as {
+        waiting: number;
+        snoozeEndsInMs: number | null;
+        conversations: { id: string; snooze: { until: string | null } | null }[];
+      };
+    const snooze = (body: unknown, as = member) =>
+      write("PATCH", `${path}/${chat.conversationId}`, body, as);
+    return { team, member, chat, path, list, snooze };
+  }
+
+  test("until a reply: not waiting until the visitor writes again", async () => {
+    const { team, member, chat, path, list, snooze } = await waitingChat("Gus");
+    expect((await list()).waiting).toBe(1);
+    expect((await snooze({ snooze: { until: null } })).status).toBe(200);
+    const snoozed = await list();
+    expect(snoozed.waiting).toBe(0);
+    expect(snoozed.conversations[0]?.snooze).toEqual({ until: null });
+    const thread = (await (
+      await get(`${path}/${chat.conversationId}/messages`, member)
+    ).json()) as {
+      conversation: { snooze: unknown };
+    };
+    expect(thread.conversation.snooze).toEqual({ until: null });
+    // Other operators hear of it, and the visitor's stream does not.
+    const [last] = await owner
+      .select({ kind: schema.event.kind })
+      .from(schema.event)
+      .where(eq(schema.event.workspaceId, team.id))
+      .orderBy(sql`${schema.event.seq} desc`)
+      .limit(1);
+    expect(last?.kind).toBe("conversation.snoozed");
+
+    // An operator's own reply keeps it snoozed.
+    await write(
+      "POST",
+      `${path}/${chat.conversationId}/messages`,
+      { clientId: "reply", body: "Looking" },
+      member,
+    );
+    expect((await list()).conversations[0]?.snooze).toEqual({ until: null });
+
+    await visitorWritesAgain(team.publicKey, chat.token, "again");
+    const after = await list();
+    expect(after.waiting).toBe(1);
+    expect(after.conversations[0]?.snooze).toBeNull();
+  });
+
+  test("until a time: waiting again once it passes, and unsnooze ends it", async () => {
+    const { list, snooze } = await waitingChat("Hal");
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await snooze({ snooze: { until: later } });
+    const snoozed = await list();
+    expect(snoozed.waiting).toBe(0);
+    expect(snoozed.conversations[0]?.snooze).toEqual({ until: later });
+    // The delay to its end, by the server's clock, so the inbox loads again then.
+    expect(snoozed.snoozeEndsInMs).toBeGreaterThan(59 * 60 * 1000);
+    expect(snoozed.snoozeEndsInMs).toBeLessThanOrEqual(60 * 60 * 1000);
+    // Past what a 32-bit integer holds in milliseconds, the list still loads.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    await snooze({ snooze: { until: new Date(Date.now() + 30 * DAY_MS).toISOString() } });
+    expect((await list()).snoozeEndsInMs).toBeGreaterThan(29 * DAY_MS);
+    await snooze({ snooze: { until: later } });
+
+    await snooze({ snooze: { until: new Date(Date.now() - 1000).toISOString() } });
+    const ended = await list();
+    expect(ended.waiting).toBe(1);
+    expect(ended.conversations[0]?.snooze).toBeNull();
+    expect(ended.snoozeEndsInMs).toBeNull();
+
+    await snooze({ snooze: { until: null } });
+    expect((await snooze({ snooze: null })).status).toBe(200);
+    expect((await list()).waiting).toBe(1);
+  });
+
+  test("a close clears it, a closed conversation cannot be snoozed, and a reopen starts unsnoozed", async () => {
+    const { list, snooze } = await waitingChat("Ida");
+    await snooze({ snooze: { until: null } });
+    expect((await snooze({ status: "closed" })).status).toBe(200);
+    const refused = await snooze({ snooze: { until: null } });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ error: { code: "conversation_closed" } });
+    expect((await snooze({ status: "open" })).status).toBe(200);
+    const reopened = await list();
+    expect(reopened.conversations[0]?.snooze).toBeNull();
+    expect(reopened.waiting).toBe(1);
+  });
+
+  test("the operator waiting count leaves snoozed conversations out", async () => {
+    const { team, member, snooze } = await waitingChat("Jo");
+    await snooze({ snooze: { until: null } });
+    const counts = (await (await get("/v1/operator/waiting", member)).json()) as {
+      workspaces: { workspaceId: string; waiting: number }[];
+    };
+    expect(counts.workspaces.find((one) => one.workspaceId === team.id)?.waiting).toBe(0);
+  });
+
+  test("a body with both a status and a snooze is refused", async () => {
+    const { snooze } = await waitingChat("Kit");
+    expect((await snooze({ status: "open", snooze: null })).status).toBe(400);
+    expect((await snooze({ snooze: { until: "tomorrow" } })).status).toBe(400);
+  });
+
+  test("another workspace cannot snooze it", async () => {
+    const { chat, list, snooze } = await waitingChat("Lou");
+    expect((await snooze({ snooze: { until: null } }, otherCookie)).status).toBe(404);
+    const throughOwn = await write(
+      "PATCH",
+      `/v1/operator/workspaces/${b.id}/conversations/${chat.conversationId}`,
+      { snooze: { until: null } },
+      otherCookie,
+    );
+    expect(throughOwn.status).toBe(404);
+    expect((await list()).waiting).toBe(1);
+  });
+});
+
 describe("reply receipts", () => {
   type Read = {
     messages: { id: string; seq: string; fromVisitor: boolean }[];

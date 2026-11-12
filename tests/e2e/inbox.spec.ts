@@ -51,6 +51,45 @@ const row = (page: Page, text: string) => page.locator(".row", { hasText: text }
 const openCount = (page: Page) => page.locator(".nav .count:not(.live)");
 const favicon = (page: Page) => page.locator('link[rel="icon"]');
 
+/** Runs an action from the conversation's "…" menu. */
+async function moreAction(page: Page, name: string) {
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
+test("a snoozed conversation leaves the count until the visitor writes again", async ({
+  browser,
+}) => {
+  const customer = await visitor(browser, "Snooze me");
+  const operator = await signedIn(browser, server, "alice@example.com");
+  await expect(openCount(operator)).toHaveText("1");
+  await row(operator, "Snooze me").click();
+
+  await moreAction(operator, "Snooze until they reply");
+  await expect(openCount(operator)).toHaveCount(0);
+  await expect(row(operator, "Snooze me").locator(".chip")).toHaveText("Snoozed");
+
+  // A snooze with a time says when it ends, and Unsnooze ends it.
+  await moreAction(operator, "Unsnooze");
+  await expect(openCount(operator)).toHaveText("1");
+  await moreAction(operator, "Snooze until tomorrow");
+  await expect(row(operator, "Snooze me").locator(".chip")).toHaveText(/^Snoozed until \w+ 9:00/);
+
+  // A close ends the snooze, so a reopen offers to snooze it again.
+  await operator.getByRole("button", { name: "Close", exact: true }).click();
+  await operator.getByRole("button", { name: "Reopen" }).click();
+  await operator.getByRole("button", { name: "More actions" }).click();
+  await expect(operator.getByRole("menuitem", { name: "Unsnooze" })).toHaveCount(0);
+  await operator.getByRole("menuitem", { name: "Snooze until tomorrow", exact: true }).click();
+
+  // The visitor writes again, so it waits again.
+  await say(customer, "Any news?");
+  await expect(openCount(operator)).toHaveText("1");
+  await expect(row(operator, "Any news?").locator(".chip.warn")).toHaveText("Waiting for a reply");
+
+  for (const page of [customer, operator]) await page.context().close();
+});
+
 test("each reply shows who sent it, and your own say You", async ({ browser }) => {
   const customer = await visitor(browser, "Who is answering?");
   const alice = await signedIn(browser, server, "alice@example.com");
@@ -79,10 +118,8 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
 
   // A signed-out visitor has a short code, and the thread shows the page without its query.
   await expect(alice.locator(".thread-head h2")).toHaveText(/^Visitor [0-9A-Z]{4}$/);
-  // The last page is in the visitor's panel.
-  await expect(alice.locator(".visitor-panel")).toContainText(
-    `${new URL(server.hostOrigin).host}/pricing`,
-  );
+  // The last page is in the visitor's panel, by its path.
+  await expect(alice.locator(".visitor-panel")).toContainText("/pricing");
   await expect(alice.locator(".thread")).not.toContainText("SECRET");
 
   for (const page of [customer, alice, bob]) await page.context().close();

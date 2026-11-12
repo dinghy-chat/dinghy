@@ -150,6 +150,8 @@ describe("the protocol", () => {
       "add_note",
       "close_conversation",
       "reopen_conversation",
+      "snooze_conversation",
+      "unsnooze_conversation",
       "assign_conversation",
     ]);
     const reply = tools.find((tool) => tool.name === "reply");

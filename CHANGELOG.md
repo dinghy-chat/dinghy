@@ -6,7 +6,12 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Added
 
+- Snooze: the **…** menu of a conversation snoozes it until the visitor replies, until tomorrow at 9:00 or until next Monday at 9:00. It stays open, shows **Snoozed** in the Inbox and does not count as waiting until then, and the visitor sees nothing. API: `{ "snooze": { "until" } }` on `PATCH .../conversations/{conversationId}`, `snooze` on each conversation, a `conversation.snoozed` change, and the MCP tools `snooze_conversation` and `unsnooze_conversation`.
 - Internal notes: choose **Note** above the reply box to write a message that only your team sees, never the visitor. API: `"note": true` on `POST .../conversations/{conversationId}/messages`, a message `kind` of `note`, and the MCP tool `add_note`.
+
+### Changed
+
+- A visitor who writes after their conversation was closed reopens it, with its assignee, instead of starting a new one. Only a visitor's first message starts a conversation, and the `conversation:started` event and `conversation.created` webhook come only then.
 
 ### Fixed
 
