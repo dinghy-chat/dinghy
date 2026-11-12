@@ -124,8 +124,8 @@ describe("the identity setup", () => {
       for (const claim of CLAIMS[language]) expect(setup.serverCode).toContain(claim);
       expect(setup.browserCode).toContain("Dinghy.identify(");
       expect(setup.browserCode).toContain("Dinghy.reset()");
-      expect(setup.secret).toContain("Settings > Install");
-      expect(setup.secret).toContain("never paste it in a chat");
+      expect(setup.secretNote).toContain("Settings > Install");
+      expect(setup.secretNote).toContain("never paste it in a chat");
     },
   );
 

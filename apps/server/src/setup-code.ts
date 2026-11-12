@@ -10,13 +10,13 @@ export const FRAMEWORKS = [
   "laravel",
   "wordpress",
 ] as const;
-export type Framework = (typeof FRAMEWORKS)[number];
+type Framework = (typeof FRAMEWORKS)[number];
 
 export const IDENTITY_LANGUAGES = ["typescript", "python", "ruby", "php", "go"] as const;
-export type IdentityLanguage = (typeof IDENTITY_LANGUAGES)[number];
+type IdentityLanguage = (typeof IDENTITY_LANGUAGES)[number];
 
 export const WEBHOOK_LANGUAGES = ["typescript", "python", "go"] as const;
-export type WebhookLanguage = (typeof WEBHOOK_LANGUAGES)[number];
+type WebhookLanguage = (typeof WEBHOOK_LANGUAGES)[number];
 
 /** The environment variable every identity sample reads the signing secret from. */
 export const SECRET_VARIABLE = "DINGHY_SIGNING_SECRET";
@@ -281,7 +281,7 @@ export function identitySetup(language: IdentityLanguage, publicKey: string) {
     serverFile: signer.file,
     serverCode: signer.code,
     browserCode: BROWSER_CALL,
-    secret: `A person copies the signing secret from Settings > Install into the server environment as ${SECRET_VARIABLE}; never paste it in a chat. No tool or API key can read it.`,
+    secretNote: `A person copies the signing secret from Settings > Install into the server environment as ${SECRET_VARIABLE}; never paste it in a chat. No tool or API key can read it.`,
     publicKey,
   };
 }
@@ -289,7 +289,7 @@ export function identitySetup(language: IdentityLanguage, publicKey: string) {
 // Webhook signatures ------------------------------------------------------------------------------
 
 /** The oldest `t` a receiver should accept, as the samples check it. */
-const SIGNATURE_TOLERANCE_SECONDS = 300;
+export const SIGNATURE_TOLERANCE_SECONDS = 300;
 
 const VERIFIERS: Record<WebhookLanguage, string> = {
   typescript: String.raw`import { createHmac, timingSafeEqual } from "node:crypto";
@@ -368,7 +368,7 @@ export function webhookVerification(language: WebhookLanguage) {
     code: VERIFIERS[language],
     notes: [
       "Dinghy-Signature is t=<unix seconds>,v1=<hex>: the HMAC-SHA256 of `<t>.<raw body>` with the webhook's signing secret, which create_webhook answered once.",
-      "Check the raw body before parsing it, compare in constant time, and refuse a t older than 5 minutes.",
+      `Check the raw body before parsing it, compare in constant time, and refuse a t older than ${SIGNATURE_TOLERANCE_SECONDS / 60} minutes.`,
       "Delivery is at least once: drop a repeat by its Dinghy-Event-Id header. Answer 2xx quickly, or Dinghy retries for about a day.",
       "Keep the webhook's secret in the receiver's environment, not in code.",
     ],

@@ -1,16 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import {
-  and,
-  count,
-  eq,
-  exists,
-  gt,
-  inArray,
-  isNull,
-  notExists,
-  notInArray,
-  sql,
-} from "drizzle-orm";
+import { and, count, eq, isNull, not, notInArray, sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
@@ -19,7 +8,6 @@ import {
   API_KEY_LEVELS,
   type ApiKeyLevel,
   apiKey,
-  apiKeyCredential,
   REPLY_MODES,
   type ReplyMode,
   workspace,
@@ -49,9 +37,10 @@ import {
   resolveAuthorizeRequest,
 } from "./oauth-authorize.ts";
 import { type FindClient, redirectHost } from "./oauth-client.ts";
-import { issueCode, revokeKey } from "./oauth-grants.ts";
+import { issueCode, liveCredential, revokeKeys } from "./oauth-grants.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { allowed } from "./team.ts";
+import { MINUTE_SECONDS } from "./time.ts";
 
 // The consent page's API. The page at /oauth/authorize sends its own query string here, so the
 // server checks every parameter again on each step and trusts nothing the page kept.
@@ -61,8 +50,6 @@ export const GRANT_LIMIT = 50;
 const APPROVALS_PER_MINUTE = 20;
 /** Room for the longest client ID and redirect URI Dinghy accepts, percent-encoded, and the rest. */
 const REQUEST_MAX_LENGTH = 16 * 1024;
-/** When the client's metadata document cannot be fetched now: the operator's 20 a minute ran out. */
-const FETCH_WAIT_SECONDS = 60;
 
 const INVALID_CLIENT = failure(
   "invalid_client",
@@ -255,21 +242,35 @@ async function liveGrantCount(
         eq(apiKey.source, "oauth"),
         isNull(apiKey.revokedAt),
         notInArray(apiKey.id, replaced),
-        exists(
-          tx
-            .select({ one: sql`1` })
-            .from(apiKeyCredential)
-            .where(
-              and(
-                eq(apiKeyCredential.workspaceId, apiKey.workspaceId),
-                eq(apiKeyCredential.apiKeyId, apiKey.id),
-                gt(apiKeyCredential.expiresAt, sql`now()`),
-              ),
-            ),
-        ),
+        liveCredential(tx),
       ),
     );
   return row?.total ?? 0;
+}
+
+/**
+ * The operator's grants for this client that no longer work, which a new approval replaces. The same
+ * app on a second computer keeps the first one's grant.
+ */
+async function replaceableGrants(
+  tx: Transaction,
+  workspaceId: string,
+  operatorId: string,
+  clientId: string,
+): Promise<string[]> {
+  const older = await tx
+    .select({ id: apiKey.id })
+    .from(apiKey)
+    .where(
+      and(
+        eq(apiKey.workspaceId, workspaceId),
+        eq(apiKey.clientId, clientId),
+        eq(apiKey.createdBy, operatorId),
+        isNull(apiKey.revokedAt),
+        not(liveCredential(tx, ["access", "refresh"])),
+      ),
+    );
+  return older.map((grant) => grant.id);
 }
 
 /**
@@ -298,35 +299,9 @@ async function approve(
   if (approver === undefined || !allowed.settings(approver.role)) return { kind: "forbidden" };
   // Two approvals at once take turns, so neither passes the limit.
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`oauth-grants:${workspaceId}`}))`);
-  const older = await tx
-    .select({ id: apiKey.id })
-    .from(apiKey)
-    .where(
-      and(
-        eq(apiKey.workspaceId, workspaceId),
-        eq(apiKey.clientId, request.client.id),
-        eq(apiKey.createdBy, operatorId),
-        isNull(apiKey.revokedAt),
-        // Only a grant that no longer works is replaced: the same app on a second computer keeps
-        // the first one's grant.
-        notExists(
-          tx
-            .select({ one: sql`1` })
-            .from(apiKeyCredential)
-            .where(
-              and(
-                eq(apiKeyCredential.workspaceId, apiKey.workspaceId),
-                eq(apiKeyCredential.apiKeyId, apiKey.id),
-                inArray(apiKeyCredential.kind, ["access", "refresh"]),
-                gt(apiKeyCredential.expiresAt, sql`now()`),
-              ),
-            ),
-        ),
-      ),
-    );
-  const replaced = older.map((grant) => grant.id);
+  const replaced = await replaceableGrants(tx, workspaceId, operatorId, request.client.id);
   if ((await liveGrantCount(tx, workspaceId, replaced)) >= GRANT_LIMIT) return { kind: "limit" };
-  for (const id of replaced) await revokeKey(tx, workspaceId, id);
+  await revokeKeys(tx, workspaceId, replaced);
   const [grant] = await tx
     .insert(apiKey)
     .values({
@@ -352,11 +327,14 @@ export function registerOAuthConsent(
   { db, logger, rateLimit, issuer, findClient }: ConsentOptions,
 ): void {
   /** Reads the request as the page got it, with its client, which may need a fetch. */
-  const resolve = async (raw: string, operatorId: string): Promise<AuthorizeResult | "limited"> => {
+  const resolve = async (
+    raw: string,
+    operatorId: string,
+  ): Promise<AuthorizeResult | { kind: "limited"; waitSeconds: number }> => {
     const params = new URLSearchParams(raw);
     const clientId = params.get("client_id");
     const client = clientId === null ? null : await findClient(clientId, operatorId);
-    if (client === "limited") return "limited";
+    if (client !== null && "waitSeconds" in client) return { kind: "limited", ...client };
     return resolveAuthorizeRequest(params, client, issuer);
   };
   const invalidAnswer = (error: "invalid_client" | "invalid_redirect_uri") =>
@@ -365,7 +343,7 @@ export function registerOAuthConsent(
   app.openapi(infoRoute, async (c) => {
     const operatorId = c.get("operatorId");
     const resolved = await resolve(new URL(c.req.url).search, operatorId);
-    if (resolved === "limited") return tooManyRequests(c, FETCH_WAIT_SECONDS);
+    if (resolved.kind === "limited") return tooManyRequests(c, resolved.waitSeconds);
     if (resolved.kind === "invalid") return c.json(invalidAnswer(resolved.error), 400);
     if (resolved.kind === "refused") {
       return c.json({ kind: "redirect" as const, redirectTo: resolved.redirectTo }, 200);
@@ -387,11 +365,16 @@ export function registerOAuthConsent(
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const operatorId = c.get("operatorId");
     const workspaceId = c.get("memberWorkspaceId");
-    const wait = await rateLimit.hit("oauth-approve", operatorId, APPROVALS_PER_MINUTE, 60);
+    const wait = await rateLimit.hit(
+      "oauth-approve",
+      operatorId,
+      APPROVALS_PER_MINUTE,
+      MINUTE_SECONDS,
+    );
     if (wait !== null) return tooManyRequests(c, wait);
     const body = c.req.valid("json");
     const resolved = await resolve(body.request, operatorId);
-    if (resolved === "limited") return tooManyRequests(c, FETCH_WAIT_SECONDS);
+    if (resolved.kind === "limited") return tooManyRequests(c, resolved.waitSeconds);
     if (resolved.kind === "invalid") return c.json(invalidAnswer(resolved.error), 400);
     if (resolved.kind === "refused") return c.json(INVALID_REQUEST, 400);
     const { request } = resolved;
@@ -414,7 +397,7 @@ export function registerOAuthConsent(
 
   app.openapi(denyRoute, async (c) => {
     const resolved = await resolve(c.req.valid("json").request, c.get("operatorId"));
-    if (resolved === "limited") return tooManyRequests(c, FETCH_WAIT_SECONDS);
+    if (resolved.kind === "limited") return tooManyRequests(c, resolved.waitSeconds);
     if (resolved.kind === "invalid") return c.json(invalidAnswer(resolved.error), 400);
     if (resolved.kind === "refused") return c.json({ redirectTo: resolved.redirectTo }, 200);
     const { request } = resolved;

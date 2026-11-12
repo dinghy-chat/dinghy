@@ -1,10 +1,10 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "@hono/zod-openapi";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { type ApiKeyLevel, apiKey, apiKeyCredential } from "./db/schema.ts";
+import { and, eq, exists, gt, inArray, isNull, sql } from "drizzle-orm";
+import { type ApiKeyLevel, apiKey, apiKeyCredential, type CredentialKind } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace, workspaceAccess } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
-import { DAY_MS, MINUTE_MS } from "./time.ts";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "./time.ts";
 
 // An OAuth grant is an `api_key` row with `source = 'oauth'`. Its codes and tokens are credentials,
 // of which only the SHA-256 is stored. Every token names its workspace, as a static key does, so a
@@ -16,8 +16,8 @@ const CODE_PREFIX = "dkc_";
 export const ACCESS_PREFIX = "dko_";
 const REFRESH_PREFIX = "dkr_";
 const CODE_LIFETIME_MS = MINUTE_MS;
-const ACCESS_LIFETIME_MS = 60 * MINUTE_MS;
-const REFRESH_LIFETIME_MS = 30 * DAY_MS;
+export const ACCESS_LIFETIME_MS = HOUR_MS;
+export const REFRESH_LIFETIME_MS = 30 * DAY_MS;
 /** A refresh token used again this soon after its rotation gets a new pair, not a revoke. */
 const REFRESH_GRACE_SECONDS = 60;
 /** The worker deletes a grant nobody used once it is this old. */
@@ -42,24 +42,51 @@ export const newToken = (prefix: string, workspaceId: string) =>
 const scopeOf = (level: ApiKeyLevel) =>
   level === "setup" ? "conversations setup" : "conversations";
 
-/** Ends a key or a grant: it stays for the names on its replies, and its tokens are deleted. */
-export async function revokeKey(
+/** Ends keys or grants: each stays for the names on its replies, and its tokens are deleted. */
+export async function revokeKeys(
   tx: Transaction,
   workspaceId: string,
-  apiKeyId: string,
+  apiKeyIds: string[],
 ): Promise<void> {
+  if (apiKeyIds.length === 0) return;
   await tx
     .update(apiKey)
     .set({ revokedAt: new Date() })
     .where(
-      and(eq(apiKey.workspaceId, workspaceId), eq(apiKey.id, apiKeyId), isNull(apiKey.revokedAt)),
+      and(
+        eq(apiKey.workspaceId, workspaceId),
+        inArray(apiKey.id, apiKeyIds),
+        isNull(apiKey.revokedAt),
+      ),
     );
   await tx
     .delete(apiKeyCredential)
     .where(
-      and(eq(apiKeyCredential.workspaceId, workspaceId), eq(apiKeyCredential.apiKeyId, apiKeyId)),
+      and(
+        eq(apiKeyCredential.workspaceId, workspaceId),
+        inArray(apiKeyCredential.apiKeyId, apiKeyIds),
+      ),
     );
 }
+
+/**
+ * Whether the key in the query holds a credential that has not expired: one of `kinds`, or any,
+ * a code included, without them.
+ */
+export const liveCredential = (tx: Transaction, kinds?: CredentialKind[]) =>
+  exists(
+    tx
+      .select({ one: sql`1` })
+      .from(apiKeyCredential)
+      .where(
+        and(
+          eq(apiKeyCredential.workspaceId, apiKey.workspaceId),
+          eq(apiKeyCredential.apiKeyId, apiKey.id),
+          kinds === undefined ? undefined : inArray(apiKeyCredential.kind, kinds),
+          gt(apiKeyCredential.expiresAt, sql`now()`),
+        ),
+      ),
+  );
 
 /** Ends every OAuth grant an operator approved in a workspace, as their removal or demotion does. */
 export async function revokeGrantsOf(
@@ -78,7 +105,11 @@ export async function revokeGrantsOf(
         isNull(apiKey.revokedAt),
       ),
     );
-  for (const grant of grants) await revokeKey(tx, workspaceId, grant.id);
+  await revokeKeys(
+    tx,
+    workspaceId,
+    grants.map((grant) => grant.id),
+  );
 }
 
 interface CodeFacts {
@@ -256,7 +287,7 @@ async function revokeReplayedCode(
         sql`${apiKeyCredential.usedAt} is not null`,
       ),
     );
-  if (used !== undefined) await revokeKey(tx, workspaceId, used.apiKeyId);
+  if (used !== undefined) await revokeKeys(tx, workspaceId, [used.apiKeyId]);
 }
 
 /**
@@ -275,7 +306,7 @@ export function refreshGrant(
     const found = await claimRefresh(tx, workspaceId, tokenHash);
     if (found === null) return INVALID_GRANT;
     if (found.kind === "replayed") {
-      await revokeKey(tx, workspaceId, found.apiKeyId);
+      await revokeKeys(tx, workspaceId, [found.apiKeyId]);
       return INVALID_GRANT;
     }
     const grant = await liveGrant(tx, workspaceId, found.apiKeyId);
@@ -358,7 +389,7 @@ export async function revokeByToken(
         ),
       );
     if (row === undefined || (clientId !== null && clientId !== row.clientId)) return;
-    await revokeKey(tx, workspaceId, row.apiKeyId);
+    await revokeKeys(tx, workspaceId, [row.apiKeyId]);
   });
 }
 

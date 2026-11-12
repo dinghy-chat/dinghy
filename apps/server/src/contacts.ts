@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { conversation, visitor } from "./db/schema.ts";
@@ -19,7 +19,7 @@ import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import { containing, isChat } from "./messages.ts";
-import { deleteConversation } from "./moderation.ts";
+import { deleteConversations } from "./moderation.ts";
 import type { VisitorPresence } from "./presence.ts";
 import { allowed } from "./team.ts";
 
@@ -430,22 +430,25 @@ const csvLine = (contact: ReturnType<typeof contactView>) =>
     .map(csvCell)
     .join(",")}\r\n`;
 
-/** Deletes a visitor with their conversations, messages and images. False when there is none. */
-export async function deleteContact(
+/** Deletes visitors with their conversations, messages and images. Answers how many there were. */
+export async function deleteContacts(
   tx: Transaction,
   workspaceId: string,
-  visitorId: string,
-): Promise<boolean> {
+  visitorIds: string[],
+): Promise<number> {
+  if (visitorIds.length === 0) return 0;
   const conversations = await tx
-    .select({ id: conversation.id })
+    .select({ id: conversation.id, visitorId: conversation.visitorId })
     .from(conversation)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)));
-  for (const one of conversations) await deleteConversation(tx, workspaceId, one.id, visitorId);
+    .where(
+      and(eq(conversation.workspaceId, workspaceId), inArray(conversation.visitorId, visitorIds)),
+    );
+  await deleteConversations(tx, workspaceId, conversations);
   const deleted = await tx
     .delete(visitor)
-    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)))
+    .where(and(eq(visitor.workspaceId, workspaceId), inArray(visitor.id, visitorIds)))
     .returning({ id: visitor.id });
-  return deleted.length > 0;
+  return deleted.length;
 }
 
 export function registerContactRoutes(
@@ -533,8 +536,8 @@ export function registerContactRoutes(
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { visitorId } = c.req.valid("param");
-    const found = await withWorkspace(db, id, (tx) => deleteContact(tx, id, visitorId));
-    if (!found) return c.json(NOT_FOUND, 404);
+    const deleted = await withWorkspace(db, id, (tx) => deleteContacts(tx, id, [visitorId]));
+    if (deleted === 0) return c.json(NOT_FOUND, 404);
     live.wake(id, OPERATORS);
     // Their open chats end: the token now names nobody.
     live.revoke(id, visitorId);

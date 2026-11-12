@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq } from "drizzle-orm";
-import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
+import { KEY_REQUESTS_PER_MINUTE } from "./api-keys.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { deleteContact } from "./contacts.ts";
+import { deleteContacts } from "./contacts.ts";
 import { conversation, visitor } from "./db/schema.ts";
 import {
   type Database,
@@ -14,23 +14,25 @@ import {
 } from "./db/tenant.ts";
 import {
   errorAnswer,
-  FORBIDDEN,
   failure,
+  jsonAnswer,
+  jsonBody,
   KEY_LIMITED,
   NOT_FOUND,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { newBrowserToken, sha256Hex } from "./identity.ts";
 import { InboxMessage, messageView } from "./inbox.ts";
+import { Body } from "./inputs.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import { closedFailure, OPEN_WHILE_CLOSED, WORKSPACE_PREFIX } from "./member.ts";
-import { appendMessage, catchClosed, WorkspaceClosedError } from "./messages.ts";
+import { appendMessage, catchClosed, joinVisitor, WorkspaceClosedError } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
-import { maySetUp } from "./team.ts";
+import { requireSetUp } from "./team.ts";
+import { MINUTE_SECONDS } from "./time.ts";
 
 /** Simulated visitor messages a workspace may send in a minute. */
 export const TEST_MESSAGES_PER_MINUTE = 10;
-const MINUTE_SECONDS = 60;
 
 /** The answer to a test message over the limit. */
 export const testMessagesLimited = (waitSeconds: number) =>
@@ -40,13 +42,7 @@ export const testMessagesLimited = (waitSeconds: number) =>
   );
 
 export const TestMessageInput = z.object({
-  body: z
-    .string()
-    .trim()
-    .min(1)
-    .max(MESSAGE_MAX)
-    .regex(/^[^\0]*$/)
-    .describe("What the test visitor writes"),
+  body: Body.describe("What the test visitor writes"),
   name: z
     .string()
     .trim()
@@ -93,13 +89,7 @@ async function testVisitor(tx: Transaction, workspaceId: string, input: TestMess
   const [found] = await tx
     .select({ id: visitor.id })
     .from(conversation)
-    .innerJoin(
-      visitor,
-      and(
-        eq(visitor.workspaceId, conversation.workspaceId),
-        eq(visitor.id, conversation.visitorId),
-      ),
-    )
+    .innerJoin(visitor, joinVisitor())
     .where(
       and(
         eq(conversation.workspaceId, workspaceId),
@@ -170,8 +160,11 @@ export function createTestVisitors({
           .select({ id: visitor.id })
           .from(visitor)
           .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.isTest, true)));
-        for (const row of rows) await deleteContact(tx, workspaceId, row.id);
-        return rows.length;
+        return deleteContacts(
+          tx,
+          workspaceId,
+          rows.map((row) => row.id),
+        );
       });
       if (deleted > 0) live.wake(workspaceId, OPERATORS);
       return deleted;
@@ -192,25 +185,17 @@ const sendRoute = createRoute({
   summary: `Send a message as a test visitor, to test a bot from end to end. At most ${TEST_MESSAGES_PER_MINUTE} a minute per workspace`,
   request: {
     params: workspaceParams,
-    body: { required: true, content: { "application/json": { schema: TestMessageInput } } },
+    body: jsonBody(TestMessageInput),
   },
   responses: {
-    201: {
-      description: "The test visitor, its conversation and the message",
-      content: {
-        "application/json": {
-          schema: z.object({
-            visitorId: z.string(),
-            conversationId: z.string(),
-            message: InboxMessage,
-          }),
-        },
-      },
-    },
+    201: jsonAnswer(
+      "The test visitor, its conversation and the message",
+      z.object({ visitorId: z.string(), conversationId: z.string(), message: InboxMessage }),
+    ),
     ...ROLE_WRITE_ERRORS,
     404: errorAnswer("not_found: the conversation is not a test visitor's"),
     429: errorAnswer(
-      `too_many_requests: over ${TEST_MESSAGES_PER_MINUTE} test messages a minute. Retry after \`retry-after\``,
+      `too_many_requests: over an API key's ${KEY_REQUESTS_PER_MINUTE} requests a minute, or the workspace's ${TEST_MESSAGES_PER_MINUTE} test messages a minute. Retry after \`retry-after\``,
     ),
   },
 });
@@ -224,17 +209,14 @@ const deleteRoute = createRoute({
   request: { params: workspaceParams },
   responses: {
     ...KEY_LIMITED,
-    200: {
-      description: "How many test visitors were deleted",
-      content: { "application/json": { schema: z.object({ deleted: z.number().int() }) } },
-    },
+    200: jsonAnswer("How many test visitors were deleted", z.object({ deleted: z.number().int() })),
     ...ROLE_WRITE_ERRORS,
   },
 });
 
 export function registerTestVisitorRoutes(app: App, testVisitors: TestVisitors): void {
+  requireSetUp(app, [sendRoute, deleteRoute]);
   app.openapi(sendRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const sent = await testVisitors.send(c.get("memberWorkspaceId"), c.req.valid("json"));
     if (sent.kind === "limited") return tooManyRequests(c, sent.waitSeconds);
     if (sent.kind === "missing") return c.json(NOT_FOUND, 404);
@@ -247,7 +229,6 @@ export function registerTestVisitorRoutes(app: App, testVisitors: TestVisitors):
   });
 
   app.openapi(deleteRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     return c.json({ deleted: await testVisitors.deleteAll(c.get("memberWorkspaceId")) }, 200);
   });
 }

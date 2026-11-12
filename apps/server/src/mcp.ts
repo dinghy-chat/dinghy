@@ -1,24 +1,18 @@
 import { z } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
-import {
-  apiKeyToken,
-  authenticateApiKey,
-  KEY_INVALID,
-  KEY_REQUESTS_PER_MINUTE,
-  type KeyActor,
-} from "./api-keys.ts";
+import { authenticateRequest, type KeyActor } from "./api-keys.ts";
 import { API_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { WEBHOOK_EVENTS } from "./db/schema.ts";
 import { type Database, writable } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND, RATE_LIMITED, WRONG_ORIGIN } from "./errors.ts";
 import type { Inbox } from "./inbox.ts";
+import { conversationId, UNTRUSTED_TEXT, webhookId } from "./inputs.ts";
 import type { Live } from "./live.ts";
 import { type ChatToolsOptions, chatTools } from "./mcp-chat-tools.ts";
-import { conversationId, UNTRUSTED_TEXT, webhookId } from "./mcp-inputs.ts";
 import { mcpSetupTools, type SetupToolOptions } from "./mcp-setup-tools.ts";
 import { closedFailure } from "./member.ts";
-import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
+import type { RateLimit } from "./rate-limit.ts";
 import { assignTo, NOT_A_MEMBER } from "./team.ts";
 import type { Webhooks } from "./webhooks.ts";
 
@@ -36,6 +30,11 @@ const SUPPORTED_VERSIONS = [STATELESS_VERSION, ...PROTOCOL_VERSIONS];
 const PATH = "/v1/mcp";
 const META_VERSION = "io.modelcontextprotocol/protocolVersion";
 const META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
+// JSON-RPC error codes, and the MCP ones past them.
+const PARSE_ERROR = -32700;
+const INVALID_REQUEST = -32600;
+const METHOD_NOT_FOUND = -32601;
+const INVALID_PARAMS = -32602;
 const HEADER_MISMATCH = -32020;
 const UNSUPPORTED_VERSION = -32022;
 /** How long a client may keep the tool list. It depends on the key's level, so it is private. */
@@ -63,7 +62,7 @@ const rpcResult = (id: RpcId, result: Record<string, unknown>) => ({
 /** A tool's answer: its data, or an error body with a stable code, as the HTTP API gives. */
 export type Outcome = { data: Record<string, unknown> } | { error: ReturnType<typeof failure> };
 
-export interface Context {
+interface Context {
   workspaceId: string;
   actor: KeyActor;
 }
@@ -368,7 +367,8 @@ export function registerMcp(
     toolsFor(actor).map(({ call: _call, ...listed }) => listed);
   const callTool = async (id: RpcId, params: Params, actor: KeyActor) => {
     const found = toolsFor(actor).find((one) => one.name === params.name);
-    if (found === undefined) return rpcError(id, -32602, "There is no tool with this name.");
+    if (found === undefined)
+      return rpcError(id, INVALID_PARAMS, "There is no tool with this name.");
     const outcome = await found.call(params.arguments, { workspaceId: actor.workspaceId, actor });
     return rpcResult(id, toolResult(outcome));
   };
@@ -390,7 +390,7 @@ export function registerMcp(
     if (method === "ping") return rpcResult(id, {});
     if (method === "tools/list") return rpcResult(id, { tools: listTools(actor) });
     if (method === "tools/call") return callTool(id, params, actor);
-    return rpcError(id, -32601, "This method does not exist.");
+    return rpcError(id, METHOD_NOT_FOUND, "This method does not exist.");
   };
 
   /** Answers one 2026-07-28 request, whose every result says it is complete and who answered. */
@@ -426,20 +426,19 @@ export function registerMcp(
     // A page on another site must not reach this through a visitor's browser.
     const origin = c.req.header("origin");
     if (origin !== undefined && origin !== publicOrigin) return c.json(WRONG_ORIGIN, 403);
-    const token = apiKeyToken(c.req.header("authorization"));
-    const actor = token === null ? null : await authenticateApiKey(db, token);
-    if (actor === null) {
-      const tokenSent = c.req.header("authorization") !== undefined;
-      c.header("www-authenticate", challenge(resourceMetadata, tokenSent));
-      return c.json(KEY_INVALID, 401);
+    const actor = await authenticateRequest(c, db, rateLimit);
+    if (actor instanceof Response) {
+      if (actor.status === 401) {
+        const tokenSent = c.req.header("authorization") !== undefined;
+        actor.headers.set("www-authenticate", challenge(resourceMetadata, tokenSent));
+      }
+      return actor;
     }
-    const wait = await rateLimit.hit("api-key", actor.apiKeyId, KEY_REQUESTS_PER_MINUTE, 60);
-    if (wait !== null) return tooManyRequests(c, wait);
     const raw: unknown = await c.req.json().catch(() => undefined);
-    if (raw === undefined) return c.json(rpcError(null, -32700, "The body is not JSON."), 400);
+    if (raw === undefined) return c.json(rpcError(null, PARSE_ERROR, "The body is not JSON."), 400);
     const parsed = RpcMessage.safeParse(raw);
     if (!parsed.success) {
-      return c.json(rpcError(null, -32600, "Send one JSON-RPC 2.0 message."), 400);
+      return c.json(rpcError(null, INVALID_REQUEST, "Send one JSON-RPC 2.0 message."), 400);
     }
     const { id, method, params = {} } = parsed.data;
     const header = c.req.header("mcp-protocol-version");
@@ -469,7 +468,8 @@ export function registerMcp(
     if (id === undefined || method === undefined) return c.body(null, 202);
     if (!stateless) return c.json(await answerLegacy(id, method, params, actor), 200);
     const answer = await answerStateless(id, method, params, actor);
-    if (answer === null) return c.json(rpcError(id, -32601, "This method does not exist."), 404);
+    if (answer === null)
+      return c.json(rpcError(id, METHOD_NOT_FOUND, "This method does not exist."), 404);
     return c.json(answer, 200);
   });
 

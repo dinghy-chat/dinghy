@@ -6,6 +6,7 @@ import type { Logger } from "pino";
 import { KeyName } from "./api-keys.ts";
 import { sha256Hex } from "./identity.ts";
 import type { RateLimit } from "./rate-limit.ts";
+import { HOUR_SECONDS, MINUTE_SECONDS } from "./time.ts";
 import { endpointProblem, guardedLookup, PUBLIC_ONLY } from "./webhooks.ts";
 
 // An OAuth client is a public client, with no secret. Dinghy knows two kinds and stores neither:
@@ -25,9 +26,10 @@ export interface OAuthClient {
 export const DEFAULT_CLIENT_NAME = "MCP client";
 export const REDIRECT_URIS_MAX = 5;
 const REDIRECT_URI_MAX_LENGTH = 500;
-const CLIENT_ID_MAX_LENGTH = 4096;
+/** The longest client ID: a registered one holds its redirect URIs. */
+export const CLIENT_ID_MAX_LENGTH = 4096;
 const DCR_PREFIX = "dcr1.";
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
+export const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
 /** Schemes that run code or read files where a browser lands, never a redirect target. */
 const REFUSED_SCHEMES = new Set(["javascript:", "data:", "file:", "vbscript:", "blob:", "about:"]);
 const PRIVATE_SCHEME = /^[a-z][a-z0-9+.-]*:$/;
@@ -134,13 +136,14 @@ function isMetadataUrl(clientId: string): boolean {
 
 /**
  * The host Settings shows for a grant's client, from its client ID alone: a metadata URL's host,
- * or a registered client's first redirect host. The ID was checked when the grant was approved.
+ * or a registered client's first redirect host, which may be a loopback address. The ID was checked
+ * when the grant was approved.
  */
-export function clientHost(clientId: string): string | null {
-  if (isMetadataUrl(clientId)) return new URL(clientId).hostname;
+export function clientHost(clientId: string): { host: string; loopback: boolean } | null {
+  if (isMetadataUrl(clientId)) return { host: new URL(clientId).hostname, loopback: false };
   const parts = decodeClientId(clientId);
   const first = parts === null ? undefined : readPayload(parts.payload)?.r[0];
-  return first === undefined || !URL.canParse(first) ? null : redirectHost(first).host;
+  return first === undefined || !URL.canParse(first) ? null : redirectHost(first);
 }
 
 /** Fetches a metadata document. It answers null for anything but a small JSON answer. */
@@ -216,7 +219,7 @@ function readClientDocument(url: string, document: unknown): OAuthClient | null 
   };
 }
 
-const DOCUMENT_CACHE_SECONDS = 60 * 60;
+const DOCUMENT_CACHE_SECONDS = HOUR_SECONDS;
 const FETCHES_PER_MINUTE = 20;
 
 interface ClientsOptions {
@@ -249,14 +252,18 @@ export function createClients({
   return async function findClient(
     clientId: string,
     operatorId: string,
-  ): Promise<OAuthClient | "limited" | null> {
+  ): Promise<OAuthClient | { waitSeconds: number } | null> {
     if (clientId.startsWith(DCR_PREFIX)) return verifyClientId(secret, clientId);
     if (!isMetadataUrl(clientId)) return null;
     const hit = readClientDocument(clientId, await cached(clientId));
     if (hit !== null) return hit;
-    if ((await rateLimit.hit("oauth-client-fetch", operatorId, FETCHES_PER_MINUTE, 60)) !== null) {
-      return "limited";
-    }
+    const wait = await rateLimit.hit(
+      "oauth-client-fetch",
+      operatorId,
+      FETCHES_PER_MINUTE,
+      MINUTE_SECONDS,
+    );
+    if (wait !== null) return { waitSeconds: wait };
     const document = await fetchDocument(clientId);
     const client = readClientDocument(clientId, document);
     if (client !== null) {

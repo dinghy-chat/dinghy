@@ -147,7 +147,14 @@ export const visitorQuote = (row: QuoteRow | null) =>
  * How a reply came: a key's through the REST API or the MCP server, or an operator's that sent a
  * key's draft.
  */
-type Channel = "api" | "mcp" | "draft";
+export const CHANNELS = ["api", "mcp", "draft"] as const;
+type Channel = (typeof CHANNELS)[number];
+
+/** A write that did not come the default way: a key's through MCP, or an operator's that sent a draft. */
+export type MessageSource = { via: "mcp" } | { via: "draft"; draftId: string };
+
+/** How a key's write came, when not through the REST API. */
+export type KeySource = Extract<MessageSource, { via: "mcp" }>;
 
 export interface StoredMessage {
   id: string;
@@ -357,15 +364,26 @@ export const catchClosed = <T>(write: Promise<T>): Promise<T | WorkspaceClosedEr
     throw error;
   });
 
+/** Waits for a write, and returns `{ kind: "closed" }` instead of throwing ConversationClosedError. */
+export const catchConversationClosed = <T>(write: Promise<T>): Promise<T | { kind: "closed" }> =>
+  write.catch((error: unknown) => {
+    if (error instanceof ConversationClosedError) return { kind: "closed" as const };
+    throw error;
+  });
+
 /** Takes the next position and the workspace row lock, which lasts until commit. */
-export async function nextSeq(tx: Transaction, workspaceId: string): Promise<bigint> {
-  const [next] = await tx
+export const nextSeq = (tx: Transaction, workspaceId: string): Promise<bigint> =>
+  takeSeqs(tx, workspaceId, 1);
+
+/** Takes `count` positions in a row and the workspace row lock. Answers the first position. */
+async function takeSeqs(tx: Transaction, workspaceId: string, count: number): Promise<bigint> {
+  const [last] = await tx
     .update(workspace)
-    .set({ eventSeq: sql`${workspace.eventSeq} + 1` })
+    .set({ eventSeq: sql`${workspace.eventSeq} + ${count}` })
     .where(eq(workspace.id, workspaceId))
     .returning({ seq: workspace.eventSeq });
-  if (next === undefined) throw new Error("The workspace row is missing");
-  return next.seq;
+  if (last === undefined) throw new Error("The workspace row is missing");
+  return last.seq - BigInt(count - 1);
 }
 
 /**
@@ -429,10 +447,7 @@ export async function appendMessage(
     alert?: boolean;
     /** An earlier message of the same conversation that this one quotes. */
     replyToMessageId?: string | undefined;
-    /** A key's reply that came through MCP, or an operator's that sent a draft. */
-    via?: "mcp" | "draft";
-    /** The draft that this operator's message sends. */
-    fromDraftId?: string;
+    source?: MessageSource | undefined;
   } & ({ image?: NewImage; note?: false } | { image?: undefined; note: true }),
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
@@ -513,7 +528,7 @@ export async function appendMessage(
         height: input.image.height,
       },
     }),
-    ...(input.via !== undefined && { via: input.via }),
+    ...(input.source !== undefined && { via: input.source.via }),
   };
   const [row] = await tx
     .insert(message)
@@ -576,7 +591,8 @@ export async function appendMessage(
   // A new visitor message, or a person's answer, leaves the drafts that wait behind. A note reaches
   // no visitor, so it answers nothing.
   if ((author.kind === "visitor" && !target.created) || (author.kind === "operator" && !isNote)) {
-    await markDraftsStale(tx, workspaceId, conversationId, input.fromDraftId);
+    const sentDraftId = input.source?.via === "draft" ? input.source.draftId : undefined;
+    await markDraftsStale(tx, workspaceId, conversationId, sentDraftId);
   }
   return { message: stored(row), created: true, conversationStarted: target.created };
 }
@@ -605,11 +621,8 @@ async function markDraftsStale(
       ),
     )
     .returning({ id: draftReply.id });
-  if (marked.length === 0) return;
-  const seq = await nextSeq(tx, workspaceId);
-  await tx
-    .insert(event)
-    .values({ workspaceId, seq, kind: "draft.changed", payload: { conversationId } });
+  if (marked.length > 0)
+    await recordConversationChange(tx, workspaceId, conversationId, "draft.changed");
 }
 
 /** Whether an operator has replied in this conversation. */
@@ -928,6 +941,15 @@ export interface ConversationSummary extends ConversationRow {
 }
 
 /**
+ * Whether a conversation, named by its alias in the query, is a bot's test visitor's. Nobody is
+ * told about one: it alerts nobody, is never unread and stays out of the numbers.
+ */
+export const conversationHasTestVisitor = (alias: SQL) => sql<boolean>`exists (
+  select 1 from ${visitor} as tv
+  where tv.workspace_id = ${alias}.workspace_id and tv.id = ${alias}.visitor_id and tv.is_test
+)`;
+
+/**
  * Whether the conversation in the query has a visitor message past this operator's read position.
  * An API key, null here, has no position, so nothing is unread for it. A bot's test visitor is
  * never unread, as it alerts nobody. Notes are not messages, so they are never unread. The probe
@@ -936,11 +958,7 @@ export interface ConversationSummary extends ConversationRow {
 function unreadBy(operatorId: string | null) {
   if (operatorId === null) return sql<boolean>`false`;
   // Aliased, because Drizzle leaves the table off a column when a query has no join.
-  return sql<boolean>`not exists (
-    select 1 from ${visitor} as tv
-    where tv.workspace_id = ${conversation}.workspace_id and tv.id = ${conversation}.visitor_id
-      and tv.is_test
-  ) and exists (
+  return sql<boolean>`not ${conversationHasTestVisitor(sql`${conversation}`)} and exists (
     select 1 from ${message} as m
     where m.workspace_id = ${conversation}.workspace_id and m.conversation_id = ${conversation}.id
       and m.author_visitor_id is not null and m.deleted_at is null
@@ -1229,11 +1247,21 @@ export async function findMessage(
   workspaceId: string,
   messageId: string,
 ): Promise<StoredMessage | null> {
-  const [row] = await tx
+  return (await findMessages(tx, workspaceId, [messageId])).get(messageId) ?? null;
+}
+
+/** The messages of these IDs that exist, by ID, in one query. */
+export async function findMessages(
+  tx: Transaction,
+  workspaceId: string,
+  messageIds: string[],
+): Promise<Map<string, StoredMessage>> {
+  if (messageIds.length === 0) return new Map();
+  const rows = await tx
     .select(messageColumns)
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
-  return row === undefined ? null : stored(row);
+    .where(and(eq(message.workspaceId, workspaceId), inArray(message.id, messageIds)));
+  return new Map(rows.map((row) => [row.id, stored(row)]));
 }
 
 export async function findConversation(
@@ -1241,12 +1269,24 @@ export async function findConversation(
   workspaceId: string,
   conversationId: string,
 ): Promise<ConversationRow | null> {
-  const [row] = await tx
+  return (await findConversations(tx, workspaceId, [conversationId])).get(conversationId) ?? null;
+}
+
+/** The conversations of these IDs that exist, by ID, in one query. */
+export async function findConversations(
+  tx: Transaction,
+  workspaceId: string,
+  conversationIds: string[],
+): Promise<Map<string, ConversationRow>> {
+  if (conversationIds.length === 0) return new Map();
+  const rows = await tx
     .select(conversationColumns)
     .from(conversation)
     .innerJoin(visitor, joinVisitor())
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  return row ?? null;
+    .where(
+      and(eq(conversation.workspaceId, workspaceId), inArray(conversation.id, conversationIds)),
+    );
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 /** One conversation's messages after a position, in commit order. */
@@ -1359,15 +1399,33 @@ export async function assignConversation(
   return true;
 }
 
-/** Tells every open operator app that this conversation changed. It holds no text. */
-export async function recordConversationChange(
+type ConversationChange = Extract<EventKind, `conversation.${string}` | "draft.changed">;
+
+/** Tells every open operator app that this conversation, or its drafts, changed. It holds no text. */
+export const recordConversationChange = (
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
-  kind: Extract<EventKind, `conversation.${string}`>,
+  kind: ConversationChange,
+): Promise<void> => recordConversationChanges(tx, workspaceId, [conversationId], kind);
+
+/** The same change to several conversations, with an event each, in one insert. */
+export async function recordConversationChanges(
+  tx: Transaction,
+  workspaceId: string,
+  conversationIds: string[],
+  kind: ConversationChange,
 ): Promise<void> {
-  const seq = await nextSeq(tx, workspaceId);
-  await tx.insert(event).values({ workspaceId, seq, kind, payload: { conversationId } });
+  if (conversationIds.length === 0) return;
+  const first = await takeSeqs(tx, workspaceId, conversationIds.length);
+  await tx.insert(event).values(
+    conversationIds.map((conversationId, index) => ({
+      workspaceId,
+      seq: first + BigInt(index),
+      kind,
+      payload: { conversationId },
+    })),
+  );
 }
 
 /** Tells every open operator app to read the team again. It holds no names. */

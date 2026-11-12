@@ -861,7 +861,7 @@ export const apiKey = pgTable(
   ],
 );
 
-export const CREDENTIAL_KINDS = ["code", "access", "refresh"] as const;
+const CREDENTIAL_KINDS = ["code", "access", "refresh"] as const;
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
 
 /**
@@ -909,7 +909,7 @@ export const apiKeyCredential = pgTable(
 );
 
 /** How an operator ended a draft reply. */
-export const DRAFT_RESOLUTIONS = ["sent", "discarded"] as const;
+const DRAFT_RESOLUTIONS = ["sent", "discarded"] as const;
 export type DraftResolution = (typeof DRAFT_RESOLUTIONS)[number];
 
 /**

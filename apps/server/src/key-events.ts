@@ -1,12 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import type { Logger } from "pino";
-import {
-  apiKeyToken,
-  authenticateApiKey,
-  KEY_INVALID,
-  KEY_REQUESTS_PER_MINUTE,
-  keyStillValid,
-} from "./api-keys.ts";
+import { authenticateRequest, keyStillValid } from "./api-keys.ts";
 import { API_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { WEBHOOK_EVENTS, type WebhookEvent } from "./db/schema.ts";
@@ -17,9 +11,9 @@ import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, type OperatorNotice } from "./live.ts";
 import { closedFailure } from "./member.ts";
 import { type Cursor, formatCursor, listWorkspaceEvents, parseCursor } from "./messages.ts";
-import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
+import type { RateLimit } from "./rate-limit.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
-import { webhookData, webhookTypes } from "./webhooks.ts";
+import { isWebhookEvent, webhookData, webhookTypes } from "./webhooks.ts";
 
 const PATH = "/v1/events";
 /** Events read for one page of the stream. */
@@ -47,9 +41,6 @@ function parsePosition(value: string): Position {
     partOf: { ...cursor, part: Number(part) },
   };
 }
-
-const isWebhookEvent = (name: string): name is WebhookEvent =>
-  WEBHOOK_EVENTS.some((one) => one === name);
 
 const eventsRoute = createRoute({
   method: "get",
@@ -106,59 +97,68 @@ interface KeyEventsOptions {
   publicOrigin: string;
 }
 
-export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
-  const { db, images, limits, live, logger, rateLimit, stream, publicOrigin } = options;
-
-  /**
-   * One page of events after a cursor, as webhook bodies of the wanted types, without the parts of
-   * a row that the client has.
-   */
-  const readPage = (
-    workspaceId: string,
-    wanted: Set<WebhookEvent> | null,
-    position: Cursor | undefined,
-    partOf: Position["partOf"],
-  ) =>
-    withWorkspace(db, workspaceId, async (tx) => {
-      const page = await listWorkspaceEvents(tx, workspaceId, position, PAGE);
-      const items: { event: string; seq: bigint; id: string; data: unknown }[] = [];
-      const has = (seq: bigint, part: number) =>
-        partOf !== null &&
-        partOf.generation === page.cursor.generation &&
-        partOf.seq === seq &&
-        part <= partOf.part;
-      for (const one of page.events) {
-        const ids = one.payload as { conversationId?: string; messageId?: string };
-        if (ids.conversationId === undefined) continue;
-        const types = webhookTypes(one.kind, one.payload);
-        for (const [part, type] of types.entries()) {
-          if (wanted !== null && !wanted.has(type)) continue;
-          if (has(one.seq, part)) continue;
-          const data = await webhookData(tx, images, workspaceId, {
-            conversationId: ids.conversationId,
+/**
+ * One page of events after a cursor, as webhook bodies of the wanted types, without the parts of
+ * a row that the client has.
+ */
+const readPage = (
+  { db, images }: Pick<KeyEventsOptions, "db" | "images">,
+  workspaceId: string,
+  wanted: Set<WebhookEvent> | null,
+  position: Cursor | undefined,
+  partOf: Position["partOf"],
+) =>
+  withWorkspace(db, workspaceId, async (tx) => {
+    const page = await listWorkspaceEvents(tx, workspaceId, position, PAGE);
+    const has = (seq: bigint, part: number) =>
+      partOf !== null &&
+      partOf.generation === page.cursor.generation &&
+      partOf.seq === seq &&
+      part <= partOf.part;
+    const wantedEvents = page.events.flatMap((one) => {
+      const ids = one.payload as { conversationId?: string; messageId?: string };
+      const { conversationId } = ids;
+      if (conversationId === undefined) return [];
+      const types = webhookTypes(one.kind, one.payload);
+      const cursor = formatCursor({ generation: page.cursor.generation, seq: one.seq });
+      return [...types.entries()]
+        .filter(([part, type]) => (wanted === null || wanted.has(type)) && !has(one.seq, part))
+        .map(([part, type]) => ({
+          type,
+          seq: one.seq,
+          id: part === types.length - 1 ? cursor : `${cursor}.${part}`,
+          subject: {
+            conversationId,
             messageId: type.startsWith("message.") ? (ids.messageId ?? null) : null,
-          });
-          // A conversation or message deleted since has nothing to send.
-          if (typeof data === "string") continue;
-          const cursor = formatCursor({ generation: page.cursor.generation, seq: one.seq });
-          const id = part === types.length - 1 ? cursor : `${cursor}.${part}`;
-          items.push({ event: type, seq: one.seq, id, data: { type, workspaceId, data } });
-        }
-      }
-      return { ...page, items };
+          },
+        }));
     });
+    const bodies = await webhookData(
+      tx,
+      images,
+      workspaceId,
+      wantedEvents.map((one) => one.subject),
+    );
+    const items = wantedEvents.flatMap(({ type, seq, id }, index) => {
+      const data = bodies[index];
+      // A conversation or message deleted since has nothing to send.
+      if (typeof data !== "object") return [];
+      return [{ event: type, seq, id, data: { type, workspaceId, data } }];
+    });
+    return { ...page, items };
+  });
+
+export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
+  const { db, limits, live, logger, rateLimit, stream, publicOrigin } = options;
 
   app.openapi(eventsRoute, async (c) => {
     const origin = c.req.header("origin");
     if (origin !== undefined && origin !== publicOrigin) return c.json(WRONG_ORIGIN, 403);
-    const token = apiKeyToken(c.req.header("authorization"));
-    const actor = token === null ? null : await authenticateApiKey(db, token);
-    if (actor === null) return c.json(KEY_INVALID, 401);
-    const wait = await rateLimit.hit("api-key", actor.apiKeyId, KEY_REQUESTS_PER_MINUTE, 60);
-    if (wait !== null) return tooManyRequests(c, wait);
+    const actor = await authenticateRequest(c, db, rateLimit);
+    if (actor instanceof Response) return actor;
     if (actor.access === "waiting_payment") {
       const refused = closedFailure(actor.access);
-      return c.json(refused.body, 402);
+      return c.json(refused.body, refused.status);
     }
     const { types, after } = c.req.valid("query");
     const resume = c.req.header("last-event-id");
@@ -183,7 +183,7 @@ export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
       expiresAt: undefined,
       after: position?.after,
       authorized: () => keyStillValid(db, actor),
-      read: (cursor) => readPage(workspaceId, wanted, cursor, position?.partOf ?? null),
+      read: (cursor) => readPage(options, workspaceId, wanted, cursor, position?.partOf ?? null),
     });
   });
 }

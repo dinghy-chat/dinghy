@@ -8,21 +8,29 @@ import type { App } from "./app.ts";
 import type { Database } from "./db/tenant.ts";
 import { mcpResource, normalizeResource, SCOPES } from "./oauth-authorize.ts";
 import {
+  CLIENT_ID_MAX_LENGTH,
   createClients,
   DEFAULT_CLIENT_NAME,
   type FetchClientDocument,
   isValidRedirectUri,
+  LOOPBACK_HOSTS,
   REDIRECT_URIS_MAX,
   signClientId,
 } from "./oauth-client.ts";
 import { registerOAuthConsent } from "./oauth-consent.ts";
-import { type Exchange, redeemCode, refreshGrant, revokeByToken } from "./oauth-grants.ts";
+import {
+  ACCESS_LIFETIME_MS,
+  type Exchange,
+  REFRESH_LIFETIME_MS,
+  redeemCode,
+  refreshGrant,
+  revokeByToken,
+} from "./oauth-grants.ts";
 import type { RateLimit } from "./rate-limit.ts";
+import { DAY_MS, HOUR_MS, HOUR_SECONDS, MINUTE_SECONDS } from "./time.ts";
 
 // Dinghy is its own OAuth 2.1 authorization server for MCP clients (MCP authorization 2026-07-28).
 // An approved grant is an API key, so everything that works for a key works for a grant.
-
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /**
  * The issuer: the public URL's origin, with no trailing slash. OAuth is on only on https or a
@@ -41,8 +49,6 @@ export const resourceMetadataUrl = (issuer: string) =>
 const REGISTRATIONS_PER_HOUR = 10;
 const TOKEN_REQUESTS_PER_MINUTE = 60;
 const FORM_MAX_BYTES = 16 * 1024;
-/** The longest client ID: a registered one holds its redirect URIs. */
-const CLIENT_ID_MAX = 4096;
 
 const OAuthError = z
   .object({ error: z.string(), error_description: z.string() })
@@ -102,8 +108,7 @@ const authorizationServerRoute = createRoute({
 const registerRoute = createRoute({
   method: "post",
   path: "/v1/oauth/register",
-  summary:
-    "Register a public OAuth client (RFC 7591). Dinghy stores nothing: the client ID holds the name and redirect URIs, signed. 10 an hour per address",
+  summary: `Register a public OAuth client (RFC 7591). Dinghy stores nothing: the client ID holds the name and redirect URIs, signed. ${REGISTRATIONS_PER_HOUR} an hour per address`,
   request: {
     body: {
       required: true,
@@ -146,7 +151,7 @@ const TokenForm = z.object({
   code: z.string().max(256).optional(),
   code_verifier: z.string().max(256).optional(),
   redirect_uri: z.string().max(2048).optional(),
-  client_id: z.string().max(CLIENT_ID_MAX).optional(),
+  client_id: z.string().max(CLIENT_ID_MAX_LENGTH).optional(),
   refresh_token: z.string().max(256).optional(),
   resource: z.string().max(2048).optional(),
   scope: z.string().max(256).optional(),
@@ -155,8 +160,7 @@ const TokenForm = z.object({
 const tokenRoute = createRoute({
   method: "post",
   path: "/v1/oauth/token",
-  summary:
-    "Trade an authorization code with its PKCE verifier, or a refresh token, for an access token (1 hour) and a new refresh token (30 days). 60 a minute per address",
+  summary: `Trade an authorization code with its PKCE verifier, or a refresh token, for an access token (${ACCESS_LIFETIME_MS / HOUR_MS} hour) and a new refresh token (${REFRESH_LIFETIME_MS / DAY_MS} days). ${TOKEN_REQUESTS_PER_MINUTE} a minute per address`,
   request: {
     body: {
       required: true,
@@ -198,7 +202,7 @@ const revokeRoute = createRoute({
           schema: z.object({
             token: z.string().max(256),
             token_type_hint: z.string().max(64).optional(),
-            client_id: z.string().max(CLIENT_ID_MAX).optional(),
+            client_id: z.string().max(CLIENT_ID_MAX_LENGTH).optional(),
           }),
         },
       },
@@ -255,9 +259,9 @@ function registerDiscovery(app: App, issuer: string): void {
   const server = {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
-    token_endpoint: `${issuer}/v1/oauth/token`,
-    registration_endpoint: `${issuer}/v1/oauth/register`,
-    revocation_endpoint: `${issuer}/v1/oauth/revoke`,
+    token_endpoint: `${issuer}${tokenRoute.path}`,
+    registration_endpoint: `${issuer}${registerRoute.path}`,
+    revocation_endpoint: `${issuer}${revokeRoute.path}`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
@@ -285,9 +289,9 @@ const limitByAddress =
 
 function registerClientRegistration(app: App, { rateLimit, secret }: OAuthOptions): void {
   app.use(
-    "/v1/oauth/register",
+    registerRoute.path,
     bodyLimit({ maxSize: FORM_MAX_BYTES }),
-    limitByAddress(rateLimit, "oauth-register", REGISTRATIONS_PER_HOUR, 60 * 60),
+    limitByAddress(rateLimit, "oauth-register", REGISTRATIONS_PER_HOUR, HOUR_SECONDS),
   );
   app.openapi(
     registerRoute,
@@ -332,7 +336,10 @@ function registerClientRegistration(app: App, { rateLimit, secret }: OAuthOption
     (result, c) => {
       if (!result.success) {
         return c.json(
-          oauthError("invalid_client_metadata", "Send redirect_uris: 1 to 5 addresses."),
+          oauthError(
+            "invalid_client_metadata",
+            `Send redirect_uris: 1 to ${REDIRECT_URIS_MAX} addresses.`,
+          ),
           400,
         );
       }
@@ -381,13 +388,13 @@ const requireForm = async (c: Context, next: Next) => {
 
 function registerTokenRoutes(app: App, { db, rateLimit, issuer }: OAuthOptions): void {
   for (const [path, name] of [
-    ["/v1/oauth/token", "oauth-token"],
-    ["/v1/oauth/revoke", "oauth-revoke"],
+    [tokenRoute.path, "oauth-token"],
+    [revokeRoute.path, "oauth-revoke"],
   ] as const) {
     app.use(
       path,
       bodyLimit({ maxSize: FORM_MAX_BYTES }),
-      limitByAddress(rateLimit, name, TOKEN_REQUESTS_PER_MINUTE, 60),
+      limitByAddress(rateLimit, name, TOKEN_REQUESTS_PER_MINUTE, MINUTE_SECONDS),
       requireForm,
     );
   }

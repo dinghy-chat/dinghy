@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, type SQL, sql } from "drizzle-orm";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
-import type { Actor } from "./api-keys.ts";
+import { type Actor, actorFields } from "./api-keys.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
@@ -10,17 +10,17 @@ import { widgetSiteSeen, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
-  FORBIDDEN,
   failure,
+  jsonAnswer,
+  jsonBody,
   KEY_LIMITED,
-  MEMBER_ERRORS,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { normalizeOrigin } from "./identity.ts";
 import type { LiveVisitors } from "./live-visitors.ts";
 import { OPEN_WHILE_CLOSED, WORKSPACE_PREFIX } from "./member.ts";
 import { FRAMEWORKS, IDENTITY_LANGUAGES, identitySetup, installSnippet } from "./setup-code.ts";
-import { badOrigin, MAX_ORIGINS, maySetUp } from "./team.ts";
+import { badOrigin, MAX_ORIGINS, requireSetUp, SETUP_DENIED } from "./team.ts";
 import { DAY_MS, HOUR_MS } from "./time.ts";
 
 /** Refused origins a workspace keeps as a hint, newest first, for a day. */
@@ -141,7 +141,7 @@ function siteRows(
   );
 }
 
-type SiteChange = { sites: string[] } | "bad_origin" | "limit";
+type SitesAnswer = { sites: string[] };
 
 /** The allowed sites, when the widget first loaded, and where it loaded. */
 async function installState(tx: Transaction, workspaceId: string) {
@@ -192,9 +192,7 @@ export function createSetup({
     // Origins are public, as every page that embeds the widget shows its own.
     audit(logger, "origins.changed", {
       workspaceId,
-      ...(actor.kind === "operator"
-        ? { operatorId: actor.operatorId }
-        : { apiKeyId: actor.apiKeyId }),
+      ...actorFields(actor),
       allowedOrigins: row.sites,
     });
     return row.sites;
@@ -223,7 +221,11 @@ export function createSetup({
     },
 
     /** Adds one origin, unless it is there already. */
-    async addSite(workspaceId: string, actor: Actor, value: string): Promise<SiteChange> {
+    async addSite(
+      workspaceId: string,
+      actor: Actor,
+      value: string,
+    ): Promise<SitesAnswer | "bad_origin" | "limit"> {
       const origin = normalizeOrigin(value);
       if (origin === null) return "bad_origin";
       const list = workspace.allowedOrigins;
@@ -238,7 +240,11 @@ export function createSetup({
       return sites.includes(origin) ? { sites } : "limit";
     },
 
-    async removeSite(workspaceId: string, actor: Actor, value: string): Promise<SiteChange> {
+    async removeSite(
+      workspaceId: string,
+      actor: Actor,
+      value: string,
+    ): Promise<SitesAnswer | "bad_origin"> {
       const origin = normalizeOrigin(value);
       if (origin === null) return "bad_origin";
       const list = workspace.allowedOrigins;
@@ -306,15 +312,11 @@ export type SiteSignals = Pick<Setup, "siteSeen" | "siteRefused">;
 
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}`;
 const workspaceParams = z.object({ workspaceId: z.uuid() });
-const Origin = z.string().trim().max(300).describe("An origin, such as https://www.example.com");
-const json = <T extends z.ZodType>(description: string, schema: T) => ({
-  description,
-  content: { "application/json": { schema } },
-});
-const denied = {
-  ...MEMBER_ERRORS,
-  403: errorAnswer("forbidden: this role, or a Conversations API key, may not do this"),
-};
+export const Origin = z
+  .string()
+  .trim()
+  .max(300)
+  .describe("An origin, such as https://www.example.com");
 const BAD_ORIGIN_ANSWER = {
   400: errorAnswer("invalid_request: the request is not valid. bad_origin: not a valid origin"),
 };
@@ -362,7 +364,8 @@ const IdentitySetup = z
     serverFile: z.string(),
     serverCode: z.string(),
     browserCode: z.string(),
-    secret: z.string(),
+    // Where the signing secret comes from. It never holds the secret.
+    secretNote: z.string(),
     publicKey: z.string(),
   })
   .openapi("IdentitySetup");
@@ -373,7 +376,7 @@ const snippetRoute = createRoute({
   security: SESSION_OR_SETUP_KEY,
   summary: "The code that adds the widget to an app made with a framework, and where it goes",
   request: { params: workspaceParams, query: z.object({ framework: z.enum(FRAMEWORKS) }) },
-  responses: { ...KEY_LIMITED, 200: json("The snippet", Snippet), ...denied },
+  responses: { ...KEY_LIMITED, 200: jsonAnswer("The snippet", Snippet), ...SETUP_DENIED },
 });
 
 const checkRoute = createRoute({
@@ -385,8 +388,8 @@ const checkRoute = createRoute({
   request: { params: workspaceParams, query: z.object({ origin: Origin.optional() }) },
   responses: {
     ...KEY_LIMITED,
-    200: json("The install's state", InstallCheck),
-    ...denied,
+    200: jsonAnswer("The install's state", InstallCheck),
+    ...SETUP_DENIED,
     ...BAD_ORIGIN_ANSWER,
   },
 });
@@ -398,7 +401,11 @@ const identityRoute = createRoute({
   summary:
     "Server code that signs the identity token for `Dinghy.identify()`, in a language. Never the signing secret",
   request: { params: workspaceParams, query: z.object({ language: z.enum(IDENTITY_LANGUAGES) }) },
-  responses: { ...KEY_LIMITED, 200: json("The code and its steps", IdentitySetup), ...denied },
+  responses: {
+    ...KEY_LIMITED,
+    200: jsonAnswer("The code and its steps", IdentitySetup),
+    ...SETUP_DENIED,
+  },
 });
 
 const listSitesRoute = createRoute({
@@ -407,7 +414,7 @@ const listSitesRoute = createRoute({
   security: SESSION_OR_SETUP_KEY,
   summary: "The allowed sites: the origins where the widget may load",
   request: { params: workspaceParams },
-  responses: { ...KEY_LIMITED, 200: json("The allowed sites", Sites), ...denied },
+  responses: { ...KEY_LIMITED, 200: jsonAnswer("The allowed sites", Sites), ...SETUP_DENIED },
 });
 
 const addSiteRoute = createRoute({
@@ -417,14 +424,11 @@ const addSiteRoute = createRoute({
   summary: `Allow the widget on one more origin. A workspace has at most ${MAX_ORIGINS}`,
   request: {
     params: workspaceParams,
-    body: {
-      required: true,
-      content: { "application/json": { schema: z.object({ origin: Origin }) } },
-    },
+    body: jsonBody(z.object({ origin: Origin })),
   },
   responses: {
     ...KEY_LIMITED,
-    200: json("The allowed sites", Sites),
+    200: jsonAnswer("The allowed sites", Sites),
     ...ROLE_WRITE_ERRORS,
     ...BAD_ORIGIN_ANSWER,
     409: errorAnswer(`site_limit: the workspace has ${MAX_ORIGINS} allowed sites already`),
@@ -440,7 +444,7 @@ const removeSiteRoute = createRoute({
   request: { params: workspaceParams, query: z.object({ origin: Origin }) },
   responses: {
     ...KEY_LIMITED,
-    200: json("The allowed sites", Sites),
+    200: jsonAnswer("The allowed sites", Sites),
     ...ROLE_WRITE_ERRORS,
     ...BAD_ORIGIN_ANSWER,
   },
@@ -448,15 +452,14 @@ const removeSiteRoute = createRoute({
 
 /** `serverUrl` is this server's origin, which the snippets load the widget from. */
 export function registerSetupRoutes(app: App, setup: Setup, serverUrl: string): void {
+  requireSetUp(app, [snippetRoute, checkRoute, identityRoute, listSitesRoute]);
   app.openapi(snippetRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const publicKey = await setup.publicKey(c.get("memberWorkspaceId"));
     const { framework } = c.req.valid("query");
     return c.json(installSnippet(framework, { serverUrl, publicKey }), 200);
   });
 
   app.openapi(checkRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { origin } = c.req.valid("query");
     const checked = await setup.check(c.get("memberWorkspaceId"), origin);
     if (checked === "bad_origin") return c.json(badOrigin(origin ?? ""), 400);
@@ -464,18 +467,15 @@ export function registerSetupRoutes(app: App, setup: Setup, serverUrl: string): 
   });
 
   app.openapi(identityRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const publicKey = await setup.publicKey(c.get("memberWorkspaceId"));
     return c.json(identitySetup(c.req.valid("query").language, publicKey), 200);
   });
 
   app.openapi(listSitesRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     return c.json({ sites: await setup.sites(c.get("memberWorkspaceId")) }, 200);
   });
 
   app.openapi(addSiteRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { origin } = c.req.valid("json");
     const changed = await setup.addSite(c.get("memberWorkspaceId"), c.get("actor"), origin);
     if (changed === "bad_origin") return c.json(badOrigin(origin), 400);
@@ -484,10 +484,9 @@ export function registerSetupRoutes(app: App, setup: Setup, serverUrl: string): 
   });
 
   app.openapi(removeSiteRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { origin } = c.req.valid("query");
     const changed = await setup.removeSite(c.get("memberWorkspaceId"), c.get("actor"), origin);
-    if (typeof changed === "string") return c.json(badOrigin(origin), 400);
+    if (changed === "bad_origin") return c.json(badOrigin(origin), 400);
     return c.json(changed, 200);
   });
 }

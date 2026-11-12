@@ -22,9 +22,14 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { forgetPagesWithoutChat, lockVisitor } from "./journey.ts";
+import { forgetPagesWithoutChat, lockVisitors } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { findConversation, recordConversationChange, recordTeamChange } from "./messages.ts";
+import {
+  findConversation,
+  recordConversationChange,
+  recordConversationChanges,
+  recordTeamChange,
+} from "./messages.ts";
 import { allowed } from "./team.ts";
 
 // Long enough to stop someone who clears their browser, and short enough for an address that a
@@ -118,33 +123,33 @@ async function unblock(tx: Transaction, workspaceId: string, visitorId: string):
 }
 
 /**
- * Deletes a conversation and queues its stored files, in one transaction. The worker deletes the
+ * Deletes conversations and queues their stored files, in one transaction. The worker deletes the
  * files, because an object store can be down, and the database must not wait for it.
  */
-export async function deleteConversation(
+export async function deleteConversations(
   tx: Transaction,
   workspaceId: string,
-  conversationId: string,
-  visitorId: string,
+  conversations: { id: string; visitorId: string }[],
 ): Promise<void> {
-  // The visitor's lock comes before the workspace's, as in a block, and in a send that notes a new
-  // address. A page report holds it too, so a report and this delete take turns, and the delete
+  if (conversations.length === 0) return;
+  const ids = conversations.map((one) => one.id);
+  const visitorIds = [...new Set(conversations.map((one) => one.visitorId))];
+  // The visitors' locks come before the workspace's, as in a block, and in a send that notes a new
+  // address. A page report holds one too, so a report and this delete take turns, and the delete
   // never leaves a page behind.
-  await lockVisitor(tx, workspaceId, visitorId);
+  await lockVisitors(tx, workspaceId, visitorIds);
   // Then the workspace's, as in every other write. A send that holds this lock and checks the
   // conversation with a foreign key would deadlock with a delete that took the conversation first.
   // One that waits here finds the conversation gone, and a visitor's next message starts a new one.
-  await recordConversationChange(tx, workspaceId, conversationId, "conversation.deleted");
+  await recordConversationChanges(tx, workspaceId, ids, "conversation.deleted");
   // A draft names the messages it quotes or became, so it goes before them.
   await tx
     .delete(draftReply)
-    .where(
-      and(eq(draftReply.workspaceId, workspaceId), eq(draftReply.conversationId, conversationId)),
-    );
+    .where(and(eq(draftReply.workspaceId, workspaceId), inArray(draftReply.conversationId, ids)));
   const messages = tx
     .select({ id: message.id })
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversationId)));
+    .where(and(eq(message.workspaceId, workspaceId), inArray(message.conversationId, ids)));
   const files = await tx
     .delete(attachment)
     .where(and(eq(attachment.workspaceId, workspaceId), inArray(attachment.messageId, messages)))
@@ -156,11 +161,11 @@ export async function deleteConversation(
   }
   await tx
     .delete(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversationId)));
+    .where(and(eq(message.workspaceId, workspaceId), inArray(message.conversationId, ids)));
   await tx
     .delete(conversation)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  await forgetPagesWithoutChat(tx, workspaceId, visitorId);
+    .where(and(eq(conversation.workspaceId, workspaceId), inArray(conversation.id, ids)));
+  await forgetPagesWithoutChat(tx, workspaceId, visitorIds);
 }
 
 const params = z.object({ workspaceId: z.uuid(), conversationId: z.uuid() });
@@ -329,7 +334,7 @@ export function registerModerationRoutes(app: App, db: Database, live: Live): vo
     const visitorId = await withWorkspace(db, id, async (tx) => {
       const found = await findConversation(tx, id, conversationId);
       if (found === null) return null;
-      await deleteConversation(tx, id, conversationId, found.visitorId);
+      await deleteConversations(tx, id, [{ id: conversationId, visitorId: found.visitorId }]);
       return found.visitorId;
     });
     if (visitorId === null) return c.json(NOT_FOUND, 404);

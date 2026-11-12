@@ -8,7 +8,10 @@ import sharp from "sharp";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { setReplyMode } from "../test/keys.ts";
 import { signedInOperator } from "../test/operators.ts";
+import { asOperator, withKey } from "../test/requests.ts";
+import { SITE, visitorSays, visitorStarts } from "../test/visitors.ts";
 import { fanOutOne } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -19,7 +22,6 @@ import {
   draftReply,
   event,
   message,
-  type ReplyMode,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
@@ -29,8 +31,6 @@ import { createLive } from "./live.ts";
 import { localStore } from "./storage.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const SITE = "https://app.example.com";
-const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 const ok = async () => {};
 
@@ -49,45 +49,8 @@ const inSpace = (path = "") => `/v1/operator/workspaces/${space.id}${path}`;
 const inChat = (conversationId: string, path: string) =>
   inSpace(`/conversations/${conversationId}${path}`);
 
-function call(headers: Record<string, string>, method: string, path: string, body?: unknown) {
-  return app.request(path, {
-    method,
-    headers: { ...headers, ...(body === undefined ? {} : { "content-type": "application/json" }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-}
-const asOperator = (who: { cookie: string }, method: string, path: string, body?: unknown) =>
-  call({ cookie: who.cookie, origin: ORIGIN }, method, path, body);
-const asKey = (method: string, path: string, body?: unknown, token = key.token) =>
-  call({ authorization: `Bearer ${token}` }, method, path, body);
-
-const setMode = (replyMode: ReplyMode) =>
-  owner.update(apiKey).set({ replyMode }).where(eq(apiKey.id, key.id));
-
-/** A new visitor's first message, which opens a conversation. */
-async function newChat(body = "Where is my order?") {
-  const made = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
-  });
-  const visitor = (await made.json()) as { visitorId: string; token: string };
-  const conversationId = await visitorSays(visitor.token, body);
-  return { ...visitor, conversationId };
-}
-
-async function visitorSays(token: string, body: string) {
-  const sent = await call(
-    { origin: SITE, authorization: `Bearer ${token}` },
-    "POST",
-    `/v1/widget/${space.publicKey}/messages`,
-    { clientId: randomUUID(), body },
-  );
-  expect(sent.status).toBe(201);
-  return ((await sent.json()) as { conversationId: string }).conversationId;
-}
-
 const keyReply = (conversationId: string, body: string, clientId: string = randomUUID()) =>
-  asKey("POST", inChat(conversationId, "/messages"), { clientId, body });
+  withKey(app, key.token, "POST", inChat(conversationId, "/messages"), { clientId, body });
 
 async function errorCode(response: Response) {
   return ((await response.json()) as { error: { code: string } }).error.code;
@@ -192,12 +155,14 @@ beforeAll(async () => {
     .update(workspaceMember)
     .set({ alertEmail: true })
     .where(eq(workspaceMember.workspaceId, space.id));
-  const made = await asOperator(boss, "POST", inSpace("/api-keys"), { name: "Support bot" });
+  const made = await asOperator(app, boss.cookie, "POST", inSpace("/api-keys"), {
+    name: "Support bot",
+  });
   key = (await made.json()) as { id: string; token: string };
 }, 30_000);
 
 beforeEach(async () => {
-  await setMode("send");
+  await setReplyMode(owner, key.id, "send");
   await owner.update(workspace).set({ botsPausedAt: null }).where(eq(workspace.id, space.id));
 });
 
@@ -208,22 +173,24 @@ afterAll(async () => {
 
 describe("reply modes", () => {
   test("a new key drafts, as the migration left only the old keys sending", async () => {
-    const made = await asOperator(boss, "POST", inSpace("/api-keys"), { name: "New bot" });
+    const made = await asOperator(app, boss.cookie, "POST", inSpace("/api-keys"), {
+      name: "New bot",
+    });
     const { id } = (await made.json()) as { id: string };
     const [row] = await owner.select().from(apiKey).where(eq(apiKey.id, id));
     expect(row?.replyMode).toBe("draft");
   });
 
   test("a send-mode key's reply reaches the visitor", async () => {
-    const chat = await newChat();
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     const sent = await keyReply(chat.conversationId, "It ships today.");
     expect(sent.status).toBe(201);
     expect(await widgetText(chat.token)).toContain("It ships today.");
   });
 
   test("a draft-mode key's reply waits as a draft, and a retry returns the same one", async () => {
-    await setMode("draft");
-    const chat = await newChat();
+    await setReplyMode(owner, key.id, "draft");
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     const first = await keyReply(chat.conversationId, "Maybe tomorrow.", "d1");
     expect(first.status).toBe(202);
     const { draft } = (await first.json()) as { draft: { id: string; status: string } };
@@ -243,8 +210,8 @@ describe("reply modes", () => {
   });
 
   test("a draft-mode key's image answers drafts_text_only, and nothing is stored", async () => {
-    await setMode("draft");
-    const chat = await newChat();
+    await setReplyMode(owner, key.id, "draft");
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     const png = await sharp({
       create: { width: 2, height: 2, channels: 3, background: "#123456" },
     })
@@ -262,8 +229,8 @@ describe("reply modes", () => {
 
 describe("a person handling a conversation", () => {
   test("an operator's reply silences a send-mode key, which may still draft", async () => {
-    const chat = await newChat();
-    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
+    await asOperator(app, boss.cookie, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "I have it.",
     });
@@ -271,9 +238,14 @@ describe("a person handling a conversation", () => {
     const refused = await keyReply(chat.conversationId, "Me too!");
     expect(refused.status).toBe(409);
     expect(await errorCode(refused)).toBe("human_handling");
-    await setMode("draft");
+    await setReplyMode(owner, key.id, "draft");
     expect((await keyReply(chat.conversationId, "A suggestion")).status).toBe(202);
-    const read = await asOperator(boss, "GET", inChat(chat.conversationId, "/messages"));
+    const read = await asOperator(
+      app,
+      boss.cookie,
+      "GET",
+      inChat(chat.conversationId, "/messages"),
+    );
     const { conversation: shown } = (await read.json()) as {
       conversation: Record<string, unknown>;
     };
@@ -294,14 +266,17 @@ describe("a person handling a conversation", () => {
   });
 
   test("give back lets the key send again, and only people can do it", async () => {
-    const chat = await newChat();
-    await asOperator(agent, "POST", inChat(chat.conversationId, "/messages"), {
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
+    await asOperator(app, agent.cookie, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Let me look.",
     });
-    expect((await asKey("POST", inChat(chat.conversationId, "/give-back"))).status).toBe(403);
     expect(
-      (await asOperator(agent, "POST", inChat(chat.conversationId, "/give-back"))).status,
+      (await withKey(app, key.token, "POST", inChat(chat.conversationId, "/give-back"))).status,
+    ).toBe(403);
+    expect(
+      (await asOperator(app, agent.cookie, "POST", inChat(chat.conversationId, "/give-back")))
+        .status,
     ).toBe(200);
     expect((await conversationRow(chat.conversationId))?.humanSince).toBeNull();
     expect((await keyReply(chat.conversationId, "Back to me.")).status).toBe(201);
@@ -311,24 +286,24 @@ describe("a person handling a conversation", () => {
 describe("who handles a conversation", () => {
   /** The handler as the list and the read show it, which must agree. */
   async function handlerOf(conversationId: string) {
-    const list = await asOperator(boss, "GET", inSpace("/conversations?limit=100"));
+    const list = await asOperator(app, boss.cookie, "GET", inSpace("/conversations?limit=100"));
     const { conversations } = (await list.json()) as {
       conversations: { id: string; handler: unknown }[];
     };
-    const read = await asOperator(boss, "GET", inChat(conversationId, "/messages"));
+    const read = await asOperator(app, boss.cookie, "GET", inChat(conversationId, "/messages"));
     const { conversation: shown } = (await read.json()) as { conversation: { handler: unknown } };
     expect(conversations.find((one) => one.id === conversationId)?.handler).toEqual(shown.handler);
     return shown.handler;
   }
 
   test("no one, then the bot that took part, the team after a handoff, the bot again", async () => {
-    const chat = await newChat();
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     expect(await handlerOf(chat.conversationId)).toBeNull();
-    await setMode("draft");
+    await setReplyMode(owner, key.id, "draft");
     await keyReply(chat.conversationId, "A suggestion");
     const bot = { kind: "bot", apiKeyId: key.id, name: "Support bot" };
     expect(await handlerOf(chat.conversationId)).toEqual(bot);
-    await asKey("POST", inChat(chat.conversationId, "/handoff"), {
+    await withKey(app, key.token, "POST", inChat(chat.conversationId, "/handoff"), {
       clientId: randomUUID(),
       reason: "A person should answer",
     });
@@ -336,7 +311,7 @@ describe("who handles a conversation", () => {
       kind: "team",
       since: expect.any(String),
     });
-    await asOperator(agent, "PUT", inChat(chat.conversationId, "/assignee"), {
+    await asOperator(app, agent.cookie, "PUT", inChat(chat.conversationId, "/assignee"), {
       operatorId: agent.id,
     });
     expect(await handlerOf(chat.conversationId)).toMatchObject({
@@ -344,19 +319,19 @@ describe("who handles a conversation", () => {
       operatorId: agent.id,
       name: "Ana",
     });
-    await asOperator(agent, "POST", inChat(chat.conversationId, "/give-back"));
+    await asOperator(app, agent.cookie, "POST", inChat(chat.conversationId, "/give-back"));
     expect(await handlerOf(chat.conversationId)).toEqual(bot);
   });
 
   test("a key's note makes it the bot that took part, and an operator's note does not", async () => {
-    const chat = await newChat();
-    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
+    await asOperator(app, boss.cookie, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Watch this one.",
       note: true,
     });
     expect(await handlerOf(chat.conversationId)).toBeNull();
-    await asKey("POST", inChat(chat.conversationId, "/messages"), {
+    await withKey(app, key.token, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Looked up the order.",
       note: true,
@@ -371,15 +346,17 @@ describe("who handles a conversation", () => {
 
 describe("drafts", () => {
   async function drafted(body: string) {
-    await setMode("draft");
-    const chat = await newChat();
+    await setReplyMode(owner, key.id, "draft");
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     const made = await keyReply(chat.conversationId, body);
     const { draft } = (await made.json()) as { draft: { id: string } };
     return { ...chat, draftId: draft.id };
   }
   const listed = async (conversationId: string) =>
     (
-      (await (await asOperator(boss, "GET", inChat(conversationId, "/drafts"))).json()) as {
+      (await (
+        await asOperator(app, boss.cookie, "GET", inChat(conversationId, "/drafts"))
+      ).json()) as {
         drafts: { id: string; status: string }[];
       }
     ).drafts;
@@ -387,13 +364,13 @@ describe("drafts", () => {
   test("a new visitor message marks the waiting drafts stale", async () => {
     const chat = await drafted("Try restarting it.");
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["open"]);
-    await visitorSays(chat.token, "Actually, it works now.");
+    await visitorSays(app, space.publicKey, chat.token, "Actually, it works now.");
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["stale"]);
   });
 
   test("a person's reply marks the waiting drafts stale", async () => {
     const chat = await drafted("Try restarting it.");
-    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+    await asOperator(app, boss.cookie, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "I'll take this one.",
     });
@@ -402,16 +379,22 @@ describe("drafts", () => {
 
   test("an operator's note leaves the drafts waiting and the bots answering", async () => {
     const chat = await drafted("Try restarting it.");
-    const noted = await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
-      clientId: randomUUID(),
-      body: "Check their plan first.",
-      note: true,
-    });
+    const noted = await asOperator(
+      app,
+      boss.cookie,
+      "POST",
+      inChat(chat.conversationId, "/messages"),
+      {
+        clientId: randomUUID(),
+        body: "Check their plan first.",
+        note: true,
+      },
+    );
     expect(noted.status).toBe(201);
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["open"]);
     // A note is no answer to the visitor, so no person handles the conversation yet.
     expect((await conversationRow(chat.conversationId))?.humanSince).toBeNull();
-    await setMode("send");
+    await setReplyMode(owner, key.id, "send");
     expect((await keyReply(chat.conversationId, "Restart it, please.")).status).toBe(201);
   });
 
@@ -420,7 +403,7 @@ describe("drafts", () => {
     const second = await keyReply(chat.conversationId, "Second idea.");
     const { draft } = (await second.json()) as { draft: { id: string } };
     const path = inChat(chat.conversationId, `/drafts/${draft.id}/send`);
-    expect((await asOperator(boss, "POST", path, {})).status).toBe(201);
+    expect((await asOperator(app, boss.cookie, "POST", path, {})).status).toBe(201);
     const [sent] = await owner.select().from(draftReply).where(eq(draftReply.id, draft.id));
     expect(sent).toMatchObject({ resolved: "sent", staleAt: null });
     expect(await listed(chat.conversationId)).toEqual([
@@ -431,9 +414,9 @@ describe("drafts", () => {
   test("a draft that one operator sent, another sends again: the visitor gets it once", async () => {
     const chat = await drafted("Your parcel is on its way.");
     const path = inChat(chat.conversationId, `/drafts/${chat.draftId}/send`);
-    const first = await asOperator(boss, "POST", path, {});
+    const first = await asOperator(app, boss.cookie, "POST", path, {});
     expect(first.status).toBe(201);
-    const second = await asOperator(agent, "POST", path, { body: "Something else" });
+    const second = await asOperator(app, agent.cookie, "POST", path, { body: "Something else" });
     expect(second.status).toBe(200);
     const shown = (await second.json()) as { id: string; authorOperatorId: string; body: string };
     expect(shown).toMatchObject({
@@ -457,7 +440,9 @@ describe("drafts", () => {
   test("sending a draft writes the operator's message, and keeps the bot on the conversation", async () => {
     const chat = await drafted("Your order left today.");
     const path = inChat(chat.conversationId, `/drafts/${chat.draftId}/send`);
-    const sent = await asOperator(boss, "POST", path, { body: "Your order left this morning." });
+    const sent = await asOperator(app, boss.cookie, "POST", path, {
+      body: "Your order left this morning.",
+    });
     expect(sent.status).toBe(201);
     const shown = (await sent.json()) as { id: string };
     expect(shown).toMatchObject({
@@ -470,7 +455,7 @@ describe("drafts", () => {
     expect((await conversationRow(chat.conversationId))?.humanSince).toBeNull();
     const [row] = await owner.select().from(draftReply).where(eq(draftReply.id, chat.draftId));
     expect(row).toMatchObject({ resolved: "sent", sentMessageId: shown.id, apiKeyId: key.id });
-    const again = await asOperator(boss, "POST", path, {});
+    const again = await asOperator(app, boss.cookie, "POST", path, {});
     expect(again.status).toBe(200);
     expect(((await again.json()) as { id: string }).id).toBe(shown.id);
     expect(await listed(chat.conversationId)).toEqual([]);
@@ -479,31 +464,33 @@ describe("drafts", () => {
   test("a discarded draft never reaches the visitor and cannot be sent", async () => {
     const chat = await drafted("Wrong answer.");
     const base = inChat(chat.conversationId, `/drafts/${chat.draftId}`);
-    expect((await asOperator(agent, "POST", `${base}/discard`)).status).toBe(200);
-    expect((await asOperator(boss, "POST", `${base}/send`, {})).status).toBe(404);
+    expect((await asOperator(app, agent.cookie, "POST", `${base}/discard`)).status).toBe(200);
+    expect((await asOperator(app, boss.cookie, "POST", `${base}/send`, {})).status).toBe(404);
     expect(await listed(chat.conversationId)).toEqual([]);
     expect(await widgetText(chat.token)).not.toContain("Wrong answer.");
   });
 
   test("keys cannot list, send or discard drafts", async () => {
     const chat = await drafted("Not for keys.");
-    expect((await asKey("GET", inChat(chat.conversationId, "/drafts"))).status).toBe(403);
+    expect(
+      (await withKey(app, key.token, "GET", inChat(chat.conversationId, "/drafts"))).status,
+    ).toBe(403);
     const base = inChat(chat.conversationId, `/drafts/${chat.draftId}`);
-    expect((await asKey("POST", `${base}/send`, {})).status).toBe(403);
-    expect((await asKey("POST", `${base}/discard`)).status).toBe(403);
+    expect((await withKey(app, key.token, "POST", `${base}/send`, {})).status).toBe(403);
+    expect((await withKey(app, key.token, "POST", `${base}/discard`)).status).toBe(403);
   });
 });
 
 describe("notes", () => {
   test("a key writes a note while a person handles the conversation", async () => {
-    await setMode("send");
-    const chat = await newChat();
-    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+    await setReplyMode(owner, key.id, "send");
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
+    await asOperator(app, boss.cookie, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "I'm on it.",
     });
     expect(await errorCode(await keyReply(chat.conversationId, "Me too"))).toBe("human_handling");
-    const noted = await asKey("POST", inChat(chat.conversationId, "/messages"), {
+    const noted = await withKey(app, key.token, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Order #1234 is late",
       note: true,
@@ -518,15 +505,15 @@ describe("handoff", () => {
   const handoffPath = (conversationId: string) => inChat(conversationId, "/handoff");
 
   test("only a key hands off", async () => {
-    const chat = await newChat();
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     const body = { clientId: randomUUID(), reason: "Refund" };
-    expect((await asOperator(boss, "POST", handoffPath(chat.conversationId), body)).status).toBe(
-      403,
-    );
+    expect(
+      (await asOperator(app, boss.cookie, "POST", handoffPath(chat.conversationId), body)).status,
+    ).toBe(403);
   });
 
   test("a handoff tells the visitor, assigns, silences the bot and alerts the assignee", async () => {
-    const chat = await newChat("I want a refund");
+    const chat = await visitorStarts(app, space.publicKey, "I want a refund");
     // Earlier events alert on their own, and an email to the same person within minutes is skipped.
     await owner.update(event).set({ needsAlert: false }).where(eq(event.workspaceId, space.id));
     const body = {
@@ -536,7 +523,7 @@ describe("handoff", () => {
       operatorId: agent.id,
       visitorMessage: "I've passed this to the team.",
     };
-    const done = await asKey("POST", handoffPath(chat.conversationId), body);
+    const done = await withKey(app, key.token, "POST", handoffPath(chat.conversationId), body);
     expect(done.status).toBe(201);
     expect(await done.json()).toMatchObject({
       visitorMessage: { status: "sent", message: { body: "I've passed this to the team." } },
@@ -559,7 +546,7 @@ describe("handoff", () => {
     expect(await errorCode(await keyReply(chat.conversationId, "One more thing"))).toBe(
       "human_handling",
     );
-    const retry = await asKey("POST", handoffPath(chat.conversationId), body);
+    const retry = await withKey(app, key.token, "POST", handoffPath(chat.conversationId), body);
     expect(retry.status).toBe(200);
     expect(await notesOf(chat.conversationId)).toHaveLength(1);
 
@@ -572,20 +559,20 @@ describe("handoff", () => {
   });
 
   test("a retry answers the first result and sends nothing, even after bots resume", async () => {
-    const chat = await newChat();
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     const paused = inSpace("/bots-paused");
-    await asOperator(boss, "PUT", paused, { paused: true });
+    await asOperator(app, boss.cookie, "PUT", paused, { paused: true });
     const body = {
       clientId: randomUUID(),
       reason: "Needs a person",
       visitorMessage: "A person will take over.",
     };
-    const first = await asKey("POST", handoffPath(chat.conversationId), body);
+    const first = await withKey(app, key.token, "POST", handoffPath(chat.conversationId), body);
     expect(first.status).toBe(201);
     const notSent = { visitorMessage: { status: "not_sent", reason: "bots_paused" } };
     expect(await first.json()).toEqual(notSent);
-    await asOperator(boss, "PUT", paused, { paused: false });
-    const retry = await asKey("POST", handoffPath(chat.conversationId), body);
+    await asOperator(app, boss.cookie, "PUT", paused, { paused: false });
+    const retry = await withKey(app, key.token, "POST", handoffPath(chat.conversationId), body);
     expect(retry.status).toBe(200);
     expect(await retry.json()).toEqual(notSent);
     expect(await widgetText(chat.token)).not.toContain("A person will take over.");
@@ -597,9 +584,9 @@ describe("handoff", () => {
   });
 
   test("an unassigned handoff alerts every member with alerts on", async () => {
-    const chat = await newChat();
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     await owner.update(event).set({ needsAlert: false }).where(eq(event.workspaceId, space.id));
-    const done = await asKey("POST", handoffPath(chat.conversationId), {
+    const done = await withKey(app, key.token, "POST", handoffPath(chat.conversationId), {
       clientId: randomUUID(),
       reason: "Angry customer",
     });
@@ -613,16 +600,16 @@ describe("handoff", () => {
   });
 
   test("a draft-mode key's message becomes a draft, and a stranger cannot be assigned", async () => {
-    await setMode("draft");
-    const chat = await newChat();
-    const stranger = await asKey("POST", handoffPath(chat.conversationId), {
+    await setReplyMode(owner, key.id, "draft");
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
+    const stranger = await withKey(app, key.token, "POST", handoffPath(chat.conversationId), {
       clientId: randomUUID(),
       reason: "x",
       operatorId: randomUUID(),
     });
     expect(stranger.status).toBe(400);
     expect(await errorCode(stranger)).toBe("not_a_member");
-    const done = await asKey("POST", handoffPath(chat.conversationId), {
+    const done = await withKey(app, key.token, "POST", handoffPath(chat.conversationId), {
       clientId: randomUUID(),
       reason: "Billing",
       visitorMessage: "A person will reply soon.",
@@ -635,41 +622,51 @@ describe("handoff", () => {
 describe("pausing every bot", () => {
   test("only owners and admins pause, and the apps can read it", async () => {
     const path = inSpace("/bots-paused");
-    expect((await asOperator(agent, "PUT", path, { paused: true })).status).toBe(403);
-    expect((await asKey("PUT", path, { paused: true })).status).toBe(403);
-    expect((await asOperator(boss, "PUT", path, { paused: true })).status).toBe(200);
-    const me = (await (await asOperator(agent, "GET", "/v1/operator/me")).json()) as {
+    expect((await asOperator(app, agent.cookie, "PUT", path, { paused: true })).status).toBe(403);
+    expect((await withKey(app, key.token, "PUT", path, { paused: true })).status).toBe(403);
+    expect((await asOperator(app, boss.cookie, "PUT", path, { paused: true })).status).toBe(200);
+    const me = (await (await asOperator(app, agent.cookie, "GET", "/v1/operator/me")).json()) as {
       workspaces: { botsPaused: boolean; botsPausedBy: string | null }[];
     };
     expect(me.workspaces[0]).toMatchObject({ botsPaused: true, botsPausedBy: "Mona" });
-    const face = (await (await asKey("GET", inSpace())).json()) as { botsPaused: boolean };
+    const face = (await (await withKey(app, key.token, "GET", inSpace())).json()) as {
+      botsPaused: boolean;
+    };
     expect(face).toMatchObject({ botsPaused: true, botsPausedBy: "Mona" });
-    const resumed = await asOperator(boss, "PUT", path, { paused: false });
+    const resumed = await asOperator(app, boss.cookie, "PUT", path, { paused: false });
     expect(await resumed.json()).toEqual({ paused: false, pausedBy: null });
-    const again = await asOperator(boss, "PUT", path, { paused: true });
+    const again = await asOperator(app, boss.cookie, "PUT", path, { paused: true });
     expect(await again.json()).toEqual({ paused: true, pausedBy: "Mona" });
-    await asOperator(boss, "PUT", path, { paused: false });
+    await asOperator(app, boss.cookie, "PUT", path, { paused: false });
   });
 
   test("a pause refuses replies, drafts and typing, and leaves notes and handoffs", async () => {
-    const chat = await newChat();
-    await asOperator(boss, "PUT", inSpace("/bots-paused"), { paused: true });
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
+    await asOperator(app, boss.cookie, "PUT", inSpace("/bots-paused"), { paused: true });
     expect(await errorCode(await keyReply(chat.conversationId, "Hi"))).toBe("bots_paused");
-    await setMode("draft");
+    await setReplyMode(owner, key.id, "draft");
     expect(await errorCode(await keyReply(chat.conversationId, "Hi"))).toBe("bots_paused");
-    const typing = await asKey("POST", inChat(chat.conversationId, "/typing"), { typing: true });
+    const typing = await withKey(app, key.token, "POST", inChat(chat.conversationId, "/typing"), {
+      typing: true,
+    });
     expect(await errorCode(typing)).toBe("bots_paused");
-    const noted = await asKey("POST", inChat(chat.conversationId, "/messages"), {
+    const noted = await withKey(app, key.token, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Paused, noted",
       note: true,
     });
     expect(noted.status).toBe(201);
-    const handedOff = await asKey("POST", inChat(chat.conversationId, "/handoff"), {
-      clientId: randomUUID(),
-      reason: "Paused",
-      visitorMessage: "Someone will reply.",
-    });
+    const handedOff = await withKey(
+      app,
+      key.token,
+      "POST",
+      inChat(chat.conversationId, "/handoff"),
+      {
+        clientId: randomUUID(),
+        reason: "Paused",
+        visitorMessage: "Someone will reply.",
+      },
+    );
     expect(await handedOff.json()).toEqual({
       visitorMessage: { status: "not_sent", reason: "bots_paused" },
     });
@@ -678,26 +675,35 @@ describe("pausing every bot", () => {
 
 describe("typing", () => {
   test("a key's typing reaches the visitor's chat, and a person's handling refuses it", async () => {
-    const chat = await newChat();
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
     const stream = listen(
       await app.request(`/v1/widget/${space.publicKey}/stream`, {
         headers: { origin: SITE, authorization: `Bearer ${chat.token}` },
       }),
     );
     await stream.waitFor((one) => one.event === "ready");
-    const typing = await asKey("POST", inChat(chat.conversationId, "/typing"), { typing: true });
+    const typing = await withKey(app, key.token, "POST", inChat(chat.conversationId, "/typing"), {
+      typing: true,
+    });
     expect(typing.status).toBe(200);
     const notice = await stream.waitFor((one) => one.event === "notice");
     expect(notice.data).toEqual({ kind: "typing", name: "Support bot", typing: true });
     await stream.stop();
     expect(
-      (await asOperator(boss, "POST", inChat(chat.conversationId, "/typing"), {})).status,
+      (await asOperator(app, boss.cookie, "POST", inChat(chat.conversationId, "/typing"), {}))
+        .status,
     ).toBe(403);
-    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+    await asOperator(app, boss.cookie, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Mine.",
     });
-    const refused = await asKey("POST", inChat(chat.conversationId, "/typing"), {});
+    const refused = await withKey(
+      app,
+      key.token,
+      "POST",
+      inChat(chat.conversationId, "/typing"),
+      {},
+    );
     expect(await errorCode(refused)).toBe("human_handling");
   });
 });
@@ -711,7 +717,7 @@ describe("the event stream for keys", () => {
   test("it delivers webhook bodies, resumes from a cursor and keeps to the types asked", async () => {
     const live = listen(await open());
     await live.waitFor((one) => one.event === "ready");
-    const chat = await newChat("Hello from the stream");
+    const chat = await visitorStarts(app, space.publicKey, "Hello from the stream");
     const created = await live.waitFor((one) => one.event === "message.created");
     expect(created.data).toMatchObject({
       type: "message.created",
@@ -722,7 +728,7 @@ describe("the event stream for keys", () => {
       },
     });
     await live.waitFor((one) => one.event === "conversation.created");
-    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+    await asOperator(app, boss.cookie, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Streamed note",
       note: true,
@@ -746,7 +752,7 @@ describe("the event stream for keys", () => {
   test("a stream that drops between the two events of a first message resumes with the second", async () => {
     const live = listen(await open());
     await live.waitFor((one) => one.event === "ready");
-    const chat = await newChat("Two events, one change");
+    const chat = await visitorStarts(app, space.publicKey, "Two events, one change");
     const started = await live.waitFor((one) => one.event === "conversation.created");
     const created = await live.waitFor((one) => one.event === "message.created");
     await live.stop();
@@ -767,12 +773,501 @@ describe("the event stream for keys", () => {
     await after.stop();
   });
 
+  test("one page of several events reads as it did one event at a time", async () => {
+    const send = (headers: Record<string, string>, path: string, body: unknown) =>
+      app.request(path, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const asBoss = { cookie: boss.cookie, origin: new URL(PUBLIC_URL).origin };
+    const asBot = { authorization: `Bearer ${key.token}` };
+    const made = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
+      method: "POST",
+      headers: { origin: SITE },
+    });
+    const visitor = (await made.json()) as { token: string };
+    const asVisitor = { origin: SITE, authorization: `Bearer ${visitor.token}` };
+    const says = (body: string) =>
+      send(asVisitor, `/v1/widget/${space.publicKey}/messages`, { clientId: randomUUID(), body });
+    // The cursor of the first message, so the rest comes as one page.
+    const start = listen(await app.request("/v1/events", { headers: asBot }));
+    await start.waitFor((one) => one.event === "ready");
+    const first = (await (await says("Where is order #1042?")).json()) as {
+      conversationId: string;
+    };
+    const marker = await start.waitFor((one) => one.event === "message.created");
+    await start.stop();
+    const chat = (path: string) => inChat(first.conversationId, path);
+    await says("It was due Monday.");
+    await send(asBot, chat("/messages"), { clientId: randomUUID(), body: "Let me check." });
+    await send(asBoss, chat("/messages"), { clientId: randomUUID(), body: "VIP", note: true });
+    await send(asBot, chat("/handoff"), {
+      clientId: randomUUID(),
+      reason: "Shipping question",
+      operatorId: boss.id,
+      visitorMessage: "A person takes over now.",
+    });
+    await send(asBoss, chat("/give-back"), {});
+    const page = listen(
+      await app.request("/v1/events", { headers: { ...asBot, "last-event-id": marker.id ?? "" } }),
+    );
+    await page.waitFor((one) => one.event === "ready");
+    await page.stop();
+    const names = new Map<string, string>();
+    const [, markerSeq = "0"] = (marker.id ?? "").split(".");
+    const sinceMarker = (seq: string | undefined) => BigInt(seq ?? 0) - BigInt(markerSeq);
+    const normalized = JSON.stringify(page.events)
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, (id) => {
+        if (!names.has(id)) names.set(id, `<id ${names.size}>`);
+        return names.get(id) ?? id;
+      })
+      .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>")
+      .replace(/"seq":"(\d+)"/g, (_, seq: string) => `"seq":"+${sinceMarker(seq)}"`)
+      .replace(/"\d+\.\d+(\.\d)?"/g, (cursor) => {
+        const [, seq, part] = cursor.slice(1, -1).split(".");
+        return `"+${sinceMarker(seq)}${part === undefined ? "" : `.${part}`}"`;
+      });
+    expect(JSON.parse(normalized)).toMatchInlineSnapshot(`
+      [
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": "<id 2>",
+                "handler": {
+                  "apiKeyId": "<id 3>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 4>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+              "message": {
+                "authorApiKeyId": null,
+                "authorName": null,
+                "authorOperatorId": null,
+                "body": "It was due Monday.",
+                "clientId": "<id 6>",
+                "conversationId": "<id 1>",
+                "createdAt": "<time>",
+                "deleted": false,
+                "editedAt": null,
+                "fromVisitor": true,
+                "id": "<id 5>",
+                "image": null,
+                "imageRemoved": false,
+                "kind": "text",
+                "readAt": null,
+                "replyTo": null,
+                "seq": "+1",
+                "via": null,
+              },
+            },
+            "type": "message.created",
+            "workspaceId": "<id 0>",
+          },
+          "event": "message.created",
+          "id": "+1",
+        },
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": "<id 2>",
+                "handler": {
+                  "apiKeyId": "<id 3>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 4>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+              "message": {
+                "authorApiKeyId": "<id 3>",
+                "authorName": "Support bot",
+                "authorOperatorId": null,
+                "body": "Let me check.",
+                "clientId": "<id 8>",
+                "conversationId": "<id 1>",
+                "createdAt": "<time>",
+                "deleted": false,
+                "editedAt": null,
+                "fromVisitor": false,
+                "id": "<id 7>",
+                "image": null,
+                "imageRemoved": false,
+                "kind": "text",
+                "readAt": null,
+                "replyTo": null,
+                "seq": "+2",
+                "via": "api",
+              },
+            },
+            "type": "message.created",
+            "workspaceId": "<id 0>",
+          },
+          "event": "message.created",
+          "id": "+2",
+        },
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": "<id 2>",
+                "handler": {
+                  "apiKeyId": "<id 3>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 4>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+              "message": {
+                "authorApiKeyId": null,
+                "authorName": "Mona",
+                "authorOperatorId": "<id 2>",
+                "body": "VIP",
+                "clientId": "<id 10>",
+                "conversationId": "<id 1>",
+                "createdAt": "<time>",
+                "deleted": false,
+                "editedAt": null,
+                "fromVisitor": false,
+                "id": "<id 9>",
+                "image": null,
+                "imageRemoved": false,
+                "kind": "note",
+                "readAt": null,
+                "replyTo": null,
+                "seq": "+3",
+                "via": null,
+              },
+            },
+            "type": "message.created",
+            "workspaceId": "<id 0>",
+          },
+          "event": "message.created",
+          "id": "+3",
+        },
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": "<id 2>",
+                "handler": {
+                  "apiKeyId": "<id 3>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 4>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+              "message": {
+                "authorApiKeyId": "<id 3>",
+                "authorName": "Support bot",
+                "authorOperatorId": null,
+                "body": "A person takes over now.",
+                "clientId": "<id 12>",
+                "conversationId": "<id 1>",
+                "createdAt": "<time>",
+                "deleted": false,
+                "editedAt": null,
+                "fromVisitor": false,
+                "id": "<id 11>",
+                "image": null,
+                "imageRemoved": false,
+                "kind": "text",
+                "readAt": null,
+                "replyTo": null,
+                "seq": "+4",
+                "via": "api",
+              },
+            },
+            "type": "message.created",
+            "workspaceId": "<id 0>",
+          },
+          "event": "message.created",
+          "id": "+4",
+        },
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": "<id 2>",
+                "handler": {
+                  "apiKeyId": "<id 3>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 4>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+              "message": {
+                "authorApiKeyId": "<id 3>",
+                "authorName": "Support bot",
+                "authorOperatorId": null,
+                "body": "Handed off: Shipping question",
+                "clientId": "handoff:<id 12>",
+                "conversationId": "<id 1>",
+                "createdAt": "<time>",
+                "deleted": false,
+                "editedAt": null,
+                "fromVisitor": false,
+                "id": "<id 13>",
+                "image": null,
+                "imageRemoved": false,
+                "kind": "note",
+                "readAt": null,
+                "replyTo": null,
+                "seq": "+5",
+                "via": "api",
+              },
+            },
+            "type": "message.created",
+            "workspaceId": "<id 0>",
+          },
+          "event": "message.created",
+          "id": "+5",
+        },
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": "<id 2>",
+                "handler": {
+                  "apiKeyId": "<id 3>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 4>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+            },
+            "type": "conversation.assigned",
+            "workspaceId": "<id 0>",
+          },
+          "event": "conversation.assigned",
+          "id": "+6",
+        },
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": "<id 2>",
+                "handler": {
+                  "apiKeyId": "<id 3>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 4>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+            },
+            "type": "conversation.handoff",
+            "workspaceId": "<id 0>",
+          },
+          "event": "conversation.handoff",
+          "id": "+7",
+        },
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": "<id 2>",
+                "handler": {
+                  "apiKeyId": "<id 3>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 4>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+            },
+            "type": "conversation.given_back",
+            "workspaceId": "<id 0>",
+          },
+          "event": "conversation.given_back",
+          "id": "+8",
+        },
+        {
+          "data": {
+            "cursor": "+8",
+          },
+          "event": "ready",
+        },
+      ]
+    `);
+  });
+
   test("a revoked key's stream closes at the next heartbeat", async () => {
-    const made = await asOperator(boss, "POST", inSpace("/api-keys"), { name: "Short-lived" });
+    const made = await asOperator(app, boss.cookie, "POST", inSpace("/api-keys"), {
+      name: "Short-lived",
+    });
     const temporary = (await made.json()) as { id: string; token: string };
     const stream = listen(await open("", {}, temporary.token));
     await stream.waitFor((one) => one.event === "ready");
-    await asOperator(boss, "DELETE", inSpace(`/api-keys/${temporary.id}`));
+    await asOperator(app, boss.cookie, "DELETE", inSpace(`/api-keys/${temporary.id}`));
     const closed = await stream.waitFor((one) => one.event === "close");
     expect(closed.data).toEqual({ reason: "revoked" });
   });

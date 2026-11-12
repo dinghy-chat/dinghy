@@ -6,7 +6,7 @@ import { BlockList, isIP, type LookupFunction } from "node:net";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Logger } from "pino";
-import type { Actor } from "./api-keys.ts";
+import { type Actor, actorFields } from "./api-keys.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
@@ -25,10 +25,10 @@ import {
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
-  FORBIDDEN,
   failure,
+  jsonAnswer,
+  jsonBody,
   KEY_LIMITED,
-  MEMBER_ERRORS,
   NOT_FOUND,
   okContent,
   ROLE_WRITE_ERRORS,
@@ -36,9 +36,15 @@ import {
 import type { Images } from "./images.ts";
 import { conversationView, messageView } from "./inbox.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
-import { authorNames, findConversation, findMessage } from "./messages.ts";
+import {
+  authorNames,
+  findConversation,
+  findConversations,
+  findMessage,
+  findMessages,
+} from "./messages.ts";
 import { retryDelayMs } from "./retry.ts";
-import { maySetUp } from "./team.ts";
+import { requireSetUp, SETUP_DENIED } from "./team.ts";
 import { DAY_MS } from "./time.ts";
 
 /** At most this many webhooks per workspace. */
@@ -47,7 +53,7 @@ const WEBHOOK_LIMIT = 5;
 const REQUEST_TIMEOUT_MS = 10_000;
 /** The first retry waits 30 seconds, doubling to an hour: 30 attempts last about a day. */
 export const WEBHOOK_MAX_ATTEMPTS = 30;
-const DELIVERIES_SHOWN = 20;
+export const DELIVERIES_SHOWN = 20;
 const ERROR_MAX = 200;
 /** The type of the event that "Send test" sends. It is never stored. */
 const TEST_TYPE = "webhook.test";
@@ -326,18 +332,6 @@ const Delivery = z
   })
   .openapi("WebhookDelivery");
 
-const json = <T extends z.ZodType>(schema: T) => ({
-  required: true,
-  content: { "application/json": { schema } },
-});
-const answer = <T extends z.ZodType>(description: string, schema: T) => ({
-  description,
-  content: { "application/json": { schema } },
-});
-const denied = {
-  ...MEMBER_ERRORS,
-  403: errorAnswer("forbidden: this role, or a Conversations API key, may not do this"),
-};
 const BAD_ENDPOINT_ANSWER = {
   400: errorAnswer(
     "invalid_request: the request is not valid. bad_endpoint: the URL is not https, or it is a private address on a server that does not allow them",
@@ -352,8 +346,8 @@ const listRoute = createRoute({
   request: { params: workspaceParams },
   responses: {
     ...KEY_LIMITED,
-    200: answer("The webhooks", z.object({ webhooks: z.array(Webhook) })),
-    ...denied,
+    200: jsonAnswer("The webhooks", z.object({ webhooks: z.array(Webhook) })),
+    ...SETUP_DENIED,
   },
 });
 
@@ -364,11 +358,11 @@ const createWebhookRoute = createRoute({
   summary: "Add a webhook. Its signing secret is shown only in this response",
   request: {
     params: workspaceParams,
-    body: json(z.object({ url: Url, events: EventList, enabled: z.boolean().default(true) })),
+    body: jsonBody(z.object({ url: Url, events: EventList, enabled: z.boolean().default(true) })),
   },
   responses: {
     ...KEY_LIMITED,
-    201: answer("The webhook, with its signing secret", WithSecret),
+    201: jsonAnswer("The webhook, with its signing secret", WithSecret),
     ...ROLE_WRITE_ERRORS,
     ...BAD_ENDPOINT_ANSWER,
     409: errorAnswer(`webhook_limit: the workspace has ${WEBHOOK_LIMIT} webhooks already`),
@@ -382,7 +376,7 @@ const changeRoute = createRoute({
   summary: "Change a webhook's URL, events, or whether it is on",
   request: {
     params: webhookParams,
-    body: json(
+    body: jsonBody(
       z.object({
         url: Url.optional(),
         events: EventList.optional(),
@@ -392,7 +386,7 @@ const changeRoute = createRoute({
   },
   responses: {
     ...KEY_LIMITED,
-    200: answer("The webhook", Webhook),
+    200: jsonAnswer("The webhook", Webhook),
     ...ROLE_WRITE_ERRORS,
     ...BAD_ENDPOINT_ANSWER,
   },
@@ -420,7 +414,7 @@ const rotateRoute = createRoute({
   request: { params: webhookParams },
   responses: {
     ...KEY_LIMITED,
-    200: answer("The webhook, with its new secret", WithSecret),
+    200: jsonAnswer("The webhook, with its new secret", WithSecret),
     ...ROLE_WRITE_ERRORS,
   },
 });
@@ -433,7 +427,7 @@ const testRoute = createRoute({
   request: { params: webhookParams },
   responses: {
     ...KEY_LIMITED,
-    200: answer(
+    200: jsonAnswer(
       "What the webhook answered",
       z.object({
         delivered: z.boolean(),
@@ -453,8 +447,8 @@ const deliveriesRoute = createRoute({
   request: { params: webhookParams },
   responses: {
     ...KEY_LIMITED,
-    200: answer("The deliveries, newest first", z.object({ deliveries: z.array(Delivery) })),
-    ...denied,
+    200: jsonAnswer("The deliveries, newest first", z.object({ deliveries: z.array(Delivery) })),
+    ...SETUP_DENIED,
   },
 });
 
@@ -467,7 +461,7 @@ const replayRoute = createRoute({
   request: { params: webhookParams.extend({ deliveryId: z.uuid() }) },
   responses: {
     ...KEY_LIMITED,
-    201: answer("The new delivery", z.object({ delivery: Delivery })),
+    201: jsonAnswer("The new delivery", z.object({ delivery: Delivery })),
     ...ROLE_WRITE_ERRORS,
   },
 });
@@ -505,10 +499,6 @@ const deliveryView = (row: DeliveryRow) => ({
   createdAt: row.createdAt.toISOString(),
   finishedAt: row.finishedAt?.toISOString() ?? null,
 });
-
-/** The actor's ID for the audit log and a webhook's creator. */
-const actorFields = (actor: Actor) =>
-  actor.kind === "operator" ? { operatorId: actor.operatorId } : { apiKeyId: actor.apiKeyId };
 
 const ofWebhook = (workspaceId: string, webhookId: string) =>
   and(eq(webhook.workspaceId, workspaceId), eq(webhook.id, webhookId));
@@ -741,13 +731,12 @@ export function createWebhooks({
 export type Webhooks = ReturnType<typeof createWebhooks>;
 
 export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhooks }): void {
+  requireSetUp(app, [listRoute, changeRoute, rotateRoute, testRoute, deliveriesRoute, replayRoute]);
   app.openapi(listRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     return c.json({ webhooks: await webhooks.list(c.get("memberWorkspaceId")) }, 200);
   });
 
   app.openapi(createWebhookRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const made = await webhooks.create(
       c.get("memberWorkspaceId"),
       c.get("actor"),
@@ -759,7 +748,6 @@ export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhoo
   });
 
   app.openapi(changeRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const changed = await webhooks.change(
       c.get("memberWorkspaceId"),
       c.get("actor"),
@@ -772,14 +760,12 @@ export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhoo
   });
 
   app.openapi(deleteRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     await webhooks.remove(c.get("memberWorkspaceId"), c.get("actor"), webhookId);
     return c.json({ ok: true as const }, 200);
   });
 
   app.openapi(rotateRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     const rotated = await webhooks.rotate(c.get("memberWorkspaceId"), c.get("actor"), webhookId);
     if (rotated === null) return c.json(NOT_FOUND, 404);
@@ -787,7 +773,6 @@ export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhoo
   });
 
   app.openapi(testRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     const result = await webhooks.test(c.get("memberWorkspaceId"), webhookId);
     if (result === null) return c.json(NOT_FOUND, 404);
@@ -795,7 +780,6 @@ export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhoo
   });
 
   app.openapi(deliveriesRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId } = c.req.valid("param");
     return c.json(
       { deliveries: await webhooks.deliveries(c.get("memberWorkspaceId"), webhookId) },
@@ -804,7 +788,6 @@ export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhoo
   });
 
   app.openapi(replayRoute, async (c) => {
-    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const { webhookId, deliveryId } = c.req.valid("param");
     const delivery = await webhooks.replay(
       c.get("memberWorkspaceId"),
@@ -834,36 +817,50 @@ export function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
     if (change === "handoff") return ["conversation.handoff"];
     return change === "given_back" ? ["conversation.given_back"] : [];
   }
-  return WEBHOOK_EVENTS.some((one) => one === kind) ? [kind as WebhookEvent] : [];
+  return isWebhookEvent(kind) ? [kind] : [];
 }
 
+export const isWebhookEvent = (name: string): name is WebhookEvent =>
+  WEBHOOK_EVENTS.some((one) => one === name);
+
 /** What one webhook event names: its conversation, and its message. */
-export interface WebhookSubject {
+interface WebhookSubject {
   conversationId: string;
   messageId: string | null;
 }
 
 /**
- * The `data` of one webhook event, in the same shapes as the operator API: the conversation, and
- * the message it names. A string says why there is nothing to send. The webhooks and
- * the key event stream both build their bodies with this.
+ * The `data` of webhook events, in the same shapes as the operator API: the conversation, and the
+ * message each names, in the subjects' order. It reads each kind of row in one query. A string says
+ * why there is nothing to send. The webhooks and the key event stream both build their bodies with
+ * this.
  */
 export async function webhookData(
   tx: Transaction,
   images: Images | undefined,
   workspaceId: string,
-  subject: WebhookSubject,
-): Promise<Record<string, unknown> | string> {
-  const found = await findConversation(tx, workspaceId, subject.conversationId);
-  if (found === null) return "The conversation was deleted.";
-  const data: Record<string, unknown> = { conversation: conversationView(found, null) };
-  if (subject.messageId !== null) {
-    const stored = await findMessage(tx, workspaceId, subject.messageId);
-    if (stored === null) return "The message was deleted.";
-    const names = await authorNames(tx, workspaceId, [stored]);
-    data.message = messageView(images, workspaceId, names, stored);
-  }
-  return data;
+  subjects: WebhookSubject[],
+): Promise<(Record<string, unknown> | string)[]> {
+  const conversations = await findConversations(
+    tx,
+    workspaceId,
+    subjects.map((one) => one.conversationId),
+  );
+  const messages = await findMessages(
+    tx,
+    workspaceId,
+    subjects.flatMap((one) => (one.messageId === null ? [] : [one.messageId])),
+  );
+  const names = await authorNames(tx, workspaceId, [...messages.values()]);
+  return subjects.map((subject) => {
+    const found = conversations.get(subject.conversationId);
+    if (found === undefined) return "The conversation was deleted.";
+    const data: Record<string, unknown> = { conversation: conversationView(found, null) };
+    if (subject.messageId === null) return data;
+    const stored = messages.get(subject.messageId);
+    if (stored === undefined) return "The message was deleted.";
+    return { ...data, message: messageView(images, workspaceId, names, stored) };
+  });
 }
 
 /**
@@ -1020,11 +1017,10 @@ async function planWebhook(
     if (!delivery.enabled) {
       return "Dinghy stopped this delivery because the webhook is off. Turn it on to receive future events.";
     }
-    const data = await webhookData(tx, images, row.workspaceId, {
-      conversationId: delivery.conversationId,
-      messageId: delivery.messageId,
-    });
-    if (typeof data === "string") return data;
+    const subject = { conversationId: delivery.conversationId, messageId: delivery.messageId };
+    const [data] = await webhookData(tx, images, row.workspaceId, [subject]);
+    // One subject has one answer.
+    if (typeof data !== "object") return data ?? "The conversation was deleted.";
     return {
       url: delivery.url,
       secret: delivery.secret,

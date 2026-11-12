@@ -1,6 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { and, desc, eq, isNotNull, isNull, type SQL } from "drizzle-orm";
-import { apiKey, conversation, draftReply, event } from "./db/schema.ts";
+import { apiKey, conversation, draftReply } from "./db/schema.ts";
 import { type Transaction, workspaceAccess, writable } from "./db/tenant.ts";
 import {
   type Author,
@@ -10,7 +10,7 @@ import {
   findMessage,
   InvalidReplyToError,
   lockWorkspace,
-  nextSeq,
+  recordConversationChange,
   type StoredMessage,
   WorkspaceClosedError,
 } from "./messages.ts";
@@ -91,14 +91,6 @@ const selectDrafts = (tx: Transaction, workspaceId: string, condition: SQL | und
     .orderBy(desc(draftReply.createdAt), desc(draftReply.id))
     .limit(DRAFTS_LISTED);
 
-/** Tells the operator apps that a conversation's drafts changed. Drafts make no webhook. */
-async function draftChanged(tx: Transaction, workspaceId: string, conversationId: string) {
-  const seq = await nextSeq(tx, workspaceId);
-  await tx
-    .insert(event)
-    .values({ workspaceId, seq, kind: "draft.changed", payload: { conversationId } });
-}
-
 /**
  * A draft-mode key's reply, which waits for an operator. A retry with the same clientId returns the
  * first. It runs under the workspace row lock, which the caller took.
@@ -130,7 +122,7 @@ export async function createDraft(
     body: input.body,
     replyToMessageId: input.replyToMessageId ?? null,
   });
-  await draftChanged(tx, workspaceId, conversationId);
+  await recordConversationChange(tx, workspaceId, conversationId, "draft.changed");
   const made = await findDraft(tx, workspaceId, apiKeyId, input.clientId);
   if (made === undefined) throw new Error("The draft insert left no row");
   return { draft: made, created: true };
@@ -149,7 +141,7 @@ export async function findDraft(
 }
 
 /** Which drafts a list holds: the ones that wait (open and stale), one of those, or all. */
-export type DraftFilter = "waiting" | "open" | "stale" | "all";
+type DraftFilter = "waiting" | "open" | "stale" | "all";
 
 const filterCondition = (filter: DraftFilter) => {
   if (filter === "all") return undefined;
@@ -177,8 +169,8 @@ export async function listDrafts(
   return rows.map(draftView);
 }
 
-/** The draft that waits in this conversation, locked until commit, or why there is none. */
-async function waitingDraft(
+/** A draft of this conversation, whatever its status, locked until commit. */
+async function lockDraft(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
@@ -206,10 +198,7 @@ async function waitingDraft(
 const ofDraft = (workspaceId: string, draftId: string) =>
   and(eq(draftReply.workspaceId, workspaceId), eq(draftReply.id, draftId));
 
-export type SentDraft =
-  | { kind: "sent"; message: StoredMessage; created: boolean }
-  | { kind: "missing" }
-  | { kind: "discarded" };
+type SentDraft = { kind: "sent"; message: StoredMessage; created: boolean } | { kind: "missing" };
 
 /**
  * Sends a draft as the operator's own message, with `via: "draft"`. The operator approves the bot's
@@ -225,9 +214,8 @@ export async function sendDraft(
 ): Promise<SentDraft> {
   // The workspace row lock first, as every write takes it, then the draft's row.
   await lockWorkspace(tx, workspaceId);
-  const draft = await waitingDraft(tx, workspaceId, author.conversationId, draftId);
-  if (draft === undefined) return { kind: "missing" };
-  if (draft.resolved === "discarded") return { kind: "discarded" };
+  const draft = await lockDraft(tx, workspaceId, author.conversationId, draftId);
+  if (draft === undefined || draft.resolved === "discarded") return { kind: "missing" };
   // Sent before, maybe by another operator: that message, so the visitor never gets it twice.
   if (draft.sentMessageId !== null) {
     const sent = await findMessage(tx, workspaceId, draft.sentMessageId);
@@ -237,8 +225,7 @@ export async function sendDraft(
   const reply = {
     clientId: `draft-${draftId}`,
     body: body ?? draft.body,
-    via: "draft" as const,
-    fromDraftId: draftId,
+    source: { via: "draft" as const, draftId },
   };
   const quote = draft.replyToMessageId ?? undefined;
   // The quoted message may have been deleted since the draft: then it goes without the quote.
@@ -258,7 +245,7 @@ export async function sendDraft(
       sentMessageId: appended.message.id,
     })
     .where(ofDraft(workspaceId, draftId));
-  await draftChanged(tx, workspaceId, author.conversationId);
+  await recordConversationChange(tx, workspaceId, author.conversationId, "draft.changed");
   return { kind: "sent", message: appended.message, created: appended.created };
 }
 
@@ -271,13 +258,13 @@ export async function discardDraft(
   draftId: string,
 ): Promise<boolean> {
   await lockWorkspace(tx, workspaceId);
-  const draft = await waitingDraft(tx, workspaceId, conversationId, draftId);
+  const draft = await lockDraft(tx, workspaceId, conversationId, draftId);
   if (draft === undefined || draft.resolved === "sent") return false;
   if (draft.resolved === "discarded") return true;
   await tx
     .update(draftReply)
     .set({ resolved: "discarded", resolvedAt: new Date(), resolvedByOperatorId: operatorId })
     .where(ofDraft(workspaceId, draftId));
-  await draftChanged(tx, workspaceId, conversationId);
+  await recordConversationChange(tx, workspaceId, conversationId, "draft.changed");
   return true;
 }

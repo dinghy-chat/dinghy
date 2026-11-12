@@ -4,7 +4,7 @@ import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
-import { firstName, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
+import { firstName } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
@@ -32,6 +32,7 @@ import {
   visitorAuthorId,
 } from "./identity.ts";
 import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
+import { Body, ClientId } from "./inputs.ts";
 import {
   PAGE_PATH_MAX,
   PageContextSchema,
@@ -69,7 +70,6 @@ import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
-const CLIENT_ID = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
 
 const createVisitorRoute = createRoute({
@@ -425,16 +425,10 @@ const sendMessageRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            clientId: CLIENT_ID,
+            clientId: ClientId,
             page: PAGE,
             replyToMessageId: REPLY_TO,
-            // Postgres text cannot hold a NUL byte.
-            body: z
-              .string()
-              .trim()
-              .min(1)
-              .max(MESSAGE_MAX)
-              .regex(/^[^\0]*$/),
+            body: Body,
           }),
           example: {
             clientId: "m_4f9a2c",
@@ -469,7 +463,7 @@ const sendImageRoute = createRoute({
     "Send an image as the raw request body. A retry with the same clientId returns the original",
   request: {
     params,
-    query: z.object({ clientId: CLIENT_ID, page: PAGE, replyToMessageId: REPLY_TO }),
+    query: z.object({ clientId: ClientId, page: PAGE, replyToMessageId: REPLY_TO }),
   },
   responses: {
     200: {

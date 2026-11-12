@@ -1106,6 +1106,9 @@
           "clientHost": {
             "type": ["string", "null"]
           },
+          "clientIsLoopback": {
+            "type": "boolean"
+          },
           "createdByName": {
             "type": ["string", "null"]
           },
@@ -1123,6 +1126,7 @@
           "source",
           "replyMode",
           "clientHost",
+          "clientIsLoopback",
           "createdByName",
           "createdAt",
           "lastUsedAt"
@@ -1449,7 +1453,7 @@
           "browserCode": {
             "type": "string"
           },
-          "secret": {
+          "secretNote": {
             "type": "string"
           },
           "publicKey": {
@@ -1462,7 +1466,7 @@
           "serverFile",
           "serverCode",
           "browserCode",
-          "secret",
+          "secretNote",
           "publicKey"
         ]
       },
@@ -4697,6 +4701,8 @@
                       "updatedAt": "2026-11-08T09:30:00.000Z",
                       "assigneeOperatorId": null,
                       "startedPage": "https://www.example.com/pricing",
+                      "welcome": false,
+                      "handler": null,
                       "pageContext": {
                         "plan": "pro"
                       },
@@ -4713,7 +4719,8 @@
                         "lastPage": "https://www.example.com/pricing",
                         "lastSeenAt": "2026-11-08T09:30:00.000Z",
                         "country": "PT",
-                        "timeZone": "Europe/Lisbon"
+                        "timeZone": "Europe/Lisbon",
+                        "isTest": false
                       },
                       "lastMessage": {
                         "body": "Do you have a yearly plan?",
@@ -9576,7 +9583,7 @@
             }
           },
           "409": {
-            "description": "bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation",
+            "description": "bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly",
             "content": {
               "application/json": {
                 "schema": {
@@ -10407,7 +10414,7 @@
             }
           },
           "429": {
-            "description": "too_many_requests: over 10 test messages a minute. Retry after `retry-after`",
+            "description": "too_many_requests: over an API key's 300 requests a minute, or the workspace's 10 test messages a minute. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

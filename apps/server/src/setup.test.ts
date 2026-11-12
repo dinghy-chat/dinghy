@@ -1,16 +1,19 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
+import { asOperator, callTool, ORIGIN, withKey } from "../test/requests.ts";
+import { newVisitor, SITE, visitorStarts } from "../test/visitors.ts";
 import { fanOutOne } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import {
   alertDelivery,
   conversation,
+  event,
   visitor,
   widgetSettings,
   widgetSiteSeen,
@@ -20,8 +23,6 @@ import type { Database } from "./db/tenant.ts";
 import { nextStep } from "./setup.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
-const SITE = "https://app.example.com";
-const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 const ok = async () => {};
 
@@ -40,41 +41,6 @@ let setupKey: string;
 let chatKey: string;
 
 const inSpace = (path = "", id = space.id) => `/v1/operator/workspaces/${id}${path}`;
-const json = (body: unknown) =>
-  body === undefined
-    ? {}
-    : { body: JSON.stringify(body), headers: { "content-type": "application/json" } };
-const asOperator = (as: { cookie: string }, method: string, path: string, body?: unknown) => {
-  const sent = json(body);
-  return app.request(path, {
-    method,
-    ...sent,
-    headers: { cookie: as.cookie, origin: ORIGIN, ...sent.headers },
-  });
-};
-const withKey = (token: string, method: string, path: string, body?: unknown) => {
-  const sent = json(body);
-  return app.request(path, {
-    method,
-    ...sent,
-    headers: { authorization: `Bearer ${token}`, ...sent.headers },
-  });
-};
-
-interface ToolAnswer {
-  isError: boolean;
-  structuredContent: Record<string, unknown>;
-}
-async function callTool(token: string, name: string, args: Record<string, unknown> = {}) {
-  const response = await withKey(token, "POST", "/v1/mcp", {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "tools/call",
-    params: { name, arguments: args },
-  });
-  return ((await response.json()) as { result: ToolAnswer }).result;
-}
-
 /** A beat from a page of `site`, as the loader sends it. */
 const beat = (site: string, key = space.publicKey) =>
   app.request(`/v1/widget/${key}/beat`, {
@@ -88,7 +54,7 @@ const beat = (site: string, key = space.publicKey) =>
   });
 
 async function makeKey(level: "conversations" | "setup") {
-  const response = await asOperator(boss, "POST", inSpace("/api-keys"), {
+  const response = await asOperator(app, boss.cookie, "POST", inSpace("/api-keys"), {
     name: level === "setup" ? "Installer" : "Answerer",
     level,
   });
@@ -131,23 +97,23 @@ describe("who may set up", () => {
 
   test("a Conversations key and a member get 403 forbidden", async () => {
     for (const [method, path, body] of routes) {
-      const byKey = await withKey(chatKey, method, inSpace(path), body);
+      const byKey = await withKey(app, chatKey, method, inSpace(path), body);
       expect(byKey.status, `${method} ${path}`).toBe(403);
       expect(await byKey.json()).toMatchObject({ error: { code: "forbidden" } });
-      expect((await asOperator(member, method, inSpace(path), body)).status).toBe(403);
+      expect((await asOperator(app, member.cookie, method, inSpace(path), body)).status).toBe(403);
     }
   });
 
   test("an owner and a Setup key get through", async () => {
     for (const [method, path, body] of routes) {
-      expect((await withKey(setupKey, method, inSpace(path), body)).status).toBeLessThan(300);
+      expect((await withKey(app, setupKey, method, inSpace(path), body)).status).toBeLessThan(300);
     }
-    expect((await asOperator(boss, "GET", inSpace("/sites"))).status).toBe(200);
+    expect((await asOperator(app, boss.cookie, "GET", inSpace("/sites"))).status).toBe(200);
   });
 
   test("a Conversations key does not list the Setup tools, and cannot call them", async () => {
     const list = async (token: string) => {
-      const response = await withKey(token, "POST", "/v1/mcp", {
+      const response = await withKey(app, token, "POST", "/v1/mcp", {
         jsonrpc: "2.0",
         id: 1,
         method: "tools/list",
@@ -198,7 +164,7 @@ describe("who may set up", () => {
       expect(one.inputSchema, one.name).not.toHaveProperty("anyOf");
       expect(one.inputSchema, one.name).not.toHaveProperty("oneOf");
     }
-    const refused = await withKey(chatKey, "POST", "/v1/mcp", {
+    const refused = await withKey(app, chatKey, "POST", "/v1/mcp", {
       jsonrpc: "2.0",
       id: 1,
       method: "tools/call",
@@ -210,82 +176,89 @@ describe("who may set up", () => {
 
 describe("the install snippet and identity help", () => {
   test("the snippet route fills in the workspace's key and this server", async () => {
-    const response = await withKey(setupKey, "GET", inSpace("/install/snippet?framework=nextjs"));
+    const response = await withKey(
+      app,
+      setupKey,
+      "GET",
+      inSpace("/install/snippet?framework=nextjs"),
+    );
     expect(await response.json()).toMatchObject({
       framework: "nextjs",
       file: "app/layout.tsx",
       publicKey: space.publicKey,
       serverUrl: ORIGIN,
     });
-    const bad = await withKey(setupKey, "GET", inSpace("/install/snippet?framework=cobol"));
+    const bad = await withKey(app, setupKey, "GET", inSpace("/install/snippet?framework=cobol"));
     expect(bad.status).toBe(400);
   });
 
   test("the tools answer the same, and never the signing secret", async () => {
-    const snippet = await callTool(setupKey, "get_install_snippet", { framework: "wordpress" });
+    const snippet = await callTool(app, setupKey, "get_install_snippet", {
+      framework: "wordpress",
+    });
     expect(snippet.structuredContent).toMatchObject({ publicKey: space.publicKey });
     for (const language of ["typescript", "python", "ruby", "php", "go"]) {
-      const identity = await callTool(setupKey, "get_identity_setup", { language });
+      const identity = await callTool(app, setupKey, "get_identity_setup", { language });
       expect(identity.isError).toBe(false);
       expect(JSON.stringify(identity)).not.toContain(space.signingSecret);
       expect(identity.structuredContent.serverCode).toContain("DINGHY_SIGNING_SECRET");
     }
-    const route = await withKey(setupKey, "GET", inSpace("/install/identity?language=php"));
+    const route = await withKey(app, setupKey, "GET", inSpace("/install/identity?language=php"));
     expect(await route.text()).not.toContain(space.signingSecret);
-    const hook = await callTool(setupKey, "get_webhook_verification", { language: "go" });
+    const hook = await callTool(app, setupKey, "get_webhook_verification", { language: "go" });
     expect(hook.structuredContent.code).toContain("hmac.Equal");
   });
 });
 
 describe("allowed sites", () => {
   test("add normalizes and keeps one copy, remove takes it out", async () => {
-    const added = await withKey(setupKey, "POST", inSpace("/sites"), {
+    const added = await withKey(app, setupKey, "POST", inSpace("/sites"), {
       origin: "HTTPS://Shop.Example.com/",
     });
     expect(await added.json()).toEqual({ sites: [SITE, "https://shop.example.com"] });
-    const again = await callTool(setupKey, "add_allowed_site", {
+    const again = await callTool(app, setupKey, "add_allowed_site", {
       origin: "https://shop.example.com",
     });
     expect(again.structuredContent).toEqual({ sites: [SITE, "https://shop.example.com"] });
-    const removed = await callTool(setupKey, "remove_allowed_site", { origin: SITE });
+    const removed = await callTool(app, setupKey, "remove_allowed_site", { origin: SITE });
     expect(removed.structuredContent).toEqual({ sites: ["https://shop.example.com"] });
-    const listed = await callTool(setupKey, "list_allowed_sites");
+    const listed = await callTool(app, setupKey, "list_allowed_sites");
     expect(listed.structuredContent).toEqual({ sites: ["https://shop.example.com"] });
-    const settings = await asOperator(boss, "GET", inSpace("/settings"));
+    const settings = await asOperator(app, boss.cookie, "GET", inSpace("/settings"));
     expect(await settings.json()).toMatchObject({ allowedOrigins: ["https://shop.example.com"] });
   });
 
   test("a value that is not an origin is refused, as Settings refuses it", async () => {
     for (const origin of ["shop.example.com", "https://shop.example.com/cart", "ftp://x.example"]) {
-      const response = await withKey(setupKey, "POST", inSpace("/sites"), { origin });
+      const response = await withKey(app, setupKey, "POST", inSpace("/sites"), { origin });
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ error: { code: "bad_origin" } });
-      const viaPatch = await asOperator(boss, "PATCH", inSpace("/settings"), {
+      const viaPatch = await asOperator(app, boss.cookie, "PATCH", inSpace("/settings"), {
         allowedOrigins: [origin],
       });
       expect(await viaPatch.json()).toMatchObject({ error: { code: "bad_origin" } });
     }
-    const tool = await callTool(setupKey, "remove_allowed_site", { origin: "nope" });
+    const tool = await callTool(app, setupKey, "remove_allowed_site", { origin: "nope" });
     expect(tool.structuredContent).toMatchObject({ error: { code: "bad_origin" } });
   });
 
   test("a workspace has at most 20", async () => {
     const many = Array.from({ length: 20 }, (_, index) => `https://s${index}.example.com`);
-    await asOperator(boss, "PATCH", inSpace("/settings"), { allowedOrigins: many });
-    const over = await withKey(setupKey, "POST", inSpace("/sites"), {
+    await asOperator(app, boss.cookie, "PATCH", inSpace("/settings"), { allowedOrigins: many });
+    const over = await withKey(app, setupKey, "POST", inSpace("/sites"), {
       origin: "https://one-more.example.com",
     });
     expect(over.status).toBe(409);
     expect(await over.json()).toMatchObject({ error: { code: "site_limit" } });
     // One already there is not an addition.
-    const present = await withKey(setupKey, "POST", inSpace("/sites"), { origin: many[0] });
+    const present = await withKey(app, setupKey, "POST", inSpace("/sites"), { origin: many[0] });
     expect(present.status).toBe(200);
   });
 });
 
 describe("verify_install", () => {
   const check = async (origin?: string) =>
-    (await callTool(setupKey, "verify_install", origin === undefined ? {} : { origin }))
+    (await callTool(app, setupKey, "verify_install", origin === undefined ? {} : { origin }))
       .structuredContent as {
       allowed: boolean | null;
       widgetSeenAt: string | null;
@@ -313,7 +286,7 @@ describe("verify_install", () => {
     expect(state.nextStep).toBe(
       "Add https://www.example.com to the allowed sites, then open a page of it once.",
     );
-    const bad = await withKey(setupKey, "GET", inSpace("/install/check?origin=nope"));
+    const bad = await withKey(app, setupKey, "GET", inSpace("/install/check?origin=nope"));
     expect(bad.status).toBe(400);
   });
 
@@ -352,7 +325,7 @@ describe("verify_install", () => {
     expect(state.nextStep).toBe(
       `The widget was refused on ${elsewhere}. If that site is yours, add it to the allowed sites.`,
     );
-    await callTool(setupKey, "add_allowed_site", { origin: elsewhere });
+    await callTool(app, setupKey, "add_allowed_site", { origin: elsewhere });
     expect((await check()).refused).toEqual([]);
   });
 
@@ -373,7 +346,7 @@ describe("appearance", () => {
       .update(widgetSettings)
       .set({ greeting: "Ahoy" })
       .where(eq(widgetSettings.workspaceId, space.id));
-    const changed = await callTool(setupKey, "update_appearance", {
+    const changed = await callTool(app, setupKey, "update_appearance", {
       title: "Talk to us",
       accent: "#1D4ED8",
     });
@@ -382,14 +355,14 @@ describe("appearance", () => {
       accent: "#1d4ed8",
       greeting: "Ahoy",
     });
-    const read = await callTool(setupKey, "get_appearance");
+    const read = await callTool(app, setupKey, "get_appearance");
     expect(read.structuredContent).toMatchObject({ title: "Talk to us", greeting: "Ahoy" });
-    const bad = await callTool(setupKey, "update_appearance", { accent: "blue" });
+    const bad = await callTool(app, setupKey, "update_appearance", { accent: "blue" });
     expect(bad.structuredContent).toMatchObject({ error: { code: "invalid_request" } });
   });
 
   test("the REST routes open to a Setup key, but the logo stays an operator's", async () => {
-    const read = await withKey(setupKey, "GET", inSpace("/widget"));
+    const read = await withKey(app, setupKey, "GET", inSpace("/widget"));
     expect(read.status).toBe(200);
     const {
       logoUrl: _logo,
@@ -398,23 +371,28 @@ describe("appearance", () => {
       typingPreview: _preview,
       ...settings
     } = (await read.json()) as Record<string, unknown>;
-    const put = await withKey(setupKey, "PUT", inSpace("/widget"), { ...settings, title: "Hi" });
+    const put = await withKey(app, setupKey, "PUT", inSpace("/widget"), {
+      ...settings,
+      title: "Hi",
+    });
     expect(put.status).toBe(200);
-    expect((await withKey(chatKey, "PUT", inSpace("/widget"), settings)).status).toBe(403);
-    expect((await asOperator(member, "PUT", inSpace("/widget"), settings)).status).toBe(403);
+    expect((await withKey(app, chatKey, "PUT", inSpace("/widget"), settings)).status).toBe(403);
+    expect((await asOperator(app, member.cookie, "PUT", inSpace("/widget"), settings)).status).toBe(
+      403,
+    );
     const logo = await app.request(inSpace("/widget/logo"), {
       method: "PUT",
       headers: { authorization: `Bearer ${setupKey}`, "content-type": "image/png" },
       body: new Uint8Array([1, 2, 3]),
     });
     expect(logo.status).toBe(403);
-    expect((await withKey(setupKey, "DELETE", inSpace("/widget/logo"))).status).toBe(403);
+    expect((await withKey(app, setupKey, "DELETE", inSpace("/widget/logo"))).status).toBe(403);
   });
 });
 
 describe("test visitors", () => {
   const simulate = async (args: Record<string, unknown>) =>
-    (await callTool(setupKey, "send_test_message", args)).structuredContent as {
+    (await callTool(app, setupKey, "send_test_message", args)).structuredContent as {
       visitorId: string;
       conversationId: string;
       message: { body: string; fromVisitor: boolean };
@@ -431,31 +409,19 @@ describe("test visitors", () => {
     });
     const [row] = await owner.select().from(visitor).where(eq(visitor.id, first.visitorId));
     expect(row).toMatchObject({ isTest: true, name: "Test Tess", externalId: null });
-    const listed = await callTool(chatKey, "list_conversations");
+    const listed = await callTool(app, chatKey, "list_conversations");
     expect(listed.structuredContent).toMatchObject({
       conversations: [{ id: first.conversationId, visitor: { isTest: true } }],
     });
   });
 
   test("a conversation that is not a test's is refused", async () => {
-    const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-      method: "POST",
-      headers: { origin: SITE },
+    const { conversationId: real } = await visitorStarts(app, space.publicKey, "A real person", {
+      clientId: "real",
     });
-    const { token } = (await created.json()) as { token: string };
-    const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
-      method: "POST",
-      headers: {
-        origin: SITE,
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ clientId: "real", body: "A real person" }),
-    });
-    const real = ((await sent.json()) as { conversationId: string }).conversationId;
     const refused = await simulate({ body: "Sneaky", conversationId: real });
     expect(refused.error?.code).toBe("not_found");
-    const route = await withKey(setupKey, "POST", inSpace("/test-visitors/messages"), {
+    const route = await withKey(app, setupKey, "POST", inSpace("/test-visitors/messages"), {
       body: "Sneaky",
       conversationId: real,
     });
@@ -467,16 +433,16 @@ describe("test visitors", () => {
       .update(workspaceMember)
       .set({ alertEmail: true })
       .where(eq(workspaceMember.workspaceId, space.id));
-    const sent = await withKey(setupKey, "POST", inSpace("/test-visitors/messages"), {
+    const sent = await withKey(app, setupKey, "POST", inSpace("/test-visitors/messages"), {
       body: "Testing",
     });
     expect(sent.status).toBe(201);
     const { conversationId } = (await sent.json()) as { conversationId: string };
-    const analytics = await asOperator(boss, "GET", inSpace("/analytics?days=7"));
+    const analytics = await asOperator(app, boss.cookie, "GET", inSpace("/analytics?days=7"));
     expect(await analytics.json()).toMatchObject({ started: 0 });
-    const contacts = await asOperator(boss, "GET", inSpace("/contacts"));
+    const contacts = await asOperator(app, boss.cookie, "GET", inSpace("/contacts"));
     expect(await contacts.json()).toMatchObject({ contacts: [] });
-    const steps = await asOperator(boss, "GET", inSpace("/get-started"));
+    const steps = await asOperator(app, boss.cookie, "GET", inSpace("/get-started"));
     expect(await steps.json()).toMatchObject({ chat: false });
     const worker = database.connect("worker", 2).db;
     while (await fanOutOne(worker, { push: true, email: true }));
@@ -494,16 +460,36 @@ describe("test visitors", () => {
 
   test("delete_test_visitors removes them with their conversations, and no one else", async () => {
     const made = await simulate({ body: "Bye" });
-    const real = await createWorkspaceVisitor();
-    const deleted = await withKey(setupKey, "DELETE", inSpace("/test-visitors"));
+    const real = (await newVisitor(app, space.publicKey)).visitorId;
+    const deleted = await withKey(app, setupKey, "DELETE", inSpace("/test-visitors"));
     expect(await deleted.json()).toEqual({ deleted: 1 });
     expect(await owner.select().from(visitor).where(eq(visitor.id, made.visitorId))).toEqual([]);
     expect(
       await owner.select().from(conversation).where(eq(conversation.id, made.conversationId)),
     ).toEqual([]);
     expect(await owner.select().from(visitor).where(eq(visitor.id, real))).toHaveLength(1);
-    const again = await callTool(setupKey, "delete_test_visitors");
+    const again = await callTool(app, setupKey, "delete_test_visitors");
     expect(again.structuredContent).toEqual({ deleted: 0 });
+  });
+
+  test("deleting several test visitors at once deletes every conversation, each with its event", async () => {
+    const first = await simulate({ body: "Is order #1042 on its way?" });
+    await simulate({ body: "It was due Monday.", conversationId: first.conversationId });
+    const second = await simulate({ body: "Do you ship to Canada?" });
+    const ids = [first.conversationId, second.conversationId];
+    const deleted = await withKey(app, setupKey, "DELETE", inSpace("/test-visitors"));
+    expect(await deleted.json()).toEqual({ deleted: 2 });
+    expect(await owner.select().from(conversation).where(inArray(conversation.id, ids))).toEqual(
+      [],
+    );
+    const events = await owner
+      .select({ seq: event.seq, payload: event.payload })
+      .from(event)
+      .where(and(eq(event.workspaceId, space.id), eq(event.kind, "conversation.deleted")));
+    expect(events.map((one) => one.payload)).toEqual(
+      expect.arrayContaining(ids.map((conversationId) => ({ conversationId }))),
+    );
+    expect(new Set(events.map((one) => one.seq)).size).toBe(2);
   });
 
   test(`a workspace sends at most 10 a minute`, async () => {
@@ -511,17 +497,9 @@ describe("test visitors", () => {
       expect((await simulate({ body: `Message ${index}` })).error).toBeUndefined();
     }
     expect((await simulate({ body: "One too many" })).error?.code).toBe("too_many_requests");
-    const route = await withKey(setupKey, "POST", inSpace("/test-visitors/messages"), {
+    const route = await withKey(app, setupKey, "POST", inSpace("/test-visitors/messages"), {
       body: "One too many",
     });
     expect(route.status).toBe(429);
   });
 });
-
-async function createWorkspaceVisitor(): Promise<string> {
-  const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-    method: "POST",
-    headers: { origin: SITE },
-  });
-  return ((await created.json()) as { visitorId: string }).visitorId;
-}

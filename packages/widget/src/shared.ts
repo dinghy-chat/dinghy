@@ -296,3 +296,9 @@ export function forgetVisitor(publicKey: string): void {
 
 /** The longest message, in characters: the composers' limit, which the server checks too. */
 export const MESSAGE_MAX = 10_000;
+
+/**
+ * A bot repeats its typing notice while it writes, so one that stops repeating has stopped: the
+ * chat and the operator app drop it after this long with no update.
+ */
+export const BOT_TYPING_MS = 6000;

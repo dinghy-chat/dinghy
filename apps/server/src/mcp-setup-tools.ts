@@ -1,14 +1,17 @@
 import { z } from "@hono/zod-openapi";
+import { RESPONSE_EXCERPT_MAX } from "./db/schema.ts";
 import { NOT_FOUND } from "./errors.ts";
+import { UNTRUSTED_TEXT, webhookId } from "./inputs.ts";
 import { type Outcome, type Tool, tool } from "./mcp.ts";
-import { UNTRUSTED_TEXT, webhookId } from "./mcp-inputs.ts";
 import { closedFailure } from "./member.ts";
-import { type Setup, SITE_LIMIT } from "./setup.ts";
+import { Origin, type Setup, SITE_LIMIT } from "./setup.ts";
 import {
   FRAMEWORKS,
   IDENTITY_LANGUAGES,
   identitySetup,
   installSnippet,
+  SECRET_VARIABLE,
+  SIGNATURE_TOLERANCE_SECONDS,
   WEBHOOK_LANGUAGES,
   webhookVerification,
 } from "./setup-code.ts";
@@ -19,7 +22,7 @@ import {
   type TestVisitors,
   testMessagesLimited,
 } from "./test-visitors.ts";
-import type { Webhooks } from "./webhooks.ts";
+import { DELIVERIES_SHOWN, type Webhooks } from "./webhooks.ts";
 import { type createAppearance, WidgetSettingsSchema } from "./widget-settings.ts";
 
 export interface SetupToolOptions {
@@ -31,13 +34,9 @@ export interface SetupToolOptions {
   serverUrl: string;
 }
 
-const origin = z
-  .string()
-  .trim()
-  .max(300)
-  .describe(
-    "An exact origin: scheme, host and port if not the default, no path. Such as https://www.example.com",
-  );
+const origin = Origin.describe(
+  "An exact origin: scheme, host and port if not the default, no path. Such as https://www.example.com",
+);
 
 const sitesAnswer = (
   changed: { sites: string[] } | "bad_origin" | "limit",
@@ -111,8 +110,7 @@ function installTools({ setup, serverUrl }: SetupToolOptions): Tool[] {
     tool({
       name: "get_identity_setup",
       title: "Get the sign-in setup",
-      description:
-        "Explains Dinghy.identify(), which shows operators who a signed-in user is, and gives server code in `language` that signs its HS256 token from the DINGHY_SIGNING_SECRET environment variable, plus the browser call. It never gives the signing secret: a person copies it from Settings > Install into the server's environment. Never ask anyone to paste it in a chat.",
+      description: `Explains Dinghy.identify(), which shows operators who a signed-in user is, and gives server code in \`language\` that signs its HS256 token from the ${SECRET_VARIABLE} environment variable, plus the browser call. It never gives the signing secret: a person copies it from Settings > Install into the server's environment. Never ask anyone to paste it in a chat.`,
       input: z.object({
         language: z.enum(IDENTITY_LANGUAGES).describe("The language of the app's server"),
       }),
@@ -154,8 +152,7 @@ function webhookHelpTools({ webhooks }: SetupToolOptions): Tool[] {
     tool({
       name: "get_webhook_verification",
       title: "Get webhook signature code",
-      description:
-        "Gives code in `language` that checks a webhook request's Dinghy-Signature header (t=, v1=: the HMAC-SHA256 of `<t>.<raw body>` with the webhook's secret), compares in constant time and refuses one older than 5 minutes.",
+      description: `Gives code in \`language\` that checks a webhook request's Dinghy-Signature header (t=, v1=: the HMAC-SHA256 of \`<t>.<raw body>\` with the webhook's secret), compares in constant time and refuses one older than ${SIGNATURE_TOLERANCE_SECONDS / 60} minutes.`,
       input: z.object({ language: z.enum(WEBHOOK_LANGUAGES) }),
       readOnly: true,
       run: async ({ language }) => ({ data: webhookVerification(language) }),
@@ -163,7 +160,7 @@ function webhookHelpTools({ webhooks }: SetupToolOptions): Tool[] {
     tool({
       name: "list_webhook_deliveries",
       title: "List webhook deliveries",
-      description: `Lists a webhook's newest 20 deliveries: each one's event ID and type, \`status\` (pending, sent or failed), attempts, the last HTTP status and error, \`responseExcerpt\` (the start of the receiver's refusing answer, up to 2 KB) and \`replayOf\`. ${UNTRUSTED_TEXT}`,
+      description: `Lists a webhook's newest ${DELIVERIES_SHOWN} deliveries: each one's event ID and type, \`status\` (pending, sent or failed), attempts, the last HTTP status and error, \`responseExcerpt\` (the start of the receiver's refusing answer, up to ${RESPONSE_EXCERPT_MAX / 1024} KB) and \`replayOf\`. ${UNTRUSTED_TEXT}`,
       input: z.object({ webhookId }),
       readOnly: true,
       run: async (input, { workspaceId }) => ({

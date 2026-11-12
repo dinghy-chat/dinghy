@@ -20,6 +20,7 @@ import { type Database, enterWorkspace, type Transaction, withWorkspace } from "
 import { prunePageViews } from "./journey.ts";
 import { EMAIL_COLORS, letter, letterHtml } from "./letter.ts";
 import {
+  conversationHasTestVisitor,
   conversationVisitor,
   isChat,
   messageAuthors,
@@ -269,7 +270,10 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
     // Only a message.created event, a close, a transcript request and a handoff set needsAlert. Each
     // names a message: the new one, the close's status line, or the newest message when it was
     // asked for or handed off.
-    const { messageId, conversationId } = found.payload as MessagePayload | StatusPayload;
+    const { messageId, conversationId } = found.payload as
+      | MessagePayload
+      | StatusPayload
+      | Extract<HandledPayload, { change: "handoff" }>;
     const base = { workspaceId, eventSeq: seq, conversationId, messageId };
 
     const [written] = await tx
@@ -277,18 +281,15 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
         authorVisitorId: message.authorVisitorId,
         deletedAt: message.deletedAt,
         // A bot's simulated visitor: nobody is told about it.
-        fromTest: sql<boolean>`exists (select 1 from conversation c join visitor v
-          on v.workspace_id = c.workspace_id and v.id = c.visitor_id
+        fromTest: sql<boolean>`exists (select 1 from conversation c
           where c.workspace_id = message.workspace_id and c.id = message.conversation_id
-            and v.is_test)`,
+            and ${conversationHasTestVisitor(sql`c`)})`,
       })
       .from(message)
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
     // A message whose row was deleted before this step has nothing to alert about.
     const rows =
-      written === undefined
-        ? []
-        : await eventRows(tx, found.kind, found.payload, written, channels, base);
+      written === undefined ? [] : await eventRows(tx, found.kind, written, channels, base);
     if (rows.length > 0) await tx.insert(alertDelivery).values(rows).onConflictDoNothing();
     await tx
       .update(event)
@@ -316,7 +317,6 @@ async function handoffRows(tx: Transaction, channels: Channels, base: DeliveryBa
 async function eventRows(
   tx: Transaction,
   kind: EventKind,
-  payload: unknown,
   written: { authorVisitorId: string | null; deletedAt: Date | null; fromTest: boolean },
   channels: Channels,
   base: DeliveryBase,
@@ -324,9 +324,7 @@ async function eventRows(
   if (written.fromTest) return [];
   switch (kind) {
     case "conversation.handled":
-      return (payload as HandledPayload).change === "handoff"
-        ? handoffRows(tx, channels, base)
-        : [];
+      return handoffRows(tx, channels, base);
     case "conversation.closed":
       return channels.email ? transcriptRows(tx, base) : [];
     case "transcript.requested":

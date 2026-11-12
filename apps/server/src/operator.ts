@@ -5,13 +5,7 @@ import { createMiddleware } from "hono/factory";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
 import { heirOf, isSoleOwner } from "./account-delete.ts";
-import {
-  type Actor,
-  apiKeyToken,
-  authenticateApiKey,
-  KEY_INVALID,
-  KEY_REQUESTS_PER_MINUTE,
-} from "./api-keys.ts";
+import { type Actor, apiKeyToken, authenticateRequest } from "./api-keys.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
@@ -253,12 +247,9 @@ export function registerOperatorRoutes(
   }>(async (c, next) => {
     // A key in a bearer header, which a browser never sends on its own, so it needs no Origin. It
     // reaches only its own workspace's routes, and the member check limits it to a member's.
-    const token = apiKeyToken(c.req.header("authorization"));
-    if (token !== null) {
-      const actor = await authenticateApiKey(db, token);
-      if (actor === null) return c.json(KEY_INVALID, 401);
-      const wait = await rateLimit.hit("api-key", actor.apiKeyId, KEY_REQUESTS_PER_MINUTE, 60);
-      if (wait !== null) return tooManyRequests(c, wait);
+    if (apiKeyToken(c.req.header("authorization")) !== null) {
+      const actor = await authenticateRequest(c, db, rateLimit);
+      if (actor instanceof Response) return actor;
       if (!c.req.path.startsWith(`${WORKSPACE_PREFIX}/`)) return c.json(FORBIDDEN, 403);
       c.set("actor", actor);
       return next();

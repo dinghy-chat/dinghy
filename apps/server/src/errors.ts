@@ -156,6 +156,18 @@ export const okContent = { "application/json": { schema: z.object({ ok: z.litera
 /** An error answer in a route's OpenAPI responses. */
 export const errorAnswer = (description: string) => ({ description, content: errorContent });
 
+/** A required JSON request body. */
+export const jsonBody = <T extends z.ZodType>(schema: T) => ({
+  required: true,
+  content: { "application/json": { schema } },
+});
+
+/** A JSON answer. */
+export const jsonAnswer = <T extends z.ZodType>(description: string, schema: T) => ({
+  description,
+  content: { "application/json": { schema } },
+});
+
 /** The description of a JSON body over the server's 64 KB limit. */
 const TOO_LARGE_BODY = "too_large: the body is over 64 KB";
 /** The description of an operator write that another site sent. */

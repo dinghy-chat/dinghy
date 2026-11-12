@@ -1,8 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Logger } from "pino";
-import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
-import { type Actor, type KeyActor, keyStillValid } from "./api-keys.ts";
+import { type Actor, actorId, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { keyGate, takeOver } from "./bots.ts";
@@ -31,6 +30,7 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { ImageSchema, type Images, imageView, lostConnection, refuseImage } from "./images.ts";
+import { Body, ClientId } from "./inputs.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
@@ -46,6 +46,7 @@ import {
   type Author,
   appendMessage,
   authorNames,
+  CHANNELS,
   ConversationClosedError,
   type ConversationRow,
   type ConversationSummary,
@@ -57,6 +58,7 @@ import {
   findMessage,
   InvalidReplyToError,
   isUnread,
+  type KeySource,
   listConversationMessages,
   listConversations,
   listWorkspaceEvents,
@@ -85,11 +87,11 @@ const MESSAGE_SEEN = failure(
   "The visitor has read this reply, or an email carried it, so it can no longer change.",
 );
 const NOT_YOURS = failure("forbidden", "You can change only your own replies.");
-export const BOTS_PAUSED = failure(
+const BOTS_PAUSED = failure(
   "bots_paused",
   "An owner or admin paused every bot of this workspace. Only people reply until they resume.",
 );
-export const HUMAN_HANDLING = failure(
+const HUMAN_HANDLING = failure(
   "human_handling",
   "A person handles this conversation now, so a bot may not send. Write a draft or a note instead.",
 );
@@ -101,7 +103,7 @@ const KEY_HAS_NO_ASSIGNMENTS = failure(
   "invalid_request",
   "An API key is assigned nothing. Pass assignee=none, or leave it out.",
 );
-const KEY_REPLY_REFUSALS =
+export const KEY_REPLY_REFUSALS =
   "bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly";
 const REPLY_OR_NOTE_ANSWER = {
   409: errorAnswer(
@@ -122,14 +124,6 @@ const REPLY_TO = z.uuid().optional().openapi({
   description:
     "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message. A reply cannot quote a note, and a note can quote any of them.",
 });
-
-/** A message's text, as a send and an edit take it. Postgres text cannot hold a NUL byte. */
-export const BODY = z
-  .string()
-  .trim()
-  .min(1)
-  .max(MESSAGE_MAX)
-  .regex(/^[^\0]*$/);
 
 export const InboxMessage = z
   .object({
@@ -161,7 +155,7 @@ export const InboxMessage = z
     readAt: z.string().nullable(),
     // A key's reply: sent through the REST API or through MCP. `draft`: an operator sent a key's
     // draft, and is its author. Null for anyone else's.
-    via: z.enum(["api", "mcp", "draft"]).nullable(),
+    via: z.enum(CHANNELS).nullable(),
     createdAt: z.string(),
   })
   .openapi("InboxMessage", {
@@ -329,6 +323,8 @@ const listRoute = createRoute({
                 updatedAt: "2026-11-08T09:30:00.000Z",
                 assigneeOperatorId: null,
                 startedPage: "https://www.example.com/pricing",
+                welcome: false,
+                handler: null,
                 pageContext: { plan: "pro" },
                 visitor: {
                   id: "0b6f1c6e-2f4a-4c1e-9a57-3f1b8f0e6d21",
@@ -342,6 +338,7 @@ const listRoute = createRoute({
                   lastSeenAt: "2026-11-08T09:30:00.000Z",
                   country: "PT",
                   timeZone: "Europe/Lisbon",
+                  isTest: false,
                 },
                 lastMessage: {
                   body: "Do you have a yearly plan?",
@@ -473,8 +470,8 @@ const replyRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
-            body: BODY,
+            clientId: ClientId,
+            body: Body,
             replyToMessageId: REPLY_TO,
             note: z.boolean().default(false).openapi({
               description: "True for a note that only the team sees. A note is text only.",
@@ -517,7 +514,7 @@ const editRoute = createRoute({
     params: messageParams,
     body: {
       required: true,
-      content: { "application/json": { schema: z.object({ body: BODY }) } },
+      content: { "application/json": { schema: z.object({ body: Body }) } },
     },
   },
   responses: {
@@ -577,7 +574,7 @@ const replyImageRoute = createRoute({
     params: conversationParams,
     // Strict, so a `note` here is refused rather than sent to the visitor: a note is text only.
     query: z.strictObject({
-      clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+      clientId: ClientId,
       replyToMessageId: REPLY_TO,
     }),
   },
@@ -850,8 +847,6 @@ const replyAuthor = (actor: Actor, conversationId: string): Author =>
 const wakeFor = (live: Live, workspaceId: string, visitorId: string, isNote: boolean) =>
   isNote ? live.wake(workspaceId, OPERATORS) : wakeConversation(live, workspaceId, visitorId);
 
-const actorId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : actor.apiKeyId);
-
 /** The operator whose read positions apply, or null for an API key, which has none. */
 const readerId = (actor: Actor) => (actor.kind === "operator" ? actor.operatorId : null);
 
@@ -1088,7 +1083,7 @@ export function createInbox({
         return { found, unread, page, names, pages, welcome, receipts };
       });
       if (result === null) return null;
-      return {
+      const view = {
         conversation: {
           ...conversationView(
             result.found,
@@ -1116,6 +1111,8 @@ export function createInbox({
           })),
         },
       };
+      // The MCP transcript names the assignee, which the view holds only while they handle it.
+      return { view, assigneeName: result.found.assigneeName };
     },
 
     /** `operatorId` reads which conversations are unread, and is null for an API key. */
@@ -1141,7 +1138,7 @@ export function createInbox({
         clientId: string;
         body: string;
         replyToMessageId?: string | undefined;
-        via?: "mcp";
+        source?: KeySource;
         note: boolean;
       },
     ) {
@@ -1163,7 +1160,7 @@ export function createInbox({
       input: { clientId: string; image: NewImage; replyToMessageId?: string | undefined },
       limits: Limits,
       check: (tx: Transaction) => Promise<void>,
-    ): Promise<ReplyOutcome & { created: boolean }> {
+    ): Promise<Exclude<ReplyOutcome, { kind: "drafted" }> & { created: boolean }> {
       const outcome = await reply(
         workspaceId,
         actor,
@@ -1175,6 +1172,8 @@ export function createInbox({
           return appendMessage(tx, workspaceId, author, input, limits);
         },
       );
+      // With no text, a draft-mode key's reply stops at drafts_text_only, so it never drafts.
+      if (outcome.kind === "drafted") throw new Error("An image reply made a draft");
       return { ...outcome, created: outcome.kind === "sent" && outcome.created };
     },
 
@@ -1264,7 +1263,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       limit,
     );
     if (result === null) return c.json(NOT_FOUND, 404);
-    return c.json(result, 200);
+    return c.json(result.view, 200);
   });
 
   app.openapi(searchRoute, async (c) => {
@@ -1328,8 +1327,6 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       if ("refused" in outcome) return refuseImage(c, outcome.refused);
       const result = outcome.result;
       if (result.kind === "sent") return c.json(result.message, result.created ? 201 : 200);
-      // An image never makes a draft.
-      if (result.kind === "drafted") return c.json(DRAFTS_TEXT_ONLY, 409);
       const refused = refusedReply(result);
       return c.json(refused.body, refused.status);
     });

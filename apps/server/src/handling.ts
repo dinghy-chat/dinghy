@@ -1,8 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import type { Actor, KeyActor } from "./api-keys.ts";
+import { BOT_TYPING_MS } from "../../../packages/widget/src/shared.ts";
+import type { KeyActor } from "./api-keys.ts";
 import { API_KEY, SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { giveBack, type HandoffInput, handoff, setBotsPaused, typingGate } from "./bots.ts";
+import { giveBack, type HandoffInput, setBotsPaused, typingGate, writeHandoff } from "./bots.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { DraftSchema, discardDraft, listDrafts, sendDraft } from "./drafts.ts";
 import {
@@ -10,6 +11,8 @@ import {
   errorAnswer,
   FORBIDDEN,
   failure,
+  jsonAnswer,
+  jsonBody,
   KEY_LIMITED,
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
@@ -18,16 +21,17 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import type { Images } from "./images.ts";
-import { BODY, BOTS_PAUSED, HUMAN_HANDLING, InboxMessage, messageView } from "./inbox.ts";
+import { InboxMessage, KEY_REPLY_REFUSALS, messageView, refusedReply } from "./inbox.ts";
+import { Body, ClientId, HandoffReason, HandoffSummary } from "./inputs.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import { closedFailure, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import {
   authorNames,
-  ConversationClosedError,
   catchClosed,
-  findConversation,
+  catchConversationClosed,
+  conversationVisitor,
+  type KeySource,
   recordWorkspaceChange,
-  type StoredMessage,
   WorkspaceClosedError,
 } from "./messages.ts";
 import { allowed, NOT_A_MEMBER } from "./team.ts";
@@ -35,26 +39,8 @@ import { allowed, NOT_A_MEMBER } from "./team.ts";
 const workspaceParams = z.object({ workspaceId: z.uuid() });
 const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const draftParams = conversationParams.extend({ draftId: z.uuid() });
-const CLIENT_ID = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
-/** One line or a few, with no NUL byte, which Postgres text cannot hold. */
-const text = (max: number) =>
-  z
-    .string()
-    .trim()
-    .min(1)
-    .max(max)
-    .regex(/^[^\0]*$/);
 
 const KEYS_ONLY = failure("forbidden", "Only an API key's bot does this.");
-
-const json = <T extends z.ZodType>(schema: T) => ({
-  required: true,
-  content: { "application/json": { schema } },
-});
-const answer = <T extends z.ZodType>(description: string, schema: T) => ({
-  description,
-  content: { "application/json": { schema } },
-});
 
 const listDraftsRoute = createRoute({
   method: "get",
@@ -65,7 +51,7 @@ const listDraftsRoute = createRoute({
     "Replies that API keys in draft mode wrote, which no visitor has seen. A `stale` draft is older than the visitor's newest message.",
   request: { params: conversationParams },
   responses: {
-    200: answer("The drafts", z.object({ drafts: z.array(DraftSchema) })),
+    200: jsonAnswer("The drafts", z.object({ drafts: z.array(DraftSchema) })),
     ...MEMBER_ERRORS,
   },
 });
@@ -77,10 +63,10 @@ const sendDraftRoute = createRoute({
   summary: "Send a draft to the visitor, as is or edited, as your own reply",
   description:
     "The message's author is the operator, and its `via` is `draft`. Sending approves the bot's words, so the bot keeps the conversation. Sending it again returns the same message.",
-  request: { params: draftParams, body: json(z.object({ body: BODY.optional() })) },
+  request: { params: draftParams, body: jsonBody(z.object({ body: Body.optional() })) },
   responses: {
-    200: answer("It was sent before. This is that message", InboxMessage),
-    201: answer("The new message", InboxMessage),
+    200: jsonAnswer("It was sent before. This is that message", InboxMessage),
+    201: jsonAnswer("The new message", InboxMessage),
     ...MEMBER_WRITE_ERRORS,
     404: errorAnswer("not_found: no such draft here, or it was discarded"),
     409: errorAnswer("conversation_closed: reopen it to reply"),
@@ -119,20 +105,20 @@ const handoffRoute = createRoute({
     "In one step: `visitorMessage` goes to the visitor as the key's reply (or a draft in draft mode), the conversation is assigned to `operatorId` if given, a person handles it from now so bots that send directly answer `human_handling`, a note holds `reason` and `summary`, and the assignee, or every member when there is none, gets an alert. Webhooks get `conversation.handoff`. A retry with the same clientId changes nothing again.",
   request: {
     params: conversationParams,
-    body: json(
+    body: jsonBody(
       z.object({
-        clientId: CLIENT_ID,
-        reason: text(500),
-        summary: text(2000).optional(),
+        clientId: ClientId,
+        reason: HandoffReason,
+        summary: HandoffSummary.optional(),
         operatorId: z.uuid().optional(),
-        visitorMessage: BODY.optional(),
+        visitorMessage: Body.optional(),
       }),
     ),
   },
   responses: {
     ...KEY_LIMITED,
-    200: answer("A retry", z.object({ visitorMessage: HandoffMessageSchema })),
-    201: answer("Handed off", z.object({ visitorMessage: HandoffMessageSchema })),
+    200: jsonAnswer("A retry", z.object({ visitorMessage: HandoffMessageSchema })),
+    201: jsonAnswer("Handed off", z.object({ visitorMessage: HandoffMessageSchema })),
     ...MEMBER_WRITE_ERRORS,
     400: errorAnswer(
       "invalid_request: the request is not valid. not_a_member: operatorId is not in this workspace",
@@ -163,9 +149,9 @@ const botsPausedRoute = createRoute({
   summary: "Pause or resume every bot of the workspace. Owners and admins only",
   description:
     "While paused, every API key's reply, draft or typing answers 409 `bots_paused`. Reads, notes and handoffs still work, so a bot can still hand a conversation to people.",
-  request: { params: workspaceParams, body: json(z.object({ paused: z.boolean() })) },
+  request: { params: workspaceParams, body: jsonBody(z.object({ paused: z.boolean() })) },
   responses: {
-    200: answer(
+    200: jsonAnswer(
       "The new state, and the name of who paused bots, null when they run",
       z.object({ paused: z.boolean(), pausedBy: z.string().nullable() }),
     ),
@@ -178,20 +164,17 @@ const typingRoute = createRoute({
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/typing`,
   security: API_KEY,
   summary: "Show the visitor that the key's bot is typing. API keys only",
-  description:
-    "Nothing is stored. The visitor's chat shows `<name> is typing` for 6 seconds, or until the next message, so repeat it while you write. Operators see it too. A key in draft mode shows it to operators only. Refused like a reply: `bots_paused`, and `human_handling` for a key that sends directly.",
+  description: `Nothing is stored. The visitor's chat shows \`<name> is typing\` for ${BOT_TYPING_MS / 1000} seconds, or until the next message, so repeat it while you write. Operators see it too. A key in draft mode shows it to operators only. Refused like a reply: \`bots_paused\`, and \`human_handling\` for a key that sends directly.`,
   request: {
     params: conversationParams,
-    body: json(z.object({ typing: z.boolean().default(true) })),
+    body: jsonBody(z.object({ typing: z.boolean().default(true) })),
   },
   responses: {
     ...KEY_LIMITED,
     200: { description: "Passed on", content: okContent },
     ...MEMBER_WRITE_ERRORS,
     403: errorAnswer("forbidden: an operator sent it"),
-    409: errorAnswer(
-      "bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation",
-    ),
+    409: errorAnswer(KEY_REPLY_REFUSALS),
   },
 });
 
@@ -201,13 +184,6 @@ interface HandlingOptions {
   live: Live;
 }
 
-/** The message as the operator API shows it, named after its author. */
-const viewOf =
-  (images: Images | undefined, workspaceId: string, actor: Actor) => (message: StoredMessage) => {
-    const id = actor.kind === "operator" ? actor.operatorId : actor.apiKeyId;
-    return messageView(images, workspaceId, new Map([[id, actor.name]]), message);
-  };
-
 /** Sets a typing notice for the visitor, and for operators. */
 export async function setTyping(
   db: Database,
@@ -216,51 +192,68 @@ export async function setTyping(
   actor: KeyActor,
   conversationId: string,
   typing: boolean,
-): Promise<"ok" | "missing" | "bots_paused" | "human_handling"> {
+): Promise<{ kind: "ok" } | { kind: "missing" } | { kind: "bots_paused" | "human_handling" }> {
   const found = await withWorkspace(db, workspaceId, (tx) =>
     typingGate(tx, workspaceId, actor.apiKeyId, conversationId),
   );
-  if (found === null) return "missing";
-  if (found.gate === "bots_paused" || found.gate === "human_handling") return found.gate;
+  if (found === null) return { kind: "missing" };
+  if (found.gate === "bots_paused" || found.gate === "human_handling") return { kind: found.gate };
   live.tell(workspaceId, { kind: "bot_typing", conversationId, name: actor.name, typing });
   if (found.gate === "send") {
     live.tellVisitor(workspaceId, found.visitorId, { kind: "typing", name: actor.name, typing });
   }
-  return "ok";
+  return { kind: "ok" };
 }
 
-/** A bot's handoff to people, with the clients woken after the commit. */
+/**
+ * A bot's handoff to people, with its message to the visitor as the operator API shows it. The
+ * clients wake after the commit.
+ */
 export async function handOff(
-  db: Database,
-  live: Live,
+  { db, images, live }: HandlingOptions,
   workspaceId: string,
   actor: KeyActor,
   conversationId: string,
   input: HandoffInput,
-  via?: "mcp",
+  source?: KeySource,
 ) {
-  const key = { apiKeyId: actor.apiKeyId, ...(via !== undefined && { via }) };
+  const key = { apiKeyId: actor.apiKeyId, source };
   const outcome = await catchClosed(
-    withWorkspace(db, workspaceId, async (tx) => {
-      const done = await handoff(tx, workspaceId, key, conversationId, input);
-      const found = await findConversation(tx, workspaceId, conversationId);
-      return { done, visitorId: found?.visitorId };
-    }),
+    catchConversationClosed(
+      withWorkspace(db, workspaceId, (tx) =>
+        writeHandoff(tx, workspaceId, key, conversationId, input),
+      ),
+    ),
   );
-  if (outcome instanceof WorkspaceClosedError)
-    return { kind: "refused" as const, access: outcome.access };
-  if (outcome.done.kind === "handed_off" && outcome.visitorId !== undefined) {
-    wakeConversation(live, workspaceId, outcome.visitorId);
+  if (outcome instanceof WorkspaceClosedError) {
+    return { kind: "failed" as const, ...closedFailure(outcome.access) };
   }
-  return outcome.done;
+  if (outcome.kind === "not_member") {
+    return { kind: "failed" as const, body: NOT_A_MEMBER, status: 400 as const };
+  }
+  if (outcome.kind === "missing" || outcome.kind === "closed") {
+    return { kind: "failed" as const, ...refusedReply(outcome) };
+  }
+  if (outcome.kind === "handed_off") wakeConversation(live, workspaceId, outcome.visitorId);
+  const sent = outcome.visitorMessage;
+  const names = new Map([[actor.apiKeyId, actor.name]]);
+  return {
+    kind: "done" as const,
+    created: outcome.kind === "handed_off",
+    visitorMessage:
+      sent?.status === "sent"
+        ? { ...sent, message: messageView(images, workspaceId, names, sent.message) }
+        : sent,
+  };
 }
 
-export function registerHandlingRoutes(app: App, { db, images, live }: HandlingOptions): void {
+export function registerHandlingRoutes(app: App, options: HandlingOptions): void {
+  const { db, images, live } = options;
   app.openapi(listDraftsRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
     const drafts = await withWorkspace(db, id, async (tx) =>
-      (await findConversation(tx, id, conversationId)) === null
+      (await conversationVisitor(tx, id, conversationId)) === undefined
         ? null
         : listDrafts(tx, id, conversationId, "waiting"),
     );
@@ -273,20 +266,19 @@ export function registerHandlingRoutes(app: App, { db, images, live }: HandlingO
     const { conversationId, draftId } = c.req.valid("param");
     const author = { kind: "operator" as const, operatorId: c.get("operatorId"), conversationId };
     const outcome = await catchClosed(
-      withWorkspace(db, id, async (tx) => {
-        const sent = await sendDraft(tx, id, author, draftId, c.req.valid("json").body);
-        if (sent.kind !== "sent") return sent;
-        const names = await authorNames(tx, id, [sent.message]);
-        const found = await findConversation(tx, id, conversationId);
-        return {
-          ...sent,
-          view: messageView(images, id, names, sent.message),
-          visitorId: found?.visitorId,
-        };
-      }).catch((error: unknown) => {
-        if (error instanceof ConversationClosedError) return { kind: "closed" as const };
-        throw error;
-      }),
+      catchConversationClosed(
+        withWorkspace(db, id, async (tx) => {
+          const sent = await sendDraft(tx, id, author, draftId, c.req.valid("json").body);
+          if (sent.kind !== "sent") return sent;
+          const names = await authorNames(tx, id, [sent.message]);
+          const found = await conversationVisitor(tx, id, conversationId);
+          return {
+            ...sent,
+            view: messageView(images, id, names, sent.message),
+            visitorId: found?.id,
+          };
+        }),
+      ),
     );
     if (outcome instanceof WorkspaceClosedError) {
       const refused = closedFailure(outcome.access);
@@ -316,20 +308,9 @@ export function registerHandlingRoutes(app: App, { db, images, live }: HandlingO
     const actor = c.get("actor");
     if (actor.kind !== "key") return c.json(KEYS_ONLY, 403);
     const { conversationId } = c.req.valid("param");
-    const outcome = await handOff(db, live, id, actor, conversationId, c.req.valid("json"));
-    if (outcome.kind === "refused") {
-      const refused = closedFailure(outcome.access);
-      return c.json(refused.body, refused.status);
-    }
-    if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
-    if (outcome.kind === "closed") return c.json(CONVERSATION_CLOSED, 409);
-    if (outcome.kind === "not_member") return c.json(NOT_A_MEMBER, 400);
-    const sent = outcome.visitorMessage;
-    const visitorMessage =
-      sent?.status === "sent"
-        ? { ...sent, message: viewOf(images, id, actor)(sent.message) }
-        : sent;
-    return c.json({ visitorMessage }, outcome.created ? 201 : 200);
+    const outcome = await handOff(options, id, actor, conversationId, c.req.valid("json"));
+    if (outcome.kind === "failed") return c.json(outcome.body, outcome.status);
+    return c.json({ visitorMessage: outcome.visitorMessage }, outcome.created ? 201 : 200);
   });
 
   app.openapi(giveBackRoute, async (c) => {
@@ -360,9 +341,8 @@ export function registerHandlingRoutes(app: App, { db, images, live }: HandlingO
     if (actor.kind !== "key") return c.json(KEYS_ONLY, 403);
     const { conversationId } = c.req.valid("param");
     const result = await setTyping(db, live, id, actor, conversationId, c.req.valid("json").typing);
-    if (result === "missing") return c.json(NOT_FOUND, 404);
-    if (result === "bots_paused") return c.json(BOTS_PAUSED, 409);
-    if (result === "human_handling") return c.json(HUMAN_HANDLING, 409);
-    return c.json({ ok: true as const }, 200);
+    if (result.kind === "ok") return c.json({ ok: true as const }, 200);
+    const refused = refusedReply(result);
+    return c.json(refused.body, refused.status);
   });
 }

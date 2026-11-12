@@ -464,14 +464,13 @@ export function createApp({
       live,
       visitorPresence,
     });
-    const publicOrigin = serverUrl;
     registerMcp(app, {
       db,
       webhooks: webhookManager,
       live,
       rateLimit,
       inbox,
-      publicOrigin,
+      publicOrigin: serverUrl,
       version,
       setup: {
         setup,
@@ -483,7 +482,16 @@ export function createApp({
       chat: { db, images, inbox, limits, live, liveVisitors, presence, visitorPresence },
       resourceMetadata: issuer === null ? null : resourceMetadataUrl(issuer),
     });
-    registerKeyEvents(app, { db, images, limits, live, logger, rateLimit, stream, publicOrigin });
+    registerKeyEvents(app, {
+      db,
+      images,
+      limits,
+      live,
+      logger,
+      rateLimit,
+      stream,
+      publicOrigin: serverUrl,
+    });
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, db, presence);
     registerModerationRoutes(app, db, live);

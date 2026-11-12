@@ -5,7 +5,7 @@ import type { App } from "./app.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure, INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
-import { isChat, messageAuthors } from "./messages.ts";
+import { conversationHasTestVisitor, isChat, messageAuthors } from "./messages.ts";
 
 // Support numbers from the conversations and messages already stored. Nothing here tracks anyone.
 
@@ -205,8 +205,7 @@ const firstReplies = (workspaceId: string, since: SQL) => sql`
     ORDER BY m.seq LIMIT 1
   ) AS reply ON true
   WHERE c.workspace_id = ${workspaceId} AND c.created_at >= ${since} AND NOT c.welcome
-    AND NOT EXISTS (SELECT 1 FROM visitor AS v
-                    WHERE v.workspace_id = c.workspace_id AND v.id = c.visitor_id AND v.is_test)`;
+    AND NOT ${conversationHasTestVisitor(sql`c`)}`;
 
 /** The median first reply time over the last `days`, as Analytics shows it. Null with no reply. */
 export async function medianFirstReplySeconds(

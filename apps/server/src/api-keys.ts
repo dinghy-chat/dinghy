@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, exists, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import type { Context } from "hono";
 import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
@@ -34,17 +35,20 @@ import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { clientHost } from "./oauth-client.ts";
 import {
   ACCESS_PREFIX,
+  liveCredential,
   newToken,
   parseWorkspaceToken,
-  revokeKey,
+  revokeKeys,
   STATIC_KEY_PREFIX,
 } from "./oauth-grants.ts";
+import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { allowed } from "./team.ts";
-import { MINUTE_MS } from "./time.ts";
+import { MINUTE_MS, MINUTE_SECONDS } from "./time.ts";
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}";
 /** Requests a minute for one API key, across every instance, the operator API and MCP together. */
 export const KEY_REQUESTS_PER_MINUTE = 300;
+const KEY_RATE_WINDOW_SECONDS = MINUTE_SECONDS;
 /** A key's last use is noted to the minute, so a busy key does not write on every request. */
 const LAST_USED_STEP_MS = MINUTE_MS;
 
@@ -63,7 +67,15 @@ export type Actor =
     };
 export type KeyActor = Extract<Actor, { kind: "key" }>;
 
-export const KEY_INVALID = failure("unauthorized", "This API key is not valid or was revoked.");
+/** The ID of whoever acts: the operator's, or the key's. */
+export const actorId = (actor: Actor) =>
+  actor.kind === "operator" ? actor.operatorId : actor.apiKeyId;
+
+/** The actor's ID for the audit log and a webhook's creator. */
+export const actorFields = (actor: Actor) =>
+  actor.kind === "operator" ? { operatorId: actor.operatorId } : { apiKeyId: actor.apiKeyId };
+
+const KEY_INVALID = failure("unauthorized", "This API key is not valid or was revoked.");
 
 /**
  * The bearer token in an `Authorization` header: a static key, `dk_...`, or an OAuth access token,
@@ -119,8 +131,29 @@ async function findKey(tx: Transaction, workspaceId: string, token: string) {
   return row;
 }
 
+/**
+ * The key behind a request's bearer token, counted against the key's rate limit, or the answer that
+ * refuses the request: 401 with no valid key, 429 over the limit.
+ */
+export async function authenticateRequest(
+  c: Context,
+  db: Database,
+  rateLimit: RateLimit,
+): Promise<KeyActor | Response> {
+  const token = apiKeyToken(c.req.header("authorization"));
+  const actor = token === null ? null : await authenticateApiKey(db, token);
+  if (actor === null) return c.json(KEY_INVALID, 401);
+  const wait = await rateLimit.hit(
+    "api-key",
+    actor.apiKeyId,
+    KEY_REQUESTS_PER_MINUTE,
+    KEY_RATE_WINDOW_SECONDS,
+  );
+  return wait === null ? actor : tooManyRequests(c, wait);
+}
+
 /** The key behind a token, or null when it is unknown, expired, revoked, or its workspace is deleted. */
-export async function authenticateApiKey(db: Database, token: string): Promise<KeyActor | null> {
+async function authenticateApiKey(db: Database, token: string): Promise<KeyActor | null> {
   const parsed =
     parseWorkspaceToken(token, STATIC_KEY_PREFIX) ?? parseWorkspaceToken(token, ACCESS_PREFIX);
   if (parsed === null) return null;
@@ -186,6 +219,8 @@ const ApiKey = z
     replyMode: z.enum(REPLY_MODES),
     // A connected app's host, from its client ID. Null for a static key.
     clientHost: z.string().nullable(),
+    // Whether that host is this computer, as a CLI agent's is.
+    clientIsLoopback: z.boolean(),
     // Who made the key or approved the app.
     createdByName: z.string().nullable(),
     createdAt: z.string(),
@@ -294,22 +329,7 @@ const iso = (value: Date | null) => value?.toISOString() ?? null;
  * whose tokens all expired is gone for its app.
  */
 const redeemed = (tx: Transaction) =>
-  or(
-    eq(apiKey.source, "static"),
-    exists(
-      tx
-        .select({ one: sql`1` })
-        .from(apiKeyCredential)
-        .where(
-          and(
-            eq(apiKeyCredential.workspaceId, apiKey.workspaceId),
-            eq(apiKeyCredential.apiKeyId, apiKey.id),
-            inArray(apiKeyCredential.kind, ["access", "refresh"]),
-            gt(apiKeyCredential.expiresAt, sql`now()`),
-          ),
-        ),
-    ),
-  );
+  or(eq(apiKey.source, "static"), liveCredential(tx, ["access", "refresh"]));
 
 /** The live keys of a workspace as Settings shows them, or one of them. */
 async function readKeys(tx: Transaction, workspaceId: string, keyId?: string) {
@@ -335,12 +355,16 @@ async function readKeys(tx: Transaction, workspaceId: string, keyId?: string) {
       ),
     )
     .orderBy(desc(apiKey.createdAt));
-  return rows.map(({ clientId, ...row }) => ({
-    ...row,
-    clientHost: clientId === null ? null : clientHost(clientId),
-    createdAt: row.createdAt.toISOString(),
-    lastUsedAt: iso(row.lastUsedAt),
-  }));
+  return rows.map(({ clientId, ...row }) => {
+    const client = clientId === null ? null : clientHost(clientId);
+    return {
+      ...row,
+      clientHost: client?.host ?? null,
+      clientIsLoopback: client?.loopback ?? false,
+      createdAt: row.createdAt.toISOString(),
+      lastUsedAt: iso(row.lastUsedAt),
+    };
+  });
 }
 
 export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): void {
@@ -379,6 +403,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
         source: "static" as const,
         replyMode,
         clientHost: null,
+        clientIsLoopback: false,
         createdByName: c.get("operatorName"),
         createdAt: row.createdAt.toISOString(),
         lastUsedAt: null,
@@ -416,7 +441,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { keyId } = c.req.valid("param");
-    await withWorkspace(db, id, (tx) => revokeKey(tx, id, keyId));
+    await withWorkspace(db, id, (tx) => revokeKeys(tx, id, [keyId]));
     audit(logger, "api_key.revoked", {
       workspaceId: id,
       operatorId: c.get("operatorId"),

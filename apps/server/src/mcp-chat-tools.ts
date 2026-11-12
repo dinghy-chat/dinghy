@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "@hono/zod-openapi";
 import { and, eq, inArray } from "drizzle-orm";
+import { BOT_TYPING_MS } from "../../../packages/widget/src/shared.ts";
 import {
   AnalyticsQuery,
   analyticsFor,
@@ -12,35 +13,36 @@ import { ContactListQuery, listContacts, readContact } from "./contacts.ts";
 import { conversation, message, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { listDrafts } from "./drafts.ts";
-import { CONVERSATION_CLOSED, failure, NOT_FOUND } from "./errors.ts";
+import { failure, NOT_FOUND } from "./errors.ts";
 import { handOff, setTyping } from "./handling.ts";
 import type { Images } from "./images.ts";
+import { type Inbox, messageView, type ReplyOutcome, refusedReply } from "./inbox.ts";
 import {
-  BOTS_PAUSED,
-  HUMAN_HANDLING,
-  type Inbox,
-  messageView,
-  type ReplyOutcome,
-  refusedReply,
-} from "./inbox.ts";
+  Body,
+  clientId,
+  conversationId,
+  HandoffReason,
+  HandoffSummary,
+  replyToMessageId,
+  UNTRUSTED_TEXT,
+} from "./inputs.ts";
 import { type Limits, STREAM_LIMIT } from "./limits.ts";
 import { type Live, OPERATORS, type Session } from "./live.ts";
 import { type LiveVisitors, liveVisitorList } from "./live-visitors.ts";
 import { type Outcome, type Tool, tool } from "./mcp.ts";
-import { body, clientId, conversationId, replyToMessageId, UNTRUSTED_TEXT } from "./mcp-inputs.ts";
-import { closedFailure } from "./member.ts";
 import {
   CURSOR_PATTERN,
   type Cursor,
-  findConversation,
+  conversationVisitor,
   formatCursor,
+  joinVisitor,
   listWorkspaceEvents,
   messageColumns,
   parseCursor,
   stored,
 } from "./messages.ts";
 import type { Presence, VisitorPresence } from "./presence.ts";
-import { listMembers, NOT_A_MEMBER } from "./team.ts";
+import { listMembers } from "./team.ts";
 import { MINUTE_MS } from "./time.ts";
 
 /** The days of first replies that `replySeconds` takes its median from, as the widget's header does. */
@@ -79,7 +81,7 @@ type Line = { seq: bigint; at: string; text: string };
 const clock = (iso: string) => iso.slice(11, 16);
 const indent = (text: string) => text.replaceAll("\n", "\n    ");
 
-type Read = NonNullable<Awaited<ReturnType<Inbox["read"]>>>;
+type Read = NonNullable<Awaited<ReturnType<Inbox["read"]>>>["view"];
 
 function messageLine(one: Read["messages"][number]): Line {
   const who = one.fromVisitor
@@ -177,13 +179,7 @@ async function visitorMessagesAfter(
           eq(conversation.id, message.conversationId),
         ),
       )
-      .innerJoin(
-        visitor,
-        and(
-          eq(visitor.workspaceId, conversation.workspaceId),
-          eq(visitor.id, conversation.visitorId),
-        ),
-      )
+      .innerJoin(visitor, joinVisitor())
       .where(and(eq(message.workspaceId, workspaceId), inArray(message.id, ids)))
       .orderBy(message.seq);
     const [place] = await tx
@@ -284,13 +280,11 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
           input.limit,
         );
         if (found === null) return { error: NOT_FOUND };
-        const { replySeconds, members } = await withWorkspace(db, workspaceId, async (tx) => ({
-          replySeconds: await medianFirstReplySeconds(tx, workspaceId, REPLY_TIME_DAYS),
-          members: input.format === "markdown" ? await listMembers(tx, workspaceId) : [],
-        }));
-        if (input.format === "json") return { data: { ...found, replySeconds } };
-        const assignee = members.find((one) => one.id === found.conversation.assigneeOperatorId);
-        return { data: { markdown: transcript(found, assignee?.name ?? null, replySeconds) } };
+        const replySeconds = await withWorkspace(db, workspaceId, (tx) =>
+          medianFirstReplySeconds(tx, workspaceId, REPLY_TIME_DAYS),
+        );
+        if (input.format === "json") return { data: { ...found.view, replySeconds } };
+        return { data: { markdown: transcript(found.view, found.assigneeName, replySeconds) } };
       },
     }),
     tool({
@@ -298,13 +292,13 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       title: "Reply to a visitor",
       description:
         'Replies in an open conversation, as the API key\'s reply mode says. A key that sends directly answers `{ status: "sent", message }`: the visitor sees it, with the key\'s name as its author. A key in draft mode answers `{ status: "drafted", draft }`: nothing reached the visitor, and an operator sends, edits or discards it. Errors: `human_handling` when a person handles the conversation and the key sends directly (write a note, or wait for them to give it back), and `bots_paused` when an owner paused every bot. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message.',
-      input: z.object({ conversationId, body, clientId, replyToMessageId }),
+      input: z.object({ conversationId, body: Body, clientId, replyToMessageId }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
         replyAnswer(
           await inbox.reply(workspaceId, actor, input.conversationId, {
             ...input,
-            via: "mcp",
+            source: { via: "mcp" },
             note: false,
           }),
         ),
@@ -314,13 +308,13 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       title: "Add an internal note",
       description:
         "Adds a note to a conversation, open or closed, that only the team sees. The visitor never sees it, and it alerts nobody. Use it to pass on what you found, or to suggest an answer while a person handles the conversation: a note works while a person handles it and while bots are paused. Markdown works as in messages, but links in a key's note show as plain text. Pass the same `clientId` when you retry. Pass `replyToMessageId` to quote an earlier message or note.",
-      input: z.object({ conversationId, body, clientId, replyToMessageId }),
+      input: z.object({ conversationId, body: Body, clientId, replyToMessageId }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
         replyAnswer(
           await inbox.reply(workspaceId, actor, input.conversationId, {
             ...input,
-            via: "mcp",
+            source: { via: "mcp" },
             note: true,
           }),
         ),
@@ -351,49 +345,23 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       input: z.object({
         conversationId,
         clientId,
-        reason: z
-          .string()
-          .trim()
-          .min(1)
-          .max(500)
-          .regex(/^[^\0]*$/)
-          .describe("Why a person should take it, in a sentence"),
-        summary: z
-          .string()
-          .trim()
-          .min(1)
-          .max(2000)
-          .regex(/^[^\0]*$/)
-          .optional()
-          .describe("What the visitor needs and what you found, for the person who picks it up"),
+        reason: HandoffReason.describe("Why a person should take it, in a sentence"),
+        summary: HandoffSummary.optional().describe(
+          "What the visitor needs and what you found, for the person who picks it up",
+        ),
         operatorId: z
           .uuid()
           .optional()
           .describe("A member's id from list_members. Leave it out for the whole team"),
-        visitorMessage: body.optional().describe("Your last message to the visitor"),
+        visitorMessage: Body.optional().describe("Your last message to the visitor"),
       }),
       idempotent: true,
       async run(input, { workspaceId, actor }) {
-        const outcome = await handOff(
-          db,
-          live,
-          workspaceId,
-          actor,
-          input.conversationId,
-          input,
-          "mcp",
-        );
-        if (outcome.kind === "refused") return { error: closedFailure(outcome.access).body };
-        if (outcome.kind === "missing") return { error: NOT_FOUND };
-        if (outcome.kind === "closed") return { error: CONVERSATION_CLOSED };
-        if (outcome.kind === "not_member") return { error: NOT_A_MEMBER };
-        const sent = outcome.visitorMessage;
-        const names = new Map([[actor.apiKeyId, actor.name]]);
-        const visitorMessage =
-          sent?.status === "sent"
-            ? { ...sent, message: messageView(options.images, workspaceId, names, sent.message) }
-            : sent;
-        return { data: { status: "handed_off", visitorMessage } };
+        const outcome = await handOff(options, workspaceId, actor, input.conversationId, input, {
+          via: "mcp",
+        });
+        if (outcome.kind === "failed") return { error: outcome.body };
+        return { data: { status: "handed_off", visitorMessage: outcome.visitorMessage } };
       },
     }),
     tool({
@@ -420,8 +388,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "set_typing",
       title: "Show that you are typing",
-      description:
-        'Shows the visitor "<key name> is typing…" for 6 seconds, or until the next message, so call it again while you write. Operators see it too. A key in draft mode shows it to operators only. Errors like `reply`: `bots_paused`, and `human_handling` for a key that sends directly.',
+      description: `Shows the visitor "<key name> is typing…" for ${BOT_TYPING_MS / 1000} seconds, or until the next message, so call it again while you write. Operators see it too. A key in draft mode shows it to operators only. Errors like \`reply\`: \`bots_paused\`, and \`human_handling\` for a key that sends directly.`,
       input: z.object({ conversationId, typing: z.boolean().default(true) }),
       idempotent: true,
       async run(input, { workspaceId, actor }) {
@@ -433,9 +400,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
           input.conversationId,
           input.typing,
         );
-        if (result === "missing") return { error: NOT_FOUND };
-        if (result === "bots_paused") return { error: BOTS_PAUSED };
-        if (result === "human_handling") return { error: HUMAN_HANDLING };
+        if (result.kind !== "ok") return { error: refusedReply(result).body };
         return { data: { ok: true } };
       },
     }),
@@ -475,7 +440,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
           const visitorId =
             byConversation === undefined
               ? byVisitor
-              : (await findConversation(tx, workspaceId, byConversation))?.visitorId;
+              : (await conversationVisitor(tx, workspaceId, byConversation))?.id;
           return visitorId === undefined ? null : readContact(tx, workspaceId, visitorId);
         });
         if (found === null) return { error: NOT_FOUND };

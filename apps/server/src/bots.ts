@@ -6,14 +6,16 @@ import {
   event,
   message,
   operator,
+  type ReplyMode,
   workspace,
-  workspaceMember,
 } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 import { createDraft, type DraftView, findDraft } from "./drafts.ts";
 import {
   appendMessage,
   assignConversation,
+  ConversationClosedError,
+  type KeySource,
   lockWorkspace,
   messageColumns,
   nextSeq,
@@ -21,6 +23,7 @@ import {
   stored,
   wantsWebhook,
 } from "./messages.ts";
+import { isActiveMember } from "./team.ts";
 
 // Every string a person reads has a key, so a locale can be added later.
 const text = {
@@ -33,24 +36,31 @@ const text = {
  * a person gave it back to the bots. The `conversation.handled` event's payload names it, and the
  * webhooks send `conversation.handoff` and `conversation.given_back`.
  */
-type HandledChange = "human" | "handoff" | "given_back";
+export type HandledPayload =
+  | { change: "human" | "given_back"; conversationId: string }
+  /** The note that holds the reason, and the newest chat line, which the alert names. */
+  | { change: "handoff"; conversationId: string; noteId: string; messageId: string };
 
-export interface HandledPayload {
-  conversationId: string;
-  change: HandledChange;
-  /** On a handoff: the note message that holds the reason, and the newest chat line, for the alert. */
-  noteId?: string | undefined;
-  messageId?: string | undefined;
+/** What a key's reply may do now. */
+type KeyGate = "send" | "draft" | "bots_paused" | "human_handling";
+
+/**
+ * A pause stops every bot, a draft-mode key drafts, which it may while a person handles the
+ * conversation, and a send-mode key stays quiet while a person handles it.
+ */
+function gateOf(state: {
+  botsPaused: boolean;
+  replyMode: ReplyMode | undefined;
+  humanSince: Date | null;
+}): KeyGate {
+  if (state.botsPaused) return "bots_paused";
+  if (state.replyMode === "draft") return "draft";
+  return state.humanSince === null ? "send" : "human_handling";
 }
-
-/** What a key's reply may do now, read under the workspace row lock. */
-export type KeyGate = "send" | "draft" | "bots_paused" | "human_handling";
 
 /**
  * Takes the workspace row lock and decides what a key's reply does. A retry of a reply that went in
- * gets its first answer, whatever changed since. Then a pause stops every bot, a draft-mode key
- * drafts, which it may while a person handles the conversation, and a send-mode key stays quiet
- * while a person handles it.
+ * gets its first answer, whatever changed since.
  */
 export async function keyGate(
   tx: Transaction,
@@ -74,7 +84,6 @@ export async function keyGate(
   const retry = result.rows[0];
   if (retry?.sent === true) return "send";
   if (retry?.drafted === true) return "draft";
-  if (botsPaused) return "bots_paused";
   const [row] = await tx
     .select({ replyMode: apiKey.replyMode, humanSince: conversation.humanSince })
     .from(apiKey)
@@ -83,24 +92,18 @@ export async function keyGate(
       and(eq(conversation.workspaceId, apiKey.workspaceId), eq(conversation.id, conversationId)),
     )
     .where(and(eq(apiKey.workspaceId, workspaceId), eq(apiKey.id, apiKeyId)));
-  if (row?.replyMode === "draft") return "draft";
-  return row?.humanSince === null || row === undefined ? "send" : "human_handling";
+  return gateOf({ botsPaused, replyMode: row?.replyMode, humanSince: row?.humanSince ?? null });
 }
 
-/** Writes a `conversation.handled` event. */
-async function handled(
-  tx: Transaction,
-  workspaceId: string,
-  payload: HandledPayload,
-  alert = false,
-) {
+/** Writes a `conversation.handled` event. A handoff alerts the people who take over. */
+async function handled(tx: Transaction, workspaceId: string, payload: HandledPayload) {
   const seq = await nextSeq(tx, workspaceId);
   await tx.insert(event).values({
     workspaceId,
     seq,
     kind: "conversation.handled",
     payload,
-    needsAlert: alert,
+    needsAlert: payload.change === "handoff",
     needsWebhook: payload.change === "human" ? false : wantsWebhook(workspaceId),
   });
 }
@@ -168,6 +171,12 @@ export async function setBotsPaused(
   return pauser?.name ?? null;
 }
 
+/** The key that hands off, and how its write came. */
+export interface HandoffKey {
+  apiKeyId: string;
+  source: KeySource | undefined;
+}
+
 export interface HandoffInput {
   clientId: string;
   reason: string;
@@ -182,17 +191,18 @@ type HandoffMessage =
   | { status: "drafted"; draft: DraftView }
   | { status: "not_sent"; reason: "bots_paused" };
 
-export type HandoffOutcome =
-  | { kind: "handed_off"; created: boolean; visitorMessage: HandoffMessage | null }
+/** A retry answers the first handoff's message. */
+type HandoffOutcome =
+  | { kind: "handed_off"; visitorId: string; visitorMessage: HandoffMessage | null }
+  | { kind: "retried"; visitorMessage: HandoffMessage | null }
   | { kind: "missing" }
-  | { kind: "closed" }
   | { kind: "not_member" };
 
 /** The key's message to the visitor: sent, drafted or held back, as its reply would be. */
 async function handoffMessage(
   tx: Transaction,
   workspaceId: string,
-  key: { apiKeyId: string; via?: "mcp" },
+  key: HandoffKey,
   conversationId: string,
   input: HandoffInput,
 ): Promise<HandoffMessage | null> {
@@ -206,10 +216,7 @@ async function handoffMessage(
   }
   // The handoff's own message goes even while a person handles it: it tells the visitor who takes over.
   const author = { kind: "key" as const, apiKeyId: key.apiKeyId, conversationId };
-  const sent = await appendMessage(tx, workspaceId, author, {
-    ...reply,
-    ...(key.via !== undefined && { via: key.via }),
-  });
+  const sent = await appendMessage(tx, workspaceId, author, { ...reply, source: key.source });
   return { status: "sent", message: sent.message };
 }
 
@@ -248,21 +255,10 @@ async function earlierHandoff(
   return { status: "not_sent", reason: "bots_paused" };
 }
 
-async function isMember(tx: Transaction, workspaceId: string, operatorId: string) {
-  const [member] = await tx
-    .select({ id: workspaceMember.operatorId })
-    .from(workspaceMember)
-    .where(
-      and(
-        eq(workspaceMember.workspaceId, workspaceId),
-        eq(workspaceMember.operatorId, operatorId),
-        isNull(workspaceMember.removedAt),
-      ),
-    );
-  return member !== undefined;
-}
-
-/** The newest message of the conversation that is not a note, which a handoff's alert names. */
+/**
+ * The newest message of the conversation that is not a note, which a handoff's alert names. A
+ * conversation always has one: the visitor's first.
+ */
 async function newestMessageId(tx: Transaction, workspaceId: string, conversationId: string) {
   const [row] = await tx
     .select({ id: message.id })
@@ -276,32 +272,35 @@ async function newestMessageId(tx: Transaction, workspaceId: string, conversatio
     )
     .orderBy(desc(message.seq))
     .limit(1);
-  return row?.id;
+  if (row === undefined) throw new Error("A conversation has no message");
+  return row.id;
 }
 
 /**
  * A bot hands a conversation to people, in one transaction: its message to the visitor, the
  * assignee, the handler, a note with the reason, and an event that alerts the assignee, or every
  * member when there is none. A retry with the same clientId changes nothing and answers the first
- * result, even after the conversation or the pause changed.
+ * result, even after the conversation or the pause changed. Throws ConversationClosedError, as a
+ * reply does, when the conversation is closed.
  */
-export async function handoff(
+export async function writeHandoff(
   tx: Transaction,
   workspaceId: string,
-  key: { apiKeyId: string; via?: "mcp" },
+  key: HandoffKey,
   conversationId: string,
   input: HandoffInput,
 ): Promise<HandoffOutcome> {
   await lockWorkspace(tx, workspaceId);
   const earlier = await earlierHandoff(tx, workspaceId, key.apiKeyId, input);
-  if (earlier !== undefined) return { kind: "handed_off", created: false, visitorMessage: earlier };
+  if (earlier !== undefined) return { kind: "retried", visitorMessage: earlier };
   const [target] = await tx
-    .select({ status: conversation.status })
+    .select({ status: conversation.status, visitorId: conversation.visitorId })
     .from(conversation)
     .where(ofConversation(workspaceId, conversationId));
   if (target === undefined) return { kind: "missing" };
-  if (target.status !== "open") return { kind: "closed" };
-  if (input.operatorId !== undefined && !(await isMember(tx, workspaceId, input.operatorId))) {
+  if (target.status !== "open") throw new ConversationClosedError();
+  const { operatorId } = input;
+  if (operatorId !== undefined && !(await isActiveMember(tx, workspaceId, operatorId))) {
     return { kind: "not_member" };
   }
   const visitorMessage = await handoffMessage(tx, workspaceId, key, conversationId, input);
@@ -314,11 +313,11 @@ export async function handoff(
       clientId: handoffNoteClientId(input.clientId),
       body: text.handoffNote(input.reason, input.summary),
       note: true,
-      ...(key.via !== undefined && { via: key.via }),
+      source: key.source,
     },
   );
-  if (input.operatorId !== undefined) {
-    await assignConversation(tx, workspaceId, conversationId, input.operatorId);
+  if (operatorId !== undefined) {
+    await assignConversation(tx, workspaceId, conversationId, operatorId);
   }
   await tx
     .update(conversation)
@@ -327,16 +326,13 @@ export async function handoff(
       handoffByApiKeyId: key.apiKeyId,
     })
     .where(ofConversation(workspaceId, conversationId));
-  const messageId = await newestMessageId(tx, workspaceId, conversationId);
-  const payload = {
+  await handled(tx, workspaceId, {
     conversationId,
-    change: "handoff" as const,
+    change: "handoff",
     noteId: noted.message.id,
-    messageId,
-  };
-  // The alert names a message, which a conversation always has: the visitor's first.
-  await handled(tx, workspaceId, payload, messageId !== undefined);
-  return { kind: "handed_off", created: true, visitorMessage };
+    messageId: await newestMessageId(tx, workspaceId, conversationId),
+  });
+  return { kind: "handed_off", visitorId: target.visitorId, visitorMessage };
 }
 
 /**
@@ -364,13 +360,6 @@ export async function typingGate(
     )
     .where(and(ofConversation(workspaceId, conversationId), eq(conversation.status, "open")));
   if (row === undefined) return null;
-  const gate: KeyGate =
-    row.botsPausedAt !== null
-      ? "bots_paused"
-      : row.replyMode === "draft"
-        ? "draft"
-        : row.humanSince !== null
-          ? "human_handling"
-          : "send";
+  const gate = gateOf({ ...row, botsPaused: row.botsPausedAt !== null });
   return { gate, visitorId: row.visitorId };
 }
