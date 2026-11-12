@@ -104,7 +104,7 @@ dialog{padding:0;border:0;background:transparent;max-width:95vw;max-height:95vh;
 dialog::backdrop{background:rgb(11 34 57/.85)}
 dialog img{display:block;max-width:none}
 .panel.page{inset:0;margin:auto;width:100%;max-width:720px;height:auto;max-height:none;border-radius:0}
-@media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}textarea{font-size:16px}.panel:not(.page) .head{padding-top:max(10px,env(safe-area-inset-top))}.panel:not(.page)>:last-child{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
+@media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}textarea,input{font-size:16px}.panel:not(.page) .head{padding-top:max(10px,env(safe-area-inset-top))}.panel:not(.page)>:last-child{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
 .panel:focus{outline:none}
 :host([data-side=left]) .panel{right:auto;left:0}
 .opened{display:none!important}

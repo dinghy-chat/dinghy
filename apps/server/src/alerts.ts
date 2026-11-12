@@ -623,10 +623,19 @@ async function replyEmailPlan(
 // Markdown's paragraphs come bare, and a mail app's default margins would pad the bubble unevenly.
 const bubbleParagraphs = (html: string) => html.replaceAll("<p>", '<p style="margin:0 0 8px">');
 
-/** A reply in the HTML: who replied, above a chat bubble with its quote and its text. */
-const replyHtml = (reply: { author: string; body: string; quote: Quote | null }) =>
-  `<p style="margin:0 0 6px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(text.replied(reply.author))}</p>` +
-  '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px"><tr>' +
+/**
+ * A reply in the HTML: a chat bubble with its quote and its text, under who replied when the reply
+ * before it had another author, as a chat groups one person's messages.
+ */
+const replyHtml = (
+  reply: { author: string; body: string; quote: Quote | null },
+  index: number,
+  replies: { author: string }[],
+) =>
+  (replies[index - 1]?.author === reply.author
+    ? ""
+    : `<p style="margin:${index === 0 ? 0 : 12}px 0 6px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(text.replied(reply.author))}</p>`) +
+  '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px"><tr>' +
   `<td style="background:${EMAIL_COLORS.bubble};border-radius:4px 18px 18px 18px;padding:12px 16px 4px;font-size:16px;line-height:1.45">` +
   `${quotedHtml(reply.quote, bubbleParagraphs(markdownHtml(reply.body)))}</td></tr></table>`;
 

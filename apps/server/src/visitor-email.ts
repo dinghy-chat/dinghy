@@ -102,8 +102,8 @@ export function verifyEmailStop(
 }
 
 /**
- * Who wrote a message, as the widget shows them: the visitor, a first name, a key's name, or the
- * team when the author is gone.
+ * Who wrote a message, for an email to the visitor: the visitor, a member's first name, the
+ * workspace for an API key, or the team when the author is gone.
  */
 export function visitorAuthorName(
   line: {
@@ -115,10 +115,11 @@ export function visitorAuthorName(
   placeName: string,
 ): string {
   if (line.authorVisitorId !== null) return visitorEmailText.you;
-  const id = line.authorOperatorId ?? line.authorApiKeyId ?? "";
-  const author = authors.get(id);
+  // A bot's key has a name for the team, such as "Support bot". A visitor reads the workspace.
+  if (line.authorApiKeyId !== null) return placeName;
+  const author = authors.get(line.authorOperatorId ?? "");
   if (author === undefined) return visitorEmailText.team(placeName);
-  return line.authorApiKeyId !== null || author.isDeleted ? author.name : firstName(author.name);
+  return author.isDeleted ? author.name : firstName(author.name);
 }
 
 /** The layout of an email to a visitor: the workspace's header, a button to the chat, the stop link. */

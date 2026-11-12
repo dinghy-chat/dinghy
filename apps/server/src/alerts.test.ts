@@ -862,12 +862,14 @@ describe("email", () => {
     expect(mail?.headers?.["list-unsubscribe"]).toBe(`<${stop}>`);
     expect(mail?.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
     // The HTML version shows the Markdown as formatting, and escapes everything else.
-    // Each reply in its bubble under its author's first name, as the widget shows it.
+    // Each reply in its bubble, and one line with the author's first name over both, as a chat
+    // groups one person's messages.
     expect(mail?.html).toContain('<p style="margin:0 0 8px">First answer</p>');
     expect(mail?.html).toContain(
       '<p style="margin:0 0 8px"><strong>Second</strong> answer &lt;b&gt;</p>',
     );
-    expect(mail?.html?.match(/>anna-[^<@]* replied<\/p>/g)).toHaveLength(2);
+    expect(mail?.html?.match(/>anna-[^<@]* replied<\/p>/g)).toHaveLength(1);
+    expect(mail?.html?.match(/border-radius:4px 18px 18px 18px/g)).toHaveLength(2);
     expect(mail?.html).toContain(`href="${new URL(chat ?? "", PUBLIC_URL).href}"`);
     expect(mail?.html).toContain(`href="${stop}"`);
     expect(mail?.html).not.toContain("<b>");

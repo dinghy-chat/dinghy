@@ -20,7 +20,8 @@ describe("the reply email", () => {
     acme,
     [
       { author: "Anna", body: "It ships **today**.", quote },
-      { author: "Help bot", body: null, quote: null },
+      { author: "Acme", body: null, quote: null },
+      { author: "Acme", body: "Anything else?", quote: null },
     ],
     links,
   );
@@ -36,7 +37,8 @@ describe("the reply email", () => {
 
   test("the HTML names each replier above a bubble, with the quote inside it", () => {
     expect(letter.html).toContain(">Anna replied</p>");
-    expect(letter.html).toContain(">Help bot replied</p>");
+    // Two replies in a row by one author share one line, as a chat groups them.
+    expect(letter.html.match(/>Acme replied<\/p>/g)).toHaveLength(1);
     expect(letter.html).toMatch(
       /border-radius:4px 18px 18px 18px[^>]*><div[^>]*><strong>You<\/strong><br>Where is my order\?<\/div>/,
     );
@@ -111,7 +113,8 @@ describe("the transcript", () => {
     expect(letter.subject).toBe("Your conversation with Acme");
     expect(letter.text).toContain("You, 2026-11-11 20:20 UTC:\nHi");
     expect(letter.text).toContain("Anna, 2026-11-11 20:20 UTC:\nUse **Export**.");
-    expect(letter.text).toContain("Help bot, 2026-11-11 20:20 UTC:\nSent an image.");
+    // A bot's key has a name for the team. The visitor reads the workspace.
+    expect(letter.text).toContain("Acme, 2026-11-11 20:20 UTC:\nSent an image.");
     expect(letter.text).toContain(`Continue the chat: ${links.chatUrl}`);
     expect(letter.html).toContain("<strong>Export</strong>");
     expect(letter.html).not.toContain("<img");
