@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The reply box keeps its height when you switch between **Reply** and **Note**, as **Add note** is now as tall as the send button.
+
 ## [0.25.0] - 2026-11-12
 
 ### Changed
