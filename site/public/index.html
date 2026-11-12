@@ -73,36 +73,65 @@
       <div class="wrap">
         <div class="section-head">
           <h2>Talk to your customers, right from your site.</h2>
-          <p>A light chat on your site, a shared inbox for your team, alerts on your phone, and replies by email when the visitor has left.</p>
+          <p>A light chat on your site, a shared inbox for your team, alerts on your phone, replies by email when the visitor has left, and room for your own AI agent.</p>
         </div>
         <div class="bento">
           <article class="tile tile-wide tile-blue">
             <h3>One inbox for the whole team</h3>
-            <p>See who has each chat and who is replying now, so two people do not answer the same customer.</p>
+            <p>See what waits for a reply, who has each chat and who is typing, so two people never answer the same customer.</p>
             <div class="toy" data-toy="inbox" aria-hidden="true">
               <div class="app-window">
-                <div class="app-side"><b>Open <i>4</i></b><span>Closed</span><span>Settings</span></div>
-                <div class="chat-list">
-                  <div class="chat-row">
-                    <span class="avatar avatar-large tint-1">MC</span>
-                    <div><b>Maya Chen</b><small>Do you deliver on Sundays?</small><span class="chat-row-meta"><span class="chip">Unassigned</span></span></div>
-                  </div>
-                  <div class="chat-row">
-                    <span class="avatar avatar-large tint-2">LM</span>
-                    <div><b>Leo Martin</b><small>Where is my order #4102?</small><span class="chat-row-meta"><span class="dots"><i></i><i></i><i></i></span><span class="who">Tom is replying</span></span></div>
-                  </div>
-                  <div class="chat-row">
-                    <span class="avatar avatar-large tint-3">SO</span>
-                    <div><b>Sara Okafor</b><small>My import keeps failing. Help?</small><span class="chat-row-meta"><span class="avatar avatar-small tint-0">AR</span><span class="who">Ana Ruiz</span></span></div>
-                  </div>
+                <div class="app-side">
+                  <span class="app-brand"><img src="/favicon.svg" width="16" height="16" alt="">dinghy</span>
+                  <b><svg class="ico" viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox<i class="app-badge">3</i></b>
+                  <span><svg class="ico" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="10" r="2.6"/><path d="M8.5 16.5c1.2-1.8 5.8-1.8 7 0"/></svg>Contacts</span>
+                  <span><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.2 3.2 3.2 14.8 0 18M12 3c-3.2 3.2-3.2 14.8 0 18"/></svg>Visitors</span>
+                  <span><svg class="ico" viewBox="0 0 24 24"><path d="M4 20h16M7 20v-6M12 20V8M17 20v-9"/></svg>Analytics</span>
+                  <span><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg>Settings</span>
                 </div>
-                <div class="app-conversation">
-                  <div class="app-conversation-head"><b class="app-conversation-name">Maya Chen</b><small>Open chat</small></div>
-                  <div class="app-conversation-log">
-                    <div class="chat-bubble from-visitor app-conversation-text">Do you deliver on Sundays?</div>
-                    <div class="app-conversation-status"><span class="chat-row-meta"><span class="dots"><i></i><i></i><i></i></span><span class="who">Tom is replying</span></span></div>
+                <div class="app-card">
+                  <div class="chat-list-pane">
+                    <div class="chat-list-head"><b>Inbox</b><small><span class="app-waiting">3</span> people are waiting for you.</small></div>
+                    <div class="chat-list">
+                      <div class="chat-row is-unread is-open">
+                        <span class="avatar tint-1">MC</span>
+                        <div class="chat-row-main"><span class="chat-row-top"><b>Maya Chen</b><time>now</time><i class="unread-dot"></i></span><small>Do you deliver on Sundays?</small><span class="chat-row-meta"><span class="chip">Waiting for a reply</span></span></div>
+                      </div>
+                      <div class="chat-row">
+                        <span class="avatar tint-2">LM</span>
+                        <div class="chat-row-main"><span class="chat-row-top"><b>Leo Martin</b><time>2 min</time></span><small>Where is my order #4102?</small><span class="chat-row-meta"><span class="typing"><span class="dots"><i></i><i></i><i></i></span>Tom is replying</span><img class="handler" src="/img/people/tom.webp" width="20" height="20" alt=""></span></div>
+                      </div>
+                      <div class="chat-row">
+                        <span class="avatar tint-3">EH</span>
+                        <div class="chat-row-main"><span class="chat-row-top"><b>Emma Holt</b><time>5 min</time></span><small>Can I switch to the yearly plan?</small><span class="chat-row-meta"><span class="chip">Waiting for a reply</span><span class="handler handler-bot"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9.5 12h0M14.5 12h0M9.5 15.5h5"/></svg></span></span></div>
+                      </div>
+                      <div class="chat-row">
+                        <span class="avatar tint-0">SO</span>
+                        <div class="chat-row-main"><span class="chat-row-top"><b>Sara Okafor</b><time>12 min</time></span><small>Thanks, the import works now!</small><span class="chat-row-meta"><img class="handler" src="/img/people/ana.webp" width="20" height="20" alt=""></span></div>
+                      </div>
+                    </div>
                   </div>
-                  <div class="app-compose"><span>Write a reply...</span><i></i></div>
+                  <div class="app-conversation">
+                    <div class="app-conversation-head"><span class="avatar avatar-head tint-1">MC</span><b class="app-conversation-name">Maya Chen</b><span class="app-close">Close</span></div>
+                    <div class="app-conversation-log">
+                      <span class="app-day">Today</span>
+                      <div class="chat-bubble from-visitor app-conversation-text">Do you deliver on Sundays?</div>
+                      <div class="app-conversation-status"></div>
+                    </div>
+                    <div class="app-compose">
+                      <span class="app-compose-pill"><b>Reply</b><span>Note</span></span>
+                      <span class="app-compose-box">
+                        <span>Write a reply...</span>
+                        <span class="app-compose-tools">
+                          <svg class="ico" viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l7.8-7.8a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7.1-7.1"/></svg>
+                          <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c2 2 5 2 7 0M9 9.5h0M15 9.5h0"/></svg>
+                          <svg class="ico" viewBox="0 0 24 24"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg>
+                          <svg class="ico" viewBox="0 0 24 24"><path d="M11 5h7M6 19h7M14.5 5 9.5 19"/></svg>
+                          <i><svg class="ico" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></i>
+                        </span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -127,10 +156,10 @@
 
           <article class="tile tile-narrow tile-yellow" data-toy="colors">
             <h3>Looks like your site</h3>
-            <p>Set your colors. Hide the boat or the chat button. Each takes one attribute.</p>
+            <p>Your colors, logo, words and chat button, set in Settings with a live preview. No code.</p>
             <fieldset class="swatches">
               <legend class="visually-hidden">Sample colors</legend>
-              <label class="swatch swatch-0"><input type="radio" name="sample-colors" checked><span class="visually-hidden">Navy and blue</span></label>
+              <label class="swatch swatch-0"><input type="radio" name="sample-colors" checked><span class="visually-hidden">Navy and red</span></label>
               <label class="swatch swatch-1"><input type="radio" name="sample-colors"><span class="visually-hidden">Brown and coral</span></label>
               <label class="swatch swatch-2"><input type="radio" name="sample-colors"><span class="visually-hidden">Green and mint</span></label>
               <label class="swatch swatch-3"><input type="radio" name="sample-colors"><span class="visually-hidden">Indigo and lilac</span></label>
@@ -139,43 +168,105 @@
               <div class="mini-widget">
                 <div class="mini-widget-head">
                   <span class="mini-logos">
-                    <svg width="22" height="22" viewBox="0 0 24 24"><path d="M3 5c3-1.5 6-1.5 9 .5v14c-3-2-6-2-9-.5z" fill="#0b2239"/><path d="M21 5c-3-1.5-6-1.5-9 .5v14c3-2 6-2 9-.5z" fill="#1f6bff"/></svg>
-                    <svg width="22" height="22" viewBox="0 0 24 24"><path d="M3 13a9 8 0 0 1 18 0v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#8a2f1c"/><path d="M8.5 9.5 7.5 13M12.5 9 11.5 13M16.5 9.5 15.5 13" stroke="#ff8a6b" stroke-width="2" stroke-linecap="round"/></svg>
-                    <svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#0a5c50"/><path d="M4 11c2.7-2.5 5.3-2.5 8 0s5.3 2.5 8 0M6 16c2-1.8 4-1.8 6 0s4 1.8 6 0" fill="none" stroke="#4fd8b8" stroke-width="2" stroke-linecap="round"/></svg>
-                    <svg width="22" height="22" viewBox="0 0 24 24"><path d="M3 21V11a9 9 0 0 1 18 0v10z" fill="#3c2a9c"/><path d="M12 8c2.8 2.8 3.5 5 3.5 6.800a3.5 3.5 0 0 1-7 0C8.5 12.5 10.5 11 12 8z" fill="#b19cff"/></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24"><path d="M3 5c3-1.5 6-1.5 9 .5v14c-3-2-6-2-9-.5z" fill="#0b2239"/><path d="M21 5c-3-1.5-6-1.5-9 .5v14c3-2 6-2 9-.5z" fill="#e5352b"/></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24"><path d="M3 13a9 8 0 0 1 18 0v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#8a2f1c"/><path d="M8.5 9.5 7.5 13M12.5 9 11.5 13M16.5 9.5 15.5 13" stroke="#ff8a6b" stroke-width="2" stroke-linecap="round"/></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#0a5c50"/><path d="M4 11c2.7-2.5 5.3-2.5 8 0s5.3 2.5 8 0M6 16c2-1.8 4-1.8 6 0s4 1.8 6 0" fill="none" stroke="#4fd8b8" stroke-width="2" stroke-linecap="round"/></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24"><path d="M3 21V11a9 9 0 0 1 18 0v10z" fill="#3c2a9c"/><path d="M12 8c2.8 2.8 3.5 5 3.5 6.8a3.5 3.5 0 0 1-7 0C8.5 12.5 10.5 11 12 8z" fill="#b19cff"/></svg>
                   </span>
-                  Chat with us
+                  <span class="mini-title">Chat with us<small><i></i>Usually replies in 2 min</small></span>
+                  <img class="mini-face" src="/img/people/ana.webp" width="24" height="24" alt="">
+                  <svg class="ico mini-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
                 </div>
                 <div class="mini-widget-body">
-                  <div class="chat-bubble from-visitor">Hi, how can we help?</div>
                   <div class="chat-bubble from-team">Do you ship to Spain?</div>
+                  <span class="mini-author"><img class="mini-face" src="/img/people/ana.webp" width="18" height="18" alt="">Ana</span>
+                  <div class="chat-bubble from-visitor">We do, and it's free over €50.</div>
                 </div>
                 <div class="mini-compose">
+                  <svg class="ico" viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l7.8-7.8a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7.1-7.1"/></svg>
+                  <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c2 2 5 2 7 0M9 9.5h0M15 9.5h0"/></svg>
                   <span>Write a message...</span>
-                  <i class="mini-send"><svg width="15" height="15" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M227.91,134.86,59.93,231a8,8,0,0,1-11.44-9.67L80,128,48.49,34.72a8,8,0,0,1,11.44-9.67l168,95.85A8,8,0,0,1,227.91,134.86Z"/><path d="M231.87,114l-168-95.89A16,16,0,0,0,40.92,37.34L71.55,128,40.92,218.67A16,16,0,0,0,56,240a16.15,16.15,0,0,0,7.93-2.1l167.92-96.05a16,16,0,0,0,.05-27.89ZM56,224a.56.56,0,0,0,0-.12L85.74,136H144a8,8,0,0,0,0-16H85.74L56.06,32.16A.46.46,0,0,0,56,32l168,95.83Z"/></svg></i>
+                  <i class="mini-send"><svg class="ico" viewBox="0 0 24 24"><path d="M4.5 12 20 4.5 15 20l-3-6.5z"/></svg></i>
                 </div>
               </div>
             </div>
           </article>
 
-          <article class="tile tile-narrow tile-mint">
-            <h3>Images in the chat</h3>
-            <p>PNG, JPEG or WebP up to 5 MB.</p>
-            <div class="toy" data-toy="images" aria-hidden="true">
-              <div class="upload-window">
-                <div class="upload">
-                  <div class="chat-bubble from-visitor">Can you send a screenshot?</div>
-                  <div class="upload-shot">
-                    <div class="upload-frame">
-                      <span class="upload-frame-bar"><i></i><i></i><i></i><em>screenshot.png</em></span>
-                      <div class="upload-frame-body">Importing contacts<div class="upload-progress"><i></i></div><div class="upload-error">Stopped at 40%</div></div>
+          <article class="tile tile-wide tile-mint">
+            <h3>Bring your own AI agent</h3>
+            <p>Connect Claude Code, Cursor or your own bot. It drafts replies, and your team sends them.</p>
+            <div class="toy" data-toy="agent" aria-hidden="true">
+              <div class="agent-window">
+                <div class="agent-term">
+                  <span class="agent-term-bar"><i></i><i></i><i></i></span>
+                  <code><span class="agent-prompt">$</span> claude mcp add --transport http dinghy https://app.dinghy.chat/v1/mcp</code>
+                  <span class="agent-term-ok">&#10003; Connected to Flour &amp; Co</span>
+                  <span class="agent-term-ask">&gt; Install the chat on my site</span>
+                  <span class="agent-term-ok">&#10003; The chat is live</span>
+                </div>
+                <div class="agent-thread">
+                  <div class="app-conversation-head"><span class="avatar avatar-head tint-3">EH</span><b class="agent-name">Emma Holt</b><span class="agent-handler"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9.5 12h0M14.5 12h0M9.5 15.5h5"/></svg><span class="agent-handler-name">Support bot</span></span></div>
+                  <div class="agent-log" data-state="draft">
+                    <div class="chat-bubble from-visitor agent-question">Can I switch to the yearly plan?</div>
+                    <div class="agent-draft">
+                      <span class="agent-label"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9.5 12h0M14.5 12h0M9.5 15.5h5"/></svg>Suggested by Support bot</span>
+                      <div class="agent-draft-bubble agent-answer">Yes! Open Billing and pick Yearly.</div>
+                      <span class="agent-actions"><span>Discard</span><span class="agent-edit">Edit</span><b>Send</b></span>
                     </div>
-                    <div class="upload-sent"><i></i></div>
+                    <div class="agent-sent">
+                      <span class="agent-label agent-label-sent"><img src="/img/people/ana.webp" width="16" height="16" alt=""><span class="agent-sent-by">Sent by Ana</span></span>
+                      <div class="chat-bubble from-team agent-answer">Yes! Open Billing and pick Yearly.</div>
+                    </div>
+                    <div class="agent-handoff">
+                      <span class="agent-divider"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="16.5" cy="10" r="2.5"/><path d="M3.5 19c.9-2.8 3.3-4 5.5-4s4.6 1.2 5.5 4M15 15.2c2.2-.3 4.6.8 5.5 3.3"/></svg>Handed to the team</span>
+                      <div class="agent-note"><small>Handoff note</small><span>Refund request: charged twice.</span></div>
+                    </div>
                   </div>
                 </div>
-                <div class="mini-compose">
-                  <span>Write a message...</span>
-                  <b><svg width="17" height="17" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M180.75,104.75,204,128l-82.06,81.94a48,48,0,0,1-67.88-67.88L153.37,41.37a32,32,0,0,1,45.26,45.26Z"/><path d="M209.66,122.34a8,8,0,0,1,0,11.32l-82.05,82a56,56,0,0,1-79.2-79.21L147.67,35.73a40,40,0,1,1,56.61,56.55L105,193A24,24,0,1,1,71,159L154.3,74.38A8,8,0,1,1,165.7,85.6L82.39,170.31a8,8,0,1,0,11.27,11.36L192.93,81A24,24,0,1,0,159,47L59.76,147.68a40,40,0,1,0,56.53,56.62l82.06-82A8,8,0,0,1,209.66,122.34Z"/></svg></b>
+              </div>
+            </div>
+          </article>
+
+          <article class="tile tile-narrow tile-peach">
+            <h3>Gone? Your reply goes by email</h3>
+            <p>A visitor who left gets your answer in their inbox, and one click brings them back to the chat.</p>
+            <div class="toy" aria-hidden="true">
+              <div class="mail">
+                <div class="mail-bar">
+                  <svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+                  <span>Inbox</span>
+                  <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M10 13h4"/></svg>
+                  <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+                </div>
+                <div class="mail-from">
+                  <img src="/img/people/flour-logo.webp" width="34" height="34" alt="">
+                  <span><b>Flour &amp; Co</b><small>to me, 9:42</small></span>
+                </div>
+                <b class="mail-subject">Ana replied to your message</b>
+                <div class="mail-body">
+                  <span class="mail-who"><img src="/img/people/ana.webp" width="18" height="18" alt="">Ana replied</span>
+                  <div class="mail-bubble"><span class="mail-quote">Do you deliver on Sundays?</span>Yes, every Sunday until noon.</div>
+                  <span class="mail-button">Reply in the chat</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="tile tile-narrow tile-blue">
+            <h3>See who is on your site</h3>
+            <p>A live map of your visitors, with the page they are on and where they came from.</p>
+            <div class="toy" data-toy="visitors" aria-hidden="true">
+              <div class="live-window">
+                <div class="live-head"><i class="live-dot"></i><b class="live-count">12</b>people on your site now</div>
+                <div class="live-map">
+                  <div class="live-map-art">
+                    <img src="/img/world.svg" width="360" height="142" alt="">
+                    <i class="live-pin pin-de is-on"></i><i class="live-pin pin-us"></i><i class="live-pin pin-jp"></i><i class="live-pin pin-fr"></i><i class="live-pin pin-br"></i><i class="live-pin pin-au"></i><i class="live-pin pin-gb"></i><i class="live-pin pin-in"></i><i class="live-pin pin-ca"></i>
+                  </div>
+                </div>
+                <div class="live-list">
+                  <div class="live-row"><span class="live-flag">DE</span><div><b>Visitor 7F3K</b><small>/pricing, from Google</small></div><span class="live-chip">Chatting</span></div>
+                  <div class="live-row"><span class="live-flag">US</span><div><b>Leo Martin</b><small>/orders/4102</small></div></div>
                 </div>
               </div>
             </div>
@@ -192,6 +283,28 @@
             </div>
           </article>
         </div>
+        <div class="extras">
+          <div class="extras-head">
+            <h3>And all the small things</h3>
+            <p>In every workspace, on the cloud or your own server.</p>
+          </div>
+          <ul class="extras-list">
+            <li><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/></svg>Images up to 5 MB</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 4h14v10l-5 6H5z"/><path d="M14 20v-6h5"/></svg>Notes only your team sees</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M5 4 3 6M19 4l2 2"/></svg>Snooze until tomorrow</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6"/></svg>Reply with a quote</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><path d="M2 13l4 4 9-10M10 15l2 2 9-10"/></svg>Read receipts</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h0M10 10h0M14 10h0M18 10h0M8 14h8"/></svg>See what visitors type</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="10" r="2.6"/><path d="M8.5 16.5c1.2-1.8 5.8-1.8 7 0"/></svg>Contacts and history</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><path d="M4 20h16M7 20v-6M12 20V8M17 20v-9"/></svg>Analytics</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>Transcripts by email</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c2 2 5 2 7 0M9 9.5h0M15 9.5h0"/></svg>Markdown and emoji</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20c1-4 4-6 7-6 1.5 0 3 .4 4 1.2M15 18l2 2 4-4"/></svg>Signed-in users</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>API and webhooks</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Dark theme</li>
+            <li><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="8" width="13" height="13" rx="2"/><path d="M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3"/></svg>Several workspaces</li>
+          </ul>
+        </div>
       </div>
     </section>
 
@@ -199,7 +312,8 @@
       <div class="wrap install">
         <div>
           <h2>One tag. That is the install.</h2>
-          <p>Paste it before the closing body tag and the chat button appears. The loader is under 4 KB, and the full chat loads only when a visitor opens it.</p>
+          <p>Paste it before the closing body tag and the chat button appears. The loader is under 3 KB gzipped, and the full chat loads only when a visitor opens it.</p>
+          <p class="install-agent">Or let your coding agent do it. Connect it to Dinghy and ask it to install the chat. <a href="/docs/agents">How it works</a></p>
         </div>
         <div class="install-demo" data-toy="install" role="img" aria-label="The script tag is pasted into a page, and the chat button appears">
           <div class="editor">
@@ -220,14 +334,8 @@
 
     <section class="section" id="pricing">
       <div class="wrap">
-        <h2 class="pricing-title">$7 a month. Or free on your own server.</h2>
+        <h2 class="pricing-title">Free on your own server. Or $7 a month.</h2>
         <div class="price-cards">
-          <div class="price-card tile-yellow">
-            <h3>We host it</h3>
-            <p class="price">$7 <small>a month</small></p>
-            <p>One flat price for each workspace, plus VAT or sales tax where it applies. You add your payment details when you sign up.</p>
-            <a class="btn btn-navy" href="https://app.dinghy.chat/signup">Get started</a>
-          </div>
           <div class="price-card tile-fog">
             <h3>You host it</h3>
             <p class="price">Free</p>
@@ -236,6 +344,12 @@
               <code class="code-line"><span class="term-line">sudo ./install.sh</span></code>
               <a class="btn btn-outline" href="/docs/self-hosting">Host it yourself</a>
             </div>
+          </div>
+          <div class="price-card tile-yellow">
+            <h3>We host it</h3>
+            <p class="price">$7 <small>a month</small></p>
+            <p>One flat price for each workspace, with up to 5 teammates and 1 GB of images, plus VAT or sales tax where it applies. You add your payment details when you sign up.</p>
+            <a class="btn btn-navy" href="https://app.dinghy.chat/signup">Get started</a>
           </div>
         </div>
 
@@ -278,22 +392,22 @@
           <article class="faq-card tile-blue">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z"/><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-68a28,28,0,0,1-28,28h-4v8a8,8,0,0,1-16,0v-8H104a8,8,0,0,1,0-16h36a12,12,0,0,0,0-24H116a28,28,0,0,1,0-56h4V72a8,8,0,0,1,16,0v8h16a8,8,0,0,1,0,16H116a12,12,0,0,0,0,24h24A28,28,0,0,1,168,148Z"/></svg></span>
             <h3>How much does it cost?</h3>
-            <p>$7 a month for each workspace if we host it, plus VAT or sales tax where it applies. Free if you host it on your own server.</p>
+            <p>Free if you host it on your own server. $7 a month for each workspace if we host it, plus VAT or sales tax where it applies.</p>
           </article>
           <article class="faq-card tile-yellow">
-            <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M232,56v64L168,56Z"/><path d="M232,48H168a8,8,0,0,0-5.66,13.66L188.69,88,136,140.69l-34.34-34.35a8,8,0,0,0-11.32,0l-72,72a8,8,0,0,0,11.32,11.32L96,123.31l34.34,34.35a8,8,0,0,0,11.32,0L200,99.31l26.34,26.35A8,8,0,0,0,240,120V56A8,8,0,0,0,232,48Zm-8,52.69L187.31,64H224Z"/></svg></span>
-            <h3>How can it cost so little?</h3>
-            <p>Dinghy is only the chat: no bots, campaigns or help center to build and run. So you pay one flat price per workspace, not per seat.</p>
+            <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><rect class="duo" x="40" y="104" width="176" height="112" rx="8"/><path d="M208,96H96V64a32,32,0,0,1,61.6-12.2,8,8,0,1,0,14.8-6.1A48,48,0,0,0,80,64V96H48a16,16,0,0,0-16,16v96a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V112A16,16,0,0,0,208,96Zm0,112H48V112H208Zm-68-56a12,12,0,1,1-12-12A12,12,0,0,1,140,152Z"/></svg></span>
+            <h3>Is anything locked behind a plan?</h3>
+            <p>No. The cloud and your own server run the same product, with every feature. On the cloud you pay for us to run it, not for features.</p>
           </article>
           <article class="faq-card tile-mint">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M232,152v24a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V153.13C24,95.65,70.15,48.2,127.63,48A104,104,0,0,1,232,152Z"/><path d="M207.06,72.67A111.24,111.24,0,0,0,128,40h-.4C66.07,40.21,16,91,16,153.13V176a16,16,0,0,0,16,16H224a16,16,0,0,0,16-16V152A111.25,111.25,0,0,0,207.06,72.67ZM224,176H119.71l54.76-75.3a8,8,0,0,0-12.94-9.42L99.92,176H32V153.13c0-3.08.15-6.12.43-9.13H56a8,8,0,0,0,0-16H35.27c10.32-38.86,44-68.24,84.73-71.66V80a8,8,0,0,0,16,0V56.33A96.14,96.14,0,0,1,221,128H200a8,8,0,0,0,0,16h23.67c.21,2.65.33,5.31.33,8Z"/></svg></span>
             <h3>Will it slow down my site?</h3>
-            <p>The tag loads a script under 4 KB. The chat itself loads when a visitor opens it.</p>
+            <p>The tag loads a script under 3 KB gzipped. The chat itself loads when a visitor opens it.</p>
           </article>
           <article class="faq-card tile-peach">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M224,64V192a8,8,0,0,1-8,8H80L45.15,230.11A8,8,0,0,1,32,224V64a8,8,0,0,1,8-8H216A8,8,0,0,1,224,64Z"/><path d="M216,48H40A16,16,0,0,0,24,64V224a15.85,15.85,0,0,0,9.24,14.5A16.13,16.13,0,0,0,40,240a15.89,15.89,0,0,0,10.25-3.78l.09-.07L83,208H216a16,16,0,0,0,16-16V64A16,16,0,0,0,216,48ZM40,224h0ZM216,192H80a8,8,0,0,0-5.23,1.95L40,224V64H216ZM88,112a8,8,0,0,1,8-8h64a8,8,0,0,1,0,16H96A8,8,0,0,1,88,112Zm0,32a8,8,0,0,1,8-8h64a8,8,0,1,1,0,16H96A8,8,0,0,1,88,144Z"/></svg></span>
-            <h3>Does it answer with AI?</h3>
-            <p>No. Your team writes every answer.</p>
+            <h3>Can an AI agent answer chats?</h3>
+            <p>Yours can. Dinghy has no AI of its own, but your bot or agent connects through MCP or the API. Its replies wait as drafts for your team to send, unless you let it send directly.</p>
           </article>
           <article class="faq-card tile-fog">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M216,48V208H40V48A16,16,0,0,1,56,32H200A16,16,0,0,1,216,48Z"/><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"/></svg></span>
@@ -322,7 +436,7 @@
       <div class="wrap footer-grid">
         <div class="footer-pitch">
           <h2>Start talking with your visitors today.</h2>
-          <p>One inbox, alerts, images and your colors. $7 a month on our cloud, or free on your own server.</p>
+          <p>Free on your own server, or $7 a month on our cloud.</p>
           <a class="btn btn-white btn-large" href="https://app.dinghy.chat/signup">Get started</a>
         </div>
         <nav class="footer-links" aria-label="Footer">
@@ -337,11 +451,14 @@
             <a href="https://app.dinghy.chat">Log in</a>
             <a href="/docs/add-to-your-site">Add it to your site</a>
             <a href="/docs/self-hosting">Host it yourself</a>
+            <a href="/docs/agents">AI agents</a>
           </div>
           <div>
             <h3>Open source</h3>
             <a href="/docs/">Docs</a>
             <a href="https://github.com/dinghy-chat/dinghy">GitHub</a>
+            <a href="https://github.com/dinghy-chat/dinghy/blob/main/CHANGELOG.md">Changelog</a>
+            <a href="https://status.dinghy.chat">Status</a>
           </div>
           <div>
             <h3>Legal</h3>

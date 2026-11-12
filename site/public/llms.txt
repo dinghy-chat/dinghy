@@ -23,7 +23,7 @@ Add one tag before `</body>`, with the workspace's public key from Settings > In
 
 Then add the site's origin, such as `https://www.example.com`, under Allowed sites in Settings > Install. In an app with a bundler, use the npm package instead: `npm install @dinghy-chat/widget`, then `init({ url: "https://chat.example.com", key: "wk_your_public_key" })` once, in the browser. It returns the typed `Dinghy` object.
 
-Settings > Widget in the operator app sets the colors, side, theme, launcher, corners, words, email ask and the "Powered by Dinghy" line with no code. Tag attributes win over it: `data-primary` and `data-accent` (six-digit hex colors), `data-mascot="false"` (no boat in the open chat), `data-launcher` (`boat`, `bubble` or `hidden`), `data-position="left"`, `data-offset-x` and `data-offset-y` (pixels), and `data-branding="false"`. CSS variables on the `dinghy-chat` element: `--dinghy-font`, `--dinghy-radius`, `--dinghy-launcher-radius`.
+Settings > Appearance in the operator app sets the colors, side, theme, launcher, corners, words, header faces and reply time, sound, email ask, transcript and the "Powered by Dinghy" line with no code. Tag attributes win over it: `data-primary` and `data-accent` (six-digit hex colors), `data-mascot="false"` (no boat in the open chat), `data-launcher` (`boat`, `bubble`, `label`, `square` or `hidden`), `data-position="left"`, `data-offset-x` and `data-offset-y` (pixels), and `data-branding="false"`. CSS variables on the `dinghy-chat` element: `--dinghy-font`, `--dinghy-radius`, `--dinghy-launcher-radius`.
 
 ## Browser API
 
