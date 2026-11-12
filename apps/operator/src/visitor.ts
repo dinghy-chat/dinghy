@@ -103,23 +103,32 @@ export function pagePath(page: string): string {
 /** The separator before the site's name at the end of a title, as in "Pricing | Acme". */
 const TITLE_SEPARATOR = /\s+[-|–—·•:]{1,2}\s+/g;
 
+/** Second-level labels of country domains, as in "acme.com.au", where the name comes before. */
+const SECOND_LEVEL = new Set(["ac", "co", "com", "edu", "gov", "net", "org"]);
+
+/** The site's name in its domain, as in "acme" for "app.acme.com" or "acme.co.uk". */
+function siteName(page: string): string | null {
+  if (webLink(page) === null) return null;
+  const labels = new URL(page).hostname.split(".");
+  const name = SECOND_LEVEL.has(labels.at(-2) ?? "") ? labels.at(-3) : labels.at(-2);
+  return name === undefined || name.length < 3 ? null : name.replaceAll("-", "");
+}
+
 /**
  * A page's name with no site name at its end, as in "Profile - Settings" for "Profile - Settings -
- * Shipmail" on shipmail.to. The last part goes when it holds the domain's name; a title that is only
- * the site's name stays. A page with no title shows its path.
+ * Shipmail" on shipmail.to. The last part goes when it starts with the domain's name; a title that
+ * is only the site's name stays. A page with no title shows its path.
  */
 export function pageName(title: string | null, page: string): string {
   if (title === null) return pagePath(page);
-  const site = webLink(page) === null ? undefined : new URL(page).hostname.split(".").at(-2);
+  const site = siteName(page);
   const cut = [...title.matchAll(TITLE_SEPARATOR)].at(-1);
-  if (site === undefined || site.length < 3 || cut?.index === undefined || cut.index === 0) {
-    return title;
-  }
+  if (site === null || cut?.index === undefined || cut.index === 0) return title;
   const end = title
     .slice(cut.index + cut[0].length)
     .toLowerCase()
     .replaceAll(/[^a-z0-9]/g, "");
-  return end.includes(site.replaceAll("-", "")) ? title.slice(0, cut.index) : title;
+  return end.startsWith(site) ? title.slice(0, cut.index) : title;
 }
 
 /** "5 minutes ago", "yesterday", in the browser's words. Narrow is "5m ago" in English. */

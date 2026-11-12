@@ -122,6 +122,9 @@ describe("pages of the customer's site", () => {
     expect(pageName("Pricing — Annual", page)).toBe("Pricing — Annual");
     expect(pageName("Shipmail", page)).toBe("Shipmail");
     expect(pageName(null, page)).toBe("/settings/profile");
+    expect(pageName("Settings - Email", "https://mail.com/settings")).toBe("Settings - Email");
+    expect(pageName("Help - Community", "https://acme.com.au/help")).toBe("Help - Community");
+    expect(pageName("Pricing - Acme", "https://acme.co.uk/pricing")).toBe("Pricing");
   });
 });
 
