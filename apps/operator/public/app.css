@@ -1932,16 +1932,16 @@ img.ws-tile {
 /* The whole flag, as emoji draw it: a circle would crop most flags past recognition. */
 .flag-badge {
   position: absolute;
-  right: -5px;
-  bottom: -3px;
+  right: -4px;
+  bottom: -2px;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 15px;
-  border-radius: 4px;
+  width: 16px;
+  height: 12px;
+  border-radius: 3px;
   background: var(--surface);
-  box-shadow: 0 0 0 2px var(--surface);
-  font-size: 14px;
+  box-shadow: 0 0 0 1.5px var(--surface);
+  font-size: 11px;
   line-height: 1;
 }
 .presence-dot {
