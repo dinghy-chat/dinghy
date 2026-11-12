@@ -106,7 +106,7 @@ Each operator has their own read position in each conversation. A `Conversation`
 
 ## The widget's look
 
-`GET /v1/operator/workspaces/{workspaceId}/widget` answers the widget's settings to any member and to a Setup key. Owners, admins and Setup keys replace them with `PUT` on the same address, with every field:
+`GET /v1/operator/workspaces/{workspaceId}/widget` answers the widget's settings to any member and to a Full access key. Owners, admins and Full access keys replace them with `PUT` on the same address, with every field:
 
 | Field | Value |
 |---|---|
@@ -154,20 +154,20 @@ curl https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/conversations 
   -H "Authorization: Bearer dk_..."
 ```
 
-A key works in its own workspace only, at the access level chosen when it was made. **Conversations**, the default, has a member's permissions. It can:
+A key works in its own workspace only, at the access level chosen when it was made. There are two, which the operator app calls **Chats** and **Full access**, and the API calls `conversations` and `setup`, in `level`, in OAuth scopes and in the OpenAPI enums. **Chats**, the default, has a member's permissions. It can:
 
 - list, search and read conversations, with the visitor and the page journey (`?assignee=none` lists the unassigned ones; a key is assigned nothing, so `assignee=me` answers 400),
 - reply with text or an image, as its reply mode says, write notes, hand a conversation to people and show that it types (see [Bots](#bots-reply-modes-drafts-notes-and-handoff)),
 - close, reopen and assign a conversation,
 - read contacts, the visitors on the site now and the analytics, and stream events from [`GET /v1/events`](#events-for-api-keys).
 
-**Setup** can do all of that, and set the workspace up: the [webhooks](#webhooks) (list, add, change, delete, replace a secret, send a test, read and replay the deliveries), the widget's look, and the [install routes and test visitors](#install-and-test-visitors). It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Setup key.
+**Full access** can do all of that, and set the workspace up: the [webhooks](#webhooks) (list, add, change, delete, replace a secret, send a test, read and replay the deliveries), the widget's look, and the [install routes and test visitors](#install-and-test-visitors). It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Full access key.
 
-A route that every key can call lists `apiKey` in its OpenAPI `security`, and a route that only a Setup key can call lists `setupKey`. A Conversations key on a Setup route answers 403 `forbidden`. Every other route, such as members, keys, billing, export, deleting the workspace, sending or discarding a draft, giving a conversation back, pausing bots or `/v1/operator/me`, answers 403 `forbidden` to any key: no key can create, list or revoke keys, and no key reads the signing secret. Another workspace's routes answer 404. An unknown, expired or revoked key answers 401. Each key may send 300 requests a minute, across the API, MCP and the event stream, and over that it gets 429 with `Retry-After`.
+A route that every key can call lists `apiKey` in its OpenAPI `security`, and a route that only a Full access key can call lists `setupKey`. A Chats key on such a route answers 403 `forbidden`. Every other route, such as members, keys, billing, export, deleting the workspace, sending or discarding a draft, giving a conversation back, pausing bots or `/v1/operator/me`, answers 403 `forbidden` to any key: no key can create, list or revoke keys, and no key reads the signing secret. Another workspace's routes answer 404. An unknown, expired or revoked key answers 401. Each key may send 300 requests a minute, across the API, MCP and the event stream, and over that it gets 429 with `Retry-After`.
 
 `POST .../api-keys` takes `name`, `level` (`conversations` or `setup`) and `replyMode` (`send` or `draft`, by default `draft`). `PATCH .../api-keys/{keyId}` changes `name`, `level` or `replyMode`, and `DELETE` revokes the key or disconnects the app. Only owners and admins call them, with a session. The key list answers each key's `level`, `replyMode`, `source` (`static` for a key made in Settings, `oauth` for a connected app), `clientHost` (a connected app's host), `clientIsLoopback` (true when that host is the user's own computer, as a CLI agent's is), `createdByName` (who made the key or approved the app) and `lastUsedAt`.
 
-A reply sent with a key has `authorApiKeyId` set and `authorOperatorId` null, and `authorName` is the key's name. Visitors see the key's name on it, with a bot icon. Revoking a key in Settings stops it at once, and its old replies keep its name. **Last used** shows to the minute.
+A reply sent with a key has `authorApiKeyId` set and `authorOperatorId` null, and `authorName` is the key's name. Visitors see the key's name on it, with a bot icon. Revoking a key in Settings stops it at once, and its old replies keep its name. Settings shows when each key was last used.
 
 A token names its workspace: it is `dk_`, the workspace's ID, a dot, and a random part.
 
@@ -194,11 +194,11 @@ A redirect URI is `https` on any host, `http` on `localhost`, `127.0.0.1` or `[:
 
 ### Scopes and levels
 
-The scopes are `conversations` and `setup`, the two key levels. The consent page preselects the level from `scope`, and the person may change it. A Setup grant's tokens carry the scope `conversations setup`. Dinghy ignores scopes it does not know, such as `offline_access`, and always gives a refresh token. A Conversations token does not see the Setup tools in MCP, and on a Setup route it gets 403 with `WWW-Authenticate: Bearer error="insufficient_scope", scope="setup"`.
+The scopes are `conversations` (Chats) and `setup` (Full access), the two key levels. The consent page preselects the level from `scope`, and the person may change it. A Full access grant's tokens carry the scope `conversations setup`. Dinghy ignores scopes it does not know, such as `offline_access`, and always gives a refresh token. A Chats token does not see the Full access tools in MCP, and on a `setupKey` route it gets 403 with `WWW-Authenticate: Bearer error="insufficient_scope", scope="setup"`.
 
 ### Consent
 
-`GET /oauth/authorize` is a page of the operator app, with the usual query: `response_type=code`, `client_id`, `redirect_uri`, `code_challenge`, `code_challenge_method=S256`, and optional `state`, `scope` and `resource`. A `resource` must be the MCP address or the origin, or the page answers `invalid_target`. A `client_id` or `redirect_uri` that is not valid shows an error page and never redirects. The page asks the person to sign in first, then shows who asks, a workspace picker with the workspaces where they are an owner or admin, the level and the reply mode.
+`GET /oauth/authorize` is a page of the operator app, with the usual query: `response_type=code`, `client_id`, `redirect_uri`, `code_challenge`, `code_challenge_method=S256`, and optional `state`, `scope` and `resource`. A `resource` must be the MCP address or the origin, or the page answers `invalid_target`. A `client_id` or `redirect_uri` that is not valid shows an error page and never redirects. The page asks the person to sign in first, then shows the app's name, a workspace picker with the workspaces where they are an owner or admin, the access (Chats or Full access) and the reply mode.
 
 **Approve** sends `POST /v1/operator/workspaces/{workspaceId}/oauth/grants` with the session, and **Cancel** sends `POST /v1/operator/oauth/deny`. Both answer `{ redirectTo }`, with `code` or `error=access_denied`, and `state` and `iss`. Approving makes a connected app, a key with `source: "oauth"` named after the app, in **Drafts only** unless the person chose **Send directly**. When the same person approves the same app again, Dinghy replaces their earlier grant only if it no longer has a live token, so the same app on a second computer keeps the first one's grant. A workspace has at most 50 connected apps, and the 51st answers 409 `grant_limit`.
 
@@ -244,11 +244,18 @@ A person handles a conversation from when an operator replies in text or with an
 - `{ kind: "bot", apiKeyId, name }`: no person handles it, and this key took part last, with a message, a draft, a note or a handoff.
 - null: no person handles it, and no bot took part.
 
-While a person handles it, a key that sends directly gets 409 `human_handling` on a reply and on typing. A key in draft mode may still write drafts, as suggestions. `POST .../conversations/{conversationId}/give-back`, with a session only, gives it back to the bots and adds a `conversation.given_back` event.
+A conversation's `bot` is `{ apiKeyId, name }` of the key that took part last, whoever handles it now, or null when no key did. It is the bot that a person can give the conversation back to.
+
+While a person handles it, a key that sends directly gets 409 `human_handling` on a reply and on typing. A key in draft mode may still write drafts, as suggestions.
+
+People pick who handles a conversation with two routes, with a session only:
+
+- `POST .../conversations/{conversationId}/give-back` gives it back to the bots. In one transaction it clears the assignee, with a `conversation.assigned` event when there was one, and makes no person handle it, with a `conversation.given_back` event.
+- `PUT .../conversations/{conversationId}/assignee` with `{ "operatorId": "<member>" }`, or `null` for the whole team, takes it over. In one transaction it sets the assignee, with a `conversation.assigned` event, and makes a person handle it, as a reply does. With an API key the same route changes only the assignee, and the bot keeps answering.
 
 ### Handoff
 
-`POST .../conversations/{conversationId}/handoff`, with an API key only, takes `clientId`, `reason` (up to 500 characters), and optional `summary` (up to 2,000), `operatorId` and `visitorMessage`. In one transaction, it sends `visitorMessage` as the key's reply (or a draft in draft mode), assigns the conversation to `operatorId`, makes a person handle it, adds a note with the reason and the summary, and adds a `conversation.handoff` event. That event alerts the assignee, or every member with alerts on when there is none, as a new visitor message does. It answers 201 with `visitorMessage`: `{ status: "sent", message }`, `{ status: "drafted", draft }`, `{ status: "not_sent", reason: "bots_paused" }` or null. A retry with the same `clientId` answers 200 with the first result and changes nothing, even when bots were resumed since.
+`POST .../conversations/{conversationId}/handoff`, with an API key only, takes `clientId`, `reason` (up to 500 characters), and optional `summary` (up to 2,000), `operatorId` and `visitorMessage`. In one transaction, it sends `visitorMessage` as the key's reply (or a draft in draft mode), assigns the conversation to `operatorId`, makes a person handle it, adds a note with the reason and the summary, and adds a `conversation.handoff` event. The note's `handoff` is `{ operatorId }`: the member it went to, or null for the whole team. Every other message has `handoff: null`. That event alerts the assignee, or every member with alerts on when there is none, as a new visitor message does. It answers 201 with `visitorMessage`: `{ status: "sent", message }`, `{ status: "drafted", draft }`, `{ status: "not_sent", reason: "bots_paused" }` or null. A retry with the same `clientId` answers 200 with the first result and changes nothing, even when bots were resumed since.
 
 ### Notes from bots
 
@@ -256,7 +263,7 @@ A key writes a [note](#notes) as an operator does, with `"note": true` or the MC
 
 ### Pause all bots
 
-`PUT .../bots-paused` with `{ "paused": true }`, from an owner or admin with a session, pauses every bot of the workspace. While paused, every key's reply, draft and typing answer 409 `bots_paused`. Reads, notes and handoffs still work. The workspace lists answer `botsPaused`, and `botsPausedBy`, the name of who paused them. The route answers `{ paused, pausedBy }`.
+`PUT .../bots-paused` with `{ "paused": true }`, from an owner or admin with a session, pauses every bot of the workspace. While paused, every key's reply, draft and typing answer 409 `bots_paused`. Reads, notes and handoffs still work. The workspace lists answer `botsPaused`, `botsPausedBy`, the name of who paused them, and `botsPausedAt`, when. The route answers `{ paused, pausedBy }`.
 
 ### Typing
 
@@ -275,7 +282,7 @@ With no position, it starts from now. Reconnect with `Last-Event-ID`, or `?after
 
 ## Install and test visitors
 
-These routes help a person or a Setup key put the widget on a site. They are under `/v1/operator/workspaces/{workspaceId}`, and owners, admins and Setup keys can call them.
+These routes help a person or a Full access key put the widget on a site. They are under `/v1/operator/workspaces/{workspaceId}`, and owners, admins and Full access keys can call them.
 
 | Route | What it does |
 |---|---|
@@ -292,7 +299,7 @@ A test visitor has `isTest: true`, and the inbox shows a **Test** label. Webhook
 
 ## Webhooks
 
-A webhook sends a signed `POST` to your server when something changes in a workspace. An owner or admin adds one in **Settings > API & webhooks**, with its address and the events it wants, or a [Setup key](#api-keys) adds one with the same routes. Each webhook answers `createdBy`: `{ "kind": "operator" | "key", "name" }`, or null for one from an older release, and Settings shows it. A workspace has at most 5. The signing secret shows once, and **Replace secret** makes a new one. **Send test** sends a `webhook.test` event at once and shows the answer.
+A webhook sends a signed `POST` to your server when something changes in a workspace. An owner or admin adds one in **Settings > API & webhooks**, with its address and the events it wants, or a [Full access key](#api-keys) adds one with the same routes. Each webhook answers `createdBy`: `{ "kind": "operator" | "key", "name" }`, or null for one from an older release, and Settings shows it. A workspace has at most 5. The signing secret shows once, and **Replace secret** makes a new one. **Send test** sends a `webhook.test` event at once and shows the answer.
 
 | Event | When |
 |---|---|
@@ -448,41 +455,41 @@ Another client that supports remote servers over HTTP takes the same address, an
 }
 ```
 
-Every key and connected app gets the Conversations tools. A Setup one also gets the Setup tools. A Conversations `tools/list` does not include the Setup tools, and calling one answers that there is no such tool.
+Every key and connected app gets the Chats tools. A Full access one also gets the Full access tools. A Chats `tools/list` does not include the Full access tools, and calling one answers that there is no such tool.
 
 | Tool | Level | What it does |
 |---|---|---|
-| `list_conversations` | Conversations | Lists open or closed conversations, newest activity first. Pass `nextCursor` back as `cursor` for the next page |
-| `search_conversations` | Conversations | Finds conversations by the visitor's name, email or user ID, or by message text |
-| `get_conversation` | Conversations | Reads a conversation: its messages, notes among them with `kind: "note"`, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
-| `reply` | Conversations | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Quote an earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
-| `add_note` | Conversations | Adds a note that only the team sees, in an open or closed conversation, even while a person handles it or bots are paused. Quote any earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
-| `list_drafts` | Conversations | Lists the drafts of keys in draft mode: `open`, `stale` or `all` |
-| `hand_off` | Conversations | Hands a conversation to people, with a reason, a summary and an optional last message to the visitor |
-| `list_members` | Conversations | Lists the members: `id`, `name`, `role` and whether they are `online`. The `id` is what `assign_conversation` and `hand_off` take |
-| `set_typing` | Conversations | Shows the visitor that the bot is typing, for 6 seconds |
-| `wait_for_messages` | Conversations | Waits up to 30 seconds for new visitor messages, from a cursor. With no cursor it answers the cursor for now, and no earlier messages |
-| `close_conversation` | Conversations | Closes a conversation. Marked destructive |
-| `reopen_conversation` | Conversations | Reopens a closed conversation |
-| `assign_conversation` | Conversations | Assigns a conversation to a member by operator ID, or clears it with `null` |
-| `get_contact` | Conversations | Reads a visitor, by `visitorId` or by `conversationId`, exactly one of them, with their local time, pages and other conversations |
-| `list_contacts`, `search_contacts` | Conversations | Lists or finds the people who have a conversation |
-| `get_live_visitors` | Conversations | Lists the tabs of the site open now |
-| `get_analytics` | Conversations | The Analytics page's numbers for 7, 30 or 90 days |
-| `get_install_snippet` | Setup | The code that adds the widget for a framework, and where it goes |
-| `list_allowed_sites`, `add_allowed_site` | Setup | Lists or adds the origins where the widget may load |
-| `remove_allowed_site` | Setup | Stops the widget on an origin. Marked destructive |
-| `verify_install` | Setup | Checks whether the widget loaded on a site, and names the next step |
-| `get_identity_setup` | Setup | Server code that signs the identity token. Never the signing secret |
-| `get_appearance`, `update_appearance` | Setup | Reads or changes the widget's look and words, not the logo |
-| `list_webhooks` | Setup | Lists the webhooks, with their events and who added them, never their secrets |
-| `create_webhook` | Setup | Adds a webhook from `url` and `events`, and answers its signing secret, once |
-| `delete_webhook` | Setup | Deletes a webhook. Marked destructive |
-| `test_webhook` | Setup | Sends a signed `webhook.test` now and answers what the webhook answered |
-| `get_webhook_verification` | Setup | Signature-check code in TypeScript, Python or Go |
-| `list_webhook_deliveries`, `replay_webhook_delivery` | Setup | Lists a webhook's last 20 deliveries, or sends one again |
-| `send_test_message` | Setup | Sends a message as a test visitor |
-| `delete_test_visitors` | Setup | Deletes every test visitor. Marked destructive |
+| `list_conversations` | Chats | Lists open or closed conversations, newest activity first. Pass `nextCursor` back as `cursor` for the next page |
+| `search_conversations` | Chats | Finds conversations by the visitor's name, email or user ID, or by message text |
+| `get_conversation` | Chats | Reads a conversation: its messages, notes among them with `kind: "note"`, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
+| `reply` | Chats | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Quote an earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
+| `add_note` | Chats | Adds a note that only the team sees, in an open or closed conversation, even while a person handles it or bots are paused. Quote any earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
+| `list_drafts` | Chats | Lists the drafts of keys in draft mode: `open`, `stale` or `all` |
+| `hand_off` | Chats | Hands a conversation to people, with a reason, a summary and an optional last message to the visitor |
+| `list_members` | Chats | Lists the members: `id`, `name`, `role` and whether they are `online`. The `id` is what `assign_conversation` and `hand_off` take |
+| `set_typing` | Chats | Shows the visitor that the bot is typing, for 6 seconds |
+| `wait_for_messages` | Chats | Waits up to 30 seconds for new visitor messages, from a cursor. With no cursor it answers the cursor for now, and no earlier messages |
+| `close_conversation` | Chats | Closes a conversation. Marked destructive |
+| `reopen_conversation` | Chats | Reopens a closed conversation |
+| `assign_conversation` | Chats | Assigns a conversation to a member by operator ID, or clears it with `null` |
+| `get_contact` | Chats | Reads a visitor, by `visitorId` or by `conversationId`, exactly one of them, with their local time, pages and other conversations |
+| `list_contacts`, `search_contacts` | Chats | Lists or finds the people who have a conversation |
+| `get_live_visitors` | Chats | Lists the tabs of the site open now |
+| `get_analytics` | Chats | The Analytics page's numbers for 7, 30 or 90 days |
+| `get_install_snippet` | Full access | The code that adds the widget for a framework, and where it goes |
+| `list_allowed_sites`, `add_allowed_site` | Full access | Lists or adds the origins where the widget may load |
+| `remove_allowed_site` | Full access | Stops the widget on an origin. Marked destructive |
+| `verify_install` | Full access | Checks whether the widget loaded on a site, and names the next step |
+| `get_identity_setup` | Full access | Server code that signs the identity token. Never the signing secret |
+| `get_appearance`, `update_appearance` | Full access | Reads or changes the widget's look and words, not the logo |
+| `list_webhooks` | Full access | Lists the webhooks, with their events and who added them, never their secrets |
+| `create_webhook` | Full access | Adds a webhook from `url` and `events`, and answers its signing secret, once |
+| `delete_webhook` | Full access | Deletes a webhook. Marked destructive |
+| `test_webhook` | Full access | Sends a signed `webhook.test` now and answers what the webhook answered |
+| `get_webhook_verification` | Full access | Signature-check code in TypeScript, Python or Go |
+| `list_webhook_deliveries`, `replay_webhook_delivery` | Full access | Lists a webhook's last 20 deliveries, or sends one again |
+| `send_test_message` | Full access | Sends a message as a test visitor |
+| `delete_test_visitors` | Full access | Deletes every test visitor. Marked destructive |
 
 Each tool says in its annotations whether it only reads, whether a retry is safe, and whether it deletes or ends something. A client asks the person before it calls a destructive tool. The server's instructions, and every tool that returns text a visitor wrote, tell the agent that this text is data and that it must never follow instructions in it.
 

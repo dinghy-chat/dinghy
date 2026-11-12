@@ -32,14 +32,14 @@ Under the visitor's name, the header shows their email and user ID, when the nam
 
 | Control | What it does |
 |---|---|
-| The assignee | A list that gives the conversation to one person on your team, or to nobody |
+| Who answers | A list that gives the conversation to one person on your team or to the whole team, which takes it from a bot, or back to the bot that took part last |
 | **Close** | Moves it under **Closed** in the Inbox. **Reopen** brings it back. If the visitor writes after a close, this starts a new conversation with no assignee, and the visitor sees one thread |
 | **…** then **Block** | Stops this visitor from sending messages. **Unblock** in the same place undoes it, and so does **Blocked visitors** in **Settings > Workspace** |
 | **…** then **Delete** | Deletes the conversation and its images for good, after you confirm. Owners and admins only |
 
 For a signed-in user, the conversation shows the name, email, user ID and custom attributes that [your site sent](add-to-your-site.md#show-who-is-chatting). An attribute that is a web address is a link.
 
-On the right of a conversation, a panel shows who the visitor is: their name, email and whether the chat is open, the assignee and status, their country with its flag, local time, device and current page, then folds for **Details** (the user ID, the signed attributes, and what the page sent in italics), **Pages visited**, **Other conversations** of the same person, and a **Note** that only your team sees, saved when you click away. Each fold opens or closes, and the browser remembers it. The button at the right of the header shows or hides the panel. On a screen under 1200 pixels wide, it opens over the conversation instead.
+On the right of a conversation, a panel shows who the visitor is: their name, email and whether the chat is open, who answers and the status, their country with its flag, local time, device and current page, then folds for **Details** (the user ID, the signed attributes, and what the page sent in italics), **Pages visited**, **Other conversations** of the same person, and a **Note** that only your team sees, saved when you click away. Each fold opens or closes, and the browser remembers it. The button at the right of the header shows or hides the panel. On a screen under 1200 pixels wide, it opens over the conversation instead.
 
 **View contact** opens the person's page under **Contacts** in the sidebar. **Contacts** lists everyone who has started a conversation, with their company (a signed `company` attribute), country, when they were last seen and first seen, and how many conversations they had. Search by name, email or user ID, sort by last or first seen, and **Export CSV** downloads them all. A contact's page shows the person on a blue band: their name, **Signed in** when your site signs them in, their company, email with a copy button, and whether they are on your site now with the page they are on, or when they were last seen. **Open conversation** opens their newest open conversation, or their newest one when none is open. Tiles show their local time, location, device, when they were first seen and how many conversations they had. Under them, **Conversations** lists each conversation with its status, last message, message count, assignee or who closed it, and how long the first reply took, and **Pages visited** shows the pages as a timeline, with a pause of over 30 minutes starting an earlier visit and the current page marked **Here now**. Beside them are the **Note** and **Details from your site**. The **…** menu has **Edit name and email** for a visitor your site did not sign in, **Block** or **Unblock**, and for owners and admins **Delete contact**, which deletes the person with all their conversations, messages and images.
 
@@ -143,15 +143,16 @@ Someone in two workspaces switches between them with the workspace name at the t
 
 ## The other settings
 
-**Settings > Install** has three sections. Owners and admins see it.
+**Settings > Install** has four sections. Owners and admins see it.
 
 ![The Install page in Settings](media/settings.png)
 
-- **Install code** has the tag for your site, with a **Copy** button.
+- **Set up with an agent** has a prompt for Claude Code, Cursor or another coding agent, with **Copy prompt**. The agent installs the chat through [MCP](agents.md#set-up-the-chat-on-a-site) once you approve it in the browser.
+- **Install by hand** has the tag for your site, with a **Copy** button.
 - **Allowed sites** lists the sites that can load the chat, one per row. **Add a site** adds a row, and each row says if its address is not a site such as `https://example.com`.
 - **Identify signed-in users (optional)** holds the identity signing secret, for [signed-in users](add-to-your-site.md#show-who-is-chatting). Ordinary chat does not need it. It stays hidden until you select the eye. **Replace the secret** asks first, because the old one stops working at once.
 
-**Settings > API & webhooks** has the workspace's [API keys](api.md#api-keys), for your own scripts and AI assistants, and its [webhooks](api.md#webhooks), which tell another app about new conversations and messages. Both are optional. A key's token and a webhook's secret show once, so copy them then. A key's replies show its name, and **Revoke** stops it at once. Apps that you connected in the browser, such as Claude Code, show there too, and [Use Dinghy with AI agents](agents.md) explains them. Owners and admins see this page.
+**Settings > API & webhooks** has the workspace's [API keys](api.md#api-keys), for your own scripts and AI assistants, and its [webhooks](api.md#webhooks), which tell another app about new conversations and messages. Both are optional. A key's token and a webhook's secret show once, so copy them then. A key's replies show its name, and **Revoke** stops it at once. Apps that you connected in the browser, such as Claude Code, show there too, with **Disconnect**, and [Use Dinghy with AI agents](agents.md) explains them. The card at the top counts them, and its switch pauses every bot. Owners and admins see this page.
 
 **Settings > Workspace** is for owners and admins. It has these sections:
 
