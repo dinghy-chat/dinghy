@@ -87,8 +87,49 @@ export function replyAuthor(
   return message.authorName ?? t("aTeammate");
 }
 
-/** A page as the header shows it: with no scheme, as in "acme.example/pricing". */
+/** An address with no scheme, as in "acme.example/pricing". */
 export const bare = (page: string) => page.replace(/^https?:\/\//, "");
+
+/**
+ * A page of the customer's own site, which the operator already knows: its path, as in
+ * "/docs/pricing", or the address with no scheme when it is not a web address.
+ */
+export function pagePath(page: string): string {
+  if (webLink(page) === null) return bare(page);
+  const { pathname, search, hash } = new URL(page);
+  return pathname + search + hash;
+}
+
+/** The separator before the site's name at the end of a title, as in "Pricing | Acme". */
+const TITLE_SEPARATOR = /\s+[-|–—·•:]{1,2}\s+/g;
+
+/** Second-level labels of country domains, as in "acme.com.au", where the name comes before. */
+const SECOND_LEVEL = new Set(["ac", "co", "com", "edu", "gov", "net", "org"]);
+
+/** The site's name in its domain, as in "acme" for "app.acme.com" or "acme.co.uk". */
+function siteName(page: string): string | null {
+  if (webLink(page) === null) return null;
+  const labels = new URL(page).hostname.split(".");
+  const name = SECOND_LEVEL.has(labels.at(-2) ?? "") ? labels.at(-3) : labels.at(-2);
+  return name === undefined || name.length < 3 ? null : name.replaceAll("-", "");
+}
+
+/**
+ * A page's name with no site name at its end, as in "Profile - Settings" for "Profile - Settings -
+ * Shipmail" on shipmail.to. The last part goes when it starts with the domain's name; a title that
+ * is only the site's name stays. A page with no title shows its path.
+ */
+export function pageName(title: string | null, page: string): string {
+  if (title === null) return pagePath(page);
+  const site = siteName(page);
+  const cut = [...title.matchAll(TITLE_SEPARATOR)].at(-1);
+  if (site === null || cut?.index === undefined || cut.index === 0) return title;
+  const end = title
+    .slice(cut.index + cut[0].length)
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]/g, "");
+  return end.startsWith(site) ? title.slice(0, cut.index) : title;
+}
 
 /** "5 minutes ago", "yesterday", in the browser's words. Narrow is "5m ago" in English. */
 export function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "long"): string {

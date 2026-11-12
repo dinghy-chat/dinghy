@@ -3105,6 +3105,22 @@ button.quote:hover {
   max-width: 95vw;
   max-height: 95svh;
 }
+.viewer-actions {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  display: flex;
+  gap: 8px;
+}
+.viewer-actions .icon-button {
+  width: 44px;
+  height: 44px;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(11 34 57 / 0.3);
+}
+.viewer-actions .icon-button:hover:not(:disabled) {
+  background: var(--soft-hover);
+}
 
 /* Pages in the panel, such as each Settings page. Rows with thin lines, no cards in cards. */
 .page {

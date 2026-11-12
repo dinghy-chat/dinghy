@@ -53,6 +53,12 @@ function useViews(setFilter: Dispatch<SetStateAction<Filter>>) {
   return { view, setView, settingsPage, setSettingsPage };
 }
 
+/** The conversation the address names, when it is in this workspace, as a notification's link. */
+function linkedConversation(workspaceId: string): string | null {
+  const params = new URLSearchParams(location.search);
+  return params.get("workspace") === workspaceId ? params.get("conversation") : null;
+}
+
 export function Inbox({
   me,
   workspaceId,
@@ -88,10 +94,7 @@ export function Inbox({
   const { status } = filter;
   const [drafts, setDraft] = useDrafts(me.id, workspaceId);
   // A notification opens the app on its conversation.
-  const [selected, setSelected] = useState(() => {
-    const params = new URLSearchParams(location.search);
-    return params.get("workspace") === workspaceId ? params.get("conversation") : null;
-  });
+  const [selected, setSelected] = useState(() => linkedConversation(workspaceId));
   const { view, setView, settingsPage, setSettingsPage } = useViews(setFilter);
   // The contact the Contacts view shows, or null for its list.
   const [contactId, setContactId] = useState<string | null>(null);
@@ -119,6 +122,18 @@ export function Inbox({
   const billing = useBilling(api, me.billing && role === "owner", accountVersion);
   // The conversation a link opened, whose status picks Open or Closed once it loads.
   const linked = useRef(selected);
+  // A notification clicked while the app is open moves it to the conversation.
+  useEffect(() => {
+    const moved = () => {
+      const id = linkedConversation(workspaceId);
+      if (id === null) return;
+      linked.current = id;
+      setView("inbox");
+      setSelected(id);
+    };
+    addEventListener(NAVIGATE_EVENT, moved);
+    return () => removeEventListener(NAVIGATE_EVENT, moved);
+  }, [workspaceId, setView]);
 
   /** Shows a view, and a Settings page in it, and puts it in the address for Back and reloads. */
   const showView = (next: View, page: SettingsPage | null = null) => {

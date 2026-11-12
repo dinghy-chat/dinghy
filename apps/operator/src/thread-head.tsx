@@ -96,8 +96,8 @@ export function ThreadHead({
       onSelect: () => onBlocked(!blocked),
     },
     {
-      label: t("sendTranscript"),
-      lead: <Icon name="download" size={18} />,
+      label: t("emailTranscript"),
+      lead: <Icon name="envelope" size={18} />,
       ...(noEmail === undefined ? {} : { unavailable: noEmail }),
       onSelect: onTranscript,
     },

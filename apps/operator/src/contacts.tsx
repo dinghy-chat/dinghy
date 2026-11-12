@@ -25,8 +25,8 @@ import {
 import {
   ago,
   avatarLetters,
-  bare,
   conversationPreview,
+  pagePath,
   presenceLine,
   visitorName,
   webLink,
@@ -290,7 +290,7 @@ function LiveLine({ contact }: { contact: ContactDetail }) {
             rel="noopener noreferrer"
             title={page}
           >
-            {bare(page)}
+            {pagePath(page)}
           </a>
         )}
       </p>
