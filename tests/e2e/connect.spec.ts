@@ -224,9 +224,7 @@ test("a failed delivery shows the receiver's answer and can be replayed", async 
   await page.context().close();
 });
 
-test("the Install page shows a whole prompt per coding agent, which ends with the AGENTS.md block", async ({
-  browser,
-}) => {
+test("the Install page shows a short, whole prompt per coding agent", async ({ browser }) => {
   const page = await signedIn(browser, server, "owner@example.com");
   await openSettings(page, "Install");
   await expect(page.getByRole("heading", { name: "Set up with an agent" })).toBeVisible();
@@ -246,7 +244,6 @@ test("the Install page shows a whole prompt per coding agent, which ends with th
   await expect(
     page.getByText("Ask me before you change anything outside the install."),
   ).toBeVisible();
-  await expect(page.getByText("Add this block to the site's AGENTS.md")).toBeVisible();
-  await expect(page.getByText(/call hand_off when a visitor asks for a person/)).toBeVisible();
+  await expect(prompt).toContainText("verify_install, at most 5 times");
   await page.context().close();
 });

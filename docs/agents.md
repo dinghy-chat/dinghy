@@ -55,7 +55,7 @@ Connect with **Full access**, then ask your coding agent to add Dinghy to the si
 7. Optional: `create_webhook` and `get_webhook_verification`, if your server should get events.
 8. `send_test_message` to send a test chat, then `delete_test_visitors` to clean up. See [Test a bot](#test-a-bot).
 
-The **Install** page in the operator app has a "Set up with an agent" row with a prompt to copy, in the words of Claude Code, Cursor or another MCP client. It holds these steps, and its last step adds the block in [Tell your agent about Dinghy](#tell-your-agent-about-dinghy) to your site's `AGENTS.md`.
+The **Install** page in the operator app has a "Set up with an agent" row with a prompt to copy, in the words of Claude Code, Cursor or another MCP client. It holds these steps. To keep the agent careful later, add the block in [Tell your agent about Dinghy](#tell-your-agent-about-dinghy) to your site's `AGENTS.md` yourself.
 
 ## Answer chats
 

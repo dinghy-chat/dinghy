@@ -20,15 +20,8 @@ function connectSteps(client: AgentClient, url: string) {
   return { connect: t("agentConnectOther", { url }), approve: t("agentApproveOther") };
 }
 
-/**
- * The prompt that has a coding agent install the chat through MCP, in the words of its client. Its
- * last step adds `notes`, the block for the site repository's AGENTS.md.
- */
+/** The prompt that has a coding agent install the chat through MCP, in the words of its client. */
 export function agentPrompt(origin: string, workspace: string, client: AgentClient) {
   const url = `${origin}/v1/mcp`;
-  return t("agentPrompt", {
-    workspace,
-    ...connectSteps(client, url),
-    notes: t("agentNotes", { url }),
-  });
+  return t("agentPrompt", { workspace, ...connectSteps(client, url) });
 }
