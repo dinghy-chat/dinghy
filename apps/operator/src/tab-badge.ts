@@ -2,9 +2,12 @@ import { useEffect } from "react";
 import { t } from "./text.ts";
 
 const ICON = "/assets/icon.svg";
-/** The favicon's size in the drawing, and its red dot, as fractions of it. */
+/**
+ * The favicon's size in the drawing, and its red dot, as fractions of it. The dot and its ring stay
+ * 0.04 inside the edge, as a browser can round the icon's corners and would cut it.
+ */
 const SIZE = 64;
-const DOT = { x: 0.8, y: 0.2, radius: 0.15, ring: 0.05 };
+const DOT = { x: 0.78, y: 0.22, radius: 0.13, ring: 0.05 };
 
 /** The app's icon with a red dot in its corner, drawn once, or null if the browser cannot. */
 let dotted: Promise<string | null> | null = null;
