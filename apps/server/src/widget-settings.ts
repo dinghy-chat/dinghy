@@ -145,7 +145,7 @@ const putRoute = createRoute({
   path: PREFIX,
   security: SESSION_OR_SETUP_KEY,
   summary:
-    "Replace the widget's look, words and behavior. Sites show it within 5 minutes. Owners, admins and Setup API keys only",
+    "Replace the widget's look, words and behavior. Sites show it within 5 minutes. Owners, admins and Full access (`setup`) API keys only",
   request: {
     params: workspaceParams,
     body: { required: true, content: { "application/json": { schema: WidgetSettingsSchema } } },

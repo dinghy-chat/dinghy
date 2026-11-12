@@ -154,6 +154,7 @@ describe("uploading a logo", () => {
       logoUrl,
       botsPaused: false,
       botsPausedBy: null,
+      botsPausedAt: null,
     });
 
     const served = await app.request(logoUrl);

@@ -43,6 +43,6 @@ export function registerSecuritySchemes(registry: OpenAPIHono["openAPIRegistry"]
     type: "http",
     scheme: "bearer",
     description:
-      "A workspace API key, `dk_...`, made with the Setup access level. It reaches what a Conversations key does, and the webhooks: list, add, change, delete, rotate a secret, test and read deliveries. It never reaches keys, members, billing, export or the workspace's deletion.",
+      "A workspace API key, `dk_...`, made with Full access, the `setup` level. It reaches what a Chats (`conversations`) key does, and the webhooks: list, add, change, delete, rotate a secret, test and read deliveries. It never reaches keys, members, billing, export or the workspace's deletion.",
   });
 }

@@ -119,6 +119,7 @@ describe("membership", () => {
       logoUrl: null,
       botsPaused: false,
       botsPausedBy: null,
+      botsPausedAt: null,
     });
   });
 

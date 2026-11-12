@@ -188,7 +188,6 @@ async function makeSource(): Promise<Source> {
     headers: { cookie, origin: ORIGIN, "content-type": "image/png" },
     body: await png(),
   });
-  await write("PUT", `/conversations/${conversationId}/assignee`, { operatorId: agent.id });
   // A reply from an API key, and what the page sent.
   const key = (await (await write("POST", "/api-keys", { name: "Helper bot" })).json()) as {
     id: string;
@@ -211,6 +210,8 @@ async function makeSource(): Promise<Source> {
       note: true,
     }),
   });
+  // Assigned after the bot's turn, as giving it back clears the assignee.
+  await write("PUT", `/conversations/${conversationId}/assignee`, { operatorId: agent.id });
   await app.request(`/v1/widget/${space.publicKey}/context`, {
     method: "POST",
     headers: {

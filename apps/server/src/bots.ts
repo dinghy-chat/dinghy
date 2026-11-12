@@ -121,7 +121,10 @@ export async function takeOver(tx: Transaction, workspaceId: string, conversatio
   if (taken.length > 0) await handled(tx, workspaceId, { conversationId, change: "human" });
 }
 
-/** An operator gives the conversation back to the bots. False when it does not exist. */
+/**
+ * An operator gives the conversation back to the bots: no person handles it and nobody is assigned,
+ * so the bot is its only handler. False when it does not exist.
+ */
 export async function giveBack(
   tx: Transaction,
   workspaceId: string,
@@ -129,10 +132,11 @@ export async function giveBack(
 ): Promise<boolean> {
   await lockWorkspace(tx, workspaceId);
   const [row] = await tx
-    .select({ humanSince: conversation.humanSince })
+    .select({ humanSince: conversation.humanSince, assignee: conversation.assigneeOperatorId })
     .from(conversation)
     .where(ofConversation(workspaceId, conversationId));
   if (row === undefined) return false;
+  if (row.assignee !== null) await assignConversation(tx, workspaceId, conversationId, null);
   if (row.humanSince === null) return true;
   await tx
     .update(conversation)
@@ -294,7 +298,11 @@ export async function writeHandoff(
   const earlier = await earlierHandoff(tx, workspaceId, key.apiKeyId, input);
   if (earlier !== undefined) return { kind: "retried", visitorMessage: earlier };
   const [target] = await tx
-    .select({ status: conversation.status, visitorId: conversation.visitorId })
+    .select({
+      status: conversation.status,
+      visitorId: conversation.visitorId,
+      assignee: conversation.assigneeOperatorId,
+    })
     .from(conversation)
     .where(ofConversation(workspaceId, conversationId));
   if (target === undefined) return { kind: "missing" };
@@ -314,6 +322,7 @@ export async function writeHandoff(
       body: text.handoffNote(input.reason, input.summary),
       note: true,
       source: key.source,
+      handoffTo: operatorId ?? target.assignee,
     },
   );
   if (operatorId !== undefined) {

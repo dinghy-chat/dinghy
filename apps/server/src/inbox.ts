@@ -156,6 +156,9 @@ export const InboxMessage = z
     // A key's reply: sent through the REST API or through MCP. `draft`: an operator sent a key's
     // draft, and is its author. Null for anyone else's.
     via: z.enum(CHANNELS).nullable(),
+    // A bot's handoff note: the member it handed the conversation to, or null for the whole team.
+    // Null for any other message.
+    handoff: z.object({ operatorId: z.string().nullable() }).nullable(),
     createdAt: z.string(),
   })
   .openapi("InboxMessage", {
@@ -183,6 +186,7 @@ export const InboxMessage = z
       deleted: false,
       readAt: null,
       via: null,
+      handoff: null,
       createdAt: "2026-11-08T09:31:00.000Z",
     },
   });
@@ -214,6 +218,9 @@ const Conversation = z
     // and `team` the same with no assignee; bots that send directly stay quiet. `bot`: no person
     // handles it, and this key took part last. Null: no person handles it and no bot took part.
     handler: ConversationHandler.nullable(),
+    // The key that took part last, whoever handles it now, so a person can give it back to that bot.
+    // Null when no bot took part.
+    bot: z.object({ apiKeyId: z.string(), name: z.string() }).nullable(),
     // What the host page last sent with `Dinghy.setContext()`. Unsigned, so not verified.
     pageContext: PageContextSchema.nullable(),
     visitor: z.object({
@@ -269,6 +276,8 @@ const workspaceRoute = createRoute({
               botsPaused: z.boolean(),
               // The name of who paused them. Null when bots run, or that person's account is gone.
               botsPausedBy: z.string().nullable(),
+              // When they were paused. Null when bots run.
+              botsPausedAt: z.string().nullable(),
             })
             .openapi("InboxWorkspace"),
         },
@@ -325,6 +334,7 @@ const listRoute = createRoute({
                 startedPage: "https://www.example.com/pricing",
                 welcome: false,
                 handler: null,
+                bot: null,
                 pageContext: { plan: "pro" },
                 visitor: {
                   id: "0b6f1c6e-2f4a-4c1e-9a57-3f1b8f0e6d21",
@@ -786,6 +796,7 @@ export function conversationView(
     startedPage: row.startedPage,
     welcome: row.welcome,
     handler: handlerOf(row),
+    bot: row.botKey === null ? null : { apiKeyId: row.botKey.id, name: row.botKey.name },
     pageContext: PageContextSchema.nullable().catch(null).parse(row.visitorPageContext),
     visitor: {
       id: row.visitorId,

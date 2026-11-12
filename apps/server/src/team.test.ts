@@ -883,6 +883,7 @@ describe("invites", () => {
         logoUrl: null,
         botsPaused: false,
         botsPausedBy: null,
+        botsPausedAt: null,
         active: true,
         readOnly: false,
         waiting: false,

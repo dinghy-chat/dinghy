@@ -26,7 +26,7 @@
       "setupKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A workspace API key, `dk_...`, made with the Setup access level. It reaches what a Conversations key does, and the webhooks: list, add, change, delete, rotate a secret, test and read deliveries. It never reaches keys, members, billing, export or the workspace's deletion."
+        "description": "A workspace API key, `dk_...`, made with Full access, the `setup` level. It reaches what a Chats (`conversations`) key does, and the webhooks: list, add, change, delete, rotate a secret, test and read deliveries. It never reaches keys, members, billing, export or the workspace's deletion."
       }
     },
     "schemas": {
@@ -554,6 +554,9 @@
                 "botsPausedBy": {
                   "type": ["string", "null"]
                 },
+                "botsPausedAt": {
+                  "type": ["string", "null"]
+                },
                 "active": {
                   "type": "boolean"
                 },
@@ -580,6 +583,7 @@
                 "logoUrl",
                 "botsPaused",
                 "botsPausedBy",
+                "botsPausedAt",
                 "active",
                 "readOnly",
                 "waiting",
@@ -624,9 +628,12 @@
           },
           "botsPausedBy": {
             "type": ["string", "null"]
+          },
+          "botsPausedAt": {
+            "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "logoUrl", "botsPaused", "botsPausedBy"]
+        "required": ["id", "name", "logoUrl", "botsPaused", "botsPausedBy", "botsPausedAt"]
       },
       "Conversation": {
         "type": "object",
@@ -652,6 +659,18 @@
           },
           "handler": {
             "$ref": "#/components/schemas/ConversationHandler"
+          },
+          "bot": {
+            "type": ["object", "null"],
+            "properties": {
+              "apiKeyId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["apiKeyId", "name"]
           },
           "pageContext": {
             "allOf": [
@@ -750,6 +769,7 @@
           "startedPage",
           "welcome",
           "handler",
+          "bot",
           "pageContext",
           "visitor",
           "lastMessage",
@@ -867,6 +887,15 @@
             "type": ["string", "null"],
             "enum": ["api", "mcp", "draft", null]
           },
+          "handoff": {
+            "type": ["object", "null"],
+            "properties": {
+              "operatorId": {
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["operatorId"]
+          },
           "createdAt": {
             "type": "string"
           }
@@ -889,6 +918,7 @@
           "deleted",
           "readAt",
           "via",
+          "handoff",
           "createdAt"
         ],
         "example": {
@@ -915,6 +945,7 @@
           "deleted": false,
           "readAt": null,
           "via": null,
+          "handoff": null,
           "createdAt": "2026-11-08T09:31:00.000Z"
         }
       },
@@ -4707,6 +4738,7 @@
                       "startedPage": "https://www.example.com/pricing",
                       "welcome": false,
                       "handler": null,
+                      "bot": null,
                       "pageContext": {
                         "plan": "pro"
                       },
@@ -7585,7 +7617,7 @@
             "setupKey": []
           }
         ],
-        "summary": "List the workspace's webhooks. Owners, admins and Setup API keys only",
+        "summary": "List the workspace's webhooks. Owners, admins and Full access (`setup`) API keys only",
         "parameters": [
           {
             "schema": {
@@ -7638,7 +7670,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role, or a Conversations API key, may not do this",
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -8488,7 +8520,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role, or a Conversations API key, may not do this",
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -9232,7 +9264,7 @@
           }
         ],
         "summary": "Give a conversation back to the bots",
-        "description": "No person handles it any more, so a key that sends directly may reply again. Webhooks get `conversation.given_back`. Only people can do this: a bot cannot take a conversation back.",
+        "description": "No person handles it any more and its assignee is cleared, so a key that sends directly may reply again. Webhooks get `conversation.given_back`, and `conversation.assigned` when it had an assignee. Only people can do this: a bot cannot take a conversation back.",
         "parameters": [
           {
             "schema": {
@@ -9692,7 +9724,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role, or a Conversations API key, may not do this",
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -9799,7 +9831,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role, or a Conversations API key, may not do this",
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -9894,7 +9926,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role, or a Conversations API key, may not do this",
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -9980,7 +10012,7 @@
             }
           },
           "403": {
-            "description": "forbidden: this role, or a Conversations API key, may not do this",
+            "description": "forbidden: this role, or a Chats (`conversations`) API key, may not do this",
             "content": {
               "application/json": {
                 "schema": {
@@ -13657,6 +13689,7 @@
           }
         ],
         "summary": "Assign a conversation to a member, or clear it with null",
+        "description": "Signed in, it also makes a person handle the conversation, as a reply does, so a key that sends directly stops replying. With an API key, it changes only the assignee.",
         "parameters": [
           {
             "schema": {
@@ -14305,7 +14338,7 @@
             "setupKey": []
           }
         ],
-        "summary": "Replace the widget's look, words and behavior. Sites show it within 5 minutes. Owners, admins and Setup API keys only",
+        "summary": "Replace the widget's look, words and behavior. Sites show it within 5 minutes. Owners, admins and Full access (`setup`) API keys only",
         "parameters": [
           {
             "schema": {

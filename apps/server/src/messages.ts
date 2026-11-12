@@ -183,6 +183,8 @@ export interface StoredMessage {
    * else's message.
    */
   via: Channel | null;
+  /** A bot's handoff note: who it handed the conversation to, with null for the team. */
+  handoff: { operatorId: string | null } | null;
   /** Its own position, or its last edit's or delete's, for a stream that sends changes again. */
   changeSeq: bigint;
   createdAt: Date;
@@ -240,6 +242,8 @@ interface MessageMetadata {
   imageRemoved?: boolean;
   /** Set on a key's reply that came through MCP, and on an operator's that sent a draft. */
   via?: "mcp" | "draft";
+  /** Set on a bot's handoff note: who it handed the conversation to, or null for the team. */
+  handoff?: { operatorId: string | null };
 }
 
 export function stored({
@@ -258,6 +262,7 @@ export function stored({
     deleted: deletedAt !== null,
     via:
       meta?.via === "draft" ? "draft" : row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
+    handoff: meta?.handoff ?? null,
     changeSeq: changedSeq ?? row.seq,
   };
 }
@@ -448,6 +453,8 @@ export async function appendMessage(
     /** An earlier message of the same conversation that this one quotes. */
     replyToMessageId?: string | undefined;
     source?: MessageSource | undefined;
+    /** A bot's handoff note: who takes the conversation, with null for the team. */
+    handoffTo?: string | null | undefined;
   } & ({ image?: NewImage; note?: false } | { image?: undefined; note: true }),
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
@@ -529,6 +536,7 @@ export async function appendMessage(
       },
     }),
     ...(input.source !== undefined && { via: input.source.via }),
+    ...(input.handoffTo !== undefined && { handoff: { operatorId: input.handoffTo } }),
   };
   const [row] = await tx
     .insert(message)
@@ -845,7 +853,7 @@ export interface ConversationRow {
   humanSince: Date | null;
   /** The assignee's name, for the handler. */
   assigneeName: string | null;
-  /** While no person handles it: the key that took part last, or null when none did. */
+  /** The key that took part last, whoever handles it now, or null when none did. */
   botKey: KeyName | null;
 }
 
@@ -860,11 +868,11 @@ const assigneeName = sql<string | null>`(
   select o.name from operator as o where o.id = "conversation"."assignee_operator_id")`;
 
 /**
- * While no person handles the conversation, the key that wrote its newest message, draft or note, or
- * handed it off. A note is a message, so one probe reads both. Read in the same statement as each
- * listed row, with one backward index probe per table and no sort, and only for the rows that need it.
+ * The key that wrote the conversation's newest message, draft or note, or handed it off. A note is a
+ * message, so one probe reads both. Read in the same statement as each listed row, with one backward
+ * index probe per table and no sort.
  */
-const botKey = sql<KeyName | null>`(case when "conversation"."human_since" is null then (
+const botKey = sql<KeyName | null>`(
   select json_build_object('id', k.id, 'name', k.name) from api_key as k
   where k.workspace_id = "conversation"."workspace_id" and k.id = coalesce((
     select case greatest(by_message.at, by_draft.at)
@@ -880,7 +888,7 @@ const botKey = sql<KeyName | null>`(case when "conversation"."human_since" is nu
       select d.api_key_id as key_id, d.created_at as at from draft_reply as d
       where d.workspace_id = "conversation"."workspace_id" and d.conversation_id = "conversation"."id"
       order by d.created_at desc limit 1) as by_draft on true
-  ), "conversation"."handoff_by_api_key_id")) end)`;
+  ), "conversation"."handoff_by_api_key_id"))`;
 
 const conversationColumns = {
   id: conversation.id,

@@ -194,6 +194,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
           workspaceId,
           input.conversationId,
           input.operatorId,
+          false,
         );
         if (result === "not_member") return { error: NOT_A_MEMBER };
         if (result === "none") return { error: NOT_FOUND };

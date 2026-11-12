@@ -345,7 +345,7 @@ const listRoute = createRoute({
   method: "get",
   path: PREFIX,
   security: SESSION_OR_SETUP_KEY,
-  summary: "List the workspace's webhooks. Owners, admins and Setup API keys only",
+  summary: "List the workspace's webhooks. Owners, admins and Full access (`setup`) API keys only",
   request: { params: workspaceParams },
   responses: {
     ...KEY_LIMITED,

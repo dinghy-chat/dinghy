@@ -9,6 +9,7 @@ import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, LINK_MINUTES, signInNow } from "./auth.ts";
+import { takeOver } from "./bots.ts";
 import {
   attachment,
   conversation,
@@ -107,7 +108,7 @@ export const maySetUp = (actor: Actor, role: Role) =>
 /** What a Setup route answers to a member who may not set up. */
 export const SETUP_DENIED = {
   ...MEMBER_ERRORS,
-  403: errorAnswer("forbidden: this role, or a Conversations API key, may not do this"),
+  403: errorAnswer("forbidden: this role, or a Chats (`conversations`) API key, may not do this"),
 };
 
 /** Refuses, before any handler, a member who may not set up on these routes' paths. */
@@ -332,6 +333,8 @@ const assignRoute = createRoute({
   path: `${PREFIX}/conversations/{conversationId}/assignee`,
   security: SESSION_OR_KEY,
   summary: "Assign a conversation to a member, or clear it with null",
+  description:
+    "Signed in, it also makes a person handle the conversation, as a reply does, so a key that sends directly stops replying. With an API key, it changes only the assignee.",
   request: {
     params: workspaceParams.extend({ conversationId: z.uuid() }),
     body: jsonBody(z.object({ operatorId: z.uuid().nullable() })),
@@ -638,12 +641,15 @@ export async function assignTo(
   workspaceId: string,
   conversationId: string,
   operatorId: string | null,
+  /** A person picked this in the app, so a person handles the conversation from now. */
+  takesOver: boolean,
 ): Promise<"ok" | "not_member" | "none"> {
   const result = await withWorkspace(db, workspaceId, async (tx) => {
     if (operatorId !== null && !(await isActiveMember(tx, workspaceId, operatorId))) {
       return "not_member" as const;
     }
     const found = await assignConversation(tx, workspaceId, conversationId, operatorId);
+    if (found && takesOver) await takeOver(tx, workspaceId, conversationId);
     return found ? ("ok" as const) : ("none" as const);
   });
   if (result === "ok") live.wake(workspaceId, OPERATORS);
@@ -984,7 +990,10 @@ export function registerTeamRoutes(
   app.openapi(assignRoute, async (c) => {
     const { conversationId } = c.req.valid("param");
     const { operatorId } = c.req.valid("json");
-    const result = await assignTo(db, live, c.get("memberWorkspaceId"), conversationId, operatorId);
+    // A person who assigns in the app takes the conversation from the bots. A key's assign does not.
+    const takesOver = c.get("actor").kind === "operator";
+    const workspaceId = c.get("memberWorkspaceId");
+    const result = await assignTo(db, live, workspaceId, conversationId, operatorId, takesOver);
     if (result === "not_member") return c.json(NOT_A_MEMBER, 400);
     if (result === "none") return c.json(NOT_FOUND, 404);
     return c.json({ ok: true as const }, 200);

@@ -134,7 +134,7 @@ const giveBackRoute = createRoute({
   security: SESSION,
   summary: "Give a conversation back to the bots",
   description:
-    "No person handles it any more, so a key that sends directly may reply again. Webhooks get `conversation.given_back`. Only people can do this: a bot cannot take a conversation back.",
+    "No person handles it any more and its assignee is cleared, so a key that sends directly may reply again. Webhooks get `conversation.given_back`, and `conversation.assigned` when it had an assignee. Only people can do this: a bot cannot take a conversation back.",
   request: { params: conversationParams },
   responses: {
     200: { description: "Bots may answer it", content: okContent },

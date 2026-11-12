@@ -344,6 +344,133 @@ describe("who handles a conversation", () => {
   });
 });
 
+describe("picking who handles a conversation", () => {
+  /** A conversation that the key answered last, so the bot handles it. */
+  async function botChat() {
+    await setReplyMode(owner, key.id, "send");
+    const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
+    await keyReply(chat.conversationId, "Let me check.");
+    return chat;
+  }
+  const read = async (conversationId: string) =>
+    (
+      (await (
+        await asOperator(app, boss.cookie, "GET", inChat(conversationId, "/messages"))
+      ).json()) as {
+        conversation: {
+          assigneeOperatorId: string | null;
+          handler: { kind: string } | null;
+          bot: { apiKeyId: string; name: string } | null;
+        };
+      }
+    ).conversation;
+  /** The kinds of the events written for this conversation after `seq`, in order. */
+  async function eventsSince(conversationId: string, seq: bigint) {
+    const rows = await owner
+      .select({ kind: event.kind, payload: event.payload, seq: event.seq })
+      .from(event)
+      .where(eq(event.workspaceId, space.id))
+      .orderBy(event.seq);
+    return rows
+      .filter(
+        (row) =>
+          row.seq > seq &&
+          (row.payload as { conversationId?: string }).conversationId === conversationId,
+      )
+      .map(
+        (row) =>
+          `${row.kind}${"change" in (row.payload as object) ? `:${(row.payload as { change: string }).change}` : ""}`,
+      );
+  }
+  async function lastSeq() {
+    const [row] = await owner
+      .select({ seq: event.seq })
+      .from(event)
+      .where(eq(event.workspaceId, space.id))
+      .orderBy(desc(event.seq))
+      .limit(1);
+    return row?.seq ?? 0n;
+  }
+  const assign = (conversationId: string, operatorId: string | null) =>
+    asOperator(app, boss.cookie, "PUT", inChat(conversationId, "/assignee"), { operatorId });
+
+  test("picking a person takes over from the bot: assigned, a person handles it, one transaction", async () => {
+    const chat = await botChat();
+    const before = await lastSeq();
+    expect((await assign(chat.conversationId, agent.id)).status).toBe(200);
+    expect(await read(chat.conversationId)).toMatchObject({
+      assigneeOperatorId: agent.id,
+      handler: { kind: "person", operatorId: agent.id },
+      bot: { apiKeyId: key.id, name: "Support bot" },
+    });
+    expect(await eventsSince(chat.conversationId, before)).toEqual([
+      "conversation.assigned",
+      "conversation.handled:human",
+    ]);
+    expect(await errorCode(await keyReply(chat.conversationId, "Still me."))).toBe(
+      "human_handling",
+    );
+  });
+
+  test("picking Team takes over with nobody assigned", async () => {
+    const chat = await botChat();
+    await assign(chat.conversationId, agent.id);
+    expect((await assign(chat.conversationId, null)).status).toBe(200);
+    expect(await read(chat.conversationId)).toMatchObject({
+      assigneeOperatorId: null,
+      handler: { kind: "team" },
+    });
+    const fresh = await botChat();
+    expect((await assign(fresh.conversationId, null)).status).toBe(200);
+    expect((await read(fresh.conversationId)).handler).toMatchObject({ kind: "team" });
+  });
+
+  test("picking the bot gives it back: no person handles it and nobody is assigned", async () => {
+    const chat = await botChat();
+    await assign(chat.conversationId, agent.id);
+    const before = await lastSeq();
+    const back = await asOperator(
+      app,
+      boss.cookie,
+      "POST",
+      inChat(chat.conversationId, "/give-back"),
+    );
+    expect(back.status).toBe(200);
+    const shown = await read(chat.conversationId);
+    expect(shown).toMatchObject({
+      assigneeOperatorId: null,
+      handler: { kind: "bot", apiKeyId: key.id },
+      bot: { apiKeyId: key.id },
+    });
+    expect(await eventsSince(chat.conversationId, before)).toEqual([
+      "conversation.assigned",
+      "conversation.handled:given_back",
+    ]);
+    expect((await conversationRow(chat.conversationId))?.humanSince).toBeNull();
+    expect((await keyReply(chat.conversationId, "Back to me.")).status).toBe(201);
+  });
+
+  test("a key's assign changes only the assignee, and the bot keeps answering", async () => {
+    const chat = await botChat();
+    const assigned = await withKey(
+      app,
+      key.token,
+      "PUT",
+      inChat(chat.conversationId, "/assignee"),
+      {
+        operatorId: agent.id,
+      },
+    );
+    expect(assigned.status).toBe(200);
+    expect((await conversationRow(chat.conversationId))?.humanSince).toBeNull();
+    expect(await read(chat.conversationId)).toMatchObject({
+      assigneeOperatorId: agent.id,
+      handler: { kind: "bot" },
+    });
+    expect((await keyReply(chat.conversationId, "Still me.")).status).toBe(201);
+  });
+});
+
 describe("drafts", () => {
   async function drafted(body: string) {
     await setReplyMode(owner, key.id, "draft");
@@ -503,6 +630,29 @@ describe("notes", () => {
 
 describe("handoff", () => {
   const handoffPath = (conversationId: string) => inChat(conversationId, "/handoff");
+
+  test("the handoff note names whom it went to: the member, or null for the team", async () => {
+    const handoffOf = async (conversationId: string) => {
+      const read = await asOperator(app, boss.cookie, "GET", inChat(conversationId, "/messages"));
+      const { messages } = (await read.json()) as {
+        messages: { kind: string; handoff: { operatorId: string | null } | null }[];
+      };
+      return messages.map((one) => one.handoff);
+    };
+    const toAgent = await visitorStarts(app, space.publicKey, "I want a refund");
+    await withKey(app, key.token, "POST", handoffPath(toAgent.conversationId), {
+      clientId: randomUUID(),
+      reason: "Refund",
+      operatorId: agent.id,
+    });
+    expect(await handoffOf(toAgent.conversationId)).toEqual([null, { operatorId: agent.id }]);
+    const toTeam = await visitorStarts(app, space.publicKey, "I want a refund");
+    await withKey(app, key.token, "POST", handoffPath(toTeam.conversationId), {
+      clientId: randomUUID(),
+      reason: "Refund",
+    });
+    expect(await handoffOf(toTeam.conversationId)).toEqual([null, { operatorId: null }]);
+  });
 
   test("only a key hands off", async () => {
     const chat = await visitorStarts(app, space.publicKey, "Where is my order?");
@@ -834,9 +984,13 @@ describe("the event stream for keys", () => {
           "data": {
             "data": {
               "conversation": {
-                "assigneeOperatorId": "<id 2>",
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
                 "handler": {
-                  "apiKeyId": "<id 3>",
+                  "apiKeyId": "<id 2>",
                   "kind": "bot",
                   "name": "Support bot",
                 },
@@ -853,7 +1007,7 @@ describe("the event stream for keys", () => {
                   "device": "Unknown",
                   "email": null,
                   "externalId": null,
-                  "id": "<id 4>",
+                  "id": "<id 3>",
                   "isTest": false,
                   "lastPage": null,
                   "lastSeenAt": null,
@@ -868,13 +1022,14 @@ describe("the event stream for keys", () => {
                 "authorName": null,
                 "authorOperatorId": null,
                 "body": "It was due Monday.",
-                "clientId": "<id 6>",
+                "clientId": "<id 5>",
                 "conversationId": "<id 1>",
                 "createdAt": "<time>",
                 "deleted": false,
                 "editedAt": null,
                 "fromVisitor": true,
-                "id": "<id 5>",
+                "handoff": null,
+                "id": "<id 4>",
                 "image": null,
                 "imageRemoved": false,
                 "kind": "text",
@@ -894,9 +1049,13 @@ describe("the event stream for keys", () => {
           "data": {
             "data": {
               "conversation": {
-                "assigneeOperatorId": "<id 2>",
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
                 "handler": {
-                  "apiKeyId": "<id 3>",
+                  "apiKeyId": "<id 2>",
                   "kind": "bot",
                   "name": "Support bot",
                 },
@@ -913,7 +1072,7 @@ describe("the event stream for keys", () => {
                   "device": "Unknown",
                   "email": null,
                   "externalId": null,
-                  "id": "<id 4>",
+                  "id": "<id 3>",
                   "isTest": false,
                   "lastPage": null,
                   "lastSeenAt": null,
@@ -924,17 +1083,18 @@ describe("the event stream for keys", () => {
                 "welcome": false,
               },
               "message": {
-                "authorApiKeyId": "<id 3>",
+                "authorApiKeyId": "<id 2>",
                 "authorName": "Support bot",
                 "authorOperatorId": null,
                 "body": "Let me check.",
-                "clientId": "<id 8>",
+                "clientId": "<id 7>",
                 "conversationId": "<id 1>",
                 "createdAt": "<time>",
                 "deleted": false,
                 "editedAt": null,
                 "fromVisitor": false,
-                "id": "<id 7>",
+                "handoff": null,
+                "id": "<id 6>",
                 "image": null,
                 "imageRemoved": false,
                 "kind": "text",
@@ -954,9 +1114,13 @@ describe("the event stream for keys", () => {
           "data": {
             "data": {
               "conversation": {
-                "assigneeOperatorId": "<id 2>",
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
                 "handler": {
-                  "apiKeyId": "<id 3>",
+                  "apiKeyId": "<id 2>",
                   "kind": "bot",
                   "name": "Support bot",
                 },
@@ -973,7 +1137,7 @@ describe("the event stream for keys", () => {
                   "device": "Unknown",
                   "email": null,
                   "externalId": null,
-                  "id": "<id 4>",
+                  "id": "<id 3>",
                   "isTest": false,
                   "lastPage": null,
                   "lastSeenAt": null,
@@ -986,7 +1150,7 @@ describe("the event stream for keys", () => {
               "message": {
                 "authorApiKeyId": null,
                 "authorName": "Mona",
-                "authorOperatorId": "<id 2>",
+                "authorOperatorId": "<id 9>",
                 "body": "VIP",
                 "clientId": "<id 10>",
                 "conversationId": "<id 1>",
@@ -994,7 +1158,8 @@ describe("the event stream for keys", () => {
                 "deleted": false,
                 "editedAt": null,
                 "fromVisitor": false,
-                "id": "<id 9>",
+                "handoff": null,
+                "id": "<id 8>",
                 "image": null,
                 "imageRemoved": false,
                 "kind": "note",
@@ -1014,9 +1179,13 @@ describe("the event stream for keys", () => {
           "data": {
             "data": {
               "conversation": {
-                "assigneeOperatorId": "<id 2>",
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
                 "handler": {
-                  "apiKeyId": "<id 3>",
+                  "apiKeyId": "<id 2>",
                   "kind": "bot",
                   "name": "Support bot",
                 },
@@ -1033,7 +1202,7 @@ describe("the event stream for keys", () => {
                   "device": "Unknown",
                   "email": null,
                   "externalId": null,
-                  "id": "<id 4>",
+                  "id": "<id 3>",
                   "isTest": false,
                   "lastPage": null,
                   "lastSeenAt": null,
@@ -1044,7 +1213,7 @@ describe("the event stream for keys", () => {
                 "welcome": false,
               },
               "message": {
-                "authorApiKeyId": "<id 3>",
+                "authorApiKeyId": "<id 2>",
                 "authorName": "Support bot",
                 "authorOperatorId": null,
                 "body": "A person takes over now.",
@@ -1054,6 +1223,7 @@ describe("the event stream for keys", () => {
                 "deleted": false,
                 "editedAt": null,
                 "fromVisitor": false,
+                "handoff": null,
                 "id": "<id 11>",
                 "image": null,
                 "imageRemoved": false,
@@ -1074,9 +1244,13 @@ describe("the event stream for keys", () => {
           "data": {
             "data": {
               "conversation": {
-                "assigneeOperatorId": "<id 2>",
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
                 "handler": {
-                  "apiKeyId": "<id 3>",
+                  "apiKeyId": "<id 2>",
                   "kind": "bot",
                   "name": "Support bot",
                 },
@@ -1093,7 +1267,7 @@ describe("the event stream for keys", () => {
                   "device": "Unknown",
                   "email": null,
                   "externalId": null,
-                  "id": "<id 4>",
+                  "id": "<id 3>",
                   "isTest": false,
                   "lastPage": null,
                   "lastSeenAt": null,
@@ -1104,7 +1278,7 @@ describe("the event stream for keys", () => {
                 "welcome": false,
               },
               "message": {
-                "authorApiKeyId": "<id 3>",
+                "authorApiKeyId": "<id 2>",
                 "authorName": "Support bot",
                 "authorOperatorId": null,
                 "body": "Handed off: Shipping question",
@@ -1114,6 +1288,9 @@ describe("the event stream for keys", () => {
                 "deleted": false,
                 "editedAt": null,
                 "fromVisitor": false,
+                "handoff": {
+                  "operatorId": "<id 9>",
+                },
                 "id": "<id 13>",
                 "image": null,
                 "imageRemoved": false,
@@ -1134,9 +1311,13 @@ describe("the event stream for keys", () => {
           "data": {
             "data": {
               "conversation": {
-                "assigneeOperatorId": "<id 2>",
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
                 "handler": {
-                  "apiKeyId": "<id 3>",
+                  "apiKeyId": "<id 2>",
                   "kind": "bot",
                   "name": "Support bot",
                 },
@@ -1153,7 +1334,7 @@ describe("the event stream for keys", () => {
                   "device": "Unknown",
                   "email": null,
                   "externalId": null,
-                  "id": "<id 4>",
+                  "id": "<id 3>",
                   "isTest": false,
                   "lastPage": null,
                   "lastSeenAt": null,
@@ -1174,9 +1355,13 @@ describe("the event stream for keys", () => {
           "data": {
             "data": {
               "conversation": {
-                "assigneeOperatorId": "<id 2>",
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
                 "handler": {
-                  "apiKeyId": "<id 3>",
+                  "apiKeyId": "<id 2>",
                   "kind": "bot",
                   "name": "Support bot",
                 },
@@ -1193,7 +1378,7 @@ describe("the event stream for keys", () => {
                   "device": "Unknown",
                   "email": null,
                   "externalId": null,
-                  "id": "<id 4>",
+                  "id": "<id 3>",
                   "isTest": false,
                   "lastPage": null,
                   "lastSeenAt": null,
@@ -1214,9 +1399,13 @@ describe("the event stream for keys", () => {
           "data": {
             "data": {
               "conversation": {
-                "assigneeOperatorId": "<id 2>",
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
                 "handler": {
-                  "apiKeyId": "<id 3>",
+                  "apiKeyId": "<id 2>",
                   "kind": "bot",
                   "name": "Support bot",
                 },
@@ -1233,7 +1422,51 @@ describe("the event stream for keys", () => {
                   "device": "Unknown",
                   "email": null,
                   "externalId": null,
-                  "id": "<id 4>",
+                  "id": "<id 3>",
+                  "isTest": false,
+                  "lastPage": null,
+                  "lastSeenAt": null,
+                  "name": null,
+                  "pictureUrl": null,
+                  "timeZone": null,
+                },
+                "welcome": false,
+              },
+            },
+            "type": "conversation.assigned",
+            "workspaceId": "<id 0>",
+          },
+          "event": "conversation.assigned",
+          "id": "+8",
+        },
+        {
+          "data": {
+            "data": {
+              "conversation": {
+                "assigneeOperatorId": null,
+                "bot": {
+                  "apiKeyId": "<id 2>",
+                  "name": "Support bot",
+                },
+                "handler": {
+                  "apiKeyId": "<id 2>",
+                  "kind": "bot",
+                  "name": "Support bot",
+                },
+                "id": "<id 1>",
+                "lastMessage": null,
+                "pageContext": null,
+                "startedPage": null,
+                "status": "open",
+                "updatedAt": "<time>",
+                "visitor": {
+                  "attributes": null,
+                  "blocked": false,
+                  "country": null,
+                  "device": "Unknown",
+                  "email": null,
+                  "externalId": null,
+                  "id": "<id 3>",
                   "isTest": false,
                   "lastPage": null,
                   "lastSeenAt": null,
@@ -1248,11 +1481,11 @@ describe("the event stream for keys", () => {
             "workspaceId": "<id 0>",
           },
           "event": "conversation.given_back",
-          "id": "+8",
+          "id": "+9",
         },
         {
           "data": {
-            "cursor": "+8",
+            "cursor": "+9",
           },
           "event": "ready",
         },

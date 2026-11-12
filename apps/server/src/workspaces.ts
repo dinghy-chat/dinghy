@@ -125,5 +125,6 @@ export async function readWorkspaceFace(
     logoUrl: imageUrls.logo(row.publicKey, row.logoUpdatedAt),
     botsPaused: row.botsPausedAt !== null,
     botsPausedBy: row.botsPausedAt === null ? null : row.botsPausedBy,
+    botsPausedAt: row.botsPausedAt?.toISOString() ?? null,
   };
 }

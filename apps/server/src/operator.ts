@@ -77,6 +77,8 @@ const meRoute = createRoute({
                   botsPaused: z.boolean(),
                   // The name of who paused them. Null when bots run, or that account is gone.
                   botsPausedBy: z.string().nullable(),
+                  // When they were paused. Null when bots run.
+                  botsPausedAt: z.string().nullable(),
                   // False while a cloud signup waits for payment.
                   active: z.boolean(),
                   // True after a cloud subscription ended: operators can read and export only.
@@ -435,6 +437,7 @@ export function registerOperatorRoutes(
               logoUrl: face?.logoUrl ?? null,
               botsPaused: face?.botsPaused ?? false,
               botsPausedBy: face?.botsPausedBy ?? null,
+              botsPausedAt: face?.botsPausedAt ?? null,
               soleOwner,
               heir,
             };
