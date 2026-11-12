@@ -1912,6 +1912,19 @@ img.ws-tile {
   border-left: 1px solid var(--line);
   background: var(--surface);
 }
+/* A toggle slides the panel in from the right edge, and the thread makes room as it comes. */
+.visitor-panel.entering {
+  animation: panel-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.visitor-panel.leaving {
+  /* Reversed, so this curve speeds up as the panel leaves. */
+  animation: panel-in 0.18s cubic-bezier(0, 0, 0.6, 1) reverse forwards;
+}
+@keyframes panel-in {
+  from {
+    margin-right: -300px;
+  }
+}
 /* Below 1200px the panel is a drawer over the thread. */
 .visitor-panel.overlay {
   position: absolute;
@@ -1923,29 +1936,150 @@ img.ws-tile {
   border-left: 0;
   box-shadow: -12px 0 32px rgb(11 34 57 / 0.16);
 }
+.visitor-panel.overlay.entering,
+.visitor-panel.overlay.leaving {
+  animation-name: drawer-in;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+/* The panel's head: who the visitor is, and their place as tiles, on a soft blue. */
 .panel-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 20px 18px 16px;
-  border-bottom: 1px solid var(--line);
+  gap: 14px;
+  padding: 18px 16px 16px;
+  background: var(--tile-blue);
 }
 .panel-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
 }
-.panel-who h3 {
+.panel-who .avatar {
+  width: 46px;
+  height: 46px;
+  font-size: 15px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.panel-who .presence-dot {
+  box-shadow: 0 0 0 2.5px var(--tile-blue);
+}
+.panel-name {
+  flex: 1;
+  min-width: 0;
+}
+.panel-name h3 {
   overflow: hidden;
-  font-size: 17px;
+  font-size: 18px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.panel-who p {
+.panel-name p {
   overflow: hidden;
-  color: var(--mute);
-  font-size: 13.5px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.panel-who .icon-button {
+  align-self: flex-start;
+  width: 32px;
+  height: 32px;
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
+}
+.panel-who .icon-button:hover {
+  background: var(--surface);
+}
+/* Facts as tiles, two to a row. An odd last tile takes the whole row. */
+.place-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--line);
+}
+.place-tiles > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--mute);
+}
+.panel-head .place-tiles {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--navy) 8%, transparent);
+}
+.panel-head .place-tiles > div {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+}
+.place-tiles > div:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+.place-tiles dl {
+  min-width: 0;
+}
+.place-tiles dt {
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.place-tiles dd {
+  overflow: hidden;
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.place-tiles a,
+.journey a,
+.context a {
+  text-decoration: none;
+}
+.place-tiles a:hover,
+.journey a:hover,
+.context a:hover {
+  text-decoration: underline;
+}
+.place-tiles a {
+  color: var(--blue-deep);
+}
+/* The assignee fills the row, and the status sits beside it. */
+.panel-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-bar .assignee {
+  flex: 1;
+}
+.panel-bar .select-button {
+  width: 100%;
+}
+.panel-bar .select-value {
+  flex: 1;
+}
+.panel-bar .popup {
+  max-width: 100%;
+}
+.panel-bar .chip {
+  min-height: 36px;
+  padding: 0 14px;
 }
 /* An ID to copy: monospace, cut to its line. */
 .copy-id {
@@ -1973,11 +2107,6 @@ img.ws-tile {
   min-height: 0;
   border-radius: 6px;
 }
-.panel-head .panel-contact {
-  grid-column: 1 / -1;
-  min-height: 36px;
-  margin-top: 8px;
-}
 /* A fold of the panel or the contact page: a title that opens or closes it. */
 .fold {
   border-bottom: 1px solid var(--line);
@@ -1986,29 +2115,43 @@ img.ws-tile {
 .fold h3 button {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   width: 100%;
-  min-height: 42px;
-  padding: 0 18px;
-  color: var(--mute);
-  font: 600 13.5px / 1.4 var(--body);
-}
-.fold h3 button:hover {
+  min-height: 44px;
+  padding: 0 16px;
   color: var(--navy);
+  font: 600 14px / 1.4 var(--display);
+}
+.fold-count {
+  color: var(--mute);
+  font: 500 12.5px / 1 var(--body);
 }
 .fold-chevron {
   display: grid;
-  transition: transform 0.15s;
+  margin-left: auto;
+  color: var(--mute);
+  transition:
+    transform 0.15s,
+    opacity 0.15s;
 }
 [aria-expanded="false"] > .fold-chevron {
   transform: rotate(-90deg);
 }
+/* With a pointer, an open fold shows its chevron only on hover or focus. */
+@media (hover: hover) {
+  [aria-expanded="true"] > .fold-chevron {
+    opacity: 0;
+  }
+  .fold h3 button:hover > .fold-chevron,
+  .fold h3 button:focus-visible > .fold-chevron {
+    opacity: 1;
+  }
+}
 .fold-body {
   display: grid;
   gap: 10px;
-  padding: 0 18px 14px;
+  padding: 0 16px 16px;
 }
-.facts,
 .context {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -2016,25 +2159,23 @@ img.ws-tile {
   gap: 6px 14px;
   font-size: 13.5px;
 }
-.facts dt,
 .context dt {
   color: var(--mute);
 }
-.facts dd,
 .context dd {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
   color: var(--navy);
-}
-.facts a {
-  color: var(--blue-deep);
-}
-.facts .assignee .select-button {
-  min-height: 34px;
-  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
+.page-context {
+  display: grid;
+  gap: 4px;
+}
 .page-context h4 {
+  margin: 0;
   color: var(--mute);
   font: 600 13.5px / 1.4 var(--body);
 }
@@ -2045,14 +2186,42 @@ img.ws-tile {
 .journey ol {
   display: grid;
   gap: 2px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 .journey li {
+  position: relative;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   min-width: 0;
+  min-height: 30px;
+  padding-left: 20px;
+}
+/* A timeline: a dot for each page, joined by a line, and the newest in blue. */
+.journey li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--nobody-line);
+  background: var(--surface);
+}
+.journey li:first-child::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+  background: var(--blue);
+}
+.journey li + li::after {
+  content: "";
+  position: absolute;
+  bottom: calc(50% + 6px);
+  left: 6.5px;
+  width: 1px;
+  height: 20px;
+  background: var(--line);
 }
 .journey .page-name {
   flex: 1;
@@ -2073,7 +2242,7 @@ img.ws-tile {
 .journey .text-button {
   min-height: 28px;
   margin-top: 4px;
-  padding: 0;
+  padding: 0 0 0 20px;
 }
 .conversation-links {
   display: grid;
@@ -2104,10 +2273,17 @@ img.ws-tile {
   color: var(--mute);
   font-weight: 400;
 }
+/* The team's note, as a sticky note. */
 .note-field {
-  min-height: 84px;
+  min-height: 72px;
   resize: vertical;
+  border-color: color-mix(in srgb, var(--warn-fill) 30%, transparent);
+  background: var(--warn-soft);
+  color: var(--navy);
   font-size: 14px;
+}
+.note-field::placeholder {
+  color: color-mix(in srgb, var(--warn-ink) 75%, transparent);
 }
 .context a {
   color: var(--blue-deep);
@@ -4146,7 +4322,7 @@ button.quote:hover {
     flex-basis: 100%;
     gap: 8px;
   }
-  .avatar-wrap {
+  .who-is .avatar-wrap {
     display: none;
   }
   .thread-head .actions {

@@ -283,7 +283,8 @@ function ContactView({
         <div className="contact-folds">
           <ContactFolds
             contact={contact}
-            visitor={contact}
+            visitor={{ ...contact, userId: null }}
+            place
             pages={contact.pages}
             conversationId={null}
             onOpenConversation={onOpenConversation}

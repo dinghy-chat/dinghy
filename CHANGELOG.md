@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The conversation's visitor panel has a new look. Its head shows the visitor on a soft blue, with their place, local time, device and current page (the last page once they leave) as tiles. The assignee and the status sit in one row under it. Long values stay on one line, the pages visited form a timeline, folds show their item count, and the note looks like a sticky note. **View contact** is an icon in the head, and the user ID moved to **Details**. The panel slides in and out when you show or hide it, unless the device asks for reduced motion.
+
 ## [0.21.0] - 2026-11-12
 
 ### Upgrading

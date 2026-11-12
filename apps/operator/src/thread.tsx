@@ -285,7 +285,7 @@ export function Thread({
         )}
       </section>
       {/* A welcome chat's visitor is another workspace, with no visit to show. */}
-      {welcome === null && panel.open && (
+      {welcome === null && panel.shown && (
         <VisitorPanel
           conversation={conversation}
           contact={contact.data}
@@ -293,6 +293,8 @@ export function Thread({
           pages={thread.pages}
           members={members}
           overlay={!panel.wide}
+          motion={panel.motion}
+          onMoved={panel.moved}
           onAssign={(operatorId) => void change.assign(operatorId)}
           onOpenContact={() => onOpenContact(conversation.visitor.id)}
           onOpenConversation={onOpenConversation}
