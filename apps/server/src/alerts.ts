@@ -731,7 +731,7 @@ async function handoffNote(tx: Transaction, workspaceId: string, eventSeq: strin
       message,
       and(
         eq(message.workspaceId, event.workspaceId),
-        sql`${message.id}::text = ${event.payload}->>'noteId'`,
+        sql`${message.id} = (${event.payload}->>'noteId')::uuid`,
       ),
     )
     .where(
