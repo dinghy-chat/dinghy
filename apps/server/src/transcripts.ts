@@ -2,12 +2,12 @@
 
 import { and, desc, eq, gt, gte, isNull, or, sql } from "drizzle-orm";
 import { escapeHtml, markdownHtml } from "../../../packages/widget/src/markdown.ts";
-import { firstName } from "../../../packages/widget/src/shared.ts";
 import type {
   AlertPlan,
   ClaimedDelivery,
   DeliveryBase,
   DeliveryRow,
+  Place,
   PlanOptions,
 } from "./alerts.ts";
 import { chatLinkUrl, createChatLink } from "./chat-link.ts";
@@ -18,10 +18,9 @@ import {
   message,
   visitor,
   widgetSettings,
-  workspace,
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { EMAIL_COLORS, letter, letterHtml } from "./letter.ts";
+import { EMAIL_COLORS, letter } from "./letter.ts";
 import {
   conversationVisitor,
   isChat,
@@ -34,7 +33,6 @@ import {
   type StatusPayload,
   visitorQuote,
 } from "./messages.ts";
-import { imageUrls } from "./public-images.ts";
 import { MINUTE_MS } from "./time.ts";
 import {
   emailStopped,
@@ -43,7 +41,9 @@ import {
   quotedText,
   sentToday,
   VISITOR_EMAILS_PER_DAY,
+  visitorAuthorName,
   visitorEmailText,
+  visitorLetterHtml,
 } from "./visitor-email.ts";
 
 // The transcript waits, so a quick reopen cancels it.
@@ -53,16 +53,15 @@ const TRANSCRIPT_MESSAGES = 500;
 
 // Every string a person reads has a key, so a locale can be added later.
 const text = {
-  // A team reply whose author's account or key is gone.
-  team: (name: string) => `The ${name} team`,
   subject: (name: string) => `Your conversation with ${name}`,
   intro: (name: string) => `Here is your conversation with ${name}, for your records.`,
   image: "Sent an image. Open the chat to see it.",
   line: (who: string, when: string) => `${who}, ${when}`,
-  body: <Messages>(name: string, messages: Messages, chat: string, stop: string) => [
+  continueChat: "Continue the chat",
+  body: (name: string, messages: string, chat: string, stop: string) => [
     text.intro(name),
     messages,
-    `Continue the chat: ${chat}`,
+    `${text.continueChat}: ${chat}`,
     visitorEmailText.linkWarning,
     visitorEmailText.whyYouGotThis(name, stop),
   ],
@@ -163,26 +162,6 @@ export async function requestedTranscriptRows(
 const utcTime = (at: Date) => `${at.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
 /**
- * Who wrote a message, as the visitor knows them: themself, a first name, a key's name, or the team
- * when the author is gone.
- */
-function transcriptAuthor(
-  line: {
-    authorVisitorId: string | null;
-    authorOperatorId: string | null;
-    authorApiKeyId: string | null;
-  },
-  authors: Map<string, MessageAuthor>,
-  placeName: string,
-): string {
-  if (line.authorVisitorId !== null) return visitorEmailText.you;
-  const id = line.authorOperatorId ?? line.authorApiKeyId ?? "";
-  const author = authors.get(id);
-  if (author === undefined) return text.team(placeName);
-  return line.authorApiKeyId !== null || author.isDeleted ? author.name : firstName(author.name);
-}
-
-/**
  * The whole conversation by email. A close's transcript sends nothing when the conversation was
  * reopened, or when a later close made another. A reply email waits for it, and leaves out the
  * replies it carried once it is sent, so the visitor does not get both.
@@ -191,23 +170,19 @@ export async function transcriptPlan(
   tx: Transaction,
   row: ClaimedDelivery,
   visitorId: string,
-  placeName: string,
-  { publicUrl, secret, imageOrigin }: PlanOptions,
+  place: Place,
+  { publicUrl, secret }: PlanOptions,
 ): Promise<AlertPlan | null> {
   const { workspaceId, conversationId, messageId, eventSeq } = row;
   const [state] = await tx
     .select({
       status: conversation.status,
       email: visitor.email,
-      publicKey: workspace.publicKey,
-      logoUpdatedAt: widgetSettings.logoUpdatedAt,
       fromClose: sql<boolean>`exists (select 1 from ${message} where ${message.workspaceId} = ${workspaceId} and ${message.id} = ${messageId} and ${message.kind} = 'closed')`,
       later: sql<boolean>`exists (select 1 from ${alertDelivery} where ${alertDelivery.workspaceId} = ${workspaceId} and ${alertDelivery.conversationId} = ${conversationId} and ${alertDelivery.channel} = 'transcript' and ${alertDelivery.eventSeq} > ${eventSeq}::bigint)`,
     })
     .from(conversation)
     .innerJoin(visitor, joinVisitor())
-    .innerJoin(workspace, eq(workspace.id, conversation.workspaceId))
-    .innerJoin(widgetSettings, eq(widgetSettings.workspaceId, conversation.workspaceId))
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
   if (state === undefined || state.email === null) return null;
   if (state.fromClose && (state.status !== "closed" || state.later)) return null;
@@ -247,11 +222,10 @@ export async function transcriptPlan(
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, state.email);
-  const logoUrl = imageUrls(imageOrigin).logo(state.publicKey, state.logoUpdatedAt);
   return {
     channel: "email",
     to: state.email,
-    ...transcriptLetter(placeName, lines, authors, { chatUrl, stopUrl, logoUrl }),
+    ...transcriptLetter(place, lines, authors, { chatUrl, stopUrl }),
     stopUrl,
     carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
   };
@@ -270,14 +244,14 @@ interface TranscriptLine {
 
 /** The transcript's words: each message under its author and time, as text and as HTML. */
 export function transcriptLetter(
-  placeName: string,
+  place: Place,
   lines: TranscriptLine[],
   authors: Map<string, MessageAuthor>,
-  links: { chatUrl: string; stopUrl: string; logoUrl: string | null },
+  links: { chatUrl: string; stopUrl: string },
 ): { subject: string; text: string; html: string } {
-  const { chatUrl, stopUrl, logoUrl } = links;
+  const { chatUrl, stopUrl } = links;
   const heads = lines.map((line) =>
-    text.line(transcriptAuthor(line, authors, placeName), utcTime(line.createdAt)),
+    text.line(visitorAuthorName(line, authors, place.name), utcTime(line.createdAt)),
   );
   const plain = lines
     .map(
@@ -286,9 +260,7 @@ export function transcriptLetter(
     )
     .join("\n\n");
   const html = [
-    logoUrl === null
-      ? ""
-      : `<p><img src="${escapeHtml(logoUrl)}" width="48" height="48" alt="" style="border-radius:10px"></p>`,
+    `<p style="margin:0">${escapeHtml(text.intro(place.name))}</p>`,
     ...lines.map(
       (line, index) =>
         `<p style="margin:18px 0 2px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
@@ -301,9 +273,13 @@ export function transcriptLetter(
     ),
   ].join("");
   return {
-    subject: text.subject(placeName),
-    text: letter(text.body(placeName, plain, chatUrl, stopUrl), undefined, placeName),
-    html: letterHtml(text.body(placeName, { html }, chatUrl, stopUrl), placeName),
+    subject: text.subject(place.name),
+    text: letter(text.body(place.name, plain, chatUrl, stopUrl), undefined, place.name),
+    html: visitorLetterHtml(place.name, html, {
+      ...links,
+      logoUrl: place.logoUrl,
+      chatLabel: text.continueChat,
+    }),
   };
 }
 
