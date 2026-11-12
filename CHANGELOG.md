@@ -4,6 +4,27 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- An MCP client such as Claude Code connects with OAuth in the browser: `claude mcp add --transport http dinghy https://chat.example.com/v1/mcp`, then an owner or admin approves it and picks the workspace, the level and the reply mode. The agent never sees a secret. A connected app shows in **Settings > API & webhooks** beside the keys, and can be revoked there. OAuth is on when `PUBLIC_URL` is `https` or `localhost`. API: OAuth discovery at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/v1/oauth/token`, `/v1/oauth/register` and `/v1/oauth/revoke`, with Client ID Metadata Documents and Dynamic Client Registration.
+- MCP speaks protocol 2026-07-28, which is stateless, beside the older versions.
+- Setup tools and routes, so a coding agent can install the chat: the install snippet for seven frameworks, allowed sites, an install check, identity code with no secret, the widget's look, webhook signature code, delivery replay, and test visitors. API: `/install/snippet`, `/install/check`, `/install/identity`, `/sites`, `/test-visitors` and `.../deliveries/{deliveryId}/replay`.
+- A key's reply mode: **Send directly**, or **Drafts only**, where each reply waits under the conversation for an operator to send, edit or discard. API: `replyMode` on keys, a 202 `{ draft }` answer to a key's reply, and `/drafts` routes.
+- Internal notes on a conversation, from operators and keys, which the visitor never sees. API: `POST .../notes`, `notes` in the messages, and the `note.created` webhook.
+- A bot hands a conversation to people with a reason, a summary and a last message to the visitor, and the team gets an alert. While a person handles it, a key that sends directly gets 409 `human_handling`, until an operator gives it back. API: `POST .../handoff`, `POST .../give-back`, `humanSince` and `handler` on conversations, and the `conversation.handoff` and `conversation.bot_resumed` webhooks.
+- Owners and admins pause every bot with one switch: replies, drafts and typing from keys answer 409 `bots_paused`. API: `PUT .../bots-paused`.
+- A bot shows "<name> is typing" in the chat. API: `POST .../typing`, and a widget `notice`.
+- `GET /v1/events` streams the webhook events to an API key, for a bot with no public address, and the MCP tool `wait_for_messages` waits for new visitor messages.
+- MCP tools for keys: `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors`, `get_analytics`, and `format: "markdown"` and `replySeconds` on `get_conversation`.
+- A failed webhook delivery shows the start of the receiver's answer. API: `responseExcerpt` and `replayOf` on deliveries.
+- Docs: [Use Dinghy with AI agents](docs/agents.md), with a block to paste into a repository's `AGENTS.md`, and every doc in one file at `https://dinghy.chat/llms-full.txt`.
+
+### Changed
+
+- A new API key or connected app starts in **Drafts only**. Existing keys keep sending directly, so no bot changes how it behaves.
+- API keys can read the analytics, and Setup keys can read and change the widget's look.
+- `close_conversation` is marked destructive, so an MCP client asks the person first.
+
 ## [0.22.0] - 2026-11-12
 
 ### Added

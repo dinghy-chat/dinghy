@@ -1,7 +1,8 @@
 /**
- * Builds the docs section of dinghy.chat from docs/*.md, the only source. The pages it writes in
- * site/public/docs are not committed: the Site workflow builds them before it tests and deploys.
- * Run `bun run docs:build` to preview the site locally.
+ * Builds the docs section of dinghy.chat from docs/*.md, the only source, and llms-full.txt, every
+ * doc in one Markdown file for language models. The files it writes in site/public/docs and
+ * site/public/llms-full.txt are not committed: the Site workflow builds them before it tests and
+ * deploys. Run `bun run docs:build` to preview the site locally.
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
@@ -19,6 +20,7 @@ const SITE = "https://dinghy.chat";
 const WIDGET =
   '<script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async></script>';
 const OUT = "site/public/docs";
+const LLMS_FULL = "site/public/llms-full.txt";
 
 interface Page {
   source: string;
@@ -30,7 +32,7 @@ interface Page {
 }
 
 /** The pages in sidebar order. An empty slug is the docs home, at /docs/. */
-const PAGES: Page[] = [
+export const PAGES: Page[] = [
   { source: "README.md", slug: "", nav: "Overview", group: "" },
   {
     source: "self-hosting.md",
@@ -49,6 +51,14 @@ const PAGES: Page[] = [
       "Put the Dinghy chat on your website with one tag. Set its colors, open it from your own button and show who is chatting.",
   },
   { source: "operator-guide.md", slug: "operator-guide", nav: "Operator guide", group: "Use it" },
+  {
+    source: "agents.md",
+    slug: "agents",
+    nav: "AI agents",
+    group: "Use it",
+    description:
+      "Connect Claude Code or your own bot with OAuth or an API key, install the chat, answer chats with drafts first, and hand off to people.",
+  },
   {
     source: "troubleshooting.md",
     slug: "troubleshooting",
@@ -90,7 +100,7 @@ const PAGES: Page[] = [
   },
 ];
 
-const pathOf = (page: Page) => (page.slug ? `/docs/${page.slug}` : "/docs/");
+export const pathOf = (page: Page) => (page.slug ? `/docs/${page.slug}` : "/docs/");
 
 const escape = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -153,15 +163,20 @@ function lineHtml(line: CodeLine, language: CodeLanguage): string {
   return language === "sh" ? `<span class="${PROMPT_CLASS[line.prompt]}">${html}</span>` : html;
 }
 
-function codeBlock(text: string, lang: string, id: string): string {
-  if (!isCodeLanguage(lang)) throw new Error(`A code block has no known language: "${lang}".`);
+/** Languages the highlighter does not know, shown as plain text under their own label. */
+const PLAIN_LABELS: Record<string, string> = { python: "Python", go: "Go" };
+
+function codeBlock(text: string, fence: string, id: string): string {
+  const label = PLAIN_LABELS[fence];
+  const lang = label ? "text" : fence;
+  if (!isCodeLanguage(lang)) throw new Error(`A code block has no known language: "${fence}".`);
   const lines = highlight(text, lang).filter(
     (line) => lang !== "sh" || line.tokens.some((token) => token.text.trim()),
   );
   const body = lines.map((line) => lineHtml(line, lang));
   const kind = lang === "sh" ? "" : " terminal-plain";
   return `<div class="terminal doc-code${kind}">
-<div class="terminal-bar"><span>${CODE_LABELS[lang]}</span><button class="copy" type="button" data-copy="${id}"><span data-copy-label>Copy</span></button></div>
+<div class="terminal-bar"><span>${label ?? CODE_LABELS[lang]}</span><button class="copy" type="button" data-copy="${id}"><span data-copy-label>Copy</span></button></div>
 <pre class="terminal-code" id="${id}"><code>${body.join("\n")}</code></pre>
 </div>\n`;
 }
@@ -384,6 +399,28 @@ ${FOOTER}
   return { html, images: doc.images };
 }
 
+/** A doc's Markdown with its relative links made absolute, as a file outside the site reads them. */
+function absoluteLinks(markdown: string): string {
+  return markdown.replace(/(\]\()([^)\s]+)\)/g, (_match, open: string, href: string) => {
+    const target = rewriteLink(href);
+    return `${open}${target.startsWith("/") ? SITE + target : target})`;
+  });
+}
+
+/** Every doc in sidebar order, in one Markdown file, as llmstxt.org suggests for llms-full.txt. */
+function llmsFull(): string {
+  const docs = PAGES.map((page) => {
+    const [title = "", ...rest] = readFileSync(join("docs", page.source), "utf8").split("\n");
+    const body = absoluteLinks(rest.join("\n").trim());
+    return `${title}\n\nSource: ${SITE}${pathOf(page)}\n\n${body}\n`;
+  });
+  const header = `# Dinghy docs, in full
+
+> Dinghy is a small, open-source live support chat. This file holds every page of its docs, from ${REPO}/tree/main/docs. The short index is ${SITE}/llms.txt.
+`;
+  return [header, ...docs].join("\n---\n\n");
+}
+
 /** Every file the docs section needs, by path, with the contents it should have now. */
 function buildDocs(): Map<string, string | Buffer> {
   const files = new Map<string, string | Buffer>();
@@ -392,6 +429,7 @@ function buildDocs(): Map<string, string | Buffer> {
     files.set(join(OUT, `${page.slug || "index"}.html`), html);
     for (const image of images) files.set(join("site/public", image), readFileSync(image));
   }
+  files.set(LLMS_FULL, llmsFull());
   return files;
 }
 
@@ -406,4 +444,4 @@ export function writeDocs(): number {
   return files.size;
 }
 
-if (import.meta.main) console.log(`Wrote ${writeDocs()} files to ${OUT}.`);
+if (import.meta.main) console.log(`Wrote ${writeDocs()} files to ${OUT} and ${LLMS_FULL}.`);
