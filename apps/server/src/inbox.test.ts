@@ -1194,6 +1194,11 @@ describe("snooze", () => {
     // The delay to its end, by the server's clock, so the inbox loads again then.
     expect(snoozed.snoozeEndsInMs).toBeGreaterThan(59 * 60 * 1000);
     expect(snoozed.snoozeEndsInMs).toBeLessThanOrEqual(60 * 60 * 1000);
+    // Past what a 32-bit integer holds in milliseconds, the list still loads.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    await snooze({ snooze: { until: new Date(Date.now() + 30 * DAY_MS).toISOString() } });
+    expect((await list()).snoozeEndsInMs).toBeGreaterThan(29 * DAY_MS);
+    await snooze({ snooze: { until: later } });
 
     await snooze({ snooze: { until: new Date(Date.now() - 1000).toISOString() } });
     const ended = await list();

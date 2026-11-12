@@ -1078,7 +1078,7 @@ export async function nextSnoozeEndMs(
   workspaceId: string,
 ): Promise<number | null> {
   const result = await tx.execute<{ ms: number | null }>(sql`
-    select ceil(extract(epoch from min(snoozed_until) - now()) * 1000)::int as ms
+    select ceil(extract(epoch from min(snoozed_until) - now()) * 1000)::float8 as ms
     from ${conversation}
     where workspace_id = ${workspaceId} and status = 'open' and snoozed_until > now()`);
   return result.rows[0]?.ms ?? null;
