@@ -102,10 +102,10 @@ function WorkspaceSwitcher({
   }
   if (onBotsPaused !== null) {
     items.push({
-      label: t(botsPaused ? "botsResumeMenu" : "botsPauseMenu"),
+      label: t("botsPauseMenu"),
       lead: <Icon name="prohibit" size={18} />,
-      // A small switch that shows the state. The label says what choosing it does.
-      trail: <i className={botsPaused ? "mini-switch on" : "mini-switch"} aria-hidden="true" />,
+      // The label stays, and the switch shows whether the bots are paused.
+      switched: botsPaused,
       divider: items.length > 0,
       onSelect: () => onBotsPaused(!botsPaused),
     });

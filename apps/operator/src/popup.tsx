@@ -318,6 +318,8 @@ export interface MenuItem {
   lead?: ReactNode;
   /** For a choice among items, such as the current workspace: a check, read as checked. */
   checked?: boolean;
+  /** For an item that turns something on or off: a small switch that shows its state. */
+  switched?: boolean;
   danger?: boolean;
   /** A line above this item, to set a group apart. */
   divider?: boolean;
@@ -385,16 +387,22 @@ export function Menu({
         >
           {items.map((item, index) => (
             // biome-ignore lint/a11y/useKeyWithClickEvents: the menu handles the keys.
-            // biome-ignore lint/a11y/noStaticElementInteractions: the role is menuitem or menuitemradio.
-            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on menuitemradio only.
+            // biome-ignore lint/a11y/noStaticElementInteractions: the role is a menu item's.
+            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-checked is on the radio and checkbox items only.
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: two workspaces can share a name.
               key={index}
               id={popup.itemId(index)}
               data-index={index}
-              role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+              role={
+                item.switched !== undefined
+                  ? "menuitemcheckbox"
+                  : item.checked === undefined
+                    ? "menuitem"
+                    : "menuitemradio"
+              }
               tabIndex={-1}
-              aria-checked={item.checked}
+              aria-checked={item.checked ?? item.switched}
               aria-disabled={item.unavailable === undefined ? undefined : true}
               className={[
                 "item",
@@ -413,6 +421,12 @@ export function Menu({
                 {item.unavailable !== undefined && <small>{item.unavailable}</small>}
               </span>
               {item.trail}
+              {item.switched !== undefined && (
+                <i
+                  className={item.switched ? "mini-switch on" : "mini-switch"}
+                  aria-hidden="true"
+                />
+              )}
               {item.checked === true && <Icon name="check" size={16} />}
             </div>
           ))}

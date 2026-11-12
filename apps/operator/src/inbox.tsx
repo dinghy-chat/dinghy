@@ -118,6 +118,7 @@ export function Inbox({
   const suspended = membership?.suspended ?? false;
   const waitsForCloud = membership?.waiting ?? false;
   const botsPaused = membership?.botsPaused ?? false;
+  const botsPausedBy = membership?.botsPausedBy ?? null;
   // Only owners and admins pause or resume the bots.
   const setBotsPaused =
     role === "member" ? null : (paused: boolean) => void pauseBots(api, paused, onAccountChanged);
@@ -206,6 +207,7 @@ export function Inbox({
             waitsForCloud={waitsForCloud}
             billing={billing}
             botsPaused={botsPaused}
+            botsPausedBy={botsPausedBy}
             onResumeBots={setBotsPaused && (() => setBotsPaused(false))}
           />
           <main className="panel">
@@ -222,6 +224,7 @@ export function Inbox({
                 billing={billing}
                 waiting={waitsForCloud}
                 botsPaused={botsPaused}
+                botsPausedBy={botsPausedBy}
                 onBotsPaused={setBotsPaused}
                 emailAvailable={emailAvailable}
                 page={settingsPage}

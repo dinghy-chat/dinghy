@@ -83,7 +83,7 @@ function ConversationRow({
               )}
               {assignee !== undefined && (
                 <span className="chip">
-                  {handler?.kind === "human" && (
+                  {handler?.kind === "person" && (
                     <span className="chip-mark" title={t("handledByPerson")}>
                       <Icon name="user" size={13} />
                       <span className="visually-hidden">{t("handledByPerson")}</span>

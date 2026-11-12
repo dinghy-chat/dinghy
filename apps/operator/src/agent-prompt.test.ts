@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { agentTexts } from "./agent-prompt.ts";
 
@@ -13,9 +14,10 @@ test("the prompt connects to this server's MCP and names every setup step", () =
   for (const tool of [
     "get_install_snippet",
     "add_allowed_site",
+    "remove_allowed_site",
     "verify_install",
     "get_identity_setup",
-    "simulate_visitor_message",
+    "send_test_message",
     "delete_test_visitors",
   ]) {
     expect(prompt).toContain(tool);
@@ -25,9 +27,16 @@ test("the prompt connects to this server's MCP and names every setup step", () =
   expect(prompt).not.toMatch(/\{\w+\}/);
 });
 
-test("the AGENTS.md block names the MCP server, and a name with $ shows as typed", () => {
-  const { notes } = agentTexts(ORIGIN, "R$$D");
+test("the prompt ends its steps with the AGENTS.md block, and a name with $ shows as typed", () => {
+  const { prompt, notes } = agentTexts(ORIGIN, "R$$D");
   expect(notes).toContain("https://chat.example.com/v1/mcp");
-  expect(notes).toContain('"R$$D"');
+  expect(notes).toContain("hand_off");
   expect(notes).not.toMatch(/\{\w+\}/);
+  expect(prompt).toContain(notes);
+  expect(prompt).toContain('"R$$D"');
+});
+
+test("docs/agents.md holds the same AGENTS.md block", () => {
+  const docs = readFileSync(new URL("../../../docs/agents.md", import.meta.url), "utf8");
+  expect(docs).toContain(agentTexts(ORIGIN, "Acme").notes);
 });

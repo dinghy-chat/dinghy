@@ -78,27 +78,31 @@ test("an operator sends, edits and discards a bot's suggested replies", async ({
   await expect(card).toContainText("Suggested by Support bot");
   await expect(card.locator("strong", { hasText: "today" })).toBeVisible();
   await expect(alice.locator(".thread-head .handler")).toContainText("Bot: Support bot");
+  // The row and the header name the same handler, from the server.
+  await expect(row.locator(".chip", { hasText: "Support bot" })).toBeVisible();
 
   await card.getByRole("button", { name: "Send" }).click();
   await expect(alice.locator(".bubble-row", { hasText: "It ships today." })).toBeVisible();
   await expect(card).toHaveCount(0);
 
-  // A visitor message after a draft makes it stale, live, and Send asks first.
+  // A visitor message after a draft makes it stale, live: it waits behind a button, and Send asks.
   await draft(alice, token, chat, "Anything else?");
   await expect(card).toContainText("Anything else?");
   await testVisitorSays(alice, "Hello?", chat);
-  await expect(card).toContainText("Older than the visitor's last message");
+  const older = alice.getByRole("button", { name: "1 older suggestion" });
+  await expect(older).toHaveAttribute("aria-expanded", "false");
+  await expect(card).toHaveCount(0);
+  await older.click();
+  await expect(card).toContainText("Written before the last message");
   await card.getByRole("button", { name: "Send" }).click();
-  await expect(card).toContainText("The visitor wrote after this. Send it anyway?");
+  await expect(card).toContainText("New messages came after this. Send it anyway?");
   await card.getByRole("button", { name: "Cancel" }).click();
 
   // Edit puts the text in the box, and sending it sends the draft.
   await card.getByRole("button", { name: "Edit" }).click();
   const box = alice.getByRole("textbox", { name: "Your reply" });
   await expect(box).toHaveValue("Anything else?");
-  await expect(alice.locator(".quote-chip")).toContainText(
-    "Editing the reply Support bot suggested",
-  );
+  await expect(alice.locator(".quote-chip")).toContainText("Editing Support bot's suggestion");
   await box.fill("Anything else I can help with?");
   await box.press("Enter");
   await expect(
@@ -110,6 +114,17 @@ test("an operator sends, edits and discards a bot's suggested replies", async ({
   await card.getByRole("button", { name: "Discard" }).click();
   await expect(card).toHaveCount(0);
   await expect(alice.locator(".bubble-row", { hasText: "Bye for now" })).toHaveCount(0);
+
+  // Two open drafts show oldest first, and a long one shows all of its text when asked.
+  await draft(alice, token, chat, "Short one");
+  await draft(alice, token, chat, "Line one\n\nLine two\n\nLine three\n\nThe last line");
+  await expect(card).toHaveCount(2);
+  await expect(card.first()).toContainText("Short one");
+  const long = card.nth(1);
+  await expect(long.getByText("The last line")).not.toBeInViewport({ ratio: 1 });
+  await long.getByRole("button", { name: "Show the whole suggestion" }).click();
+  await expect(long.getByText("The last line")).toBeInViewport({ ratio: 1 });
+  await expect(long.getByRole("button", { name: "Show the whole suggestion" })).toHaveCount(0);
 
   await alice.context().close();
 });
@@ -137,6 +152,15 @@ test("notes, a bot's handoff, giving it back, and the bot typing", async ({ brow
   const handoff = alice.locator(".team-note", { hasText: "Handed off: Refunds need a person" });
   await expect(handoff).toContainText("Helper bot");
   await expect(alice.locator(".thread-head .handler")).toContainText("Team");
+
+  // A link in a bot's note shows its address, and nobody can click it.
+  await asBot(alice, token, `/conversations/${chat}/notes`, {
+    clientId: "note-link-1",
+    body: "The visitor sent [the receipt](https://example.com/receipt).",
+  });
+  const botNote = alice.locator(".team-note", { hasText: "the receipt" });
+  await expect(botNote).toContainText("the receipt (https://example.com/receipt)");
+  await expect(botNote.locator("a")).toHaveCount(0);
 
   await alice.getByRole("button", { name: "More actions" }).click();
   await alice.getByRole("menuitem", { name: "Give back to bot" }).click();
@@ -171,5 +195,8 @@ test("an operator's reply takes the conversation from the bot, and the header fo
   });
   await expect(handler).toContainText("alice@example.com");
   await expect(handler).not.toContainText("Bot:");
+  // The operator's message makes the bot's draft stale, so it waits behind a button.
+  await expect(alice.locator(".draft-card")).toHaveCount(0);
+  await expect(alice.getByRole("button", { name: "1 older suggestion" })).toBeVisible();
   await alice.context().close();
 });

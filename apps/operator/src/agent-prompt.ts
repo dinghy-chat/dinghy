@@ -15,13 +15,11 @@ function mcpSetup(origin: string) {
 }
 
 /**
- * The prompt that has a coding agent install the chat through MCP, and a short block for the site
- * repository's AGENTS.md.
+ * The prompt that has a coding agent install the chat through MCP. Its last step adds `notes`, the
+ * block for the site repository's AGENTS.md.
  */
 export function agentTexts(origin: string, workspace: string) {
   const mcp = mcpSetup(origin);
-  return {
-    prompt: t("agentPrompt", { workspace, ...mcp }),
-    notes: t("agentNotes", { workspace, url: mcp.url }),
-  };
+  const notes = t("agentNotes", { url: mcp.url });
+  return { prompt: t("agentPrompt", { workspace, ...mcp, notes }), notes };
 }

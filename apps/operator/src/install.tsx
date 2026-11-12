@@ -61,7 +61,7 @@ function CodeBlock({
 function AgentRow({ workspace, waiting }: { workspace: string; waiting: boolean }) {
   // The code row below already says why nothing can be installed yet.
   if (waiting) return null;
-  const { prompt, notes } = agentTexts(location.origin, workspace);
+  const { prompt } = agentTexts(location.origin, workspace);
   return (
     <PageRow
       title={t("agentTitle")}
@@ -69,15 +69,13 @@ function AgentRow({ workspace, waiting }: { workspace: string; waiting: boolean 
       docs={[{ path: "agents", text: "mcpDocsLink" }]}
     >
       <div className="agent-copy">
-        <CopyButton value={prompt} label={t("agentCopy")} />
+        <CopyButton value={prompt} label={t("agentCopy")} text={t("agentCopy")} />
         <span className="hint">{t("agentCopyHint")}</span>
       </div>
       <details className="prompt-preview">
         <summary>{t("agentPreview")}</summary>
         <pre>{prompt}</pre>
       </details>
-      <p className="hint">{t("agentNotesHelp")}</p>
-      <CodeBlock value={notes} language="text" title={t("agentNotesTitle")} />
     </PageRow>
   );
 }

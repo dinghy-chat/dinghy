@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useState } from "react";
-import type { Conversation, Draft, Member, Note, ReplyReceipts, WorkspaceApi } from "./api.ts";
+import type { Conversation, Draft, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
 import { type ComposeMode, Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import { Icon } from "./icons.tsx";
@@ -11,7 +11,7 @@ import { Confirm } from "./popup.tsx";
 import { receiptOf } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
 import { DraftCards, DraftChip, useDrafts } from "./thread-drafts.tsx";
-import { type Handler, ThreadHead } from "./thread-head.tsx";
+import { ThreadHead } from "./thread-head.tsx";
 import { type Line, useThreadLines } from "./thread-lines.ts";
 import { ThreadLog } from "./thread-log.tsx";
 import { ErrorNote, failureText, Loading } from "./ui.tsx";
@@ -43,24 +43,6 @@ function infoOf(line: Line, author: string, receipts: ReplyReceipts | null): Inf
         ? null
         : { isRead: receiptOf(line.seq, receipts) === "read" },
   };
-}
-
-/** The name of a bot that took part: it handles the chat, wrote here, or suggested a reply. */
-function botNameOf(conversation: Conversation, lines: Line[], notes: Note[], drafts: Draft[]) {
-  if (conversation.handler?.kind === "bot") return conversation.handler.name;
-  const line = lines.filter((one) => one.authorApiKeyId !== null).at(-1);
-  const note = notes.filter((one) => one.authorKind === "key").at(-1);
-  return line?.authorName ?? note?.authorName ?? drafts[0]?.authorName ?? null;
-}
-
-/** Who answers, once a bot took part: a person since one replied or a bot handed off, or the bot. */
-function handlerOf(conversation: Conversation, members: Member[], botName: string | null) {
-  if (botName === null) return null;
-  if (conversation.humanSince === null) return { kind: "bot", name: botName } satisfies Handler;
-  const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
-  return assignee === undefined
-    ? ({ kind: "team" } satisfies Handler)
-    : ({ kind: "person", name: assignee.name } satisfies Handler);
 }
 
 export function Thread({
@@ -210,11 +192,6 @@ export function Thread({
     setEditingDraft(chosen);
     setDraft(chosen.body);
   };
-  const handler = handlerOf(
-    conversation,
-    members,
-    botNameOf(conversation, lines, notes, drafts.drafts),
-  );
   const canReply = repliesOffReason === null && !closed;
   const infoLine =
     info === null
@@ -256,11 +233,12 @@ export function Thread({
           onDelete={() => change.setConfirming(true)}
           onTranscript={() => void change.sendTranscript()}
           onGiveBack={
-            conversation.humanSince === null || repliesOffReason !== null
+            conversation.handler === null ||
+            conversation.handler.kind === "bot" ||
+            repliesOffReason !== null
               ? undefined
               : () => void change.giveBack()
           }
-          handler={handler}
           emailAvailable={emailAvailable}
           panel={welcome === null ? panel : null}
         />

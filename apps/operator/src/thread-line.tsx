@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { createElement, type ReactNode } from "react";
-import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
+import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import type { Note } from "./api.ts";
 import { clockTime, isToday } from "./format.ts";
 import { Icon } from "./icons.tsx";
@@ -137,6 +137,23 @@ export function StatusNote({
   );
 }
 
+/**
+ * Elements for a key's note: each link shows as plain text with its address, and nobody can click
+ * it. A bot's note may carry a visitor's link, and the team's card would make it look trusted.
+ */
+const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) => {
+  if (tag !== "a") return createElement(tag, props, ...children);
+  const href = String(props?.href);
+  const isBare = children.length === 1 && children[0] === href;
+  return createElement(
+    "span",
+    { className: "plain-link" },
+    ...(isBare ? [] : [...children, " ("]),
+    href,
+    isBare ? "" : ")",
+  );
+};
+
 /** A note for the team, across the thread: who wrote it, when, and its text. */
 export function NoteCard({ note, meId }: { note: Note; meId: string }) {
   const isKey = note.authorKind === "key";
@@ -154,7 +171,7 @@ export function NoteCard({ note, meId }: { note: Note; meId: string }) {
       {createElement(
         "div",
         { className: "team-note-body" },
-        ...renderMarkdown(note.body, createElement),
+        ...renderMarkdown(note.body, isKey ? plainLinks : createElement),
       )}
     </article>
   );

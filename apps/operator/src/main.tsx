@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
 import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
-import { ConsentPage } from "./consent.tsx";
+import { ConsentPage, requestingApp } from "./consent.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
 import { NAVIGATE_EVENT, navigate, replaceAddress } from "./nav.ts";
@@ -96,6 +96,7 @@ function App() {
         emailAvailable={meta.email}
         signup={meta.signup !== null}
         returnTo={`${path}${address.search}`}
+        reason={t("consentSignIn", { app: requestingApp(query) })}
       />
     );
   }

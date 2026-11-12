@@ -45,11 +45,7 @@ function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
   );
 }
 
-/** Who answers a conversation: a bot, a person, or the team when no one is assigned. */
-export type Handler =
-  | { kind: "bot"; name: string }
-  | { kind: "person"; name: string }
-  | { kind: "team" };
+type Handler = NonNullable<Conversation["handler"]>;
 
 /** The quiet mark in the header that says who answers. */
 function HandlerMark({ handler }: { handler: Handler }) {
@@ -83,7 +79,6 @@ export function ThreadHead({
   onTranscript,
   onGiveBack,
   emailAvailable,
-  handler,
   panel,
 }: {
   conversation: Conversation;
@@ -103,12 +98,11 @@ export function ThreadHead({
   onTranscript(): void;
   /** Lets the bots answer again. Undefined while no person handles the conversation. */
   onGiveBack: (() => void) | undefined;
-  /** Who answers, shown when a bot took part. */
-  handler: Handler | null;
   /** This server sends email, so a transcript can go. */
   emailAvailable: boolean;
 }) {
   const closed = conversation.status === "closed";
+  const { handler } = conversation;
   const { blocked } = conversation.visitor;
   const assignee = members.some((member) => member.id === conversation.assigneeOperatorId)
     ? (conversation.assigneeOperatorId ?? "")

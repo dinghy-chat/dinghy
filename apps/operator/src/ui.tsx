@@ -254,7 +254,16 @@ export function CopyId({ value, label }: { value: string; label: TextId }) {
   );
 }
 
-export function CopyButton({ value, label = t("copy") }: { value: string; label?: string }) {
+export function CopyButton({
+  value,
+  label = t("copy"),
+  text = t("copy"),
+}: {
+  value: string;
+  label?: string;
+  /** The button's visible words, when the plain "Copy" would not say what it copies. */
+  text?: string;
+}) {
   const [done, copy] = useCopy(value);
   return (
     <button
@@ -264,7 +273,7 @@ export function CopyButton({ value, label = t("copy") }: { value: string; label?
       onClick={copy}
     >
       <Icon name={done ? "check" : "copy"} size={16} />
-      {done ? t("copied") : t("copy")}
+      {done ? t("copied") : text}
     </button>
   );
 }

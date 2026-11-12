@@ -118,12 +118,14 @@ export interface Conversation {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: string } | null;
   /** A welcome chat on Dinghy Cloud. */
   welcome: boolean;
-  /** Since when a person handles it. Bots that send directly stay quiet while it is set. */
-  humanSince: string | null;
-  /** A person, the bot that handed it off and got it back, or null when neither happened. */
+  /**
+   * Who handles it: a bot that took part while no person handles it, the assigned person, or the
+   * team when a person handles it unassigned. Null when no bot took part and no person handles it.
+   */
   handler:
-    | { kind: "human"; since: string }
     | { kind: "bot"; apiKeyId: string; name: string }
+    | { kind: "person"; operatorId: string; name: string; since: string }
+    | { kind: "team"; since: string }
     | null;
 }
 
@@ -270,6 +272,8 @@ export interface Me {
     logoUrl: string | null;
     /** An owner or admin paused every bot: API keys and connected apps may not reply or type. */
     botsPaused: boolean;
+    /** Who paused the bots, or null when they run or that person is gone. */
+    botsPausedBy: string | null;
     active: boolean;
     /** The subscription ended: operators can read and export, and cannot reply. */
     readOnly: boolean;
@@ -360,7 +364,7 @@ export const WEBHOOK_EVENTS = [
   "conversation.reopened",
   "conversation.assigned",
   "conversation.handoff",
-  "conversation.bot_resumed",
+  "conversation.given_back",
   "note.created",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
@@ -646,7 +650,7 @@ export function workspaceApi(workspaceId: string) {
         body: JSON.stringify({ replyMode }),
       }),
     setBotsPaused: (paused: boolean) =>
-      call<{ paused: boolean }>(`${base}/bots-paused`, {
+      call<{ paused: boolean; pausedBy: string | null }>(`${base}/bots-paused`, {
         method: "PUT",
         body: JSON.stringify({ paused }),
       }),

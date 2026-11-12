@@ -662,8 +662,14 @@ textarea {
 
 /* Sign in, signup, invite: the landing page's sky and sea around one card. The scene stays put
    while one card replaces another. */
+/* The scene grows with a card taller than the screen, so no grey shows below it. */
+#root:has(> .scene) {
+  position: relative;
+  height: auto;
+  min-height: 100%;
+}
 .scene {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
@@ -758,7 +764,7 @@ textarea {
   z-index: 2;
   display: grid;
   place-items: center;
-  min-height: 100%;
+  min-height: 100dvh;
   padding: 48px 20px 190px;
 }
 @keyframes card-in {
@@ -876,6 +882,21 @@ textarea {
   padding-block: 6px;
   background: var(--warn-soft);
   color: var(--navy);
+}
+.bots-banner-short {
+  display: none;
+}
+/* A phone keeps the banner to one line: "Bots paused" and Resume. */
+@media (max-width: 760px) {
+  .bots-banner {
+    flex-wrap: nowrap;
+  }
+  .bots-banner-long {
+    display: none;
+  }
+  .bots-banner-short {
+    display: inline;
+  }
 }
 /* The workspace menu's bots switch: a small track that shows the state, as the Settings switch. */
 .mini-switch {
@@ -4748,6 +4769,10 @@ button.quote:hover {
 .key-item {
   flex-wrap: wrap;
 }
+/* A new key's token, under its own name. */
+.key-item .created {
+  flex: 1 0 100%;
+}
 /* The name and its line keep room to read, and the controls move under them when they lack it. */
 .item-list .key-item .who-lines {
   flex: 1 1 240px;
@@ -4791,7 +4816,7 @@ button.quote:hover {
   border-radius: 14px;
   background: var(--cream-soft);
   color: var(--navy);
-  font: 14px / 1.55 var(--body);
+  font: 13.5px / 1.55 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -4809,6 +4834,14 @@ button.quote:hover {
 }
 .consent-choice .hint {
   margin: 0;
+}
+/* The workspace choice spans the card, so its chevron sits at the right edge. */
+.consent-choice > .select > .select-button {
+  justify-content: space-between;
+}
+.consent-workspace {
+  color: var(--navy);
+  font-weight: 600;
 }
 .check {
   display: flex;
@@ -5419,7 +5452,8 @@ button.quote:hover {
   .check input,
   .check input::after,
   .get-started-button,
-  .fold-chevron {
+  .fold-chevron,
+  .pill.drafts-older svg {
     transition: none;
   }
 }
@@ -6017,6 +6051,29 @@ button.quote:hover {
 .draft-card.stale {
   border-color: var(--soft-edge);
 }
+/* "2 older suggestions": a soft pill above the cards. */
+.drafts-older {
+  justify-self: start;
+  gap: 6px;
+}
+/* A cut draft shows all of it once asked, or while a key moved focus to one of its buttons. A
+   click does not, so the button under the pointer stays where it is. */
+.draft-card.compact .draft-body.open,
+.draft-card.compact:has(:focus-visible) .draft-body {
+  max-height: none;
+  mask-image: none;
+}
+.draft-more {
+  margin-top: 4px;
+  padding: 0;
+  background: none;
+  color: var(--blue-deep);
+  font: 600 13px / 1.4 var(--body);
+  cursor: pointer;
+}
+.draft-more:hover {
+  text-decoration: underline;
+}
 .draft-card.stale :is(.draft-head, .draft-body) {
   color: var(--mute);
 }
@@ -6074,6 +6131,13 @@ button.quote:hover {
 }
 .who-text .handler svg {
   flex: none;
+}
+/* The chevron of "2 older suggestions" turns down while the stale ones show. */
+.pill.drafts-older svg {
+  transition: transform 0.15s;
+}
+.pill.drafts-older[aria-expanded="true"] svg {
+  transform: rotate(90deg);
 }
 .chip.test {
   background: var(--tile-blue);

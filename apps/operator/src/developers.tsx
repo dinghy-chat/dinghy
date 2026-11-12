@@ -11,7 +11,7 @@ import {
   type WebhookTest,
   type WorkspaceApi,
 } from "./api.ts";
-import { REPLY_MODE_HELP, REPLY_MODES } from "./bots.tsx";
+import { isLoopbackHost, LEVELS, REPLY_MODE_HELP, REPLY_MODES } from "./bots.tsx";
 import { useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -23,7 +23,6 @@ import {
   ErrorNote,
   Field,
   failureText,
-  type Option,
   Page,
   PageRow,
   StatusNote,
@@ -43,7 +42,7 @@ const EVENT_TEXT: Record<WebhookEvent, TextId> = {
   "conversation.reopened": "webhookEventReopened",
   "conversation.assigned": "webhookEventAssigned",
   "conversation.handoff": "webhookEventHandoff",
-  "conversation.bot_resumed": "webhookEventBotResumed",
+  "conversation.given_back": "webhookEventGivenBack",
   "note.created": "webhookEventNote",
 };
 
@@ -76,7 +75,10 @@ function apiKeyLine(key: ApiKey): string {
     key.lastUsedAt === null
       ? t("apiKeyNeverUsed")
       : t("apiKeyUsed", { date: when(key.lastUsedAt) });
-  const host = key.clientHost === null ? "" : `${key.clientHost} · `;
+  const host =
+    key.clientHost === null
+      ? ""
+      : `${isLoopbackHost(key.clientHost) ? t("thisComputer") : key.clientHost} · `;
   return `${host}${made} ${used}`;
 }
 
@@ -108,10 +110,6 @@ function ReplyModeSelect({
   );
 }
 
-const LEVELS: Option<ApiKeyLevel>[] = [
-  { value: "conversations", label: "apiKeyLevelConversations" },
-  { value: "setup", label: "apiKeyLevelSetup" },
-];
 const LEVEL_HELP: Record<ApiKeyLevel, TextId> = {
   conversations: "apiKeyLevelConversationsHelp",
   setup: "apiKeyLevelSetupHelp",
@@ -123,7 +121,8 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
   const [name, setName] = useState("");
   const [level, setLevel] = useState<ApiKeyLevel>("conversations");
   const [replyMode, setReplyMode] = useState<ReplyMode>("draft");
-  const [made, setMade] = useState<{ name: string; token: string } | null>(null);
+  // The new key's token, shown once in the key's own row.
+  const [made, setMade] = useState<{ id: string; name: string; token: string } | null>(null);
   const [failure, setFailure] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
@@ -145,7 +144,7 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
   const create = () =>
     act(async () => {
       const { token, ...key } = await api.createApiKey(name.trim(), level, replyMode);
-      setMade({ name: key.name, token });
+      setMade({ id: key.id, name: key.name, token });
       resetForm();
     });
   const revoke = (key: ApiKey) =>
@@ -210,16 +209,16 @@ function ApiKeysRow({ api }: { api: WorkspaceApi }) {
                   {t("apiKeyRevoke")}
                 </button>
               </span>
+              {made?.id === key.id && (
+                <CopyField
+                  hint={t("shownOnce")}
+                  label={t("apiKeyCopy", { name: made.name })}
+                  value={made.token}
+                />
+              )}
             </li>
           ))}
         </ul>
-      )}
-      {made !== null && (
-        <CopyField
-          hint={t("shownOnce")}
-          label={t("apiKeyCopy", { name: made.name })}
-          value={made.token}
-        />
       )}
       <AddForm
         isOpen={adding}
@@ -357,14 +356,17 @@ function DeliveryItem({ row, onReplay }: { row: WebhookDelivery; onReplay(): voi
       <code>{row.type}</code>
       {row.replayOf !== null && <span className="chip">{t("deliveryReplayed")}</span>}
       <span className="quiet">{deliveryLine(row)}</span>
-      <button
-        type="button"
-        className="pill small delivery-replay"
-        aria-label={t("deliveryReplayLabel", { type: row.type, date: when(row.createdAt) })}
-        onClick={onReplay}
-      >
-        {t("deliveryReplay")}
-      </button>
+      {/* A pending delivery still goes, so a replay would send it twice. */}
+      {row.status !== "pending" && (
+        <button
+          type="button"
+          className="pill small delivery-replay"
+          aria-label={t("deliveryReplayLabel", { type: row.type, date: when(row.createdAt) })}
+          onClick={onReplay}
+        >
+          {t("deliveryReplay")}
+        </button>
+      )}
       {row.responseExcerpt !== null && (
         <details className="excerpt">
           <summary>{t("deliveryExcerpt")}</summary>
@@ -652,15 +654,20 @@ function WebhooksRow({ api }: { api: WorkspaceApi }) {
 /** One switch that stops every key and connected app from replying, for owners and admins. */
 function BotsPauseRow({
   paused,
+  pausedBy,
   onChange,
 }: {
   paused: boolean;
+  pausedBy: string | null;
   onChange: ((paused: boolean) => void) | null;
 }) {
   return (
     <PageRow title={t("botsPauseTitle")} help={t("botsPauseHelp")}>
       <label className="check">
-        {t("botsPauseToggle")}
+        <span className="who-lines">
+          {t("botsPauseToggle")}
+          {paused && pausedBy !== null && <span>{t("botsPausedBy", { name: pausedBy })}</span>}
+        </span>
         <input
           type="checkbox"
           checked={paused}
@@ -676,16 +683,19 @@ function BotsPauseRow({
 export function DevelopersPage({
   api,
   botsPaused,
+  botsPausedBy,
   onBotsPaused,
 }: {
   api: WorkspaceApi;
   botsPaused: boolean;
+  /** Who paused the bots, or null. */
+  botsPausedBy: string | null;
   /** Pauses or resumes every bot. Null for a member. */
   onBotsPaused: ((paused: boolean) => void) | null;
 }) {
   return (
     <Page title={t("pageDevelopers")}>
-      <BotsPauseRow paused={botsPaused} onChange={onBotsPaused} />
+      <BotsPauseRow paused={botsPaused} pausedBy={botsPausedBy} onChange={onBotsPaused} />
       <ApiKeysRow api={api} />
       <WebhooksRow api={api} />
     </Page>

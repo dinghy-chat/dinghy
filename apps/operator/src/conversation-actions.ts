@@ -62,11 +62,10 @@ export function useConversationActions({
   const giveBack = async () => {
     if (!(await act(() => api.giveBack(conversationId)))) return;
     toast("giveBackDone");
-    // The next load names the bot that handles it now.
+    // No person handles it now. The next load names the bot.
     change((current) => ({
       ...current,
-      humanSince: null,
-      handler: current.handler?.kind === "human" ? null : current.handler,
+      handler: current.handler?.kind === "bot" ? current.handler : null,
     }));
   };
 

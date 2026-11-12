@@ -126,6 +126,7 @@ export function Settings({
   billing,
   waiting,
   botsPaused,
+  botsPausedBy,
   onBotsPaused,
   emailAvailable,
   page,
@@ -149,6 +150,8 @@ export function Settings({
   /** The workspace waits for the cloud to open, so its widget is off. */
   waiting: boolean;
   botsPaused: boolean;
+  /** Who paused the bots, or null. */
+  botsPausedBy: string | null;
   /** Pauses or resumes every bot. Null for a member. */
   onBotsPaused: ((paused: boolean) => void) | null;
   /** The server sends email, so invites and the account's delete go by email. */
@@ -246,7 +249,14 @@ export function Settings({
           />
         );
       case "developers":
-        return <DevelopersPage api={api} botsPaused={botsPaused} onBotsPaused={onBotsPaused} />;
+        return (
+          <DevelopersPage
+            api={api}
+            botsPaused={botsPaused}
+            botsPausedBy={botsPausedBy}
+            onBotsPaused={onBotsPaused}
+          />
+        );
     }
   };
 

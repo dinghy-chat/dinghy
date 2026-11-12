@@ -8,23 +8,19 @@ import {
   denyApp,
   type ReplyMode,
 } from "./api.ts";
-import { REPLY_MODE_HELP, REPLY_MODES } from "./bots.tsx";
+import { isLoopbackHost, LEVELS, REPLY_MODE_HELP, REPLY_MODES } from "./bots.tsx";
 import { useLoad } from "./load.ts";
 import { navigate } from "./nav.ts";
 import { Select } from "./popup.tsx";
 import { AuthPage, SceneLoading } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
-import { Choices, ErrorNote, failureText, type Option } from "./ui.tsx";
+import { Choices, ErrorNote, failureText } from "./ui.tsx";
 
 /** After this long on the page, the browser did not leave for the app, so the tab is done. */
 const LEAVE_WAIT_MS = 1000;
 
 type Consent = Extract<AuthorizeInfo, { kind: "consent" }>;
 
-const LEVELS: Option<ApiKeyLevel>[] = [
-  { value: "conversations", label: "apiKeyLevelConversations" },
-  { value: "setup", label: "apiKeyLevelSetup" },
-];
 const LEVEL_HELP: Record<ApiKeyLevel, TextId> = {
   conversations: "consentConversationsHelp",
   setup: "consentSetupHelp",
@@ -37,6 +33,30 @@ function headline({ client }: Consent): string {
   return client.loopback ? t("consentTitleLoopback") : t("consentTitleHost", { host: client.host });
 }
 
+/**
+ * The app that sent a signed-out person here, from its return address: the sign-in card names it.
+ * Nothing checked the address yet, so the card names only its host.
+ */
+export function requestingApp(query: URLSearchParams): string {
+  const to = query.get("redirect_uri");
+  if (to === null || !URL.canParse(to)) return t("consentAppUnknown");
+  const url = new URL(to);
+  if (url.protocol === "http:" && isLoopbackHost(url.hostname)) return t("consentAppLoopback");
+  return url.protocol === "https:"
+    ? t("consentAppHost", { host: url.hostname })
+    : t("consentAppUnknown");
+}
+
+/** The card after the browser left for the app, or should have: the tab's work is done. */
+function DoneCard({ title, note }: { title: TextId; note: string }) {
+  return (
+    <AuthPage>
+      <h1>{t(title)}</h1>
+      <p className="note">{note}</p>
+    </AuthPage>
+  );
+}
+
 /** A calm card for a request that cannot go on, with a way into the app. */
 function Refused({ text }: { text: TextId }) {
   return (
@@ -44,7 +64,7 @@ function Refused({ text }: { text: TextId }) {
       <h1>{t("consentRefusedTitle")}</h1>
       <p className="note">{t(text)}</p>
       <button type="button" className="btn primary large" onClick={() => navigate("/")}>
-        {t("inviteOpenApp")}
+        {t("openApp")}
       </button>
     </AuthPage>
   );
@@ -80,15 +100,12 @@ function ConsentForm({ request, consent }: { request: string; consent: Consent }
       setError(failureText(failure, { 400: "consentExpired", 403: "consentNotAdmin" }));
     }
   };
-  if (done !== null) {
-    return (
-      <AuthPage>
-        <h1>{t(done)}</h1>
-        <p className="note">{t("consentCloseTab")}</p>
-      </AuthPage>
-    );
-  }
   const { client, workspaces } = consent;
+  if (done !== null) {
+    const note =
+      done === "consentDone" ? t("consentGoBack", { app: client.name }) : t("consentCloseTab");
+    return <DoneCard title={done} note={note} />;
+  }
   const canApprove = workspaces.length > 0;
   return (
     <AuthPage>
@@ -161,12 +178,16 @@ function ConsentChoices({
         <span className="setting-label" aria-hidden="true">
           {t("consentWorkspace")}
         </span>
-        <Select
-          label={t("consentWorkspace")}
-          value={workspaceId}
-          choices={workspaces.map((one) => ({ value: one.id, label: one.name }))}
-          onChange={onWorkspace}
-        />
+        {workspaces.length === 1 ? (
+          <strong className="consent-workspace">{workspaces[0]?.name}</strong>
+        ) : (
+          <Select
+            label={t("consentWorkspace")}
+            value={workspaceId}
+            choices={workspaces.map((one) => ({ value: one.id, label: one.name }))}
+            onChange={onWorkspace}
+          />
+        )}
       </div>
       <div className="consent-choice">
         <span className="setting-label" aria-hidden="true">
@@ -181,7 +202,7 @@ function ConsentChoices({
           onChange={onLevel}
         />
         <p className="hint">{t(LEVEL_HELP[level])}</p>
-        <p className="hint">{t("consentSetupNote")}</p>
+        {level === "setup" && <p className="hint">{t("consentSetupNote")}</p>}
       </div>
       <div className="consent-choice">
         <span className="setting-label" aria-hidden="true">
@@ -208,12 +229,7 @@ function Returning({ to }: { to: string }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: it leaves once, for this address.
   useEffect(() => leave(to, "consentReturned"), [to]);
   if (done === null) return <SceneLoading />;
-  return (
-    <AuthPage>
-      <h1>{t(done)}</h1>
-      <p className="note">{t("consentCloseTab")}</p>
-    </AuthPage>
-  );
+  return <DoneCard title={done} note={t("consentCloseTab")} />;
 }
 
 /** The page an app sends an owner or admin to, at /oauth/authorize, to connect it to a workspace. */

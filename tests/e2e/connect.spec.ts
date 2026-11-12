@@ -58,8 +58,10 @@ test("an owner approves an app with Setup and Drafts only, then sees it in Setti
   await expect(consentHeading(page)).toBeVisible();
   await expect(page.getByText('It calls itself "Claude Code".')).toBeVisible();
   await expect(page.getByText("Unverified app")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Workspace E2E/ })).toBeVisible();
+  // The only workspace shows as text, not as a choice.
+  await expect(page.locator(".consent-workspace")).toHaveText("E2E");
   await expect(page.getByRole("radio", { name: "Setup" })).toBeChecked();
+  await expect(page.getByText("Setup is for installing Dinghy.")).toBeVisible();
   await expect(page.getByRole("radio", { name: "Drafts only" })).toBeChecked();
 
   await page.getByRole("button", { name: "Approve" }).click();
@@ -86,6 +88,8 @@ test("an owner approves an app with Setup and Drafts only, then sees it in Setti
   await expect(row.getByText("Connected app")).toBeVisible();
   await expect(row.getByText("Setup", { exact: true })).toBeVisible();
   await expect(row.getByText(/Approved by owner@example\.com/)).toBeVisible();
+  // A loopback app shows as this computer, as the consent page said.
+  await expect(row.getByText(/^This computer · /)).toBeVisible();
   const replies = row.getByRole("button", { name: /Replies from Claude Code/ });
   await expect(replies).toContainText("Drafts only");
   await replies.click();
@@ -105,6 +109,7 @@ test("signed out, the sign-in link comes back to the request, and Cancel leaves 
   const page = await context.newPage();
   const request = await authorizeRequest(APP_REDIRECT);
   await page.goto(request.url);
+  await expect(page.getByText("Sign in to connect an app.")).toBeVisible();
   await page.getByLabel("Email").fill("owner@example.com");
   await page.getByRole("button", { name: "Email me a sign-in link" }).click();
   await openLink(page, await server.linkTo("owner@example.com"));
@@ -112,6 +117,7 @@ test("signed out, the sign-in link comes back to the request, and Cancel leaves 
     page.getByRole("heading", { name: "An app at com.example.app wants to use Dinghy" }),
   ).toBeVisible();
   await expect(page.getByRole("radio", { name: "Conversations" })).toBeChecked();
+  await expect(page.getByText("Setup is for installing Dinghy.")).toHaveCount(0);
 
   // The app's own scheme leaves the tab here, so the card says it is done.
   await page.getByRole("button", { name: "Cancel" }).click();
@@ -148,14 +154,23 @@ test("an owner pauses every bot from the workspace menu, everyone sees the banne
     page.getByText("Bots are paused. Visitors only get replies from people.");
 
   await owner.getByRole("button", { name: /E2E/ }).click();
-  await owner.getByRole("menuitem", { name: "Pause all bots" }).click();
+  const pause = owner.getByRole("menuitemcheckbox", { name: "Pause all bots" });
+  await expect(pause).toHaveAttribute("aria-checked", "false");
+  await pause.click();
   await expect(banner(owner)).toBeVisible();
+  await expect(banner(owner)).toContainText("Paused by owner@example.com.");
   // The other operator's app hears of it from the server.
   await expect(banner(member)).toBeVisible();
   await expect(member.getByRole("button", { name: "Resume" })).toHaveCount(0);
 
   await openSettings(owner, "API & webhooks");
   await expect(owner.getByRole("checkbox", { name: "Bots paused" })).toBeChecked();
+  await expect(owner.locator("label.check", { hasText: "Bots paused" })).toContainText(
+    "Paused by owner@example.com",
+  );
+  await owner.getByRole("button", { name: /E2E/ }).click();
+  await expect(pause).toHaveAttribute("aria-checked", "true");
+  await owner.keyboard.press("Escape");
   await owner.getByRole("button", { name: "Resume" }).click();
   await expect(banner(owner)).toHaveCount(0);
   await expect(banner(member)).toHaveCount(0);
@@ -201,16 +216,24 @@ test("a failed delivery shows the receiver's answer and can be replayed", async 
 
   await deliveries.getByRole("button", { name: /Replay the message\.created delivery/ }).click();
   await expect(deliveries.getByText("Replayed")).toBeVisible();
+  // The replay waits to go, so it offers no Replay of its own.
+  await expect(
+    deliveries.getByRole("button", { name: /Replay the message\.created delivery/ }),
+  ).toHaveCount(1);
   await page.context().close();
 });
 
-test("the Install page gives a prompt for a coding agent, and a block for AGENTS.md", async ({
+test("the Install page gives one prompt for a coding agent, which ends with the AGENTS.md block", async ({
   browser,
 }) => {
   const page = await signedIn(browser, server, "owner@example.com");
   await openSettings(page, "Install");
   await expect(page.getByRole("heading", { name: "Set up with an agent" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Copy the prompt" })).toBeVisible();
+  const agentRow = page.locator(".page-row", { hasText: "Set up with an agent" });
+  await expect(agentRow.getByRole("button", { name: "Copy the prompt" })).toHaveText(
+    "Copy the prompt",
+  );
+  await expect(agentRow.getByRole("button", { name: /Copy/ })).toHaveCount(1);
   await page.getByText("Show the prompt").click();
   await expect(
     page.getByText(`claude mcp add --transport http dinghy ${server.apiOrigin}/v1/mcp`),
@@ -218,6 +241,7 @@ test("the Install page gives a prompt for a coding agent, and a block for AGENTS
   await expect(
     page.getByText("Ask me before you change anything outside the install."),
   ).toBeVisible();
-  await expect(page.getByText("## Dinghy live chat")).toBeVisible();
+  await expect(page.getByText("Add this block to the site's AGENTS.md")).toBeVisible();
+  await expect(page.getByText(/call hand_off when a visitor asks for a person/)).toBeVisible();
   await page.context().close();
 });

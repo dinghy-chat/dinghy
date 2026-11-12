@@ -36,11 +36,14 @@ export function SignIn({
   emailAvailable,
   signup = false,
   returnTo,
+  reason,
 }: {
   emailAvailable: boolean;
   signup?: boolean;
   /** A path of this app to open after the emailed link signs in. */
   returnTo?: string;
+  /** Why the person must sign in here, such as an app that asks to connect. */
+  reason?: string;
 }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<TextId | null>(null);
@@ -71,6 +74,7 @@ export function SignIn({
     return (
       <AuthPage time="morning">
         <h1>{t("signInTitle")}</h1>
+        {reason !== undefined && <p className="note">{reason}</p>}
         <ErrorNote text={error} />
         <p className="note">{t("signInNoMail")}</p>
         <DocLink path="operator-guide#if-no-sign-in-link-arrives" text="signInDocsLink" />
@@ -80,6 +84,7 @@ export function SignIn({
   return (
     <AuthPage time="morning" onSubmit={submit}>
       <h1>{t("signInTitle")}</h1>
+      {reason !== undefined && <p className="note">{reason}</p>}
       <p className="note">{t("signInHelp")}</p>
       <Field
         label={t("email")}
