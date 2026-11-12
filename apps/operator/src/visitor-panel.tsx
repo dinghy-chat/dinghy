@@ -17,6 +17,8 @@ import {
   bare,
   conversationPreview,
   detailRows,
+  pageName,
+  pagePath,
   presenceLine,
   visitorName,
   webLink,
@@ -155,7 +157,7 @@ function PlaceTiles({ visitor, online }: { visitor: Place; online: boolean }) {
       {page !== null && (
         <Tile icon="link" label={t(online ? "currentPageLabel" : "lastPageLabel")}>
           <a href={page} target="_blank" rel="noopener noreferrer" title={page}>
-            {bare(page)}
+            {pagePath(page)}
           </a>
         </Tile>
       )}
@@ -259,7 +261,7 @@ export function PageJourney({ pages, online }: { pages: PageView[]; online: bool
       <ol>
         {shown.map((page, index) => {
           const link = webLink(page.path);
-          const name = page.title ?? bare(page.path);
+          const name = pageName(page.title, page.path);
           const newer = shown[index - 1];
           const isNow = online && index === 0;
           const startsVisit =
