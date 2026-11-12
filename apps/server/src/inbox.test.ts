@@ -1095,6 +1095,32 @@ describe("a visitor's message after a close", () => {
     expect(events.at(-1)?.payload).not.toHaveProperty("conversationCreated");
   });
 
+  test("drops an assignee who left the team, so it waits for everyone", async () => {
+    const team = await createWorkspace(db, "Left", [WIDGET_ORIGIN]);
+    const gil = await operatorSession("gil-left@example.com", team.id, "Gil");
+    const hal = await operatorSession("hal-left@example.com", team.id, "Hal");
+    const base = `/v1/operator/workspaces/${team.id}/conversations`;
+    const { token, conversationId } = await visitorSends(team.publicKey, "Hi");
+    await write("POST", `${base}/${conversationId}/messages`, { clientId: "r", body: "Hey" }, gil);
+    await write("PATCH", `${base}/${conversationId}`, { status: "closed" }, gil);
+    const [gilRow] = await owner
+      .select({ id: schema.operator.id })
+      .from(schema.operator)
+      .where(eq(schema.operator.email, "gil-left@example.com"));
+    await owner
+      .update(schema.workspaceMember)
+      .set({ removedAt: new Date() })
+      .where(eq(schema.workspaceMember.operatorId, gilRow?.id ?? ""));
+
+    await visitorWritesAgain(team.publicKey, token, "after-leave");
+    const page = (await (await get(base, hal)).json()) as {
+      waiting: number;
+      conversations: { id: string; assigneeOperatorId: string | null }[];
+    };
+    expect(page.conversations[0]).toMatchObject({ id: conversationId, assigneeOperatorId: null });
+    expect(page.waiting).toBe(1);
+  });
+
   test("a visitor with no conversation still starts a new one", async () => {
     const team = await createWorkspace(db, "Fresh", [WIDGET_ORIGIN]);
     const first = await visitorSends(team.publicKey, "Hello");

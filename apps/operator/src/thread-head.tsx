@@ -46,7 +46,6 @@ function WelcomeNote({ welcome }: { welcome: WelcomeChat }) {
   );
 }
 
-/** What the operator can do with this conversation. */
 /** Snooze choices for an open conversation, or Unsnooze for a snoozed one. None when closed. */
 function snoozeItems(conversation: Conversation, onSnooze: (snooze: Snooze | null) => void) {
   if (conversation.status === "closed") return [];
@@ -61,6 +60,7 @@ function snoozeItems(conversation: Conversation, onSnooze: (snooze: Snooze | nul
   }));
 }
 
+/** What the operator can do with this conversation. */
 export function ThreadHead({
   conversation,
   welcome,

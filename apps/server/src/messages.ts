@@ -267,6 +267,18 @@ async function visitorConversation(
   if (newest?.status === "open") return { id: newest.id, started: null };
   if (newest !== undefined) {
     await setConversationStatus(tx, workspaceId, newest.id, "open", { kind: "visitor", visitorId });
+    // An assignee who left the team would hide it from everyone's waiting count and lists.
+    await tx
+      .update(conversation)
+      .set({ assigneeOperatorId: null })
+      .where(
+        and(
+          eq(conversation.workspaceId, workspaceId),
+          eq(conversation.id, newest.id),
+          sql`not exists (select 1 from ${workspaceMember} where ${workspaceMember.workspaceId} = ${workspaceId}
+            and ${workspaceMember.operatorId} = ${conversation.assigneeOperatorId} and ${workspaceMember.removedAt} is null)`,
+        ),
+      );
     return { id: newest.id, started: "reopened" };
   }
   const [created] = await tx

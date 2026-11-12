@@ -19,6 +19,16 @@ import { useWaitingBadge } from "./tab-badge.ts";
 import { t } from "./text.ts";
 
 const PAGE_SIZE = 50;
+/** The longest delay setTimeout keeps: a longer one fires at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/** When the first timed snooze in this list ends, in epoch milliseconds, or null with none. */
+function firstSnoozeEndMs(conversations: Conversation[]): number | null {
+  const ends = conversations.flatMap(({ snooze }) =>
+    snooze?.until == null ? [] : [Date.parse(snooze.until)],
+  );
+  return ends.length === 0 ? null : Math.min(...ends);
+}
 
 /** Whether this browser already did something once. Without storage, it reads as no. */
 const remembered = (key: string) => readStored(key) !== null;
@@ -142,6 +152,14 @@ function useConversationList({
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: each of these asks for a load.
   useEffect(reload, [reload, status, assignee, limit, version]);
+  // A snooze ends with no event, so the list loads again when the first one in view ends.
+  const snoozeEndMs = firstSnoozeEndMs(conversations);
+  useEffect(() => {
+    if (snoozeEndMs === null) return;
+    const delayMs = Math.min(Math.max(snoozeEndMs - Date.now(), 0), MAX_TIMER_MS);
+    const timer = setTimeout(reload, delayMs);
+    return () => clearTimeout(timer);
+  }, [snoozeEndMs, reload]);
   const loadMore = () => setLimit((current) => current + PAGE_SIZE);
   // Grows with each read, so a search, which is a snapshot, asks again.
   const [reads, setReads] = useState(0);
