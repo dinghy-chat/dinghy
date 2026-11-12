@@ -57,6 +57,13 @@ test("lists, bulleted and numbered, with their start", () => {
   expect(markdownHtml("3. a")).toBe('<ol start="3"><li>a</li></ol>');
 });
 
+test("lines that start with > make one quote, which keeps its formatting", () => {
+  expect(markdownHtml("> so the request\n>goes **out**\n\nOk")).toBe(
+    "<blockquote>so the request<br>goes <strong>out</strong></blockquote><p>Ok</p>",
+  );
+  expect(markdownHtml("a > b")).toBe("<p>a &gt; b</p>");
+});
+
 test("line breaks stay inside a paragraph, and a blank line starts a new one", () => {
   expect(markdownHtml("one\ntwo\n\nthree")).toBe("<p>one<br>two</p><p>three</p>");
 });

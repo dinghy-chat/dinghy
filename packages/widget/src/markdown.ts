@@ -1,5 +1,5 @@
 // The small Markdown that messages use: **bold**, *italic*, `code`, fenced code, [links](url), bare
-// links, lists and line breaks. No HTML, images or headings. The parser builds a tree of plain
+// links, lists, > quotes and line breaks. No HTML, images or headings. The parser builds a tree of plain
 // values, and each renderer writes text as text, so nothing in a message can become markup.
 
 /** A run of text, or a formatted part of it. Text keeps its line breaks, for `white-space`. */
@@ -10,7 +10,7 @@ type Inline =
   | { tag: "a"; href: string; children: Inline[] };
 
 export type Block =
-  | { tag: "p"; children: Inline[] }
+  | { tag: "p" | "blockquote"; children: Inline[] }
   | { tag: "pre"; text: string }
   | { tag: "ul" | "ol"; items: Inline[][]; start: number };
 
@@ -21,6 +21,7 @@ const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
 const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
 const FENCE = /^\s*```/;
 const LIST_ITEM = /^\s*(?:[-*+]|(\d{1,9})[.)])\s+(.*)$/;
+const QUOTE = /^\s*> ?(.*)$/;
 
 /** Reads the formatting inside one paragraph or list item. */
 function inline(source: string, depth = 0): Inline[] {
@@ -101,6 +102,17 @@ export function parseMarkdown(source: string): Block[] {
       blocks.push({ tag: "pre", text: code.join("\n") });
       continue;
     }
+    // Lines that start with > in a row make one quote.
+    if (QUOTE.test(line)) {
+      endParagraph();
+      const quoted: string[] = [];
+      for (; QUOTE.test(lines[index] ?? ""); index += 1) {
+        quoted.push(QUOTE.exec(lines[index] ?? "")?.[1] ?? "");
+      }
+      index -= 1;
+      blocks.push({ tag: "blockquote", children: inline(quoted.join("\n")) });
+      continue;
+    }
     const item = LIST_ITEM.exec(line);
     if (item !== null) {
       endParagraph();
@@ -140,8 +152,8 @@ export function renderMarkdown<Node>(source: string, h: CreateElement<Node>): (N
             : h(part.tag, null, ...inlines(part.children)),
     );
   return parseMarkdown(source).map((block) =>
-    block.tag === "p"
-      ? h("p", null, ...inlines(block.children))
+    block.tag === "p" || block.tag === "blockquote"
+      ? h(block.tag, null, ...inlines(block.children))
       : block.tag === "pre"
         ? h("pre", null, h("code", null, block.text))
         : h(

@@ -62,7 +62,7 @@ export const CSS = `
 .port{width:150px;height:100px;border-radius:26px}
 .sun{position:absolute;left:calc(78% - 12px);top:34px;width:24px;height:24px;border-radius:50%;background:#fff8df;box-shadow:0 0 0 5px rgb(255 248 223/.4)}
 .msg{align-self:flex-start;max-width:84%;padding:9px 13px;border-radius:18px 18px 18px 5px;background:var(--paper);box-shadow:0 1px 2px rgb(13 34 64/.08);overflow-wrap:anywhere;white-space:pre-wrap}
-.msg p,.msg ul,.msg ol,.msg pre{margin:0}.msg>*+*{margin-top:10px}.msg ul,.msg ol{padding-left:20px}
+.msg p,.msg ul,.msg ol,.msg pre,.msg blockquote{margin:0}.msg blockquote{padding:6px 10px;border-radius:10px;background:rgb(127 127 127/.14)}.msg>*+*{margin-top:10px}.msg ul,.msg ol{padding-left:20px}
 .msg pre,.msg code{font:13px/1.4 ui-monospace,monospace}.msg code{padding:0 3px;border-radius:4px;background:rgb(127 127 127/.18)}.msg pre code{display:block;padding:6px 8px;overflow-x:auto}.msg a{color:inherit}
 .mine{align-self:flex-end;border-radius:18px 18px 5px 18px;background:var(--primary);color:var(--d-primary-text,#fff);box-shadow:none}
 .note{align-self:center;margin:6px 0;font-size:12px;line-height:16px;color:var(--mute);text-align:center}

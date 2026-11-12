@@ -2508,8 +2508,14 @@ img.ws-tile {
   white-space: pre-wrap;
 }
 /* The small Markdown a message may use. */
-.msg :where(p, ul, ol, pre) {
+.msg :where(p, ul, ol, pre, blockquote) {
   margin: 0;
+}
+/* A quoted passage: a tinted block, like a quoted reply, with no bar at its side. */
+.msg :where(blockquote) {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgb(127 127 127 / 0.14);
 }
 .msg > * + * {
   margin-top: 10px;
