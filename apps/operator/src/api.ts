@@ -317,6 +317,9 @@ export const WEBHOOK_EVENTS = [
   "conversation.closed",
   "conversation.reopened",
   "conversation.assigned",
+  "conversation.handoff",
+  "conversation.bot_resumed",
+  "note.created",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 

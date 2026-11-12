@@ -983,7 +983,10 @@
                 "message.deleted",
                 "conversation.closed",
                 "conversation.reopened",
-                "conversation.assigned"
+                "conversation.assigned",
+                "conversation.handoff",
+                "conversation.bot_resumed",
+                "note.created"
               ]
             }
           },
@@ -1027,7 +1030,10 @@
               "message.deleted",
               "conversation.closed",
               "conversation.reopened",
-              "conversation.assigned"
+              "conversation.assigned",
+              "conversation.handoff",
+              "conversation.bot_resumed",
+              "note.created"
             ]
           },
           "status": {
@@ -6232,11 +6238,14 @@
                         "message.deleted",
                         "conversation.closed",
                         "conversation.reopened",
-                        "conversation.assigned"
+                        "conversation.assigned",
+                        "conversation.handoff",
+                        "conversation.bot_resumed",
+                        "note.created"
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 7
+                    "maxItems": 10
                   },
                   "enabled": {
                     "type": "boolean",
@@ -6418,11 +6427,14 @@
                         "message.deleted",
                         "conversation.closed",
                         "conversation.reopened",
-                        "conversation.assigned"
+                        "conversation.assigned",
+                        "conversation.handoff",
+                        "conversation.bot_resumed",
+                        "note.created"
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 7
+                    "maxItems": 10
                   },
                   "enabled": {
                     "type": "boolean"

@@ -13,14 +13,18 @@ import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import {
   apiKey,
+  apiKeyCredential,
   attachment,
   conversation,
+  draftReply,
   message,
+  note,
   pageView,
   subscription,
   visitor,
   webhook,
   webhookDelivery,
+  widgetSiteSeen,
   workspace,
   workspaceLogo,
   workspaceMember,
@@ -170,7 +174,12 @@ describe("the owner's delete", () => {
       .returning({ id: apiKey.id });
     const [talk] = await owner
       .insert(conversation)
-      .values({ workspaceId: created.id, visitorId: seen?.id ?? "" })
+      .values({
+        workspaceId: created.id,
+        visitorId: seen?.id ?? "",
+        humanSince: new Date(),
+        handoffByApiKeyId: key?.id ?? "",
+      })
       .returning({ id: conversation.id });
     const [said] = await owner
       .insert(message)
@@ -201,6 +210,37 @@ describe("the owner's delete", () => {
       conversationId: talk?.id ?? "",
       messageId: said?.id ?? "",
     });
+    // A grant's token, a note, a sent draft and a site, whose foreign keys the purge must also order.
+    await owner.insert(apiKeyCredential).values({
+      workspaceId: created.id,
+      apiKeyId: key?.id ?? "",
+      kind: "refresh",
+      tokenHash: "home-refresh",
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
+    await owner.insert(note).values({
+      workspaceId: created.id,
+      conversationId: talk?.id ?? "",
+      seq: 2n,
+      authorApiKeyId: key?.id ?? "",
+      clientId: "note-1",
+      body: "A note",
+    });
+    await owner.insert(draftReply).values({
+      workspaceId: created.id,
+      conversationId: talk?.id ?? "",
+      apiKeyId: key?.id ?? "",
+      clientId: "draft-1",
+      body: "Hello",
+      replyToMessageId: said?.id ?? "",
+      resolved: "sent",
+      resolvedByOperatorId: selfId,
+      resolvedAt: new Date(),
+      sentMessageId: said?.id ?? "",
+    });
+    await owner
+      .insert(widgetSiteSeen)
+      .values({ workspaceId: created.id, origin: "https://home.example" });
     // A logo, which goes with the workspace row by its foreign key.
     await owner
       .insert(workspaceLogo)

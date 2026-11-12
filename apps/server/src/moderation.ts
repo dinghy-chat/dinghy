@@ -6,8 +6,10 @@ import type { App } from "./app.ts";
 import {
   attachment,
   conversation,
+  draftReply,
   ipBlock,
   message,
+  note,
   storageDeletion,
   visitor,
 } from "./db/schema.ts";
@@ -134,6 +136,15 @@ export async function deleteConversation(
   // conversation with a foreign key would deadlock with a delete that took the conversation first.
   // One that waits here finds the conversation gone, and a visitor's next message starts a new one.
   await recordConversationChange(tx, workspaceId, conversationId, "conversation.deleted");
+  // A draft names the messages it quotes or became, so it goes before them.
+  await tx
+    .delete(draftReply)
+    .where(
+      and(eq(draftReply.workspaceId, workspaceId), eq(draftReply.conversationId, conversationId)),
+    );
+  await tx
+    .delete(note)
+    .where(and(eq(note.workspaceId, workspaceId), eq(note.conversationId, conversationId)));
   const messages = tx
     .select({ id: message.id })
     .from(message)
