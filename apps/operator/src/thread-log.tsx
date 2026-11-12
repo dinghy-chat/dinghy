@@ -4,7 +4,7 @@ import type { Conversation, ReplyReceipts } from "./api.ts";
 import { Composer } from "./composer.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
-import { ReceiptLine, receiptOf } from "./receipts.tsx";
+import { receiptOf } from "./receipts.tsx";
 import { t } from "./text.ts";
 import {
   dayLabel,
@@ -122,9 +122,9 @@ export function ThreadLog({
   const renderLine = (line: Line, index: number) => {
     const meta = groupMeta(lines, index, who.meId);
     const receipt =
-      line.fromVisitor || line.seq === null || receipts === null ? null : (
-        <ReceiptLine receipt={receiptOf(line.seq, receipts)} later={index !== lastReply} />
-      );
+      line.fromVisitor || line.seq === null || receipts === null
+        ? null
+        : receiptOf(line.seq, receipts);
     return (
       <>
         {/* The welcome chat's founder has a face, as an operator does in the widget. */}
@@ -162,6 +162,7 @@ export function ThreadLog({
           }
           flash={flashId === line.id}
           receipt={receipt}
+          isLastReply={index === lastReply}
           onView={() => setViewing(line.id)}
           onImageError={onImageError}
           onRetry={() => onRetry(line)}

@@ -9,28 +9,26 @@ const PRESENCE_EVERY_MS = 10_000;
 
 /**
  * Says which conversation is open, and learns who else has one open. This follows what is open, and
- * no operator's keystroke. Only a visible tab counts.
+ * no operator's keystroke. A hidden tab keeps the operator online, as the inbox often waits in one,
+ * and has no conversation open. A closing tab ends only its conversation's mark, as another tab can
+ * keep the operator online, and the online mark expires on its own. `leave` is for a sign-out: it
+ * ends the online mark too, and no beat follows it. Presence is best effort, so a failed request is
+ * dropped: the next beat, or the expiry, puts it right.
  */
-export function usePresence(
-  api: WorkspaceApi,
-  selected: string | null,
-  visible: boolean,
-): Record<string, string[]> {
+export function usePresence(api: WorkspaceApi, selected: string | null, visible: boolean) {
   const [viewers, setViewers] = useState<Record<string, string[]>>({});
   const open = useRef<string | null>(null);
+  const signedOut = useRef(false);
 
   useEffect(() => {
-    if (!visible) {
-      void api.leave(open.current).catch(() => {});
-      open.current = null;
-      return;
-    }
     const left = open.current;
-    open.current = selected;
+    const viewing = visible ? selected : null;
+    open.current = viewing;
     let stopped = false;
     const beat = (previous: string | null) => {
+      if (signedOut.current) return;
       api
-        .beat(selected, previous)
+        .beat(viewing, previous, !visible)
         .then((state) => {
           if (!stopped) setViewers(state.viewers);
         })
@@ -45,12 +43,22 @@ export function usePresence(
   }, [api, selected, visible]);
 
   useEffect(() => {
-    const onHide = () => void api.leave(open.current).catch(() => {});
+    const onHide = () => {
+      if (open.current !== null) api.leave(open.current, false).catch(() => {});
+    };
     addEventListener("pagehide", onHide);
     return () => removeEventListener("pagehide", onHide);
   }, [api]);
 
-  return viewers;
+  const leave = useCallback(() => {
+    signedOut.current = true;
+    return api
+      .leave(open.current, true)
+      .then(() => {})
+      .catch(() => {});
+  }, [api]);
+
+  return { viewers, leave };
 }
 
 export function useTabVisible(): boolean {

@@ -891,10 +891,15 @@ export async function countOpenByAssignee(
 }
 
 /**
- * How many open conversations wait for a reply: their newest message is from the visitor. It is
- * one number for the whole workspace, not a per-operator read state.
+ * How many open conversations wait for a reply: their newest message is from the visitor. For an
+ * operator, only the ones assigned to them or to no one, as a teammate's are not theirs to answer.
+ * An API key, with no assignments, counts them all. It is not a per-operator read state.
  */
-export async function countWaiting(tx: Transaction, workspaceId: string): Promise<number> {
+export async function countWaiting(
+  tx: Transaction,
+  workspaceId: string,
+  operatorId: string | null,
+): Promise<number> {
   const result = await tx.execute<{ count: number }>(sql`
     select count(*)::int as count
     from ${conversation} as c
@@ -906,7 +911,8 @@ export async function countWaiting(tx: Transaction, workspaceId: string): Promis
       limit 1
     ) as newest
     where c.workspace_id = ${workspaceId} and c.status = 'open'
-      and newest.author_visitor_id is not null`);
+      and newest.author_visitor_id is not null
+      ${operatorId === null ? sql`` : sql`and (c.assignee_operator_id is null or c.assignee_operator_id = ${operatorId})`}`);
   return result.rows[0]?.count ?? 0;
 }
 

@@ -193,7 +193,9 @@ const operatorWrites = (operatorId: string, conversationId: string, body: string
     ),
   );
 
-const deliveries = () => owner.select().from(alertDelivery);
+// Oldest first, as a test reads [0] for the first delivery, and an unordered select has no order.
+const deliveries = () =>
+  owner.select().from(alertDelivery).orderBy(alertDelivery.eventSeq, alertDelivery.id);
 const planOptions = { publicUrl: PUBLIC_URL, secret: AUTH_SECRET, imageOrigin: PUBLIC_URL };
 const fanOutAll = async (channels = { push: true, email: true }) => {
   while (await fanOutOne(workerDb, channels));
@@ -860,10 +862,16 @@ describe("email", () => {
     expect(mail?.headers?.["list-unsubscribe"]).toBe(`<${stop}>`);
     expect(mail?.headers?.["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
     // The HTML version shows the Markdown as formatting, and escapes everything else.
+    // Each reply in its bubble, and one line with the author's first name over both, as a chat
+    // groups one person's messages.
+    expect(mail?.html).toContain('<p style="margin:0 0 8px">First answer</p>');
     expect(mail?.html).toContain(
-      "<p>First answer</p><p><strong>Second</strong> answer &lt;b&gt;</p>",
+      '<p style="margin:0 0 8px"><strong>Second</strong> answer &lt;b&gt;</p>',
     );
-    expect(mail?.html).toContain(`<a href="${new URL(chat ?? "", PUBLIC_URL).href}">`);
+    expect(mail?.html?.match(/>anna-[^<@]* replied<\/p>/g)).toHaveLength(1);
+    expect(mail?.html?.match(/border-radius:4px 18px 18px 18px/g)).toHaveLength(2);
+    expect(mail?.html).toContain(`href="${new URL(chat ?? "", PUBLIC_URL).href}"`);
+    expect(mail?.html).toContain(`href="${stop}"`);
     expect(mail?.html).not.toContain("<b>");
   });
 

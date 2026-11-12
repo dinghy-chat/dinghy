@@ -202,21 +202,56 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
   const page = owner.getByRole("region", { name: "Analytics" });
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
   const zone = await owner.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
-  await expect(page.getByText(`use your time zone (${zone})`)).toBeVisible();
-  const started = page
-    .locator(".figures div", { hasText: /^Conversations started/ })
-    .locator("dd")
-    .first();
+  await expect(page.getByText(`in ${zone} time`)).toBeVisible();
+  const stats = page.getByRole("region", { name: "Key numbers" });
+  const started = stats.locator(".stat", { hasText: "Conversations" }).locator(".stat-value");
   await expect(started).toHaveText(/^[1-9]\d*$/);
+  await expect(stats.getByRole("heading", { name: "Median first reply" })).toBeVisible();
+  await expect(stats.getByText(/^\d+ of \d+ got a reply$/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What happened to them" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Who replies first" })).toBeVisible();
+  await expect(page.locator(".day-bar")).toHaveCount(30);
+  await expect(page.locator(".heat-cell")).toHaveCount(7 * 24);
+  await expect(page.locator(".heat-cell.peak")).toHaveCount(1);
+
+  // An explanation shows on focus, and Escape hides it.
+  const help = stats.getByRole("button", { name: /^Half of answered conversations/ });
+  await help.focus();
+  await expect(page.locator(".chart-tip")).toContainText("Half of answered conversations");
+  await owner.keyboard.press("Escape");
+  await expect(page.locator(".chart-tip")).toHaveCount(0);
+
+  await page.getByRole("radio", { name: "7 days" }).check();
+  await expect(page.locator(".day-bar")).toHaveCount(7);
+  await expect(page.getByRole("radio", { name: "7 days" })).toBeChecked();
+});
+
+test("Analytics compares the period with the one just before", async ({ browser }) => {
+  // Before the last 7 days, and slower than 5 minutes: 10 minutes.
+  await visitor(browser, "/pricing", "A question last week");
+  await server.reply("Sorry for the wait.");
+  await server.backdateLatest(10 * 24, 600);
+  await visitor(browser, "/pricing", "A question today");
+  await server.reply("Right away.");
+  const owner = await signedIn(browser, server, "owner@example.com");
+  await owner.getByRole("button", { name: "Analytics" }).click();
+  const page = owner.getByRole("region", { name: "Analytics" });
+  const stats = page.getByRole("region", { name: "Key numbers" });
+  // The 30 days before the last 30 had no conversations, so nothing compares.
+  await expect(stats.locator(".stat-value").first()).toBeVisible();
+  await expect(stats.locator(".stat-change")).toHaveCount(0);
+
+  await page.getByRole("radio", { name: "7 days" }).check();
+  await expect(page.locator(".day-bar")).toHaveCount(7);
+  const median = stats.locator(".stat", { hasText: "Median first reply" }).locator(".stat-change");
+  await expect(median).toHaveText(/^↓ .+ faster vs previous 7 days$/);
+  await expect(median).toHaveClass(/better/);
+  const fast = stats.locator(".stat", { hasText: "Replied within 5 min" }).locator(".stat-change");
+  await expect(fast).toHaveText(/^↑ \d+ pts vs previous 7 days$/);
+  await expect(fast).toHaveClass(/better/);
   await expect(
-    page.locator(".figures div", { hasText: "First reply time (median)" }),
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Conversations per day" })).toBeVisible();
-  await expect(page.locator(".bars > span")).toHaveCount(30);
-  await expect(page.locator(".hours-grid .cell")).toHaveCount(7 * 24);
-  await page.getByRole("button", { name: /Period/ }).click();
-  await owner.getByRole("option", { name: "Last 7 days" }).click();
-  await expect(page.locator(".bars > span")).toHaveCount(7);
+    stats.locator(".stat", { hasText: "Conversations" }).locator(".stat-change"),
+  ).toContainText("vs previous 7 days");
 });
 
 test("a message in the open conversation chimes while another page hides it", async ({

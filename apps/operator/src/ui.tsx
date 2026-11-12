@@ -14,6 +14,7 @@ import { EMOJIS, insertEmoji } from "../../../packages/widget/src/emoji.ts";
 import { ApiError, type Role } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { navigate } from "./nav.ts";
+import { countryName, flag } from "./place.ts";
 import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
@@ -224,21 +225,28 @@ function CopyText({ value }: { value: string }) {
   );
 }
 
+/** A small icon button that copies a value. The label names what it copies. */
+export function CopyIcon({ value, label }: { value: string; label: string }) {
+  const [done, copy] = useCopy(value);
+  return (
+    <button
+      type="button"
+      className="icon-button copy-icon"
+      aria-label={done ? t("copied") : label}
+      title={done ? t("copied") : label}
+      onClick={copy}
+    >
+      <Icon name={done ? "check" : "copy"} size={14} />
+    </button>
+  );
+}
+
 /** An ID, such as the site's user ID: monospace, cut to its line, with a button that copies it. */
 export function CopyId({ value, label }: { value: string; label: TextId }) {
-  const [done, copy] = useCopy(value);
   return (
     <p className="copy-id">
       <code title={value}>{value}</code>
-      <button
-        type="button"
-        className="icon-button"
-        aria-label={done ? t("copied") : t("copyValue", { name: t(label) })}
-        title={done ? t("copied") : t("copy")}
-        onClick={copy}
-      >
-        <Icon name={done ? "check" : "copy"} size={14} />
-      </button>
+      <CopyIcon value={value} label={t("copyValue", { name: t(label) })} />
     </p>
   );
 }
@@ -688,6 +696,21 @@ export function Avatar({
 }
 
 /**
+ * A country's flag in a small round badge, for the bottom corner of an avatar in an `avatar-wrap`.
+ * It names the country, so a row that says it nowhere else still does. Nothing for an unknown code.
+ */
+export function FlagBadge({ country }: { country: string }) {
+  const emoji = flag(country);
+  if (emoji === "") return null;
+  const name = countryName(country);
+  return (
+    <span className="flag-badge" role="img" aria-label={name} title={name}>
+      {emoji}
+    </span>
+  );
+}
+
+/**
  * A short label that shows above its control on hover and on keyboard focus, which a native
  * title does not do for a disabled button. The control names the tip with the given ID when the
  * tip says more than its own label.
@@ -738,7 +761,7 @@ export type Option<T> = {
 
 /**
  * Radio buttons drawn as pills, named by a legend for screen readers. Outlined draws them as one
- * segmented control, and quiet as small words.
+ * segmented control, and tabs as a row of tabs over a line.
  */
 export function Choices<T extends string>({
   label,
@@ -750,7 +773,7 @@ export function Choices<T extends string>({
   onChange,
 }: {
   label: string;
-  variant?: "outlined" | "quiet";
+  variant?: "outlined" | "tabs";
   /** Fills the width, in equal parts. */
   full?: boolean;
   /** The ID of a hint that says more about the choice. */

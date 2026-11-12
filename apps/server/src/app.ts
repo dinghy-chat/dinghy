@@ -112,6 +112,8 @@ export interface AppEnv {
     operatorId: string;
     operatorName: string;
     operatorEmail: string;
+    /** The operator set Away, so their beats do not count them online. */
+    operatorAway: boolean;
     /** The signed-in operator's session, which a stream checks again on each wake. */
     sessionId: string;
     memberWorkspaceId: string;
@@ -369,7 +371,7 @@ export function createApp({
     ownOrigin,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
-  registerWidgetPresence(app, presence, alerts?.emailAvailable ?? false);
+  registerWidgetPresence(app, db, presence, alerts?.emailAvailable ?? false);
   if (ownOrigin !== undefined) {
     registerChatPage(app, { db, rateLimit, imagesOrigin: images?.origin });
   }
@@ -438,9 +440,9 @@ export function createApp({
       version,
     });
     registerAnalyticsRoute(app, db);
-    registerOperatorPresence(app, presence);
+    registerOperatorPresence(app, db, presence);
     registerModerationRoutes(app, db, live);
-    registerContactRoutes(app, db, live);
+    registerContactRoutes(app, { db, live, visitorPresence });
     registerLiveVisitorRoutes(app, db, liveVisitors);
     registerGetStartedRoutes(app, db);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);

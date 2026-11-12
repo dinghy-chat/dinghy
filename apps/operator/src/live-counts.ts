@@ -2,15 +2,15 @@ import { useEffect, useState } from "react";
 import { getWaiting, type WorkspaceApi } from "./api.ts";
 import { useLatestLoad } from "./load.ts";
 
-/** How often the other workspaces' waiting counts load again while this tab shows. */
+/** How often the waiting counts load again, which a hidden tab's timers allow anyway. */
 const WAITING_EVERY_MS = 60_000;
 /** How often the sidebar asks how many people are on the site. */
 const LIVE_COUNT_EVERY_MS = 30_000;
 
 /**
- * Each other workspace's waiting count, for the switcher, which has no stream of theirs here. It
- * loads when the tab shows and every minute while it does. The current workspace's count comes
- * from its own list.
+ * Each workspace's waiting count: the others' for the switcher, which has no stream of theirs here,
+ * and this one's for the badge while the tab is hidden and holds no stream. It loads when the tab
+ * shows or hides, and every minute either way.
  */
 export function useWaitingBy(visible: boolean): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -18,8 +18,8 @@ export function useWaitingBy(visible: boolean): Record<string, number> {
     const { workspaces } = await getWaiting();
     setCounts(Object.fromEntries(workspaces.map((one) => [one.workspaceId, one.waiting])));
   });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: showing or hiding the tab asks for a load.
   useEffect(() => {
-    if (!visible) return;
     load();
     const timer = setInterval(load, WAITING_EVERY_MS);
     return () => clearInterval(timer);

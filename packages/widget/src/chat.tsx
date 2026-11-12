@@ -30,9 +30,9 @@ import {
   readToken,
   rememberOpen,
   type SavedAppearance,
-  WIDGET_DEFAULTS,
   type WidgetContext,
   wasOpen,
+  withDefaults,
   writeToken,
 } from "./shared.ts";
 import { chime, prepareSound } from "./sound.ts";
@@ -272,7 +272,11 @@ function Chat({
     return () => clearTimeout(timer);
   }, [newReply]);
 
-  const { online, emailReplies } = usePresence(client, fullPage ? token : null, open && visible);
+  const { online, members, emailReplies, replySeconds } = usePresence(
+    client,
+    fullPage ? token : null,
+    open && visible,
+  );
   usePageReports(client, token, chatted && !fullPage);
   // Only into an open conversation, and only when the workspace shows drafts.
   useDraftPreview(client, token, openConversation && saved?.typingPreview === true, draft);
@@ -668,9 +672,10 @@ function Chat({
       <ChatHead
         scene={sceneState}
         online={online}
+        members={members}
+        replySeconds={replySeconds}
         mascot={mascot}
-        logoUrl={saved.logoUrl}
-        team={saved.team}
+        saved={saved}
         say={say}
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />
@@ -770,7 +775,7 @@ function Root({ context }: { context: WidgetContext }) {
   // no launcher, but its chat link's page still needs words.
   useEffect(() => {
     context.appearance.then((answer) => {
-      const found = answer ?? WIDGET_DEFAULTS;
+      const found = withDefaults(answer);
       context.shadow.host.setAttribute("data-theme", found.theme);
       setSaved(found);
     });

@@ -20,7 +20,11 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import { RADIUS_MAX_PX, WIDGET_DEFAULTS } from "../../../../packages/widget/src/shared.ts";
+import {
+  HEADER_FACES_MAX,
+  RADIUS_MAX_PX,
+  WIDGET_DEFAULTS,
+} from "../../../../packages/widget/src/shared.ts";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const id = () => uuid("id").notNull().default(sql`gen_random_uuid()`);
@@ -53,6 +57,13 @@ export const widgetLauncher = pgEnum("widget_launcher", [
   "square",
 ]);
 export const widgetEmailAsk = pgEnum("widget_email_ask", ["off", "after_first", "before_first"]);
+export const widgetHeaderFaces = pgEnum("widget_header_faces", [
+  "online",
+  "repliers",
+  "chosen",
+  "none",
+]);
+export const widgetHeaderStatus = pgEnum("widget_header_status", ["presence", "reply_time"]);
 
 export const workspace = pgTable(
   "workspace",
@@ -118,6 +129,8 @@ export const operator = pgTable("operator", {
   // Set when the operator deletes their account. The row stays, with its personal data erased, so
   // the messages and member rows that point to it keep working.
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // The operator's own status, in every workspace. While away, the widget does not count them online.
+  away: boolean("away").notNull().default(false),
   // Cloud only. When the cloud's welcome email went out, so an account gets it once, whatever it does after.
   welcomedAt: timestamp("welcomed_at", { withTimezone: true }),
   createdAt: createdAt(),
@@ -1043,6 +1056,17 @@ export const widgetSettings = pgTable(
     customizedAt: timestamp("customized_at", { withTimezone: true }),
     // Operators see what a visitor types before they send it. Nothing stores the draft.
     typingPreview: boolean("typing_preview").notNull().default(WIDGET_DEFAULTS.typingPreview),
+    headerFaces: widgetHeaderFaces("header_faces").notNull().default(WIDGET_DEFAULTS.headerFaces),
+    headerFaceCount: smallint("header_face_count")
+      .notNull()
+      .default(WIDGET_DEFAULTS.headerFaceCount),
+    headerDot: boolean("header_dot").notNull().default(WIDGET_DEFAULTS.headerDot),
+    headerStatus: widgetHeaderStatus("header_status")
+      .notNull()
+      .default(WIDGET_DEFAULTS.headerStatus),
+    // The operators that `chosen` shows, in order. Not a foreign key: a member who leaves is
+    // skipped when the widget reads it, and comes back in place if they join again.
+    headerMembers: uuid("header_members").array().notNull().default(sql`'{}'::uuid[]`),
   },
   (table) => [
     check("widget_settings_primary_color", sql`${table.primary} ~ '^#[0-9a-f]{6}$'`),
@@ -1050,6 +1074,10 @@ export const widgetSettings = pgTable(
     check(
       "widget_settings_radius",
       sql`${table.radius} between 0 and ${sql.raw(String(RADIUS_MAX_PX))}`,
+    ),
+    check(
+      "widget_settings_header_face_count",
+      sql`${table.headerFaceCount} between 1 and ${sql.raw(String(HEADER_FACES_MAX))}`,
     ),
   ],
 );

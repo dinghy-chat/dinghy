@@ -3,8 +3,18 @@ import { escapeHtml } from "../../../packages/widget/src/markdown.ts";
 /** How long a sign-in link works. Every email that carries one says so. */
 export const LINK_MINUTES = 15;
 
-/** The colors of the HTML emails: the text, quiet text, and a quote's background. */
-export const EMAIL_COLORS = { text: "#0b2239", muted: "#5f6e80", quote: "#f3efe4" };
+/**
+ * The colors of the HTML emails: the text, which also fills the button, quiet text, a quote's and a
+ * reply's background, the footer's line, and the text on the navy.
+ */
+export const EMAIL_COLORS = {
+  text: "#0b2239",
+  muted: "#5f6e80",
+  quote: "#f3efe4",
+  bubble: "#f0f2f5",
+  line: "#e3e7ec",
+  onDark: "#ffffff",
+};
 
 // Every email is plain text in one voice: a greeting, a few short paragraphs and the same sign-off.
 // Every string has a key here or next to its sender, so a locale can be added later.
@@ -76,27 +86,60 @@ export function letter(
   return [greeting, ...paragraphs, signOff ?? text.signOff(oneLine(team) || "Dinghy")].join("\n\n");
 }
 
-/** A paragraph of HTML that its maker escaped, such as a message rendered from its Markdown. */
-export interface HtmlParagraph {
+// The fonts every system has, because mail apps load no web fonts.
+const EMAIL_FONTS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const LOGO_PX = 40;
+// Outlook on Windows ignores max-width, so it gets a table of this width instead.
+const COLUMN_PX = 560;
+
+// The logo, or the name's first letter on a rounded square when the workspace has none.
+function logoHtml(team: string, logoUrl: string | null): string {
+  const size = `width:${LOGO_PX}px;height:${LOGO_PX}px;border-radius:10px`;
+  if (logoUrl !== null) {
+    return `<img src="${escapeHtml(logoUrl)}" width="${LOGO_PX}" height="${LOGO_PX}" alt="" style="display:block;${size}">`;
+  }
+  const letter = escapeHtml(Array.from(team)[0]?.toUpperCase() ?? "");
+  return `<div style="${size};background:${EMAIL_COLORS.text};color:${EMAIL_COLORS.onDark};font-size:19px;font-weight:700;line-height:${LOGO_PX}px;text-align:center">${letter}</div>`;
+}
+
+const actionHtml = ({ label, url }: { label: string; url: string }) =>
+  `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-radius:999px;background:${EMAIL_COLORS.text}">` +
+  `<a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 26px;border-radius:999px;color:${EMAIL_COLORS.onDark};font-weight:600;text-decoration:none">${escapeHtml(label)}</a>` +
+  "</td></tr></table>";
+
+/**
+ * The HTML version of an email that a workspace sends: its logo and name, the content, a button,
+ * and small print under a line. `html` and `footer` are HTML that their maker escaped.
+ */
+export function letterHtml(page: {
+  team: string;
+  logoUrl: string | null;
   html: string;
-}
-
-/** A paragraph of plain text as HTML: escaped, with its web addresses as links. */
-function paragraphHtml(paragraph: string | HtmlParagraph): string {
-  if (typeof paragraph !== "string") return paragraph.html;
-  const escaped = escapeHtml(paragraph).replace(
-    /https?:\/\/[^\s<]+/g,
-    (url) => `<a href="${url}">${url}</a>`,
-  );
-  return `<p>${escaped.replace(/\n/g, "<br>")}</p>`;
-}
-
-/** The HTML version of `letter`, for an email whose paragraphs include formatted messages. */
-export function letterHtml(paragraphs: (string | HtmlParagraph)[], team = "Dinghy"): string {
-  const body = [text.hi, ...paragraphs, text.signOff(oneLine(team) || "Dinghy")]
-    .map(paragraphHtml)
+  action: { label: string; url: string };
+  footer: string[];
+}): string {
+  const team = oneLine(page.team) || "Dinghy";
+  const header =
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-right:12px">${logoHtml(team, page.logoUrl)}</td>` +
+    `<td style="font-size:17px;font-weight:700">${escapeHtml(team)}</td></tr></table>`;
+  const footer = page.footer
+    .map((paragraph) => `<p style="margin:0 0 8px">${paragraph}</p>`)
     .join("");
-  return `<!doctype html><html><body style="font:15px/1.5 -apple-system,'Segoe UI',sans-serif;color:${EMAIL_COLORS.text}">${body}</body></html>`;
+  const rows = [
+    `<td style="padding-bottom:24px">${header}</td>`,
+    `<td>${page.html}</td>`,
+    `<td style="padding:24px 0 28px">${actionHtml(page.action)}</td>`,
+    `<td style="border-top:1px solid ${EMAIL_COLORS.line};padding-top:16px;font-size:12px;line-height:1.5;color:${EMAIL_COLORS.muted}">${footer}</td>`,
+  ];
+  return (
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>' +
+    `<body style="margin:0;padding:0;background:${EMAIL_COLORS.onDark}">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:32px 16px">` +
+    `<!--[if mso]><table role="presentation" width="${COLUMN_PX}" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:${COLUMN_PX}px;font-family:${EMAIL_FONTS};font-size:15px;line-height:1.5;color:${EMAIL_COLORS.text};text-align:left">` +
+    rows.map((row) => `<tr>${row}</tr>`).join("") +
+    "</table><!--[if mso]></td></tr></table><![endif]--></td></tr></table></body></html>"
+  );
 }
 
 /** The sign-in link that an operator asked for on the sign-in page. */

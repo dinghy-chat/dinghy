@@ -104,7 +104,7 @@ dialog{padding:0;border:0;background:transparent;max-width:95vw;max-height:95vh;
 dialog::backdrop{background:rgb(11 34 57/.85)}
 dialog img{display:block;max-width:none}
 .panel.page{inset:0;margin:auto;width:100%;max-width:720px;height:auto;max-height:none;border-radius:0}
-@media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}.panel:not(.page) .head{padding-top:max(10px,env(safe-area-inset-top))}.panel:not(.page)>:last-child{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
+@media (max-width:480px){.panel:not(.page){position:fixed;inset:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;border-radius:0}textarea,input{font-size:16px}.panel:not(.page) .head{padding-top:max(10px,env(safe-area-inset-top))}.panel:not(.page)>:last-child{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
 .panel:focus{outline:none}
 :host([data-side=left]) .panel{right:auto;left:0}
 .opened{display:none!important}
@@ -114,7 +114,7 @@ dialog img{display:block;max-width:none}
 .emojis{position:absolute;left:8px;right:8px;bottom:100%;margin:0;min-width:0;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:6px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgb(13 34 64/.18)}
 .emojis button{height:36px;padding:0;border:0;border-radius:8px;background:none;font-size:20px;cursor:pointer}
 .emojis button:hover{background:var(--fog)}
-.file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+.file{position:absolute;width:1px;height:1px;padding:0;border:0;opacity:0;overflow:hidden;pointer-events:none}
 .card{display:block;align-self:stretch;margin:6px 0;padding:12px 14px;border:0;border-radius:16px;background:color-mix(in srgb,var(--primary) 7%,var(--paper));box-shadow:0 1px 2px rgb(13 34 64/.08)}
 .card .who{margin:0;color:var(--ink);font-weight:600}
 .card p{margin:4px 0 0;font-size:13px;line-height:18px;color:var(--mute)}
@@ -128,6 +128,8 @@ dialog img{display:block;max-width:none}
 .face{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--fog);color:var(--mute);font-size:11px;font-weight:700}
 .faces{display:flex;flex:none;padding-left:6px}
 .faces .face{width:26px;height:26px;margin-left:-6px;box-shadow:0 0 0 2px var(--primary)}
+.faces>span{position:relative;display:flex}
+.faces i{position:absolute;z-index:1;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px var(--primary)}
 .brand{display:block;padding:0 12px 8px;font-size:11px;line-height:14px;color:var(--mute);opacity:.75;text-align:center;text-decoration:none}
 .brand:hover{opacity:1}
 :host([data-theme=dark]) .panel{${DARK}}
@@ -318,30 +320,57 @@ function Face({ name, pictureUrl, bot = false }: TeamFace & { bot?: boolean }) {
 }
 
 /**
+ * The header's faces as the owner chose them. Online now shows the members online, in order, and
+ * the latest repliers when nobody is. Every other mode shows its candidates.
+ */
+export function headerFaces(saved: SavedAppearance, members: string[]): TeamFace[] {
+  const { headerFaces: mode, faces } = saved;
+  const here = faces.filter((face) => members.includes(face.id));
+  const shown = mode !== "online" ? faces : here.length > 0 ? here : saved.team;
+  return shown.slice(0, saved.headerFaceCount);
+}
+
+/** "Usually replies in 2 min", or in hours from an hour. */
+function replyTime(seconds: number): string {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return minutes < 60
+    ? t("replyMinutes").replace("{n}", `${minutes}`)
+    : t("replyHours").replace("{n}", `${Math.round(minutes / 60)}`);
+}
+
+/**
  * The panel's title bar: the workspace's logo or the boat's scene, what the scene means in words,
  * the team's faces and the close button.
  */
 export function ChatHead({
   scene,
   online,
+  members,
+  replySeconds,
   mascot,
-  logoUrl,
-  team,
+  saved,
   say,
   onClose,
 }: {
   scene: SceneState;
   online: boolean | null;
+  /** The members online now, by the hash on their faces. */
+  members: string[];
+  /** The usual first reply time, from the presence answer. */
+  replySeconds: number | null;
   mascot: boolean;
-  logoUrl: string | null;
-  /** Who is on the team, not who is online, so the faces have no text of their own. */
-  team: TeamFace[];
+  saved: SavedAppearance;
   say: Say;
   /** Missing on the full-page chat, which has nothing to close. */
   onClose?: () => void;
 }) {
+  const { logoUrl } = saved;
   const isOnline = scene === "waiting" && online === true;
-  const status = say(isOnline ? "teamOnline" : SCENES[scene].text);
+  const status =
+    isOnline && saved.headerStatus === "reply_time" && replySeconds !== null
+      ? replyTime(replySeconds)
+      : say(isOnline ? "teamOnline" : SCENES[scene].text);
+  const faces = headerFaces(saved, members);
   return (
     <div class="head">
       <div class={`scene ${scene === "empty" ? "empty-state" : scene}${isOnline ? " on" : ""}`}>
@@ -369,10 +398,14 @@ export function ChatHead({
           </small>
         </div>
       </div>
-      {team.length > 0 && (
+      {/* The status line says whether anyone is online, so the faces and dots have no text. */}
+      {faces.length > 0 && (
         <span class="faces" aria-hidden="true">
-          {team.map((face) => (
-            <Face key={face.id} {...face} />
+          {faces.map((face) => (
+            <span key={face.id}>
+              <Face {...face} />
+              {saved.headerDot && members.includes(face.id) && <i />}
+            </span>
           ))}
         </span>
       )}

@@ -28,6 +28,9 @@
   --map-sea: light-dark(#0b2239, #08182a);
   --map-land: light-dark(#2f5d93, #2a5283);
   --map-dot: #ffc917;
+  /* Text on the map's white chips and cards, and on its yellow dots, in both themes. */
+  --map-ink: #0b2239;
+  --map-ink-mute: #44546a;
   /* Focus: the navy (off-white at night) for the line, and the warm sand for a field's halo. */
   --focus: var(--navy);
   --focus-halo: light-dark(#e8e6e0, #243344);
@@ -48,6 +51,11 @@
   --tile-peach: light-dark(#f3e8e4, #3a2a2b);
   --tile-yellow: light-dark(#f1ecdb, #383220);
   --tile-mint: light-dark(#e3eee9, #1b3833);
+  /* The busiest hours, from few to many: pale to deep blue by day, dim to bright at night. */
+  --heat-1: light-dark(#d6e4ff, #1d3558);
+  --heat-2: light-dark(#9dbdff, #24508f);
+  --heat-3: light-dark(#5b8fff, #3a74d6);
+  --heat-4: light-dark(#1f5ad6, #7fb0ff);
   --display: "Gabarito", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1003,7 +1011,7 @@ button.workspace[aria-expanded="true"],
   background: var(--navy);
   color: var(--on-navy);
 }
-.menu-wrap {
+.popup-wrap {
   position: relative;
 }
 .me-menu {
@@ -1147,6 +1155,23 @@ button.workspace[aria-expanded="true"],
   height: 34px;
   background: var(--navy);
   color: var(--on-navy);
+}
+/* The operator's own status: green while available, gray while away. */
+.status-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.status-dot.away {
+  background: var(--mute);
+}
+.me .status-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  box-shadow: 0 0 0 2px var(--side-tint);
 }
 .me-text {
   display: grid;
@@ -1335,6 +1360,22 @@ button.workspace[aria-expanded="true"],
   flex-wrap: wrap;
   gap: 10px;
 }
+@media (max-width: 560px) {
+  /* A segmented control in a page's head, such as the period, takes its own full row under the
+     line of context, as its pills would not fit beside the title. */
+  .page-actions:has(> .choices.outlined) {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    margin-top: 12px;
+  }
+  .page-actions > .choices.outlined {
+    flex: 1;
+  }
+  .page-actions > .choices.outlined label {
+    flex: 1;
+    justify-content: center;
+  }
+}
 
 /* A dropdown or a menu: a white card under (or over) its button. */
 .popup {
@@ -1342,7 +1383,7 @@ button.workspace[aria-expanded="true"],
   top: 100%;
   z-index: 50;
   min-width: max(100%, 200px);
-  max-width: min(320px, calc(100vw - 32px));
+  max-width: min(320px, calc(100vw - 24px));
   max-height: 320px;
   margin-top: 6px;
   padding: 6px;
@@ -1376,6 +1417,12 @@ button.workspace[aria-expanded="true"],
   bottom: 100%;
   margin: 0 0 6px;
   animation-name: pop-up;
+}
+/* Placed in the window by its script, so an area that scrolls, such as the thread, never cuts it
+   off. */
+.popup.floating {
+  position: fixed;
+  margin: 0;
 }
 @keyframes pop-up {
   from {
@@ -1561,12 +1608,63 @@ img.ws-tile {
 .list .page-head {
   padding: 26px 24px 14px;
 }
+/* The search field, and the filter button beside it. */
+.list-tools {
+  display: flex;
+  gap: 8px;
+  margin: 0 16px 12px;
+}
 .search {
   position: relative;
-  margin: 0 24px 12px;
+  flex: 1;
+  min-width: 0;
+}
+.filter-button {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+  color: var(--navy);
+  transition: background-color 0.15s;
+}
+.filter-button:is(:hover, [aria-expanded="true"]) {
+  background: var(--soft);
+}
+/* A filter other than Open and All: a dot on the button. */
+.filter-button.filtered::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+/* The filter card: Status, and in a team Assigned to, each one segmented control. */
+.popover {
+  display: grid;
+  gap: 6px;
+  width: 300px;
+  padding: 12px 12px 14px;
+}
+.popover-title {
+  margin: 0 2px 4px;
+  font-size: 15px;
+}
+.popover-label {
+  margin: 6px 2px 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 .search-note {
-  margin: -4px 24px 12px;
+  margin: -4px 16px 12px;
   font-size: 13.5px;
 }
 .search svg {
@@ -1822,10 +1920,29 @@ img.ws-tile {
   flex: none;
   display: grid;
 }
+.row .avatar-wrap {
+  align-self: flex-start;
+}
 .who-is .avatar {
   width: 40px;
   height: 40px;
   font-size: 14px;
+}
+/* The flag cut to a circle, with a ring that parts it from the avatar. */
+/* The whole flag, as emoji draw it: a circle would crop most flags past recognition. */
+.flag-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1.5px var(--surface);
+  font-size: 11px;
+  line-height: 1;
 }
 .presence-dot {
   position: absolute;
@@ -2100,7 +2217,7 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.copy-id .icon-button {
+.copy-icon {
   flex: none;
   width: 26px;
   height: 26px;
@@ -2163,24 +2280,25 @@ img.ws-tile {
   color: var(--mute);
 }
 .context dd {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   min-width: 0;
-  overflow: hidden;
   color: var(--navy);
+}
+.detail-value {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* What the page sent, which nobody verified. */
+.context dd.unsigned {
+  font-style: italic;
 }
 /* What the page sent, apart from the signed attributes, with a note that nobody verified it. */
 .page-context {
   display: grid;
   gap: 4px;
-}
-.page-context h4 {
-  margin: 0;
-  color: var(--mute);
-  font: 600 13.5px / 1.4 var(--body);
-}
-.page-context .context {
-  padding-top: 6px;
 }
 /* The visitor's pages, newest first: a title as a link, and how long ago on the right. */
 .journey ol {
@@ -2243,6 +2361,28 @@ img.ws-tile {
   min-height: 28px;
   margin-top: 4px;
   padding: 0 0 0 20px;
+}
+/* Where an online visitor is now. */
+.journey li.now::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 20%, transparent);
+  background: var(--green);
+}
+.journey .here-now {
+  flex: none;
+  color: var(--green);
+  font-weight: 600;
+}
+/* An earlier visit starts under its own label, with no line to the page above. */
+.journey li.visit-gap {
+  padding-top: 8px;
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 600;
+}
+.journey li.visit-gap::before,
+.journey li.visit-gap::after,
+.journey li.visit-gap + li::after {
+  display: none;
 }
 .conversation-links {
   display: grid;
@@ -2313,6 +2453,7 @@ img.ws-tile {
   min-height: 0;
   padding: 24px 28px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 .empty {
   margin: auto;
@@ -2346,6 +2487,13 @@ img.ws-tile {
 }
 .msg :where(ul, ol) {
   padding-left: 22px;
+}
+/* The app's own lists have no markers, but a message's list is the visitor's or the operator's. */
+.msg :where(ul) {
+  list-style: disc;
+}
+.msg :where(ol) {
+  list-style: decimal;
 }
 .msg :where(pre, code) {
   font: 13.5px / 1.45 var(--mono);
@@ -2402,20 +2550,23 @@ img.ws-tile {
 .receipt.emailFailed {
   color: var(--bad);
 }
-/* An earlier reply's line shows with the pointer on its bubble, and screen readers always read it. */
+/* An earlier reply's line shows beside its bubble, past the "…", with the pointer on it. It sits
+   over the empty side of the thread, so nothing moves, and screen readers always read it. */
 .receipt.later {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+  right: 100%;
+  bottom: 6px;
+  margin: 0 4px 0 0;
   white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
 }
-.bubble-row:hover + .receipt.later {
-  position: static;
-  width: auto;
-  height: auto;
-  clip-path: none;
+/* A phone has no room beside the bubble, and its Info item says the same. */
+@media (hover: hover) and (min-width: 761px) {
+  .bubble-row:is(:hover, :focus-within) > .receipt.later {
+    opacity: 1;
+  }
 }
 /* A visitor's unsent words, faded, with three dots that move. */
 .msg.draft {
@@ -2487,6 +2638,7 @@ img.ws-tile {
 }
 /* A message and its "…": the button sits on the bubble's inner side and shows on hover or focus. */
 .bubble-row {
+  position: relative;
   display: flex;
   flex-direction: row-reverse;
   align-self: flex-end;
@@ -2504,19 +2656,32 @@ img.ws-tile {
   flex-direction: row;
   align-self: flex-start;
 }
-.bubble-row .menu-wrap {
+.bubble-row .popup-wrap {
   opacity: 0;
   transition: opacity 0.12s;
 }
-.bubble-row:is(:hover, :focus-within) .menu-wrap,
-.bubble-row .menu-wrap:has([aria-expanded="true"]) {
+.bubble-row:is(:hover, :focus-within) .popup-wrap,
+.bubble-row .popup-wrap:has([aria-expanded="true"]) {
   opacity: 1;
 }
 /* A touch screen has no hover, so the button always shows there, quietly. */
 @media (hover: none) {
-  .bubble-row .menu-wrap {
+  .bubble-row .popup-wrap {
     opacity: 1;
   }
+}
+/* A message's menu: smaller than the app's other menus, as it opens over the thread. */
+.msg-menu .popup {
+  min-width: 168px;
+  padding: 4px;
+  border-radius: 12px;
+  font-size: 13.5px;
+}
+.msg-menu .item {
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 8px;
 }
 .msg-more {
   display: grid;
@@ -2716,6 +2881,10 @@ button.quote:hover {
   align-items: center;
   gap: 2px;
   min-width: 0;
+}
+/* The Aa toggle shows only on a phone, where the formats wait behind it. */
+.format-toggle {
+  display: none;
 }
 .format-tools {
   display: flex;
@@ -3037,86 +3206,396 @@ button.quote:hover {
 .danger-zone h3 {
   color: var(--bad);
 }
-/* Analytics: the headline numbers, then one row per chart. Bars and cells use the brand's navy
-   and blue on the cream track, as the usage meters do. */
-.figures {
+/* Analytics: four key numbers in one outlined box, then the charts in cards, two to a row. Bars,
+   lines and rings use the brand blue; the hours use the --heat ramp. */
+.analytics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 14px;
-  padding: 18px 0 24px;
+  gap: 16px;
+  padding-top: 14px;
 }
-/* Each card spans three rows of the grid, so labels, values and their notes line up across the
-   cards in a row, even when a label wraps. */
-.figures div {
+.stats {
   display: grid;
-  grid-row: span 3;
-  grid-template-rows: subgrid;
-  row-gap: 0;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px var(--line);
 }
-.figures dt {
+.stat {
+  position: relative;
+  min-width: 0;
+  padding: 18px 20px 16px;
+}
+.stat + .stat {
+  box-shadow: -1px 0 0 var(--line);
+}
+.stat h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--mute);
-  font-size: 13.5px;
+  font: 600 13px / 1.3 var(--body);
 }
-.figures dd {
-  align-self: end;
-  margin-top: 6px;
+.info-tip {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--mute);
+  font: 700 10px / 1 var(--body);
+  cursor: help;
+}
+.info-tip:hover,
+.info-tip:focus-visible {
+  background: var(--soft-edge);
   color: var(--navy);
-  font: 700 26px / 1.1 var(--display);
+}
+/* On a touch screen, a press anywhere in the 40px around a small control reaches it. */
+@media (pointer: coarse) {
+  .info-tip {
+    position: relative;
+  }
+  .info-tip::after,
+  .live-dot::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
+    transform: translate(-50%, -50%);
+  }
+}
+.stat-value {
+  margin: 8px 0 2px;
+  color: var(--navy);
+  font: 700 34px / 1 var(--display);
   font-variant-numeric: tabular-nums;
 }
-.figures .figure-help {
-  align-self: start;
-  margin-top: 8px;
+.stat-value.none {
+  font-size: 22px;
+}
+.stat-note {
+  margin-top: 4px;
   color: var(--mute);
-  font: 400 12.5px / 1.4 var(--body);
+  font-size: 13px;
 }
-.figures + .page-row {
-  border-top: 0;
+.stat-change {
+  margin-top: 4px;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
 }
-/* Charts use the row's full width, out to the line above them. */
-.page-controls:has(> .per-day, > .by-operator, > .hours-grid, > figure) {
-  max-width: none;
+.stat-change.better {
+  color: var(--green);
+}
+.stat-change.worse {
+  color: var(--bad);
+}
+.stat-change span {
+  color: var(--mute);
+  font-weight: 400;
+}
+.spark {
+  position: absolute;
+  top: 44px;
+  right: 18px;
+  width: 42%;
+  height: 36px;
+  overflow: visible;
+}
+.spark-area {
+  fill: color-mix(in srgb, var(--blue) 14%, transparent);
+}
+.spark-line {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.stat-ring {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 2px;
+}
+.stat-ring .stat-value {
+  margin: 0;
+}
+.ring {
+  width: 40px;
+  height: 40px;
+  transform: rotate(-90deg);
+}
+.ring circle {
+  fill: none;
+  stroke-width: 6;
+}
+.ring-back {
+  stroke: var(--soft);
+}
+.ring-front {
+  stroke: var(--blue);
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.5s;
+}
+.stat-meter,
+.share-track {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--soft);
+}
+.stat-meter {
+  margin-top: 10px;
+}
+.stat-meter span,
+.share-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--blue);
+  transition: width 0.5s;
+}
+.charts {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.chart-card {
+  min-width: 0;
+  padding: 18px 20px;
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 14px;
+  color: var(--mute);
+  font-size: 13px;
+}
+.chart-head h3 {
+  color: var(--navy);
+  font: 700 16px / 1.2 var(--display);
 }
 .per-day,
 .hours {
   margin: 0;
   min-width: 0;
 }
-.bars {
+.per-day {
+  --scale-gutter: 28px;
+}
+/* The scale's labels sit in the left gutter, and the lines at the top, middle and floor. */
+.day-bars {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  height: 140px;
-  /* Room above the tallest bar, clear of the rounded corners. */
-  padding: 14px 6px 6px;
-  border-radius: 12px;
-  background: var(--soft);
+  height: 180px;
+  padding-left: var(--scale-gutter);
+  background:
+    linear-gradient(var(--line), var(--line)) var(--scale-gutter) 0 / 100% 1px no-repeat,
+    linear-gradient(var(--line), var(--line)) var(--scale-gutter) 50% / 100% 1px no-repeat,
+    linear-gradient(var(--navy), var(--navy)) var(--scale-gutter) 100% / 100% 1px no-repeat;
 }
-.bars span {
+.day-scale {
+  position: absolute;
+  left: 0;
+  color: var(--mute);
+  font-size: 11.5px;
+  transform: translateY(-50%);
+}
+.day-bar {
   display: flex;
   flex: 1;
   align-items: flex-end;
   height: 100%;
 }
-.bars i {
+.day-bar i {
   display: block;
   width: 100%;
-  border-radius: 3px 3px 0 0;
-  background: var(--navy);
-}
-.bars span {
   border-radius: 4px 4px 0 0;
-}
-.bars span:hover {
-  background: var(--soft-hover);
-}
-.bars span:hover i {
   background: var(--blue);
+  transition: height 0.4s;
 }
-/* A chart with a card over the part under the pointer. analytics.tsx places it. */
+.day-bar:hover i {
+  background: var(--blue-deep);
+}
+.day-axis {
+  display: flex;
+  justify-content: space-between;
+  margin: 6px 0 0 var(--scale-gutter);
+  color: var(--mute);
+  font-size: 12px;
+}
+.outcomes,
+.repliers {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.outcomes li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  font-size: 14px;
+}
+.outcome-label,
+.replier-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--navy);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-count {
+  color: var(--navy);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.share-count span {
+  margin-left: 6px;
+  color: var(--mute);
+  font-weight: 400;
+}
+.outcomes .share-track {
+  grid-column: 1 / -1;
+  height: 10px;
+}
+.outcome-note {
+  grid-column: 1 / -1;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+.repliers li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+}
+.repliers .avatar {
+  grid-row: span 2;
+  width: 32px;
+  height: 32px;
+  font-size: 12px;
+}
+.repliers .share-track {
+  grid-column: 2 / -1;
+}
+.heat {
+  display: grid;
+  grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+  align-items: center;
+  gap: 3px;
+  color: var(--mute);
+  font-size: 11.5px;
+}
+.heat-hour {
+  white-space: nowrap;
+}
+.heat-cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: var(--soft);
+}
+.heat-cell:hover {
+  outline: 2px solid var(--navy);
+  outline-offset: 1px;
+}
+.heat-cell.peak {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--map-dot);
+}
+/* A cell's level, in the grid and in its legend. Level 0, an hour with none, keeps the cell's own
+   background. */
+.hours .level-1 {
+  background: var(--heat-1);
+}
+.hours .level-2 {
+  background: var(--heat-2);
+}
+.hours .level-3 {
+  background: var(--heat-3);
+}
+.hours .level-4 {
+  background: var(--heat-4);
+}
+.heat-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 10px;
+  color: var(--mute);
+  font-size: 12px;
+}
+.heat-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+.heat-swatch:first-of-type {
+  margin-left: 4px;
+}
+.heat-swatch:last-of-type {
+  margin-right: 4px;
+}
+@media (max-width: 1000px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .stat:nth-child(3) {
+    box-shadow: 0 -1px 0 var(--line);
+  }
+  .stat:nth-child(4) {
+    box-shadow:
+      -1px 0 0 var(--line),
+      0 -1px 0 var(--line);
+  }
+  .charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stat + .stat {
+    box-shadow: 0 -1px 0 var(--line);
+  }
+  .heat {
+    grid-template-columns: 28px repeat(24, minmax(0, 1fr));
+    gap: 2px;
+  }
+  .heat-cell {
+    border-radius: 2px;
+  }
+  .spark {
+    width: 38%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring-front,
+  .stat-meter span,
+  .share-track span,
+  .day-bar i {
+    transition: none;
+  }
+}
+/* An area with a card over the part under the pointer or the focus. analytics.tsx places it. */
 .tipped {
   position: relative;
 }
@@ -3143,87 +3622,11 @@ button.quote:hover {
 .chart-tip span {
   opacity: 0.75;
 }
-.axis {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
-  color: var(--mute);
-  font-size: 12.5px;
-}
-.by-operator {
-  display: grid;
-  gap: 4px;
-}
-.by-operator .operator {
-  display: grid;
-  padding: 4px 0;
-  grid-template-columns: minmax(80px, 160px) minmax(0, 1fr) 3ch;
-  align-items: center;
-  gap: 12px;
-}
-.by-operator .who {
-  overflow: hidden;
-  color: var(--navy);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.by-operator .track {
-  display: block;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--soft);
-}
-.by-operator .fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--navy);
-}
-.by-operator .operator:hover .fill {
-  background: var(--blue);
-}
-.by-operator .count {
-  color: var(--navy);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.hours-grid {
-  display: grid;
-  grid-template-columns: 3.2em repeat(24, minmax(0, 1fr));
-  gap: 2px;
-  font-size: 11.5px;
-}
-.hour-label {
-  overflow: visible;
-  color: var(--mute);
-  white-space: nowrap;
-}
-.day-label {
-  color: var(--mute);
-  line-height: 18px;
-}
-.cell {
-  height: 18px;
-  border-radius: 3px;
-  background: var(--soft);
-}
-.cell.level-1 {
-  background: color-mix(in srgb, var(--blue) 25%, var(--soft));
-}
-.cell.level-2 {
-  background: color-mix(in srgb, var(--blue) 50%, var(--soft));
-}
-.cell.level-3 {
-  background: var(--blue);
-}
-.cell.level-4 {
-  background: var(--navy);
-}
-.cell:hover {
-  box-shadow: 0 0 0 2px var(--navy);
+/* The words behind an "i" button wrap. */
+.chart-tip.words {
+  max-width: 260px;
+  width: max-content;
+  white-space: normal;
 }
 .stack {
   display: grid;
@@ -3405,20 +3808,10 @@ button.quote:hover {
   box-shadow: inset 0 0 0 1.5px var(--soft-edge);
   color: var(--navy);
 }
-/* Open or Closed, and below it, in a team, whose: All, Mine or Unassigned. */
-.list-filters {
-  display: grid;
-  justify-items: stretch;
-  gap: 8px;
-  margin: 0 24px 14px;
-}
 /* One segmented control in an outline, such as Open or Closed. */
-.choices.outlined,
-.choices.quiet {
+.choices.outlined {
   flex-wrap: nowrap;
   gap: 2px;
-}
-.choices.outlined {
   padding: 3px;
   border-radius: 999px;
   box-shadow: inset 0 0 0 1.5px var(--field-line);
@@ -3428,34 +3821,31 @@ button.quote:hover {
   padding: 0 14px;
   font-size: 14px;
 }
-/* Quieter than an outlined one: small muted words, and the chosen one navy on a soft pill. */
-.choices.quiet label {
-  gap: 5px;
-  min-height: 28px;
-  padding: 0 10px;
-  color: var(--mute);
-  font-size: 13px;
-}
-.choices.quiet label:has(:checked) {
-  box-shadow: none;
-  color: var(--navy);
-}
-/* Under Open and Closed, the same width, with its edges inside the outline's. */
-.list-filters > .choices.quiet {
-  padding: 0 3px;
-}
-/* Open and Closed, as two equal halves as wide as the search field. */
+/* Open and Closed, or All, Mine and Unassigned, in equal parts across the filter card. */
 .choices.full label {
   flex: 1;
   justify-content: center;
+  padding: 0 8px;
+}
+/* Tabs: a row of words over a line, the chosen one underlined. */
+.choices.tabs {
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.choices.tabs label {
+  min-height: 0;
+  padding: 8px 12px 10px;
+  border-radius: 8px 8px 0 0;
+  color: var(--mute);
+}
+.choices.tabs label:has(:checked) {
+  background: none;
+  box-shadow: inset 0 -2px 0 var(--navy);
+  color: var(--navy);
 }
 .choice-count {
   color: var(--mute);
   font-variant-numeric: tabular-nums;
-}
-.choices.quiet .choice-count {
-  font-size: 12px;
-  font-weight: 500;
 }
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
    preview comes first, so on a narrow screen it sits above the form. */
@@ -3547,7 +3937,7 @@ button.quote:hover {
   justify-self: start;
 }
 .color-field,
-.radius-field {
+.range-field {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -3600,14 +3990,14 @@ button.quote:hover {
 .color-box .mono:focus-visible {
   outline: none;
 }
-.radius-field input {
+.range-field input {
   width: 180px;
   min-height: 0;
   padding: 0;
   border: 0;
   accent-color: var(--fill);
 }
-.radius-field output {
+.range-field output {
   min-width: 44px;
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
@@ -3620,16 +4010,27 @@ button.quote:hover {
   }
   .setting-row > .choices,
   .color-field,
-  .radius-field {
+  .range-field {
     justify-self: start;
     justify-content: flex-start;
   }
-  .radius-field input {
+  .range-field input {
     width: auto;
     flex: 1;
   }
-  .radius-field {
+  .range-field {
     justify-self: stretch;
+  }
+  /* Five choices, such as the chat button's, share the row and wrap only when they must. */
+  .setting-row > .choices.outlined {
+    flex-wrap: wrap;
+    justify-self: stretch;
+    border-radius: 20px;
+  }
+  .setting-row > .choices.outlined label {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 8px;
   }
 }
 .widget-save {
@@ -3714,41 +4115,10 @@ button.quote:hover {
 .contacts time {
   white-space: nowrap;
 }
-/* One contact: the folds on the left, and the name and the delete beside them. */
-.contact-page {
-  display: grid;
-  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
-  gap: 24px 40px;
-  align-items: start;
-}
-.contact-folds {
-  border-radius: 16px;
-  box-shadow: inset 0 0 0 1px var(--line);
-  overflow: hidden;
-}
-.contact-folds > .fold:last-child {
-  border-bottom: 0;
-}
-.contact-rows .page-row {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-}
-.contact-rows .page-row:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-.identity-form {
-  display: grid;
-  gap: 12px;
-  max-width: 420px;
-}
 .identity-field {
   display: grid;
   gap: 6px;
   font-weight: 600;
-}
-.identity-form .pill {
-  justify-self: start;
 }
 .back-link {
   display: inline-flex;
@@ -3757,6 +4127,245 @@ button.quote:hover {
   min-height: 0;
   padding: 0;
   vertical-align: baseline;
+}
+/* One contact: who they are on a blue band, the facts as tiles, then the conversations and pages
+   beside the note and the details. */
+.contact-page {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 20px 32px 32px;
+}
+.contact-page > .back-link {
+  justify-self: start;
+  color: var(--blue-deep);
+  font-size: 14px;
+}
+.contact-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 22px;
+  background: var(--tile-blue);
+}
+.contact-hero .avatar {
+  width: 72px;
+  height: 72px;
+  box-shadow: 0 0 0 3px var(--surface);
+  font-size: 28px;
+}
+.contact-hero .flag-badge {
+  right: -6px;
+  bottom: 0;
+  width: 28px;
+  height: 21px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 3px var(--tile-blue);
+  font-size: 19px;
+}
+.contact-who {
+  flex: 1;
+  min-width: 240px;
+}
+.contact-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.contact-name h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--navy);
+  font: 700 32px / 1.1 var(--display);
+}
+.contact-name .chip {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--navy);
+}
+.contact-name .chip.signed {
+  color: var(--green);
+}
+.contact-name .chip.bad {
+  color: var(--bad);
+}
+.contact-email {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.contact-email-link {
+  overflow: hidden;
+  color: var(--text-strong);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-email-link:hover {
+  text-decoration: underline;
+}
+.contact-seen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 13.5px;
+}
+.contact-seen-link {
+  color: var(--blue-deep);
+  text-decoration: none;
+}
+.contact-seen-link:hover {
+  text-decoration: underline;
+}
+.contact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.contact-actions .round {
+  background: var(--surface);
+}
+.contact-actions .round:hover,
+.contact-actions .round[aria-expanded="true"] {
+  background: var(--soft);
+}
+/* As many tiles to a row as fit. */
+.contact-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.contact-tiles .tile {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.contact-tiles dt {
+  color: var(--mute);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.contact-tiles dd {
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--navy);
+  font: 700 19px / 1.2 var(--display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-tiles .tile-sub {
+  margin-top: 0;
+  color: var(--mute);
+  font: 400 12.5px / 1.45 var(--body);
+}
+.contact-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 24px;
+  align-items: start;
+}
+.contact-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.contact-conversations {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.conversation-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  text-align: left;
+  transition: background-color 0.12s;
+}
+.conversation-card:hover {
+  background: var(--row-hover);
+}
+.conversation-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.conversation-top b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--navy);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-top time {
+  flex: none;
+  color: var(--mute);
+  font-size: 13px;
+}
+.conversation-facts {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-main .journey {
+  font-size: 14px;
+}
+.contact-side {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+.contact-side h3 {
+  margin-bottom: 10px;
+  color: var(--navy);
+  font: 700 16px / 1.2 var(--display);
+}
+.contact-details {
+  padding: 16px;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.contact-details .page-context {
+  margin-top: 12px;
+  font-size: 12.5px;
+}
+/* The note as a sticky note: the field takes the card's yellow. */
+.contact-note {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--warn-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn-fill) 30%, transparent);
+}
+.contact-note .note-field {
+  width: 100%;
+  min-height: 96px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.contact-note small {
+  color: var(--mute);
+  font-size: 12px;
 }
 .members th {
   padding: 14px 12px 10px;
@@ -3939,6 +4548,29 @@ button.quote:hover {
 }
 .meter.full .meter-note {
   color: var(--bad);
+}
+/* Appearance: the members the header shows, in order, each with its buttons. */
+.chosen-members {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chosen-members > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chosen-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chosen-members .down svg {
+  transform: rotate(180deg);
 }
 /* Blocked visitors, API keys and webhooks: one item a row, with a line between rows. */
 .item-list {
@@ -4228,13 +4860,53 @@ button.quote:hover {
   }
 }
 
-/* Phone: one pane at a time. */
-@media (max-width: 760px) {
-  .app {
-    padding: 0 8px 8px;
-  }
-  .contact-page {
+/* The contact page: the note and details above the conversations, side by side, then stacked on a
+   phone. */
+@media (max-width: 1100px) {
+  .contact-columns {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .contact-side {
+    order: -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .contact-page {
+    padding: 16px;
+  }
+  .contact-hero {
+    padding: 16px;
+  }
+  .contact-name h2 {
+    font-size: 26px;
+  }
+  .contact-actions {
+    width: 100%;
+  }
+  .contact-actions .pill.dark {
+    flex: 1;
+  }
+  .contact-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .contact-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Phone: one pane at a time, a compact top bar, and the sections in a tab bar at the bottom. The
+   insets keep everything clear of the notch, the home bar and the browser's own bars. */
+@media (max-width: 760px) {
+  :root {
+    --tab-bar-height: 58px;
+    --phone-edge: max(8px, env(safe-area-inset-left));
+  }
+  .shell {
+    height: 100dvh;
+  }
+  .app {
+    padding: 0 var(--phone-edge) calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 8px);
   }
   .contacts .wide-cell {
     display: none;
@@ -4243,52 +4915,91 @@ button.quote:hover {
     width: 100%;
     max-width: none;
   }
+  /* The top bar: the workspace on the left, Get started and the operator on the right. The tab
+     bar names the app, so the wordmark goes. */
+  .side {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: max(8px, env(safe-area-inset-top)) 4px 6px;
+  }
   .brand {
-    order: 0;
+    display: none;
   }
   .workspace-menu,
   .side > .workspace {
-    flex: 1;
-    order: 1;
+    flex: 0 1 auto;
+    min-width: 0;
     max-width: none;
   }
-  .me-menu {
-    order: 2;
+  .get-started,
+  .get-started + .me-menu {
     margin: 0;
   }
   .get-started {
-    order: 2;
-    margin: 0;
+    margin-left: auto;
   }
-  /* On a phone the steps rise as a sheet from the bottom. */
+  /* The steps drop under the top bar as a card, inside the screen's edges. */
   .get-started-panel {
     position: fixed;
-    top: auto;
+    top: calc(max(8px, env(safe-area-inset-top)) + 52px);
+    right: 12px;
+    bottom: auto;
+    left: 12px;
+    width: auto;
+    max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - 64px);
+    overflow-y: auto;
+  }
+  .get-started-panel .icon-button {
+    width: 40px;
+    height: 40px;
+    margin: -8px -8px 0 0;
+  }
+  .nav {
+    position: fixed;
     right: 0;
     bottom: 0;
     left: 0;
-    width: auto;
-    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
-    border-radius: 22px 22px 0 0;
-  }
-  .nav {
-    order: 3;
-    flex: 1 1 100%;
-    justify-content: space-between;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
     margin: 0;
-    /* The items fit a 360px phone. A narrower screen scrolls them, never the page. */
-    overflow-x: auto;
-    scrollbar-width: none;
+    padding: 4px max(4px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom))
+      max(4px, env(safe-area-inset-left));
+    border-top: 1px solid var(--line);
+    background: var(--surface);
   }
   .nav button {
-    flex: 1;
+    position: relative;
+    flex-direction: column;
     justify-content: center;
-    gap: 6px;
-    padding: 0 6px;
-    font-size: 14px;
+    gap: 2px;
+    width: auto;
+    min-width: 0;
+    height: calc(var(--tab-bar-height) - 9px);
+    min-height: 0;
+    padding: 0 2px;
+    font-size: 11.5px;
+    line-height: 1.2;
   }
-  .nav svg {
-    display: none;
+  .nav button[aria-current="page"] {
+    background: var(--soft);
+    box-shadow: none;
+  }
+  /* The count sits on the icon's corner, so every label keeps its place. */
+  .nav .count {
+    position: absolute;
+    top: 3px;
+    left: calc(50% + 4px);
+    min-width: 18px;
+    margin: 0;
+    padding: 0 5px;
+    font-size: 11px;
+    line-height: 16px;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+  .toasts {
+    bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px);
   }
   .panel {
     border-radius: 18px;
@@ -4305,7 +5016,8 @@ button.quote:hover {
   }
   .app.showing {
     grid-template-rows: minmax(0, 1fr);
-    padding-top: 8px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
   .app:not(.showing) .thread {
     display: none;
@@ -4315,8 +5027,8 @@ button.quote:hover {
     margin-left: -8px;
   }
   .thread-head {
-    gap: 10px;
-    padding: 10px 14px 12px;
+    gap: 8px;
+    padding: 8px 12px 10px;
   }
   .who-is {
     flex-basis: 100%;
@@ -4328,10 +5040,17 @@ button.quote:hover {
   .thread-head .actions {
     flex: 1 1 100%;
     flex-wrap: nowrap;
+    gap: 6px;
     min-width: 0;
   }
   .assignee {
     flex: 1;
+    min-width: 0;
+  }
+  /* The assignee is the row's first control, so its list opens from its left edge. */
+  .thread-head .assignee .popup {
+    right: auto;
+    left: 0;
   }
   .assignee .select-button {
     width: 100%;
@@ -4354,7 +5073,63 @@ button.quote:hover {
     max-width: calc(84% + 34px);
   }
   .compose {
-    padding: 0 10px 10px;
+    padding: 0 8px 8px;
+  }
+  .compose .box {
+    position: relative;
+    padding: 4px;
+  }
+  /* The emoji grid opens over the whole box, as the button sits too far right for its width. */
+  .compose .emoji-picker {
+    position: static;
+  }
+  .compose .box textarea {
+    min-height: 40px;
+    max-height: 160px;
+  }
+  .format-toggle {
+    display: grid;
+  }
+  .compose:not(.formatting) .format-tools,
+  .compose .tools-divider {
+    display: none;
+  }
+  /* One row: attach, emoji, Aa, the field and send. The formats show above the field. */
+  .compose:not(.editing) .box {
+    grid-template-columns: repeat(3, auto) minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0;
+  }
+  .compose:not(.editing) .box > * {
+    grid-column: 1 / -1;
+  }
+  .compose:not(.editing) .compose-tools {
+    display: contents;
+  }
+  .compose:not(.editing) .compose-tools > * {
+    grid-row: 3;
+  }
+  .compose:not(.editing) .box textarea {
+    grid-row: 3;
+    grid-column: 4;
+  }
+  .compose:not(.editing) .send {
+    grid-column: 5;
+  }
+  .compose:not(.editing) .format-tools {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .compose.editing .compose-tools {
+    flex-wrap: wrap;
+  }
+  .compose.editing .format-tools {
+    flex-basis: 100%;
+    order: -1;
   }
   .closed,
   .thread > .bad {
@@ -4366,8 +5141,8 @@ button.quote:hover {
   .list .page-head {
     padding: 22px 18px 12px;
   }
-  .search {
-    margin-inline: 18px;
+  .list-tools {
+    margin-inline: 12px;
   }
   .page-head h2 {
     font-size: 25px;
@@ -4389,19 +5164,46 @@ button.quote:hover {
   .app .select-button {
     min-height: 44px;
   }
-  .nav button {
-    min-height: 44px;
+  /* The thread's controls share one row on a 360px phone, so they keep the 40px minimum. */
+  .thread-head .pill,
+  .thread-head .assignee .select-button {
+    min-height: 40px;
+    height: 40px;
+    padding: 0 12px;
+  }
+  .thread-head .assignee .select-button {
+    padding-left: 6px;
   }
   .thread-head .round {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
   }
   .thread-head .icon-button,
   .back,
   .compose .icon-button,
-  .compose button[type="submit"] {
-    min-width: 44px;
-    min-height: 44px;
+  .compose button[type="submit"],
+  .panel-who .icon-button,
+  .live-tool {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  /* A finger needs 40px: the text buttons, the docs links and the small pills grow to it. */
+  .text-button,
+  .doc-link,
+  .app .live-actions .pill {
+    min-height: 40px;
+  }
+  .choices.outlined label {
+    min-height: 36px;
+  }
+  /* A field under 16px makes iOS zoom the page when it takes the focus. */
+  :root
+    :is(
+      input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+      textarea,
+      select
+    ) {
+    font-size: 16px;
   }
   .members thead,
   .members .email-cell {
@@ -4445,13 +5247,6 @@ button.quote:hover {
   /* Above the card, which starts near a quarter of the screen. */
   .cloud-b {
     top: 11%;
-  }
-  /* Two figures a row, and an odd last one takes the full row, so no card sits beside a gap. */
-  .figures {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .figures div:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
   }
   .signin {
     padding-bottom: 150px;
@@ -4557,79 +5352,440 @@ button.quote:hover {
   gap: 8px;
 }
 
-/* Visitors: the world in dots on a navy sea, with a yellow dot for each country that has people. */
-.world-map {
-  position: relative;
-  max-width: 980px;
-  aspect-ratio: 360 / 142;
-  margin: 8px 0 20px;
-  overflow: hidden;
-  border-radius: 18px;
-  background: var(--map-sea);
+/* Visitors: the map and the tiles on the left, the people on the right in a column that stays in
+   view. On a narrow screen the people come between the map and the tiles. */
+.live-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
-.world-land {
+.live-pulse {
+  position: relative;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.live-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--green);
+  animation: live-ping 1.8s ease-out infinite;
+}
+@keyframes live-ping {
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+.live-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 24px;
+  align-items: start;
+  padding-top: 10px;
+}
+.live-side {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* The world on a navy sea, which pans and zooms inside its box. */
+.live-map {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 360 / 150;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--map-sea);
+  cursor: grab;
+  user-select: none;
+  touch-action: pan-y;
+}
+/* Zoomed, a drag pans the map, so it no longer scrolls the page. */
+.live-map.zoomed {
+  touch-action: none;
+}
+.live-map.dragging {
+  cursor: grabbing;
+}
+.live-zoom {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.live-map.dragging .live-zoom {
+  transition: none;
+}
+/* The land starts a little below the top, as WORLD_TOP in visitors.tsx says. */
+.live-world {
+  position: absolute;
+  inset: 4% 0 0;
+}
+.live-land {
   position: absolute;
   inset: 0;
   background: var(--map-land);
   mask: url("world.svg") center / 100% 100% no-repeat;
 }
-.world-map .map-dot {
+.live-dot {
   position: absolute;
+  display: grid;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+  padding: 0;
   border-radius: 50%;
   background: var(--map-dot);
-  box-shadow: 0 0 0 4px rgb(255 201 23 / 0.25);
-  transform: translate(-50%, -50%);
+  color: var(--map-ink);
+  font: 700 10.5px / 1 var(--body);
+  box-shadow: 0 0 0 3px rgb(255 201 23 / 0.22);
+  transition:
+    box-shadow 0.15s,
+    transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.live-list {
+.live-dot.group {
+  width: 18px;
+  height: 18px;
+}
+.live-dot::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1.5px solid var(--map-dot);
+  border-radius: 50%;
+  opacity: 0;
+  animation: live-ring 2.4s ease-out infinite;
+}
+@keyframes live-ring {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+.live-dot:hover,
+.live-dot.lit {
+  box-shadow:
+    0 0 0 3px rgb(255 201 23 / 0.35),
+    0 0 0 7px rgb(255 201 23 / 0.16);
+}
+.live-dot.dim {
+  opacity: 0.35;
+}
+.live-dot:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.live-tools {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
   display: grid;
+  gap: 4px;
+}
+.live-tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+.live-tool:hover {
+  background: rgb(255 255 255 / 0.2);
+}
+.live-reset {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--map-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+}
+.live-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 14px;
+  max-width: calc(100% - 80px);
+  color: rgb(255 255 255 / 0.55);
+  font-size: 12px;
+}
+/* The card over a dot, white on the sea in both themes, as the reset chip is. */
+.live-card {
+  position: absolute;
+  z-index: 3;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--map-ink);
+  font-size: 13px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.3);
+  transform: translate(-50%, calc(-100% - 16px));
+  pointer-events: none;
+}
+.live-card.below {
+  transform: translate(-50%, 16px);
+}
+.live-card b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.live-card ul {
   padding: 0;
   list-style: none;
 }
-.live-row {
+.live-card-row {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 14px 4px;
-  border-top: 1px solid var(--line);
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  color: var(--map-ink-mute);
 }
-.live-flag {
-  flex: none;
-  width: 28px;
-  font-size: 22px;
-  line-height: 1.2;
-  text-align: center;
-}
-.live-text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.live-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.live-text b {
-  color: var(--navy);
-}
-.live-page {
+.live-card em {
   overflow: hidden;
-  color: var(--blue-deep);
+  font-style: normal;
+  font-weight: 600;
+  color: var(--map-ink);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.live-text small {
+
+/* Pages now and Came from, as bars behind the counts. */
+.live-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.live-tile {
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.live-tile h3,
+.live-people h3 {
+  margin-bottom: 10px;
+  color: var(--navy);
+  font: 700 16px / 1.2 var(--display);
+}
+.live-bars {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+.live-bars-row {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  color: var(--navy);
+  font-size: 13.5px;
+}
+.live-bars span {
+  position: relative;
+}
+.live-bars span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-bars span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.live-bars .live-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 9px;
+  background: var(--tile-blue);
+}
+
+/* The people, in a column that scrolls on its own beside the map. */
+.live-people {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+  min-width: 0;
+}
+.live-list {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.live-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  transition:
+    background 0.12s,
+    box-shadow 0.12s;
+}
+.live-row:hover,
+.live-row.lit {
+  background: var(--row-hover);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.live-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--soft);
   color: var(--mute);
-  font-size: 13px;
+  font-size: 21px;
 }
-.live-chat {
-  cursor: pointer;
+.live-face.known {
+  background: var(--tile-yellow);
+  color: var(--navy);
+  font: 700 14px var(--body);
 }
-.map-credit {
-  margin-top: 18px;
+.live-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.live-who b {
+  overflow: hidden;
+  color: var(--navy);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip.live-chatting {
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+  font-size: 12px;
+}
+.chip.live-chatting::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.live-page {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 2px;
+  font-size: 14px;
+}
+.live-page a {
+  overflow: hidden;
+  color: var(--blue-deep);
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-page a:hover {
+  text-decoration: underline;
+}
+.live-page span {
+  overflow: hidden;
+  padding-top: 1px;
+  color: var(--mute);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+  color: var(--mute);
   font-size: 12.5px;
 }
-.credit-link {
+.live-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.live-actions .pill {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.live-credit {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.live-credit a {
   color: var(--mute);
+}
+
+@media (max-width: 1100px) {
+  .live-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live-side {
+    display: contents;
+  }
+  .live-tiles {
+    order: 3;
+  }
+  .live-people {
+    position: static;
+    max-height: none;
+  }
+}
+@media (max-width: 640px) {
+  .live-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live-map {
+    aspect-ratio: 360 / 190;
+  }
+  .live-hint {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-pulse::after,
+  .live-dot::before {
+    animation: none;
+  }
+  .live-zoom,
+  .live-dot {
+    transition: none;
+  }
 }

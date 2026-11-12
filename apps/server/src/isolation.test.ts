@@ -36,6 +36,7 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { visitorAuthorId } from "./identity.ts";
 import { createImages } from "./images.ts";
 import { appendMessage } from "./messages.ts";
 import { createPush } from "./push.ts";
@@ -267,10 +268,15 @@ const ATTACKS: Record<string, Attack> = {
       401,
     );
   },
-  "GET /v1/widget/:key/presence": async ({ widget, a, b }) => {
+  "GET /v1/widget/:key/presence": async ({ widget, operator: as, a, b, anna }) => {
     expect((await widget(a.publicKey, "GET", "presence", null, SITE_B)).status).toBe(403);
+    // Online in one workspace is not online in another.
+    const beat = { viewing: null, left: null, hidden: false };
+    expect((await as(anna, "PUT", inWorkspace(a.id, "/presence"), beat)).status).toBe(200);
     const own = await widget(b.publicKey, "GET", "presence", null, SITE_B);
-    expect(Object.keys((await own.json()) as object)).toEqual(["online", "emailReplies"]);
+    const body = (await own.json()) as { members: string[] };
+    expect(Object.keys(body)).toEqual(["online", "members", "emailReplies", "replySeconds"]);
+    expect(body.members).not.toContain(visitorAuthorId(anna.id));
   },
   "GET /v1/widget/:key/appearance": async ({ server, a, b, secrets }) => {
     await owner
@@ -594,11 +600,11 @@ const ATTACKS: Record<string, Attack> = {
     expect(await readStream(own)).not.toContain(other.conversationId);
   },
   "PUT /v1/operator/workspaces/:workspaceId/presence": async ({ operator: as, anna, b }) => {
-    const body = { viewing: null, left: null };
+    const body = { viewing: null, left: null, hidden: false };
     expect((await as(anna, "PUT", inWorkspace(b.id, "/presence"), body)).status).toBe(404);
   },
   "POST /v1/operator/workspaces/:workspaceId/presence/leave": async ({ operator: as, anna, b }) => {
-    const body = { conversationId: null };
+    const body = { conversationId: null, signingOut: true };
     expect((await as(anna, "POST", inWorkspace(b.id, "/presence/leave"), body)).status).toBe(404);
   },
   "GET /v1/operator/workspaces/:workspaceId/members": async ({ operator: as, anna, bea, a, b }) => {
@@ -774,6 +780,16 @@ const ATTACKS: Record<string, Attack> = {
     // Only the caller's own picture changes.
     expect(await pictureOf(anna.id)).toBeDefined();
     expect(await pictureOf(bea.id)).toBeUndefined();
+  },
+  "PUT /v1/operator/me/status": async ({ operator: as, anna, bea }) => {
+    expect((await as(anna, "PUT", "/v1/operator/me/status", { away: true })).status).toBe(200);
+    // Only the caller's own status changes.
+    const [other] = await owner
+      .select({ away: operator.away })
+      .from(operator)
+      .where(eq(operator.id, bea.id));
+    expect(other?.away).toBe(false);
+    await as(anna, "PUT", "/v1/operator/me/status", { away: false });
   },
   "DELETE /v1/operator/me/picture": async ({ operator: as, anna, bea }) => {
     await owner

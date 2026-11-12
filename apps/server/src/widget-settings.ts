@@ -1,20 +1,24 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { etag } from "hono/etag";
 import {
   firstName,
+  HEADER_FACES_MAX,
   RADIUS_MAX_PX,
   type SavedAppearance,
   TEXT_MAX,
   TITLE_MAX,
   type WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
+import { medianFirstReplySeconds } from "./analytics.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import {
   message,
   operator,
   widgetEmailAsk,
+  widgetHeaderFaces,
+  widgetHeaderStatus,
   widgetLauncher,
   widgetPosition,
   widgetSettings,
@@ -37,8 +41,8 @@ import { PUBLIC_KEY, widgetWorkspace } from "./workspaces.ts";
 const PREFIX = "/v1/operator/workspaces/{workspaceId}/widget";
 /** How long a site keeps the appearance, so a saved change reaches it within 5 minutes. */
 const APPEARANCE_CACHE = "public, max-age=300";
-/** The members the widget's header shows. */
-const TEAM_FACES = 3;
+/** The days of first replies behind the header's usual reply time, as Analytics' default. */
+const REPLY_TIME_DAYS = 30;
 /** Appearance requests one address may make in a minute: one per page view, cached for 5. */
 const APPEARANCE_PER_MINUTE = 600;
 
@@ -75,8 +79,23 @@ export const WidgetSettingsSchema = z
     branding: z.boolean(),
     sound: z.boolean(),
     transcript: z.boolean(),
+    headerFaces: z.enum(widgetHeaderFaces.enumValues),
+    headerFaceCount: z.number().int().min(1).max(HEADER_FACES_MAX),
+    headerDot: z.boolean(),
+    headerStatus: z.enum(widgetHeaderStatus.enumValues),
+    // The operators `chosen` shows, in order. The widget gets their faces, never these IDs.
+    headerMembers: z
+      .array(z.uuid())
+      .max(HEADER_FACES_MAX)
+      .refine((ids) => new Set(ids).size === ids.length),
   })
   .openapi("WidgetSettings") satisfies z.ZodType<WidgetSettings>;
+
+const TeamFaceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  pictureUrl: z.string().nullable(),
+});
 
 const SavedAppearanceSchema = WidgetSettingsSchema.extend({
   // The chat sends the visitor's unsent words, so operators see them as they type. Workspace
@@ -84,9 +103,20 @@ const SavedAppearanceSchema = WidgetSettingsSchema.extend({
   typingPreview: z.boolean(),
   // The logo's address, which changes with each upload. Null with no logo.
   logoUrl: z.string().nullable(),
-  // Up to 3 members, the ones who sent the latest replies. Who is on the team, not who is online.
-  team: z.array(z.object({ id: z.string(), name: z.string(), pictureUrl: z.string().nullable() })),
+  // Up to 5 members, the ones who sent the latest replies. Who is on the team, not who is online.
+  team: z.array(TeamFaceSchema),
+  // The header's candidates: every member for `online` (latest repliers first), the latest
+  // repliers for `repliers`, the chosen members in order for `chosen`, none for `none`. The widget's
+  // presence answer says which are online now.
+  faces: z.array(TeamFaceSchema),
 }).openapi("WidgetAppearance") satisfies z.ZodType<SavedAppearance>;
+
+/** What any site reads: the operators' IDs stay in the operator app. */
+const PublicAppearanceSchema = SavedAppearanceSchema.omit({ headerMembers: true }).openapi(
+  "WidgetPublicAppearance",
+);
+
+type OperatorAppearance = z.infer<typeof SavedAppearanceSchema>;
 
 const workspaceParams = z.object({ workspaceId: z.uuid() });
 const appearanceAnswer = {
@@ -164,7 +194,10 @@ const appearanceRoute = createRoute({
     "The loader asks for this on each page view, before it draws the launcher. It caches for 5 minutes and answers 304 to a matching If-None-Match. The snippet's attributes and Dinghy.configure() win over these values.",
   request: { params: z.object({ key: z.string() }) },
   responses: {
-    200: appearanceAnswer,
+    200: {
+      description: "The widget's settings, with its logo and the members it shows",
+      content: { "application/json": { schema: PublicAppearanceSchema } },
+    },
     304: { description: "Not changed since the ETag in If-None-Match" },
     404: errorAnswer(
       "not_found: the key is unknown, or the workspace's widget is off: it is suspended, waits, is read-only or was deleted",
@@ -173,30 +206,38 @@ const appearanceRoute = createRoute({
   },
 });
 
-/** The members who replied last, newest first. Each needs one short read of an index. */
-function recentRepliers(tx: Transaction, workspaceId: string) {
-  const lastReply = sql`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId} and ${isChat()})`;
+const memberFace = {
+  id: operator.id,
+  name: operator.name,
+  pictureUpdatedAt: operator.pictureUpdatedAt,
+};
+
+/**
+ * Every member, the latest repliers first, then those who never replied by when they joined. Each
+ * needs one short read of an index. `lastReply` is null for a member who never replied.
+ */
+function membersByLastReply(tx: Transaction, workspaceId: string) {
+  const lastReply = sql<
+    string | null
+  >`(select max(${message.seq}) from ${message} where ${message.workspaceId} = ${workspaceMember.workspaceId} and ${message.authorOperatorId} = ${workspaceMember.operatorId} and ${isChat()})`;
   return tx
-    .select({ id: operator.id, name: operator.name, pictureUpdatedAt: operator.pictureUpdatedAt })
+    .select({ ...memberFace, lastReply: lastReply.as("last_reply") })
     .from(workspaceMember)
     .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-    .where(
-      and(
-        eq(workspaceMember.workspaceId, workspaceId),
-        isNull(workspaceMember.removedAt),
-        isNotNull(lastReply),
-      ),
-    )
-    .orderBy(desc(lastReply))
-    .limit(TEAM_FACES);
+    .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)))
+    .orderBy(sql`"last_reply" desc nulls last`, workspaceMember.createdAt);
 }
+
+/** The members with these IDs, in the IDs' order. An ID that is no member's is skipped. */
+const pickInOrder = <Member extends { id: string }>(ids: string[], members: Member[]) =>
+  ids.flatMap((id) => members.find((member) => member.id === id) ?? []);
 
 /** The settings as the widget reads them. Run it in the workspace's context. */
 async function readAppearance(
   tx: Transaction,
   urls: ImageUrls,
   workspaceId: string,
-): Promise<SavedAppearance> {
+): Promise<OperatorAppearance> {
   const [row] = await tx
     .select({ publicKey: workspace.publicKey, settings: widgetSettings })
     .from(widgetSettings)
@@ -207,18 +248,41 @@ async function readAppearance(
     workspaceId: _workspace,
     logoUpdatedAt,
     customizedAt: _customized,
+    headerMembers,
     ...settings
   } = row.settings;
-  const team = await recentRepliers(tx, workspaceId);
+  const toFace = (member: { id: string; name: string; pictureUpdatedAt: Date | null }) => ({
+    id: visitorAuthorId(member.id),
+    name: firstName(member.name),
+    pictureUrl: urls.picture(member.id, member.pictureUpdatedAt),
+  });
+  const members = await membersByLastReply(tx, workspaceId);
+  const team = members.filter((member) => member.lastReply !== null).slice(0, HEADER_FACES_MAX);
+  const chosen = pickInOrder(headerMembers, members);
+  const faces = { online: members, repliers: team, chosen, none: [] }[settings.headerFaces];
   return {
     ...settings,
+    headerMembers: chosen.map((member) => member.id),
     logoUrl: urls.logo(row.publicKey, logoUpdatedAt),
-    team: team.map((member) => ({
-      id: visitorAuthorId(member.id),
-      name: firstName(member.name),
-      pictureUrl: urls.picture(member.id, member.pictureUpdatedAt),
-    })),
+    team: team.map(toFace),
+    faces: faces.map(toFace),
   };
+}
+
+/**
+ * The 30-day median first reply time, in seconds, for a header that shows it. Null when the header
+ * shows "Online" instead, or with no reply in those days.
+ */
+export function headerReplySeconds(db: Database, workspaceId: string): Promise<number | null> {
+  return withWorkspace(db, workspaceId, async (tx) => {
+    const [row] = await tx
+      .select({ headerStatus: widgetSettings.headerStatus })
+      .from(widgetSettings)
+      .where(eq(widgetSettings.workspaceId, workspaceId));
+    return row?.headerStatus === "reply_time"
+      ? medianFirstReplySeconds(tx, workspaceId, REPLY_TIME_DAYS)
+      : null;
+  });
 }
 
 /**
@@ -351,7 +415,7 @@ export function registerWidgetAppearance(
     const { key } = c.req.valid("param");
     const found = PUBLIC_KEY.test(key) ? await widgetWorkspace(db, key) : null;
     if (found === null) return c.json(NOT_FOUND, 404);
-    const appearance = await withWorkspace(db, found.id, (tx) =>
+    const { headerMembers: _ids, ...appearance } = await withWorkspace(db, found.id, (tx) =>
       readAppearance(tx, urls, found.id),
     );
     c.header("cache-control", APPEARANCE_CACHE);

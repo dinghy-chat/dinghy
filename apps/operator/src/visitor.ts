@@ -1,4 +1,5 @@
-import type { Conversation, VisitorIdentity } from "./api.ts";
+import { markdownText } from "../../../packages/widget/src/markdown.ts";
+import type { ContactDetail, Conversation, VisitorIdentity } from "./api.ts";
 import { MINUTE_MS } from "./format.ts";
 import { t } from "./text.ts";
 
@@ -97,4 +98,10 @@ export function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "l
   const hours = Math.round(minutes / 60);
   if (hours > -24) return words.format(hours, "hour");
   return words.format(Math.round(hours / 24), "day");
+}
+
+/** A conversation's line in a list: its last message as text, an image's word, or none at all. */
+export function conversationPreview(one: ContactDetail["conversations"][number]): string {
+  if (one.messageCount === 0) return t("noMessages");
+  return one.lastBody === null ? t("image") : markdownText(one.lastBody);
 }

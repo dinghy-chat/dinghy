@@ -1,8 +1,8 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { conversation, message, visitor } from "./db/schema.ts";
+import { conversation, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -20,6 +20,7 @@ import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import { containing, isChat } from "./messages.ts";
 import { deleteConversation } from "./moderation.ts";
+import type { VisitorPresence } from "./presence.ts";
 import { allowed } from "./team.ts";
 
 /** The attribute a host site signs for a person's company, which the list shows. */
@@ -59,6 +60,8 @@ const ContactSchema = z
   .openapi("Contact");
 
 const ContactDetailSchema = ContactSchema.extend({
+  // A widget stream of the visitor's is open now. Null when the server cannot tell.
+  online: z.boolean().nullable(),
   attributes: z.record(z.string(), z.unknown()).nullable(),
   pageContext: PageContextSchema.nullable(),
   // Private to the team.
@@ -71,6 +74,14 @@ const ContactDetailSchema = ContactSchema.extend({
       updatedAt: z.string(),
       // The newest message's text, or null for an image.
       lastBody: z.string().nullable(),
+      // Messages people wrote, not counting deleted ones.
+      messageCount: z.number().int(),
+      assigneeName: z.string().nullable(),
+      // The member or API key that wrote the newest close. Null while open, or when the visitor
+      // closed it.
+      closedBy: z.string().nullable(),
+      // From the start to the first reply from a member or an API key. Null with no reply.
+      firstReplySeconds: z.number().int().nullable(),
     }),
   ),
   // The newest pages, newest first, at most 20.
@@ -297,6 +308,59 @@ async function listContacts(
   };
 }
 
+// An ISO time in UTC to the millisecond, as a JSON date writes it. A raw statement reads a time as
+// Postgres's own text.
+const ISO_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"';
+
+type ConversationRow = {
+  id: string;
+  status: "open" | "closed";
+  createdAt: string;
+  updatedAt: string;
+  lastBody: string | null;
+  messageCount: number;
+  assigneeName: string | null;
+  closedBy: string | null;
+  firstReplySeconds: number | null;
+};
+
+/**
+ * A contact's conversations, newest activity first, each with its preview and numbers, in one
+ * statement: each lateral reads one conversation's run of the message index.
+ */
+const contactConversations = (tx: Transaction, workspaceId: string, visitorId: string) =>
+  tx.execute<ConversationRow>(sql`
+    SELECT c.id, c.status,
+           to_char(c.created_at AT TIME ZONE 'UTC', ${ISO_FORMAT}) AS "createdAt",
+           to_char(c.updated_at AT TIME ZONE 'UTC', ${ISO_FORMAT}) AS "updatedAt",
+           newest.body AS "lastBody", stats.message_count AS "messageCount",
+           assignee.name AS "assigneeName", closer.name AS "closedBy",
+           extract(epoch FROM stats.first_reply_at - c.created_at)::int AS "firstReplySeconds"
+    FROM conversation AS c
+    LEFT JOIN operator AS assignee ON assignee.id = c.assignee_operator_id
+    LEFT JOIN LATERAL (
+      SELECT m.body FROM message AS m
+      WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
+        AND ${isChat(sql`m.kind`)} AND m.deleted_at IS NULL
+      ORDER BY m.seq DESC LIMIT 1
+    ) AS newest ON true
+    LEFT JOIN LATERAL (
+      SELECT count(*) FILTER (WHERE m.deleted_at IS NULL)::int AS message_count,
+             min(m.created_at) FILTER (WHERE m.author_visitor_id IS NULL) AS first_reply_at
+      FROM message AS m
+      WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
+        AND ${isChat(sql`m.kind`)}
+    ) AS stats ON true
+    LEFT JOIN LATERAL (
+      SELECT coalesce(o.name, k.name) AS name FROM message AS m
+      LEFT JOIN operator AS o ON o.id = m.author_operator_id
+      LEFT JOIN api_key AS k ON k.workspace_id = m.workspace_id AND k.id = m.author_api_key_id
+      WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id AND m.kind = 'closed'
+      ORDER BY m.seq DESC LIMIT 1
+    ) AS closer ON c.status = 'closed'
+    WHERE c.workspace_id = ${workspaceId} AND c.visitor_id = ${visitorId}
+    ORDER BY c.updated_at DESC`);
+
 /** One contact with everything the contact page shows, or null. */
 async function readContact(tx: Transaction, workspaceId: string, visitorId: string) {
   const [row] = await tx
@@ -309,32 +373,7 @@ async function readContact(tx: Transaction, workspaceId: string, visitorId: stri
     .from(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
   if (row === undefined) return null;
-  const newest = tx
-    .select({ body: message.body })
-    .from(message)
-    .where(
-      and(
-        eq(message.workspaceId, workspaceId),
-        eq(message.conversationId, conversation.id),
-        isChat(),
-        isNull(message.deletedAt),
-      ),
-    )
-    .orderBy(desc(message.seq))
-    .limit(1)
-    .as("newest");
-  const conversations = await tx
-    .select({
-      id: conversation.id,
-      status: conversation.status,
-      createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      lastBody: newest.body,
-    })
-    .from(conversation)
-    .leftJoinLateral(newest, sql`true`)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
-    .orderBy(desc(conversation.updatedAt));
+  const conversations = await contactConversations(tx, workspaceId, visitorId);
   const pages = await visitorPages(tx, workspaceId, visitorId);
   const { attributes, pageContext, note, ...contact } = row;
   return {
@@ -342,11 +381,7 @@ async function readContact(tx: Transaction, workspaceId: string, visitorId: stri
     attributes: (attributes as Record<string, unknown> | null) ?? null,
     pageContext: PageContextSchema.nullable().catch(null).parse(pageContext),
     note,
-    conversations: conversations.map((one) => ({
-      ...one,
-      createdAt: one.createdAt.toISOString(),
-      updatedAt: one.updatedAt.toISOString(),
-    })),
+    conversations: conversations.rows,
     pages: pages.map((page) => ({ ...page, viewedAt: page.viewedAt.toISOString() })),
   };
 }
@@ -393,7 +428,16 @@ const csvLine = (contact: ReturnType<typeof contactView>) =>
     .map(csvCell)
     .join(",")}\r\n`;
 
-export function registerContactRoutes(app: App, db: Database, live: Live): void {
+export function registerContactRoutes(
+  app: App,
+  { db, live, visitorPresence }: { db: Database; live: Live; visitorPresence: VisitorPresence },
+): void {
+  /** The contact with whether they are on the site now, which Valkey knows, not Postgres. */
+  const withPresence = async (
+    workspaceId: string,
+    found: NonNullable<Awaited<ReturnType<typeof readContact>>>,
+  ) => ({ ...found, online: await visitorPresence.online(workspaceId, found.id) });
+
   app.openapi(listRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const options = c.req.valid("query");
@@ -432,7 +476,7 @@ export function registerContactRoutes(app: App, db: Database, live: Live): void 
     const { visitorId } = c.req.valid("param");
     const found = await withWorkspace(db, id, (tx) => readContact(tx, id, visitorId));
     if (found === null) return c.json(NOT_FOUND, 404);
-    return c.json(found, 200);
+    return c.json(await withPresence(id, found), 200);
   });
 
   app.openapi(changeRoute, async (c) => {
@@ -462,7 +506,7 @@ export function registerContactRoutes(app: App, db: Database, live: Live): void 
     });
     if (result === "missing" || result === null) return c.json(NOT_FOUND, 404);
     if (result === "signed_in") return c.json(SIGNED_IN, 409);
-    return c.json(result, 200);
+    return c.json(await withPresence(id, result), 200);
   });
 
   app.openapi(deleteRoute, async (c) => {

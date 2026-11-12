@@ -133,44 +133,7 @@
         },
         "required": ["name", "version", "billing", "signup", "email"]
       },
-      "WidgetAppearance": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/WidgetSettings"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "typingPreview": {
-                "type": "boolean"
-              },
-              "logoUrl": {
-                "type": ["string", "null"]
-              },
-              "team": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "pictureUrl": {
-                      "type": ["string", "null"]
-                    }
-                  },
-                  "required": ["id", "name", "pictureUrl"]
-                }
-              }
-            },
-            "required": ["typingPreview", "logoUrl", "team"]
-          }
-        ]
-      },
-      "WidgetSettings": {
+      "WidgetPublicAppearance": {
         "type": "object",
         "properties": {
           "title": {
@@ -231,6 +194,64 @@
           },
           "transcript": {
             "type": "boolean"
+          },
+          "headerFaces": {
+            "type": "string",
+            "enum": ["online", "repliers", "chosen", "none"]
+          },
+          "headerFaceCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "headerDot": {
+            "type": "boolean"
+          },
+          "headerStatus": {
+            "type": "string",
+            "enum": ["presence", "reply_time"]
+          },
+          "typingPreview": {
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "type": ["string", "null"]
+          },
+          "team": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pictureUrl": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["id", "name", "pictureUrl"]
+            }
+          },
+          "faces": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pictureUrl": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["id", "name", "pictureUrl"]
+            }
           }
         },
         "required": [
@@ -247,7 +268,15 @@
           "emailAsk",
           "branding",
           "sound",
-          "transcript"
+          "transcript",
+          "headerFaces",
+          "headerFaceCount",
+          "headerDot",
+          "headerStatus",
+          "typingPreview",
+          "logoUrl",
+          "team",
+          "faces"
         ]
       },
       "NewVisitor": {
@@ -492,6 +521,9 @@
           "pictureUrl": {
             "type": ["string", "null"]
           },
+          "away": {
+            "type": "boolean"
+          },
           "workspaces": {
             "type": "array",
             "items": {
@@ -549,7 +581,16 @@
             "type": ["string", "null"]
           }
         },
-        "required": ["id", "name", "email", "pictureUrl", "workspaces", "billing", "contact"]
+        "required": [
+          "id",
+          "name",
+          "email",
+          "pictureUrl",
+          "away",
+          "workspaces",
+          "billing",
+          "contact"
+        ]
       },
       "InboxWorkspace": {
         "type": "object",
@@ -1048,11 +1089,32 @@
               "p90Seconds": {
                 "type": ["number", "null"]
               },
-              "within5Minutes": {
-                "type": ["number", "null"]
+              "fast": {
+                "type": "integer"
               }
             },
-            "required": ["medianSeconds", "p90Seconds", "within5Minutes"]
+            "required": ["medianSeconds", "p90Seconds", "fast"]
+          },
+          "previous": {
+            "type": "object",
+            "properties": {
+              "started": {
+                "type": "integer"
+              },
+              "firstReply": {
+                "type": "object",
+                "properties": {
+                  "medianSeconds": {
+                    "type": ["number", "null"]
+                  },
+                  "fast": {
+                    "type": "integer"
+                  }
+                },
+                "required": ["medianSeconds", "fast"]
+              }
+            },
+            "required": ["started", "firstReply"]
           },
           "perDay": {
             "type": "array",
@@ -1069,25 +1131,62 @@
               "required": ["date", "conversations"]
             }
           },
-          "operators": {
+          "repliers": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "operatorId": {
-                  "type": ["string", "null"]
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["operator"]
+                    },
+                    "operatorId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "conversations": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["kind", "operatorId", "name", "conversations"]
                 },
-                "apiKeyId": {
-                  "type": ["string", "null"]
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["api_key"]
+                    },
+                    "apiKeyId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "conversations": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["kind", "apiKeyId", "name", "conversations"]
                 },
-                "name": {
-                  "type": ["string", "null"]
-                },
-                "conversations": {
-                  "type": "integer"
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["former"]
+                    },
+                    "conversations": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["kind", "conversations"]
                 }
-              },
-              "required": ["operatorId", "apiKeyId", "name", "conversations"]
+              ]
             }
           },
           "hours": {
@@ -1107,8 +1206,9 @@
           "closed",
           "answered",
           "firstReply",
+          "previous",
           "perDay",
-          "operators",
+          "repliers",
           "hours"
         ]
       },
@@ -1183,6 +1283,9 @@
           {
             "type": "object",
             "properties": {
+              "online": {
+                "type": ["boolean", "null"]
+              },
               "attributes": {
                 "type": ["object", "null"],
                 "additionalProperties": {}
@@ -1220,9 +1323,31 @@
                     },
                     "lastBody": {
                       "type": ["string", "null"]
+                    },
+                    "messageCount": {
+                      "type": "integer"
+                    },
+                    "assigneeName": {
+                      "type": ["string", "null"]
+                    },
+                    "closedBy": {
+                      "type": ["string", "null"]
+                    },
+                    "firstReplySeconds": {
+                      "type": ["integer", "null"]
                     }
                   },
-                  "required": ["id", "status", "createdAt", "updatedAt", "lastBody"]
+                  "required": [
+                    "id",
+                    "status",
+                    "createdAt",
+                    "updatedAt",
+                    "lastBody",
+                    "messageCount",
+                    "assigneeName",
+                    "closedBy",
+                    "firstReplySeconds"
+                  ]
                 }
               },
               "pages": {
@@ -1244,7 +1369,7 @@
                 }
               }
             },
-            "required": ["attributes", "pageContext", "note", "conversations", "pages"]
+            "required": ["online", "attributes", "pageContext", "note", "conversations", "pages"]
           }
         ]
       },
@@ -1443,6 +1568,170 @@
         },
         "required": ["publicKey", "allowedOrigins", "signingSecret", "usage", "deletion"]
       },
+      "WidgetAppearance": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WidgetSettings"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "typingPreview": {
+                "type": "boolean"
+              },
+              "logoUrl": {
+                "type": ["string", "null"]
+              },
+              "team": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "pictureUrl": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["id", "name", "pictureUrl"]
+                }
+              },
+              "faces": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "pictureUrl": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["id", "name", "pictureUrl"]
+                }
+              }
+            },
+            "required": ["typingPreview", "logoUrl", "team", "faces"]
+          }
+        ]
+      },
+      "WidgetSettings": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "greeting": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "away": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]*$/u"
+          },
+          "primary": {
+            "type": ["string", "null"],
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "accent": {
+            "type": ["string", "null"],
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "position": {
+            "type": "string",
+            "enum": ["left", "right"]
+          },
+          "theme": {
+            "type": "string",
+            "enum": ["light", "dark", "auto"]
+          },
+          "launcher": {
+            "type": "string",
+            "enum": ["boat", "bubble", "hidden", "label", "square"]
+          },
+          "mascot": {
+            "type": "boolean"
+          },
+          "radius": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "emailAsk": {
+            "type": "string",
+            "enum": ["off", "after_first", "before_first"]
+          },
+          "branding": {
+            "type": "boolean"
+          },
+          "sound": {
+            "type": "boolean"
+          },
+          "transcript": {
+            "type": "boolean"
+          },
+          "headerFaces": {
+            "type": "string",
+            "enum": ["online", "repliers", "chosen", "none"]
+          },
+          "headerFaceCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "headerDot": {
+            "type": "boolean"
+          },
+          "headerStatus": {
+            "type": "string",
+            "enum": ["presence", "reply_time"]
+          },
+          "headerMembers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 5
+          }
+        },
+        "required": [
+          "title",
+          "greeting",
+          "away",
+          "primary",
+          "accent",
+          "position",
+          "theme",
+          "launcher",
+          "mascot",
+          "radius",
+          "emailAsk",
+          "branding",
+          "sound",
+          "transcript",
+          "headerFaces",
+          "headerFaceCount",
+          "headerDot",
+          "headerStatus",
+          "headerMembers"
+        ]
+      },
       "AlertSettings": {
         "type": "object",
         "properties": {
@@ -1602,7 +1891,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WidgetAppearance"
+                  "$ref": "#/components/schemas/WidgetPublicAppearance"
                 }
               }
             }
@@ -3096,7 +3385,7 @@
     },
     "/v1/widget/{key}/presence": {
       "get": {
-        "summary": "Say whether the team is online. It names nobody.",
+        "summary": "Say whether the team is online, and which of the header's members are",
         "parameters": [
           {
             "schema": {
@@ -3118,11 +3407,20 @@
                     "online": {
                       "type": ["boolean", "null"]
                     },
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "emailReplies": {
                       "type": "boolean"
+                    },
+                    "replySeconds": {
+                      "type": ["number", "null"]
                     }
                   },
-                  "required": ["online", "emailReplies"]
+                  "required": ["online", "members", "emailReplies", "replySeconds"]
                 }
               }
             }
@@ -6852,7 +7150,7 @@
           }
         ],
         "summary": "Support numbers for the last 7, 30 or 90 days",
-        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `operators` counts conversations by who sent that reply. A welcome chat on Dinghy Cloud counts nowhere.",
+        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
         "parameters": [
           {
             "schema": {
@@ -6896,7 +7194,14 @@
                   "firstReply": {
                     "medianSeconds": 140,
                     "p90Seconds": 1260,
-                    "within5Minutes": 0.67
+                    "fast": 8
+                  },
+                  "previous": {
+                    "started": 9,
+                    "firstReply": {
+                      "medianSeconds": 180,
+                      "fast": 5
+                    }
                   },
                   "perDay": [
                     {
@@ -6904,10 +7209,10 @@
                       "conversations": 3
                     }
                   ],
-                  "operators": [
+                  "repliers": [
                     {
+                      "kind": "operator",
                       "operatorId": "7a3e5b20-9c1d-4f6a-b8e2-4d0f1c9a6b53",
-                      "apiKeyId": null,
                       "name": "Sam",
                       "conversations": 11
                     }
@@ -7005,9 +7310,12 @@
                   "left": {
                     "type": ["string", "null"],
                     "format": "uuid"
+                  },
+                  "hidden": {
+                    "type": "boolean"
                   }
                 },
-                "required": ["viewing", "left"]
+                "required": ["viewing", "left", "hidden"]
               }
             }
           }
@@ -7098,6 +7406,71 @@
         }
       }
     },
+    "/v1/operator/me/status": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Set yourself available or away, in every workspace. While away, the widget does not count you online.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "away": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["away"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The status now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "away": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["away"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/workspaces/{workspaceId}/presence/leave": {
       "post": {
         "x-workspace-access": "closed",
@@ -7106,7 +7479,8 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Say that this operator's app is no longer showing",
+        "summary": "Say that a tab of this operator's app closed, or that the operator signed out",
+        "description": "A closing tab ends only its mark on the conversation it showed, as another tab may still keep the operator online, and the online mark expires on its own. A sign-out ends the online mark too.",
         "parameters": [
           {
             "schema": {
@@ -7128,9 +7502,12 @@
                   "conversationId": {
                     "type": ["string", "null"],
                     "format": "uuid"
+                  },
+                  "signingOut": {
+                    "type": "boolean"
                   }
                 },
-                "required": ["conversationId"]
+                "required": ["conversationId", "signingOut"]
               }
             }
           }

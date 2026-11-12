@@ -128,7 +128,7 @@ describe("the beat", () => {
     expect(await count()).toBeGreaterThanOrEqual(1);
   });
 
-  test("the referrer stays from the first beat, and a bad time zone or another site's page is dropped", async () => {
+  test("the referrer stays from the first beat, and the site's own, a bad time zone or another site's page is dropped", async () => {
     const id = tab();
     await beat({ tab: id, page: `${SITE}/a`, referrer: "https://first.example" });
     await beat({ tab: id, page: `${SITE}/b`, timeZone: "Not/AZone" });
@@ -137,6 +137,9 @@ describe("the beat", () => {
       referrer: "https://first.example",
       timeZone: null,
     });
+    const inside = tab();
+    await beat({ tab: inside, page: `${SITE}/c`, referrer: `${SITE}/a` });
+    expect((await live()).visitors?.find((one) => one.tab === inside)?.referrer).toBeNull();
     const elsewhere = tab();
     expect((await beat({ tab: elsewhere, page: "https://evil.example/x" })).status).toBe(200);
     expect((await live()).visitors?.some((one) => one.tab === elsewhere)).toBe(false);

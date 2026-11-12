@@ -2,6 +2,7 @@
 import { createElement, type ReactNode } from "react";
 import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import { clockTime, isToday } from "./format.ts";
+import { type Receipt, ReceiptLine } from "./receipts.tsx";
 import { t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
 import { replyAuthor } from "./visitor.ts";
@@ -60,6 +61,7 @@ export function ThreadLine({
   editor,
   flash,
   receipt,
+  isLastReply,
   onView,
   onImageError,
   onRetry,
@@ -71,8 +73,13 @@ export function ThreadLine({
   editor: ReactNode;
   /** Highlighted for a moment, after a click on a quote of it or a link to it. */
   flash: boolean;
-  /** How far the visitor has seen this reply, under its bubble. */
-  receipt: ReactNode;
+  /** How far the visitor has seen this reply. Null for a visitor's message. */
+  receipt: Receipt | null;
+  /**
+   * The last reply's receipt shows under its bubble. An earlier one shows beside its bubble while
+   * the pointer is on it, over the empty side, so nothing in the thread moves.
+   */
+  isLastReply: boolean;
   onView(): void;
   onImageError(): void;
   onRetry(): void;
@@ -86,9 +93,10 @@ export function ThreadLine({
         <div className={row} id={`message-${line.id}`}>
           <Bubble line={line} quote={quote} onView={onView} onImageError={onImageError} />
           {menu}
+          {receipt !== null && !isLastReply && <ReceiptLine receipt={receipt} later />}
         </div>
       )}
-      {receipt}
+      {receipt !== null && isLastReply && <ReceiptLine receipt={receipt} later={false} />}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}
       {line.status === "failed" && (
         <button type="button" className="retry" onClick={onRetry}>

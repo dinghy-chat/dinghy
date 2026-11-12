@@ -80,18 +80,22 @@ export interface Analytics {
   firstReply: {
     medianSeconds: number | null;
     p90Seconds: number | null;
-    /** From 0 to 1, of the conversations started. */
-    within5Minutes: number | null;
+    /** Of the conversations started, the ones with a first reply within 5 minutes. */
+    fast: number;
+  };
+  /** The same numbers for a period of the same length just before. */
+  previous: {
+    started: number;
+    firstReply: { medianSeconds: number | null; fast: number };
   };
   perDay: { date: string; conversations: number }[];
-  /** By who sent the first reply. */
-  operators: {
-    /** One of the two is set: a member, or an API key that sent the first reply. */
-    operatorId: string | null;
-    apiKeyId: string | null;
-    name: string | null;
-    conversations: number;
-  }[];
+  /** By who sent the first reply, most first. */
+  repliers: (
+    | { kind: "operator"; operatorId: string; name: string; conversations: number }
+    | { kind: "api_key"; apiKeyId: string; name: string; conversations: number }
+    /** Deleted operators, all in one. */
+    | { kind: "former"; conversations: number }
+  )[];
   /** Weekday (Monday first) by hour. */
   hours: number[][];
 }
@@ -189,6 +193,8 @@ export interface Contact extends VisitorIdentity {
 }
 
 export interface ContactDetail extends Contact {
+  /** A widget stream of the visitor's is open now. Null when the server cannot tell. */
+  online: boolean | null;
   attributes: Record<string, unknown> | null;
   pageContext: PageContext | null;
   note: string | null;
@@ -198,6 +204,11 @@ export interface ContactDetail extends Contact {
     createdAt: string;
     updatedAt: string;
     lastBody: string | null;
+    messageCount: number;
+    assigneeName: string | null;
+    /** The member or key that closed it. Null while open, or when the visitor closed it. */
+    closedBy: string | null;
+    firstReplySeconds: number | null;
   }[];
   pages: PageView[];
 }
@@ -214,6 +225,8 @@ export interface Me {
   email: string;
   /** The same in every workspace. Null with none. */
   pictureUrl: string | null;
+  /** Set Away, in every workspace: the widget does not count this operator online. */
+  away: boolean;
   workspaces: {
     workspaceId: string;
     role: Role;
@@ -240,6 +253,15 @@ export interface Me {
 }
 
 export type Role = "owner" | "admin" | "member";
+
+/** What the Appearance form saves: the widget's settings, and the operators the header shows. */
+export interface AppearanceSettings extends WidgetSettings {
+  /** Operator IDs, in order, for the `chosen` faces. Only members who are still on the team. */
+  headerMembers: string[];
+}
+
+/** The saved appearance, as the operator app reads it. */
+export type OperatorAppearance = SavedAppearance & AppearanceSettings;
 
 export interface Member {
   id: string;
@@ -423,6 +445,11 @@ export const getWaiting = () =>
 type Picture = { pictureUrl: string | null };
 export const setPicture = (file: Blob) => putImage<Picture>("/v1/operator/me/picture", file);
 export const removePicture = () => call<Picture>("/v1/operator/me/picture", { method: "DELETE" });
+export const setAway = (away: boolean) =>
+  call<{ away: boolean }>("/v1/operator/me/status", {
+    method: "PUT",
+    body: JSON.stringify({ away }),
+  });
 /**
  * Deletes the account. With email, a link goes to it and `deleted` is false. Without, the typed
  * email confirms, and the account is gone.
@@ -505,13 +532,13 @@ export function workspaceApi(workspaceId: string) {
         body: JSON.stringify({ allowedOrigins }),
       }),
     rotateSecret: () => post<WorkspaceSettings>(`${base}/settings/rotate-secret`, {}),
-    widget: () => call<SavedAppearance>(`${base}/widget`),
-    setWidget: (settings: WidgetSettings) =>
-      call<SavedAppearance>(`${base}/widget`, { method: "PUT", body: JSON.stringify(settings) }),
-    setLogo: (file: Blob) => putImage<SavedAppearance>(`${base}/widget/logo`, file),
-    removeLogo: () => call<SavedAppearance>(`${base}/widget/logo`, { method: "DELETE" }),
+    widget: () => call<OperatorAppearance>(`${base}/widget`),
+    setWidget: (settings: AppearanceSettings) =>
+      call<OperatorAppearance>(`${base}/widget`, { method: "PUT", body: JSON.stringify(settings) }),
+    setLogo: (file: Blob) => putImage<OperatorAppearance>(`${base}/widget/logo`, file),
+    removeLogo: () => call<OperatorAppearance>(`${base}/widget/logo`, { method: "DELETE" }),
     setTypingPreview: (enabled: boolean) =>
-      call<SavedAppearance>(`${base}/widget/typing-preview`, {
+      call<OperatorAppearance>(`${base}/widget/typing-preview`, {
         method: "PUT",
         body: JSON.stringify({ enabled }),
       }),
@@ -577,17 +604,18 @@ export function workspaceApi(workspaceId: string) {
         method: "PUT",
         body: JSON.stringify({ operatorId }),
       }),
-    beat: (viewing: string | null, left: string | null) =>
+    /** A hidden tab views nothing, and still counts online. */
+    beat: (viewing: string | null, left: string | null, hidden: boolean) =>
       call<{ viewers: Record<string, string[]> }>(`${base}/presence`, {
         method: "PUT",
-        body: JSON.stringify({ viewing, left }),
+        body: JSON.stringify({ viewing, left, hidden }),
       }),
-    /** keepalive, so this still goes out while the page closes. */
-    leave: (conversationId: string | null) =>
+    /** keepalive, so this still goes out while the page closes. A sign-out also ends the online mark. */
+    leave: (conversationId: string | null, signingOut: boolean) =>
       call<{ ok: true }>(`${base}/presence/leave`, {
         method: "POST",
         keepalive: true,
-        body: JSON.stringify({ conversationId }),
+        body: JSON.stringify({ conversationId, signingOut }),
       }),
     alerts: () => call<AlertSettings>(`${base}/alerts`),
     setAlerts: (change: { email: boolean }) =>

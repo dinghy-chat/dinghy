@@ -15,6 +15,7 @@ import { useLiveCount, useWaitingBy } from "./live-counts.ts";
 import { useLatestLoad } from "./load.ts";
 import { chime, prepareSound } from "./sound.ts";
 import { readStored, store } from "./stored.ts";
+import { useWaitingBadge } from "./tab-badge.ts";
 import { t } from "./text.ts";
 
 const PAGE_SIZE = 50;
@@ -58,7 +59,7 @@ function useTeam(
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: teamVersion asks for a load.
   useEffect(loadMembers, [loadMembers, teamVersion]);
-  const viewers = usePresence(api, selected, visible);
+  const { viewers, leave } = usePresence(api, selected, visible);
   /** Who else has this conversation open, by name. Someone who left the team has no name here. */
   const replying = (conversationId: string) => {
     const names = (viewers[conversationId] ?? [])
@@ -67,7 +68,7 @@ function useTeam(
     if (names.length === 0) return null;
     return t(names.length === 1 ? "isReplying" : "areReplying", { names: names.join(", ") });
   };
-  return { members, loadMembers, replying };
+  return { members, loadMembers, replying, leavePresence: leave };
 }
 
 /**
@@ -193,12 +194,10 @@ export function useInboxData({
     onSignedOut,
     onWelcome,
   });
-  // A count in the tab's title, so a waiting visitor shows from another tab.
-  useEffect(() => {
-    document.title = list.waiting > 0 ? `(${list.waiting}) ${t("appName")}` : t("appName");
-    return () => {
-      document.title = t("appName");
-    };
-  }, [list.waiting]);
+  // A waiting visitor shows from another tab, and on the installed app's icon. A hidden tab holds
+  // no stream, so its list stands still and the minute's count takes over.
+  useWaitingBadge(
+    live.visible ? list.waiting : (live.waitingElsewhere[workspaceId] ?? list.waiting),
+  );
   return { ...live, ...team, ...list, isTeam, who };
 }

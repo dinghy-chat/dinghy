@@ -51,6 +51,13 @@ function sampleLines({ question, answer, author }: PreviewSample): Line[] {
   ];
 }
 
+/** A usual reply time of 2 minutes, a sample as the messages are: the real one needs a server. */
+const SAMPLE_REPLY_SECONDS = 120;
+
+/** Two members online, as a sample, so the owner sees the dots. */
+const sampleOnline = ({ faces, team }: SavedAppearance) =>
+  (faces.length > 0 ? faces : team).slice(0, 2).map((face) => face.id);
+
 /** The launcher as the loader draws it. The label carries the chat's title. */
 function Launcher({ kind, title }: { kind: LauncherKind; title: string }) {
   return (
@@ -89,9 +96,10 @@ function Preview({ appearance, sample }: PreviewProps) {
         <ChatHead
           scene="waiting"
           online
+          members={sampleOnline(appearance)}
+          replySeconds={SAMPLE_REPLY_SECONDS}
           mascot={mascot}
-          logoUrl={appearance.logoUrl}
-          team={appearance.team}
+          saved={appearance}
           say={say}
           onClose={ignore}
         />

@@ -1,5 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { inboxFilter } from "./filters.ts";
 import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -48,6 +49,7 @@ async function answer(page: Page, text: string) {
 
 const row = (page: Page, text: string) => page.locator(".row", { hasText: text });
 const openCount = (page: Page) => page.locator(".nav .count:not(.live)");
+const favicon = (page: Page) => page.locator('link[rel="icon"]');
 
 test("each reply shows who sent it, and your own say You", async ({ browser }) => {
   const customer = await visitor(browser, "Who is answering?");
@@ -86,7 +88,7 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
   for (const page of [customer, alice, bob]) await page.context().close();
 });
 
-test("the Inbox item and the tab title count the conversations that wait for a reply", async ({
+test("the Inbox item, the tab title and the favicon count the conversations that wait for a reply", async ({
   browser,
 }) => {
   const operator = await signedIn(browser, server, "alice@example.com");
@@ -122,8 +124,47 @@ test("the Inbox item and the tab title count the conversations that wait for a r
   await operator.getByRole("button", { name: "Close", exact: true }).click();
   await expect(openCount(operator)).toHaveText("1");
   await expect(operator).toHaveTitle("(1) Dinghy");
+  await expect(favicon(operator)).toHaveAttribute("href", /^data:image\/png/);
+
+  // A teammate's conversation is not theirs to answer, so it leaves their count.
+  await row(operator, "Second question").click();
+  await operator.getByRole("button", { name: /^Assign to/ }).click();
+  await operator.getByRole("option", { name: "alice@example.com" }).click();
+  await expect(openCount(teammate)).toHaveCount(0);
+  await expect(teammate).toHaveTitle("Dinghy");
+  await expect(favicon(teammate)).toHaveAttribute("href", "/assets/icon.svg");
+  await expect(openCount(operator)).toHaveText("1");
 
   for (const page of [first, second, operator, teammate]) await page.context().close();
+});
+
+test("a hidden tab's title counts a visitor who writes while it is hidden", async ({ browser }) => {
+  const operator = await signedIn(browser, server, "alice@example.com");
+  // The waiting counts load every minute while the tab is hidden, which the fake clock skips.
+  await operator.clock.install();
+  await operator.reload();
+  await expect(operator).toHaveTitle("Dinghy");
+  await operator.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  const writer = await visitor(browser, "Written while hidden");
+  await operator.clock.runFor(60_000);
+  await expect(operator).toHaveTitle("(1) Dinghy");
+  for (const page of [writer, operator]) await page.context().close();
+});
+
+test("a row shows the visitor's country as a flag on the avatar, and names it", async ({
+  browser,
+}) => {
+  await server.seedConversations(1, "from-portugal", "PT");
+  await server.seedConversations(1, "from-nowhere");
+  const operator = await signedIn(browser, server, "alice@example.com");
+  const flagged = row(operator, "from-portugal message 0");
+  await expect(flagged.locator(".avatar-wrap .flag-badge")).toHaveText("🇵🇹");
+  await expect(flagged.getByRole("img", { name: "Portugal" })).toBeVisible();
+  await expect(row(operator, "from-nowhere message 0").locator(".flag-badge")).toHaveCount(0);
+  await operator.context().close();
 });
 
 test("a draft stays with its conversation when the operator opens another", async ({ browser }) => {
@@ -194,15 +235,18 @@ test("the Closed switch lists closed conversations, by keyboard too, and a reloa
   // A conversation that stops matching leaves the list.
   await expect(row(page, "Close this one")).toHaveCount(0);
 
-  const open = page.getByRole("radio", { name: "Open" });
+  const open = await inboxFilter(page, "Open");
   await open.focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
   await expect(row(page, "Close this one")).toBeVisible();
   await expect(page).toHaveURL(/[?&]view=closed/);
 
   await page.reload();
-  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  // The card opens with the focus on the chosen filter, so the arrows move from it.
+  const closed = await inboxFilter(page, "Closed");
+  await expect(closed).toBeChecked();
+  await expect(closed).toBeFocused();
   await expect(row(page, "Close this one")).toBeVisible();
   for (const one of [customer, page]) await one.context().close();
 });
@@ -217,10 +261,10 @@ test("Mine and Unassigned follow assignments as they change", async ({ browser }
     await alice.getByRole("option", { name }).click();
   };
 
-  await bob.getByRole("radio", { name: "Unassigned" }).click();
+  await (await inboxFilter(bob, "Unassigned")).click();
   await expect(row(bob, "For Alice")).toBeVisible();
   await expect(row(bob, "For Bob")).toBeVisible();
-  await bob.getByRole("radio", { name: "Mine" }).click();
+  await (await inboxFilter(bob, "Mine")).click();
   await expect(bob.getByText("Nothing is assigned to you.")).toBeVisible();
   await expect(bob).toHaveURL(/[?&]who=mine/);
 
@@ -233,11 +277,11 @@ test("Mine and Unassigned follow assignments as they change", async ({ browser }
   // Reassigned away, it leaves.
   await assign("For Bob", "alice@example.com");
   await expect(row(bob, "For Bob")).toHaveCount(0);
-  await bob.getByRole("radio", { name: "Unassigned" }).click();
+  await (await inboxFilter(bob, "Unassigned")).click();
   await expect(bob.getByText("Every open conversation has someone on it.")).toBeVisible();
 
   await bob.reload();
-  await expect(bob.getByRole("radio", { name: "Unassigned" })).toBeChecked();
+  await expect(await inboxFilter(bob, "Unassigned")).toBeChecked();
   for (const one of [...customers, alice, bob]) await one.context().close();
 });
 
@@ -252,7 +296,7 @@ test("an old Closed link opens the Inbox with Closed picked, and a conversation 
 
   await page.goto(`${server.apiOrigin}/?view=closed`);
   await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
   await expect(row(page, "Linked and closed")).toBeVisible();
 
   const workspaceId = server.workspaceId();
@@ -265,6 +309,6 @@ test("an old Closed link opens the Inbox with Closed picked, and a conversation 
   const linked = conversations.find((one) => one.lastMessage?.body === "Linked and closed");
   await page.goto(`${server.apiOrigin}/?workspace=${workspaceId}&conversation=${linked?.id}`);
   await expect(page.getByText("This conversation is closed.")).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Closed" })).toBeChecked();
+  await expect(await inboxFilter(page, "Closed")).toBeChecked();
   for (const one of [customer, page]) await one.context().close();
 });

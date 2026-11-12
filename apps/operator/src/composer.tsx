@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { type ReactNode, useId, useLayoutEffect, useRef, useState } from "react";
 import { IMAGE_TYPES, isComposing } from "../../../packages/widget/src/compose.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -55,6 +55,9 @@ export function Composer({
   editing?: boolean;
 }) {
   const picker = useRef<HTMLInputElement>(null);
+  // A phone keeps the formatting buttons behind one toggle, so the field gets the row.
+  const [showsFormats, setShowsFormats] = useState(false);
+  const formatsId = useId();
   const input = useRef<HTMLTextAreaElement>(null);
   // The selection a format asked for, set once the new text is on screen.
   const selection = useRef<[number, number] | null>(null);
@@ -84,7 +87,12 @@ export function Composer({
   };
 
   return (
-    <form className={editing ? "compose editing" : "compose"} onSubmit={submit}>
+    <form
+      className={["compose", editing && "editing", showsFormats && "formatting"]
+        .filter(Boolean)
+        .join(" ")}
+      onSubmit={submit}
+    >
       <div className="box">
         {above}
         <textarea
@@ -150,8 +158,19 @@ export function Composer({
             </>
           )}
           <EmojiButton field={input} onPick={setDraft} />
+          <button
+            type="button"
+            className="icon-button format-toggle"
+            aria-label={t("formatTools")}
+            title={t("formatTools")}
+            aria-pressed={showsFormats}
+            aria-controls={formatsId}
+            onClick={() => setShowsFormats((shows) => !shows)}
+          >
+            <Icon name="textAa" size={18} />
+          </button>
           <span className="tools-divider" aria-hidden="true" />
-          <fieldset className="format-tools" aria-label={t("formatTools")}>
+          <fieldset id={formatsId} className="format-tools" aria-label={t("formatTools")}>
             {FORMATS.map((one) => {
               const label = shortcutLabel(one.name, one.key);
               return (

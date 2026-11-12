@@ -70,6 +70,8 @@ const meRoute = createRoute({
               email: z.string(),
               // The operator's picture, the same in every workspace. Null with none.
               pictureUrl: z.string().nullable(),
+              // Set Away, in every workspace: the widget does not count this operator online.
+              away: z.boolean(),
               workspaces: z.array(
                 z.object({
                   workspaceId: z.string(),
@@ -241,6 +243,7 @@ export function registerOperatorRoutes(
       operatorId: string;
       operatorName: string;
       operatorEmail: string;
+      operatorAway: boolean;
       sessionId: string;
     };
   }>(async (c, next) => {
@@ -280,6 +283,7 @@ export function registerOperatorRoutes(
     c.set("operatorId", found.user.id);
     c.set("operatorName", found.user.name);
     c.set("operatorEmail", found.user.email);
+    c.set("operatorAway", found.user.away === true);
     c.set("sessionId", found.session.id);
     await next();
   });
@@ -392,11 +396,14 @@ export function registerOperatorRoutes(
   });
   // One short count per workspace, each in its own workspace's context. An operator has few.
   app.openapi(waitingRoute, async (c) => {
-    const memberships = await operatorWorkspaces(db, c.get("operatorId"));
+    const operatorId = c.get("operatorId");
+    const memberships = await operatorWorkspaces(db, operatorId);
     const workspaces = await Promise.all(
       memberships.map(async ({ workspaceId }) => ({
         workspaceId,
-        waiting: await withWorkspace(db, workspaceId, (tx) => countWaiting(tx, workspaceId)),
+        waiting: await withWorkspace(db, workspaceId, (tx) =>
+          countWaiting(tx, workspaceId, operatorId),
+        ),
       })),
     );
     return c.json({ workspaces }, 200);
@@ -414,6 +421,7 @@ export function registerOperatorRoutes(
         name: c.get("operatorName"),
         email: c.get("operatorEmail"),
         pictureUrl: imageUrls.picture(id, picture?.pictureUpdatedAt ?? null),
+        away: c.get("operatorAway"),
         workspaces: await Promise.all(
           (await operatorWorkspaces(db, id)).map(async ({ access, ...membership }) => {
             const { workspaceId, role } = membership;

@@ -75,7 +75,8 @@ function merge(lines: Line[], message: Message): Line[] {
   return inCommitOrder(others, line);
 }
 
-const ONLINE_EVERY_MS = 30_000;
+/** A visitor's online state changes with no event, so views that show it read it this often. */
+export const ONLINE_EVERY_MS = 30_000;
 
 /**
  * A thread's conversation and its lines: it loads what it has not seen on each version, keeps the
@@ -148,7 +149,6 @@ export function useThreadLines({
   useEffect(() => {
     if (rewriteVersion !== 0) reloadAll();
   }, [load, rewriteVersion]);
-  // The visitor's online state changes with no event, so it is read again now and then.
   useEffect(() => {
     const timer = setInterval(load, ONLINE_EVERY_MS);
     return () => clearInterval(timer);

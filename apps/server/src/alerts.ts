@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
-import { markdownHtml } from "../../../packages/widget/src/markdown.ts";
+import { escapeHtml, markdownHtml } from "../../../packages/widget/src/markdown.ts";
 import { chatLinkUrl, createChatLink, pruneChatLinks } from "./chat-link.ts";
 import {
   alertDelivery,
@@ -11,20 +11,23 @@ import {
   operator,
   pushSubscription,
   visitor,
+  widgetSettings,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { prunePageViews } from "./journey.ts";
-import { letter, letterHtml } from "./letter.ts";
+import { EMAIL_COLORS, letter } from "./letter.ts";
 import {
   conversationVisitor,
   isChat,
+  messageAuthors,
   messageColumns,
   type Quote,
   type StatusPayload,
   visitorQuote,
 } from "./messages.ts";
+import { imageUrls } from "./public-images.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 import { MINUTE_MS } from "./time.ts";
@@ -36,7 +39,9 @@ import {
   quotedText,
   sentToday,
   VISITOR_EMAILS_PER_DAY,
+  visitorAuthorName,
   visitorEmailText,
+  visitorLetterHtml,
 } from "./visitor-email.ts";
 
 // A failed send retries after 30 seconds, doubling each time, and stops after this many attempts.
@@ -68,7 +73,9 @@ const text = {
       "under Alerts.",
   ],
   replySubject: (name: string) => `${name} replied to your message`,
-  replyBody: <Replies>(name: string, replies: Replies, chat: string, stop: string) => [
+  replied: (who: string) => `${who} replied`,
+  replyInChat: "Reply in the chat",
+  replyBody: (name: string, replies: string, chat: string, stop: string) => [
     `${name} replied to your message:`,
     replies,
     `Read the conversation and answer here: ${chat}`,
@@ -421,6 +428,12 @@ export type AlertPlan =
     }
   | { channel: "later"; until: Date };
 
+/** The workspace that a visitor's email comes from, as its header shows it. */
+export interface Place {
+  name: string;
+  logoUrl: string | null;
+}
+
 export interface PlanOptions {
   publicUrl: string;
   secret: string;
@@ -438,8 +451,13 @@ export function planDelivery(
   const { publicUrl } = options;
   return withWorkspace(db, workspaceId, async (tx) => {
     const [place] = await tx
-      .select({ name: workspace.name })
+      .select({
+        name: workspace.name,
+        publicKey: workspace.publicKey,
+        logoUpdatedAt: widgetSettings.logoUpdatedAt,
+      })
       .from(workspace)
+      .leftJoin(widgetSettings, eq(widgetSettings.workspaceId, workspace.id))
       .where(eq(workspace.id, workspaceId));
     const [written] = await tx
       .select({ body: message.body, deletedAt: message.deletedAt })
@@ -447,11 +465,15 @@ export function planDelivery(
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, row.messageId)));
     if (place === undefined || written === undefined) return null;
     if (row.visitorId !== null) {
+      const from: Place = {
+        name: place.name,
+        logoUrl: imageUrls(options.imageOrigin).logo(place.publicKey, place.logoUpdatedAt),
+      };
       // A reply email is not skipped when its own reply was deleted: it carries every unread one.
       const plan =
         row.channel === "transcript"
-          ? await transcriptPlan(tx, row, row.visitorId, place.name, options)
-          : await replyEmailPlan(tx, row, row.visitorId, place.name, options);
+          ? await transcriptPlan(tx, row, row.visitorId, from, options)
+          : await replyEmailPlan(tx, row, row.visitorId, from, options);
       if (plan?.channel === "email" && plan.carries !== undefined) {
         await recordCoverage(tx, row, plan.carries);
       }
@@ -520,7 +542,7 @@ async function replyEmailPlan(
   tx: Transaction,
   row: ClaimedDelivery,
   visitorId: string,
-  placeName: string,
+  place: Place,
   { publicUrl, secret }: PlanOptions,
 ): Promise<AlertPlan | null> {
   const { workspaceId, conversationId } = row;
@@ -538,7 +560,14 @@ async function replyEmailPlan(
   // share lock makes an edit or a delete wait until this email's range is recorded. It is no
   // stronger, so a read or a resent quote, which update other columns, never waits in a cycle.
   const replies = await tx
-    .select({ seq: message.seq, body: message.body, replyTo: messageColumns.replyTo })
+    .select({
+      seq: message.seq,
+      body: message.body,
+      replyTo: messageColumns.replyTo,
+      authorVisitorId: message.authorVisitorId,
+      authorOperatorId: message.authorOperatorId,
+      authorApiKeyId: message.authorApiKeyId,
+    })
     .from(message)
     .innerJoin(
       conversation,
@@ -576,45 +605,65 @@ async function replyEmailPlan(
     publicUrl,
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
+  const authors = await messageAuthors(tx, workspaceId, replies);
   const written = replies.map((reply) => ({
+    author: visitorAuthorName(reply, authors, place.name),
     body: reply.body,
     quote: visitorQuote(reply.replyTo),
   }));
   return {
     channel: "email",
     to: target.email,
-    ...replyLetter(placeName, written, { chatUrl, stopUrl }),
+    ...replyLetter(place, written, { chatUrl, stopUrl }),
     stopUrl,
     carries: { fromSeq: replies[0]?.seq ?? 0n, toSeq: replies.at(-1)?.seq ?? 0n },
   };
 }
 
+// Markdown's paragraphs come bare, and a mail app's default margins would pad the bubble unevenly.
+const bubbleParagraphs = (html: string) => html.replaceAll("<p>", '<p style="margin:0 0 8px">');
+
+/**
+ * A reply in the HTML: a chat bubble with its quote and its text, under who replied when the reply
+ * before it had another author, as a chat groups one person's messages.
+ */
+const replyHtml = (
+  reply: { author: string; body: string; quote: Quote | null },
+  index: number,
+  replies: { author: string }[],
+) =>
+  (replies[index - 1]?.author === reply.author
+    ? ""
+    : `<p style="margin:${index === 0 ? 0 : 12}px 0 6px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(text.replied(reply.author))}</p>`) +
+  '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px"><tr>' +
+  `<td style="background:${EMAIL_COLORS.bubble};border-radius:4px 18px 18px 18px;padding:12px 16px 4px;font-size:16px;line-height:1.45">` +
+  `${quotedHtml(reply.quote, bubbleParagraphs(markdownHtml(reply.body)))}</td></tr></table>`;
+
 /**
  * The reply email's words: each reply under its quote. The visitor typed this address, and nobody
- * proved it, so it greets no name.
+ * proved it, so it greets no name. The HTML leaves out the greeting and the sign-off, because its
+ * header and its subject say who wrote.
  */
 export function replyLetter(
-  placeName: string,
-  replies: { body: string | null; quote: Quote | null }[],
+  place: Place,
+  replies: { author: string; body: string | null; quote: Quote | null }[],
   links: { chatUrl: string; stopUrl: string },
 ): { subject: string; text: string; html: string } {
-  const letterBody = <Replies>(rendered: Replies) =>
-    text.replyBody(placeName, rendered, links.chatUrl, links.stopUrl);
   const written = replies.map((reply) => ({ ...reply, body: messageText(reply.body) }));
+  const plain = written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n");
   return {
-    subject: text.replySubject(placeName),
+    subject: text.replySubject(place.name),
     text: letter(
-      letterBody(written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n")),
+      text.replyBody(place.name, plain, links.chatUrl, links.stopUrl),
       undefined,
-      placeName,
+      place.name,
     ),
     // The replies' Markdown shows as formatting here, and stays as typed in the text version.
-    html: letterHtml(
-      letterBody({
-        html: written.map((reply) => quotedHtml(reply.quote, markdownHtml(reply.body))).join(""),
-      }),
-      placeName,
-    ),
+    html: visitorLetterHtml(place.name, written.map(replyHtml).join(""), {
+      ...links,
+      logoUrl: place.logoUrl,
+      chatLabel: text.replyInChat,
+    }),
   };
 }
 

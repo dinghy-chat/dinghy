@@ -141,7 +141,7 @@ export function Inbox({
     setFilter({ status: nextStatus, who: nextWho });
   };
 
-  /** Opens a contact's page, from a conversation's panel. */
+  /** Opens a contact's page, from a conversation's panel or from Visitors. */
   const openContact = (visitorId: string) =>
     leave(() => {
       setContactId(visitorId);
@@ -166,7 +166,7 @@ export function Inbox({
           workspaceId={workspaceId}
           canCreate={canCreate}
           view={view}
-          onProfile={view === "settings" && settingsPage === "profile"}
+          isProfile={view === "settings" && settingsPage === "profile"}
           waiting={waiting}
           waitingBy={{ ...data.waitingElsewhere, [workspaceId]: waiting }}
           liveCount={data.liveCount}
@@ -181,6 +181,8 @@ export function Inbox({
           }}
           onProfileOpen={() => openSettings("profile")}
           onSwitch={onSwitch}
+          onStatusChanged={onAccountChanged}
+          onLeavePresence={data.leavePresence}
           onSignedOut={onSignedOut}
         />
         <div className="stage">
@@ -225,7 +227,11 @@ export function Inbox({
             )}
             {view === "analytics" && <AnalyticsPage api={api} />}
             {view === "visitors" && (
-              <VisitorsPage api={api} onOpenConversation={(id) => openConversation(id, "open")} />
+              <VisitorsPage
+                api={api}
+                onOpenConversation={(id) => openConversation(id, "open")}
+                onOpenContact={openContact}
+              />
             )}
             {view === "contacts" && (
               <ContactsPage

@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import { Redis } from "iovalkey";
 import { SignJWT } from "jose";
 import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
-import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { untilWaiting } from "../test/locks.ts";
 import {
   captureMail,
@@ -28,7 +29,7 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { sha256Hex } from "./identity.ts";
+import { sha256Hex, visitorAuthorId } from "./identity.ts";
 import type { Live } from "./live.ts";
 import { appendMessage } from "./messages.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
@@ -1289,7 +1290,11 @@ describe("assignment", () => {
 describe("presence routes", () => {
   const conversationId = "00000000-0000-4000-8000-000000000001";
   const beat = (as: Person | null, workspaceId = space.id) =>
-    call("PUT", inSpace("/presence", workspaceId), as, { viewing: conversationId, left: null });
+    call("PUT", inSpace("/presence", workspaceId), as, {
+      viewing: conversationId,
+      left: null,
+      hidden: false,
+    });
 
   test("only a member can say or read presence", async () => {
     const other = await createWorkspace(db, "Other", [SITE]);
@@ -1307,14 +1312,112 @@ describe("presence routes", () => {
     const response = await beat(member);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ viewers: {} });
-    const leave = await call("POST", inSpace("/presence/leave"), member, { conversationId: null });
+    const leave = await call("POST", inSpace("/presence/leave"), member, {
+      conversationId: null,
+      signingOut: true,
+    });
     expect(leave.status).toBe(200);
     const widget = await app.request(`/v1/widget/${space.publicKey}/presence`, {
       headers: { origin: SITE },
     });
     expect(await widget.json()).toEqual({
       online: null,
+      members: [],
       emailReplies: false,
+      replySeconds: null,
+    });
+  });
+
+  test("a hidden tab views nothing", async () => {
+    const member = await person("member");
+    const response = await call("PUT", inSpace("/presence"), member, {
+      viewing: conversationId,
+      left: null,
+      hidden: true,
+    });
+    expect(response.status).toBe(400);
+  });
+
+  test("Away holds in every workspace, and the session cannot set it another way", async () => {
+    const member = await person("member");
+    const away = await call("PUT", "/v1/operator/me/status", member, { away: true });
+    expect(away.status).toBe(200);
+    expect(await away.json()).toEqual({ away: true });
+    const me = await call("GET", "/v1/operator/me", member);
+    expect(await me.json()).toMatchObject({ away: true });
+    // BetterAuth's own route must not reach the column.
+    await call("POST", "/v1/auth/update-user", member, { away: false });
+    expect(await (await call("GET", "/v1/operator/me", member)).json()).toMatchObject({
+      away: true,
+    });
+    expect((await call("PUT", "/v1/operator/me/status", null, { away: false })).status).toBe(401);
+  });
+
+  describe("with Valkey", () => {
+    let valkey: Redis;
+    let withValkey: App;
+    beforeAll(() => {
+      valkey = new Redis(VALKEY_URL, { maxRetriesPerRequest: 1 });
+      withValkey = createApp({
+        auth,
+        db,
+        live,
+        logger,
+        valkey,
+        checks: { postgres: ok, valkey: ok },
+      });
+    });
+    afterAll(() => valkey.disconnect());
+
+    const send = (method: string, path: string, as: Person, body: unknown) =>
+      withValkey.request(path, {
+        method,
+        headers: { cookie: as.cookie, origin: ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const widget = async () =>
+      (
+        await withValkey.request(`/v1/widget/${space.publicKey}/presence`, {
+          headers: { origin: SITE },
+        })
+      ).json();
+
+    test("a hidden tab counts online, and Away does not, at once", async () => {
+      const anna = await person("member");
+      expect(await widget()).toMatchObject({ online: false, members: [] });
+      const hidden = { viewing: null, left: null, hidden: true };
+      expect((await send("PUT", inSpace("/presence"), anna, hidden)).status).toBe(200);
+      expect(await widget()).toMatchObject({ online: true, members: [visitorAuthorId(anna.id)] });
+
+      await send("PUT", "/v1/operator/me/status", anna, { away: true });
+      expect(await widget()).toMatchObject({ online: false, members: [] });
+      // An away operator's beat still says what they view, for the team.
+      const beat = await send("PUT", inSpace("/presence"), anna, {
+        viewing: conversationId,
+        left: null,
+        hidden: false,
+      });
+      expect(await beat.json()).toEqual({ viewers: { [conversationId]: [anna.id] } });
+      expect(await widget()).toMatchObject({ online: false });
+
+      await send("PUT", "/v1/operator/me/status", anna, { away: false });
+      await send("PUT", inSpace("/presence"), anna, hidden);
+      expect(await widget()).toMatchObject({ online: true });
+    });
+
+    test("a closing tab keeps the operator online, and a sign-out does not", async () => {
+      const ben = await person("member");
+      const shown = { viewing: conversationId, left: null, hidden: false };
+      await send("PUT", inSpace("/presence"), ben, shown);
+      const closing = { conversationId, signingOut: false };
+      expect((await send("POST", inSpace("/presence/leave"), ben, closing)).status).toBe(200);
+      expect((await widget()).members).toContain(visitorAuthorId(ben.id));
+      const beat = await send("PUT", inSpace("/presence"), ben, { ...shown, viewing: null });
+      expect((await beat.json()).viewers[conversationId] ?? []).not.toContain(ben.id);
+
+      const signingOut = { conversationId: null, signingOut: true };
+      await send("POST", inSpace("/presence/leave"), ben, signingOut);
+      expect((await widget()).members).not.toContain(visitorAuthorId(ben.id));
     });
   });
 

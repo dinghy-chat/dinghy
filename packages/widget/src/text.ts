@@ -9,6 +9,8 @@ const en = {
   title: DEFAULT_TITLE,
   teamOnline: "Online",
   teamAway: "Away, we reply here and by email",
+  replyMinutes: "Usually replies in {n} min",
+  replyHours: "Usually replies in {n} h",
   waiting: "We will reply here",
   sceneSending: "Sending...",
   newReply: "New reply",

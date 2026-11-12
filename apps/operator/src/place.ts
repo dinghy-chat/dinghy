@@ -21,18 +21,30 @@ export function countryName(country: string): string {
 }
 
 /**
- * The time where the visitor is, with its offset from UTC: "7:52 PM, UTC+1". Null for a time zone
- * the browser does not know.
+ * The time where the visitor is, and its offset from UTC: "7:52 PM" and "UTC+1". Null for a time
+ * zone the browser does not know.
  */
-export function localTime(timeZone: string, now = new Date()): string | null {
+export function zoneClock(
+  timeZone: string,
+  now = new Date(),
+): { time: string; utc: string } | null {
   try {
     const time = clockTime(now, timeZone);
     const offset = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" })
       .formatToParts(now)
       .find((part) => part.type === "timeZoneName")?.value;
-    const utc = (offset ?? "GMT").replace("GMT", "UTC").replace(/^UTC[+-]0$/, "UTC");
-    return `${time}, ${utc}`;
+    return { time, utc: (offset ?? "GMT").replace("GMT", "UTC").replace(/^UTC[+-]0$/, "UTC") };
   } catch {
     return null;
   }
 }
+
+/** The time where the visitor is, with its offset from UTC: "7:52 PM, UTC+1", or null. */
+export function localTime(timeZone: string, now = new Date()): string | null {
+  const clock = zoneClock(timeZone, now);
+  return clock === null ? null : `${clock.time}, ${clock.utc}`;
+}
+
+/** The place an IANA zone is named after: "Sao Paulo" for America/Sao_Paulo. */
+export const zoneCity = (timeZone: string) =>
+  (timeZone.split("/").at(-1) ?? timeZone).replaceAll("_", " ");
