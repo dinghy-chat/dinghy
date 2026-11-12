@@ -136,31 +136,34 @@ test("notes, a bot's handoff, giving it back, and the bot typing", async ({ brow
   await alice.locator(".row", { hasText: "I want a refund" }).click();
 
   await alice.getByRole("radio", { name: "Note" }).check();
-  await expect(alice.locator(".compose-hint")).toHaveText("Only your team sees notes");
   const noteBox = alice.getByRole("textbox", { name: "Your note" });
   await noteBox.fill("Check the order in *Stripe* first");
   await noteBox.press("Enter");
-  const mine = alice.locator(".team-note", { hasText: "Check the order in Stripe first" });
-  await expect(mine).toContainText("You");
+  const mine = alice.locator(".msg.note", { hasText: "Check the order in Stripe first" });
+  await expect(mine.locator(".note-label")).toHaveText("Internal note · You");
   await expect(mine.locator("em")).toHaveText("Stripe");
-  await expect(alice.locator(".bubble-row", { hasText: "Check the order" })).toHaveCount(0);
 
   await asBot(alice, token, `/conversations/${chat}/handoff`, {
     clientId: "handoff-1",
     reason: "Refunds need a person",
   });
-  const handoff = alice.locator(".team-note", { hasText: "Handed off: Refunds need a person" });
-  await expect(handoff).toContainText("Helper bot");
+  const handoff = alice.locator(".msg.note", { hasText: "Handed off: Refunds need a person" });
+  await expect(handoff.locator(".note-label")).toContainText("Helper bot");
   await expect(alice.locator(".thread-head .handler")).toContainText("Team");
 
-  // A link in a bot's note shows its address, and nobody can click it.
-  await asBot(alice, token, `/conversations/${chat}/notes`, {
+  // A link in a bot's note shows its address, and nobody can click it. An operator's keeps its link.
+  await asBot(alice, token, `/conversations/${chat}/messages`, {
     clientId: "note-link-1",
     body: "The visitor sent [the receipt](https://example.com/receipt).",
+    note: true,
   });
-  const botNote = alice.locator(".team-note", { hasText: "the receipt" });
+  const botNote = alice.locator(".msg.note", { hasText: "the receipt" });
   await expect(botNote).toContainText("the receipt (https://example.com/receipt)");
   await expect(botNote.locator("a")).toHaveCount(0);
+  await noteBox.fill("See [the order](https://example.com/order)");
+  await noteBox.press("Enter");
+  const ownLink = alice.locator(".msg.note", { hasText: "the order" }).locator("a");
+  await expect(ownLink).toHaveAttribute("href", "https://example.com/order");
 
   await alice.getByRole("button", { name: "More actions" }).click();
   await alice.getByRole("menuitem", { name: "Give back to bot" }).click();

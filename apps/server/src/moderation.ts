@@ -9,7 +9,6 @@ import {
   draftReply,
   ipBlock,
   message,
-  note,
   storageDeletion,
   visitor,
 } from "./db/schema.ts";
@@ -142,9 +141,6 @@ export async function deleteConversation(
     .where(
       and(eq(draftReply.workspaceId, workspaceId), eq(draftReply.conversationId, conversationId)),
     );
-  await tx
-    .delete(note)
-    .where(and(eq(note.workspaceId, workspaceId), eq(note.conversationId, conversationId)));
   const messages = tx
     .select({ id: message.id })
     .from(message)

@@ -5,7 +5,7 @@ import { AnalyticsPage } from "./analytics.tsx";
 import { type Me, workspaceApi } from "./api.ts";
 import { pauseBots } from "./bots.tsx";
 import { ContactsPage } from "./contacts.tsx";
-import { useDrafts } from "./drafts.ts";
+import { NO_DRAFT, useDrafts } from "./drafts.ts";
 import { GetStarted } from "./get-started.tsx";
 import { InboxBanners } from "./inbox-banners.tsx";
 import { useInboxData } from "./inbox-data.ts";
@@ -287,8 +287,8 @@ export function Inbox({
                   key={selected}
                   api={api}
                   meId={me.id}
-                  draft={drafts[selected] ?? ""}
-                  setDraft={(text) => setDraft(selected, text)}
+                  draft={drafts[selected] ?? NO_DRAFT}
+                  setDraft={(draft) => setDraft(selected, draft)}
                   members={members}
                   replying={data.replying(selected)}
                   mayDeleteAnyone={role !== "member" && !readOnly && !suspended}

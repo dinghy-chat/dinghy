@@ -18,7 +18,6 @@ import {
   conversation,
   draftReply,
   message,
-  note,
   pageView,
   subscription,
   visitor,
@@ -210,21 +209,13 @@ describe("the owner's delete", () => {
       conversationId: talk?.id ?? "",
       messageId: said?.id ?? "",
     });
-    // A grant's token, a note, a sent draft and a site, whose foreign keys the purge must also order.
+    // A grant's token, a sent draft and a site, whose foreign keys the purge must also order.
     await owner.insert(apiKeyCredential).values({
       workspaceId: created.id,
       apiKeyId: key?.id ?? "",
       kind: "refresh",
       tokenHash: "home-refresh",
       expiresAt: new Date(Date.now() + 3_600_000),
-    });
-    await owner.insert(note).values({
-      workspaceId: created.id,
-      conversationId: talk?.id ?? "",
-      seq: 2n,
-      authorApiKeyId: key?.id ?? "",
-      clientId: "note-1",
-      body: "A note",
     });
     await owner.insert(draftReply).values({
       workspaceId: created.id,

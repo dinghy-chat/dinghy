@@ -120,7 +120,7 @@ export async function createDraft(
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
   if (target?.status !== "open") throw new ConversationClosedError();
   if (input.replyToMessageId !== undefined) {
-    await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId);
+    await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId, false);
   }
   await tx.insert(draftReply).values({
     workspaceId,

@@ -27,7 +27,7 @@ import { type Limits, STREAM_LIMIT } from "./limits.ts";
 import { type Live, OPERATORS, type Session } from "./live.ts";
 import { type LiveVisitors, liveVisitorList } from "./live-visitors.ts";
 import { type Outcome, type Tool, tool } from "./mcp.ts";
-import { body, clientId, conversationId, UNTRUSTED_TEXT } from "./mcp-inputs.ts";
+import { body, clientId, conversationId, replyToMessageId, UNTRUSTED_TEXT } from "./mcp-inputs.ts";
 import { closedFailure } from "./member.ts";
 import {
   CURSOR_PATTERN,
@@ -39,7 +39,6 @@ import {
   parseCursor,
   stored,
 } from "./messages.ts";
-import { appendNote, type NoteView } from "./notes.ts";
 import type { Presence, VisitorPresence } from "./presence.ts";
 import { listMembers, NOT_A_MEMBER } from "./team.ts";
 import { MINUTE_MS } from "./time.ts";
@@ -88,6 +87,10 @@ function messageLine(one: Read["messages"][number]): Line {
     : one.authorApiKeyId !== null
       ? `${one.authorName ?? "Bot"} (bot)`
       : (one.authorName ?? "Team");
+  if (one.kind === "note") {
+    const text = `Note by ${one.authorName ?? "Team"}: ${one.deleted ? "[deleted]" : indent(one.body ?? "")}`;
+    return { seq: BigInt(one.seq), at: one.createdAt, text };
+  }
   const content = one.deleted
     ? "[deleted]"
     : one.kind === "image"
@@ -102,12 +105,6 @@ function messageLine(one: Read["messages"][number]): Line {
   return { seq: BigInt(one.seq), at: one.createdAt, text };
 }
 
-const noteLine = (one: NoteView): Line => ({
-  seq: BigInt(one.seq),
-  at: one.createdAt,
-  text: `Note by ${one.authorName ?? "Team"}: ${indent(one.body)}`,
-});
-
 /** Who handles the conversation, in words. */
 function handlerText(handler: Read["conversation"]["handler"]): string {
   if (handler === null) return "no one yet: a bot may answer";
@@ -120,9 +117,7 @@ function handlerText(handler: Read["conversation"]["handler"]): string {
 function transcript(read: Read, assigneeName: string | null, replySeconds: number | null): string {
   const { conversation: found } = read;
   const who = [found.visitor.name, found.visitor.email].filter((one) => one !== null).join(", ");
-  const lines = [...read.messages.map(messageLine), ...read.notes.map(noteLine)].sort(
-    (one, other) => (one.seq < other.seq ? -1 : 1),
-  );
+  const lines = read.messages.map(messageLine);
   const wait = replySeconds === null ? "unknown" : `${Math.round(replySeconds)} seconds`;
   return [
     `# Conversation ${found.id}`,
@@ -268,14 +263,14 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "get_conversation",
       title: "Read a conversation",
-      description: `Reads one conversation: its status, assignee and \`handler\` (\`person\`: the assignee handles it since \`since\`; \`team\`: people handle it with no assignee; \`bot\`: no person handles it and this key took part last; null: no one yet), the visitor (with the attributes your site signed), \`pageContext\` (what the page sent, not verified), the pages the visitor went through, its messages in order, and the team's internal \`notes\`, which the visitor never sees. \`replySeconds\` is the team's median first reply time over 30 days, to tell a visitor how long a person takes. With \`format: "markdown"\` it answers \`{ markdown }\`, a short transcript. ${UNTRUSTED_TEXT}`,
+      description: `Reads one conversation: its status, assignee and \`handler\` (\`person\`: the assignee handles it since \`since\`; \`team\`: people handle it with no assignee; \`bot\`: no person handles it and this key took part last; null: no one yet), the visitor (with the attributes your site signed), \`pageContext\` (what the page sent, not verified), the pages the visitor went through, and its messages in order. A message of \`kind: "note"\` is an internal note that only the team sees, never the visitor. \`replySeconds\` is the team's median first reply time over 30 days, to tell a visitor how long a person takes. With \`format: "markdown"\` it answers \`{ markdown }\`, a short transcript. ${UNTRUSTED_TEXT}`,
       input: z.object({
         conversationId,
         after: z
           .string()
           .regex(/^\d{1,18}$/)
           .default("0")
-          .describe("Only messages and notes after this seq"),
+          .describe("Only messages after this seq"),
         limit: z.number().int().min(1).max(100).default(100),
         format: z.enum(["json", "markdown"]).default("json"),
       }),
@@ -303,23 +298,14 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       title: "Reply to a visitor",
       description:
         'Replies in an open conversation, as the API key\'s reply mode says. A key that sends directly answers `{ status: "sent", message }`: the visitor sees it, with the key\'s name as its author. A key in draft mode answers `{ status: "drafted", draft }`: nothing reached the visitor, and an operator sends, edits or discards it. Errors: `human_handling` when a person handles the conversation and the key sends directly (write a note, or wait for them to give it back), and `bots_paused` when an owner paused every bot. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message.',
-      input: z.object({
-        conversationId,
-        body,
-        clientId,
-        replyToMessageId: z
-          .uuid()
-          .optional()
-          .describe("An earlier message of this conversation to quote, from get_conversation"),
-      }),
+      input: z.object({ conversationId, body, clientId, replyToMessageId }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
         replyAnswer(
           await inbox.reply(workspaceId, actor, input.conversationId, {
-            body: input.body,
-            clientId: input.clientId,
-            replyToMessageId: input.replyToMessageId,
+            ...input,
             via: "mcp",
+            note: false,
           }),
         ),
     }),
@@ -327,23 +313,17 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "add_note",
       title: "Add an internal note",
       description:
-        "Adds a note to a conversation for the team. The visitor never sees it. Use it to pass on what you found, or to suggest an answer while a person handles the conversation. Markdown works as in messages.",
-      input: z.object({ conversationId, body, clientId }),
+        "Adds a note to a conversation, open or closed, that only the team sees. The visitor never sees it, and it alerts nobody. Use it to pass on what you found, or to suggest an answer while a person handles the conversation: a note works while a person handles it and while bots are paused. Markdown works as in messages, but links in a key's note show as plain text. Pass the same `clientId` when you retry. Pass `replyToMessageId` to quote an earlier message or note.",
+      input: z.object({ conversationId, body, clientId, replyToMessageId }),
       idempotent: true,
-      async run(input, { workspaceId, actor }) {
-        const noted = await withWorkspace(db, workspaceId, (tx) =>
-          appendNote(
-            tx,
-            workspaceId,
-            { kind: "key", apiKeyId: actor.apiKeyId },
-            input.conversationId,
-            input,
-          ),
-        );
-        if (noted === null) return { error: NOT_FOUND };
-        if (noted.created) live.wake(workspaceId, OPERATORS);
-        return { data: { note: noted.note } };
-      },
+      run: async (input, { workspaceId, actor }) =>
+        replyAnswer(
+          await inbox.reply(workspaceId, actor, input.conversationId, {
+            ...input,
+            via: "mcp",
+            note: true,
+          }),
+        ),
     }),
     tool({
       name: "list_drafts",

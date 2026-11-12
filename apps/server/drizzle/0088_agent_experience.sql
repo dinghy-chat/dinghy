@@ -39,23 +39,6 @@ CREATE TABLE "draft_reply" (
 	CONSTRAINT "draft_reply_sent_message" CHECK (coalesce("draft_reply"."resolved" = 'sent', false) = ("draft_reply"."sent_message_id" is not null))
 );
 --> statement-breakpoint
-CREATE TABLE "note" (
-	"workspace_id" uuid NOT NULL,
-	"id" uuid DEFAULT gen_random_uuid() NOT NULL,
-	"conversation_id" uuid NOT NULL,
-	"seq" bigint NOT NULL,
-	"author_operator_id" uuid,
-	"author_api_key_id" uuid,
-	"body" text NOT NULL,
-	"client_id" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "note_workspace_id_id_pk" PRIMARY KEY("workspace_id","id"),
-	CONSTRAINT "note_operator_client_key" UNIQUE("workspace_id","author_operator_id","client_id"),
-	CONSTRAINT "note_api_key_client_key" UNIQUE("workspace_id","author_api_key_id","client_id"),
-	CONSTRAINT "note_one_author" CHECK (num_nonnulls("note"."author_operator_id", "note"."author_api_key_id") = 1),
-	CONSTRAINT "note_body_length" CHECK (char_length("note"."body") between 1 and 10000)
-);
---> statement-breakpoint
 CREATE TABLE "widget_site_seen" (
 	"workspace_id" uuid NOT NULL,
 	"origin" text NOT NULL,
@@ -85,10 +68,6 @@ ALTER TABLE "draft_reply" ADD CONSTRAINT "draft_reply_api_key_fk" FOREIGN KEY ("
 ALTER TABLE "draft_reply" ADD CONSTRAINT "draft_reply_reply_to_fk" FOREIGN KEY ("workspace_id","reply_to_message_id") REFERENCES "public"."message"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "draft_reply" ADD CONSTRAINT "draft_reply_sent_message_fk" FOREIGN KEY ("workspace_id","sent_message_id") REFERENCES "public"."message"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "draft_reply" ADD CONSTRAINT "draft_reply_resolved_by_fk" FOREIGN KEY ("workspace_id","resolved_by_operator_id") REFERENCES "public"."workspace_member"("workspace_id","operator_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "note" ADD CONSTRAINT "note_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "note" ADD CONSTRAINT "note_conversation_fk" FOREIGN KEY ("workspace_id","conversation_id") REFERENCES "public"."conversation"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "note" ADD CONSTRAINT "note_author_operator_fk" FOREIGN KEY ("workspace_id","author_operator_id") REFERENCES "public"."workspace_member"("workspace_id","operator_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "note" ADD CONSTRAINT "note_author_api_key_fk" FOREIGN KEY ("workspace_id","author_api_key_id") REFERENCES "public"."api_key"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "widget_site_seen" ADD CONSTRAINT "widget_site_seen_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "api_key_credential_api_key_idx" ON "api_key_credential" USING btree ("workspace_id","api_key_id");--> statement-breakpoint
 CREATE INDEX "api_key_credential_expires_idx" ON "api_key_credential" USING btree ("expires_at");--> statement-breakpoint
@@ -96,7 +75,6 @@ CREATE INDEX "draft_reply_conversation_idx" ON "draft_reply" USING btree ("works
 CREATE INDEX "draft_reply_open_idx" ON "draft_reply" USING btree ("workspace_id","conversation_id") WHERE "draft_reply"."resolved" is null;--> statement-breakpoint
 CREATE INDEX "draft_reply_reply_to_idx" ON "draft_reply" USING btree ("workspace_id","reply_to_message_id");--> statement-breakpoint
 CREATE INDEX "draft_reply_sent_message_idx" ON "draft_reply" USING btree ("workspace_id","sent_message_id");--> statement-breakpoint
-CREATE INDEX "note_conversation_idx" ON "note" USING btree ("workspace_id","conversation_id","seq");--> statement-breakpoint
 ALTER TABLE "conversation" ADD CONSTRAINT "conversation_handoff_api_key_fk" FOREIGN KEY ("workspace_id","handoff_by_api_key_id") REFERENCES "public"."api_key"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "conversation_handoff_api_key_idx" ON "conversation" USING btree ("workspace_id","handoff_by_api_key_id");--> statement-breakpoint
 CREATE INDEX "message_api_key_conversation_idx" ON "message" USING btree ("workspace_id","conversation_id","seq") WHERE "message"."author_api_key_id" is not null;--> statement-breakpoint

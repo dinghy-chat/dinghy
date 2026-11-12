@@ -15,7 +15,7 @@ import {
 import type { Transaction } from "./db/tenant.ts";
 import {
   conversationVisitor,
-  isChat,
+  isWritten,
   messageColumns,
   nextSeq,
   type StoredMessage,
@@ -144,7 +144,7 @@ async function resendQuotes(tx: Transaction, workspaceId: string, messageId: str
     where ${message.workspaceId} = ${workspaceId} and ${message.id} = quoting.id`);
 }
 
-/** One chat line of this conversation, locked until commit, or undefined. */
+/** One chat line or note of this conversation, locked until commit, or undefined. */
 async function lockChatLine(
   tx: Transaction,
   workspaceId: string,
@@ -168,7 +168,7 @@ async function lockChatLine(
         eq(message.workspaceId, workspaceId),
         eq(message.id, messageId),
         eq(message.conversationId, conversationId),
-        isChat(),
+        isWritten(),
       ),
     )
     .for("update");
@@ -202,8 +202,9 @@ type EditOutcome =
   | { kind: "seen" };
 
 /**
- * Changes the text of an operator's own reply while the visitor cannot have seen it. Its event tells
- * the widget, the other operators and the webhooks, in the same transaction.
+ * Changes the text of an operator's own reply while the visitor cannot have seen it, or of their own
+ * note at any time, as the visitor never sees one. Its event tells the widget, the other operators
+ * and the webhooks, in the same transaction.
  */
 export async function editMessage(
   tx: Transaction,
@@ -218,8 +219,11 @@ export async function editMessage(
   if (reader === undefined) return { kind: "missing" };
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined || line.deletedAt !== null) return { kind: "missing" };
-  if (line.authorOperatorId !== operatorId || line.kind !== "text") return { kind: "not_yours" };
-  if (await visitorMaySee(tx, workspaceId, conversationId, reader, line)) {
+  const isNote = line.kind === "note";
+  if (line.authorOperatorId !== operatorId || !(line.kind === "text" || isNote)) {
+    return { kind: "not_yours" };
+  }
+  if (!isNote && (await visitorMaySee(tx, workspaceId, conversationId, reader, line))) {
     return { kind: "seen" };
   }
   const [row] = await tx
@@ -234,7 +238,7 @@ export async function editMessage(
 }
 
 type DeleteOutcome =
-  | { kind: "deleted"; visitorId: string }
+  | { kind: "deleted"; visitorId: string; isNote: boolean }
   | { kind: "missing" }
   | { kind: "not_yours" };
 
@@ -256,8 +260,8 @@ export async function deleteMessage(
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined) return { kind: "missing" };
   if (!by.mayDeleteAnyone && line.authorOperatorId !== by.operatorId) return { kind: "not_yours" };
-  const visitorId = reader.id;
-  if (line.deletedAt !== null) return { kind: "deleted", visitorId };
+  const deleted = { kind: "deleted", visitorId: reader.id, isNote: line.kind === "note" } as const;
+  if (line.deletedAt !== null) return deleted;
   await tx
     .update(message)
     .set({
@@ -278,7 +282,7 @@ export async function deleteMessage(
   }
   await recordMessageChange(tx, workspaceId, seq, "message.deleted", line);
   await resendQuotes(tx, workspaceId, messageId);
-  return { kind: "deleted", visitorId };
+  return deleted;
 }
 
 /** When the first email that carried this message was sent. Null when none did, or it was pruned. */

@@ -144,25 +144,15 @@ export interface Draft {
   createdAt: string;
 }
 
-/** An internal note, which only the team and API keys see. It sorts among messages by `seq`. */
-export interface Note {
-  id: string;
-  conversationId: string;
-  seq: string;
-  authorKind: "operator" | "key";
-  authorOperatorId: string | null;
-  /** The operator's current name, or the key's. */
-  authorName: string | null;
-  body: string;
-  createdAt: string;
-}
-
 export interface Message {
   id: string;
   conversationId: string;
   seq: string;
-  /** `closed` and `reopened` are status lines that a close or a reopen wrote, with no body. */
-  kind: "text" | "image" | "closed" | "reopened";
+  /**
+   * `closed` and `reopened` are status lines that a close or a reopen wrote, with no body. A `note`
+   * is text that only the team sees.
+   */
+  kind: "text" | "image" | "closed" | "reopened" | "note";
   fromVisitor: boolean;
   /** The operator who sent it, and their current name. Both null for a visitor's message. */
   authorOperatorId: string | null;
@@ -367,7 +357,6 @@ export const WEBHOOK_EVENTS = [
   "conversation.assigned",
   "conversation.handoff",
   "conversation.given_back",
-  "note.created",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -752,8 +741,6 @@ export function workspaceApi(workspaceId: string) {
       call<{
         conversation: Conversation;
         messages: Message[];
-        /** The internal notes among this page's messages. */
-        notes: Note[];
         hasMore: boolean;
         /** A widget stream of the visitor's is open. Null when the server cannot tell. */
         visitorOnline: boolean | null;
@@ -769,8 +756,14 @@ export function workspaceApi(workspaceId: string) {
         `${base}/conversations/search?q=${encodeURIComponent(query)}`,
         { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) },
       ),
-    reply: (id: string, clientId: string, body: string, replyToMessageId?: string) =>
-      post<Message>(`${conversation(id)}/messages`, { clientId, body, replyToMessageId }),
+    /** A reply, or with `note` a note that only the team sees. */
+    reply: (
+      id: string,
+      clientId: string,
+      body: string,
+      replyToMessageId: string | undefined,
+      note: boolean,
+    ) => post<Message>(`${conversation(id)}/messages`, { clientId, body, replyToMessageId, note }),
     replyImage: async (id: string, clientId: string, file: File, replyToMessageId?: string) => {
       const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
       const response = await fetch(`${conversation(id)}/images?clientId=${clientId}${quote}`, {
@@ -804,8 +797,6 @@ export function workspaceApi(workspaceId: string) {
       post<Message>(`${conversation(id)}/drafts/${draftId}/send`, { body }),
     discardDraft: (id: string, draftId: string) =>
       post<{ ok: true }>(`${conversation(id)}/drafts/${draftId}/discard`, {}),
-    addNote: (id: string, clientId: string, body: string) =>
-      post<Note>(`${conversation(id)}/notes`, { clientId, body }),
     /** Lets bots that send directly answer this conversation again. */
     giveBack: (id: string) => post<{ ok: true }>(`${conversation(id)}/give-back`, {}),
     /** Moves this operator's read position in the conversation forward to a message's seq. */

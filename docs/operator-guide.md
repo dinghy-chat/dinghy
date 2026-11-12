@@ -14,6 +14,8 @@ To send an image, paste it, drag it onto the chat, or select the image button. T
 
 If a message shows "Not sent", select it to try again. A retry cannot create a second copy.
 
+To write something only your team sees, choose **Note** above the reply box, write it and select **Add note**. The box turns yellow, and the note shows in a yellow bubble labeled **Internal note** with its author. The visitor never sees a note, in the chat or in an email, and a note sends no alert and does not assign the conversation. You can edit your own notes at any time and delete them as replies. A note can quote any message, but a reply cannot quote a note. Notes take text only, and the box goes back to **Reply** when you open another conversation.
+
 When you close a conversation, a visitor who gave an email gets the whole conversation by email 5 minutes later, if someone on the team replied, with a link to continue the chat. Reopening it within the 5 minutes cancels it. **Send transcript** in the conversation's **…** menu sends it now. **Settings > Appearance** turns the email at close off.
 
 Under your team's last reply, a small line says how far it got: **Sent** when Dinghy stored it, **Sent by email** when a reply email carried it to the visitor, **Email failed** when that email could not go, and **Read in chat** once the visitor has seen it in the widget. Point at an earlier reply to see its line. The line changes by itself when the visitor reads.

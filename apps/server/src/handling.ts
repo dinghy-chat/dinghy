@@ -1,6 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import type { Actor, KeyActor } from "./api-keys.ts";
-import { API_KEY, SESSION, SESSION_OR_KEY } from "./api-security.ts";
+import { API_KEY, SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { giveBack, type HandoffInput, handoff, setBotsPaused, typingGate } from "./bots.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
@@ -30,7 +30,6 @@ import {
   type StoredMessage,
   WorkspaceClosedError,
 } from "./messages.ts";
-import { appendNote, NoteSchema } from "./notes.ts";
 import { allowed, NOT_A_MEMBER } from "./team.ts";
 
 const workspaceParams = z.object({ workspaceId: z.uuid() });
@@ -98,25 +97,6 @@ const discardDraftRoute = createRoute({
     200: { description: "Discarded, or it already was", content: okContent },
     ...MEMBER_WRITE_ERRORS,
     404: errorAnswer("not_found: no such draft here, or it was sent"),
-  },
-});
-
-const noteRoute = createRoute({
-  method: "post",
-  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/notes`,
-  security: SESSION_OR_KEY,
-  summary: "Add an internal note. Only operators and API keys see notes",
-  description:
-    "A note never reaches the visitor: not the widget, an email, a transcript or a visitor export. It sorts among the messages by `seq`, and webhooks get `note.created`. A retry with the same clientId returns the original.",
-  request: {
-    params: conversationParams,
-    body: json(z.object({ clientId: CLIENT_ID, body: BODY })),
-  },
-  responses: {
-    ...KEY_LIMITED,
-    200: answer("A retry. This is the original note", NoteSchema),
-    201: answer("The new note", NoteSchema),
-    ...MEMBER_WRITE_ERRORS,
   },
 });
 
@@ -329,22 +309,6 @@ export function registerHandlingRoutes(app: App, { db, images, live }: HandlingO
     if (!done) return c.json(NOT_FOUND, 404);
     live.wake(id, OPERATORS);
     return c.json({ ok: true as const }, 200);
-  });
-
-  app.openapi(noteRoute, async (c) => {
-    const id = c.get("memberWorkspaceId");
-    const { conversationId } = c.req.valid("param");
-    const actor = c.get("actor");
-    const author =
-      actor.kind === "operator"
-        ? { kind: "operator" as const, operatorId: actor.operatorId }
-        : { kind: "key" as const, apiKeyId: actor.apiKeyId };
-    const noted = await withWorkspace(db, id, (tx) =>
-      appendNote(tx, id, author, conversationId, c.req.valid("json")),
-    );
-    if (noted === null) return c.json(NOT_FOUND, 404);
-    if (noted.created) live.wake(id, OPERATORS);
-    return c.json(noted.note, noted.created ? 201 : 200);
   });
 
   app.openapi(handoffRoute, async (c) => {

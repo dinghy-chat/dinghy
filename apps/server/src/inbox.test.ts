@@ -333,7 +333,6 @@ describe("conversations", () => {
       // The handler's key: one probe of each table's conversation index.
       expect(text).toMatch(/Index Scan Backward using message_api_key_conversation_idx/);
       expect(text).toMatch(/Index Scan Backward using draft_reply_conversation_idx/);
-      expect(text).toMatch(/Index Scan Backward using note_conversation_idx/);
       expect(text).not.toMatch(/Sort/);
     } finally {
       await client.query("rollback");
@@ -1336,8 +1335,8 @@ describe("unread conversations", () => {
     await markRead(conversationId, await newestSeq(conversationId), bo.cookie);
     const noted = await write(
       "POST",
-      `${base}/${conversationId}/notes`,
-      { clientId: "n1", body: "VIP customer" },
+      `${base}/${conversationId}/messages`,
+      { clientId: "n1", body: "VIP customer", note: true },
       ann.cookie,
     );
     expect(noted.status).toBe(201);

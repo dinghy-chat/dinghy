@@ -14,17 +14,6 @@ CREATE POLICY worker_find_credentials ON api_key_credential FOR SELECT TO dinghy
 --> statement-breakpoint
 CREATE POLICY worker_prune_credentials ON api_key_credential FOR DELETE TO dinghy_worker USING (true);
 --> statement-breakpoint
-ALTER TABLE note ENABLE ROW LEVEL SECURITY;
---> statement-breakpoint
-CREATE POLICY tenant_isolation ON note TO dinghy_app, dinghy_worker
-  USING (workspace_id = current_workspace_id()) WITH CHECK (workspace_id = current_workspace_id());
---> statement-breakpoint
--- A note is never edited. A conversation's or a contact's delete removes its notes. The worker
--- reads one for a webhook's `note.created`.
-GRANT SELECT, INSERT, DELETE ON note TO dinghy_app;
---> statement-breakpoint
-GRANT SELECT ON note TO dinghy_worker;
---> statement-breakpoint
 ALTER TABLE draft_reply ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 CREATE POLICY tenant_isolation ON draft_reply TO dinghy_app, dinghy_worker
@@ -79,7 +68,6 @@ CREATE OR REPLACE FUNCTION purge_deleted_workspaces()
         DELETE FROM webhook_delivery WHERE workspace_id = target;
         DELETE FROM webhook WHERE workspace_id = target;
         DELETE FROM draft_reply WHERE workspace_id = target;
-        DELETE FROM note WHERE workspace_id = target;
         DELETE FROM attachment WHERE workspace_id = target;
         DELETE FROM message WHERE workspace_id = target;
         -- A conversation names the key that handed it off, so it goes before the keys.
@@ -109,7 +97,7 @@ CREATE OR REPLACE FUNCTION purge_deleted_workspaces()
 GRANT INSERT ON webhook_delivery TO dinghy_app;
 --> statement-breakpoint
 -- The worker deletes an OAuth grant that nobody ever used, such as one approved and never redeemed.
--- A grant that was never used authored nothing, so no message, note, draft or webhook names it.
+-- A grant that was never used authored nothing, so no message, draft or webhook names it.
 GRANT DELETE ON api_key TO dinghy_worker;
 --> statement-breakpoint
 CREATE POLICY worker_find_unused_grants ON api_key FOR SELECT TO dinghy_worker
@@ -118,8 +106,8 @@ CREATE POLICY worker_find_unused_grants ON api_key FOR SELECT TO dinghy_worker
 CREATE POLICY worker_prune_unused_grants ON api_key FOR DELETE TO dinghy_worker
   USING (source = 'oauth' AND last_used_at IS NULL);
 --> statement-breakpoint
--- A webhook's conversation names its handler: the key that took part last, by a message, a note or a
--- draft. The worker builds that payload, so it reads drafts too, under the tenant policy.
+-- A webhook's conversation names its handler: the key that took part last, by a message (a note is
+-- one) or a draft. The worker builds that payload, so it reads drafts too, under the tenant policy.
 GRANT SELECT ON draft_reply TO dinghy_worker;
 --> statement-breakpoint
 -- The event `conversation.bot_resumed` is now `conversation.given_back`. Only builds before a

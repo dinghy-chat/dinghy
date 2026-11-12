@@ -9,10 +9,10 @@ import type { Act } from "./message-actions.tsx";
 import { t } from "./text.ts";
 
 /**
- * The drafts that wait in a conversation, oldest first as the thread reads, loaded again when one
- * changes. Sending one puts the sent message in the thread at once.
+ * The suggested replies that keys in draft mode wrote and that wait in a conversation, oldest first
+ * as the thread reads, loaded again when one changes. Sending one puts the sent message in the thread at once.
  */
-export function useDrafts({
+export function useSuggestedReplies({
   api,
   conversationId,
   version,
@@ -115,7 +115,9 @@ function DraftCard({
       <header className="draft-head">
         <Icon name="robot" size={16} />
         <strong className="card-author">{t("draftBy", { name: draft.authorName })}</strong>
-        <time dateTime={draft.createdAt}>{clockTime(draft.createdAt)}</time>
+        <time className="draft-time" dateTime={draft.createdAt}>
+          {clockTime(draft.createdAt)}
+        </time>
       </header>
       {isStale && <p className="draft-stale">{t("draftStale")}</p>}
       <DraftBody body={draft.body} compact={compact} />

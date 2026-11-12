@@ -51,15 +51,26 @@ A message's `body` is plain text that the widget, the operator app and reply ema
 
 `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/transcript` emails the visitor the whole conversation now, open or closed, whatever the `transcript` setting says. It answers 409 `no_email` when the visitor gave no email and `email_unavailable` when the server sends no email. It adds a `transcript.requested` event, and the worker sends it at least once, as it does reply emails. A transcript drops the visitor's waiting reply email, unless that email also carries a reply from another conversation. Transcripts go to visitors only, never to operators.
 
-A message's `kind` is `text` or `image` for what people wrote. Closing or reopening a conversation writes a status line in the same transaction as its `conversation.closed` or `conversation.reopened` event and with the event's position, so the widget and the operator app show it in order: `kind` is `closed` or `reopened`, `body` is null, and the author is whoever made the change (an operator, an API key, or no one shown on Dinghy Cloud's welcome chat). A status line has no `message.created` event, so it raises no alert, no push and no webhook, it is never a conversation's `lastMessage`, and it counts toward neither unread replies nor first replies. A client that shows only chat skips these kinds.
+A message's `kind` is `text` or `image` for what people wrote, and `note` for a [note](#notes) that only the team sees. Closing or reopening a conversation writes a status line in the same transaction as its `conversation.closed` or `conversation.reopened` event and with the event's position, so the widget and the operator app show it in order: `kind` is `closed` or `reopened`, `body` is null, and the author is whoever made the change (an operator, an API key, or no one shown on Dinghy Cloud's welcome chat). A status line has no `message.created` event, so it raises no alert, no push and no webhook, it is never a conversation's `lastMessage`, and it counts toward neither unread replies nor first replies. A client that shows only chat skips these kinds.
 
 An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
+
+### Notes
+
+A note is a message that only the workspace's team sees. Send `"note": true` in the body of `POST .../conversations/{conversationId}/messages`, with a signed-in operator or an API key of either level, or use the MCP `add_note` tool. It takes the same `clientId` and `replyToMessageId` as a reply, and answers the same `InboxMessage`, with `kind` `note`. A note is text only: the image upload refuses a `note` with 400 `invalid_request`.
+
+- A note goes in a closed conversation too, and leaves it closed. It never assigns the conversation, and an operator's first reply after it still does.
+- The visitor never gets a note in any form: not in the widget's message list or stream, not as an edit or a delete there, not in a reply email or a transcript, and not as a quote, because a reply that quotes a note answers 400 `invalid_reply_to`. A note can quote any message, another note too.
+- A note raises no push and no email. It is never a conversation's `lastMessage`, it does not stop a conversation from waiting, it does not move the conversation up the list, it is never unread, and it is not a first reply in analytics. Its receipt is always `{ "readAt": null, "emailedAt": null }`.
+- Its author edits it at any time, as the visitor never sees it, and deletes it as a reply. An owner or admin deletes anyone's.
+- Its `message.created`, `message.updated` and `message.deleted` events reach webhooks as any message's do, with `data.message.kind` set to `note`. On the operator stream, its `message.created` change has `fromVisitor` false.
+- A workspace export keeps notes, with their kind.
 
 ### Quotes, edits and deletes
 
 A send can quote one earlier message of the same conversation: pass its ID as `replyToMessageId` in the body of a text reply or the widget's send, in the query of an image upload, or to the MCP `reply` tool. It must be text or an image that was not deleted, or the send answers 400 `invalid_reply_to`. Every message then has `replyTo`, null or `{ id, authorName, fromVisitor, text, hasImage }`. `text` is the quoted message's whole text with its line breaks, with its Markdown marks removed. When the quoted message is deleted later, `id` is null and `text` is empty: show "Original message deleted". The widget API gives an operator's first name as `authorName`, and null for the visitor's own message.
 
-`PATCH /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}` with `{ "body" }` changes the text of the signed-in operator's own text reply, and sets `editedAt`. It works only while the visitor has not seen the reply: it answers 409 `message_seen` once the visitor read it in the chat, or once a reply email or a transcript carried it or is being sent. A reply email still waiting reads the text when it goes, so it carries the edit. Nobody edits a visitor's message, and API keys and MCP cannot edit.
+`PATCH /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}` with `{ "body" }` changes the text of the signed-in operator's own text reply or note, and sets `editedAt`. It works only while the visitor has not seen the reply: it answers 409 `message_seen` once the visitor read it in the chat, or once a reply email or a transcript carried it or is being sent. A reply email still waiting reads the text when it goes, so it carries the edit. Nobody edits a visitor's message, and API keys and MCP cannot edit.
 
 `DELETE` on the same path deletes a message: an operator deletes their own, and an owner or admin deletes anyone's, a visitor's too, such as a pasted card number. The row stays, so positions, receipts and quotes keep working: `deleted` is true, and `body` and `image` are null in every answer, webhook and export. Its image goes from storage as other deleted images do. API keys cannot delete.
 
@@ -239,9 +250,9 @@ While a person handles it, a key that sends directly gets 409 `human_handling` o
 
 `POST .../conversations/{conversationId}/handoff`, with an API key only, takes `clientId`, `reason` (up to 500 characters), and optional `summary` (up to 2,000), `operatorId` and `visitorMessage`. In one transaction, it sends `visitorMessage` as the key's reply (or a draft in draft mode), assigns the conversation to `operatorId`, makes a person handle it, adds a note with the reason and the summary, and adds a `conversation.handoff` event. That event alerts the assignee, or every member with alerts on when there is none, as a new visitor message does. It answers 201 with `visitorMessage`: `{ status: "sent", message }`, `{ status: "drafted", draft }`, `{ status: "not_sent", reason: "bots_paused" }` or null. A retry with the same `clientId` answers 200 with the first result and changes nothing, even when bots were resumed since.
 
-### Notes
+### Notes from bots
 
-`POST .../conversations/{conversationId}/notes` with `{ "clientId", "body" }` adds an internal note, from an operator or a key. Its body is Markdown, as in messages. A note never reaches the visitor: not the widget, an email, a transcript, a visitor export or a webhook body about a message. The conversation's messages answer `notes`, each with `id`, `seq`, `authorKind` (`operator` or `key`), the author's ID and name, `body` and `createdAt`, and they sort among the messages by `seq`. A retry with the same `clientId` answers 200 with the first note. Webhooks get `note.created`.
+A key writes a [note](#notes) as an operator does, with `"note": true` or the MCP `add_note` tool. A note is never refused with `human_handling` or `bots_paused`, so a bot can pass on what it found while a person handles the conversation. An operator's note does not make a person handle the conversation, and it does not make drafts stale: only a reply that reaches the visitor does. The operator app shows each link in a key's note as plain text with its address, so a link that a visitor gave a bot cannot pass as the team's.
 
 ### Pause all bots
 
@@ -286,15 +297,14 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | Event | When |
 |---|---|
 | `conversation.created` | A visitor starts a conversation. Its first message also sends `message.created` |
-| `message.created` | A visitor, an operator or an API key writes a message |
-| `message.updated` | An operator edits a reply |
+| `message.created` | A visitor, an operator or an API key writes a message or a note |
+| `message.updated` | An operator edits a reply or a note |
 | `message.deleted` | An operator deletes a message. `data.message` has `deleted: true` and no body |
 | `conversation.closed` | A conversation is closed |
 | `conversation.reopened` | A conversation is reopened |
 | `conversation.assigned` | A conversation's assignee changes, or is cleared |
 | `conversation.handoff` | An API key's bot handed the conversation to people |
 | `conversation.given_back` | An operator gave the conversation back to the bots |
-| `note.created` | An operator or an API key wrote an internal note. `data.note` has `id`, `body`, `authorName` and `authorKind` |
 
 Drafts send no webhook. The body is JSON:
 
@@ -311,7 +321,7 @@ Drafts send no webhook. The body is JSON:
 }
 ```
 
-`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`, and only `note.created` has `data.note`. They hold the state when the request is sent, which can be later than the change, such as after a retry. A test visitor's conversation has `visitor.isTest: true`.
+`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`. They hold the state when the request is sent, which can be later than the change, such as after a retry. A test visitor's conversation has `visitor.isTest: true`.
 
 Each request has these headers:
 
@@ -444,9 +454,9 @@ Every key and connected app gets the Conversations tools. A Setup one also gets 
 |---|---|---|
 | `list_conversations` | Conversations | Lists open or closed conversations, newest activity first. Pass `nextCursor` back as `cursor` for the next page |
 | `search_conversations` | Conversations | Finds conversations by the visitor's name, email or user ID, or by message text |
-| `get_conversation` | Conversations | Reads a conversation: its messages and notes, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
-| `reply` | Conversations | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Pass the same `clientId` on a retry |
-| `add_note` | Conversations | Adds an internal note that the visitor never sees |
+| `get_conversation` | Conversations | Reads a conversation: its messages, notes among them with `kind: "note"`, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
+| `reply` | Conversations | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Quote an earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
+| `add_note` | Conversations | Adds a note that only the team sees, in an open or closed conversation, even while a person handles it or bots are paused. Quote any earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
 | `list_drafts` | Conversations | Lists the drafts of keys in draft mode: `open`, `stale` or `all` |
 | `hand_off` | Conversations | Hands a conversation to people, with a reason, a summary and an optional last message to the visitor |
 | `list_members` | Conversations | Lists the members: `id`, `name`, `role` and whether they are `online`. The `id` is what `assign_conversation` and `hand_off` take |

@@ -6,6 +6,7 @@ import { Icon, type IconName } from "./icons.tsx";
 import type { MenuItem } from "./popup.tsx";
 import { seenReason } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
+import { isStatusLine } from "./thread-line.tsx";
 import type { Line } from "./thread-lines.ts";
 import { toast } from "./toast.tsx";
 
@@ -42,7 +43,7 @@ export function lineMenu(
   receipts: ReplyReceipts | null,
   act: LineActions,
 ): MenuItem[] {
-  if (line.seq === null || line.note !== undefined) return [];
+  if (line.seq === null || isStatusLine(line)) return [];
   const item = (label: TextId, icon: IconName, onSelect: () => void): MenuItem => ({
     label: t(label),
     lead: <Icon name={icon} size={16} />,
@@ -53,7 +54,8 @@ export function lineMenu(
   const isText = line.image === null && !line.imageRemoved && line.body !== "";
   const isMine = line.authorOperatorId === who.meId;
   const items: MenuItem[] = [];
-  if (who.canReply) items.push(item("messageReply", "reply", act.reply));
+  // A reply cannot quote a note, as the visitor would see the quote.
+  if (who.canReply && line.kind !== "note") items.push(item("messageReply", "reply", act.reply));
   if (isText) items.push(item("messageCopyText", "copy", act.copyText));
   if (isMine && isText && who.canWrite) {
     const seen = seenReason(line, receipts);

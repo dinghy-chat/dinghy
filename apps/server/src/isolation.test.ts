@@ -25,7 +25,6 @@ import {
   event,
   invite,
   message,
-  note,
   operator,
   operatorPicture,
   pageView,
@@ -1582,38 +1581,6 @@ const ATTACKS: Record<string, Attack> = {
       const [row] = await owner.select().from(draftReply).where(eq(draftReply.id, draft));
       expect(row?.resolved).toBeNull();
     },
-  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/notes": async ({
-    operator: as,
-    withKey,
-    anna,
-    a,
-    b,
-    one,
-    other,
-    keyA,
-    keyB,
-    secrets,
-  }) => {
-    const body = { clientId: randomUUID(), body: "a note crossing over" };
-    for (const id of [a.id, b.id]) {
-      const path = inWorkspace(id, `/conversations/${other.conversationId}/notes`);
-      expect((await as(anna, "POST", path, body)).status).toBe(404);
-      expect((await withKey(keyA.token, "POST", path, body)).status).toBe(404);
-    }
-    expect(await owner.select().from(note).where(eq(note.body, body.body))).toEqual([]);
-    // The other workspace's own note never shows in this one's thread. Written straight to the
-    // database, because the attacks must not move the other workspace's feed.
-    await owner.insert(note).values({
-      workspaceId: b.id,
-      conversationId: other.conversationId,
-      seq: 1n,
-      authorApiKeyId: keyB.id,
-      clientId: randomUUID(),
-      body: `${secrets.b}, a note`,
-    });
-    const read = inWorkspace(a.id, `/conversations/${one.conversationId}/messages`);
-    expect(await (await as(anna, "GET", read)).text()).not.toContain(secrets.b);
-  },
   "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/handoff": async ({
     withKey,
     a,

@@ -37,7 +37,6 @@ import type { Images } from "./images.ts";
 import { conversationView, messageView } from "./inbox.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import { authorNames, findConversation, findMessage } from "./messages.ts";
-import { findNote } from "./notes.ts";
 import { retryDelayMs } from "./retry.ts";
 import { maySetUp } from "./team.ts";
 import { DAY_MS } from "./time.ts";
@@ -838,16 +837,15 @@ export function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
   return WEBHOOK_EVENTS.some((one) => one === kind) ? [kind as WebhookEvent] : [];
 }
 
-/** What one webhook event names: its conversation, and its message or note. */
+/** What one webhook event names: its conversation, and its message. */
 export interface WebhookSubject {
   conversationId: string;
   messageId: string | null;
-  noteId: string | null;
 }
 
 /**
  * The `data` of one webhook event, in the same shapes as the operator API: the conversation, and
- * the message or the note it names. A string says why there is nothing to send. The webhooks and
+ * the message it names. A string says why there is nothing to send. The webhooks and
  * the key event stream both build their bodies with this.
  */
 export async function webhookData(
@@ -865,21 +863,8 @@ export async function webhookData(
     const names = await authorNames(tx, workspaceId, [stored]);
     data.message = messageView(images, workspaceId, names, stored);
   }
-  if (subject.noteId !== null) {
-    const found = await findNote(tx, workspaceId, subject.noteId);
-    if (found === null) return "The note was deleted.";
-    const { id, body, authorName, authorKind } = found;
-    data.note = { id, body, authorName, authorKind };
-  }
   return data;
 }
-
-/**
- * The ID a receiver sees for one event type of one change. A `note.created` event uses its note's
- * ID, which is as unique, so the delivery can name its note without a column of its own.
- */
-const deliveryEventId = (type: WebhookEvent, payload: { noteId?: string }) =>
-  type === "note.created" && payload.noteId !== undefined ? payload.noteId : randomUUID();
 
 /**
  * Creates the deliveries for one event, in one transaction with clearing its flag, so a crash here
@@ -907,7 +892,6 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     const payload = found.payload as {
       conversationId?: string;
       messageId?: string;
-      noteId?: string;
     };
     const types = webhookTypes(found.kind, found.payload);
     const hooks = await tx
@@ -917,7 +901,7 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     const rows: (typeof webhookDelivery.$inferInsert)[] = [];
     if (payload.conversationId !== undefined) {
       for (const type of types) {
-        const eventId = deliveryEventId(type, payload);
+        const eventId = randomUUID();
         for (const hook of hooks.filter((one) => one.events.includes(type))) {
           rows.push({
             workspaceId,
@@ -1039,7 +1023,6 @@ async function planWebhook(
     const data = await webhookData(tx, images, row.workspaceId, {
       conversationId: delivery.conversationId,
       messageId: delivery.messageId,
-      noteId: delivery.type === "note.created" ? delivery.eventId : null,
     });
     if (typeof data === "string") return data;
     return {

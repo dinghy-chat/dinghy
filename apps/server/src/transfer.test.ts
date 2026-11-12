@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { pino } from "pino";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
@@ -24,7 +24,6 @@ import {
   emailStop,
   event,
   message,
-  note,
   operator,
   pageView,
   visitor,
@@ -203,10 +202,14 @@ async function makeSource(): Promise<Source> {
     headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
     body: JSON.stringify({ clientId: "from-key", body: "Reply from the bot" }),
   });
-  await app.request(`${inSpace}/conversations/${conversationId}/notes`, {
+  await app.request(`${inSpace}/conversations/${conversationId}/messages`, {
     method: "POST",
     headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ clientId: "note-from-key", body: "Asked about **pricing**" }),
+    body: JSON.stringify({
+      clientId: "note-from-key",
+      body: "Asked about **pricing**",
+      note: true,
+    }),
   });
   await app.request(`/v1/widget/${space.publicKey}/context`, {
     method: "POST",
@@ -364,7 +367,7 @@ describe("a round trip onto a fresh install", () => {
     target = await freshInstall();
     const result = await importArchive(target.db, target.store, once(archive));
     expect(result.conversations).toBe(1);
-    expect(result.messages).toBe(5);
+    expect(result.messages).toBe(6);
     expect(result.images).toBe(2);
     expect(result.newOperators).toHaveLength(3);
     keptInstalls = installs.length;
@@ -415,21 +418,20 @@ describe("a round trip onto a fresh install", () => {
     );
     expect(messages.filter((one) => one.authorVisitorId === source.visitorId)).toHaveLength(2);
     expect(messages.filter((one) => one.authorOperatorId !== null)).toHaveLength(2);
-    expect(messages.filter((one) => one.authorApiKeyId === source.key.id)).toHaveLength(1);
+    expect(messages.filter((one) => one.authorApiKeyId === source.key.id)).toHaveLength(2);
     expect(messages[0]?.createdAt.getTime()).toBe(
       original.find((one) => one.id === messages[0]?.id)?.createdAt.getTime(),
     );
   });
 
   test("keeps the team's notes, in their place in the feed", async () => {
-    const rows = await target.owner
-      .select()
-      .from(note)
-      .where(eq(note.conversationId, source.conversationId));
-    const original = await source.install.owner
-      .select()
-      .from(note)
-      .where(eq(note.conversationId, source.conversationId));
+    const notesIn = (db: Database) =>
+      db
+        .select()
+        .from(message)
+        .where(and(eq(message.conversationId, source.conversationId), eq(message.kind, "note")));
+    const rows = await notesIn(target.owner);
+    const original = await notesIn(source.install.owner);
     expect(original).toHaveLength(1);
     expect(rows.map((one) => [one.seq, one.body, one.authorApiKeyId])).toEqual(
       original.map((one) => [one.seq, one.body, one.authorApiKeyId]),
@@ -885,7 +887,7 @@ describe("a bad file changes nothing", () => {
       importArchive(target.db, target.store, once(archive.subarray(0, 700))),
     ).rejects.toBeInstanceOf(ImportError);
     const result = await importArchive(target.db, target.store, once(archive));
-    expect(result.messages).toBe(5);
+    expect(result.messages).toBe(6);
   });
 });
 
@@ -912,7 +914,7 @@ test("an export skips an image deleted since it started, and still imports", asy
   const result = await importArchive(target.db, target.store, once(partial));
   expect(result.images).toBe(1);
   expect(result.missingImages).toBe(1);
-  expect(result.messages).toBe(5);
+  expect(result.messages).toBe(6);
 });
 
 test("an export fails if a file is missing while its row is still there", async () => {
@@ -998,7 +1000,7 @@ test("the commands write and read a real file, and a failure leaves no whole-loo
 
   const imported = run(target.database, target.directory, "import", file);
   expect(imported.status).toBe(0);
-  expect(imported.stdout).toContain("5 messages, 2 images");
+  expect(imported.stdout).toContain("6 messages, 2 images");
   expect(imported.stdout).toContain("chat sign-in-link");
 
   const again = run(target.database, target.directory, "import", file);

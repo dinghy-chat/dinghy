@@ -1,17 +1,17 @@
 /** @jsxImportSource react */
 import { Fragment, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
-import type { Conversation, Note, ReplyReceipts } from "./api.ts";
+import type { Conversation, ReplyReceipts } from "./api.ts";
 import { Composer } from "./composer.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
-import { receiptOf } from "./receipts.tsx";
+import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { t } from "./text.ts";
-import { type Entry, entriesOf } from "./thread-entries.ts";
 import {
   BotTyping,
   dayLabel,
+  dayOf,
   groupMeta,
-  NoteCard,
+  isStatusLine,
   StatusNote,
   sameSender,
   ThreadLine,
@@ -20,7 +20,7 @@ import {
 import type { Line } from "./thread-lines.ts";
 import { toast } from "./toast.tsx";
 import { ErrorNote, useModal } from "./ui.tsx";
-import { title } from "./visitor.ts";
+import { replyAuthor, title } from "./visitor.ts";
 
 function ImageViewer({
   url,
@@ -87,28 +87,13 @@ function useLogScroll(lines: Line[], bottom: (string | number | boolean)[]) {
   return { log, flashId, jump };
 }
 
-const createdAt = (entry: Entry | undefined) =>
-  entry?.kind === "note" ? entry.note.createdAt : entry?.line.createdAt;
-
-/** A line between days, where this entry starts a new one. */
-function DayLine({ entry, before }: { entry: Entry; before: Entry | undefined }) {
-  const at = createdAt(entry);
-  const previous = createdAt(before);
-  if (at === undefined) return null;
-  if (previous !== undefined && new Date(previous).toDateString() === new Date(at).toDateString()) {
-    return null;
-  }
-  return <div className="day">{dayLabel(at)}</div>;
-}
-
 /**
- * The thread's messages and the team's notes, day by day, with each message's menu, its editor and
- * the image viewer. Under the last one: the bot's suggested replies and who is typing.
+ * The thread's messages and notes, day by day, with each one's menu, its editor and the image
+ * viewer. Under the last one: the bot's suggested replies and who is typing.
  */
 export function ThreadLog({
   conversation,
   lines,
-  notes,
   receipts,
   who,
   actions,
@@ -121,7 +106,6 @@ export function ThreadLog({
 }: {
   conversation: Conversation;
   lines: Line[];
-  notes: Note[];
   receipts: ReplyReceipts | null;
   who: Rights;
   actions: MessageActions;
@@ -135,7 +119,6 @@ export function ThreadLog({
   onRetry(line: Line): void;
 }) {
   const { log, flashId, jump } = useLogScroll(lines, [
-    notes.length,
     draftCount,
     typingDraft !== null,
     botTyping !== null,
@@ -144,22 +127,14 @@ export function ThreadLog({
   const { editing, setEditing } = actions;
   const visitorName = title(conversation);
   const face = conversation.visitor.pictureUrl;
-  const lastReply = lines.reduce(
-    (last, line, index) =>
-      !line.fromVisitor && line.note === undefined && line.seq !== null ? index : last,
-    -1,
-  );
-  const entries = entriesOf(lines, notes);
+  const lastReply = lines.reduce((last, line, index) => (hasReceipt(line) ? index : last), -1);
   const openQuote = (id: string) => {
     if (!jump(id)) toast("quoteMissing", false);
   };
 
   const renderLine = (line: Line, index: number) => {
     const meta = groupMeta(lines, index, who.meId);
-    const receipt =
-      line.fromVisitor || line.seq === null || receipts === null
-        ? null
-        : receiptOf(line.seq, receipts);
+    const receipt = !hasReceipt(line) || receipts === null ? null : receiptOf(line.seq, receipts);
     return (
       <>
         {/* The welcome chat's founder has a face, as an operator does in the widget. */}
@@ -171,6 +146,7 @@ export function ThreadLog({
         )}
         <ThreadLine
           line={line}
+          noteBy={line.kind === "note" ? replyAuthor(line, who.meId) : null}
           quote={
             line.replyTo === null ? null : (
               <QuoteBlock quote={line.replyTo} visitorName={visitorName} onOpen={openQuote} />
@@ -210,16 +186,16 @@ export function ThreadLog({
   return (
     <>
       <div className="log" role="log" aria-live="polite" ref={log}>
-        {lines.length === 0 && notes.length === 0 && <p className="empty">{t("noMessages")}</p>}
-        {entries.map((entry, at) => (
-          <Fragment key={entry.kind === "note" ? `note-${entry.note.id}` : entry.line.id}>
-            <DayLine entry={entry} before={entries[at - 1]} />
-            {entry.kind === "note" ? (
-              <NoteCard note={entry.note} meId={who.meId} />
-            ) : entry.line.note !== undefined ? (
-              <StatusNote line={entry.line} note={entry.line.note} meId={who.meId} />
+        {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
+        {lines.map((line, index) => (
+          <Fragment key={line.id}>
+            {line.createdAt !== undefined && dayOf(line) !== dayOf(lines[index - 1]) && (
+              <div className="day">{dayLabel(line.createdAt)}</div>
+            )}
+            {isStatusLine(line) ? (
+              <StatusNote line={line} meId={who.meId} />
             ) : (
-              renderLine(entry.line, entry.index)
+              renderLine(line, index)
             )}
           </Fragment>
         ))}

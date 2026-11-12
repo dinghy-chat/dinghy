@@ -13,7 +13,6 @@ import {
   emailStop,
   MESSAGE_KINDS,
   message,
-  note,
   operator,
   pageView,
   visitor,
@@ -154,21 +153,6 @@ const ExportFile = z.strictObject({
     }),
   ),
   attachments: z.array(z.strictObject({ id, messageId: id, createdAt: date })),
-  // The team's internal notes. A file from before notes has none.
-  notes: z
-    .array(
-      z.strictObject({
-        id,
-        conversationId: id,
-        seq,
-        authorOperatorId: id.nullable(),
-        authorApiKeyId: id.nullable(),
-        clientId: z.string().max(128),
-        body: z.string().max(100_000),
-        createdAt: date,
-      }),
-    )
-    .default([]),
   emailStops: z.array(z.strictObject({ addressHash: z.string().max(128), createdAt: date })),
   pageViews: z.array(
     z.strictObject({
@@ -309,10 +293,7 @@ async function readWorkspace(
         .where(eq(attachment.workspaceId, workspaceId));
       const stops = await tx.select().from(emailStop).where(eq(emailStop.workspaceId, workspaceId));
       // The same bytes as one JSON.stringify of the whole file, in the schema's key order.
-      const head: Omit<
-        ExportData,
-        "messages" | "attachments" | "notes" | "emailStops" | "pageViews"
-      > = {
+      const head: Omit<ExportData, "messages" | "attachments" | "emailStops" | "pageViews"> = {
         version: VERSION,
         // The signing secret stays out. An export travels, and that secret signs in any user.
         workspace: {
@@ -371,21 +352,10 @@ async function readWorkspace(
           updatedAt: iso(row.updatedAt),
         })),
       };
-      const notes = await tx.select().from(note).where(eq(note.workspaceId, workspaceId));
-      const tail: Pick<ExportData, "attachments" | "notes" | "emailStops"> = {
+      const tail: Pick<ExportData, "attachments" | "emailStops"> = {
         attachments: attachments.map((row) => ({
           id: row.id,
           messageId: row.messageId,
-          createdAt: iso(row.createdAt),
-        })),
-        notes: notes.map((row) => ({
-          id: row.id,
-          conversationId: row.conversationId,
-          seq: row.seq.toString(),
-          authorOperatorId: row.authorOperatorId,
-          authorApiKeyId: row.authorApiKeyId,
-          clientId: row.clientId,
-          body: row.body,
           createdAt: iso(row.createdAt),
         })),
         emailStops: stops.map((row) => ({
@@ -498,8 +468,8 @@ async function readExportFile(entries: Entries): Promise<ExportData> {
   }
   // A counter below an existing sequence would make every later send fail on the unique key.
   const counter = BigInt(data.workspace.eventSeq);
-  if ([...data.messages, ...data.notes].some((row) => BigInt(row.seq) > counter)) {
-    throw new ImportError("A message's or a note's position is past the workspace's counter.");
+  if (data.messages.some((row) => BigInt(row.seq) > counter)) {
+    throw new ImportError("A message's position is past the workspace's counter.");
   }
   return data;
 }
@@ -703,21 +673,6 @@ async function insertWorkspace(
     );
   }
   for (const rows of batches(images)) await tx.insert(attachment).values(rows);
-  for (const rows of batches(data.notes)) {
-    await tx.insert(note).values(
-      rows.map((row) => ({
-        workspaceId,
-        id: row.id,
-        conversationId: row.conversationId,
-        seq: BigInt(row.seq),
-        authorOperatorId: mapOperator(row.authorOperatorId),
-        authorApiKeyId: row.authorApiKeyId,
-        clientId: row.clientId,
-        body: row.body,
-        createdAt: new Date(row.createdAt),
-      })),
-    );
-  }
   for (const rows of batches(data.pageViews)) {
     await tx.insert(pageView).values(
       rows.map((row) => ({

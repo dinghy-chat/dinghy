@@ -128,7 +128,7 @@ export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
         partOf.seq === seq &&
         part <= partOf.part;
       for (const one of page.events) {
-        const ids = one.payload as { conversationId?: string; messageId?: string; noteId?: string };
+        const ids = one.payload as { conversationId?: string; messageId?: string };
         if (ids.conversationId === undefined) continue;
         const types = webhookTypes(one.kind, one.payload);
         for (const [part, type] of types.entries()) {
@@ -137,7 +137,6 @@ export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
           const data = await webhookData(tx, images, workspaceId, {
             conversationId: ids.conversationId,
             messageId: type.startsWith("message.") ? (ids.messageId ?? null) : null,
-            noteId: type === "note.created" ? (ids.noteId ?? null) : null,
           });
           // A conversation or message deleted since has nothing to send.
           if (typeof data === "string") continue;

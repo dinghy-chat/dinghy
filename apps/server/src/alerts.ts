@@ -9,7 +9,6 @@ import {
   event,
   type MessagePayload,
   message,
-  note,
   operator,
   pushSubscription,
   visitor,
@@ -726,13 +725,13 @@ export function replyLetter(
  */
 async function handoffNote(tx: Transaction, workspaceId: string, eventSeq: string) {
   const [row] = await tx
-    .select({ body: note.body })
+    .select({ body: message.body })
     .from(event)
     .innerJoin(
-      note,
+      message,
       and(
-        eq(note.workspaceId, event.workspaceId),
-        sql`${note.id}::text = ${event.payload}->>'noteId'`,
+        eq(message.workspaceId, event.workspaceId),
+        sql`${message.id}::text = ${event.payload}->>'noteId'`,
       ),
     )
     .where(

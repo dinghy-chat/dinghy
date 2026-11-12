@@ -8,7 +8,7 @@ import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { csvCell } from "./contacts.ts";
-import { apiKey, conversation, draftReply, message, note, operator, visitor } from "./db/schema.ts";
+import { apiKey, conversation, draftReply, message, operator, visitor } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -262,7 +262,7 @@ describe("one contact", () => {
 
   test("a delete removes the person, their conversations and messages, for owners and admins", async () => {
     const { visitorId, conversationId } = await visitorChats("Forget me");
-    // A note and a draft that quotes the visitor, whose foreign keys the delete must clear first.
+    // A draft that quotes the visitor, whose foreign keys the delete must clear first.
     const [said] = await owner
       .select({ id: message.id })
       .from(message)
@@ -271,14 +271,6 @@ describe("one contact", () => {
       .insert(apiKey)
       .values({ workspaceId: space.id, name: "Bot", tokenHash: "forget-key", createdBy: boss.id })
       .returning({ id: apiKey.id });
-    await owner.insert(note).values({
-      workspaceId: space.id,
-      conversationId,
-      seq: 1000n,
-      authorOperatorId: boss.id,
-      clientId: "forget-note",
-      body: "Private",
-    });
     await owner.insert(draftReply).values({
       workspaceId: space.id,
       conversationId,
@@ -298,9 +290,6 @@ describe("one contact", () => {
     expect(
       await owner.select().from(message).where(eq(message.conversationId, conversationId)),
     ).toEqual([]);
-    expect(await owner.select().from(note).where(eq(note.conversationId, conversationId))).toEqual(
-      [],
-    );
     expect(
       await owner.select().from(draftReply).where(eq(draftReply.conversationId, conversationId)),
     ).toEqual([]);

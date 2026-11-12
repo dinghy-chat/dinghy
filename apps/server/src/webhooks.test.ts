@@ -294,10 +294,9 @@ describe("managing webhooks", () => {
 });
 
 describe("delivery", () => {
-  test("notes, handoffs and a bot's return arrive with their data, and never inside a message", async () => {
+  test("notes, handoffs and a bot's return arrive with their data", async () => {
     const hook = await addWebhook([
       "message.created",
-      "note.created",
       "conversation.handoff",
       "conversation.given_back",
     ]);
@@ -306,7 +305,11 @@ describe("delivery", () => {
     await keySends(owner, keyId);
     const conversationId = await visitorSends("Refund please");
     const path = inSpace(`/conversations/${conversationId}`);
-    await asBoss("POST", `${path}/notes`, { clientId: "n1", body: "Known customer" });
+    await asBoss("POST", `${path}/messages`, {
+      clientId: "n1",
+      body: "Known customer",
+      note: true,
+    });
     const handed = await app.request(`${path}/handoff`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -322,25 +325,16 @@ describe("delivery", () => {
       "conversation.given_back",
       "conversation.handoff",
       "message.created",
-      "note.created",
-      "note.created",
+      "message.created",
+      "message.created",
     ]);
-    expect(ofType("note.created").map((one) => one.data.note)).toEqual(
-      expect.arrayContaining([
-        {
-          id: expect.any(String),
-          body: "Known customer",
-          authorName: "Hana",
-          authorKind: "operator",
-        },
-        {
-          id: expect.any(String),
-          body: "Handed off: Refund",
-          authorName: "Bot",
-          authorKind: "key",
-        },
-      ]),
-    );
+    const notes = ofType("message.created")
+      .map((one) => one.data.message as { kind: string; body: string; authorName: string })
+      .filter((one) => one.kind === "note");
+    expect(notes.map((one) => [one.body, one.authorName]).sort()).toEqual([
+      ["Handed off: Refund", "Bot"],
+      ["Known customer", "Hana"],
+    ]);
     // A body shows the conversation as it is when the worker sends, after the give back here.
     expect(ofType("conversation.handoff")[0]?.data.conversation).toMatchObject({
       id: conversationId,
@@ -351,7 +345,6 @@ describe("delivery", () => {
     expect(ofType("conversation.given_back")[0]?.data.conversation).not.toHaveProperty(
       "humanSince",
     );
-    expect(JSON.stringify(ofType("message.created"))).not.toContain("Known customer");
   });
 
   test("each change reaches the webhook once, signed, in the operator API's shapes", async () => {

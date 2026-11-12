@@ -7,12 +7,12 @@ import { code, type Edit, link, list, wrap } from "./markdown-edit.ts";
 import { type TextId, t } from "./text.ts";
 import { Choices, EmojiButton, type Option } from "./ui.tsx";
 
-/** A reply goes to the visitor. A note stays with the team. */
+/** A reply goes to the visitor, and a note stays with the team. */
 export type ComposeMode = "reply" | "note";
 
 const MODES: Option<ComposeMode>[] = [
-  { value: "reply", label: "composeReply", icon: "reply" },
-  { value: "note", label: "composeNote", icon: "note" },
+  { value: "reply", label: "composeReply" },
+  { value: "note", label: "composeNote" },
 ];
 
 /** Each formatting button: its text, its icon, its key with Cmd or Ctrl, and what it does. */
@@ -48,9 +48,8 @@ export function Composer({
   onFiles,
   onEscape,
   above,
+  mode,
   editing = false,
-  mode = "reply",
-  onMode,
 }: {
   draft: string;
   setDraft(draft: string): void;
@@ -61,14 +60,11 @@ export function Composer({
   onEscape?: (() => void) | undefined;
   /** Above the text, such as the quote a reply carries. */
   above?: ReactNode;
+  /** Reply or Note, for a new message. With no onChange it is fixed, as in a closed conversation. */
+  mode?: { value: ComposeMode; onChange?(mode: ComposeMode): void } | undefined;
   /** It edits a sent reply, in place of its bubble. */
   editing?: boolean;
-  mode?: ComposeMode;
-  /** Shows the Reply and Note tabs. */
-  onMode?: ((mode: ComposeMode) => void) | undefined;
 }) {
-  const isNote = mode === "note";
-  const hintId = useId();
   const picker = useRef<HTMLInputElement>(null);
   // A phone keeps the formatting buttons behind one toggle, so the field gets the row.
   const [showsFormats, setShowsFormats] = useState(false);
@@ -93,6 +89,7 @@ export function Composer({
     onSend(body);
   };
 
+  const isNote = mode?.value === "note";
   const format = (apply: (typeof FORMATS)[number]["apply"]) => {
     const field = input.current;
     if (field === null) return;
@@ -103,21 +100,19 @@ export function Composer({
 
   return (
     <form
-      className={["compose", editing && "editing", showsFormats && "formatting", isNote && "note"]
+      className={["compose", editing && "editing", isNote && "note", showsFormats && "formatting"]
         .filter(Boolean)
         .join(" ")}
       onSubmit={submit}
     >
-      {onMode !== undefined && (
-        <div className="compose-modes">
-          <Choices label={t("composeMode")} value={mode} options={MODES} onChange={onMode} />
-          {isNote && (
-            <span id={hintId} className="compose-hint">
-              <Icon name="lock" size={14} />
-              {t("noteHint")}
-            </span>
-          )}
-        </div>
+      {mode?.onChange !== undefined && (
+        <Choices
+          label={t("composeMode")}
+          variant="tabs"
+          value={mode.value}
+          options={MODES}
+          onChange={mode.onChange}
+        />
       )}
       <div className="box">
         {above}
@@ -134,10 +129,9 @@ export function Composer({
             event.preventDefault();
             onFiles(data.files);
           }}
-          aria-label={t(editing ? "editLabel" : isNote ? "noteLabelField" : "replyLabel")}
-          aria-describedby={isNote ? hintId : undefined}
+          aria-label={t(editing ? "editLabel" : isNote ? "composeNoteLabel" : "replyLabel")}
           placeholder={
-            editing ? undefined : t(isNote ? "threadNotePlaceholder" : "replyPlaceholder")
+            editing ? undefined : t(isNote ? "composeNotePlaceholder" : "replyPlaceholder")
           }
           maxLength={MESSAGE_MAX}
           value={draft}
@@ -227,13 +221,12 @@ export function Composer({
                 {t("saveEdit")}
               </button>
             </span>
+          ) : isNote ? (
+            <button type="submit" className="pill dark send-note">
+              {t("addNote")}
+            </button>
           ) : (
-            <button
-              type="submit"
-              className="send"
-              aria-label={t(isNote ? "noteSave" : "send")}
-              title={t(isNote ? "noteSave" : "send")}
-            >
+            <button type="submit" className="send" aria-label={t("send")} title={t("send")}>
               <Icon name="arrowUp" size={16} />
             </button>
           )}

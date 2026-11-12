@@ -1,11 +1,10 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   apiKey,
   conversation,
   draftReply,
   event,
   message,
-  note,
   operator,
   workspace,
   workspaceMember,
@@ -22,7 +21,6 @@ import {
   stored,
   wantsWebhook,
 } from "./messages.ts";
-import { appendNote } from "./notes.ts";
 
 // Every string a person reads has a key, so a locale can be added later.
 const text = {
@@ -40,7 +38,7 @@ type HandledChange = "human" | "handoff" | "given_back";
 export interface HandledPayload {
   conversationId: string;
   change: HandledChange;
-  /** On a handoff: the note that holds the reason, and the newest message, for the alert. */
+  /** On a handoff: the note message that holds the reason, and the newest chat line, for the alert. */
   noteId?: string | undefined;
   messageId?: string | undefined;
 }
@@ -216,6 +214,12 @@ async function handoffMessage(
 }
 
 /**
+ * The clientId of a handoff's note. The visitor message takes the key's own clientId, and a colon is
+ * outside what a client may send, so no reply or note of the key can take this one.
+ */
+const handoffNoteClientId = (clientId: string) => `handoff:${clientId}`;
+
+/**
  * The first result of a handoff that went in before with this clientId, or undefined when none did.
  * Its note marks it done. Its message went out or became a draft, or else bots were paused.
  */
@@ -225,16 +229,19 @@ async function earlierHandoff(
   apiKeyId: string,
   input: HandoffInput,
 ): Promise<HandoffMessage | null | undefined> {
-  const byKey = (table: typeof note | typeof message) =>
+  const byKey = (clientId: string) =>
     and(
-      eq(table.workspaceId, workspaceId),
-      eq(table.authorApiKeyId, apiKeyId),
-      eq(table.clientId, input.clientId),
+      eq(message.workspaceId, workspaceId),
+      eq(message.authorApiKeyId, apiKeyId),
+      eq(message.clientId, clientId),
     );
-  const [noted] = await tx.select({ id: note.id }).from(note).where(byKey(note));
+  const [noted] = await tx
+    .select({ id: message.id })
+    .from(message)
+    .where(byKey(handoffNoteClientId(input.clientId)));
   if (noted === undefined) return undefined;
   if (input.visitorMessage === undefined) return null;
-  const [sent] = await tx.select(messageColumns).from(message).where(byKey(message));
+  const [sent] = await tx.select(messageColumns).from(message).where(byKey(input.clientId));
   if (sent !== undefined) return { status: "sent", message: stored(sent) };
   const draft = await findDraft(tx, workspaceId, apiKeyId, input.clientId);
   if (draft !== undefined) return { status: "drafted", draft };
@@ -255,12 +262,18 @@ async function isMember(tx: Transaction, workspaceId: string, operatorId: string
   return member !== undefined;
 }
 
-/** The newest message of the conversation, which a handoff's alert names. */
+/** The newest message of the conversation that is not a note, which a handoff's alert names. */
 async function newestMessageId(tx: Transaction, workspaceId: string, conversationId: string) {
   const [row] = await tx
     .select({ id: message.id })
     .from(message)
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.conversationId, conversationId)))
+    .where(
+      and(
+        eq(message.workspaceId, workspaceId),
+        eq(message.conversationId, conversationId),
+        ne(message.kind, "note"),
+      ),
+    )
     .orderBy(desc(message.seq))
     .limit(1);
   return row?.id;
@@ -292,17 +305,18 @@ export async function handoff(
     return { kind: "not_member" };
   }
   const visitorMessage = await handoffMessage(tx, workspaceId, key, conversationId, input);
-  const noted = await appendNote(
+  // A note alerts nobody: the handoff's own event alerts the people who take over.
+  const noted = await appendMessage(
     tx,
     workspaceId,
-    { kind: "key", apiKeyId: key.apiKeyId },
-    conversationId,
+    { kind: "key", apiKeyId: key.apiKeyId, conversationId },
     {
-      clientId: input.clientId,
+      clientId: handoffNoteClientId(input.clientId),
       body: text.handoffNote(input.reason, input.summary),
+      note: true,
+      ...(key.via !== undefined && { via: key.via }),
     },
   );
-  if (noted === null) return { kind: "missing" };
   if (input.operatorId !== undefined) {
     await assignConversation(tx, workspaceId, conversationId, input.operatorId);
   }
@@ -314,7 +328,12 @@ export async function handoff(
     })
     .where(ofConversation(workspaceId, conversationId));
   const messageId = await newestMessageId(tx, workspaceId, conversationId);
-  const payload = { conversationId, change: "handoff" as const, noteId: noted.note.id, messageId };
+  const payload = {
+    conversationId,
+    change: "handoff" as const,
+    noteId: noted.message.id,
+    messageId,
+  };
   // The alert names a message, which a conversation always has: the visitor's first.
   await handled(tx, workspaceId, payload, messageId !== undefined);
   return { kind: "handed_off", created: true, visitorMessage };

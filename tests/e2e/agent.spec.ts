@@ -207,7 +207,7 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   await page.locator(".row", { hasText: "Tess Test" }).click();
   await expect(page.locator(".thread-head .handler")).toContainText("owner@example.com");
   await expect(
-    page.locator(".team-note", { hasText: "Handed off: Plan changes need a person" }),
+    page.locator(".msg.note", { hasText: "Handed off: Plan changes need a person" }),
   ).toContainText(AGENT);
 
   const cleaned = await mcp.call("delete_test_visitors");

@@ -21,6 +21,11 @@ export const clientId = z
     "Your own ID for this write, up to 64 letters, digits, - or _. Send the same one on a retry",
   );
 
+export const replyToMessageId = z
+  .uuid()
+  .optional()
+  .describe("An earlier message of this conversation to quote, from get_conversation");
+
 /** A message or note's text, with no NUL byte, which Postgres text cannot hold. */
 export const body = z
   .string()

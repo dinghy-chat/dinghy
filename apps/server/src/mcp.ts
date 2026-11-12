@@ -361,8 +361,8 @@ export function registerMcp(
   const instructions = (actor: KeyActor) =>
     `${
       actor.level === "setup"
-        ? "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the key's, and install Dinghy on a site: the snippet, allowed sites, appearance, webhooks and test visitors. Replies show the key's name as their author."
-        : "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the key's. Replies show the key's name as their author."
+        ? "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the key's, add notes that only the team sees, and install Dinghy on a site: the snippet, allowed sites, appearance, webhooks and test visitors. Replies and notes show the key's name as their author."
+        : "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the key's, and add notes that only the team sees. Replies and notes show the key's name as their author."
     } ${INSTRUCTIONS_SAFETY}`;
   const listTools = (actor: KeyActor) =>
     toolsFor(actor).map(({ call: _call, ...listed }) => listed);

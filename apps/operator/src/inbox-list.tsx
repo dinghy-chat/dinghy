@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Conversation, Member, OpenCounts, WorkspaceApi } from "./api.ts";
+import type { Draft } from "./drafts.ts";
 import { shortTime } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { emptyLook, ListFilters, type Status, type Who } from "./inbox-filters.tsx";
@@ -247,8 +248,8 @@ export function InboxList({
   selected: string | null;
   /** What each visitor is typing now, by conversation. */
   typing: Record<string, string>;
-  /** The operator's unsent replies, by conversation. */
-  drafts: Record<string, string>;
+  /** The operator's unsent replies and notes, by conversation. */
+  drafts: Record<string, Draft>;
   /** Grows with each conversation the operator reads. */
   reads: number;
   replying(conversationId: string): string | null;
@@ -302,7 +303,7 @@ export function InboxList({
             members={members}
             replying={replying(conversation.id)}
             typing={conversation.id in typing}
-            draft={drafts[conversation.id]}
+            draft={drafts[conversation.id]?.text}
             showClosed={found !== null}
             onSelect={() => onSelect(conversation.id)}
           />

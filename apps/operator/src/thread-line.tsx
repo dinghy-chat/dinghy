@@ -1,27 +1,44 @@
 /** @jsxImportSource react */
 import { createElement, type ReactNode } from "react";
 import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
-import type { Note } from "./api.ts";
 import { clockTime, isToday } from "./format.ts";
-import { Icon } from "./icons.tsx";
 import { type Receipt, ReceiptLine } from "./receipts.tsx";
 import { t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
 import { replyAuthor } from "./visitor.ts";
 
+/**
+ * Elements for a key's note: each link shows as plain text with its address, and nobody can click
+ * it. A bot's note may carry a visitor's link, and the team's note would make it look trusted.
+ */
+const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) => {
+  if (tag !== "a") return createElement(tag, props, ...children);
+  const href = String(props?.href);
+  const isBare = children.length === 1 && children[0] === href;
+  return createElement(
+    "span",
+    { className: "plain-link" },
+    ...(isBare ? [] : [...children, " ("]),
+    href,
+    isBare ? "" : ")",
+  );
+};
+
 /** A message's bubble: its quote and text, its image, or what stands in for them. */
 function Bubble({
   line,
   quote,
+  noteBy,
   onView,
   onImageError,
 }: {
   line: Line;
   quote: ReactNode;
+  noteBy: string | null;
   onView(): void;
   onImageError(): void;
 }) {
-  const side = line.fromVisitor ? " visitor" : "";
+  const side = line.fromVisitor ? " visitor" : line.kind === "note" ? " note" : "";
   if (line.deleted) return <div className={`msg${side} removed`}>{t("messageDeleted")}</div>;
   if (line.image !== null) {
     return (
@@ -50,8 +67,12 @@ function Bubble({
   return createElement(
     "div",
     { className: `msg${side}` },
+    noteBy !== null && <span className="note-label">{t("noteBy", { name: noteBy })}</span>,
     quote,
-    ...renderMarkdown(line.body, createElement),
+    ...renderMarkdown(
+      line.body,
+      line.kind === "note" && line.authorApiKeyId !== null ? plainLinks : createElement,
+    ),
   );
 }
 
@@ -59,6 +80,7 @@ function Bubble({
 export function ThreadLine({
   line,
   quote,
+  noteBy,
   menu,
   editor,
   flash,
@@ -70,6 +92,8 @@ export function ThreadLine({
 }: {
   line: Line;
   quote: ReactNode;
+  /** A note's author, for its "Internal note" label. Null for any other line. */
+  noteBy: string | null;
   menu: ReactNode;
   /** The inline editor while the operator edits this reply. */
   editor: ReactNode;
@@ -93,7 +117,13 @@ export function ThreadLine({
     <>
       {editor ?? (
         <div className={row} id={`message-${line.id}`}>
-          <Bubble line={line} quote={quote} onView={onView} onImageError={onImageError} />
+          <Bubble
+            line={line}
+            quote={quote}
+            noteBy={noteBy}
+            onView={onView}
+            onImageError={onImageError}
+          />
           {menu}
           {receipt !== null && !isLastReply && <ReceiptLine receipt={receipt} later />}
         </div>
@@ -109,71 +139,27 @@ export function ThreadLine({
   );
 }
 
+/** Someone closed or reopened the conversation. */
+export const isStatusLine = (line: Line) => line.kind === "closed" || line.kind === "reopened";
+
 /**
  * A centered line where someone closed or reopened the conversation: who, and when. A reopen with
  * no operator or key, as the cloud's welcome chat does, names nobody.
  */
-export function StatusNote({
-  line,
-  note,
-  meId,
-}: {
-  line: Line;
-  note: "closed" | "reopened";
-  meId: string;
-}) {
+export function StatusNote({ line, meId }: { line: Line; meId: string }) {
   const byPerson = line.authorOperatorId !== null || line.authorApiKeyId !== null;
+  const closed = line.kind === "closed";
   const text = !byPerson
-    ? t(note === "closed" ? "closedPlain" : "reopenedPlain")
+    ? t(closed ? "closedPlain" : "reopenedPlain")
     : line.authorOperatorId === meId
-      ? t(note === "closed" ? "closedByYou" : "reopenedByYou")
-      : t(note === "closed" ? "closedBy" : "reopenedBy", { name: replyAuthor(line, meId) });
+      ? t(closed ? "closedByYou" : "reopenedByYou")
+      : t(closed ? "closedBy" : "reopenedBy", { name: replyAuthor(line, meId) });
   const time = line.createdAt === undefined ? null : clockTime(line.createdAt);
   return (
     <p className="status-note">
       {text}
       {time !== null && <time dateTime={line.createdAt}> · {time}</time>}
     </p>
-  );
-}
-
-/**
- * Elements for a key's note: each link shows as plain text with its address, and nobody can click
- * it. A bot's note may carry a visitor's link, and the team's card would make it look trusted.
- */
-const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) => {
-  if (tag !== "a") return createElement(tag, props, ...children);
-  const href = String(props?.href);
-  const isBare = children.length === 1 && children[0] === href;
-  return createElement(
-    "span",
-    { className: "plain-link" },
-    ...(isBare ? [] : [...children, " ("]),
-    href,
-    isBare ? "" : ")",
-  );
-};
-
-/** A note for the team, across the thread: who wrote it, when, and its text. */
-export function NoteCard({ note, meId }: { note: Note; meId: string }) {
-  const isKey = note.authorKind === "key";
-  const author = note.authorOperatorId === meId ? t("you") : (note.authorName ?? t("aTeammate"));
-  return (
-    <article className="team-note" aria-label={t("noteLabel", { name: author })}>
-      <header className="team-note-head">
-        <Icon name="note" size={16} />
-        <strong className="card-author">
-          {isKey && <Icon name="robot" size={14} />}
-          {author}
-        </strong>
-        <time dateTime={note.createdAt}>{clockTime(note.createdAt)}</time>
-      </header>
-      {createElement(
-        "div",
-        { className: "team-note-body" },
-        ...renderMarkdown(note.body, isKey ? plainLinks : createElement),
-      )}
-    </article>
   );
 }
 
@@ -213,13 +199,14 @@ export function TypingDraft({ draft }: { draft: string }) {
 export const sameSender = (one: Line | undefined, other: Line | undefined) =>
   one !== undefined &&
   other !== undefined &&
-  one.note === undefined &&
-  other.note === undefined &&
+  !isStatusLine(one) &&
+  !isStatusLine(other) &&
+  (one.kind === "note") === (other.kind === "note") &&
   one.fromVisitor === other.fromVisitor &&
   one.authorOperatorId === other.authorOperatorId &&
   one.authorApiKeyId === other.authorApiKeyId;
 
-const dayOf = (line: Line | undefined) =>
+export const dayOf = (line: Line | undefined) =>
   line?.createdAt === undefined ? null : new Date(line.createdAt).toDateString();
 
 /** "Today", "Yesterday" or the date, for the line between days. */

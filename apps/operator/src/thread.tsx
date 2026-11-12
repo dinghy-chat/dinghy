@@ -1,17 +1,24 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState } from "react";
-import type { Conversation, Draft, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
+import type {
+  Conversation,
+  Member,
+  ReplyReceipts,
+  Draft as SuggestedReply,
+  WorkspaceApi,
+} from "./api.ts";
 import { type ComposeMode, Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
+import type { Draft } from "./drafts.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
 import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
 import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
-import { receiptOf } from "./receipts.tsx";
+import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
-import { DraftCards, DraftChip, useDrafts } from "./thread-drafts.tsx";
+import { DraftCards, DraftChip, useSuggestedReplies } from "./thread-drafts.tsx";
 import { ThreadHead } from "./thread-head.tsx";
 import { type Line, useThreadLines } from "./thread-lines.ts";
 import { ThreadLog } from "./thread-log.tsx";
@@ -60,7 +67,7 @@ function infoOf(line: Line, author: string, receipts: ReplyReceipts | null): Inf
     author,
     via: line.via,
     receipt:
-      line.fromVisitor || receipts === null || line.seq === null
+      !hasReceipt(line) || receipts === null
         ? null
         : { isRead: receiptOf(line.seq, receipts) === "read" },
   };
@@ -94,9 +101,9 @@ export function Thread({
 }: {
   api: WorkspaceApi;
   meId: string;
-  /** The operator's unsent reply here, or "". The inbox keeps it, so it outlives this thread. */
-  draft: string;
-  setDraft(text: string): void;
+  /** The operator's unsent reply or note here. The inbox keeps it, so it outlives this thread. */
+  draft: Draft;
+  setDraft(draft: Draft): void;
   members: Member[];
   replying: string | null;
   /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
@@ -154,10 +161,16 @@ export function Thread({
     onChanged,
     onLoaded,
   });
-  const { conversation, online, welcome, receipts, lines, notes, sendFiles } = thread;
+  const { conversation, online, welcome, receipts, lines, sendFiles } = thread;
   useMarkRead(api, conversationId, lines, inView, onRead);
   const actions = useMessageActions({ api, conversationId, act, keep: thread.keep });
-  const drafts = useDrafts({ api, conversationId, version: draftsVersion, act, keep: thread.keep });
+  const suggestions = useSuggestedReplies({
+    api,
+    conversationId,
+    version: draftsVersion,
+    act,
+    keep: thread.keep,
+  });
   const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
   const change = useConversationActions({
     api,
@@ -180,11 +193,14 @@ export function Thread({
     : readOnly && welcome === null
       ? "readOnlyHelp"
       : null;
-  const imagesOn = !readOnly && !suspended;
+  // A closed conversation takes notes only. The choice lives with the draft, so a note typed
+  // here never comes back as a reply after a reload or a visit to another conversation.
+  const closed = conversation?.status === "closed";
+  const mode: ComposeMode = closed || draft.isNote ? "note" : "reply";
+  const imagesOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
-  const [mode, setMode] = useState<ComposeMode>("reply");
   // The bot's draft whose text is in the composer: sending it sends the draft.
-  const [editingDraft, setEditingDraft] = useState<Draft | null>(null);
+  const [editingDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
 
   if (conversation === null) {
     return (
@@ -193,33 +209,28 @@ export function Thread({
       </div>
     );
   }
-  const closed = conversation.status === "closed";
   const visitorName = title(conversation);
   /** Who wrote a line, as this thread names them. */
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
   const send = (body: string) => {
-    // The composer emptied itself, so a failure puts the text back.
-    const restore = (done: boolean) => {
-      if (!done) setDraft(body);
-    };
-    if (mode === "note") return void thread.addNote(body).then(restore);
     if (editingDraft !== null) {
-      return void drafts.send(editingDraft, body).then((done) => {
-        restore(done);
+      // The composer emptied itself, so a failure puts the text back.
+      return void suggestions.send(editingDraft, body).then((done) => {
         if (done) setEditingDraft(null);
+        else setDraft({ text: body, isNote: false });
       });
     }
     thread.sendText(
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
+      mode === "note",
     );
     setQuoting(null);
   };
-  const editDraft = (chosen: Draft) => {
-    setMode("reply");
+  const editDraft = (chosen: SuggestedReply) => {
     setQuoting(null);
     setEditingDraft(chosen);
-    setDraft(chosen.body);
+    setDraft({ text: chosen.body, isNote: false });
   };
   const canReply = repliesOffReason === null && !closed;
   const infoLine =
@@ -233,7 +244,7 @@ export function Thread({
   return (
     <div className="conversation-view">
       <section
-        className={dropping && !closed ? "thread drop" : "thread"}
+        className={dropping && !closed && imagesOn ? "thread drop" : "thread"}
         aria-label={visitorName}
         onDragOver={(event) => {
           // A drag of selected text keeps its normal behavior.
@@ -246,7 +257,7 @@ export function Thread({
           setDropping(false);
           if (!event.dataTransfer.types.includes("Files")) return;
           event.preventDefault();
-          if (!closed && imagesOn && mode === "reply") sendFiles(event.dataTransfer.files);
+          if (!closed && imagesOn) sendFiles(event.dataTransfer.files);
         }}
       >
         <ThreadHead
@@ -283,7 +294,7 @@ export function Thread({
         {deleting !== null && (
           <Confirm
             title={t("messageDeleteTitle")}
-            text={t("messageDeleteText")}
+            text={t(deleting.kind === "note" ? "noteDeleteText" : "messageDeleteText")}
             confirm={t("messageDeleteYes")}
             onConfirm={() => void actions.removeMessage(deleting)}
             onCancel={() => setDeleting(null)}
@@ -310,22 +321,21 @@ export function Thread({
         <ThreadLog
           conversation={conversation}
           lines={lines}
-          notes={notes}
           receipts={receipts}
           who={{ meId, mayDeleteAnyone, canWrite: repliesOffReason === null, canReply }}
           actions={actions}
           typingDraft={typingDraft}
           botTyping={botTyping}
-          draftCount={drafts.drafts.length}
+          draftCount={suggestions.drafts.length}
           drafts={
             <DraftCards
-              drafts={drafts.drafts}
+              drafts={suggestions.drafts}
               canSend={canReply}
-              onSend={(chosen) => drafts.send(chosen)}
+              onSend={(chosen) => suggestions.send(chosen)}
               onEdit={editDraft}
               onDiscard={(chosen) => {
                 if (editingDraft?.id === chosen.id) setEditingDraft(null);
-                return drafts.discard(chosen);
+                return suggestions.discard(chosen);
               }}
             />
           }
@@ -335,41 +345,50 @@ export function Thread({
         <ErrorNote text={problem} />
         {repliesOffReason !== null ? (
           <p className="closed">{t(repliesOffReason)}</p>
-        ) : closed ? (
-          <p className="closed">
-            <Icon name="done" size={18} />
-            {t("closedHelp")}
-          </p>
         ) : (
-          <Composer
-            draft={draft}
-            setDraft={setDraft}
-            onSend={send}
-            onFiles={imagesOn && mode === "reply" ? sendFiles : undefined}
-            onEscape={quoting === null ? undefined : () => setQuoting(null)}
-            mode={mode}
-            onMode={(next) => {
-              setMode(next);
-              setEditingDraft(null);
-            }}
-            above={
-              editingDraft !== null ? (
-                <DraftChip
-                  draft={editingDraft}
-                  onCancel={() => {
-                    setEditingDraft(null);
-                    setDraft("");
-                  }}
-                />
-              ) : quoting === null || mode === "note" ? undefined : (
-                <QuoteChip
-                  quote={quoteOf(quoting, authorOf(quoting))}
-                  visitorName={visitorName}
-                  onCancel={() => setQuoting(null)}
-                />
-              )
-            }
-          />
+          <>
+            {closed && (
+              <p className="closed">
+                <Icon name="done" size={18} />
+                {t("closedHelp")}
+              </p>
+            )}
+            <Composer
+              draft={draft.text}
+              setDraft={(text) => setDraft({ text, isNote: mode === "note" })}
+              onSend={send}
+              onFiles={imagesOn ? sendFiles : undefined}
+              mode={
+                closed
+                  ? { value: "note" }
+                  : {
+                      value: mode,
+                      onChange: (next) => {
+                        setEditingDraft(null);
+                        setDraft({ ...draft, isNote: next === "note" });
+                      },
+                    }
+              }
+              onEscape={quoting === null ? undefined : () => setQuoting(null)}
+              above={
+                editingDraft !== null ? (
+                  <DraftChip
+                    draft={editingDraft}
+                    onCancel={() => {
+                      setEditingDraft(null);
+                      setDraft({ text: "", isNote: false });
+                    }}
+                  />
+                ) : quoting === null ? undefined : (
+                  <QuoteChip
+                    quote={quoteOf(quoting, authorOf(quoting))}
+                    visitorName={visitorName}
+                    onCancel={() => setQuoting(null)}
+                  />
+                )
+              }
+            />
+          </>
         )}
       </section>
       {/* A welcome chat's visitor is another workspace, with no visit to show. */}

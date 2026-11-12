@@ -19,7 +19,6 @@ import {
   draftReply,
   event,
   message,
-  note,
   type ReplyMode,
   workspace,
   workspaceMember,
@@ -348,6 +347,26 @@ describe("who handles a conversation", () => {
     await asOperator(agent, "POST", inChat(chat.conversationId, "/give-back"));
     expect(await handlerOf(chat.conversationId)).toEqual(bot);
   });
+
+  test("a key's note makes it the bot that took part, and an operator's note does not", async () => {
+    const chat = await newChat();
+    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+      clientId: randomUUID(),
+      body: "Watch this one.",
+      note: true,
+    });
+    expect(await handlerOf(chat.conversationId)).toBeNull();
+    await asKey("POST", inChat(chat.conversationId, "/messages"), {
+      clientId: randomUUID(),
+      body: "Looked up the order.",
+      note: true,
+    });
+    expect(await handlerOf(chat.conversationId)).toEqual({
+      kind: "bot",
+      apiKeyId: key.id,
+      name: "Support bot",
+    });
+  });
 });
 
 describe("drafts", () => {
@@ -379,6 +398,21 @@ describe("drafts", () => {
       body: "I'll take this one.",
     });
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["stale"]);
+  });
+
+  test("an operator's note leaves the drafts waiting and the bots answering", async () => {
+    const chat = await drafted("Try restarting it.");
+    const noted = await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+      clientId: randomUUID(),
+      body: "Check their plan first.",
+      note: true,
+    });
+    expect(noted.status).toBe(201);
+    expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["open"]);
+    // A note is no answer to the visitor, so no person handles the conversation yet.
+    expect((await conversationRow(chat.conversationId))?.humanSince).toBeNull();
+    await setMode("send");
+    expect((await keyReply(chat.conversationId, "Restart it, please.")).status).toBe(201);
   });
 
   test("sending a draft marks the other waiting drafts stale, not itself", async () => {
@@ -461,38 +495,22 @@ describe("drafts", () => {
 });
 
 describe("notes", () => {
-  test("operators and keys add notes, which the thread shows and the visitor never sees", async () => {
+  test("a key writes a note while a person handles the conversation", async () => {
+    await setMode("send");
     const chat = await newChat();
-    const path = inChat(chat.conversationId, "/notes");
-    const first = await asOperator(boss, "POST", path, { clientId: "n1", body: "VIP customer" });
-    expect(first.status).toBe(201);
-    expect(
-      (await asOperator(boss, "POST", path, { clientId: "n1", body: "VIP customer" })).status,
-    ).toBe(200);
-    const byKey = await asKey("POST", path, { clientId: "n1", body: "Order #1234 is late" });
-    expect(byKey.status).toBe(201);
-    expect(await byKey.json()).toMatchObject({ authorKind: "key", authorName: "Support bot" });
-    const read = await asOperator(boss, "GET", inChat(chat.conversationId, "/messages"));
-    const { notes, messages } = (await read.json()) as {
-      notes: { body: string; authorName: string; seq: string }[];
-      messages: { seq: string }[];
-    };
-    expect(notes.map((one) => [one.body, one.authorName])).toEqual([
-      ["VIP customer", "Mona"],
-      ["Order #1234 is late", "Support bot"],
-    ]);
-    expect(BigInt(notes[0]?.seq ?? "0")).toBeGreaterThan(BigInt(messages[0]?.seq ?? "0"));
-    const visitorSide = await widgetText(chat.token);
-    expect(visitorSide).not.toContain("VIP customer");
-    expect(visitorSide).not.toContain("Order #1234");
-    const stream = listen(
-      await app.request(`/v1/widget/${space.publicKey}/stream?after=0.0`, {
-        headers: { origin: SITE, authorization: `Bearer ${chat.token}` },
-      }),
-    );
-    await stream.waitFor((one) => one.event === "ready");
-    expect(JSON.stringify(stream.events)).not.toContain("VIP customer");
-    await stream.stop();
+    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
+      clientId: randomUUID(),
+      body: "I'm on it.",
+    });
+    expect(await errorCode(await keyReply(chat.conversationId, "Me too"))).toBe("human_handling");
+    const noted = await asKey("POST", inChat(chat.conversationId, "/messages"), {
+      clientId: randomUUID(),
+      body: "Order #1234 is late",
+      note: true,
+    });
+    expect(noted.status).toBe(201);
+    expect(await noted.json()).toMatchObject({ kind: "note", authorName: "Support bot" });
+    expect(await widgetText(chat.token)).not.toContain("Order #1234");
   });
 });
 
@@ -527,19 +545,23 @@ describe("handoff", () => {
     const row = await conversationRow(chat.conversationId);
     expect(row).toMatchObject({ assigneeOperatorId: agent.id, handoffByApiKeyId: key.id });
     expect(row?.humanSince).not.toBeNull();
-    const [written] = await owner
-      .select()
-      .from(note)
-      .where(eq(note.conversationId, chat.conversationId));
-    expect(written?.body).toBe("Handed off: Refund over the limit\n\nOrder #1234, 120 EUR");
+    const notesOf = (conversationId: string) =>
+      owner
+        .select()
+        .from(message)
+        .where(and(eq(message.conversationId, conversationId), eq(message.kind, "note")));
+    const [written] = await notesOf(chat.conversationId);
+    expect(written).toMatchObject({
+      body: "Handed off: Refund over the limit\n\nOrder #1234, 120 EUR",
+      authorApiKeyId: key.id,
+    });
+    expect(await widgetText(chat.token)).not.toContain("Refund over the limit");
     expect(await errorCode(await keyReply(chat.conversationId, "One more thing"))).toBe(
       "human_handling",
     );
     const retry = await asKey("POST", handoffPath(chat.conversationId), body);
     expect(retry.status).toBe(200);
-    expect(
-      await owner.select().from(note).where(eq(note.conversationId, chat.conversationId)),
-    ).toHaveLength(1);
+    expect(await notesOf(chat.conversationId)).toHaveLength(1);
 
     while (await fanOutOne(workerDb, { push: true, email: true }));
     const alerts = await owner
@@ -567,9 +589,11 @@ describe("handoff", () => {
     expect(retry.status).toBe(200);
     expect(await retry.json()).toEqual(notSent);
     expect(await widgetText(chat.token)).not.toContain("A person will take over.");
-    expect(
-      await owner.select().from(note).where(eq(note.conversationId, chat.conversationId)),
-    ).toHaveLength(1);
+    const notes = await owner
+      .select()
+      .from(message)
+      .where(and(eq(message.conversationId, chat.conversationId), eq(message.kind, "note")));
+    expect(notes).toHaveLength(1);
   });
 
   test("an unassigned handoff alerts every member with alerts on", async () => {
@@ -635,9 +659,10 @@ describe("pausing every bot", () => {
     expect(await errorCode(await keyReply(chat.conversationId, "Hi"))).toBe("bots_paused");
     const typing = await asKey("POST", inChat(chat.conversationId, "/typing"), { typing: true });
     expect(await errorCode(typing)).toBe("bots_paused");
-    const noted = await asKey("POST", inChat(chat.conversationId, "/notes"), {
+    const noted = await asKey("POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Paused, noted",
+      note: true,
     });
     expect(noted.status).toBe(201);
     const handedOff = await asKey("POST", inChat(chat.conversationId, "/handoff"), {
@@ -697,22 +722,23 @@ describe("the event stream for keys", () => {
       },
     });
     await live.waitFor((one) => one.event === "conversation.created");
-    await asOperator(boss, "POST", inChat(chat.conversationId, "/notes"), {
+    await asOperator(boss, "POST", inChat(chat.conversationId, "/messages"), {
       clientId: randomUUID(),
       body: "Streamed note",
+      note: true,
     });
-    const noted = await live.waitFor((one) => one.event === "note.created");
+    const noted = await live.waitFor((one) => one.event === "message.created" && one !== created);
     expect(noted.data.data).toMatchObject({
-      note: { body: "Streamed note", authorName: "Mona", authorKind: "operator" },
+      message: { kind: "note", body: "Streamed note", authorName: "Mona" },
     });
     await live.stop();
 
     // From the first message's cursor: what came after, and only the types asked for.
     const resumed = listen(
-      await open("?types=note.created", { "last-event-id": created.id ?? "" }),
+      await open("?types=message.created", { "last-event-id": created.id ?? "" }),
     );
     await resumed.waitFor((one) => one.event === "ready");
-    expect(resumed.events.map((one) => one.event)).toEqual(["note.created", "ready"]);
+    expect(resumed.events.map((one) => one.event)).toEqual(["message.created", "ready"]);
     await resumed.stop();
     expect((await open("?types=message.created,nothing")).status).toBe(400);
   });

@@ -10,7 +10,6 @@ import {
   draftReply,
   event,
   message,
-  note,
   operator,
   stripeEvent,
   subscription,
@@ -43,7 +42,6 @@ const TENANT_TABLES = [
   webhook,
   webhookDelivery,
   apiKeyCredential,
-  note,
   draftReply,
   widgetSiteSeen,
 ];
@@ -101,14 +99,6 @@ async function seed(workspaceId: string): Promise<void> {
     kind: "access",
     tokenHash: `access-${workspaceId}`,
     expiresAt: new Date(Date.now() + 3_600_000),
-  });
-  await owner.insert(note).values({
-    workspaceId,
-    conversationId,
-    seq: 2n,
-    authorOperatorId: OPERATOR,
-    clientId: "note",
-    body: `note of ${workspaceId}`,
   });
   await owner.insert(draftReply).values({
     workspaceId,
