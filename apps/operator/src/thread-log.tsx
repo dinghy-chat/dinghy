@@ -1,15 +1,17 @@
 /** @jsxImportSource react */
-import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
-import type { Conversation, ReplyReceipts } from "./api.ts";
+import { Fragment, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import type { Conversation, Note, ReplyReceipts } from "./api.ts";
 import { Composer } from "./composer.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
 import { receiptOf } from "./receipts.tsx";
 import { t } from "./text.ts";
+import { type Entry, entriesOf } from "./thread-entries.ts";
 import {
+  BotTyping,
   dayLabel,
-  dayOf,
   groupMeta,
+  NoteCard,
   StatusNote,
   sameSender,
   ThreadLine,
@@ -65,12 +67,12 @@ function useJump(log: RefObject<HTMLDivElement | null>) {
 }
 
 /** Keeps the log at its newest line, and jumps to the message a copied link names once it loads. */
-function useLogScroll(lines: Line[], typingDraft: string | null) {
+function useLogScroll(lines: Line[], bottom: (string | number | boolean)[]) {
   const log = useRef<HTMLDivElement>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line or draft scrolls down.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new line or what is under the last one scrolls down.
   useEffect(() => {
     if (log.current !== null) log.current.scrollTop = log.current.scrollHeight;
-  }, [lines.length, typingDraft !== null]);
+  }, [lines.length, ...bottom]);
 
   const { flashId, jump } = useJump(log);
   // A copied link to a message ends with #message-<id>, and this scrolls to it once it is loaded.
@@ -85,27 +87,59 @@ function useLogScroll(lines: Line[], typingDraft: string | null) {
   return { log, flashId, jump };
 }
 
-/** The thread's messages, day by day, with each one's menu, its editor and the image viewer. */
+const createdAt = (entry: Entry | undefined) =>
+  entry?.kind === "note" ? entry.note.createdAt : entry?.line.createdAt;
+
+/** A line between days, where this entry starts a new one. */
+function DayLine({ entry, before }: { entry: Entry; before: Entry | undefined }) {
+  const at = createdAt(entry);
+  const previous = createdAt(before);
+  if (at === undefined) return null;
+  if (previous !== undefined && new Date(previous).toDateString() === new Date(at).toDateString()) {
+    return null;
+  }
+  return <div className="day">{dayLabel(at)}</div>;
+}
+
+/**
+ * The thread's messages and the team's notes, day by day, with each message's menu, its editor and
+ * the image viewer. Under the last one: the bot's suggested replies and who is typing.
+ */
 export function ThreadLog({
   conversation,
   lines,
+  notes,
   receipts,
   who,
   actions,
   typingDraft,
+  botTyping,
+  drafts,
+  draftCount,
   onImageError,
   onRetry,
 }: {
   conversation: Conversation;
   lines: Line[];
+  notes: Note[];
   receipts: ReplyReceipts | null;
   who: Rights;
   actions: MessageActions;
   typingDraft: string | null;
+  /** The name of the bot that types a reply now, or null. */
+  botTyping: string | null;
+  /** The suggested replies, under the last message. */
+  drafts: ReactNode;
+  draftCount: number;
   onImageError(): void;
   onRetry(line: Line): void;
 }) {
-  const { log, flashId, jump } = useLogScroll(lines, typingDraft);
+  const { log, flashId, jump } = useLogScroll(lines, [
+    notes.length,
+    draftCount,
+    typingDraft !== null,
+    botTyping !== null,
+  ]);
   const [viewing, setViewing] = useState<string | null>(null);
   const { editing, setEditing } = actions;
   const visitorName = title(conversation);
@@ -115,6 +149,7 @@ export function ThreadLog({
       !line.fromVisitor && line.note === undefined && line.seq !== null ? index : last,
     -1,
   );
+  const entries = entriesOf(lines, notes);
   const openQuote = (id: string) => {
     if (!jump(id)) toast("quoteMissing", false);
   };
@@ -175,20 +210,22 @@ export function ThreadLog({
   return (
     <>
       <div className="log" role="log" aria-live="polite" ref={log}>
-        {lines.length === 0 && <p className="empty">{t("noMessages")}</p>}
-        {lines.map((line, index) => (
-          <Fragment key={line.id}>
-            {line.createdAt !== undefined && dayOf(line) !== dayOf(lines[index - 1]) && (
-              <div className="day">{dayLabel(line.createdAt)}</div>
-            )}
-            {line.note !== undefined ? (
-              <StatusNote line={line} note={line.note} meId={who.meId} />
+        {lines.length === 0 && notes.length === 0 && <p className="empty">{t("noMessages")}</p>}
+        {entries.map((entry, at) => (
+          <Fragment key={entry.kind === "note" ? `note-${entry.note.id}` : entry.line.id}>
+            <DayLine entry={entry} before={entries[at - 1]} />
+            {entry.kind === "note" ? (
+              <NoteCard note={entry.note} meId={who.meId} />
+            ) : entry.line.note !== undefined ? (
+              <StatusNote line={entry.line} note={entry.line.note} meId={who.meId} />
             ) : (
-              renderLine(line, index)
+              renderLine(entry.line, entry.index)
             )}
           </Fragment>
         ))}
         {typingDraft !== null && <TypingDraft draft={typingDraft} />}
+        {drafts}
+        {botTyping !== null && <BotTyping name={botTyping} />}
       </div>
       {viewing !== null && (
         <ImageViewer

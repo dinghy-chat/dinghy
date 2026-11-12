@@ -10,6 +10,7 @@ import {
   ApiError,
   type Conversation,
   type Message,
+  type Note,
   type PageView,
   type Quote,
   type ReplyReceipts,
@@ -75,6 +76,12 @@ function merge(lines: Line[], message: Message): Line[] {
   return inCommitOrder(others, line);
 }
 
+/** Adds notes that are not there yet, in order. */
+const withNotes = (current: Note[], added: Note[]) =>
+  [...current.filter((one) => !added.some((other) => other.id === one.id)), ...added].sort(
+    (one, other) => (BigInt(one.seq) < BigInt(other.seq) ? -1 : 1),
+  );
+
 /** A visitor's online state changes with no event, so views that show it read it this often. */
 export const ONLINE_EVERY_MS = 30_000;
 
@@ -111,6 +118,7 @@ export function useThreadLines({
   const [welcome, setWelcome] = useState<WelcomeChat | null>(null);
   const [receipts, setReceipts] = useState<ReplyReceipts | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   // Why the last load failed, shown only while nothing has loaded yet.
   const [loadFailure, setLoadFailure] = useState<TextId | null>(null);
   const lastRefresh = useRef(0);
@@ -132,6 +140,7 @@ export function useThreadLines({
       setWelcome(page.welcome);
       setReceipts(page.receipts);
       setLines((current) => page.messages.reduce(merge, current));
+      setNotes((current) => withNotes(current, page.notes));
       const last = page.messages.at(-1);
       if (last !== undefined) position.current = last.seq;
       more = page.hasMore;
@@ -228,6 +237,18 @@ export function useThreadLines({
   /** Puts a line the server sent back in its place. */
   const keep = (message: Message) => setLines((current) => merge(current, message));
 
+  /** Saves a note for the team. False when it failed, so the composer gets its text back. */
+  const addNote = async (body: string) => {
+    try {
+      const note = await api.addNote(conversationId, newClientId(), body);
+      setNotes((current) => withNotes(current, [note]));
+      return true;
+    } catch (failure) {
+      setProblem(failureText(failure, {}, "noteFailed"));
+      return false;
+    }
+  };
+
   return {
     conversation,
     setConversation,
@@ -236,6 +257,7 @@ export function useThreadLines({
     welcome,
     receipts,
     lines,
+    notes,
     loadFailure,
     refreshImages,
     retry: (line: Line) =>
@@ -243,5 +265,6 @@ export function useThreadLines({
     sendText,
     sendFiles,
     keep,
+    addNote,
   };
 }

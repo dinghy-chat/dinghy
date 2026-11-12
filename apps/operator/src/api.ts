@@ -34,6 +34,8 @@ interface Visitor extends VisitorIdentity {
   timeZone: string | null;
   /** Only Dinghy Cloud's welcome chat has one: its founder's. */
   pictureUrl: string | null;
+  /** A test visitor that a bot's simulated message made. */
+  isTest: boolean;
 }
 
 /** A page in the visitor's journey, as the widget reported it. */
@@ -116,6 +118,39 @@ export interface Conversation {
   lastMessage: { body: string | null; fromVisitor: boolean; createdAt: string } | null;
   /** A welcome chat on Dinghy Cloud. */
   welcome: boolean;
+  /** Since when a person handles it. Bots that send directly stay quiet while it is set. */
+  humanSince: string | null;
+  /** A person, the bot that handed it off and got it back, or null when neither happened. */
+  handler:
+    | { kind: "human"; since: string }
+    | { kind: "bot"; apiKeyId: string; name: string }
+    | null;
+}
+
+/** A reply that an API key in draft mode wrote. No visitor has seen it. */
+export interface Draft {
+  id: string;
+  conversationId: string;
+  apiKeyId: string;
+  /** The key's name. */
+  authorName: string;
+  body: string;
+  /** `stale`: the visitor wrote after it. */
+  status: "open" | "stale" | "sent" | "discarded";
+  createdAt: string;
+}
+
+/** An internal note, which only the team and API keys see. It sorts among messages by `seq`. */
+export interface Note {
+  id: string;
+  conversationId: string;
+  seq: string;
+  authorKind: "operator" | "key";
+  authorOperatorId: string | null;
+  /** The operator's current name, or the key's. */
+  authorName: string | null;
+  body: string;
+  createdAt: string;
 }
 
 export interface Message {
@@ -141,8 +176,8 @@ export interface Message {
   editedAt: string | null;
   /** Deleted: no body and no image, and the line says so. */
   deleted: boolean;
-  /** A key's reply: through the REST API or through MCP. */
-  via: "api" | "mcp" | null;
+  /** A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft. */
+  via: "api" | "mcp" | "draft" | null;
   createdAt: string;
 }
 
@@ -662,6 +697,8 @@ export function workspaceApi(workspaceId: string) {
       call<{
         conversation: Conversation;
         messages: Message[];
+        /** The internal notes among this page's messages. */
+        notes: Note[];
         hasMore: boolean;
         /** A widget stream of the visitor's is open. Null when the server cannot tell. */
         visitorOnline: boolean | null;
@@ -706,6 +743,16 @@ export function workspaceApi(workspaceId: string) {
     /** Emails the visitor the whole conversation, through the worker. */
     sendTranscript: (id: string) =>
       call<{ ok: true }>(`${conversation(id)}/transcript`, { method: "POST" }),
+    drafts: (id: string) => call<{ drafts: Draft[] }>(`${conversation(id)}/drafts`),
+    /** Sends a draft as this operator's reply, with `body` in place of its text when edited. */
+    sendDraft: (id: string, draftId: string, body?: string) =>
+      post<Message>(`${conversation(id)}/drafts/${draftId}/send`, { body }),
+    discardDraft: (id: string, draftId: string) =>
+      post<{ ok: true }>(`${conversation(id)}/drafts/${draftId}/discard`, {}),
+    addNote: (id: string, clientId: string, body: string) =>
+      post<Note>(`${conversation(id)}/notes`, { clientId, body }),
+    /** Lets bots that send directly answer this conversation again. */
+    giveBack: (id: string) => post<{ ok: true }>(`${conversation(id)}/give-back`, {}),
     setStatus: (id: string, status: "open" | "closed") =>
       call<{ ok: true }>(conversation(id), {
         method: "PATCH",

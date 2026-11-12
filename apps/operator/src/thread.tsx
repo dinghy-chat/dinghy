@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useState } from "react";
-import type { Conversation, Member, ReplyReceipts, WorkspaceApi } from "./api.ts";
-import { Composer } from "./composer.tsx";
+import type { Conversation, Draft, Member, Note, ReplyReceipts, WorkspaceApi } from "./api.ts";
+import { type ComposeMode, Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
@@ -10,7 +10,8 @@ import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
 import { receiptOf } from "./receipts.tsx";
 import { type TextId, t } from "./text.ts";
-import { ThreadHead } from "./thread-head.tsx";
+import { DraftCards, DraftChip, useDrafts } from "./thread-drafts.tsx";
+import { type Handler, ThreadHead } from "./thread-head.tsx";
 import { type Line, useThreadLines } from "./thread-lines.ts";
 import { ThreadLog } from "./thread-log.tsx";
 import { ErrorNote, failureText, Loading } from "./ui.tsx";
@@ -44,6 +45,24 @@ function infoOf(line: Line, author: string, receipts: ReplyReceipts | null): Inf
   };
 }
 
+/** The name of a bot that took part: it handles the chat, wrote here, or suggested a reply. */
+function botNameOf(conversation: Conversation, lines: Line[], notes: Note[], drafts: Draft[]) {
+  if (conversation.handler?.kind === "bot") return conversation.handler.name;
+  const line = lines.filter((one) => one.authorApiKeyId !== null).at(-1);
+  const note = notes.filter((one) => one.authorKind === "key").at(-1);
+  return line?.authorName ?? note?.authorName ?? drafts[0]?.authorName ?? null;
+}
+
+/** Who answers, once a bot took part: a person since one replied or a bot handed off, or the bot. */
+function handlerOf(conversation: Conversation, members: Member[], botName: string | null) {
+  if (botName === null) return null;
+  if (conversation.humanSince === null) return { kind: "bot", name: botName } satisfies Handler;
+  const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
+  return assignee === undefined
+    ? ({ kind: "team" } satisfies Handler)
+    : ({ kind: "person", name: assignee.name } satisfies Handler);
+}
+
 export function Thread({
   api,
   meId,
@@ -55,10 +74,12 @@ export function Thread({
   emailAvailable,
   readOnly,
   suspended,
-  drafts,
+  drafts: unsent,
   receiptsVersion,
   rewriteVersion,
+  draftsVersion,
   typingDraft,
+  botTyping,
   onBack,
   onChanged,
   onLoaded,
@@ -85,8 +106,12 @@ export function Thread({
   receiptsVersion(visitorId: string): number;
   /** Goes up when someone edits or deletes a message here, so this loads every message again. */
   rewriteVersion: number;
+  /** Goes up when a bot's suggested reply here changed. */
+  draftsVersion: number;
   /** What the visitor is typing and has not sent, or null. */
   typingDraft: string | null;
+  /** The name of the bot that types a reply now, or null. */
+  botTyping: string | null;
   onBack(): void;
   onChanged(): void;
   /** The conversation as each load finds it. */
@@ -118,8 +143,9 @@ export function Thread({
     onChanged,
     onLoaded,
   });
-  const { conversation, online, welcome, receipts, lines, sendFiles } = thread;
+  const { conversation, online, welcome, receipts, lines, notes, sendFiles } = thread;
   const actions = useMessageActions({ api, conversationId, act, keep: thread.keep });
+  const drafts = useDrafts({ api, conversationId, version: draftsVersion, act, keep: thread.keep });
   const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
   const change = useConversationActions({
     api,
@@ -143,8 +169,11 @@ export function Thread({
       ? "readOnlyHelp"
       : null;
   const imagesOn = !readOnly && !suspended;
-  const [draft, setDraft] = useDraft(drafts, conversationId);
+  const [draft, setDraft] = useDraft(unsent, conversationId);
   const [dropping, setDropping] = useState(false);
+  const [mode, setMode] = useState<ComposeMode>("reply");
+  // The bot's draft whose text is in the composer: sending it sends the draft.
+  const [editingDraft, setEditingDraft] = useState<Draft | null>(null);
 
   if (conversation === null) {
     return (
@@ -158,12 +187,35 @@ export function Thread({
   /** Who wrote a line, as this thread names them. */
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
   const send = (body: string) => {
+    // The composer emptied itself, so a failure puts the text back.
+    const restore = (done: boolean) => {
+      if (!done) setDraft(body);
+    };
+    if (mode === "note") return void thread.addNote(body).then(restore);
+    if (editingDraft !== null) {
+      return void drafts.send(editingDraft, body).then((done) => {
+        restore(done);
+        if (done) setEditingDraft(null);
+      });
+    }
     thread.sendText(
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
     );
     setQuoting(null);
   };
+  const editDraft = (chosen: Draft) => {
+    setMode("reply");
+    setQuoting(null);
+    setEditingDraft(chosen);
+    setDraft(chosen.body);
+  };
+  const handler = handlerOf(
+    conversation,
+    members,
+    botNameOf(conversation, lines, notes, drafts.drafts),
+  );
+  const canReply = repliesOffReason === null && !closed;
   const infoLine =
     info === null
       ? null
@@ -188,7 +240,7 @@ export function Thread({
           setDropping(false);
           if (!event.dataTransfer.types.includes("Files")) return;
           event.preventDefault();
-          if (!closed && imagesOn) sendFiles(event.dataTransfer.files);
+          if (!closed && imagesOn && mode === "reply") sendFiles(event.dataTransfer.files);
         }}
       >
         <ThreadHead
@@ -203,6 +255,12 @@ export function Thread({
           onBlocked={(blocked) => void change.setBlocked(blocked)}
           onDelete={() => change.setConfirming(true)}
           onTranscript={() => void change.sendTranscript()}
+          onGiveBack={
+            conversation.humanSince === null || repliesOffReason !== null
+              ? undefined
+              : () => void change.giveBack()
+          }
+          handler={handler}
           emailAvailable={emailAvailable}
           panel={welcome === null ? panel : null}
         />
@@ -245,15 +303,25 @@ export function Thread({
         <ThreadLog
           conversation={conversation}
           lines={lines}
+          notes={notes}
           receipts={receipts}
-          who={{
-            meId,
-            mayDeleteAnyone,
-            canWrite: repliesOffReason === null,
-            canReply: repliesOffReason === null && !closed,
-          }}
+          who={{ meId, mayDeleteAnyone, canWrite: repliesOffReason === null, canReply }}
           actions={actions}
           typingDraft={typingDraft}
+          botTyping={botTyping}
+          draftCount={drafts.drafts.length}
+          drafts={
+            <DraftCards
+              drafts={drafts.drafts}
+              canSend={canReply}
+              onSend={(chosen) => drafts.send(chosen)}
+              onEdit={editDraft}
+              onDiscard={(chosen) => {
+                if (editingDraft?.id === chosen.id) setEditingDraft(null);
+                return drafts.discard(chosen);
+              }}
+            />
+          }
           onImageError={thread.refreshImages}
           onRetry={thread.retry}
         />
@@ -270,10 +338,23 @@ export function Thread({
             draft={draft}
             setDraft={setDraft}
             onSend={send}
-            onFiles={imagesOn ? sendFiles : undefined}
+            onFiles={imagesOn && mode === "reply" ? sendFiles : undefined}
             onEscape={quoting === null ? undefined : () => setQuoting(null)}
+            mode={mode}
+            onMode={(next) => {
+              setMode(next);
+              setEditingDraft(null);
+            }}
             above={
-              quoting === null ? undefined : (
+              editingDraft !== null ? (
+                <DraftChip
+                  draft={editingDraft}
+                  onCancel={() => {
+                    setEditingDraft(null);
+                    setDraft("");
+                  }}
+                />
+              ) : quoting === null || mode === "note" ? undefined : (
                 <QuoteChip
                   quote={quoteOf(quoting, authorOf(quoting))}
                   visitorName={visitorName}

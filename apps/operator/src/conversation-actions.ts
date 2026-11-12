@@ -5,7 +5,8 @@ import { toast } from "./toast.tsx";
 
 /**
  * What the operator does to the whole conversation: assign it, close or reopen it, block its
- * visitor, email its transcript or delete it, which asks first. Each change shows at once.
+ * visitor, email its transcript, give it back to the bots, or delete it, which asks first. Each
+ * change shows at once.
  */
 export function useConversationActions({
   api,
@@ -58,5 +59,25 @@ export function useConversationActions({
     change((current) => ({ ...current, status }));
   };
 
-  return { confirming, setConfirming, setBlocked, remove, assign, sendTranscript, setStatus };
+  const giveBack = async () => {
+    if (!(await act(() => api.giveBack(conversationId)))) return;
+    toast("giveBackDone");
+    // The next load names the bot that handles it now.
+    change((current) => ({
+      ...current,
+      humanSince: null,
+      handler: current.handler?.kind === "human" ? null : current.handler,
+    }));
+  };
+
+  return {
+    confirming,
+    setConfirming,
+    setBlocked,
+    remove,
+    assign,
+    sendTranscript,
+    setStatus,
+    giveBack,
+  };
 }

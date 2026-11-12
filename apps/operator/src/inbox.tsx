@@ -285,6 +285,8 @@ export function Inbox({
                   onOpenContact={openContact}
                   onOpenConversation={openConversation}
                   typingDraft={data.typing[selected] ?? null}
+                  botTyping={data.botTyping[selected] ?? null}
+                  draftsVersion={data.draftsVersion(selected)}
                   onBack={() => setSelected(null)}
                   onChanged={reload}
                   onLoaded={(conversation) => {

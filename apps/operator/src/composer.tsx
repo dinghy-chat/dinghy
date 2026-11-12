@@ -5,7 +5,15 @@ import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { code, type Edit, link, list, wrap } from "./markdown-edit.ts";
 import { type TextId, t } from "./text.ts";
-import { EmojiButton } from "./ui.tsx";
+import { Choices, EmojiButton, type Option } from "./ui.tsx";
+
+/** A reply goes to the visitor. A note stays with the team. */
+export type ComposeMode = "reply" | "note";
+
+const MODES: Option<ComposeMode>[] = [
+  { value: "reply", label: "composeReply", icon: "reply" },
+  { value: "note", label: "composeNote", icon: "note" },
+];
 
 /** Each formatting button: its text, its icon, its key with Cmd or Ctrl, and what it does. */
 const FORMATS: {
@@ -41,6 +49,8 @@ export function Composer({
   onEscape,
   above,
   editing = false,
+  mode = "reply",
+  onMode,
 }: {
   draft: string;
   setDraft(draft: string): void;
@@ -53,7 +63,12 @@ export function Composer({
   above?: ReactNode;
   /** It edits a sent reply, in place of its bubble. */
   editing?: boolean;
+  mode?: ComposeMode;
+  /** Shows the Reply and Note tabs. */
+  onMode?: ((mode: ComposeMode) => void) | undefined;
 }) {
+  const isNote = mode === "note";
+  const hintId = useId();
   const picker = useRef<HTMLInputElement>(null);
   // A phone keeps the formatting buttons behind one toggle, so the field gets the row.
   const [showsFormats, setShowsFormats] = useState(false);
@@ -88,11 +103,22 @@ export function Composer({
 
   return (
     <form
-      className={["compose", editing && "editing", showsFormats && "formatting"]
+      className={["compose", editing && "editing", showsFormats && "formatting", isNote && "note"]
         .filter(Boolean)
         .join(" ")}
       onSubmit={submit}
     >
+      {onMode !== undefined && (
+        <div className="compose-modes">
+          <Choices label={t("composeMode")} value={mode} options={MODES} onChange={onMode} />
+          {isNote && (
+            <span id={hintId} className="compose-hint">
+              <Icon name="lock" size={14} />
+              {t("noteHint")}
+            </span>
+          )}
+        </div>
+      )}
       <div className="box">
         {above}
         <textarea
@@ -108,8 +134,11 @@ export function Composer({
             event.preventDefault();
             onFiles(data.files);
           }}
-          aria-label={t(editing ? "editLabel" : "replyLabel")}
-          placeholder={editing ? undefined : t("replyPlaceholder")}
+          aria-label={t(editing ? "editLabel" : isNote ? "noteLabelField" : "replyLabel")}
+          aria-describedby={isNote ? hintId : undefined}
+          placeholder={
+            editing ? undefined : t(isNote ? "threadNotePlaceholder" : "replyPlaceholder")
+          }
           maxLength={MESSAGE_MAX}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -199,7 +228,12 @@ export function Composer({
               </button>
             </span>
           ) : (
-            <button type="submit" className="send" aria-label={t("send")} title={t("send")}>
+            <button
+              type="submit"
+              className="send"
+              aria-label={t(isNote ? "noteSave" : "send")}
+              title={t(isNote ? "noteSave" : "send")}
+            >
               <Icon name="arrowUp" size={16} />
             </button>
           )}
