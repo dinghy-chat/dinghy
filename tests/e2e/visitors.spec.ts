@@ -67,10 +67,13 @@ test("the operator sees the visitor's draft, the read receipt and the visitor's 
 
   // A reply is stored, then read in the chat, and the line changes with no reload.
   const reply = operator.getByRole("textbox", { name: "Your reply" });
-  await reply.fill("Yes, both.");
-  await operator.getByRole("button", { name: /^Bold/ }).click();
-  await expect(reply).toHaveValue("Yes, both.****");
-  await reply.fill("Yes, **both**.");
+  const bold = operator.getByRole("button", { name: /^Bold/ });
+  await reply.fill("Yes, ");
+  await bold.click();
+  await reply.pressSequentially("both");
+  await bold.click();
+  await reply.pressSequentially(".");
+  await expect(reply.locator("strong")).toHaveText("both");
   await reply.press("Enter");
   await expect(widget.locator(".msg:not(.mine) strong", { hasText: "both" })).toBeVisible();
   await expect(operator.locator(".receipt.read")).toHaveText("Read in chat");
