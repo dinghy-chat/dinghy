@@ -33,6 +33,11 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+// The conversation a click asked for, until the window it opened asks for it. On an iPhone, a home
+// screen app that starts from a click can open on its start page and not on the click's address.
+let pending = null;
+const PENDING_MS = 10_000;
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const target = new URL(event.notification.data?.url ?? "/", self.location.origin);
@@ -41,10 +46,27 @@ self.addEventListener("notificationclick", (event) => {
     (async () => {
       const open = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const first = open[0];
-      if (first === undefined) return self.clients.openWindow(url);
-      await first.focus();
-      // A tab opened with a hard reload stays uncontrolled, and its navigate call rejects.
-      return first.navigate(url).catch(() => self.clients.openWindow(url));
+      if (first !== undefined) {
+        // The open app moves to the conversation itself, with no reload. A home screen app on an
+        // iPhone ignores navigate() and stays on the page it showed.
+        first.postMessage({ type: "dinghy:open", url });
+        return first.focus();
+      }
+      // The worker stays awake until the new window asks for the address, or for a few seconds.
+      const asked = new Promise((resolve) => {
+        pending = { url, resolve };
+        setTimeout(resolve, PENDING_MS);
+      });
+      await self.clients.openWindow(url);
+      await asked;
+      pending = null;
     })(),
   );
+});
+
+// A window that starts asks for a click's address it may have missed.
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "dinghy:ready" || pending === null) return;
+  event.source?.postMessage({ type: "dinghy:open", url: pending.url });
+  pending.resolve();
 });

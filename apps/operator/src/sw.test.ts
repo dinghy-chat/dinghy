@@ -8,7 +8,7 @@ const source = await readFile(fileURLToPath(new URL("../public/sw.js", import.me
 
 const listeners = new Map<string, Listener>();
 const showNotification = vi.fn(async () => {});
-const windows: { focus: () => Promise<void>; navigate: (url: string) => Promise<void> }[] = [];
+const windows: { focus: () => Promise<void>; postMessage: (message: unknown) => void }[] = [];
 const openWindow = vi.fn(async () => {});
 const claim = vi.fn(async () => {});
 const skipWaiting = vi.fn(async () => {});
@@ -74,24 +74,48 @@ test.each([
   expect(showNotification).toHaveBeenCalledOnce();
 });
 
-test("a click opens the conversation in a new window when none is open", async () => {
-  await click("/?conversation=c");
-  expect(openWindow).toHaveBeenCalledWith("https://chat.example.com/?conversation=c");
+test("a click opens the conversation in a new window, which gets the address when it asks", async () => {
+  const clicked = click("/?conversation=c");
+  await vi.waitFor(() =>
+    expect(openWindow).toHaveBeenCalledWith("https://chat.example.com/?conversation=c"),
+  );
+  // An iPhone can start the app on its home page, so the new window asks for the address.
+  const reply = vi.fn();
+  listeners.get("message")?.({ data: { type: "dinghy:ready" }, source: { postMessage: reply } });
+  await clicked;
+  expect(reply).toHaveBeenCalledWith({
+    type: "dinghy:open",
+    url: "https://chat.example.com/?conversation=c",
+  });
 });
 
-test("a click moves an open window to the conversation", async () => {
+test("a window that starts with no click waiting gets no address", () => {
+  const reply = vi.fn();
+  listeners.get("message")?.({ data: { type: "dinghy:ready" }, source: { postMessage: reply } });
+  expect(reply).not.toHaveBeenCalled();
+});
+
+test("a click sends an open window to the conversation and brings it forward", async () => {
   const focus = vi.fn(async () => {});
-  const navigate = vi.fn(async () => {});
-  windows.push({ focus, navigate });
+  const postMessage = vi.fn();
+  windows.push({ focus, postMessage });
   await click("/?conversation=c");
   expect(focus).toHaveBeenCalled();
-  expect(navigate).toHaveBeenCalledWith("https://chat.example.com/?conversation=c");
+  expect(postMessage).toHaveBeenCalledWith({
+    type: "dinghy:open",
+    url: "https://chat.example.com/?conversation=c",
+  });
   expect(openWindow).not.toHaveBeenCalled();
 });
 
 test("a click cannot open another site, whatever the push said", async () => {
+  const postMessage = vi.fn();
+  windows.push({ focus: async () => {}, postMessage });
   await click("https://evil.example/");
-  expect(openWindow).toHaveBeenCalledWith("https://chat.example.com");
+  expect(postMessage).toHaveBeenCalledWith({
+    type: "dinghy:open",
+    url: "https://chat.example.com",
+  });
 });
 
 test("a new worker takes control of the tab that registered it", async () => {
@@ -106,15 +130,4 @@ test("a new worker does not wait for every open tab to close", async () => {
   listeners.get("install")?.({ waitUntil: (work: Promise<unknown>) => pending.push(work) });
   await Promise.all(pending);
   expect(skipWaiting).toHaveBeenCalled();
-});
-
-test("a tab that cannot navigate leads to a new window", async () => {
-  windows.push({
-    focus: async () => {},
-    navigate: async () => {
-      throw new TypeError("This service worker is not the client's active service worker.");
-    },
-  });
-  await click("/?conversation=c");
-  expect(openWindow).toHaveBeenCalledWith("https://chat.example.com/?conversation=c");
 });
