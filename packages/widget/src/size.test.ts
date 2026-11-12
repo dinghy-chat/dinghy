@@ -9,6 +9,8 @@ const LIMITS: Record<string, number> = {
   // from 2,291). The label and square launchers before it took it to 2,300.
   "loader.js": 2700,
   "page.js": 1000,
+  // 23,610 since images keep their height in a long conversation (23,602 with it, from 23,593,
+  // 2026-11-12).
   // 23,600 since the header settings: online faces with dots and the usual reply time, which the
   // owner asked for on 2026-11-12 (23,593 with them, from 23,241).
   // 23,300 since a quoted reply shows the shared plain excerpt at once, not its Markdown (23,241
@@ -20,7 +22,7 @@ const LIMITS: Record<string, number> = {
   // 22,200 since the new composer and header, the closed line and the reply chime, which the
   // owner asked for on 2026-11-11 (22,162 with them, from 21,585). Markdown in messages and the
   // typing preview took it to 21,600 the same day, and the emoji picker before them to 20,500.
-  "widget.js": 23_600,
+  "widget.js": 23_610,
 };
 
 test("the bundles use no API that exists only on secure pages", async () => {

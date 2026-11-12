@@ -918,6 +918,16 @@ button.workspace[aria-expanded="true"],
 .workspace-menu {
   margin-bottom: 14px;
 }
+/* The current workspace has a ring around its tile instead of a check, so the waiting counts all
+   end at the same edge. */
+.workspace-menu .item[aria-checked="true"] > svg:last-child {
+  display: none;
+}
+.workspace-menu .item[aria-checked="true"] .ws-tile {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--blue-deep);
+}
 .side > .workspace {
   margin-bottom: 10px;
 }
@@ -2610,6 +2620,10 @@ img.ws-tile {
     transform: translateY(-3px);
   }
 }
+.preview .draft {
+  color: var(--bad);
+  font-weight: 600;
+}
 .preview.typing {
   color: var(--blue-deep);
   font-style: italic;
@@ -2683,16 +2697,21 @@ img.ws-tile {
   padding: 4px 8px;
   border-radius: 8px;
 }
+/* A small raised chip, so it reads as a button against the thread's background. */
 .msg-more {
   display: grid;
   place-items: center;
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  color: var(--mute);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 1px 2px rgb(11 34 57 / 0.08);
+  color: var(--text-strong);
 }
 .msg-more:is(:hover, [aria-expanded="true"]) {
-  background: var(--soft);
+  background: var(--soft-hover);
   color: var(--navy);
 }
 .shot-stack {

@@ -19,6 +19,7 @@ function ConversationRow({
   members,
   replying,
   typing,
+  draft,
   showClosed,
   onSelect,
 }: {
@@ -28,6 +29,8 @@ function ConversationRow({
   replying: string | null;
   /** The visitor is typing now. */
   typing: boolean;
+  /** The operator's unsent reply, shown while another conversation is open. */
+  draft: string | undefined;
   /** Search results mix open and closed conversations, so a closed one says so. */
   showClosed: boolean;
   onSelect(): void;
@@ -58,6 +61,10 @@ function ConversationRow({
           </span>
           {typing ? (
             <span className="preview typing">{t("visitorTyping")}</span>
+          ) : draft !== undefined ? (
+            <span className="preview">
+              <b className="draft">{t("draft")}</b> {markdownText(draft)}
+            </span>
           ) : (
             <span className="preview">{preview}</span>
           )}
@@ -181,6 +188,7 @@ export function InboxList({
   members,
   selected,
   typing,
+  drafts,
   replying,
   onFilter,
   onSelect,
@@ -200,6 +208,8 @@ export function InboxList({
   selected: string | null;
   /** What each visitor is typing now, by conversation. */
   typing: Record<string, string>;
+  /** The operator's unsent replies, by conversation. */
+  drafts: Record<string, string>;
   replying(conversationId: string): string | null;
   onFilter(status: Status, who: Who): void;
   onSelect(conversationId: string): void;
@@ -251,6 +261,7 @@ export function InboxList({
             members={members}
             replying={replying(conversation.id)}
             typing={conversation.id in typing}
+            draft={conversation.id === selected ? undefined : drafts[conversation.id]}
             showClosed={found !== null}
             onSelect={() => onSelect(conversation.id)}
           />

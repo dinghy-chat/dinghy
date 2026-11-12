@@ -720,6 +720,7 @@ const en = {
   receiptEmailed: "Sent by email",
   receiptEmailFailed: "Email failed",
   visitorTyping: "typing…",
+  draft: "Draft:",
   visitorTypingLabel: "The visitor is typing",
   typingPreviewTitle: "Typing preview",
   typingPreviewHelp:

@@ -17,14 +17,13 @@ import { ErrorNote, failureText, Loading } from "./ui.tsx";
 import { replyAuthor, title } from "./visitor.ts";
 import { usePanel, VisitorPanel } from "./visitor-panel.tsx";
 
-/** The unsent reply, kept in `drafts` while the operator looks at another conversation. */
-function useDraft(drafts: Map<string, string>, conversationId: string) {
+/** The unsent reply. The inbox keeps a copy, for its list and for when the operator comes back. */
+function useDraft(saved: string, onDraft: (text: string) => void) {
   // Here and not in the composer, which unmounts while the conversation is closed.
-  const [draft, setDraftState] = useState(() => drafts.get(conversationId) ?? "");
+  const [draft, setDraftState] = useState(saved);
   const setDraft = (next: string) => {
     setDraftState(next);
-    if (next === "") drafts.delete(conversationId);
-    else drafts.set(conversationId, next);
+    onDraft(next);
   };
   return [draft, setDraft] as const;
 }
@@ -55,7 +54,8 @@ export function Thread({
   emailAvailable,
   readOnly,
   suspended,
-  drafts,
+  savedDraft,
+  onDraft,
   receiptsVersion,
   rewriteVersion,
   typingDraft,
@@ -67,8 +67,9 @@ export function Thread({
 }: {
   api: WorkspaceApi;
   meId: string;
-  /** Unsent replies by conversation, kept while the operator looks at another one. */
-  drafts: Map<string, string>;
+  /** The reply the operator left unsent here, or "". */
+  savedDraft: string;
+  onDraft(text: string): void;
   members: Member[];
   replying: string | null;
   /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
@@ -143,7 +144,7 @@ export function Thread({
       ? "readOnlyHelp"
       : null;
   const imagesOn = !readOnly && !suspended;
-  const [draft, setDraft] = useDraft(drafts, conversationId);
+  const [draft, setDraft] = useDraft(savedDraft, onDraft);
   const [dropping, setDropping] = useState(false);
 
   if (conversation === null) {

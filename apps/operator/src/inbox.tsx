@@ -4,6 +4,7 @@ import { useBilling } from "../../../ee/operator/billing.tsx";
 import { AnalyticsPage } from "./analytics.tsx";
 import { type Me, workspaceApi } from "./api.ts";
 import { ContactsPage } from "./contacts.tsx";
+import { useDrafts } from "./drafts.ts";
 import { GetStarted } from "./get-started.tsx";
 import { InboxBanners } from "./inbox-banners.tsx";
 import { useInboxData } from "./inbox-data.ts";
@@ -85,8 +86,7 @@ export function Inbox({
   useDeviceSync();
   const [filter, setFilter] = useState(filterInAddress);
   const { status } = filter;
-  // In memory only, so a reload or a sign-out clears them.
-  const drafts = useRef(new Map<string, string>()).current;
+  const [drafts, setDraft] = useDrafts(me.id, workspaceId);
   // A notification opens the app on its conversation.
   const [selected, setSelected] = useState(() => {
     const params = new URLSearchParams(location.search);
@@ -245,6 +245,7 @@ export function Inbox({
             )}
             <div className="split">
               <InboxList
+                drafts={drafts}
                 api={api}
                 status={status}
                 who={who}
@@ -271,7 +272,8 @@ export function Inbox({
                   key={selected}
                   api={api}
                   meId={me.id}
-                  drafts={drafts}
+                  savedDraft={drafts[selected] ?? ""}
+                  onDraft={(text) => setDraft(selected, text)}
                   members={members}
                   replying={data.replying(selected)}
                   mayDeleteAnyone={role !== "member" && !readOnly && !suspended}
