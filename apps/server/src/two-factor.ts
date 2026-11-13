@@ -157,6 +157,12 @@ const recoveryHash = (keys: Keys, code: string) =>
     .update(code.toLowerCase().replaceAll(/[^a-z0-9]/g, ""))
     .digest("hex");
 
+/** A new set of recovery codes, to show once, and their hashes, to store. */
+function newRecoveryCodes(keys: Keys) {
+  const codes = Array.from({ length: RECOVERY_CODE_COUNT }, newRecoveryCode);
+  return { codes, hashes: codes.map((one) => recoveryHash(keys, one)) };
+}
+
 /**
  * Starts a setup with a new secret, which replaces one that was never confirmed. Returns null when
  * two-step sign-in is already on, or the account is gone. The operator's row is locked first, as an
@@ -214,14 +220,10 @@ async function finishSetup(
     if (secret === null) return "no_setup" as const;
     const step = await matchingStep(secret, code);
     if (step === null) return "wrong_code" as const;
-    const codes = Array.from({ length: RECOVERY_CODE_COUNT }, newRecoveryCode);
+    const { codes, hashes } = newRecoveryCodes(keys);
     await tx
       .update(operatorTwoFactor)
-      .set({
-        enabledAt: new Date(),
-        lastStep: step,
-        recoveryCodes: codes.map((one) => recoveryHash(keys, one)),
-      })
+      .set({ enabledAt: new Date(), lastStep: step, recoveryCodes: hashes })
       .where(eq(operatorTwoFactor.operatorId, operatorId));
     await setTwoFactorOn(tx, operatorId, true);
     await tx
@@ -383,6 +385,28 @@ const checkRoute = createRoute({
   },
 });
 
+const recoveryCodesRoute = createRoute({
+  method: "post",
+  path: "/v1/operator/two-factor/recovery-codes",
+  security: SESSION,
+  summary: `Make a new set of ${RECOVERY_CODE_COUNT} recovery codes, with a current code from the authenticator app. The old ones stop working`,
+  request: { body: jsonBody(CodeBody) },
+  responses: {
+    200: jsonAnswer(
+      `${RECOVERY_CODE_COUNT} recovery codes, which replace the old ones. This is the only time they show`,
+      z.object({ recoveryCodes: z.array(z.string()) }),
+    ),
+    ...OPERATOR_WRITE_ERRORS,
+    400: errorAnswer(
+      `invalid_request: the request is not valid. wrong_code: not a current ${DIGITS}-digit code from the app, or one already used. A recovery code does not work here`,
+    ),
+    409: errorAnswer("two_factor_off: two-step sign-in is off"),
+    429: errorAnswer(LOCKED_TEXT),
+    500: errorAnswer(UNREADABLE_TEXT),
+    503: errorAnswer(UNAVAILABLE_TEXT),
+  },
+});
+
 const disableRoute = createRoute({
   method: "post",
   path: "/v1/operator/two-factor/disable",
@@ -506,6 +530,27 @@ export function registerTwoFactorRoutes(
     if (checked === "unreadable") return c.json(TWO_FACTOR_UNREADABLE, 500);
     if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
     return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(recoveryCodesRoute, async (c) => {
+    if (c.get("twoFactor") === "off") return c.json(TWO_FACTOR_OFF, 409);
+    const { code } = c.req.valid("json");
+    // Only the app proves the phone, so a recovery code cannot make more of itself.
+    if (!TOTP_CODE.test(code)) return c.json(WRONG_CODE, 400);
+    const operatorId = c.get("operatorId");
+    const { codes, hashes } = newRecoveryCodes(keys);
+    const checked = await checkCode(c, code, (tx) =>
+      tx
+        .update(operatorTwoFactor)
+        .set({ recoveryCodes: hashes })
+        .where(eq(operatorTwoFactor.operatorId, operatorId)),
+    );
+    if (checked === "wrong") return c.json(WRONG_CODE, 400);
+    if (checked === "locked") return tooManyAttempts(c, limit);
+    if (checked === "unreadable") return c.json(TWO_FACTOR_UNREADABLE, 500);
+    if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
+    audit(logger, "two_factor.recovery_regenerated", { operatorId, ip: c.get("clientIp") });
+    return c.json({ recoveryCodes: codes }, 200);
   });
 
   app.openapi(disableRoute, async (c) => {

@@ -356,6 +356,8 @@ export interface Me {
   contact: string | null;
   /** `required`: it is on, and this session must pass the check before anything else works. */
   twoFactor: "off" | "on" | "required";
+  /** The recovery codes not used yet. Null unless `twoFactor` is `on`. */
+  recoveryCodesLeft: number | null;
 }
 
 export type Role = "owner" | "admin" | "member";
@@ -593,6 +595,9 @@ export const startTwoFactor = () =>
 /** Confirms the setup with a code, and returns the recovery codes, which show only now. */
 export const enableTwoFactor = (code: string) =>
   post<{ recoveryCodes: string[] }>("/v1/operator/two-factor/enable", { code });
+/** A new set of recovery codes, with a code from the app. The old ones stop working. */
+export const newRecoveryCodes = (code: string) =>
+  post<{ recoveryCodes: string[] }>("/v1/operator/two-factor/recovery-codes", { code });
 export const disableTwoFactor = (code: string) =>
   post<{ ok: true }>("/v1/operator/two-factor/disable", { code });
 /** The second step of a sign-in, with a code from the app or a recovery code. */

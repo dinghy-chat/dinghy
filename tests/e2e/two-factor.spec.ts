@@ -57,13 +57,23 @@ test("an operator turns on two-step sign-in, and the next sign-in asks for a cod
   await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
 
   await openProfile(page);
+  await expect(page.getByText("10 recovery codes left.")).toBeVisible();
+  await page.getByRole("button", { name: "New recovery codes" }).click();
+  await page.getByRole("textbox", { name: "6-digit code" }).fill(await authenticatorCode(key, 1));
+  await page.getByRole("button", { name: "Make new codes" }).click();
+  await expect(page.getByText("Save your recovery codes")).toBeVisible();
+  const recoveryCode = (await page.locator(".recovery-codes li").first().textContent()) ?? "";
+  await page.getByRole("button", { name: "I saved them" }).click();
+  await expect(page.getByText("10 recovery codes left.")).toBeVisible();
+
   await page.getByRole("button", { name: "Turn off" }).click();
   const offField = page.getByRole("textbox", { name: "Code from your app, or a recovery code" });
   await offField.fill("000000");
   await page.getByRole("button", { name: "Turn off" }).click();
   // A wrong code keeps the form open with its error.
   await expect(page.getByText("That code is not right, or it was already used.")).toBeVisible();
-  await offField.fill(await authenticatorCode(key, 1));
+  // A code of the new set works.
+  await offField.fill(recoveryCode);
   await page.getByRole("button", { name: "Turn off" }).click();
   await expect(page.getByRole("button", { name: "Turn on" })).toBeVisible();
   await page.context().close();

@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Redis } from "iovalkey";
@@ -10,7 +10,7 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, deliverLinks, redeemSignInToken } from "./auth.ts";
-import { operator, operatorPicture } from "./db/schema.ts";
+import { operator, operatorPicture, operatorTwoFactor } from "./db/schema.ts";
 import { accessFlags, type Database, operatorWorkspaces, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -105,6 +105,8 @@ const meRoute = createRoute({
               // `required`: two-step sign-in is on and this session has not passed it yet, so
               // only the check, this route and sign-out work.
               twoFactor: z.enum(["off", "on", "required"]),
+              // How many recovery codes are not used yet. Null unless `twoFactor` is `on`.
+              recoveryCodesLeft: z.number().int().nullable(),
             })
             .openapi("Operator"),
         },
@@ -429,16 +431,20 @@ export function registerOperatorRoutes(
     const id = c.get("operatorId");
     // Before the second step, the session proves only the mailbox, so it learns no workspace.
     const hasPassedCheck = c.get("twoFactor") !== "required";
-    const [picture] = await db
-      .select({ pictureUpdatedAt: operator.pictureUpdatedAt })
+    const [account] = await db
+      .select({
+        pictureUpdatedAt: operator.pictureUpdatedAt,
+        recoveryCodesLeft: sql<number | null>`cardinality(${operatorTwoFactor.recoveryCodes})`,
+      })
       .from(operator)
+      .leftJoin(operatorTwoFactor, eq(operatorTwoFactor.operatorId, operator.id))
       .where(eq(operator.id, id));
     return c.json(
       {
         id,
         name: c.get("operatorName"),
         email: c.get("operatorEmail"),
-        pictureUrl: imageUrls.picture(id, picture?.pictureUpdatedAt ?? null),
+        pictureUrl: imageUrls.picture(id, account?.pictureUpdatedAt ?? null),
         away: c.get("operatorAway"),
         workspaces: await Promise.all(
           (hasPassedCheck ? await operatorWorkspaces(db, id) : []).map(
@@ -469,6 +475,8 @@ export function registerOperatorRoutes(
         billing,
         contact,
         twoFactor: c.get("twoFactor"),
+        recoveryCodesLeft:
+          c.get("twoFactor") === "on" ? (account?.recoveryCodesLeft ?? null) : null,
       },
       200,
     );

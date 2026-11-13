@@ -323,6 +323,47 @@ describe("a new session", () => {
   });
 });
 
+describe("new recovery codes", () => {
+  const codesLeft = async (cookie: string) =>
+    (
+      (await (await call(cookie, "GET", "/v1/operator/me")).json()) as {
+        recoveryCodesLeft: number | null;
+      }
+    ).recoveryCodesLeft;
+  const renew = (cookie: string, code: string) =>
+    call(cookie, "POST", "/v1/operator/two-factor/recovery-codes", { code });
+
+  test("need a current app code, replace the old set, and me counts what is left", async () => {
+    const person = await ownerWithTwoFactor();
+    expect(await codesLeft(person.cookie)).toBe(10);
+    const [oldCode, otherOld] = person.recoveryCodes;
+    const waiting = await signIn(app, auth, person.email);
+    // Before the check, me says nothing about the codes.
+    expect(await codesLeft(waiting)).toBeNull();
+    expect((await check(waiting, oldCode ?? "")).status).toBe(200);
+    expect(await codesLeft(person.cookie)).toBe(9);
+    // A recovery code cannot make more of itself.
+    expect(await codeOf(await renew(person.cookie, otherOld ?? ""))).toBe("wrong_code");
+    expect(await codeOf(await renew(person.cookie, "000000"))).toBe("wrong_code");
+    const renewed = await renew(person.cookie, await authenticatorCode(person.secret));
+    expect(renewed.status).toBe(200);
+    const { recoveryCodes } = (await renewed.json()) as { recoveryCodes: string[] };
+    expect(new Set(recoveryCodes).size).toBe(10);
+    expect(await codesLeft(person.cookie)).toBe(10);
+    expect(audits("two_factor.recovery_regenerated", person.id)).toHaveLength(1);
+    const next = await signIn(app, auth, person.email);
+    expect(await codeOf(await check(next, otherOld ?? ""))).toBe("wrong_code");
+    expect((await check(next, recoveryCodes[0] ?? "")).status).toBe(200);
+    expect(await codesLeft(person.cookie)).toBe(9);
+  });
+
+  test("answer two_factor_off, and me counts none, when it is off", async () => {
+    const person = await newOwner();
+    expect(await codesLeft(person.cookie)).toBeNull();
+    expect(await codeOf(await renew(person.cookie, "123456"))).toBe("two_factor_off");
+  });
+});
+
 describe("turning it off", () => {
   test("needs a current code, and ends the sessions that never passed", async () => {
     const person = await ownerWithTwoFactor();

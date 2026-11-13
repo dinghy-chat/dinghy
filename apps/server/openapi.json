@@ -787,6 +787,9 @@
           "twoFactor": {
             "type": "string",
             "enum": ["off", "on", "required"]
+          },
+          "recoveryCodesLeft": {
+            "type": ["integer", "null"]
           }
         },
         "required": [
@@ -798,7 +801,8 @@
           "workspaces",
           "billing",
           "contact",
-          "twoFactor"
+          "twoFactor",
+          "recoveryCodesLeft"
         ]
       },
       "InboxWorkspace": {
@@ -5010,6 +5014,135 @@
           },
           "400": {
             "description": "invalid_request: the request is not valid. wrong_code: the code is not right, or it was already used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "two_factor_off: two-step sign-in is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_attempts: 5 wrong codes in 15 minutes. The session ended. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "two_factor_unreadable: the stored secret does not open, because AUTH_SECRET changed. The server's admin runs `chat two-factor-reset`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "check_unavailable: the server cannot count attempts right now, so it checks no code. Retry later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/two-factor/recovery-codes": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Make a new set of 10 recovery codes, with a current code from the authenticator app. The old ones stop working",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "6 digits from the authenticator app, or a recovery code. Spaces do not count, and without them it has 1 to 40 characters."
+                  }
+                },
+                "required": ["code"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "10 recovery codes, which replace the old ones. This is the only time they show",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recoveryCodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["recoveryCodes"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. wrong_code: not a current 6-digit code from the app, or one already used. A recovery code does not work here",
             "content": {
               "application/json": {
                 "schema": {

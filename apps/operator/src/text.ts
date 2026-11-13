@@ -859,6 +859,12 @@ const en = {
   twoFactorRecoveryCopy: "Copy the codes",
   twoFactorRecoveryDownload: "Download",
   twoFactorRecoverySaved: "I saved them",
+  twoFactorCodesLeftOne: "1 recovery code left.",
+  twoFactorCodesLeftMany: "{count} recovery codes left.",
+  twoFactorNewCodes: "New recovery codes",
+  twoFactorNewCodesHelp:
+    "Enter a 6-digit code from your app to make 10 new recovery codes. The old ones stop working.",
+  twoFactorNewCodesConfirm: "Make new codes",
   twoFactorOffHelp: "To turn it off, enter a code from your app or a recovery code.",
   twoFactorWrongCode: "That code is not right, or it was already used.",
   twoFactorLocked: "Too many wrong codes, so you were signed out. Try again in 15 minutes.",

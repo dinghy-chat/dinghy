@@ -135,6 +135,8 @@ To turn it on, open **Profile**, select **Turn on** under **Two-step sign-in**, 
 
 Each new sign-in then opens **Enter your code** after the link. Nothing else in the app works until you enter a code from the app or a recovery code. A code works once. After 5 wrong codes in 15 minutes, Dinghy signs you out and refuses every code until 15 minutes after the first wrong one.
 
+**Profile** shows how many recovery codes you have left. To replace them, select **New recovery codes** and enter a code from the app. Dinghy shows 10 new codes, once, and the old ones stop working.
+
 To turn it off, select **Turn off** and enter a code from the app or a recovery code. Sessions that never passed the check end.
 
 **Settings > Team** shows who has it on.

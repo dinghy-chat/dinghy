@@ -7,11 +7,12 @@ import {
   disableTwoFactor,
   enableTwoFactor,
   type Me,
+  newRecoveryCodes,
   signOut,
   startTwoFactor,
 } from "./api.ts";
 import { AuthPage } from "./scene.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { CopyButton, CopyField, ErrorNote, Field, failureText } from "./ui.tsx";
 
 /** The empty modules around the code that a scanner needs, as the QR standard asks. */
@@ -213,9 +214,13 @@ type Step =
   | { kind: "idle" }
   | { kind: "setup"; secret: string; uri: string }
   | { kind: "codes"; codes: string[] }
+  | { kind: "new-codes" }
   | { kind: "turning-off" };
 
-/** The Profile row: turn it on with a QR code and a first code, or off with a current code. */
+/**
+ * The Profile row: turn it on with a QR code and a first code, make new recovery codes, or turn it
+ * off with a current code.
+ */
 export function TwoFactorRow({ me, onChanged }: { me: Me; onChanged(): void }) {
   const [step, setStep] = useState<Step>({ kind: "idle" });
   const [error, setError] = useState<TextId | null>(null);
@@ -244,12 +249,38 @@ export function TwoFactorRow({ me, onChanged }: { me: Me; onChanged(): void }) {
   }
   if (step.kind === "codes") return <RecoveryCodes codes={step.codes} onDone={finish} />;
   if (step.kind === "turning-off") return <TurnOff onDone={finish} onCancel={idle} />;
+  if (step.kind === "new-codes") {
+    return (
+      <div className="stack">
+        <p className="hint">{t("twoFactorNewCodesHelp")}</p>
+        <CodeForm
+          label="twoFactorCode"
+          submit="twoFactorNewCodesConfirm"
+          numeric
+          onSubmit={async (code) =>
+            setStep({ kind: "codes", codes: (await newRecoveryCodes(code)).recoveryCodes })
+          }
+          onCancel={idle}
+        />
+      </div>
+    );
+  }
   const isOn = me.twoFactor === "on";
   return (
     <div className="stack">
       {isOn && <p className="note">{t("twoFactorIsOn")}</p>}
+      {me.recoveryCodesLeft !== null && (
+        <p className="hint">
+          {plural(me.recoveryCodesLeft, "twoFactorCodesLeftOne", "twoFactorCodesLeftMany")}
+        </p>
+      )}
       <ErrorNote text={error} />
       <div className="actions">
+        {isOn && (
+          <button type="button" className="pill" onClick={() => setStep({ kind: "new-codes" })}>
+            {t("twoFactorNewCodes")}
+          </button>
+        )}
         <button
           type="button"
           className={isOn ? "pill" : "pill dark"}
