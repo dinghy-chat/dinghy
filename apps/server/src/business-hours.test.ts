@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
@@ -7,7 +7,7 @@ import { signedInOperator } from "../test/operators.ts";
 import { SITE } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { businessHours } from "./db/schema.ts";
+import { businessHours, event } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -94,6 +94,25 @@ describe("business hours", () => {
     expect((await save(space, boss.cookie, { ...HOURS, enabled: false })).status).toBe(200);
     expect(await appearanceHours(space)).toBeNull();
     expect(await read(space, boss.cookie)).toEqual({ ...HOURS, enabled: false });
+  });
+
+  test("a time zone in another case is saved under its one spelling", async () => {
+    const { space, boss } = await workspaceWithOwner();
+    const saved = await save(space, boss.cookie, { ...HOURS, timeZone: "europe/paris" });
+    expect(saved.status).toBe(200);
+    expect(await read(space, boss.cookie)).toEqual(HOURS);
+  });
+
+  test("a save records workspace.changed, so open operator apps read them again", async () => {
+    const { space, boss } = await workspaceWithOwner();
+    const changes = () =>
+      owner
+        .select({ seq: event.seq })
+        .from(event)
+        .where(and(eq(event.workspaceId, space.id), eq(event.kind, "workspace.changed")));
+    const before = (await changes()).length;
+    expect((await save(space, boss.cookie, HOURS)).status).toBe(200);
+    expect(await changes()).toHaveLength(before + 1);
   });
 
   test.each([

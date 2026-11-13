@@ -63,7 +63,7 @@ const en = {
   quoteDeleted: "Original message deleted",
   quoteImage: "Image",
   messageDeleted: "Message deleted",
-  botTyping: "{name} is typing…",
+  botTyping: "{name} is typing...",
 };
 
 export type Texts = typeof en;

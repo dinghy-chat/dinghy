@@ -44,7 +44,7 @@ const ignore = () => {};
 const preventSubmit = (event: Event) => event.preventDefault();
 
 function sampleLines({ question, answer, author }: PreviewSample): Line[] {
-  const line = { seq: null, image: null, download: null, status: "sent" } as const;
+  const line = { seq: null, attachment: null, status: "sent" } as const;
   return [
     { ...line, id: "question", body: question, fromVisitor: true, author: null },
     { ...line, id: "answer", body: answer, fromVisitor: false, author: { ...author, bot: false } },
@@ -111,7 +111,7 @@ function Preview({ appearance, sample }: PreviewProps) {
                 line={line}
                 showAuthor={startsRun(lines, index)}
                 onView={ignore}
-                onImageError={ignore}
+                onUploadError={ignore}
                 onRetry={ignore}
               />
               {/* The card follows the sample visitor's message, as in the chat. */}

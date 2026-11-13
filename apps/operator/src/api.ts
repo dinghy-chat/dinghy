@@ -166,7 +166,7 @@ export type BulkAction =
   | { action: "label"; labelId: string };
 
 /** What a bulk change did to one conversation. */
-type BulkResult = "ok" | "not_found" | "not_allowed" | "unchanged";
+export type BulkResult = "ok" | "not_found" | "unchanged";
 
 export interface Snooze {
   until: string | null;
@@ -184,6 +184,21 @@ export interface SuggestedReply {
   status: "open" | "stale" | "sent" | "discarded";
   createdAt: string;
 }
+
+/** A file that only downloads. `size` is in bytes. */
+export type FileAttachment = {
+  type: "file";
+  url: string;
+  name: string;
+  size: number;
+  removed?: never;
+};
+
+/** A message's image or file. One deleted after 12 months, on Dinghy Cloud, keeps only its type. */
+type Attachment =
+  | { type: "image"; url: string; width: number; height: number; removed?: never }
+  | FileAttachment
+  | { type: "image" | "file"; removed: true };
 
 /** The kinds of message that visitors and the team write to each other. */
 export type ChatKind = "text" | "image" | "file";
@@ -205,13 +220,8 @@ interface MessageFields {
   authorName: string | null;
   clientId: string;
   body: string | null;
-  image: { url: string; width: number; height: number } | null;
-  /** The image was deleted after 12 months, on Dinghy Cloud. */
-  imageRemoved: boolean;
-  /** A file that only downloads. `size` is in bytes. */
-  file: { name: string; size: number; url: string } | null;
-  /** The file was deleted after 12 months, on Dinghy Cloud. */
-  fileRemoved: boolean;
+  /** An `image` or `file` message's upload. */
+  attachment: Attachment | null;
   /** The message this one quotes. Its `id` is null when that message was deleted. */
   replyTo: Quote | null;
   /** When its author last changed its text. */
@@ -356,6 +366,8 @@ export interface Me {
   contact: string | null;
   /** `required`: it is on, and this session must pass the check before anything else works. */
   twoFactor: "off" | "on" | "required";
+  /** The recovery codes not used yet. Null unless `twoFactor` is `on`. */
+  recoveryCodesLeft: number | null;
 }
 
 export type Role = "owner" | "admin" | "member";
@@ -406,7 +418,7 @@ export interface BlockedVisitor extends VisitorIdentity {
 
 export interface Usage {
   operators: { used: number; limit: number };
-  imageBytes: { used: number; limit: number };
+  uploadBytes: { used: number; limit: number };
 }
 
 export interface WorkspaceSettings {
@@ -416,7 +428,7 @@ export interface WorkspaceSettings {
   /** The plan's limits and their use, on Dinghy Cloud. Null with no limits. */
   usage: Usage | null;
   /** What a delete removes. A self-hosted server keeps its only workspace. */
-  deletion: { conversations: number; images: number; members: number; onlyWorkspace: boolean };
+  deletion: { conversations: number; uploads: number; members: number; onlyWorkspace: boolean };
 }
 
 /** A workspace API key. Its token is shown only when it is made. */
@@ -593,6 +605,9 @@ export const startTwoFactor = () =>
 /** Confirms the setup with a code, and returns the recovery codes, which show only now. */
 export const enableTwoFactor = (code: string) =>
   post<{ recoveryCodes: string[] }>("/v1/operator/two-factor/enable", { code });
+/** A new set of recovery codes, with a code from the app. The old ones stop working. */
+export const newRecoveryCodes = (code: string) =>
+  post<{ recoveryCodes: string[] }>("/v1/operator/two-factor/recovery-codes", { code });
 export const disableTwoFactor = (code: string) =>
   post<{ ok: true }>("/v1/operator/two-factor/disable", { code });
 /** The second step of a sign-in, with a code from the app or a recovery code. */
@@ -926,7 +941,7 @@ export function workspaceApi(workspaceId: string) {
       const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
       const name = `&filename=${encodeURIComponent(file.name)}`;
       const response = await fetch(
-        `${conversation(id)}/images?clientId=${clientId}${name}${quote}`,
+        `${conversation(id)}/uploads?clientId=${clientId}${name}${quote}`,
         {
           method: "POST",
           cache: "no-store",

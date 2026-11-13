@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, sql } from "drizzle-orm";
+import { LABEL_NAME_MAX, LABELS_MAX } from "../../../packages/widget/src/shared.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import {
@@ -7,7 +8,6 @@ import {
   conversationLabel,
   event,
   LABEL_COLORS,
-  LABEL_NAME_MAX,
   type LabeledPayload,
   label,
 } from "./db/schema.ts";
@@ -27,17 +27,16 @@ import {
 } from "./errors.ts";
 import { boundedText } from "./inputs.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { WORKSPACE_PREFIX } from "./member.ts";
-import { lockWorkspace, nextSeq, recordWorkspaceChange, wantsWebhook } from "./messages.ts";
+import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
+import { changeWorkspace, lockWorkspace, nextSeq, wantsWebhook } from "./messages.ts";
 import { allowed } from "./team.ts";
 
-const LABEL_LIMIT = 100;
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/labels`;
 const ON_CONVERSATION = `${WORKSPACE_PREFIX}/{workspaceId}/conversations/{conversationId}/labels/{labelId}`;
 
 const LIMIT = failure(
   "label_limit",
-  `A workspace can have ${LABEL_LIMIT} labels. An owner or admin can delete one.`,
+  `A workspace can have ${LABELS_MAX} labels. An owner or admin can delete one.`,
 );
 const NAME_TAKEN = failure("label_name_taken", "Another label has this name.");
 
@@ -53,13 +52,12 @@ const Label = z.object({ id: z.string(), name: z.string(), color: Color }).opena
   example: { id: "9b1f4c2e-6d3a-4e8b-a7c5-2f0d1e3b4a69", name: "Billing", color: "blue" },
 });
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const labelParams = workspaceParams.extend({ labelId: z.uuid() });
 const conversationLabelParams = labelParams.extend({ conversationId: z.uuid() });
 
 const WRITE_ERRORS = {
   409: errorAnswer(
-    `label_name_taken: another label has this name. label_limit: the workspace has ${LABEL_LIMIT} already`,
+    `label_name_taken: another label has this name. label_limit: the workspace has ${LABELS_MAX} already`,
   ),
 };
 
@@ -80,7 +78,7 @@ const addRoute = createRoute({
   method: "post",
   path: PREFIX,
   security: SESSION,
-  summary: `Add a label. Any member can, up to ${LABEL_LIMIT} per workspace`,
+  summary: `Add a label. Any member can, up to ${LABELS_MAX} per workspace`,
   request: {
     params: workspaceParams,
     body: jsonBody(z.object({ name: Name, color: Color.default("gray") })),
@@ -187,7 +185,7 @@ async function refusal(
     })
     .from(label)
     .where(eq(label.workspaceId, workspaceId));
-  if (labelId === null && (counts?.total ?? 0) >= LABEL_LIMIT) return LIMIT;
+  if (labelId === null && (counts?.total ?? 0) >= LABELS_MAX) return LIMIT;
   return (counts?.taken ?? 0) > 0 ? NAME_TAKEN : null;
 }
 
@@ -265,7 +263,7 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
   app.openapi(addRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const input = c.req.valid("json");
-    const outcome = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       const refused = await refusal(tx, id, input.name, null);
       if (refused !== null) return refused;
       const [row] = await tx
@@ -273,11 +271,9 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
         .values({ workspaceId: id, ...input })
         .returning(columns);
       if (row === undefined) throw new Error("The label insert returned no row");
-      await recordWorkspaceChange(tx, id);
       return row;
     });
     if ("error" in outcome) return c.json(outcome, 409);
-    live.wake(id, OPERATORS);
     return c.json(outcome, 201);
   });
 
@@ -286,7 +282,7 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
     const id = c.get("memberWorkspaceId");
     const { labelId } = c.req.valid("param");
     const input = c.req.valid("json");
-    const outcome = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       const refused = await refusal(tx, id, input.name, labelId);
       if (refused !== null) return refused;
       const [row] = await tx
@@ -294,13 +290,10 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
         .set(input)
         .where(thisLabel(id, labelId))
         .returning(columns);
-      if (row === undefined) return null;
-      await recordWorkspaceChange(tx, id);
-      return row;
+      return row ?? null;
     });
     if (outcome === null) return c.json(NOT_FOUND, 404);
     if ("error" in outcome) return c.json(outcome, 409);
-    live.wake(id, OPERATORS);
     return c.json(outcome, 200);
   });
 
@@ -308,20 +301,17 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { labelId } = c.req.valid("param");
-    const isDeleted = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       // The workspace lock first, as in every label write.
       await lockWorkspace(tx, id);
       const deleted = await tx
         .delete(label)
         .where(thisLabel(id, labelId))
         .returning({ id: label.id });
-      if (deleted.length === 0) return false;
-      await recordWorkspaceChange(tx, id);
-      return true;
+      return deleted.length === 0 ? null : { ok: true as const };
     });
-    if (!isDeleted) return c.json(NOT_FOUND, 404);
-    live.wake(id, OPERATORS);
-    return c.json({ ok: true as const }, 200);
+    if (outcome === null) return c.json(NOT_FOUND, 404);
+    return c.json(outcome, 200);
   });
 
   app.openapi(putRoute, async (c) => {

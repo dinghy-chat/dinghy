@@ -377,7 +377,7 @@ export function Inbox({
                   version={data.threadVersion(selected)}
                   receiptsVersion={data.receiptsVersion}
                   rewriteVersion={data.rewriteVersion(selected)}
-                  accountVersion={accountVersion}
+                  savedReplies={data.savedReplies}
                   onOpenContact={openContact}
                   onOpenConversation={openConversation}
                   typingDraft={data.typing[selected] ?? null}

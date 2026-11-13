@@ -16,8 +16,8 @@ import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import { apiKey, message, workspace } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { localStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const logger = pino({ level: "silent" });
@@ -67,7 +67,7 @@ beforeAll(async () => {
     logger,
     auth,
     checks: { postgres: ok, valkey: ok },
-    images: createImages({
+    uploads: createUploads({
       store: localStore(await mkdtemp(join(tmpdir(), "dinghy-keys-"))),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
@@ -265,7 +265,7 @@ describe("what a key can do", () => {
       .png()
       .toBuffer();
     const response = await app.request(
-      inA(`/conversations/${conversationId}/images?clientId=bot-image`),
+      inA(`/conversations/${conversationId}/uploads?clientId=bot-image`),
       {
         method: "POST",
         headers: { authorization: `Bearer ${key.token}`, "content-type": "image/png" },

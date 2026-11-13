@@ -5,7 +5,7 @@ import type { BillingState, Usage, WorkspaceApi, WorkspaceSettings } from "./api
 import { useLoad } from "./load.ts";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, type Team } from "./team.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import {
   ErrorNote,
@@ -78,7 +78,7 @@ function Meter({
   limit: number;
   text: string;
   note: TextId;
-  /** What to do once nothing is left, which differs for people and for images. */
+  /** What to do once nothing is left, which differs for people and for uploads. */
   full: TextId;
 }) {
   const share = limit > 0 ? Math.min(used / limit, 1) : 0;
@@ -110,8 +110,8 @@ const operatorsText = (usage: Usage) =>
   });
 const imagesText = (usage: Usage) =>
   t("usageOf", {
-    used: formatBytes(usage.imageBytes.used),
-    limit: formatBytes(usage.imageBytes.limit),
+    used: formatBytes(usage.uploadBytes.used),
+    limit: formatBytes(usage.uploadBytes.limit),
   });
 
 /** The plan's limits and how much of each is used, on Dinghy Cloud. */
@@ -132,8 +132,8 @@ function PlanRow({ usage }: { usage: Usage }) {
         />
         <Meter
           label={t("usageFiles")}
-          used={usage.imageBytes.used}
-          limit={usage.imageBytes.limit}
+          used={usage.uploadBytes.used}
+          limit={usage.uploadBytes.limit}
           text={imagesText(usage)}
           note="usageFilesNote"
           full="usageFullFiles"
@@ -146,13 +146,11 @@ function PlanRow({ usage }: { usage: Usage }) {
 type Deletion = WorkspaceSettings["deletion"];
 
 /** "This permanently deletes 312 conversations and 40 images and files. It removes workspace access for 3 team members, ..." */
-function deletionText({ conversations, images, members }: Deletion): string {
-  const count = (value: number, one: TextId, many: TextId) =>
-    value === 1 ? t(one) : t(many, { count: value });
+function deletionText({ conversations, uploads, members }: Deletion): string {
   return t("deleteWorkspaceCounts", {
-    conversations: count(conversations, "deleteCountConversationsOne", "deleteCountConversations"),
-    files: count(images, "deleteCountFilesOne", "deleteCountFiles"),
-    members: count(members, "deleteCountMembersOne", "deleteCountMembers"),
+    conversations: plural(conversations, "deleteCountConversationsOne", "deleteCountConversations"),
+    files: plural(uploads, "deleteCountFilesOne", "deleteCountFiles"),
+    members: plural(members, "deleteCountMembersOne", "deleteCountMembers"),
   });
 }
 

@@ -81,3 +81,40 @@ export function useLoad<T>(load: () => Promise<T> | null, deps: DependencyList):
   const reload = useCallback(() => setVersion((current) => current + 1), []);
   return { data, failure, setData, reload };
 }
+
+/** A page's writes: whether one runs, and why the last one failed. */
+export interface Action {
+  busy: boolean;
+  failure: TextId | null;
+  /** Shows a failure from elsewhere on the page, or clears it with null. */
+  setFailure(failure: TextId | null): void;
+  /** Runs a write, then reloads the page's data. Answers whether the write worked. */
+  run(work: () => Promise<unknown>): Promise<boolean>;
+}
+
+/**
+ * Runs a settings page's writes: busy while one runs, its failure as a text by `byStatus`, and
+ * `reload` after each one that worked.
+ */
+export function useAction(
+  reload: () => void,
+  byStatus: Partial<Record<number, TextId>> = {},
+): Action {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<TextId | null>(null);
+  const run = async (work: () => Promise<unknown>) => {
+    setFailure(null);
+    setBusy(true);
+    try {
+      await work();
+      reload();
+      return true;
+    } catch (error) {
+      setFailure(failureText(error, byStatus));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { busy, failure, setFailure, run };
+}

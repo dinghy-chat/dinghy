@@ -10,8 +10,8 @@ import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { event, workspace, workspaceLogo, workspaceMember } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { createImages, PUBLIC_IMAGE_MAX_BYTES } from "./images.ts";
 import type { Live } from "./live.ts";
+import { createUploads, PUBLIC_IMAGE_MAX_BYTES } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -105,7 +105,7 @@ beforeAll(async () => {
   app = createApp(options);
   filesApp = createApp({
     ...options,
-    images: createImages({
+    uploads: createUploads({
       store: noStore,
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,

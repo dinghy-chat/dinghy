@@ -5306,10 +5306,6 @@ button.quote:hover {
   justify-self: start;
   margin-top: 4px;
 }
-.label-edit {
-  flex: 1;
-}
-
 /* The bar that takes the search's place while rows are chosen: one row as tall as the search, so
    the list does not move, and narrow enough for the list's narrowest width. */
 .bulk-bar {
@@ -6937,7 +6933,17 @@ button.quote:hover {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
-.saved-reply-edit > form {
+/* A label has no icon, so its row is the name and its tools. */
+.item-row.label-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+/* Settings has room for the whole name, which the inbox cuts at 14em. */
+.label-row > .label-pill {
+  justify-self: start;
+  max-width: 100%;
+}
+/* A row's edit form takes the row's full width. */
+.item-row > form {
   grid-column: 1 / -1;
 }
 .hook-edit {

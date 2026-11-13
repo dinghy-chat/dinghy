@@ -5,8 +5,13 @@ const DAY_MS = 1440 * MINUTE_MS;
 // Two weeks: a clock change can skip a range that comes once a week, and then it opens a week later.
 const SEARCH_DAYS = 14;
 
-/** Open now, or closed until a time, which is null for a week with no hours. */
-type HoursState = { open: true } | { open: false; reopensAt: Date | null };
+/**
+ * Open until a time, or closed until one. Null is no change within the search: a week open all the
+ * time, or one with no hours.
+ */
+export type HoursState =
+  | { open: true; closesAt: Date | null }
+  | { open: false; reopensAt: Date | null };
 
 /** "09:30" as milliseconds after midnight. */
 const sinceMidnight = (time: string) => (+time.slice(0, 2) * 60 + +time.slice(3)) * MINUTE_MS;
@@ -98,22 +103,24 @@ export function knownHours(hours: BusinessHours | null): BusinessHours | null {
 }
 
 /**
- * Whether the team is open at `now`, and when it opens next if not. It opens either when the clock
- * reads a range's start, or when a daylight saving change makes the clock jump into a range, so the
- * next opening is the first of those moments at which the team is open.
+ * Whether the team is open at `now`, and when that changes. It opens or closes either when the
+ * clock reads a range's start or end, or when a daylight saving change makes the clock jump across
+ * one, so the next change is the first of those moments at which the team is open, or closed.
  */
 export function hoursState(hours: BusinessHours, now: number): HoursState {
-  if (isOpenAt(hours, now)) return { open: true };
+  const open = isOpenAt(hours, now);
   const { timeZone, week } = hours;
   const { wall, day } = wallClock(now, timeZone);
   const midnight = wall - (wall % DAY_MS);
   const today = WEEKDAYS.indexOf(day);
   const moments = clockChanges(timeZone, now);
   for (let ahead = 0; ahead <= SEARCH_DAYS; ahead += 1) {
-    for (const [start] of week[WEEKDAYS[(today + ahead) % WEEKDAYS.length] as Weekday]) {
-      moments.push(...readings(midnight + ahead * DAY_MS + sinceMidnight(start), timeZone));
+    for (const range of week[WEEKDAYS[(today + ahead) % WEEKDAYS.length] as Weekday]) {
+      const time = sinceMidnight(open ? range[1] : range[0]);
+      moments.push(...readings(midnight + ahead * DAY_MS + time, timeZone));
     }
   }
-  const opens = moments.filter((at) => at > now && isOpenAt(hours, at));
-  return { open: false, reopensAt: opens.length === 0 ? null : new Date(Math.min(...opens)) };
+  const changes = moments.filter((at) => at > now && isOpenAt(hours, at) !== open);
+  const next = changes.length === 0 ? null : new Date(Math.min(...changes));
+  return open ? { open, closesAt: next } : { open, reopensAt: next };
 }

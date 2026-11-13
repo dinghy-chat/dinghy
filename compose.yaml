@@ -143,13 +143,15 @@ services:
       # Optional. Without a mail server, a visitor who left the page does not learn about a reply.
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
-      # Optional. Without these, images stay in the images volume.
+      # Optional. Without these, uploads stay in the volume named images.
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-}
       S3_BUCKET: ${S3_BUCKET:-}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-      # Optional. A separate origin for user images, such as https://files.example.com.
+      # Optional. A separate origin for uploads, such as https://files.example.com.
+      UPLOADS_ORIGIN: ${UPLOADS_ORIGIN:-}
+      # Its old name, read until the next release.
       IMAGES_ORIGIN: ${IMAGES_ORIGIN:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}

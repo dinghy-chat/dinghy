@@ -20,24 +20,27 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import type { Images } from "./images.ts";
 import { InboxMessage, KEY_REPLY_REFUSALS, messageView, refusedReply } from "./inbox.ts";
 import { Body, ClientId, HandoffReason, HandoffSummary } from "./inputs.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
-import { closedFailure, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import {
+  closedFailure,
+  conversationParams,
+  WORKSPACE_PREFIX as PREFIX,
+  workspaceParams,
+} from "./member.ts";
 import {
   authorNames,
   catchClosed,
   catchConversationClosed,
+  changeWorkspace,
   conversationVisitor,
   type KeySource,
-  recordWorkspaceChange,
   WorkspaceClosedError,
 } from "./messages.ts";
 import { allowed, NOT_A_MEMBER } from "./team.ts";
+import type { Uploads } from "./uploads.ts";
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
-const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const draftParams = conversationParams.extend({ draftId: z.uuid() });
 
 const KEYS_ONLY = failure("forbidden", "Only an API key's bot does this.");
@@ -180,7 +183,7 @@ const typingRoute = createRoute({
 
 interface HandlingOptions {
   db: Database;
-  images: Images | undefined;
+  uploads: Uploads | undefined;
   live: Live;
 }
 
@@ -210,7 +213,7 @@ export async function setTyping(
  * clients wake after the commit.
  */
 export async function handOff(
-  { db, images, live }: HandlingOptions,
+  { db, uploads, live }: HandlingOptions,
   workspaceId: string,
   actor: KeyActor,
   conversationId: string,
@@ -242,13 +245,13 @@ export async function handOff(
     created: outcome.kind === "handed_off",
     visitorMessage:
       sent?.status === "sent"
-        ? { ...sent, message: messageView(images, workspaceId, names, sent.message) }
+        ? { ...sent, message: messageView(uploads, workspaceId, names, sent.message) }
         : sent,
   };
 }
 
 export function registerHandlingRoutes(app: App, options: HandlingOptions): void {
-  const { db, images, live } = options;
+  const { db, uploads, live } = options;
   app.openapi(listDraftsRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
@@ -274,7 +277,7 @@ export function registerHandlingRoutes(app: App, options: HandlingOptions): void
           const found = await conversationVisitor(tx, id, conversationId);
           return {
             ...sent,
-            view: messageView(images, id, names, sent.message),
+            view: messageView(uploads, id, names, sent.message),
             visitorId: found?.id,
           };
         }),
@@ -326,13 +329,11 @@ export function registerHandlingRoutes(app: App, options: HandlingOptions): void
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { paused } = c.req.valid("json");
-    const pausedBy = await withWorkspace(db, id, async (tx) => {
-      const name = await setBotsPaused(tx, id, c.get("operatorId"), paused);
-      await recordWorkspaceChange(tx, id);
-      return name;
-    });
-    live.wake(id, OPERATORS);
-    return c.json({ paused, pausedBy }, 200);
+    const saved = await changeWorkspace(db, live, id, async (tx) => ({
+      paused,
+      pausedBy: await setBotsPaused(tx, id, c.get("operatorId"), paused),
+    }));
+    return c.json(saved, 200);
   });
 
   app.openapi(typingRoute, async (c) => {

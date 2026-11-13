@@ -1,24 +1,30 @@
 /** @jsxImportSource react */
 import { useId, useState } from "react";
 import { plainText } from "../../../packages/widget/src/markdown.ts";
-import { SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
+import {
+  SAVED_REPLIES_MAX,
+  SAVED_REPLY_BODY_MAX,
+  SAVED_REPLY_SHORTCUT,
+  SAVED_REPLY_SHORTCUT_MAX,
+} from "../../../packages/widget/src/shared.ts";
 import type { SavedReply, WorkspaceApi } from "./api.ts";
 import { Icon } from "./icons.tsx";
-import { useLoad } from "./load.ts";
+import { useAction, useLoad } from "./load.ts";
 import { Confirm } from "./popup.tsx";
-import { type TextId, t } from "./text.ts";
-import { AddForm, ErrorNote, Field, failureText, Loading, Page, StatusNote } from "./ui.tsx";
+import { t } from "./text.ts";
+import { AddForm, EditForm, ErrorNote, Field, Loading, Page, StatusNote } from "./ui.tsx";
 
-// The server's limits, so the form cannot send what it refuses.
-const SHORTCUT_MAX = 32;
-const BODY_MAX = 5000;
-const SAVED_REPLIES_MAX = 200;
-
-type Typed = { shortcut: string; body: string };
-const EMPTY: Typed = { shortcut: "", body: "" };
+type SavedReplyInput = { shortcut: string; body: string };
+const EMPTY: SavedReplyInput = { shortcut: "", body: "" };
 
 /** The shortcut and the text of a saved reply, new or changed. */
-function ReplyFields({ value, onChange }: { value: Typed; onChange(value: Typed): void }) {
+function ReplyFields({
+  value,
+  onChange,
+}: {
+  value: SavedReplyInput;
+  onChange(value: SavedReplyInput): void;
+}) {
   const bodyId = useId();
   const hintId = useId();
   return (
@@ -27,7 +33,7 @@ function ReplyFields({ value, onChange }: { value: Typed; onChange(value: Typed)
         label={t("savedReplyShortcut")}
         hint={t("savedReplyShortcutHint")}
         placeholder={t("savedReplyShortcutPlaceholder")}
-        maxLength={SHORTCUT_MAX}
+        maxLength={SAVED_REPLY_SHORTCUT_MAX}
         required
         autoComplete="off"
         value={value.shortcut}
@@ -39,7 +45,7 @@ function ReplyFields({ value, onChange }: { value: Typed; onChange(value: Typed)
         <textarea
           id={bodyId}
           rows={5}
-          maxLength={BODY_MAX}
+          maxLength={SAVED_REPLY_BODY_MAX}
           required
           aria-describedby={hintId}
           value={value.body}
@@ -53,37 +59,21 @@ function ReplyFields({ value, onChange }: { value: Typed; onChange(value: Typed)
   );
 }
 
-const isComplete = (typed: Typed) =>
-  SAVED_REPLY_SHORTCUT.test(typed.shortcut) && typed.body.trim() !== "";
+const isComplete = (input: SavedReplyInput) =>
+  SAVED_REPLY_SHORTCUT.test(input.shortcut) && input.body.trim() !== "";
 
 /** Settings > Saved replies: every member adds, changes and deletes the team's replies. */
 export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
   const replies = useLoad(() => api.savedReplies(), [api]);
-  const [adding, setAdding] = useState<Typed | null>(null);
-  const [editing, setEditing] = useState<{ id: string; typed: Typed } | null>(null);
+  const [adding, setAdding] = useState<SavedReplyInput | null>(null);
+  const [editing, setEditing] = useState<{ id: string; input: SavedReplyInput } | null>(null);
   const [deleting, setDeleting] = useState<SavedReply | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const act = async (work: () => Promise<unknown>) => {
-    setFailure(null);
-    setBusy(true);
-    try {
-      await work();
-      replies.reload();
-      return true;
-    } catch (error) {
-      setFailure(failureText(error, {}));
-      return false;
-    } finally {
-      setBusy(false);
-    }
+  const { busy, failure, run: act } = useAction(replies.reload);
+  const add = async (input: SavedReplyInput) => {
+    if (await act(() => api.addSavedReply(input))) setAdding(null);
   };
-  const add = async (typed: Typed) => {
-    if (await act(() => api.addSavedReply(typed))) setAdding(null);
-  };
-  const save = async (id: string, typed: Typed) => {
-    if (await act(() => api.changeSavedReply(id, typed))) setEditing(null);
+  const save = async (id: string, input: SavedReplyInput) => {
+    if (await act(() => api.changeSavedReply(id, input))) setEditing(null);
   };
   const remove = async (reply: SavedReply) => {
     if (await act(() => api.deleteSavedReply(reply.id))) setDeleting(null);
@@ -101,32 +91,18 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
         <ul className="items">
           {list.map((reply) =>
             editing?.id === reply.id ? (
-              <li key={reply.id} className="item-row saved-reply-edit">
-                <form
-                  className="stack"
-                  aria-label={t("savedReplyEditLabel", { shortcut: reply.shortcut })}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void save(reply.id, editing.typed);
-                  }}
+              <li key={reply.id} className="item-row">
+                <EditForm
+                  label={t("savedReplyEditLabel", { shortcut: reply.shortcut })}
+                  canSubmit={!busy && isComplete(editing.input)}
+                  onCancel={() => setEditing(null)}
+                  onSubmit={() => void save(reply.id, editing.input)}
                 >
                   <ReplyFields
-                    value={editing.typed}
-                    onChange={(typed) => setEditing({ id: reply.id, typed })}
+                    value={editing.input}
+                    onChange={(input) => setEditing({ id: reply.id, input })}
                   />
-                  <div className="actions">
-                    <button
-                      type="submit"
-                      className="pill dark"
-                      disabled={busy || !isComplete(editing.typed)}
-                    >
-                      {t("save")}
-                    </button>
-                    <button type="button" className="pill" onClick={() => setEditing(null)}>
-                      {t("cancel")}
-                    </button>
-                  </div>
-                </form>
+                </EditForm>
               </li>
             ) : (
               <li key={reply.id} className="item-row">
@@ -146,11 +122,11 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
                       setAdding(null);
                       setEditing({
                         id: reply.id,
-                        typed: { shortcut: reply.shortcut, body: reply.body },
+                        input: { shortcut: reply.shortcut, body: reply.body },
                       });
                     }}
                   >
-                    {t("savedReplyEdit")}
+                    {t("edit")}
                   </button>
                   <button
                     type="button"
@@ -158,7 +134,7 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
                     aria-label={t("savedReplyDeleteLabel", { shortcut: reply.shortcut })}
                     onClick={() => setDeleting(reply)}
                   >
-                    {t("savedReplyDelete")}
+                    {t("delete")}
                   </button>
                 </div>
               </li>
@@ -191,7 +167,7 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
         <Confirm
           title={t("savedReplyDeleteTitle", { shortcut: deleting.shortcut })}
           text={t("savedReplyDeleteText")}
-          confirm={t("savedReplyDelete")}
+          confirm={t("delete")}
           disabled={busy}
           onConfirm={() => void remove(deleting)}
           onCancel={() => setDeleting(null)}

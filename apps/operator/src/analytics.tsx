@@ -1,10 +1,10 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
-import { duration } from "./format.ts";
+import { browserTimeZone, duration, weekdayNames } from "./format.ts";
 import { LabelDot } from "./labels.tsx";
 import { Pond } from "./scene.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
 
 type Period = `${AnalyticsDays}`;
@@ -14,9 +14,6 @@ const PERIODS: readonly Option<Period>[] = [
   { value: "30", label: "period30" },
   { value: "90", label: "period90" },
 ];
-
-/** The browser's zone, which the server checks. Days and hours read in it. */
-const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 const percent = (share: number) =>
   new Intl.NumberFormat([], { style: "percent", maximumFractionDigits: 0 }).format(share);
@@ -33,18 +30,13 @@ function dayName(
   return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1).toLocaleDateString([], options);
 }
 
-/** Monday first, as the server sends the hours. 2024-01-01 was a Monday. */
-const weekdayNames = (weekday: "short" | "long") =>
-  Array.from({ length: 7 }, (_, index) =>
-    new Date(2024, 0, 1 + index).toLocaleDateString([], { weekday }),
-  );
-const WEEKDAYS = weekdayNames("short");
-const WEEKDAYS_LONG = weekdayNames("long");
+const DAY_NAMES_SHORT = weekdayNames("short");
+const DAY_NAMES = weekdayNames("long");
 const hourName = (hour: number) =>
   new Date(2024, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" });
 const HOURS = Array.from({ length: 24 }, (_, hour) => hourName(hour));
 
-const conversations = (count: number) => (count === 1 ? t("chartOne") : t("chartMany", { count }));
+const conversations = (count: number) => plural(count, "chartOne", "chartMany");
 
 /** A number with its label, or the words behind an "i" button. */
 type TipContent = { value: string; label: string } | { text: string };
@@ -414,12 +406,12 @@ function Hours({ hours }: { hours: number[][] }) {
   return (
     <Card
       title="hoursTitle"
-      hint={t("hoursBusiest", { day: WEEKDAYS_LONG[peak.day] ?? "", hour: hourName(peak.hour) })}
+      hint={t("hoursBusiest", { day: DAY_NAMES[peak.day] ?? "", hour: hourName(peak.hour) })}
     >
       <figure className="hours">
         <figcaption className="visually-hidden">
           {t("hoursSummary", {
-            day: WEEKDAYS_LONG[peak.day] ?? "",
+            day: DAY_NAMES[peak.day] ?? "",
             hour: hourName(peak.hour),
             conversations: conversations(peak.count),
           })}
@@ -432,8 +424,8 @@ function Hours({ hours }: { hours: number[][] }) {
             </span>
           ))}
           {hours.map((row, day) => [
-            <span key={`d${WEEKDAYS[day]}`} className="heat-day">
-              {WEEKDAYS[day]}
+            <span key={`d${DAY_NAMES_SHORT[day]}`} className="heat-day">
+              {DAY_NAMES_SHORT[day]}
             </span>,
             ...row.map((count, hour) => (
               <span
@@ -443,7 +435,7 @@ function Hours({ hours }: { hours: number[][] }) {
                   day === peak.day && hour === peak.hour ? " peak" : ""
                 }`}
                 data-value={conversations(count)}
-                data-label={t("hoursCell", { day: WEEKDAYS_LONG[day] ?? "", hour: hourName(hour) })}
+                data-label={t("hoursCell", { day: DAY_NAMES[day] ?? "", hour: hourName(hour) })}
               />
             )),
           ])}
@@ -546,7 +538,8 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
   const [days, setDays] = useState<Period>("30");
   const [numbers, setNumbers] = useState<Analytics | null>(null);
   const [failure, setFailure] = useState<TextId | null>(null);
-  const zone = timeZone();
+  // The server checks the zone, and days and hours read in it.
+  const zone = browserTimeZone();
 
   useEffect(() => {
     // An answer for another period or workspace must not land here.

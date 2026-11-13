@@ -5,8 +5,9 @@ import type { App } from "./app.ts";
 import { LABEL_COLORS } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure, INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
-import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { conversationHasTestVisitor, isChat, messageAuthors } from "./messages.ts";
+import { TimeZone } from "./time.ts";
 
 // Support numbers from the conversations and messages already stored. Nothing here tracks anyone.
 
@@ -14,20 +15,6 @@ const PERIODS = [7, 30, 90] as const;
 const FAST_REPLY_SECONDS = 5 * 60;
 /** Postgres's code for a time zone it does not know. */
 const PG_INVALID_PARAMETER = "22023";
-
-/**
- * An IANA zone name that this Node knows. An offset such as "+01:00" is refused, because Postgres
- * reads its sign the other way round.
- */
-export function isTimeZone(name: string): boolean {
-  if (!/^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$/.test(name)) return false;
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: name });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // Seconds from the start of a conversation to its first operator reply. Null with no reply.
 const medianSeconds = z.number().nullable();
@@ -93,7 +80,7 @@ export const AnalyticsQuery = z.object({
     .int()
     .refine((days) => (PERIODS as readonly number[]).includes(days), "7, 30 or 90")
     .default(30),
-  tz: z.string().refine(isTimeZone, "an IANA time zone, such as Europe/Paris").default("UTC"),
+  tz: TimeZone.default("UTC"),
 });
 
 const analyticsRoute = createRoute({
@@ -104,7 +91,7 @@ const analyticsRoute = createRoute({
   description:
     "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `labels` counts them by the labels they have now. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
   request: {
-    params: z.object({ workspaceId: z.uuid() }),
+    params: workspaceParams,
     query: AnalyticsQuery,
   },
   responses: {

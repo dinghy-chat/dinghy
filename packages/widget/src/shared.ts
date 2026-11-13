@@ -342,11 +342,32 @@ export const MESSAGE_MAX = 10_000;
 /** The most members one note mentions, which the operator app keeps to and the server checks. */
 export const MENTIONS_MAX = 10;
 
+/** The longest saved reply shortcut, in characters, where the form's field stops. */
+export const SAVED_REPLY_SHORTCUT_MAX = 32;
 /**
  * A saved reply's shortcut, what follows `/` in the composer. The form, the server and the database
  * check it.
  */
-export const SAVED_REPLY_SHORTCUT = /^[a-z0-9][a-z0-9-]{0,31}$/;
+// Built in a call marked pure, so the widget's bundles, which never use it, drop it.
+export const SAVED_REPLY_SHORTCUT = /* @__PURE__ */ (() =>
+  new RegExp(`^[a-z0-9][a-z0-9-]{0,${SAVED_REPLY_SHORTCUT_MAX - 1}}$`))();
+
+/**
+ * The limits of saved replies, labels and bulk changes. The server and the database check them, and
+ * the operator app keeps to them and names them in its texts.
+ */
+export const SAVED_REPLIES_MAX = 200;
+export const SAVED_REPLY_BODY_MAX = 5000;
+export const LABELS_MAX = 100;
+export const LABEL_NAME_MAX = 40;
+/** The most conversations one bulk change takes. */
+export const BULK_MAX = 100;
+
+/**
+ * The longest two-step sign-in code the server takes once spaces are gone, well above a recovery
+ * code's 11. The operator app's field stops there, so a code typed with spaces always fits.
+ */
+export const TWO_FACTOR_CODE_MAX = 40;
 
 /**
  * A bot repeats its typing notice while it writes, so one that stops repeating has stopped: the

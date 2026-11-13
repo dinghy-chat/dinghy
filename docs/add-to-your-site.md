@@ -286,12 +286,12 @@ connect-src https://chat.example.com;
 img-src https://chat.example.com;
 ```
 
-If your Dinghy serves images and files from a separate origin (`IMAGES_ORIGIN`), allow that origin in `img-src` and `connect-src` too, as the chat fetches a file to save it.
+If your Dinghy serves images and files from a separate origin (`UPLOADS_ORIGIN`), allow that origin in `img-src` and `connect-src` too, as the chat fetches a file to save it.
 
 ## What visitors can do
 
 - Send text and images. They can paste, drag or pick an image. An image must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels.
-- Send files, unless an owner or admin turned off **Visitors can send files** in **Settings > Appearance**. A file can be a PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, up to 10 MB. The chat shows its name and size, and it only downloads, never opens in the page. Dinghy does not scan files for viruses.
+- Send files, while **Visitors can send files** is on in **Settings > Appearance**. It is on for a new workspace, and off for one from before the release that added files. A file can be a PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, up to 10 MB. The chat shows its name and size, and it only downloads, never opens in the page. Dinghy does not scan files for viruses.
 - Read the chat again after a refresh.
 - See an unread count on the button.
 - Leave an email, if they are not signed in and your Dinghy install has a mail server. They then get your reply by email if they left the page. With no mail server, the widget does not ask.

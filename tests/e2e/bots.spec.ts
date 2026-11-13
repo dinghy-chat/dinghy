@@ -192,9 +192,9 @@ test("notes, a bot's handoff, giving it back, and the bot typing", async ({ brow
   await expect(row.getByRole("img", { name: "Helper bot" })).toBeVisible();
 
   await asBot(alice, token, `/conversations/${chat}/typing`, { typing: true });
-  await expect(alice.getByText("Helper bot is typing…")).toBeVisible();
+  await expect(alice.getByText("Helper bot is typing...")).toBeVisible();
   await asBot(alice, token, `/conversations/${chat}/typing`, { typing: false });
-  await expect(alice.getByText("Helper bot is typing…")).toHaveCount(0);
+  await expect(alice.getByText("Helper bot is typing...")).toHaveCount(0);
 
   await alice.context().close();
 });

@@ -5,7 +5,6 @@ import { BOT_TYPING_MS, MENTIONS_MAX } from "../../../packages/widget/src/shared
 import {
   AnalyticsQuery,
   analyticsFor,
-  isTimeZone,
   medianFirstReplySeconds,
   UNKNOWN_ZONE,
 } from "./analytics.ts";
@@ -15,7 +14,6 @@ import { type Database, withWorkspace } from "./db/tenant.ts";
 import { listDrafts } from "./drafts.ts";
 import { failure, NOT_FOUND } from "./errors.ts";
 import { handOff, setTyping } from "./handling.ts";
-import type { Images } from "./images.ts";
 import { type Inbox, messageView, type ReplyOutcome, refusedReply } from "./inbox.ts";
 import {
   Body,
@@ -45,7 +43,8 @@ import {
 import type { Presence, VisitorPresence } from "./presence.ts";
 import { listSavedReplies } from "./saved-replies.ts";
 import { listMembers } from "./team.ts";
-import { MINUTE_MS } from "./time.ts";
+import { isTimeZone, MINUTE_MS } from "./time.ts";
+import type { Uploads } from "./uploads.ts";
 
 /** The days of first replies that `replySeconds` takes its median from, as the widget's header does. */
 const REPLY_TIME_DAYS = 30;
@@ -62,7 +61,7 @@ const ONE_CONTACT_ID = failure(
 
 export interface ChatToolsOptions {
   db: Database;
-  images: Images | undefined;
+  uploads: Uploads | undefined;
   inbox: Inbox;
   limits: Limits;
   live: Live;
@@ -100,7 +99,7 @@ function messageLine(one: Read["messages"][number]): Line {
     : one.kind === "image"
       ? "[image]"
       : one.kind === "file"
-        ? `[file: ${one.file?.name ?? "removed"}]`
+        ? `[file: ${one.attachment !== null && "name" in one.attachment ? one.attachment.name : "removed"}]`
         : indent(one.body ?? "");
   const text =
     one.kind === "closed"
@@ -152,7 +151,7 @@ function localTime(timeZone: string | null): string | null {
 /** New visitor messages in open conversations after a cursor, with what a bot needs to answer. */
 async function visitorMessagesAfter(
   db: Database,
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   workspaceId: string,
   after: Cursor,
   only: string | undefined,
@@ -195,7 +194,7 @@ async function visitorMessagesAfter(
       .filter((row) => row.open && row.deletedAt === null)
       .map(({ open: _open, humanSince, visitorName, visitorEmail, ...row }) => ({
         conversationId: row.conversationId,
-        message: messageView(images, workspaceId, new Map(), stored(row)),
+        message: messageView(uploads, workspaceId, new Map(), stored(row)),
         visitor: { name: visitorName, email: visitorEmail },
         humanHandling: humanSince !== null,
         botsPaused,
@@ -209,7 +208,7 @@ async function visitorMessagesAfter(
  * writes or the time runs out. It holds a slot in the workspace's stream limit while it waits.
  */
 async function waitForMessages(
-  { db, images, limits, live }: ChatToolsOptions,
+  { db, uploads, limits, live }: ChatToolsOptions,
   workspaceId: string,
   input: {
     cursor?: string | undefined;
@@ -238,7 +237,7 @@ async function waitForMessages(
       });
       const page = await visitorMessagesAfter(
         db,
-        images,
+        uploads,
         workspaceId,
         cursor,
         input.conversationId,
@@ -415,7 +414,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "set_typing",
       title: "Show that you are typing",
-      description: `Shows the visitor "<key name> is typing…" for ${BOT_TYPING_MS / 1000} seconds, or until the next message, so call it again while you write. Operators see it too. A key in draft mode shows it to operators only. Errors like \`reply\`: \`bots_paused\`, and \`human_handling\` for a key that sends directly.`,
+      description: `Shows the visitor "<key name> is typing..." for ${BOT_TYPING_MS / 1000} seconds, or until the next message, so call it again while you write. Operators see it too. A key in draft mode shows it to operators only. Errors like \`reply\`: \`bots_paused\`, and \`human_handling\` for a key that sends directly.`,
       input: z.object({ conversationId, typing: z.boolean().default(true) }),
       idempotent: true,
       async run(input, { workspaceId, actor }) {

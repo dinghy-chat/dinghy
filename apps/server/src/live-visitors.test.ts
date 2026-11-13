@@ -162,7 +162,8 @@ describe("the beat", () => {
     });
     const { conversationId } = (await sent.json()) as { conversationId: string };
     const id = tab();
-    await beat({ tab: id, page: `${SITE}/app`, timeZone: "Europe/Lisbon" }, token);
+    // A zone in another case is stored under the one spelling.
+    await beat({ tab: id, page: `${SITE}/app`, timeZone: "europe/lisbon" }, token);
     const [row] = await owner
       .select({ country: visitor.country, timeZone: visitor.timeZone })
       .from(visitor)

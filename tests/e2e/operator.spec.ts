@@ -1,5 +1,6 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { visitor } from "./chat.ts";
 import { inboxFilter } from "./filters.ts";
 import { openLink, signedIn, signOut } from "./links.ts";
 import { openSettings } from "./settings.ts";
@@ -18,17 +19,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await server.stop();
 });
-
-async function visitor(browser: Browser, text: string): Promise<Page> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.goto(`${server.hostOrigin}/plain`);
-  await page.getByRole("button", { name: "Open chat" }).click();
-  await page.getByRole("textbox", { name: "Your message" }).fill(text);
-  await page.getByRole("textbox", { name: "Your message" }).press("Enter");
-  await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
-  return page;
-}
 
 const row = (page: Page, text: string) => page.locator(".row", { hasText: text });
 const reply = (page: Page) => page.getByRole("textbox", { name: "Your reply" });
@@ -57,7 +47,7 @@ test("a full conversation between the widget and the operator app @smoke", async
   });
 
   // The new conversation appears with no reload.
-  const widget = await visitor(browser, "The import stops at 40%.");
+  const widget = await visitor(browser, server, "/plain", "The import stops at 40%.");
   await row(operator, "The import stops at 40%.").click();
   await expect(operator.locator(".msg.visitor", { hasText: "40%" })).toBeVisible();
 
@@ -87,7 +77,7 @@ test("a full conversation between the widget and the operator app @smoke", async
 
 test("a message in another conversation does not reload the open thread", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  const open = await visitor(browser, "The open one");
+  const open = await visitor(browser, server, "/plain", "The open one");
   await row(operator, "The open one").click();
   await expect(operator.locator(".msg.visitor", { hasText: "The open one" })).toBeVisible();
   const threadLoads: string[] = [];
@@ -97,7 +87,7 @@ test("a message in another conversation does not reload the open thread", async 
       threadLoads.push(path);
     }
   });
-  const other = await visitor(browser, "Somebody else");
+  const other = await visitor(browser, server, "/plain", "Somebody else");
   await expect(row(operator, "Somebody else")).toBeVisible();
   expect(threadLoads).toEqual([]);
 
@@ -112,7 +102,7 @@ test("a message in another conversation does not reload the open thread", async 
 test("the reply shows its formatting, typed or pasted as Markdown, and sends Markdown", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "Format my answer");
+  const customer = await visitor(browser, server, "/plain", "Format my answer");
   const page = await signedIn(browser, server, "anna@example.com");
   await row(page, "Format my answer").click();
   const field = reply(page);
@@ -161,7 +151,7 @@ test("the reply shows its formatting, typed or pasted as Markdown, and sends Mar
 });
 
 test("a draft survives closing and reopening the conversation", async ({ browser }) => {
-  const customer = await visitor(browser, "Keep my draft");
+  const customer = await visitor(browser, server, "/plain", "Keep my draft");
   const page = await signedIn(browser, server, "anna@example.com");
   await page.locator(".row", { hasText: "Keep my draft" }).click();
   const reply = page.getByRole("textbox", { name: "Your reply" });
@@ -176,7 +166,7 @@ test("a draft survives closing and reopening the conversation", async ({ browser
 
 test("messages that arrive together all reach the open thread", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "Start of a burst");
+  await visitor(browser, server, "/plain", "Start of a burst");
   await row(operator, "Start of a burst").click();
   await expect(reply(operator)).toBeVisible();
   await server.visitorBurst(["Burst one", "Burst two", "Burst three"]);
@@ -211,7 +201,7 @@ test("a refused stream waits for Retry-After before it tries again", async ({ br
 
 test("a steady stream of events does not keep a thread from loading", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "Busy workspace");
+  await visitor(browser, server, "/plain", "Busy workspace");
   // The list must show this conversation first, or the click below could pick an older one.
   await expect(operator.locator(".row").first()).toContainText("Busy workspace");
   // Every load takes longer than the gap between events.
@@ -238,7 +228,7 @@ test("a steady stream of events does not keep a thread from loading", async ({ b
 
 test("a slow response cannot fill the wrong tab", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "An open conversation");
+  await visitor(browser, server, "/plain", "An open conversation");
   await expect(row(operator, "An open conversation")).toBeVisible();
   let releaseOpen = () => {};
   const heldOpen = new Promise<void>((resolve) => {
@@ -280,7 +270,7 @@ test("an operator can reach conversations past the first page", async ({ browser
 
 test("a refresh keeps the session and the conversations", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "Still here after a refresh");
+  await visitor(browser, server, "/plain", "Still here after a refresh");
   await expect(row(operator, "Still here after a refresh")).toBeVisible();
   await operator.reload();
   await expect(row(operator, "Still here after a refresh")).toBeVisible();
@@ -288,14 +278,14 @@ test("a refresh keeps the session and the conversations", async ({ browser }) =>
 
 test("an operator who was disconnected catches up", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "Before the disconnect");
+  await visitor(browser, server, "/plain", "Before the disconnect");
   await row(operator, "Before the disconnect").click();
   await expect(reply(operator)).toBeVisible();
 
   const dropped = operator.waitForEvent("requestfailed", (r) => r.url().includes("/stream"));
   await setVisibility(operator, "hidden");
   await dropped;
-  await visitor(browser, "Sent during the disconnect");
+  await visitor(browser, server, "/plain", "Sent during the disconnect");
   await server.closeConversations();
   await operator.waitForTimeout(200);
   await expect(row(operator, "Sent during the disconnect")).toHaveCount(0);
@@ -307,10 +297,10 @@ test("an operator who was disconnected catches up", async ({ browser }) => {
 
 test("a revoked session returns to the sign-in page", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "Before the revoke");
+  await visitor(browser, server, "/plain", "Before the revoke");
   await server.revokeSessions();
   // The next wake checks the session again.
-  await visitor(browser, "After the revoke");
+  await visitor(browser, server, "/plain", "After the revoke");
   await expect(operator.getByRole("heading", { name: "Sign in to Dinghy" })).toBeVisible();
 });
 
@@ -405,7 +395,7 @@ test("with no mail server, the sign-in page says to ask the admin for a link", a
 test("on a phone, the list and the thread take turns", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
   await operator.setViewportSize({ width: 390, height: 780 });
-  await visitor(browser, "From a phone test");
+  await visitor(browser, server, "/plain", "From a phone test");
   await row(operator, "From a phone test").click();
   await expect(reply(operator)).toBeVisible();
   await expect(row(operator, "From a phone test")).toBeHidden();
@@ -435,7 +425,7 @@ test("on a phone, the sections sit in a tab bar and the formats wait behind Aa",
 }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
   await operator.setViewportSize({ width: 390, height: 844 });
-  await visitor(browser, "Tab bar test");
+  await visitor(browser, server, "/plain", "Tab bar test");
   const tabs = operator.getByRole("navigation", { name: "Main menu" });
   const box = await tabs.boundingBox();
   expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe(844);
@@ -468,7 +458,7 @@ test("a site that is not allowed shows Not sent, never the text for a block", as
   browser,
 }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  const widget = await visitor(browser, "Before the change");
+  const widget = await visitor(browser, server, "/plain", "Before the change");
   await openSettings(operator, "Install");
   const original = (await operator.locator(".site-card").textContent()) ?? "";
   const swap = async (from: string, to: string) => {
@@ -495,7 +485,7 @@ test("a site that is not allowed shows Not sent, never the text for a block", as
 
 test("an operator blocks a visitor, who then sees why they cannot send", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  const widget = await visitor(browser, "Please block me");
+  const widget = await visitor(browser, server, "/plain", "Please block me");
   await row(operator, "Please block me").click();
   await moreAction(operator, "Block");
   await expect(operator.getByText("This visitor is blocked")).toBeVisible();
@@ -529,7 +519,7 @@ test("an operator blocks a visitor, who then sees why they cannot send", async (
 
 test("a block shows in another open thread of the same visitor", async ({ browser }) => {
   const first = await signedIn(browser, server, "anna@example.com");
-  const widget = await visitor(browser, "My first visit");
+  const widget = await visitor(browser, server, "/plain", "My first visit");
   await row(first, "My first visit").click();
   await first.getByRole("button", { name: "Close", exact: true }).click();
   await expect(first.getByText("This conversation is closed.")).toBeVisible();
@@ -569,7 +559,7 @@ test("clicking Load more twice in the blocked list still reaches every visitor",
 
 test("an owner deletes a conversation, and the list and the thread go too", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "Please delete this");
+  await visitor(browser, server, "/plain", "Please delete this");
   await row(operator, "Please delete this").click();
   await moreAction(operator, "Delete");
   await expect(operator.getByRole("alertdialog")).toContainText("for good");
@@ -634,7 +624,7 @@ test("a sign-in link opens the inbox in place, with no page load", async ({ brow
 
 test("the assignee dropdown works with the keyboard", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "Keyboard assignment");
+  await visitor(browser, server, "/plain", "Keyboard assignment");
   await row(operator, "Keyboard assignment").click();
   const button = operator.getByRole("button", { name: /^Who answers/ });
   await expect(button).toHaveAttribute("aria-haspopup", "listbox");
@@ -687,7 +677,7 @@ test("the assignee dropdown works with the keyboard", async ({ browser }) => {
 
 test("the … menu blocks with the keyboard too", async ({ browser }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
-  await visitor(browser, "Menu by keyboard");
+  await visitor(browser, server, "/plain", "Menu by keyboard");
   await row(operator, "Menu by keyboard").click();
   const more = operator.getByRole("button", { name: "More actions" });
   await more.focus();

@@ -23,10 +23,7 @@ const mine = (kind: "text" | "note"): Line => ({
   id: "m1",
   seq: 5n,
   body: "Hello",
-  image: null,
-  imageRemoved: false,
-  download: null,
-  fileRemoved: false,
+  attachment: null,
   fromVisitor: false,
   kind,
   createdAt: "2026-11-12T10:00:00.000Z",
@@ -72,7 +69,14 @@ test("a file's quote shows its name", () => {
     ...mine("text"),
     body: "",
     kind: "file",
-    download: { name: "invoice.pdf", size: 2048, url: "https://chat.example.com/f" },
+    attachment: {
+      type: "file",
+      name: "invoice.pdf",
+      size: 2048,
+      url: "https://chat.example.com/f",
+    },
   };
   expect(quoteOf(file, "Me").text).toBe("invoice.pdf");
+  const removed: Line = { ...file, attachment: { type: "file", removed: true } };
+  expect(quoteOf(removed, "Me").text).toBe("");
 });

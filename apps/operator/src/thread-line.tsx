@@ -1,7 +1,13 @@
 /** @jsxImportSource react */
-import { createElement, type ReactNode, useEffect, useRef, useState } from "react";
-import { fileSize, isImage, saveFile } from "../../../packages/widget/src/compose.ts";
+import { createElement, type ReactNode, useEffect, useState } from "react";
+import {
+  fileSize,
+  isImage,
+  saveWithRefresh,
+  urlWaiter,
+} from "../../../packages/widget/src/compose.ts";
 import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
+import type { FileAttachment } from "./api.ts";
 import { clockTime, isToday } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { type Receipt, ReceiptLine } from "./receipts.tsx";
@@ -27,45 +33,25 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
 };
 
 /**
- * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so when the
- * server says one expired, it asks once for new URLs and saves again with the line's new one. The
- * device's clock does not decide, as it can be wrong.
+ * A file's link, which saves the file and never leaves the page. After an expired URL, the line's
+ * next one comes with the new URLs that onExpired asks for.
  */
-function FileLink({
-  download,
-  onExpired,
-}: {
-  download: NonNullable<Line["download"]>;
-  onExpired(): void;
-}) {
-  // Each click asks for a save. It ends with the save, with any failure but an expired URL, or with
-  // a second expired one.
-  const [clicks, setClicks] = useState(0);
-  // The expired URL, which waits for the new one that onExpired brings.
-  const expired = useRef<string | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new URL or a click asks for a save.
-  useEffect(() => {
-    if (clicks === 0 || download.url === expired.current) return;
-    const end = () => setClicks(0);
-    saveFile(download.url, download.name).then((isSaved) => {
-      if (isSaved || expired.current !== null) return end();
-      expired.current = download.url;
-      onExpired();
-    }, end);
-  }, [clicks, download.url]);
+function FileLink({ download, onExpired }: { download: FileAttachment; onExpired(): void }) {
+  const [urls] = useState(() => urlWaiter(download.url));
+  useEffect(() => urls.offer(download.url), [urls, download.url]);
   return (
     <a
       className="file-link"
       href={download.url}
       onClick={(event) => {
         event.preventDefault();
-        expired.current = null;
-        setClicks((count) => count + 1);
+        // This render's props, so a later render's new URL does not change what expired.
+        void saveWithRefresh(download.url, download.name, () => urls.wait(download.url, onExpired));
       }}
     >
       <Icon name="download" size={20} />
       <span className="file-name">{download.name}</span>
-      <span className="file-size">{fileSize(download.size)}</span>
+      <span className="file-size">{fileSize(download.size, [])}</span>
     </a>
   );
 }
@@ -76,17 +62,22 @@ function Bubble({
   quote,
   noteBy,
   onView,
-  onImageError,
+  onUploadError,
 }: {
   line: Line;
   quote: ReactNode;
   noteBy: string | null;
   onView(): void;
-  onImageError(): void;
+  onUploadError(): void;
 }) {
   const side = line.fromVisitor ? " visitor" : line.kind === "note" ? " note" : "";
   if (line.deleted) return <div className={`msg${side} removed`}>{t("messageDeleted")}</div>;
-  if (line.image !== null) {
+  const { attachment } = line;
+  if (attachment?.removed) {
+    const removed = attachment.type === "image" ? "imageRemoved" : "fileRemoved";
+    return <div className={`msg${side} removed`}>{t(removed)}</div>;
+  }
+  if (attachment?.type === "image") {
     return (
       <div className="shot-stack">
         {quote !== null && <div className={`msg${side} quote-only`}>{quote}</div>}
@@ -97,27 +88,25 @@ function Bubble({
           onClick={onView}
         >
           <img
-            src={line.image.url}
-            width={line.image.width}
-            height={line.image.height}
+            src={attachment.url}
+            width={attachment.width}
+            height={attachment.height}
             alt={t("imageAlt")}
             loading="lazy"
-            onError={onImageError}
+            onError={onUploadError}
           />
         </button>
       </div>
     );
   }
-  if (line.download !== null) {
+  if (attachment !== null) {
     return (
       <div className={`msg${side}`}>
         {quote}
-        <FileLink download={line.download} onExpired={onImageError} />
+        <FileLink download={attachment} onExpired={onUploadError} />
       </div>
     );
   }
-  if (line.imageRemoved) return <div className={`msg${side} removed`}>{t("imageRemoved")}</div>;
-  if (line.fileRemoved) return <div className={`msg${side} removed`}>{t("fileRemoved")}</div>;
   if (line.file !== undefined) {
     return <div className="msg">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>;
   }
@@ -143,7 +132,7 @@ export function ThreadLine({
   flash,
   receipt,
   onView,
-  onImageError,
+  onUploadError,
   onRetry,
 }: {
   line: Line;
@@ -158,7 +147,7 @@ export function ThreadLine({
   /** The receipt line under this reply, or null when it shows none. */
   receipt: Receipt | null;
   onView(): void;
-  onImageError(): void;
+  onUploadError(): void;
   onRetry(): void;
 }) {
   const row = ["bubble-row", line.fromVisitor && "visitor", flash && "flash"]
@@ -173,7 +162,7 @@ export function ThreadLine({
             quote={quote}
             noteBy={noteBy}
             onView={onView}
-            onImageError={onImageError}
+            onUploadError={onUploadError}
           />
           {menu}
         </div>

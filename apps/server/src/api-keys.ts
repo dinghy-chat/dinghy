@@ -31,7 +31,7 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
-import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import { clientOrigin } from "./oauth-client.ts";
 import {
   ACCESS_PREFIX,
@@ -204,7 +204,6 @@ export async function keyStillValid(db: Database, actor: KeyActor): Promise<bool
   return row !== undefined;
 }
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const keyParams = workspaceParams.extend({ keyId: z.uuid() });
 const ApiKey = z
   .object({

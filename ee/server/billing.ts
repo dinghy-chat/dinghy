@@ -12,7 +12,11 @@ import { stripeEvent, subscription, workspace } from "../../apps/server/src/db/s
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { errorAnswer, failure } from "../../apps/server/src/errors.ts";
 import { noLive, OPERATORS, type Signals } from "../../apps/server/src/live.ts";
-import { OPEN_WHILE_CLOSED, OPEN_WHILE_UNPAID } from "../../apps/server/src/member.ts";
+import {
+  OPEN_WHILE_CLOSED,
+  OPEN_WHILE_UNPAID,
+  workspaceParams,
+} from "../../apps/server/src/member.ts";
 import { recordBillingChange } from "../../apps/server/src/messages.ts";
 import { type RateLimit, tooManyRequests } from "../../apps/server/src/rate-limit.ts";
 import { BILLING_STATES } from "./billing-states.ts";
@@ -73,7 +77,7 @@ const checkoutRoute = createRoute({
   ...OPEN_WHILE_UNPAID,
   path: "/v1/operator/workspaces/{workspaceId}/checkout",
   summary: "Start Stripe Checkout for a workspace that waits for payment",
-  request: { params: z.object({ workspaceId: z.uuid() }) },
+  request: { params: workspaceParams },
   responses: {
     200: {
       description: "The Checkout page",
@@ -92,7 +96,7 @@ const portalRoute = createRoute({
   ...OPEN_WHILE_CLOSED,
   path: "/v1/operator/workspaces/{workspaceId}/billing-portal",
   summary: "Open Stripe's billing portal for a workspace",
-  request: { params: z.object({ workspaceId: z.uuid() }) },
+  request: { params: workspaceParams },
   responses: {
     200: {
       description: "The portal page",
@@ -108,7 +112,7 @@ const billingStateRoute = createRoute({
   method: "get",
   path: "/v1/operator/workspaces/{workspaceId}/billing",
   summary: "Get a workspace's billing state",
-  request: { params: z.object({ workspaceId: z.uuid() }) },
+  request: { params: workspaceParams },
   responses: {
     200: {
       description: "The state, and the date that goes with it",

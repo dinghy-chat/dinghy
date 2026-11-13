@@ -43,6 +43,7 @@ const BY_CODE: Record<string, TextId> = {
   grant_limit: "grantLimit",
   saved_reply_limit: "savedReplyLimit",
   saved_reply_shortcut_taken: "savedReplyShortcutTaken",
+  two_factor_unreadable: "twoFactorUnreadable",
   label_limit: "labelLimit",
   label_name_taken: "labelNameTaken",
 };
@@ -420,6 +421,42 @@ export function AddForm({
       <div className="actions">
         <button type="submit" className="pill dark" disabled={!canSubmit}>
           {submitLabel}
+        </button>
+        <button type="button" className="pill" onClick={onCancel}>
+          {t("cancel")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** A list row's form that changes the row in place, with Save and Cancel. */
+export function EditForm({
+  label,
+  canSubmit,
+  onCancel,
+  onSubmit,
+  children,
+}: {
+  label: string;
+  canSubmit: boolean;
+  onCancel(): void;
+  onSubmit(): void;
+  children: ReactNode;
+}) {
+  return (
+    <form
+      className="stack"
+      aria-label={label}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      {children}
+      <div className="actions">
+        <button type="submit" className="pill dark" disabled={!canSubmit}>
+          {t("save")}
         </button>
         <button type="button" className="pill" onClick={onCancel}>
           {t("cancel")}
@@ -870,5 +907,77 @@ export function PageRow({
       </div>
       <div className="page-controls">{children}</div>
     </section>
+  );
+}
+
+/**
+ * One line of a settings form, such as Appearance or Business hours: the label and its hint on
+ * the left, the control on the right.
+ */
+export function SettingRow({
+  label,
+  hint,
+  doc,
+  stacked = false,
+  children,
+}: {
+  label: string;
+  hint?: string | undefined;
+  /** A docs section that explains the setting, as a link under the hint. */
+  doc?: { path: string; text: TextId } | undefined;
+  /** The control goes under the label, for a control too wide to share the line. */
+  stacked?: boolean;
+  /** The control, which names the hint with this ID, so a screen reader reads it too. */
+  children(hintId: string | undefined): ReactNode;
+}) {
+  const hintId = useId();
+  return (
+    <div className={stacked ? "setting-row setting-stacked" : "setting-row"}>
+      <div className="setting-label">
+        <span aria-hidden="true">{label}</span>
+        {hint !== undefined && (
+          <small className="hint" id={hintId}>
+            {hint}
+          </small>
+        )}
+        {doc !== undefined && <DocLink path={doc.path} text={doc.text} />}
+      </div>
+      {children(hint === undefined ? undefined : hintId)}
+    </div>
+  );
+}
+
+/** An on or off setting, as a switch, with a hint under its label. */
+export function Switch({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange(checked: boolean): void;
+}) {
+  const hintId = useId();
+  return (
+    <label className="check">
+      <span className="setting-label">
+        {label}
+        {hint !== undefined && (
+          <small className="hint" id={hintId}>
+            {hint}
+          </small>
+        )}
+      </span>
+      {/* Named by the label alone, and described by the hint. */}
+      <input
+        aria-label={label}
+        aria-describedby={hint === undefined ? undefined : hintId}
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </label>
   );
 }

@@ -38,9 +38,9 @@ const schema = z.object({
   S3_BUCKET: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
-  // Optional. A separate origin for user images, such as https://files.example.com, that reaches this
-  // same server. Image URLs then use it, and the image route answers only there.
-  IMAGES_ORIGIN: z.url().optional(),
+  // Optional. A separate origin for uploads, such as https://files.example.com, that reaches this same
+  // server. Upload URLs then use it, and the file route answers only there.
+  UPLOADS_ORIGIN: z.url().optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "silent"]).default("info"),
   // DB-IP's IP to Country Lite database, which the image downloads when it is built, for the live
   // view's countries. Without it, every country is unknown.
@@ -118,13 +118,15 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     merged.CHAT_DOMAIN === undefined
       ? `http://localhost:${merged.DINGHY_PORT ?? 3000}`
       : `https://${merged.CHAT_DOMAIN}`;
+  // The old name, read until the next release.
+  merged.UPLOADS_ORIGIN ??= merged.IMAGES_ORIGIN;
   const config = schema.parse(merged);
-  // The image origin answers nothing but images, so on the app's own origin it would hide the app.
+  // The uploads origin answers nothing but files, so on the app's own origin it would hide the app.
   if (
-    config.IMAGES_ORIGIN !== undefined &&
-    new URL(config.IMAGES_ORIGIN).host === new URL(config.PUBLIC_URL).host
+    config.UPLOADS_ORIGIN !== undefined &&
+    new URL(config.UPLOADS_ORIGIN).host === new URL(config.PUBLIC_URL).host
   ) {
-    throw new Error("Set IMAGES_ORIGIN to another host than PUBLIC_URL, or leave it unset.");
+    throw new Error("Set UPLOADS_ORIGIN to another host than PUBLIC_URL, or leave it unset.");
   }
   return config;
 }

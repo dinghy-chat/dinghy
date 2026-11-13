@@ -24,6 +24,7 @@ import {
 } from "./errors.ts";
 import { forgetPagesWithoutChat, lockVisitors } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
+import { conversationParams, workspaceParams } from "./member.ts";
 import {
   findConversation,
   recordConversationChange,
@@ -168,7 +169,6 @@ export async function deleteConversations(
   await forgetPagesWithoutChat(tx, workspaceId, visitorIds);
 }
 
-const params = z.object({ workspaceId: z.uuid(), conversationId: z.uuid() });
 const responses = {
   200: {
     description: "Done",
@@ -182,7 +182,7 @@ const blockRoute = createRoute({
   path: "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/block",
   security: SESSION,
   summary: "Block this conversation's visitor from sending",
-  request: { params },
+  request: { params: conversationParams },
   responses,
 });
 
@@ -191,7 +191,7 @@ const unblockRoute = createRoute({
   path: "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/block",
   security: SESSION,
   summary: "Let this conversation's visitor send again",
-  request: { params },
+  request: { params: conversationParams },
   responses,
 });
 
@@ -201,7 +201,7 @@ const blockedList = createRoute({
   security: SESSION,
   summary: "List blocked visitors, including those with no conversation left",
   request: {
-    params: z.object({ workspaceId: z.uuid() }),
+    params: workspaceParams,
     query: z.object({ offset: z.coerce.number().int().min(0).default(0) }),
   },
   responses: {
@@ -234,7 +234,7 @@ const unblockVisitorRoute = createRoute({
   path: "/v1/operator/workspaces/{workspaceId}/blocked-visitors/{visitorId}",
   security: SESSION,
   summary: "Let a visitor send again",
-  request: { params: z.object({ workspaceId: z.uuid(), visitorId: z.uuid() }) },
+  request: { params: workspaceParams.extend({ visitorId: z.uuid() }) },
   responses,
 });
 
@@ -243,7 +243,7 @@ const deleteRoute = createRoute({
   path: "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}",
   security: SESSION,
   summary: "Delete a conversation, its messages and its images",
-  request: { params },
+  request: { params: conversationParams },
   responses: { ...responses, ...ROLE_WRITE_ERRORS },
 });
 

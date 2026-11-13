@@ -2,7 +2,12 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
-import { LOCALES, SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
+import {
+  LABEL_NAME_MAX,
+  LOCALES,
+  SAVED_REPLY_BODY_MAX,
+  SAVED_REPLY_SHORTCUT,
+} from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
@@ -15,13 +20,11 @@ import {
   conversationLabel,
   emailStop,
   LABEL_COLORS,
-  LABEL_NAME_MAX,
   label,
   MESSAGE_KINDS,
   message,
   operator,
   pageView,
-  SAVED_REPLY_BODY_MAX,
   savedReply,
   visitor,
   widgetLanguage,
@@ -34,11 +37,12 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { allowedFileName, FILE_TYPE, FILENAME_INPUT_MAX } from "./files.ts";
 import { sha256Hex } from "./identity.ts";
-import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
+import { workspaceParams } from "./member.ts";
 import { markHistoryRead } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
+import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./uploads.ts";
 import { WidgetSettingsSchema } from "./widget-settings.ts";
 
 const VERSION = 1;
@@ -710,7 +714,7 @@ async function insertWorkspace(
       workspaceId,
       operatorId,
       role: member.role,
-      removedAt: member.removedAt === null ? null : new Date(member.removedAt),
+      removedAt: dateOrNull(member.removedAt),
       alertEmail: member.alertEmail,
       createdAt: new Date(member.createdAt),
     });
@@ -732,7 +736,7 @@ async function insertWorkspace(
         name: row.name,
         tokenHash: sha256Hex(`imported:${randomBytes(32).toString("base64url")}`),
         createdBy: mapOperator(row.createdBy) ?? "",
-        lastUsedAt: row.lastUsedAt === null ? null : new Date(row.lastUsedAt),
+        lastUsedAt: dateOrNull(row.lastUsedAt),
         revokedAt: row.revokedAt === null ? importedAt : new Date(row.revokedAt),
         createdAt: new Date(row.createdAt),
       })),
@@ -751,10 +755,10 @@ async function insertWorkspace(
         pageContext: row.pageContext,
         identityIssuedAt: row.identityIssuedAt === null ? null : BigInt(row.identityIssuedAt),
         lastReadSeq: BigInt(row.lastReadSeq),
-        blockedAt: row.blockedAt === null ? null : new Date(row.blockedAt),
+        blockedAt: dateOrNull(row.blockedAt),
         device: row.device,
         lastPage: row.lastPage,
-        lastSeenAt: row.lastSeenAt === null ? null : new Date(row.lastSeenAt),
+        lastSeenAt: dateOrNull(row.lastSeenAt),
         note: row.note,
         country: row.country,
         timeZone: row.timeZone,
@@ -818,15 +822,9 @@ async function insertWorkspace(
     );
   }
   for (const rows of batches(data.savedReplies)) {
-    await tx.insert(savedReply).values(
-      rows.map((row) => ({
-        workspaceId,
-        id: row.id,
-        shortcut: row.shortcut,
-        body: row.body,
-        updatedAt: new Date(row.updatedAt),
-      })),
-    );
+    await tx
+      .insert(savedReply)
+      .values(rows.map((row) => ({ workspaceId, ...row, updatedAt: new Date(row.updatedAt) })));
   }
   for (const rows of batches(data.labels)) {
     await tx
@@ -911,7 +909,7 @@ const exportRoute = createRoute({
   path: "/v1/operator/workspaces/{workspaceId}/export",
   security: SESSION,
   summary: "Download this workspace's data, images and files as a tar file. Owners only.",
-  request: { params: z.object({ workspaceId: z.uuid() }) },
+  request: { params: workspaceParams },
   responses: {
     200: {
       description: "A tar file with export.json, and the images and files",

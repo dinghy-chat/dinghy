@@ -304,7 +304,8 @@ async function deleteAccount(
         }
         left.push(workspaceId);
       }
-      // Before the sessions, in the order a code's check locks them, so the two cannot deadlock.
+      // The account's row first, then these, in the order a code's check locks them, so the two
+      // cannot deadlock.
       await tx.delete(operatorTwoFactor).where(eq(operatorTwoFactor.operatorId, operatorId));
       await tx.delete(session).where(eq(session.userId, operatorId));
       await tx.delete(account).where(eq(account.userId, operatorId));
@@ -322,6 +323,7 @@ async function deleteAccount(
           email: erasedEmail(operatorId),
           image: null,
           pictureUpdatedAt: null,
+          twoFactorOn: false,
           deletedAt: new Date(),
         })
         .where(eq(operator.id, operatorId));

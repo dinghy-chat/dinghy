@@ -48,6 +48,12 @@ function useImageFile(url: string | undefined): File | null {
   return file;
 }
 
+/** The address of the line's image, unless it was removed. */
+function viewedUrl(line: Line | undefined): string | undefined {
+  const attachment = line?.attachment;
+  return attachment?.removed ? undefined : attachment?.url;
+}
+
 /** A phone opens its share sheet, which has Save Image for the photos. A computer downloads it. */
 function saveImage(file: File) {
   if (matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) {
@@ -167,7 +173,7 @@ export function ThreadLog({
   drafts,
   olderDrafts,
   draftCount,
-  onImageError,
+  onUploadError,
   onRetry,
 }: {
   conversation: Conversation;
@@ -190,7 +196,7 @@ export function ThreadLog({
    */
   olderDrafts: { node: ReactNode; before: string | null };
   draftCount: number;
-  onImageError(): void;
+  onUploadError(): void;
   onRetry(line: Line): void;
 }) {
   const { log, flashId, jump } = useLogScroll(lines, [
@@ -245,11 +251,11 @@ export function ThreadLog({
                 editing
                 draft={editing.draft}
                 setDraft={(draft) => setEditing({ ...editing, draft })}
-                onSend={(body) =>
+                onSend={(body, picked) =>
                   void actions.saveEdit(
                     line.id,
                     body,
-                    line.kind === "note" ? mentionsIn(body, members) : [],
+                    line.kind === "note" ? mentionsIn(body, members, picked, line.mentions) : [],
                   )
                 }
                 onFiles={undefined}
@@ -262,7 +268,7 @@ export function ThreadLog({
           flash={flashId === line.id}
           receipt={receiptFor.get(line.id) ?? null}
           onView={() => setViewing(line.id)}
-          onImageError={onImageError}
+          onUploadError={onUploadError}
           onRetry={() => onRetry(line)}
         />
         {meta !== null && <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>}
@@ -296,9 +302,9 @@ export function ThreadLog({
       </div>
       {viewing !== null && (
         <ImageViewer
-          url={lines.find((line) => line.id === viewing)?.image?.url}
+          url={viewedUrl(lines.find((line) => line.id === viewing))}
           onClose={() => setViewing(null)}
-          onError={onImageError}
+          onError={onUploadError}
         />
       )}
     </>

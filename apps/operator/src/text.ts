@@ -1,3 +1,5 @@
+import { LABELS_MAX, SAVED_REPLIES_MAX } from "../../../packages/widget/src/shared.ts";
+
 // Every string an operator reads has a key, so a locale can be added later.
 const en = {
   brand: "dinghy",
@@ -76,13 +78,11 @@ const en = {
   savedReplyShortcutPlaceholder: "refund-policy",
   savedReplyBody: "Text",
   savedReplyBodyHint: "Markdown works as in a reply.",
-  savedReplyEdit: "Edit",
   savedReplyEditLabel: "Edit /{shortcut}",
-  savedReplyDelete: "Delete",
   savedReplyDeleteLabel: "Delete /{shortcut}",
   savedReplyDeleteTitle: "Delete /{shortcut}?",
   savedReplyDeleteText: "Your team can no longer insert it. Messages that used it keep their text.",
-  savedReplyLimit: "A workspace can have 200 saved replies. Delete one to add another.",
+  savedReplyLimit: `A workspace can have ${SAVED_REPLIES_MAX} saved replies. Delete one to add another.`,
   savedReplyShortcutTaken: "Another saved reply has this shortcut.",
   pageLabels: "Labels",
   labelsContext:
@@ -93,13 +93,11 @@ const en = {
   labelAdd: "Add label",
   labelName: "Name",
   labelColor: "Color",
-  labelEdit: "Edit",
   labelEditLabel: "Edit {name}",
-  labelDelete: "Delete",
   labelDeleteLabel: "Delete {name}",
   labelDeleteTitle: "Delete {name}?",
   labelDeleteText: "It comes off every conversation that has it.",
-  labelLimit: "A workspace can have 100 labels. An owner or admin can delete one.",
+  labelLimit: `A workspace can have ${LABELS_MAX} labels. An owner or admin can delete one.`,
   labelNameTaken: "Another label has this name.",
   labelsButton: "Labels",
   labelsTitle: "Labels",
@@ -119,7 +117,7 @@ const en = {
   pickerNoMembers: "No teammate matches.",
   pageAppearance: "Appearance",
   invitePendingOne: "Invite pending · 1 day left",
-  invitePendingMany: "Invite pending · {days} days left",
+  invitePendingMany: "Invite pending · {count} days left",
   usageOperatorsNote: "This limit includes team members and pending invites.",
   usageFilesNote: "Dinghy Cloud automatically deletes chat images and files after 12 months.",
   sceneMorning: "Early morning. The boat sets out on a calm sea.",
@@ -158,7 +156,7 @@ const en = {
   bulkClear: "Clear selection",
   bulkDeleteOne: "Delete 1 conversation?",
   bulkDeleteMany: "Delete {count} conversations?",
-  bulkDeleteText: "This deletes them and their images for good.",
+  bulkDeleteText: "This deletes them and their images and files for good.",
   bulkClosedOne: "Closed 1 conversation.",
   bulkClosedMany: "Closed {done} conversations.",
   bulkAssignedOne: "Assigned 1 conversation.",
@@ -169,6 +167,9 @@ const en = {
   bulkReadMany: "Marked {done} conversations read.",
   bulkDeletedOne: "Deleted 1 conversation.",
   bulkDeletedMany: "Deleted {done} conversations.",
+  bulkUnchangedOne: "1 needed no change.",
+  bulkUnchangedMany: "{unchanged} needed no change.",
+  bulkRestUnknown: "The rest may not have changed. Reload the page to see which did.",
   bulkSkippedOne: "Skipped 1: it was deleted already, or your role does not allow it.",
   bulkSkippedMany: "Skipped {skipped}: they were deleted already, or your role does not allow it.",
   filterMine: "Mine",
@@ -212,6 +213,8 @@ const en = {
   moreActions: "More actions",
   cancel: "Cancel",
   save: "Save",
+  edit: "Edit",
+  delete: "Delete",
   saved: "Saved.",
   back: "Back",
   close: "Close",
@@ -447,7 +450,7 @@ const en = {
   inviteAdminHelp:
     "Admins can manage chats and workspace settings. They can invite and remove members, but cannot manage owners or other admins.",
   inviteSend: "Send invite",
-  inviteSending: "Sending…",
+  inviteSending: "Sending...",
   inviteSentTitle: "Invite sent",
   inviteSentDays: "has 7 days to join.",
   inviteAnother: "Invite someone else",
@@ -856,10 +859,18 @@ const en = {
   twoFactorRecoveryCopy: "Copy the codes",
   twoFactorRecoveryDownload: "Download",
   twoFactorRecoverySaved: "I saved them",
+  twoFactorCodesLeftOne: "1 recovery code left.",
+  twoFactorCodesLeftMany: "{count} recovery codes left.",
+  twoFactorNewCodes: "New recovery codes",
+  twoFactorNewCodesHelp:
+    "Enter a 6-digit code from your app to make 10 new recovery codes. The old ones stop working.",
+  twoFactorNewCodesConfirm: "Make new codes",
   twoFactorOffHelp: "To turn it off, enter a code from your app or a recovery code.",
   twoFactorWrongCode: "That code is not right, or it was already used.",
   twoFactorLocked: "Too many wrong codes, so you were signed out. Try again in 15 minutes.",
   twoFactorUnavailable: "Codes cannot be checked right now. Try again in a minute.",
+  twoFactorUnreadable:
+    "This server cannot read your two-step sign-in, because its settings changed. Ask its admin to reset it.",
   twoFactorCheckTitle: "Enter your code",
   twoFactorCheckHelp:
     "Open your authenticator app and enter the 6-digit code for Dinghy. Lost your phone? Enter a recovery code.",
@@ -1015,7 +1026,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   receiptRead: "Read in chat",
   receiptEmailed: "Sent by email",
   receiptEmailFailed: "Email failed",
-  visitorTyping: "typing…",
+  visitorTyping: "typing...",
   draft: "Draft:",
   visitorTypingLabel: "The visitor is typing",
   typingPreviewTitle: "Typing preview",
@@ -1192,7 +1203,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   handoffPrivate: "Only your team sees this",
   aBot: "A bot",
   giveBackDone: "The bot can answer this conversation again.",
-  botTyping: "{name} is typing…",
+  botTyping: "{name} is typing...",
   testChip: "Test",
   infoSentLabel: "Sent",
   infoAuthorLabel: "From",
@@ -1206,11 +1217,22 @@ Ask me before you change anything outside the install. Never ask for a secret or
 
 export type TextId = keyof typeof en;
 
+type Values = Record<string, string | number>;
+
+/** The text key for `count` things: `one` for 1, else `many`. */
+export const oneOrMany = (count: number, one: TextId, many: TextId): TextId =>
+  count === 1 ? one : many;
+
+/** The text for `count` things: `one` for 1, else `many`, with `{count}` and `values` filled in. */
+export function plural(count: number, one: TextId, many: TextId, values: Values = {}): string {
+  return t(oneOrMany(count, one, many), { ...values, count });
+}
+
 /**
  * The text for `id`, with each `{name}` in it replaced by `values.name`. One pass with a function,
  * so a value that holds `$&` or `{other}` shows as it is.
  */
-export function t(id: TextId, values: Record<string, string | number> = {}): string {
+export function t(id: TextId, values: Values = {}): string {
   return en[id].replace(/\{(\w+)\}/g, (match, name: string) =>
     name in values ? String(values[name]) : match,
   );

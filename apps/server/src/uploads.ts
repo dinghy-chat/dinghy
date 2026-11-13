@@ -16,7 +16,7 @@ import {
   startsWith,
 } from "./files.ts";
 import { StorageFullError } from "./limits.ts";
-import type { NewAttachment, StoredMessage } from "./messages.ts";
+import type { NewAttachment, StoredAttachment } from "./messages.ts";
 import type { ObjectStore } from "./storage.ts";
 import { MINUTE_MS } from "./time.ts";
 
@@ -174,12 +174,12 @@ export const processPicture = (bytes: Uint8Array) =>
 
 /** The checked bytes of an upload, before they are stored. */
 type Checked = { data: Uint8Array; contentType: string } & (
-  | { kind: "image"; width: number; height: number }
-  | { kind: "file"; name: string }
+  | { type: "image"; width: number; height: number }
+  | { type: "file"; name: string }
 );
 
 /** Images and the other files people send in the chat. */
-export interface Images {
+export interface Uploads {
   /**
    * Reads, checks and stores an image or a file, then hands it to `commit`. The object stays if
    * `commit` created a message, and goes away if it did not, as on a retry, or if `commit` failed.
@@ -202,16 +202,16 @@ export interface Images {
   url(workspaceId: string, attachmentId: string): string;
   verify(workspaceId: string, attachmentId: string, expires: string, signature: string): boolean;
   store: ObjectStore;
-  /** The separate origin that serves images and files, from IMAGES_ORIGIN, or undefined to use the app's. */
+  /** The separate origin that serves uploads, from UPLOADS_ORIGIN, or undefined to use the app's. */
   origin: string | undefined;
 }
 
-interface ImagesOptions {
+interface UploadsOptions {
   store: ObjectStore;
   secret: string;
   publicUrl: string;
   /**
-   * A separate origin for user images and files, such as https://files.example.com. Their URLs then
+   * A separate origin for uploads, such as https://files.example.com. Their URLs then
    * use it, and the file route answers only there, so a file can never run in the app's origin.
    */
   origin?: string | undefined;
@@ -220,14 +220,14 @@ interface ImagesOptions {
   now?: () => number;
 }
 
-export function createImages({
+export function createUploads({
   store,
   secret,
   publicUrl,
   origin,
   readIdleMs = READ_IDLE_MS,
   now = () => Date.now(),
-}: ImagesOptions): Images {
+}: UploadsOptions): Uploads {
   const filesOrigin = origin === undefined ? undefined : new URL(origin).origin;
   let buffered = 0;
   let waitingToDecode = 0;
@@ -249,7 +249,7 @@ export function createImages({
       const name = allowedFileName(filename, bytes);
       return name === null
         ? "type_not_allowed"
-        : { kind: "file", name, data: bytes, contentType: FILE_TYPE };
+        : { type: "file", name, data: bytes, contentType: FILE_TYPE };
     }
     if (bytes.byteLength > MAX_BYTES) return "too_large";
     if (waitingToDecode >= MAX_WAITING_TO_DECODE) return "busy";
@@ -257,7 +257,7 @@ export function createImages({
     const processed = await inTurn(() => processImage(bytes)).finally(() => {
       waitingToDecode -= 1;
     });
-    return typeof processed === "string" ? processed : { kind: "image", ...processed };
+    return typeof processed === "string" ? processed : { type: "image", ...processed };
   };
 
   /** Checks and stores the bytes, then hands them to `commit`, as `receive` says. */
@@ -406,7 +406,7 @@ const REFUSALS: Record<Refusal, { status: 400 | 408 | 413 | 503 | 507; message: 
   storage_full: { status: 507, message: "This workspace has no room for more images or files." },
 };
 
-export function refuseImage(c: Context, refusal: Refusal) {
+export function refuseUpload(c: Context, refusal: Refusal) {
   const { status, message } = REFUSALS[refusal];
   if (refusal === "busy") c.header("retry-after", "1");
   // biome-ignore lint/suspicious/noExplicitAny: the routes declare these statuses.
@@ -419,41 +419,42 @@ const FILES_HOST_PATH = /^\/v1\/(files\/[^/]+\/[^/]+|widget\/[^/]+\/logo|picture
 /** The only types the route shows in place. An HTML or SVG body never goes out, whatever is stored. */
 const SERVED_TYPES = new Set<string>(Object.values(OUTPUT));
 
-export const ImageSchema = z
-  .object({ url: z.string(), width: z.number(), height: z.number() })
-  .openapi("Image");
+const ImageAttachmentSchema = z
+  .object({ type: z.literal("image"), url: z.string(), width: z.number(), height: z.number() })
+  .openapi("ImageAttachment");
 
-export function imageView(
-  images: Images | undefined,
-  workspaceId: string,
-  image: StoredMessage["image"],
-) {
-  if (image === null || images === undefined) return null;
-  return {
-    url: images.url(workspaceId, image.attachmentId),
-    width: image.width,
-    height: image.height,
-  };
-}
-
-export const FileSchema = z
+const FileAttachmentSchema = z
   .object({
+    type: z.literal("file"),
+    // A download, never shown in place.
+    url: z.string(),
     // Cleaned to letters, digits and a few marks, up to 100 characters.
     name: z.string(),
     // In bytes.
     size: z.number(),
-    // A download, never shown in place.
-    url: z.string(),
   })
-  .openapi("File");
+  .openapi("FileAttachment");
 
-export function fileView(
-  images: Images | undefined,
+// Deleted after 12 months, on Dinghy Cloud.
+const RemovedAttachmentSchema = z
+  .object({ type: z.enum(["image", "file"]), removed: z.literal(true) })
+  .openapi("RemovedAttachment");
+
+/** A message's image or file, or what is left of one that was removed. */
+export const AttachmentSchema = z
+  .union([ImageAttachmentSchema, FileAttachmentSchema, RemovedAttachmentSchema])
+  .openapi("Attachment");
+
+/** The attachment as the API shows it, with a signed URL in place of its stored ID. */
+export function attachmentView(
+  uploads: Uploads | undefined,
   workspaceId: string,
-  file: StoredMessage["file"],
+  attachment: StoredAttachment | null,
 ) {
-  if (file === null || images === undefined) return null;
-  return { name: file.name, size: file.size, url: images.url(workspaceId, file.attachmentId) };
+  if (attachment === null || "removed" in attachment) return attachment;
+  if (uploads === undefined) return null;
+  const { attachmentId, ...shown } = attachment;
+  return { ...shown, url: uploads.url(workspaceId, attachmentId) };
 }
 
 const STORE_FAILED = failure("busy", "The file could not be read. Try again.");
@@ -466,9 +467,9 @@ const STORE_FAILED = failure("busy", "The file could not be read. Try again.");
  * With a separate image origin, that origin serves this route and the public images and nothing else,
  * and the app's origin does not serve them. Register this before every other route.
  */
-export function registerImageFiles(app: App, db: Database, images: Images, logger: Logger) {
+export function registerUploadFiles(app: App, db: Database, uploads: Uploads, logger: Logger) {
   const uuid = z.uuid();
-  const filesHost = images.origin === undefined ? undefined : new URL(images.origin).host;
+  const filesHost = uploads.origin === undefined ? undefined : new URL(uploads.origin).host;
   const onFilesHost = (url: string) => new URL(url).host === filesHost;
   if (filesHost !== undefined) {
     app.use("*", async (c, next) => {
@@ -496,7 +497,7 @@ export function registerImageFiles(app: App, db: Database, images: Images, logge
     if (
       !uuid.safeParse(workspaceId).success ||
       !uuid.safeParse(attachmentId).success ||
-      !images.verify(workspaceId, attachmentId, expires, signature)
+      !uploads.verify(workspaceId, attachmentId, expires, signature)
     ) {
       return c.json(NOT_FOUND, 404);
     }
@@ -531,7 +532,7 @@ export function registerImageFiles(app: App, db: Database, images: Images, logge
     // Before opening the file, because Hono drops a HEAD response's body without closing it.
     if (c.req.method === "HEAD") return c.body(null, 200, headers);
     // A stream, so slow readers of a large file cannot hold it in memory many times over.
-    const contents = await images.store.get(row.storageKey).catch((error: unknown) => {
+    const contents = await uploads.store.get(row.storageKey).catch((error: unknown) => {
       logger.error(safeErrorFields(error), "could not read an image or a file");
       return undefined;
     });

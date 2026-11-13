@@ -6,7 +6,7 @@ import { clockTime } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import type { Act } from "./message-actions.tsx";
-import { t } from "./text.ts";
+import { plural, t } from "./text.ts";
 
 /**
  * The suggested replies that keys in draft mode wrote and that wait in a conversation, oldest first
@@ -235,7 +235,7 @@ export function OlderDrafts({ drafts, ...handlers }: DraftHandlers & { drafts: S
         <span className="sugg-mark">
           <Icon name="robot" size={13} />
         </span>
-        {stale.length === 1 ? t("draftsOlderOne") : t("draftsOlder", { count: stale.length })}
+        {plural(stale.length, "draftsOlderOne", "draftsOlder")}
         <small className="sugg-why">{t("draftsOlderWhy", { name: handlers.visitor })}</small>
         <span className="sugg-caret">
           <Icon name="chevron" size={12} />

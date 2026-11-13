@@ -37,10 +37,10 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { CURSOR_PATTERN } from "./messages.ts";
 import { localStore, type ObjectStore } from "./storage.ts";
 import { exportArchive, ImportError, importArchive } from "./transfer.ts";
+import { createUploads } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
@@ -82,7 +82,7 @@ async function freshInstall(): Promise<Install> {
     auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
     checks: { postgres: ok, valkey: ok },
     db,
-    images: createImages({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL }),
+    uploads: createUploads({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL }),
     logger,
   });
   const install = { database, db, owner, directory, store, app };
@@ -174,7 +174,7 @@ async function makeSource(): Promise<Source> {
   });
   const { conversationId } = (await sent.json()) as { conversationId: string };
   const inSpace = `/v1/operator/workspaces/${space.id}`;
-  await app.request(`/v1/widget/${space.publicKey}/images?clientId=visitor-image`, {
+  await app.request(`/v1/widget/${space.publicKey}/uploads?clientId=visitor-image`, {
     method: "POST",
     headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "image/png" },
     body: await png(),
@@ -194,7 +194,7 @@ async function makeSource(): Promise<Source> {
     clientId: "from-operator",
     body: "Reply from the owner",
   });
-  await app.request(`${inSpace}/conversations/${conversationId}/images?clientId=operator-image`, {
+  await app.request(`${inSpace}/conversations/${conversationId}/uploads?clientId=operator-image`, {
     method: "POST",
     headers: { cookie, origin: ORIGIN, "content-type": "image/png" },
     body: await png(),
@@ -325,7 +325,7 @@ afterEach(async () => {
   for (const install of installs.splice(keptInstalls)) await install.database.drop();
 });
 
-/** The archive's JSON with a change, and its images. */
+/** The archive's JSON with a change, and its uploads. */
 async function edited(change: (data: Record<string, unknown>) => void): Promise<Buffer> {
   const parts: Uint8Array[] = [];
   for await (const entry of readTar(once(archive))) {
@@ -619,9 +619,9 @@ describe("a round trip onto a fresh install", () => {
       headers: { origin: SITE, authorization: `Bearer ${source.token}` },
     });
     const { messages } = (await read.json()) as {
-      messages: { image: { url: string; width: number } | null }[];
+      messages: { attachment: { type: string; url: string; width: number } | null }[];
     };
-    const images = messages.flatMap((one) => one.image ?? []);
+    const images = messages.flatMap((one) => one.attachment ?? []);
     expect(images).toHaveLength(2);
     expect(images[0]?.width).toBe(4);
     const url = new URL(images[0]?.url ?? "");
@@ -793,7 +793,7 @@ describe("files in the chat", () => {
     });
     const { token } = (await created.json()) as { token: string };
     const send = (query: string, body: Uint8Array) =>
-      install.app.request(`/v1/widget/${space.publicKey}/images?${query}`, {
+      install.app.request(`/v1/widget/${space.publicKey}/uploads?${query}`, {
         method: "POST",
         headers: { origin: SITE, authorization: `Bearer ${token}` },
         body: body as Uint8Array<ArrayBuffer>,
@@ -818,17 +818,17 @@ describe("files in the chat", () => {
       headers: { origin: SITE, authorization: `Bearer ${token}` },
     });
     const { messages } = (await read.json()) as {
-      messages: { kind: string; file: { name: string; size: number; url: string } | null }[];
+      messages: { kind: string; attachment: { name: string; size: number; url: string } | null }[];
     };
-    const file = messages.find((one) => one.kind === "file")?.file;
-    expect(file).toMatchObject({ name: "Order 1042.pdf", size: pdf.length });
+    const file = messages.find((one) => one.kind === "file")?.attachment;
+    expect(file).toMatchObject({ type: "file", name: "Order 1042.pdf", size: pdf.length });
     const url = new URL(file?.url ?? "");
     const served = await target.app.request(`${url.pathname}${url.search}`);
     expect(served.headers.get("content-disposition")).toMatch(/^attachment;/);
     expect(Buffer.from(await served.arrayBuffer()).equals(pdf)).toBe(true);
   }, 30_000);
 
-  test("an archive from before files, with no kind on its images, still imports them", async () => {
+  test("an archive from before files, with no kind on its uploads, still imports them", async () => {
     const old = await edited((data) => {
       for (const row of data.attachments as Record<string, unknown>[]) delete row.kind;
     });
@@ -957,7 +957,7 @@ describe("a bad file changes nothing", () => {
     );
   });
 
-  test("a row that points at nothing fails after the images are stored, and they are cleaned up", async () => {
+  test("a row that points at nothing fails after the uploads are stored, and they are cleaned up", async () => {
     await refuses(
       await edited((data) => {
         const messages = data.messages as { conversationId: string }[];
@@ -1098,7 +1098,7 @@ test("an export fails if a file is missing while its row is still there", async 
   );
 });
 
-test("a commit whose reply is lost keeps the images, which the committed rows need", async () => {
+test("a commit whose reply is lost keeps the uploads, which the committed rows need", async () => {
   const target = await freshInstall();
   let calls = 0;
   const losesReply = new Proxy(target.db, {

@@ -159,6 +159,43 @@ describe("business hours", () => {
     expect(hoursState(none, at("2026-11-16T10:00:00Z"))).toEqual({ open: false, reopensAt: null });
   });
 
+  test("while open, close at the end of the current range", () => {
+    expect(hoursState(PARIS, at("2026-11-16T10:00:00Z"))).toEqual({
+      open: true,
+      closesAt: new Date("2026-11-16T17:00:00Z"),
+    });
+  });
+
+  test("a range that runs into the next day's closes at the end of the second", () => {
+    const late: BusinessHours = {
+      timeZone: "UTC",
+      week: { ...WEEKDAYS_IN("UTC").week, mon: [["14:00", "24:00"]], tue: [["00:00", "02:00"]] },
+    };
+    expect(hoursState(late, at("2026-11-16T23:00:00Z"))).toEqual({
+      open: true,
+      closesAt: new Date("2026-11-17T02:00:00Z"),
+    });
+  });
+
+  test("the clocks going forward past a range's end close it at once", () => {
+    const night: BusinessHours = {
+      timeZone: "America/New_York",
+      week: { ...WEEKDAYS_IN("UTC").week, sun: [["00:00", "02:30"]] },
+    };
+    // 01:45 in New York; at 02:00 the clocks jump to 03:00, after the range.
+    expect(hoursState(night, at("2026-03-08T06:45:00Z"))).toEqual({
+      open: true,
+      closesAt: new Date("2026-03-08T07:00:00Z"),
+    });
+  });
+
+  test("a week open all the time never closes", () => {
+    const always: [string, string][] = [["00:00", "24:00"]];
+    const week = { mon: always, tue: always, wed: always, thu: always, fri: always };
+    const allWeek: BusinessHours = { timeZone: "UTC", week: { ...week, sat: always, sun: always } };
+    expect(hoursState(allWeek, at("2026-11-16T10:00:00Z"))).toEqual({ open: true, closesAt: null });
+  });
+
   test("hours in a zone the browser does not know are off", () => {
     expect(knownHours({ ...PARIS, timeZone: "Mars/Olympus_Mons" })).toBeNull();
     expect(knownHours(PARIS)).toBe(PARIS);

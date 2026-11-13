@@ -1,7 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { eq } from "drizzle-orm";
 import { DAY_RANGES_MAX, type Weekday } from "../../../packages/widget/src/shared.ts";
-import { isTimeZone } from "./analytics.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { businessHours } from "./db/schema.ts";
@@ -14,8 +13,11 @@ import {
   MEMBER_ERRORS,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { WORKSPACE_PREFIX } from "./member.ts";
+import type { Live } from "./live.ts";
+import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
+import { changeWorkspace } from "./messages.ts";
 import { maySetUp } from "./team.ts";
+import { TimeZone } from "./time.ts";
 
 const PATH = `${WORKSPACE_PREFIX}/{workspaceId}/business-hours`;
 
@@ -48,7 +50,7 @@ export const WidgetHoursSchema = z.object({ timeZone: z.string(), week: Week });
 export const BusinessHoursSchema = z
   .object({
     enabled: z.boolean(),
-    timeZone: z.string().refine(isTimeZone, "an IANA time zone, such as Europe/Paris"),
+    timeZone: TimeZone,
     week: Week,
   })
   .openapi("BusinessHours", {
@@ -72,7 +74,6 @@ export const BusinessHoursSchema = z
 
 type SavedHours = z.infer<typeof BusinessHoursSchema>;
 
-const params = z.object({ workspaceId: z.uuid() });
 const answer = jsonAnswer(
   "The business hours, or null when nobody saved them, which means off",
   BusinessHoursSchema.nullable(),
@@ -83,7 +84,7 @@ const getRoute = createRoute({
   path: PATH,
   security: SESSION_OR_SETUP_KEY,
   summary: "Get the business hours",
-  request: { params },
+  request: { params: workspaceParams },
   responses: { ...KEY_LIMITED, 200: answer, ...MEMBER_ERRORS },
 });
 
@@ -93,7 +94,7 @@ const putRoute = createRoute({
   security: SESSION_OR_SETUP_KEY,
   summary:
     "Replace the business hours. Outside these hours the widget shows the away message and when the team is back, and asks for an email: before the first message, or after it for a visitor who has chatted. Sites show it within 5 minutes. Owners, admins and Full access (`setup`) API keys only",
-  request: { params, body: jsonBody(BusinessHoursSchema) },
+  request: { params: workspaceParams, body: jsonBody(BusinessHoursSchema) },
   responses: { ...KEY_LIMITED, 200: answer, ...ROLE_WRITE_ERRORS },
 });
 
@@ -128,16 +129,9 @@ export async function saveBusinessHours(
 /**
  * Settings > Business hours. Every member reads them, and only an owner, an admin or a Setup key
  * changes them. The widget reads them with its appearance, so a save reaches sites as the
- * appearance's cache ends.
+ * appearance's cache ends. A save records `workspace.changed`, so open operator apps read them again.
  */
-export function registerBusinessHoursRoutes(app: App, db: Database): void {
-  app.use(putRoute.getRoutingPath(), async (c, next) => {
-    if (c.req.method === "PUT" && !maySetUp(c.get("actor"), c.get("memberRole"))) {
-      return c.json(FORBIDDEN, 403);
-    }
-    await next();
-  });
-
+export function registerBusinessHoursRoutes(app: App, db: Database, live: Live): void {
   app.openapi(getRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const saved = await withWorkspace(db, id, (tx) => readBusinessHours(tx, id));
@@ -145,9 +139,13 @@ export function registerBusinessHoursRoutes(app: App, db: Database): void {
   });
 
   app.openapi(putRoute, async (c) => {
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const hours = c.req.valid("json");
-    await withWorkspace(db, id, (tx) => saveBusinessHours(tx, id, hours));
+    await changeWorkspace(db, live, id, async (tx) => {
+      await saveBusinessHours(tx, id, hours);
+      return hours;
+    });
     return c.json(hours, 200);
   });
 }

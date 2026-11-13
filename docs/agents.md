@@ -70,7 +70,7 @@ Then:
 1. `get_conversation` reads the messages, internal notes among them with `kind: "note"`, who handles it, the visitor and the pages they saw. `format: "markdown"` gives a short transcript instead, which uses fewer tokens, with the assignee's name. `replySeconds` is the team's median first reply time over 30 days.
 2. `get_contact` reads who the visitor is: name, email, signed attributes, country, local time, pages, the team's note and other conversations.
 3. `list_saved_replies` lists the replies your team saved for common questions, such as a refund policy, with their `shortcut` and `body`. Use them to answer with the team's facts and in its words.
-4. `set_typing` shows "<name> is typing…" in the chat for 6 seconds. Call it again while you write.
+4. `set_typing` shows "<name> is typing..." in the chat for 6 seconds. Call it again while you write.
 5. `reply` with a `clientId` that you make. A retry with the same `clientId` cannot send twice.
 
 `reply` answers `status: "sent"` when the visitor got the message, and `status: "drafted"` when it waits for a person. Errors to expect:
@@ -114,7 +114,7 @@ When the drafts read well, an owner or admin changes the key or the connection t
 
 ## Labels
 
-Labels sort conversations, such as `billing` or `bug`, so the team can filter the Inbox by one and count them in Analytics. `list_labels` lists the team's labels with their `id`, `name` and `color`, and each conversation has `labelIds`. `label_conversation` puts one label on a conversation by its `id`, and `unlabel_conversation` takes it off. Each call changes that one label, so your bot never undoes a label a person just put on, and a repeat changes nothing. Only people add new labels, in the operator app, so a bot picks from the team's list. A webhook or `GET /v1/events` asked for `conversation.labeled` hears of each change.
+Labels sort conversations, such as `billing` or `bug`, so the team can filter the Inbox by one and count them in Analytics. `list_labels` lists the team's labels with their `id`, `name` and `color`, each conversation has `labelIds`, and `list_conversations` with a `label` lists only the conversations with that label. `label_conversation` puts one label on a conversation by its `id`, and `unlabel_conversation` takes it off. Each call changes that one label, so your bot never undoes a label a person just put on, and a repeat changes nothing. Only people add new labels, in the operator app, so a bot picks from the team's list. A webhook or `GET /v1/events` asked for `conversation.labeled` hears of each change.
 
 ## Pause all bots
 

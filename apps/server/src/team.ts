@@ -15,7 +15,6 @@ import {
   conversation,
   invite,
   operator,
-  operatorTwoFactor,
   verification,
   workspace,
   workspaceMember,
@@ -46,12 +45,12 @@ import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { type Mailer, recipientRejected } from "./mailer.ts";
-import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { conversationParams, OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import {
   assignConversation,
+  changeWorkspace,
   markHistoryRead,
   recordTeamChange,
-  recordWorkspaceChange,
 } from "./messages.ts";
 import { revokeGrantsOf } from "./oauth-grants.ts";
 import type { ImageUrls } from "./public-images.ts";
@@ -146,7 +145,6 @@ const inviteErrors = {
 
 const roleEnum = z.enum(["owner", "admin", "member"]);
 const invitedRole = z.enum(["admin", "member"]);
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const memberParams = workspaceParams.extend({ operatorId: z.uuid() });
 const inviteParams = workspaceParams.extend({ inviteId: z.uuid() });
 
@@ -175,7 +173,7 @@ const Settings = z
       .object({
         operators: z.object({ used: z.number(), limit: z.number() }),
         // Images and files, in bytes.
-        imageBytes: z.object({ used: z.number(), limit: z.number() }),
+        uploadBytes: z.object({ used: z.number(), limit: z.number() }),
       })
       .nullable(),
     // What a delete removes, and whether it is refused: on a self-hosted server, the only
@@ -183,7 +181,7 @@ const Settings = z
     deletion: z.object({
       conversations: z.number(),
       // Images and files.
-      images: z.number(),
+      uploads: z.number(),
       members: z.number(),
       onlyWorkspace: z.boolean(),
     }),
@@ -341,7 +339,7 @@ const assignRoute = createRoute({
   description:
     "Signed in, it also makes a person handle the conversation, as a reply does, so a key that sends directly stops replying. With an API key, it changes only the assignee.",
   request: {
-    params: workspaceParams.extend({ conversationId: z.uuid() }),
+    params: conversationParams,
     body: jsonBody(z.object({ operatorId: z.uuid().nullable() })),
   },
   responses: {
@@ -533,7 +531,7 @@ interface SettingsSources {
 async function deletionContents(tx: Transaction, workspaceId: string) {
   const counted = (table: typeof conversation | typeof attachment) =>
     tx.$count(table, eq(table.workspaceId, workspaceId));
-  const [conversations, images, members] = await Promise.all([
+  const [conversations, uploads, members] = await Promise.all([
     counted(conversation),
     counted(attachment),
     tx.$count(
@@ -541,7 +539,7 @@ async function deletionContents(tx: Transaction, workspaceId: string) {
       and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)),
     ),
   ]);
-  return { conversations, images, members };
+  return { conversations, uploads, members };
 }
 
 async function readSettings(
@@ -707,9 +705,10 @@ interface TeamOptions {
   keepsLastWorkspace: boolean;
 }
 
-/** Whether a member turned on two-step sign-in, from a left join of their row. */
-const TWO_FACTOR_ON_OFF = sql<"off" | "on">`case
-  when ${operatorTwoFactor.enabledAt} is null then 'off' else 'on' end`;
+/** Whether a member turned on two-step sign-in. */
+const TWO_FACTOR_ON_OFF = sql<
+  "off" | "on"
+>`case when ${operator.twoFactorOn} then 'on' else 'off' end`;
 
 /** The workspace's members, by name. */
 export function listMembers(tx: Transaction, workspaceId: string) {
@@ -724,7 +723,6 @@ export function listMembers(tx: Transaction, workspaceId: string) {
     })
     .from(workspaceMember)
     .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-    .leftJoin(operatorTwoFactor, eq(operatorTwoFactor.operatorId, operator.id))
     .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)))
     .orderBy(asc(operator.name));
 }
@@ -1003,14 +1001,13 @@ export function registerTeamRoutes(
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { name } = c.req.valid("json");
-    await withWorkspace(db, id, async (tx) => {
+    // Open apps read `me` again on the event.
+    const renamed = await changeWorkspace(db, live, id, async (tx) => {
       await tx.update(workspace).set({ name }).where(eq(workspace.id, id));
-      await recordWorkspaceChange(tx, id);
+      return { name };
     });
-    // Open apps read `me` again on the event. A lost signal only delays it until the next one.
-    live.wake(id, OPERATORS);
     auditChange("workspace.renamed", id, c.get("operatorId"));
-    return c.json({ name }, 200);
+    return c.json(renamed, 200);
   });
 
   app.openapi(assignRoute, async (c) => {

@@ -5,9 +5,7 @@ import type { App } from "./app.ts";
 import { workspaceMember } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { MEMBER_ERRORS, MEMBER_WRITE_ERRORS, okContent } from "./errors.ts";
-import { OPEN_WHILE_CLOSED, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
-
-const workspaceParams = z.object({ workspaceId: z.uuid() });
+import { OPEN_WHILE_CLOSED, WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 
 const GetStartedSchema = z
   .object({

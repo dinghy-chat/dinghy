@@ -87,7 +87,7 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | An encrypted copy of each backup in another place |
 | `BACKUP_HEARTBEAT_URL` | An address that `chat backup` pings after each backup that worked, such as a [healthchecks.io](https://healthchecks.io) check, so a monitor tells you when a night has none. Optional |
 | `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_SECRET` | Let visitors answer reply emails and transcripts by email. Optional, and set both or neither. See below |
-| `IMAGES_ORIGIN` | A separate origin for images and files that visitors and operators send, such as `https://files.example.com`. Optional. See below |
+| `UPLOADS_ORIGIN` | A separate origin for images and files that visitors and operators send, such as `https://files.example.com`. Optional. See below. `IMAGES_ORIGIN`, its old name, still works until the next release |
 | `TRUSTED_PROXY_HOPS` | See below |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent` |
 | `GEOIP_COUNTRY_FILE` | The country database for the live view, set by the Docker image to the copy of DB-IP's IP to Country Lite it downloads when it is built. Leave it as it is. Without the file, the live view shows no countries |
@@ -98,15 +98,15 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 
 Without a mail server, Dinghy still works. Operators sign in with a link that you make for them, with `docker compose exec app chat sign-in-link <email>`, and the sign-in page tells them to ask you. Inviting someone shows you a link instead of emailing it. Someone new who opens it signs in at once, and nothing checks their email, so send each invite link only to the person it is for.
 
-### A separate origin for images
+### A separate origin for uploads
 
 Images and files come from visitors you do not know. Dinghy re-encodes each image, serves every other file only as a download, and sends both with headers that stop scripts, but a second origin adds one more wall: nothing served there can ever act as the app. Dinghy does not scan files for viruses. To use one:
 
 1. Point a second hostname at this server, such as `files.example.com`. A different registrable domain, such as `example-files.com`, is stronger still, because it shares no cookies with your site.
 2. Have your proxy pass it to the app, like your main domain. The bundled Caddy serves only `CHAT_DOMAIN`, so this needs your own proxy (see below).
-3. Set `IMAGES_ORIGIN=https://files.example.com` in `.env`, and run `docker compose up -d`.
+3. Set `UPLOADS_ORIGIN=https://files.example.com` in `.env`, and run `docker compose up -d`.
 
-Image and file links then use that origin, with the same short-lived signed URLs. It answers only the image route, and the app's own origin stops serving images and files. Every image goes out with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: inline`, and only as PNG, JPEG or WebP, never as HTML or SVG. Every other file goes out with the same two headers, `Content-Disposition: attachment` and `Content-Type: application/octet-stream`, so a browser saves it and never shows it. A host site with a Content Security Policy must allow the new origin in `img-src` for the widget's images, and in `connect-src`, as the widget fetches a file to save it.
+Image and file links then use that origin, with the same short-lived signed URLs. It answers only the file route and the public images, and the app's own origin stops serving them. Every image goes out with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: inline`, and only as PNG, JPEG or WebP, never as HTML or SVG. Every other file goes out with the same two headers, `Content-Disposition: attachment` and `Content-Type: application/octet-stream`, so a browser saves it and never shows it. A host site with a Content Security Policy must allow the new origin in `img-src` for the widget's images, and in `connect-src`, as the widget fetches a file to save it.
 
 ### Replies by email
 
@@ -257,7 +257,9 @@ To grow, run more `web` instances behind one load balancer, and one or more `wor
 
 `chat workspaces` prints each workspace's ID, public key, state and name. The state is `active`, `suspended`, `read_only`, `waiting_payment` or `waiting_cloud`, the last three only on Dinghy Cloud. `chat setup` also prints the ID of the workspace it creates.
 
-`chat two-factor-reset` is for an operator who lost their authenticator app and their recovery codes. It turns two-step sign-in off, ends every session of the account and writes a `two_factor.reset` audit line. Whoever can read the operator's email can ask you for it, so check that the request comes from them, such as in person or on a call.
+`chat two-factor-reset` is for an operator who lost their authenticator app and their recovery codes. It turns two-step sign-in off, ends every session of the account and writes a `two_factor.reset` audit line. Whoever can read the operator's email can ask you for it, so check that the request comes from them, such as in person or on a call. With `SMTP_URL` and `MAIL_FROM` set, the command emails the operator that you turned it off. The app also emails an operator when they turn it on or off, use a recovery code, or enter too many wrong codes.
+
+The secrets of two-step sign-in are encrypted with a key derived from `AUTH_SECRET`. If you change `AUTH_SECRET`, they no longer open: an operator who has it on sees **This server cannot read your two-step sign-in** at the code page, and the API answers 500 `two_factor_unreadable`. Run `chat two-factor-reset <email>` for each of them, and they can turn it on again.
 
 A suspended workspace cannot send messages or images, its widget answers as if it did not exist, and its open chats close at once. Its operators can still sign in, read and export, and a banner tells them it is suspended. The reason is for you, and they do not see it.
 

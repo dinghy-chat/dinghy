@@ -4,7 +4,7 @@ import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import { type Actor, actorFields } from "./api-keys.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
@@ -15,6 +15,7 @@ import {
   apiKey,
   event,
   type LabeledPayload,
+  label,
   type MessagePayload,
   operator,
   RESPONSE_EXCERPT_MAX,
@@ -23,7 +24,13 @@ import {
   webhook,
   webhookDelivery,
 } from "./db/schema.ts";
-import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
+import {
+  type Database,
+  enterWorkspace,
+  lockWrites,
+  type Transaction,
+  withWorkspace,
+} from "./db/tenant.ts";
 import {
   errorAnswer,
   failure,
@@ -34,9 +41,8 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import type { Images } from "./images.ts";
 import { conversationView, messageView } from "./inbox.ts";
-import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import {
   authorNames,
   findConversation,
@@ -47,9 +53,10 @@ import {
 import { retryDelayMs } from "./retry.ts";
 import { requireSetUp, SETUP_DENIED } from "./team.ts";
 import { DAY_MS } from "./time.ts";
+import type { Uploads } from "./uploads.ts";
 
 /** At most this many webhooks per workspace. */
-const WEBHOOK_LIMIT = 5;
+export const WEBHOOK_LIMIT = 5;
 /** One request may take this long, from the connection to the answer's status. */
 const REQUEST_TIMEOUT_MS = 10_000;
 /** The first retry waits 30 seconds, doubling to an hour: 30 attempts last about a day. */
@@ -300,7 +307,6 @@ function webhookBody(
 // Routes ------------------------------------------------------------------------------------------
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}/webhooks";
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const webhookParams = workspaceParams.extend({ webhookId: z.uuid() });
 const EventList = z.array(z.enum(WEBHOOK_EVENTS)).min(1).max(WEBHOOK_EVENTS.length);
 const Url = z.string().trim().max(2000);
@@ -475,7 +481,10 @@ const replayRoute = createRoute({
 });
 
 const BAD_ENDPOINT = (reason: string) => failure("bad_endpoint", reason);
-const LIMIT = failure("webhook_limit", `A workspace can have ${WEBHOOK_LIMIT} webhooks.`);
+export const WEBHOOK_LIMIT_REACHED = failure(
+  "webhook_limit",
+  `A workspace can have ${WEBHOOK_LIMIT} webhooks.`,
+);
 const newSecret = () => `whsec_${randomBytes(32).toString("base64url")}`;
 
 const webhookColumns = {
@@ -578,7 +587,7 @@ export function createWebhooks({
       const secret = newSecret();
       const created = await withWorkspace(db, workspaceId, async (tx) => {
         // Two adds at once take turns, so neither can pass the limit.
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`webhooks:${workspaceId}`}))`);
+        await lockWrites(tx, "webhooks", workspaceId);
         const [existing] = await tx
           .select({ n: count() })
           .from(webhook)
@@ -757,7 +766,7 @@ export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhoo
       c.req.valid("json"),
     );
     if (made.kind === "bad_endpoint") return c.json(BAD_ENDPOINT(made.reason), 400);
-    if (made.kind === "limit") return c.json(LIMIT, 409);
+    if (made.kind === "limit") return c.json(WEBHOOK_LIMIT_REACHED, 409);
     return c.json({ ...made.webhook, secret: made.secret }, 201);
   });
 
@@ -851,15 +860,30 @@ export function labelChange(type: WebhookEvent, payload: unknown): WebhookSubjec
   return { labelId, added };
 }
 
+/** The labels the subjects name, by ID, as `{ id, name, color }`. */
+async function findLabels(tx: Transaction, workspaceId: string, subjects: WebhookSubject[]) {
+  const ids = [
+    ...new Set(subjects.flatMap((one) => (one.label === null ? [] : [one.label.labelId]))),
+  ];
+  const rows =
+    ids.length === 0
+      ? []
+      : await tx
+          .select({ id: label.id, name: label.name, color: label.color })
+          .from(label)
+          .where(and(eq(label.workspaceId, workspaceId), inArray(label.id, ids)));
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
 /**
  * The `data` of webhook events, in the same shapes as the operator API: the conversation, and the
- * message each names, in the subjects' order. It reads each kind of row in one query. A string says
- * why there is nothing to send. The webhooks and the key event stream both build their bodies with
- * this.
+ * message or label each names, in the subjects' order. It reads each kind of row in one query. A
+ * string says why there is nothing to send. The webhooks and the key event stream both build their
+ * bodies with this.
  */
 export async function webhookData(
   tx: Transaction,
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   workspaceId: string,
   subjects: WebhookSubject[],
 ): Promise<(Record<string, unknown> | string)[]> {
@@ -874,15 +898,20 @@ export async function webhookData(
     subjects.flatMap((one) => (one.messageId === null ? [] : [one.messageId])),
   );
   const names = await authorNames(tx, workspaceId, [...messages.values()]);
+  const labels = await findLabels(tx, workspaceId, subjects);
   return subjects.map((subject) => {
     const found = conversations.get(subject.conversationId);
     if (found === undefined) return "The conversation was deleted.";
     const data: Record<string, unknown> = { conversation: conversationView(found, null) };
-    if (subject.label !== null) return { ...data, ...subject.label };
+    if (subject.label !== null) {
+      const named = labels.get(subject.label.labelId);
+      if (named === undefined) return "The label was deleted.";
+      return { ...data, label: named, action: subject.label.added ? "added" : "removed" };
+    }
     if (subject.messageId === null) return data;
     const stored = messages.get(subject.messageId);
     if (stored === undefined) return "The message was deleted.";
-    return { ...data, message: messageView(images, workspaceId, names, stored) };
+    return { ...data, message: messageView(uploads, workspaceId, names, stored) };
   });
 }
 
@@ -922,7 +951,7 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     if (payload.conversationId !== undefined) {
       for (const type of types) {
         const eventId = randomUUID();
-        const label = labelChange(type, found.payload);
+        const labelChanged = labelChange(type, found.payload);
         for (const hook of hooks.filter((one) => one.events.includes(type))) {
           rows.push({
             workspaceId,
@@ -931,8 +960,8 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
             type,
             conversationId: payload.conversationId,
             messageId: type.startsWith("message.") ? (payload.messageId ?? null) : null,
-            labelId: label?.labelId ?? null,
-            labelAdded: label?.added ?? null,
+            labelId: labelChanged?.labelId ?? null,
+            labelAdded: labelChanged?.added ?? null,
             createdAt: found.createdAt,
           });
         }
@@ -1013,7 +1042,7 @@ const held = (row: ClaimedWebhook) =>
 /** What one claimed row sends: its URL, secret, ID and body, or a reason it sends nothing. */
 async function planWebhook(
   db: Database,
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   row: ClaimedWebhook,
 ): Promise<
   { url: string; secret: string; eventId: string; body: string; retryFrom: Date } | string
@@ -1052,7 +1081,7 @@ async function planWebhook(
       messageId: delivery.messageId,
       label: labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
     };
-    const [data] = await webhookData(tx, images, row.workspaceId, [subject]);
+    const [data] = await webhookData(tx, uploads, row.workspaceId, [subject]);
     // One subject has one answer.
     if (typeof data !== "object") return data ?? "The conversation was deleted.";
     return {
@@ -1092,13 +1121,18 @@ export async function deliverWebhook(
   db: Database,
   row: ClaimedWebhook,
   {
-    images,
+    uploads,
     policy,
     retryMs,
     stopping,
-  }: { images: Images | undefined; policy: WebhookPolicy; retryMs: number; stopping: AbortSignal },
+  }: {
+    uploads: Uploads | undefined;
+    policy: WebhookPolicy;
+    retryMs: number;
+    stopping: AbortSignal;
+  },
 ): Promise<void> {
-  const plan = await planWebhook(db, images, row);
+  const plan = await planWebhook(db, uploads, row);
   if (typeof plan === "string") {
     await finishWebhook(db, row, "failed", { status: null, error: plan, excerpt: null });
     return;

@@ -29,12 +29,8 @@ interface LineFields {
   /** Null until the server confirms it. Confirmed lines sort by this, and pending ones go last. */
   seq: bigint | null;
   body: string;
-  image: Message["image"];
-  /** The image was deleted after 12 months, and the line says so. */
-  imageRemoved: boolean;
-  download: Message["file"];
-  /** The file was deleted after 12 months, and the line says so. */
-  fileRemoved: boolean;
+  /** A removed one leaves its type, and the line says so. */
+  attachment: Message["attachment"];
   /** Held until the server confirms it, so a retry can send it again. */
   file?: File;
   fromVisitor: boolean;
@@ -66,10 +62,7 @@ function merge(lines: Line[], message: Message): Line[] {
     id: message.id,
     seq: BigInt(message.seq),
     body: message.body ?? "",
-    image: message.image,
-    imageRemoved: message.imageRemoved,
-    download: message.file,
-    fileRemoved: message.fileRemoved,
+    attachment: message.attachment,
     fromVisitor: message.fromVisitor,
     kind: message.kind,
     createdAt: message.createdAt,
@@ -170,7 +163,7 @@ export function useThreadLines({
   }, [load]);
 
   // An image's URL expires after 15 minutes. Loading from the start gives every line a new one.
-  const refreshImages = () => {
+  const refreshUploads = () => {
     if (Date.now() - lastRefresh.current < REFRESH_LIMIT_MS) return;
     lastRefresh.current = Date.now();
     reloadAll();
@@ -214,10 +207,7 @@ export function useThreadLines({
     id: newClientId(),
     seq: null,
     body,
-    image: null,
-    imageRemoved: false,
-    download: null,
-    fileRemoved: false,
+    attachment: null,
     fromVisitor: false,
     kind,
     authorOperatorId: meId,
@@ -266,7 +256,7 @@ export function useThreadLines({
     receipts,
     lines,
     loadFailure,
-    refreshImages,
+    refreshUploads,
     retry: (line: Line) => void deliver(line),
     sendText,
     sendFiles,

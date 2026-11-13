@@ -26,9 +26,9 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { createLive } from "./live.ts";
 import { localStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const logger = pino({ level: "silent" });
@@ -133,7 +133,7 @@ beforeAll(async () => {
     logger,
     auth,
     live,
-    images: createImages({
+    uploads: createUploads({
       store: localStore(tmpdir()),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
@@ -217,7 +217,7 @@ describe("reply modes", () => {
     })
       .png()
       .toBuffer();
-    const response = await app.request(inChat(chat.conversationId, "/images?clientId=img1"), {
+    const response = await app.request(inChat(chat.conversationId, "/uploads?clientId=img1"), {
       method: "POST",
       headers: { authorization: `Bearer ${key.token}`, "content-type": "image/png" },
       body: png,
@@ -1031,6 +1031,7 @@ describe("the event stream for keys", () => {
                 "welcome": false,
               },
               "message": {
+                "attachment": null,
                 "authorApiKeyId": null,
                 "authorName": null,
                 "authorOperatorId": null,
@@ -1040,13 +1041,9 @@ describe("the event stream for keys", () => {
                 "createdAt": "<time>",
                 "deleted": false,
                 "editedAt": null,
-                "file": null,
-                "fileRemoved": false,
                 "fromVisitor": true,
                 "handoff": null,
                 "id": "<id 4>",
-                "image": null,
-                "imageRemoved": false,
                 "kind": "text",
                 "mentions": [],
                 "readAt": null,
@@ -1102,6 +1099,7 @@ describe("the event stream for keys", () => {
                 "welcome": false,
               },
               "message": {
+                "attachment": null,
                 "authorApiKeyId": "<id 2>",
                 "authorName": "Support bot",
                 "authorOperatorId": null,
@@ -1111,13 +1109,9 @@ describe("the event stream for keys", () => {
                 "createdAt": "<time>",
                 "deleted": false,
                 "editedAt": null,
-                "file": null,
-                "fileRemoved": false,
                 "fromVisitor": false,
                 "handoff": null,
                 "id": "<id 6>",
-                "image": null,
-                "imageRemoved": false,
                 "kind": "text",
                 "mentions": [],
                 "readAt": null,
@@ -1173,6 +1167,7 @@ describe("the event stream for keys", () => {
                 "welcome": false,
               },
               "message": {
+                "attachment": null,
                 "authorApiKeyId": null,
                 "authorName": "Mona",
                 "authorOperatorId": "<id 9>",
@@ -1182,13 +1177,9 @@ describe("the event stream for keys", () => {
                 "createdAt": "<time>",
                 "deleted": false,
                 "editedAt": null,
-                "file": null,
-                "fileRemoved": false,
                 "fromVisitor": false,
                 "handoff": null,
                 "id": "<id 8>",
-                "image": null,
-                "imageRemoved": false,
                 "kind": "note",
                 "mentions": [],
                 "readAt": null,
@@ -1244,6 +1235,7 @@ describe("the event stream for keys", () => {
                 "welcome": false,
               },
               "message": {
+                "attachment": null,
                 "authorApiKeyId": "<id 2>",
                 "authorName": "Support bot",
                 "authorOperatorId": null,
@@ -1253,13 +1245,9 @@ describe("the event stream for keys", () => {
                 "createdAt": "<time>",
                 "deleted": false,
                 "editedAt": null,
-                "file": null,
-                "fileRemoved": false,
                 "fromVisitor": false,
                 "handoff": null,
                 "id": "<id 11>",
-                "image": null,
-                "imageRemoved": false,
                 "kind": "text",
                 "mentions": [],
                 "readAt": null,
@@ -1315,6 +1303,7 @@ describe("the event stream for keys", () => {
                 "welcome": false,
               },
               "message": {
+                "attachment": null,
                 "authorApiKeyId": "<id 2>",
                 "authorName": "Support bot",
                 "authorOperatorId": null,
@@ -1324,15 +1313,11 @@ describe("the event stream for keys", () => {
                 "createdAt": "<time>",
                 "deleted": false,
                 "editedAt": null,
-                "file": null,
-                "fileRemoved": false,
                 "fromVisitor": false,
                 "handoff": {
                   "operatorId": "<id 9>",
                 },
                 "id": "<id 13>",
-                "image": null,
-                "imageRemoved": false,
                 "kind": "note",
                 "mentions": [],
                 "readAt": null,

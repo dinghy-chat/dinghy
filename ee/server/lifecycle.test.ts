@@ -20,11 +20,11 @@ import {
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
-import { createImages } from "../../apps/server/src/images.ts";
 import { createSignals } from "../../apps/server/src/live.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { appendMessage } from "../../apps/server/src/messages.ts";
 import { localStore, type ObjectStore } from "../../apps/server/src/storage.ts";
+import { createUploads } from "../../apps/server/src/uploads.ts";
 import { startWorker } from "../../apps/server/src/worker.ts";
 import { purgeDeletedWorkspaces } from "../../apps/server/src/workspace-delete.ts";
 import { widgetWorkspace, workspaceKeys } from "../../apps/server/src/workspaces.ts";
@@ -234,7 +234,7 @@ async function paidWorkspace({ onboarding = false } = {}) {
     await appendMessage(tx, workspaceId, author, {
       clientId: "c2",
       attachment: {
-        kind: "image",
+        type: "image",
         attachmentId: randomUUID(),
         storageKey,
         byteSize: 3,
@@ -369,15 +369,15 @@ beforeAll(async () => {
   };
   directory = await mkdtemp(join(tmpdir(), "dinghy-lifecycle-"));
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
-  store = localStore(join(directory, "images"));
+  store = localStore(join(directory, "uploads"));
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
-  const images = createImages({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL });
+  const uploads = createUploads({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL });
   app = createApp({
     auth,
     db,
     logger,
     valkey,
-    images,
+    uploads,
     trustedProxyHops: 1,
     limitScale: 100,
     operatorDirectory: directory,
@@ -749,7 +749,7 @@ describe("the subscription lifecycle", () => {
     expect(response.status).toBe(409);
   });
 
-  test("after the 90 days, the workspace and all its data are deleted, including images", async () => {
+  test("after the 90 days, the workspace and all its data are deleted, including uploads", async () => {
     const paid = await paidWorkspace();
     await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");
     await lifecycle();
@@ -883,7 +883,7 @@ describe("the subscription lifecycle", () => {
       purgeDeletedWorkspaces(workerDb),
       purgeDeletedWorkspaces(workerDb),
     ]);
-    // The images are queued once, and none is removed twice.
+    // The uploads are queued once, and none is removed twice.
     expect(purged).toEqual([0, 0]);
     const queued = await owner.execute<{ count: string }>(
       sql`select count(*) as count from storage_deletion where workspace_id = ${paid.workspaceId}`,
@@ -1303,7 +1303,7 @@ describe("the lifecycle emails", () => {
 });
 
 describe("the owner's delete", () => {
-  test("cancels the subscription at once, then deletes the workspace and its images", async () => {
+  test("cancels the subscription at once, then deletes the workspace and its uploads", async () => {
     const paid = await paidWorkspace();
     const path = `/v1/operator/workspaces/${paid.workspaceId}`;
     const wrong = await request(app, "DELETE", path, {
@@ -1540,7 +1540,7 @@ describe("the owner's delete", () => {
 });
 
 /**
- * Runs the real worker until the workspace row is gone: billing first, then data, then images,
+ * Runs the real worker until the workspace row is gone: billing first, then data, then uploads,
  * then the row. The clock moves past the wait before billing is cleared. The self-hosted case,
  * with no cloud, is in apps/server/src/workspace-delete.test.ts.
  */
@@ -1566,7 +1566,7 @@ async function purgeUntilGone(workspaceId: string) {
   } finally {
     await worker.stop();
   }
-  expect(await readdir(join(directory, "images", workspaceId)).catch(() => [])).toEqual([]);
+  expect(await readdir(join(directory, "uploads", workspaceId)).catch(() => [])).toEqual([]);
 }
 
 async function leftoversCount(workspaceId: string) {

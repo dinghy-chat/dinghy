@@ -10,9 +10,9 @@ The sidebar has **Inbox**, **Contacts**, **Visitors**, **Analytics** and **Setti
 
 Messages can carry a little formatting, written as Markdown: `**bold**`, `*italic*`, `` `code` ``, a block between two lines of three backticks, `[words](https://example.com)` for a link, and lines that start with `-` or `1.` for a list. A web address becomes a link by itself. The buttons under the reply box, and Cmd or Ctrl with B, I, E and K, add the marks around the selected words. Visitors see the formatting in the widget and in reply emails, and can type it too. Links open in a new tab, and only `http`, `https` and `mailto` links work. HTML, images and headings stay plain text.
 
-To send an image or a file, paste it, drag it onto the chat, or select the attach button. An image must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels. A file can be a PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, up to 10 MB. A file shows as its name and size, and selecting it downloads it: Dinghy never opens a file in the page. Dinghy does not scan files for viruses, so open a visitor's file with the care you give an email attachment.
+To send an image or a file, paste it, drag it onto the chat, or select the attach button. An image must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels. A file can be a PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, up to 10 MB. A file shows as its name and size, and selecting it downloads it: Dinghy never opens a file in the page. Dinghy does not scan files for viruses, so open a visitor's file with the care you give an email attachment. A CSV can hold spreadsheet formulas that run when a spreadsheet app opens it, so open a visitor's CSV with the same care, or import it as plain text.
 
-Visitors can send the same files, unless an owner or admin turns off **Visitors can send files** in **Settings > Appearance**. Your team can always send files.
+Visitors can send the same files while **Visitors can send files** is on in **Settings > Appearance**. It is on for a new workspace, and off for one from before the release that added files, until an owner or admin turns it on. Your team can always send files.
 
 If a message shows "Not sent", select it to try again. A retry cannot create a second copy.
 
@@ -24,7 +24,7 @@ To answer a common question in your team's words, type **/** at the start of a w
 
 To sort conversations, such as billing questions or bug reports, give them labels. Press **L** in a conversation, or select the tag button beside **Who answers** or in the panel on the right. Type to find a label, and check or uncheck it. To make a new one, type its name and press Enter, or select **Add "name"**. Anyone on the team can do this, and a workspace keeps up to 100 labels. Labels show as small colored pills under the visitor's name in the conversation, and on its row in the Inbox. Owners and admins rename, recolor and delete them in [Settings > Labels](#labels).
 
-To act on several conversations at once, choose them in the list. Point at a row and check the box over its picture, press **X** on the open conversation, or hold Shift and check a box to choose every row between it and the last one you chose. On a phone, press and hold a row, then tap the others. While rows are chosen, a bar takes the search's place and shows how many are chosen. The box beside the count chooses every row the list shows. The bar's buttons **Close** them, **Assign** them and **Label** them, and the **More actions** menu has **Mark read** and, for owners and admins, **Delete**, which asks first with the count, such as "Delete 12 conversations?". In a read-only or suspended workspace, the bar has **Mark read** alone. Each conversation changes as it would alone, so webhooks and alerts behave the same. The cross or Esc clears the choice. There is no reply to many at once.
+To act on several conversations at once, choose them in the list. Point at a row and check the box over its picture, press **X** on the open conversation, or hold Shift and check a box to choose every row between it and the last one you chose. On a phone, press and hold a row, then tap the others. While rows are chosen, a bar takes the search's place and shows how many are chosen. The box beside the count chooses every row the list shows. The bar's buttons **Close** them, **Assign** them and **Label** them, and the **More actions** menu has **Mark read** and, for owners and admins, **Delete**, which asks first with the count, such as "Delete 12 conversations?". In a read-only or suspended workspace, the bar has **Mark read** alone. Each conversation changes as it would alone, so webhooks and alerts behave the same. A message then says how many changed, how many needed no change, such as a conversation that was closed already, and how many were skipped. If the connection fails partway, it says what was done before it. The cross or Esc clears the choice. There is no reply to many at once.
 
 When you close a conversation, a visitor who gave an email gets the whole conversation by email 5 minutes later, if someone on the team replied, with a link to continue the chat. Reopening it within the 5 minutes cancels it. **Email transcript** in the conversation's **…** menu sends it now. **Settings > Appearance** turns the email at close off.
 
@@ -34,7 +34,7 @@ When your server has [replies by email](self-hosting.md#replies-by-email) on, a 
 
 If two of you open the same conversation, each sees "… has this conversation open", so you do not answer twice. It means only that the conversation is open on their screen.
 
-While a visitor with an open conversation types in the widget, the thread shows their words in a faded bubble with moving dots, and the Inbox shows **typing…** in place of the last message. It goes when they send, empty the box, or stop for 6 seconds. Dinghy does not store these words. An owner or admin turns this off with **Show what visitors type before they send** in **Settings > Workspace**, and then the widget sends nothing until the visitor sends.
+While a visitor with an open conversation types in the widget, the thread shows their words in a faded bubble with moving dots, and the Inbox shows **typing...** in place of the last message. It goes when they send, empty the box, or stop for 6 seconds. Dinghy does not store these words. An owner or admin turns this off with **Show what visitors type before they send** in **Settings > Workspace**, and then the widget sends nothing until the visitor sends.
 
 **Visitors** shows who is on your site now: a world map with a yellow dot for each country, larger with more people, and below it each open page with its country, the visitor's local time, the page, how long they have been on the site, their device and where they came from. A visitor who has chatted shows their name and **Chatting**, which opens their conversation. The number next to **Visitors** in the sidebar counts them. A tab leaves the list a minute and a half after it closes or goes to the background. [What the widget sends](add-to-your-site.md#what-operators-see-about-a-visitor) explains what this collects.
 
@@ -135,9 +135,13 @@ To turn it on, open **Profile**, select **Turn on** under **Two-step sign-in**, 
 
 Each new sign-in then opens **Enter your code** after the link. Nothing else in the app works until you enter a code from the app or a recovery code. A code works once. After 5 wrong codes in 15 minutes, Dinghy signs you out and refuses every code until 15 minutes after the first wrong one.
 
+**Profile** shows how many recovery codes you have left. To replace them, select **New recovery codes** and enter a code from the app. Dinghy shows 10 new codes, once, and the old ones stop working.
+
 To turn it off, select **Turn off** and enter a code from the app or a recovery code. Sessions that never passed the check end.
 
 **Settings > Team** shows who has it on.
+
+When the server can send email, Dinghy emails you when two-step sign-in is turned on or off, when a recovery code is used, and when too many wrong codes sign you out. If you did not do it, someone may be able to read your email.
 
 If you lose your phone and your recovery codes, ask the person who runs your Dinghy server to run `chat two-factor-reset <email>`, as [Self-hosting](self-hosting.md#common-commands) shows. It turns two-step sign-in off and ends your sessions. On Dinghy Cloud, write to hello@dinghy.chat. Support resets it only with proof from outside your mailbox, such as the invoice number and the last four digits of the card, because anyone who reads your mailbox already has the first step.
 
@@ -193,7 +197,7 @@ Someone in two workspaces switches between them with the workspace name at the t
 
 **Settings > Business hours** says when your team answers. Owners and admins see it. Turn on **Use business hours**, pick the **Time zone**, which starts as your browser's, and give each day up to 3 ranges, such as 9:00 to 12:30 and 14:00 to 18:00. A day with no range is closed, and a range that ends at 00:00 runs until midnight.
 
-Outside these hours, the chat's header shows your away message from **Settings > Appearance** and "We're back Monday at 9:00 AM", on the visitor's own clock, in place of **Online** or the usual reply time, even when a member is online. It asks for the visitor's email before the first message, or after it for a visitor who has chatted, whatever the email setting says, so your reply can reach them. Visitors can still write, and nothing is added to the conversation. Inside the hours, the header works as before. Pages of your site that open after a save follow the change within 5 minutes.
+Outside these hours, the chat's header shows your away message from **Settings > Appearance** and "We're back Monday at 9:00 AM", on the visitor's own clock and with the date when that is more than 6 days away, in place of **Online** or the usual reply time, even when a member is online. It asks for the visitor's email before the first message, or after it for a visitor who has chatted, whatever the email setting says, so your reply can reach them. Visitors can still write, and nothing is added to the conversation. Inside the hours, the header works as before. Pages of your site that open after a save follow the change within 5 minutes.
 
 ## The other settings
 

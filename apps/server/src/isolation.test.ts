@@ -46,11 +46,11 @@ import {
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { visitorAuthorId } from "./identity.ts";
-import { createImages } from "./images.ts";
 import { createReplyAddress } from "./inbound-email.ts";
 import { appendMessage } from "./messages.ts";
 import { createPush } from "./push.ts";
 import { localStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { emailStopUrl } from "./visitor-email.ts";
 import { signature } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
@@ -95,7 +95,7 @@ interface VisitorWorld {
   id: string;
   token: string;
   conversationId: string;
-  image: { url: string };
+  attachment: { url: string };
 }
 
 /** A body that invites a new email as a member. */
@@ -146,6 +146,28 @@ interface World {
 }
 
 const inWorkspace = (id: string, path = "") => `/v1/operator/workspaces/${id}${path}`;
+
+/**
+ * Sends a request on the other workspace's row under each workspace's path, and checks that both
+ * answer 404 and that `read` finds the row as it was.
+ */
+async function refusedInBoth(
+  { operator, anna, a, b }: World,
+  method: string,
+  path: string,
+  read: () => Promise<unknown>,
+  body?: unknown,
+) {
+  const before = await read();
+  for (const space of [a.id, b.id]) {
+    expect((await operator(anna, method, inWorkspace(space, path), body)).status).toBe(404);
+  }
+  expect(await read()).toEqual(before);
+}
+
+const savedReplyRow = (id: string) => owner.select().from(savedReply).where(eq(savedReply.id, id));
+const labelRow = (id: string) => owner.select().from(label).where(eq(label.id, id));
+const webhookRow = (id: string) => owner.select().from(webhook).where(eq(webhook.id, id));
 
 /** A draft by the key, waiting in the conversation, written straight to the database. */
 async function draftIn(workspaceId: string, conversationId: string, apiKeyId: string) {
@@ -296,9 +318,9 @@ const ATTACKS: Record<string, Attack> = {
     expect(text).not.toContain(secrets.b);
     expect((await widget(b.publicKey, "GET", "stream", one.token, SITE_B)).status).toBe(401);
   },
-  "POST /v1/widget/:key/images": async ({ server, b, one }) => {
+  "POST /v1/widget/:key/uploads": async ({ server, b, one }) => {
     const before = await owner.select().from(attachment).where(eq(attachment.workspaceId, b.id));
-    const response = await server.request(`/v1/widget/${b.publicKey}/images?clientId=x1`, {
+    const response = await server.request(`/v1/widget/${b.publicKey}/uploads?clientId=x1`, {
       method: "POST",
       headers: {
         origin: SITE_B,
@@ -396,13 +418,13 @@ const ATTACKS: Record<string, Attack> = {
       const parsed = new URL(url);
       return `${parsed.pathname}${parsed.search}`;
     };
-    expect((await server.request(local(one.image.url))).status).toBe(200);
+    expect((await server.request(local(one.attachment.url))).status).toBe(200);
     // The other workspace's ID with this signature, and this ID with the other's file.
-    const moved = local(one.image.url).replace(a.id, b.id);
+    const moved = local(one.attachment.url).replace(a.id, b.id);
     expect((await server.request(moved)).status).toBe(404);
-    const attachmentB = new URL(other.image.url).pathname.split("/").at(-1) ?? "";
-    const swapped = local(one.image.url).replace(
-      new URL(one.image.url).pathname.split("/").at(-1) ?? "",
+    const attachmentB = new URL(other.attachment.url).pathname.split("/").at(-1) ?? "";
+    const swapped = local(one.attachment.url).replace(
+      new URL(one.attachment.url).pathname.split("/").at(-1) ?? "",
       attachmentB,
     );
     expect((await server.request(swapped)).status).toBe(404);
@@ -639,7 +661,7 @@ const ATTACKS: Record<string, Attack> = {
       .where(and(eq(event.workspaceId, b.id), eq(event.kind, "transcript.requested")));
     expect(requested).toEqual([]);
   },
-  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/images": async ({
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/uploads": async ({
     server,
     anna,
     a,
@@ -647,7 +669,7 @@ const ATTACKS: Record<string, Attack> = {
   }) => {
     const before = await owner.select().from(attachment);
     const response = await server.request(
-      inWorkspace(a.id, `/conversations/${other.conversationId}/images?clientId=x2`),
+      inWorkspace(a.id, `/conversations/${other.conversationId}/uploads?clientId=x2`),
       {
         method: "POST",
         headers: { cookie: anna.cookie, origin: ORIGIN, "content-type": "image/png" },
@@ -954,6 +976,15 @@ const ATTACKS: Record<string, Attack> = {
     const answer = await as(anna, "POST", "/v1/operator/two-factor/check", { code: "000000" });
     expect(answer.status).toBe(409);
   },
+  "POST /v1/operator/two-factor/recovery-codes": async ({ operator: as, anna, bea }) => {
+    const before = await pendingSetupOf(bea.id);
+    // It acts only on the caller's own account, where it is off.
+    const answer = await as(anna, "POST", "/v1/operator/two-factor/recovery-codes", {
+      code: "000000",
+    });
+    expect(answer.status).toBe(409);
+    expect(await pendingSetupOf(bea.id)).toEqual(before);
+  },
   "POST /v1/operator/two-factor/disable": async ({ operator: as, anna, bea }) => {
     const before = await pendingSetupOf(bea.id);
     const answer = await as(anna, "POST", "/v1/operator/two-factor/disable", { code: "000000" });
@@ -1258,7 +1289,7 @@ const ATTACKS: Record<string, Attack> = {
     expect(text).toContain(secrets.two);
     expect(text).not.toContain(other.id);
     expect(text).not.toContain(other.conversationId);
-    expect(text).not.toContain(new URL(other.image.url).pathname.split("/").at(-1));
+    expect(text).not.toContain(new URL(other.attachment.url).pathname.split("/").at(-1));
     expect(text).not.toContain(bea.id);
     expect(text).not.toContain(`stop-of-${b.id}`);
     // The first row in the table, which a query with no filter would take.
@@ -1474,23 +1505,14 @@ const ATTACKS: Record<string, Attack> = {
     expect(rows.map((row) => row.shortcut)).not.toContain("crossing");
   },
   "PATCH /v1/operator/workspaces/:workspaceId/saved-replies/:savedReplyId": async (world) => {
-    const { operator: as, anna, a, b, replyB } = world;
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/saved-replies/${replyB.id}`);
-      expect((await as(anna, "PATCH", path, { body: "changed across" })).status).toBe(404);
-    }
-    const [row] = await owner.select().from(savedReply).where(eq(savedReply.id, replyB.id));
-    expect(row?.body).toBe(replyB.body);
+    const path = `/saved-replies/${world.replyB.id}`;
+    await refusedInBoth(world, "PATCH", path, () => savedReplyRow(world.replyB.id), {
+      body: "changed across",
+    });
   },
   "DELETE /v1/operator/workspaces/:workspaceId/saved-replies/:savedReplyId": async (world) => {
-    const { operator: as, anna, a, b, replyB } = world;
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/saved-replies/${replyB.id}`);
-      expect((await as(anna, "DELETE", path)).status).toBe(404);
-    }
-    expect(await owner.select().from(savedReply).where(eq(savedReply.id, replyB.id))).toHaveLength(
-      1,
-    );
+    const path = `/saved-replies/${world.replyB.id}`;
+    await refusedInBoth(world, "DELETE", path, () => savedReplyRow(world.replyB.id));
   },
   "GET /v1/operator/workspaces/:workspaceId/labels": async (world) => {
     const { operator: as, withKey, anna, a, b, keyA, labelB } = world;
@@ -1510,22 +1532,15 @@ const ATTACKS: Record<string, Attack> = {
     expect(rows.map((row) => row.name)).not.toContain("Planted");
   },
   "PATCH /v1/operator/workspaces/:workspaceId/labels/:labelId": async (world) => {
-    const { operator: as, anna, a, b, labelB } = world;
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/labels/${labelB.id}`);
-      expect((await as(anna, "PATCH", path, { name: "Renamed across" })).status).toBe(404);
-    }
-    const [row] = await owner.select().from(label).where(eq(label.id, labelB.id));
-    expect(row?.name).toBe(labelB.name);
+    const path = `/labels/${world.labelB.id}`;
+    await refusedInBoth(world, "PATCH", path, () => labelRow(world.labelB.id), {
+      name: "Renamed across",
+    });
   },
   "DELETE /v1/operator/workspaces/:workspaceId/labels/:labelId": async (world) => {
-    const { operator: as, anna, a, b, labelB } = world;
-    for (const space of [a.id, b.id]) {
-      expect((await as(anna, "DELETE", inWorkspace(space, `/labels/${labelB.id}`))).status).toBe(
-        404,
-      );
-    }
-    expect(await owner.select().from(label).where(eq(label.id, labelB.id))).toHaveLength(1);
+    await refusedInBoth(world, "DELETE", `/labels/${world.labelB.id}`, () =>
+      labelRow(world.labelB.id),
+    );
   },
   "PUT /v1/operator/workspaces/:workspaceId/conversations/:conversationId/labels/:labelId": async ({
     operator: as,
@@ -1629,13 +1644,8 @@ const ATTACKS: Record<string, Attack> = {
     expect(await owner.select().from(webhook).where(eq(webhook.id, hookB.id))).toHaveLength(1);
   },
   "POST /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/rotate-secret": async (world) => {
-    const { operator: as, anna, a, b, hookB } = world;
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/webhooks/${hookB.id}/rotate-secret`);
-      expect((await as(anna, "POST", path, {})).status).toBe(404);
-    }
-    const [row] = await owner.select().from(webhook).where(eq(webhook.id, hookB.id));
-    expect(row?.secret).toBe(hookB.secret);
+    const path = `/webhooks/${world.hookB.id}/rotate-secret`;
+    await refusedInBoth(world, "POST", path, () => webhookRow(world.hookB.id), {});
   },
   "POST /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/test": async (world) => {
     const { operator: as, anna, a, b, hookB } = world;
@@ -2082,17 +2092,14 @@ const ATTACKS: Record<string, Attack> = {
     expect(await inB()).toEqual(before);
   },
   "PATCH /v1/operator/workspaces/:workspaceId/api-keys/:keyId": async (world) => {
-    const { operator: as, withKey, anna, a, b, keyA, keyB } = world;
+    const { withKey, a, keyA, keyB } = world;
     const body = { name: "Stolen", replyMode: "send" };
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/api-keys/${keyB.id}`);
-      expect((await as(anna, "PATCH", path, body)).status).toBe(404);
-    }
+    const keyBRow = () => owner.select().from(apiKey).where(eq(apiKey.id, keyB.id));
+    await refusedInBoth(world, "PATCH", `/api-keys/${keyB.id}`, keyBRow, body);
     expect(
       (await withKey(keyA.token, "PATCH", inWorkspace(a.id, `/api-keys/${keyA.id}`), body)).status,
     ).toBe(403);
-    const [row] = await owner.select().from(apiKey).where(eq(apiKey.id, keyB.id));
-    expect(row?.name).toBe("Helper B");
+    expect((await keyBRow())[0]?.name).toBe("Helper B");
   },
 };
 
@@ -2138,7 +2145,7 @@ async function setupToolsStayHome({ withKey, setupA, other, hookB, a, b }: World
 }
 
 const pushed: string[] = [];
-const signer = createImages({
+const signer = createUploads({
   store: localStore(tmpdir()),
   secret: AUTH_SECRET,
   publicUrl: PUBLIC_URL,
@@ -2157,7 +2164,7 @@ async function buildWorld(db: Database): Promise<World> {
     },
     auth,
     db,
-    images: createImages({
+    uploads: createUploads({
       store: localStore(await mkdtemp(join(tmpdir(), "dinghy-isolation-"))),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
@@ -2208,20 +2215,20 @@ async function buildWorld(db: Database): Promise<World> {
     });
     const { conversationId } = (await sent.json()) as { conversationId: string };
     const uploaded = await server.request(
-      `/v1/widget/${space.publicKey}/images?clientId=${randomUUID()}`,
+      `/v1/widget/${space.publicKey}/uploads?clientId=${randomUUID()}`,
       {
         method: "POST",
         headers: { origin: site, authorization: `Bearer ${token}`, "content-type": "image/png" },
         body: await png(),
       },
     );
-    const { image } = (await uploaded.json()) as { image: { url: string } };
+    const { attachment } = (await uploaded.json()) as { attachment: { url: string } };
     // A page in the visitor's journey, whose title holds their secret.
     await widget(space.publicKey, "POST", "page", token, site, {
       page: `${site}/journey`,
       title: `${text}, the page`,
     });
-    return { id: visitorId, token, conversationId, image };
+    return { id: visitorId, token, conversationId, attachment };
   };
 
   const anna = await person(a.id, "Anna");
@@ -2522,7 +2529,7 @@ describe("the list of routes", () => {
       alerts: { emailAvailable: true, secret: AUTH_SECRET },
       auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
       db,
-      images: createImages({
+      uploads: createUploads({
         store: localStore(tmpdir()),
         secret: AUTH_SECRET,
         publicUrl: PUBLIC_URL,
@@ -2630,7 +2637,7 @@ describe("the worker with no row-level security", () => {
     const plan = await planDelivery(worker, mine, {
       publicUrl: PUBLIC_URL,
       secret: AUTH_SECRET,
-      imageOrigin: PUBLIC_URL,
+      uploadsOrigin: PUBLIC_URL,
     });
     expect(plan?.channel === "push" && plan.payload.title).toBe("The right workspace");
   });

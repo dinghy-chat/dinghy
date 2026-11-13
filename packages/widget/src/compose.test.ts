@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import {
   acceptedFiles,
   fileExtension,
@@ -7,7 +7,9 @@ import {
   isComposing,
   newClientId,
   refusalProblem,
+  saveWithRefresh,
   uploadProblem,
+  urlWaiter,
 } from "./compose.ts";
 
 test("a client ID is 32 hex characters, new each time", () => {
@@ -47,10 +49,14 @@ test("other files go by their extension, up to 10 MB", () => {
   expect(acceptedFiles(true)).toContain(",.pdf,");
 });
 
-test("a file's size reads in KB under a megabyte, and in MB above", () => {
-  expect(fileSize(10)).toBe("1 KB");
-  expect(fileSize(340 * 1024)).toBe("340 KB");
-  expect(fileSize(2.45 * 1024 * 1024)).toBe("2.5 MB");
+test("a file's size reads in kB under a megabyte, and in MB above, in the reader's language", () => {
+  expect(fileSize(10, "en")).toBe("1 kB");
+  expect(fileSize(340 * 1024, "en")).toBe("340 kB");
+  expect(fileSize(2.45 * 1024 * 1024, "en")).toBe("2.5 MB");
+  expect(fileSize(2 * 1024 * 1024, "en")).toBe("2.0 MB");
+  expect(fileSize(340 * 1024, "fr")).toBe("340\u202fko");
+  expect(fileSize(2.45 * 1024 * 1024, "fr")).toBe("2,5\u202fMo");
+  expect(fileSize(2.45 * 1024 * 1024, "es")).toBe("2,5 MB");
 });
 
 test("a confirmed line goes in commit order, before the pending ones", () => {
@@ -84,4 +90,94 @@ test("a refused upload's text follows the server's error code", () => {
   expect(refusalProblem("not_an_image", pdf)).toBe("imageWrongType");
   expect(refusalProblem("type_not_allowed", png)).toBe("imageFailed");
   expect(refusalProblem("too_many_pixels", png)).toBe("imageFailed");
+});
+
+/** Answers each URL with its status, and records the URLs fetched and the names saved. */
+function fakeFiles(statuses: Record<string, number>, whileFetching = (_url: string) => {}) {
+  const fetched: string[] = [];
+  const saved: string[] = [];
+  vi.stubGlobal("fetch", async (url: string) => {
+    fetched.push(url);
+    whileFetching(url);
+    return new Response("file", { status: statuses[url] ?? 500 });
+  });
+  vi.stubGlobal("document", {
+    createElement: () => ({
+      click(this: { download: string }) {
+        saved.push(this.download);
+      },
+    }),
+  });
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:file");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  return { fetched, saved };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+test("a file saves from its URL without asking for a new one", async () => {
+  const files = fakeFiles({ "/old": 200 });
+  const newUrl = vi.fn(async () => "/new");
+  await saveWithRefresh("/old", "a.pdf", newUrl);
+  expect(files.saved).toEqual(["a.pdf"]);
+  expect(newUrl).not.toHaveBeenCalled();
+});
+
+test("an expired URL asks once for a new one and saves with it", async () => {
+  const files = fakeFiles({ "/old": 404, "/new": 200 });
+  await saveWithRefresh("/old", "a.pdf", async () => "/new");
+  expect(files.fetched).toEqual(["/old", "/new"]);
+  expect(files.saved).toEqual(["a.pdf"]);
+});
+
+test("a second expired URL ends the click", async () => {
+  const files = fakeFiles({ "/old": 404, "/new": 404 });
+  const newUrl = vi.fn(async () => "/new");
+  await saveWithRefresh("/old", "a.pdf", newUrl);
+  expect(newUrl).toHaveBeenCalledOnce();
+  expect(files.saved).toEqual([]);
+});
+
+test("any other failure ends the click without a new URL", async () => {
+  const files = fakeFiles({ "/old": 500 });
+  const newUrl = vi.fn(async () => "/new");
+  await saveWithRefresh("/old", "a.pdf", newUrl);
+  expect(newUrl).not.toHaveBeenCalled();
+  expect(files.saved).toEqual([]);
+});
+
+test("a waiter answers the next URL offered, after asking for it", async () => {
+  const urls = urlWaiter("/old");
+  const askForUrls = vi.fn();
+  const next = urls.wait("/old", askForUrls);
+  expect(askForUrls).toHaveBeenCalledOnce();
+  urls.offer("/new");
+  expect(await next).toBe("/new");
+});
+
+test("a waiter never answers the expired URL or an empty one", async () => {
+  const urls = urlWaiter("/old");
+  const askForUrls = vi.fn();
+  const next = urls.wait("/old", askForUrls);
+  expect(askForUrls).toHaveBeenCalledOnce();
+  urls.offer("");
+  urls.offer("/old");
+  urls.offer("/new");
+  expect(await next).toBe("/new");
+});
+
+test("a URL that changed during the failed fetch saves without waiting for another", async () => {
+  const urls = urlWaiter("/old");
+  // Another file's refresh brings new URLs before this file's 404 arrives.
+  const files = fakeFiles({ "/old": 404, "/new": 200 }, (url) => {
+    if (url === "/old") urls.offer("/new");
+  });
+  const askForUrls = vi.fn();
+  await saveWithRefresh("/old", "a.pdf", () => urls.wait("/old", askForUrls));
+  expect(askForUrls).not.toHaveBeenCalled();
+  expect(files.fetched).toEqual(["/old", "/new"]);
+  expect(files.saved).toEqual(["a.pdf"]);
 });

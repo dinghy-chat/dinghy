@@ -18,10 +18,10 @@ import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { event, invite, message, subscription, workspace, workspaceMember } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { createLive, type Live } from "./live.ts";
 import { localStore } from "./storage.ts";
 import { setSuspended } from "./suspension.ts";
+import { createUploads } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -189,7 +189,7 @@ describe("suspending a workspace", () => {
     expect(reply.status).toBe(403);
     expect(await reply.json()).toMatchObject({ error: { code: "suspended" } });
     const image = await app.request(
-      `${inSpace}/conversations/${conversationId}/images?clientId=r2`,
+      `${inSpace}/conversations/${conversationId}/uploads?clientId=r2`,
       { method: "POST", headers: { cookie, origin: ORIGIN, "content-type": "image/png" } },
     );
     expect(image.status).toBe(403);
@@ -276,16 +276,16 @@ test("chat workspaces lists the ID that the suspend and export commands take", a
 
 describe("a suspension that lands while a message is on its way", () => {
   let directory: string;
-  let withImages: App;
+  let withUploads: App;
 
   beforeAll(async () => {
     directory = await mkdtemp(join(tmpdir(), "dinghy-suspension-"));
-    withImages = createApp({
+    withUploads = createApp({
       auth,
       db,
       logger,
       checks: { postgres: ok, valkey: ok },
-      images: createImages({
+      uploads: createUploads({
         store: localStore(directory),
         secret: "a-test-secret",
         publicUrl: PUBLIC_URL,
@@ -303,12 +303,12 @@ describe("a suspension that lands while a message is on its way", () => {
     await owner
       .insert(workspaceMember)
       .values({ workspaceId: created.id, operatorId, role: "owner" });
-    const visitor = await withImages.request(`/v1/widget/${created.publicKey}/visitors`, {
+    const visitor = await withUploads.request(`/v1/widget/${created.publicKey}/visitors`, {
       method: "POST",
       headers: { origin: SITE },
     });
     const { token } = (await visitor.json()) as { token: string };
-    const first = await withImages.request(`/v1/widget/${created.publicKey}/messages`, {
+    const first = await withUploads.request(`/v1/widget/${created.publicKey}/messages`, {
       method: "POST",
       headers: {
         origin: SITE,
@@ -385,13 +385,13 @@ describe("a suspension that lands while a message is on its way", () => {
       const image = await gatedImage();
       const url =
         sender === "visitor"
-          ? `/v1/widget/${created.publicKey}/images?clientId=slow`
-          : `/v1/operator/workspaces/${created.id}/conversations/${conversationId}/images?clientId=slow`;
+          ? `/v1/widget/${created.publicKey}/uploads?clientId=slow`
+          : `/v1/operator/workspaces/${created.id}/conversations/${conversationId}/uploads?clientId=slow`;
       const headers =
         sender === "visitor"
           ? { origin: SITE, authorization: `Bearer ${token}` }
           : { origin: ORIGIN, cookie };
-      const response = withImages.request(url, {
+      const response = withUploads.request(url, {
         method: "POST",
         headers,
         body: image.body,
@@ -416,8 +416,8 @@ describe("a suspension that lands while a message is on its way", () => {
     const { created, conversationId } = await setUp();
     const before = await messageCount(created.id);
     const image = await gatedImage();
-    const response = withImages.request(
-      `/v1/operator/workspaces/${created.id}/conversations/${conversationId}/images?clientId=slow`,
+    const response = withUploads.request(
+      `/v1/operator/workspaces/${created.id}/conversations/${conversationId}/uploads?clientId=slow`,
       {
         method: "POST",
         headers: { origin: ORIGIN, cookie },
@@ -453,7 +453,7 @@ describe("a suspension that lands while a message is on its way", () => {
         await client.query("UPDATE workspace SET suspended_at = now() WHERE id = $1", [created.id]);
         const response =
           sender === "visitor"
-            ? withImages.request(`/v1/widget/${created.publicKey}/messages`, {
+            ? withUploads.request(`/v1/widget/${created.publicKey}/messages`, {
                 method: "POST",
                 headers: {
                   origin: SITE,
@@ -462,7 +462,7 @@ describe("a suspension that lands while a message is on its way", () => {
                 },
                 body: JSON.stringify({ clientId: "racing", body: "Hi" }),
               })
-            : withImages.request(
+            : withUploads.request(
                 `/v1/operator/workspaces/${created.id}/conversations/${conversationId}/messages`,
                 {
                   method: "POST",
@@ -493,7 +493,7 @@ describe("a suspension that lands while a message is on its way", () => {
         "INSERT INTO subscription (workspace_id, stripe_customer_id, read_only_at) VALUES ($1, 'cus_test', now())",
         [created.id],
       );
-      const response = withImages.request(
+      const response = withUploads.request(
         `/v1/operator/workspaces/${created.id}/conversations/${conversationId}/messages`,
         {
           method: "POST",

@@ -14,7 +14,7 @@ import {
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { OPEN_ALWAYS } from "./member.ts";
+import { OPEN_ALWAYS, workspaceParams } from "./member.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 
 /** Whether `workspaceId` is the only workspace on the server that is not deleted. */
@@ -45,7 +45,7 @@ const deleteRoute = createRoute({
   security: SESSION,
   summary: "Delete a workspace and all its data, now",
   request: {
-    params: z.object({ workspaceId: z.uuid() }),
+    params: workspaceParams,
     body: {
       required: true,
       content: {

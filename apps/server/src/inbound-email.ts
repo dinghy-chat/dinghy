@@ -10,7 +10,6 @@ import { conversation, replyAddress, visitor, widgetSettings } from "./db/schema
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
-import type { Images } from "./images.ts";
 import type { Limits } from "./limits.ts";
 import { type Signals, wakeConversation } from "./live.ts";
 import { closedFailure } from "./member.ts";
@@ -24,6 +23,7 @@ import {
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
 import { HOUR_SECONDS, MINUTE_SECONDS } from "./time.ts";
+import type { Uploads } from "./uploads.ts";
 import { REPLY_MARKERS, visitorWords } from "./visitor-words.ts";
 import { signatureDigest } from "./webhooks.ts";
 
@@ -361,7 +361,7 @@ const inboundEmailRoute = createRoute({
 interface InboundOptions {
   db: Database;
   inbound: InboundEmail;
-  images: Images | undefined;
+  uploads: Uploads | undefined;
   limits: Limits;
   live: Signals;
   rateLimit: RateLimit;
@@ -472,7 +472,7 @@ const withNote = (parts: string[], note: string) => {
  * conversation. The text comes last, so it can say which attachments were left out.
  */
 async function addMessages(
-  { db, images, limits }: InboundOptions,
+  { db, uploads, limits }: InboundOptions,
   workspaceId: string,
   address: FoundAddress,
   email: Email,
@@ -498,7 +498,7 @@ async function addMessages(
       ),
     );
   const clientId = `email:${sha256Hex(email.messageId ?? body)}`;
-  const files = await addAttachments(images, workspaceId, address, email, (index, attachment) =>
+  const files = await addAttachments(uploads, workspaceId, address, email, (index, attachment) =>
     append(`${clientId}:${index + 1}`, { attachment }),
   );
   if (files === "busy") return files;
@@ -528,7 +528,7 @@ const isSmallInlineImage = ({ related, mimeType, content }: Attachment) =>
  * forwarder's retry brings the rest.
  */
 async function addAttachments(
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   workspaceId: string,
   address: FoundAddress,
   email: Email,
@@ -538,12 +538,12 @@ async function addAttachments(
   let leftOut = 0;
   const attachments = email.attachments.filter((one) => !isSmallInlineImage(one));
   for (const [index, { content, filename }] of attachments.entries()) {
-    if (images === undefined || index >= ATTACHMENTS_MAX) {
+    if (uploads === undefined || index >= ATTACHMENTS_MAX) {
       leftOut += 1;
       continue;
     }
     const bytes = typeof content === "string" ? Buffer.from(content) : new Uint8Array(content);
-    const kept = await images.receiveBytes(
+    const kept = await uploads.receiveBytes(
       bytes,
       workspaceId,
       (upload) => append(index, upload),

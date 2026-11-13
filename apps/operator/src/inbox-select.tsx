@@ -7,28 +7,19 @@ import {
   useRef,
   useState,
 } from "react";
-import type { BulkAction, Conversation, Label, Member, WorkspaceApi } from "./api.ts";
+import { BULK_MAX } from "../../../packages/widget/src/shared.ts";
+import type { BulkAction, BulkResult, Conversation, Label, Member, WorkspaceApi } from "./api.ts";
+import { bulkToast } from "./bulk-toast.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { LabelDot } from "./labels.tsx";
 import { Confirm, Menu, type MenuItem } from "./popup.tsx";
 import { useShortcuts } from "./shortcuts.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { Avatar, failureText } from "./ui.tsx";
 
-/** The server's limit of conversations in one bulk request. */
-const BULK_MAX = 100;
 /** How long a finger rests on a row before it starts a selection. */
 const LONG_PRESS_MS = 500;
-
-/** What a toast says once each action is done, for one conversation and for more. */
-const DONE_TEXT: Record<BulkAction["action"], [TextId, TextId]> = {
-  close: ["bulkClosedOne", "bulkClosedMany"],
-  assign: ["bulkAssignedOne", "bulkAssignedMany"],
-  label: ["bulkLabeledOne", "bulkLabeledMany"],
-  mark_read: ["bulkReadOne", "bulkReadMany"],
-  delete: ["bulkDeletedOne", "bulkDeletedMany"],
-};
 
 /**
  * The rows the operator picked, among those shown: a box on each row, X on the open one, Shift for
@@ -116,28 +107,23 @@ export function useTouchSelect(selection: Selection, id: string) {
 
 /**
  * Runs one action on the chosen rows, and says how it went. Select all can choose more rows than
- * the server takes in one request, so they go in turns.
+ * the server takes in one request, so they go in turns, and a failed turn keeps the ones before it.
+ * True when every turn went through.
  */
 async function runBulk(api: WorkspaceApi, ids: string[], change: BulkAction): Promise<boolean> {
+  const results: BulkResult[] = [];
+  let failure: TextId | null = null;
   try {
-    const results = [];
     for (let start = 0; start < ids.length; start += BULK_MAX) {
-      results.push(...(await api.bulk(ids.slice(start, start + BULK_MAX), change)).results);
+      const answer = await api.bulk(ids.slice(start, start + BULK_MAX), change);
+      results.push(...answer.results.map((one) => one.result));
     }
-    const skipped = results.filter(
-      (one) => one.result === "not_found" || one.result === "not_allowed",
-    ).length;
-    const done = results.length - skipped;
-    const [doneOne, doneMany] = DONE_TEXT[change.action];
-    const sentences: TextId[] = [];
-    if (done > 0) sentences.push(done === 1 ? doneOne : doneMany);
-    if (skipped > 0) sentences.push(skipped === 1 ? "bulkSkippedOne" : "bulkSkippedMany");
-    toast(sentences, skipped === 0, { done, skipped });
-    return true;
-  } catch (failure) {
-    toast(failureText(failure, {}, "actionFailed"), false);
-    return false;
+  } catch (caught) {
+    failure = failureText(caught, {}, "actionFailed");
   }
+  const { sentences, ok, values } = bulkToast(results, change.action, failure);
+  toast(sentences, ok, values);
+  return failure === null;
 }
 
 /** The bar's round button for one action. */
@@ -302,7 +288,7 @@ export function BulkBar({
       </button>
       {confirming && (
         <Confirm
-          title={count === 1 ? t("bulkDeleteOne") : t("bulkDeleteMany", { count })}
+          title={plural(count, "bulkDeleteOne", "bulkDeleteMany")}
           text={t("bulkDeleteText")}
           confirm={t("deleteYes")}
           disabled={busy}

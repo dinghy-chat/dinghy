@@ -1,17 +1,15 @@
 /** @jsxImportSource react */
 import { useState } from "react";
+import { LABEL_NAME_MAX, LABELS_MAX } from "../../../packages/widget/src/shared.ts";
 import type { Label, LabelColor, WorkspaceApi } from "./api.ts";
-import { COLOR_TEXT, LABEL_NAME_MAX, LabelDot } from "./labels.tsx";
-import { useLoad } from "./load.ts";
+import { COLOR_TEXT, LabelDot } from "./labels.tsx";
+import { useAction, useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
-import { type TextId, t } from "./text.ts";
-import { AddForm, ErrorNote, Field, failureText, Loading, Page, StatusNote } from "./ui.tsx";
+import { t } from "./text.ts";
+import { AddForm, EditForm, ErrorNote, Field, Loading, Page, StatusNote } from "./ui.tsx";
 
-// The server's limit, so the form cannot send what it refuses.
-const LABELS_MAX = 100;
-
-type Typed = { name: string; color: LabelColor };
-const EMPTY: Typed = { name: "", color: "gray" };
+type LabelInput = { name: string; color: LabelColor };
+const EMPTY: LabelInput = { name: "", color: "gray" };
 
 const COLOR_CHOICES = Object.entries(COLOR_TEXT).map(([color, text]) => ({
   value: color as LabelColor,
@@ -20,7 +18,13 @@ const COLOR_CHOICES = Object.entries(COLOR_TEXT).map(([color, text]) => ({
 }));
 
 /** A label's name and color, new or changed. */
-function LabelFields({ value, onChange }: { value: Typed; onChange(value: Typed): void }) {
+function LabelFields({
+  value,
+  onChange,
+}: {
+  value: LabelInput;
+  onChange(value: LabelInput): void;
+}) {
   return (
     <>
       <Field
@@ -47,31 +51,15 @@ function LabelFields({ value, onChange }: { value: Typed; onChange(value: Typed)
 /** Settings > Labels: owners and admins add, rename, recolor and delete the team's labels. */
 export function LabelsPage({ api }: { api: WorkspaceApi }) {
   const labels = useLoad(() => api.labels(), [api]);
-  const [adding, setAdding] = useState<Typed | null>(null);
-  const [editing, setEditing] = useState<{ id: string; typed: Typed } | null>(null);
+  const [adding, setAdding] = useState<LabelInput | null>(null);
+  const [editing, setEditing] = useState<{ id: string; input: LabelInput } | null>(null);
   const [deleting, setDeleting] = useState<Label | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const act = async (work: () => Promise<unknown>) => {
-    setFailure(null);
-    setBusy(true);
-    try {
-      await work();
-      labels.reload();
-      return true;
-    } catch (error) {
-      setFailure(failureText(error, {}));
-      return false;
-    } finally {
-      setBusy(false);
-    }
+  const { busy, failure, run: act } = useAction(labels.reload);
+  const add = async (input: LabelInput) => {
+    if (await act(() => api.addLabel(input))) setAdding(null);
   };
-  const add = async (typed: Typed) => {
-    if (await act(() => api.addLabel(typed))) setAdding(null);
-  };
-  const save = async (id: string, typed: Typed) => {
-    if (await act(() => api.changeLabel(id, typed))) setEditing(null);
+  const save = async (id: string, input: LabelInput) => {
+    if (await act(() => api.changeLabel(id, input))) setEditing(null);
   };
   const remove = async (label: Label) => {
     if (await act(() => api.deleteLabel(label.id))) setDeleting(null);
@@ -89,35 +77,21 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
         <ul className="items">
           {list.map((label) =>
             editing?.id === label.id ? (
-              <li key={label.id} className="item-row">
-                <form
-                  className="stack label-edit"
-                  aria-label={t("labelEditLabel", { name: label.name })}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void save(label.id, editing.typed);
-                  }}
+              <li key={label.id} className="item-row label-row">
+                <EditForm
+                  label={t("labelEditLabel", { name: label.name })}
+                  canSubmit={!busy && editing.input.name.trim() !== ""}
+                  onCancel={() => setEditing(null)}
+                  onSubmit={() => void save(label.id, editing.input)}
                 >
                   <LabelFields
-                    value={editing.typed}
-                    onChange={(typed) => setEditing({ id: label.id, typed })}
+                    value={editing.input}
+                    onChange={(input) => setEditing({ id: label.id, input })}
                   />
-                  <div className="actions">
-                    <button
-                      type="submit"
-                      className="pill dark"
-                      disabled={busy || editing.typed.name.trim() === ""}
-                    >
-                      {t("save")}
-                    </button>
-                    <button type="button" className="pill" onClick={() => setEditing(null)}>
-                      {t("cancel")}
-                    </button>
-                  </div>
-                </form>
+                </EditForm>
               </li>
             ) : (
-              <li key={label.id} className="item-row">
+              <li key={label.id} className="item-row label-row">
                 <span className="label-pill" data-color={label.color}>
                   {label.name}
                 </span>
@@ -128,10 +102,10 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
                     aria-label={t("labelEditLabel", { name: label.name })}
                     onClick={() => {
                       setAdding(null);
-                      setEditing({ id: label.id, typed: { name: label.name, color: label.color } });
+                      setEditing({ id: label.id, input: { name: label.name, color: label.color } });
                     }}
                   >
-                    {t("labelEdit")}
+                    {t("edit")}
                   </button>
                   <button
                     type="button"
@@ -139,7 +113,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
                     aria-label={t("labelDeleteLabel", { name: label.name })}
                     onClick={() => setDeleting(label)}
                   >
-                    {t("labelDelete")}
+                    {t("delete")}
                   </button>
                 </div>
               </li>
@@ -172,7 +146,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
         <Confirm
           title={t("labelDeleteTitle", { name: deleting.name })}
           text={t("labelDeleteText")}
-          confirm={t("labelDelete")}
+          confirm={t("delete")}
           disabled={busy}
           onConfirm={() => void remove(deleting)}
           onCancel={() => setDeleting(null)}

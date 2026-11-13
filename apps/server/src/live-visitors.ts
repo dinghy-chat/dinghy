@@ -7,7 +7,7 @@ import type { App } from "./app.ts";
 import { visitor } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { MEMBER_ERRORS } from "./errors.ts";
-import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 
 /** A tab that stops beating, closed or asleep, leaves the live view after this long. */
 const LIVE_TTL_MS = 90_000;
@@ -141,8 +141,6 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
     },
   };
 }
-
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 
 const LiveVisitorSchema = z
   .object({

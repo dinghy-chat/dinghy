@@ -42,14 +42,17 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import {
+  type Database,
   type Transaction,
   type WorkspaceAccess,
   welcomeAccess,
+  withWorkspace,
   workspaceAccess,
   writable,
   writableFor,
 } from "./db/tenant.ts";
 import { type Limits, NO_LIMITS, StorageFullError } from "./limits.ts";
+import { type Live, OPERATORS } from "./live.ts";
 
 type MessageKind = (typeof message.$inferSelect)["kind"];
 
@@ -173,6 +176,16 @@ export type MessageSource =
 /** How a key's write came, when not through the REST API. */
 export type KeySource = Extract<MessageSource, { via: "mcp" }>;
 
+type StoredImage = { attachmentId: string; width: number; height: number };
+/** A file that is not an image. `size` is in bytes. */
+type StoredFile = { attachmentId: string; name: string; size: number };
+
+/** A message's image or file. One deleted after 12 months, on Dinghy Cloud, keeps only its type. */
+export type StoredAttachment =
+  | ({ type: "image" } & StoredImage)
+  | ({ type: "file" } & StoredFile)
+  | { type: "image" | "file"; removed: true };
+
 interface StoredFields {
   id: string;
   conversationId: string;
@@ -186,13 +199,7 @@ interface StoredFields {
   /** The sender's own ID, so a client can match a stream copy to its pending line. */
   clientId: string;
   body: string | null;
-  image: { attachmentId: string; width: number; height: number } | null;
-  /** The image's file was deleted after 12 months, on Dinghy Cloud. */
-  imageRemoved: boolean;
-  /** A file that is not an image. `size` is in bytes. */
-  file: { attachmentId: string; name: string; size: number } | null;
-  /** The file was deleted after 12 months, on Dinghy Cloud. */
-  fileRemoved: boolean;
+  attachment: StoredAttachment | null;
   replyTo: QuoteRow | null;
   editedAt: Date | null;
   /** Deleted by an operator: its body and image or file are gone, and it shows as a placeholder. */
@@ -267,9 +274,9 @@ interface MessageRow {
 }
 
 interface MessageMetadata {
-  image?: StoredMessage["image"];
+  image?: StoredImage;
   imageRemoved?: boolean;
-  file?: StoredMessage["file"];
+  file?: StoredFile;
   fileRemoved?: boolean;
   /** Set on a key's reply that came through MCP, an operator's that sent a draft, and an email. */
   via?: Exclude<Channel, "api">;
@@ -289,6 +296,15 @@ function viaOf(meta: MessageMetadata | null, authorApiKeyId: string | null): Mes
   return { via: authorApiKeyId === null ? null : (meta?.via ?? "api") };
 }
 
+/** The attachment from the metadata, which keeps the shape that messages have always stored. */
+function attachmentOf(meta: MessageMetadata | null): StoredAttachment | null {
+  if (meta?.image !== undefined) return { type: "image", ...meta.image };
+  if (meta?.file !== undefined) return { type: "file", ...meta.file };
+  if (meta?.imageRemoved === true) return { type: "image", removed: true };
+  if (meta?.fileRemoved === true) return { type: "file", removed: true };
+  return null;
+}
+
 export function stored({
   authorVisitorId,
   metadata,
@@ -299,10 +315,7 @@ export function stored({
   const meta = metadata as MessageMetadata | null;
   return {
     ...row,
-    image: meta?.image ?? null,
-    imageRemoved: meta?.imageRemoved === true,
-    file: meta?.file ?? null,
-    fileRemoved: meta?.fileRemoved === true,
+    attachment: attachmentOf(meta),
     fromVisitor: authorVisitorId !== null,
     deleted: deletedAt !== null,
     ...viaOf(meta, row.authorApiKeyId),
@@ -391,13 +404,13 @@ export type NewAttachment = {
   storageKey: string;
   byteSize: number;
   contentType: string;
-} & ({ kind: "image"; width: number; height: number } | { kind: "file"; name: string });
+} & ({ type: "image"; width: number; height: number } | { type: "file"; name: string });
 
 /** What a message's metadata holds about its image or file. */
-const attachmentMetadata = ({ attachmentId, ...upload }: NewAttachment): MessageMetadata =>
-  upload.kind === "image"
-    ? { image: { attachmentId, width: upload.width, height: upload.height } }
-    : { file: { attachmentId, name: upload.name, size: upload.byteSize } };
+const attachmentMetadata = ({ attachmentId, ...attachment }: NewAttachment): MessageMetadata =>
+  attachment.type === "image"
+    ? { image: { attachmentId, width: attachment.width, height: attachment.height } }
+    : { file: { attachmentId, name: attachment.name, size: attachment.byteSize } };
 
 /**
  * The quoted message is not a message people wrote in this conversation, or it was deleted. A reply
@@ -642,7 +655,7 @@ export async function appendMessage(
       workspaceId,
       conversationId,
       seq: messageSeq,
-      kind: isNote ? "note" : (upload?.kind ?? "text"),
+      kind: isNote ? "note" : (upload?.type ?? "text"),
       clientId: input.clientId,
       body: input.body ?? null,
       metadata,
@@ -663,7 +676,7 @@ export async function appendMessage(
       storageKey: upload.storageKey,
       byteSize: upload.byteSize,
       contentType: upload.contentType,
-      ...(upload.kind === "image"
+      ...(upload.type === "image"
         ? { width: upload.width, height: upload.height }
         : { filename: upload.name }),
     });
@@ -1734,11 +1747,29 @@ export async function recordBillingChange(tx: Transaction, workspaceId: string):
 }
 
 /**
- * Tells every open operator app to read `me` again, for a new name or logo, and the saved replies.
+ * Runs a settings write in the workspace's context, such as a new name, logo, saved reply or label.
+ * The work answers a refusal (`{ error }`) or null for a missing row when it changed nothing.
+ * Otherwise this records `workspace.changed` in the same transaction and wakes the open operator
+ * apps after the commit, so they read `me` and the settings again. A lost wake only delays that
+ * until the next one.
  */
-export async function recordWorkspaceChange(tx: Transaction, workspaceId: string): Promise<void> {
-  const seq = await nextSeq(tx, workspaceId);
-  await tx.insert(event).values({ workspaceId, seq, kind: "workspace.changed" });
+export async function changeWorkspace<T extends object | null>(
+  db: Database,
+  live: Live,
+  workspaceId: string,
+  work: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  const isChange = (outcome: T) => outcome !== null && !("error" in outcome);
+  const outcome = await withWorkspace(db, workspaceId, async (tx) => {
+    const done = await work(tx);
+    if (isChange(done)) {
+      const seq = await nextSeq(tx, workspaceId);
+      await tx.insert(event).values({ workspaceId, seq, kind: "workspace.changed" });
+    }
+    return done;
+  });
+  if (isChange(outcome)) live.wake(workspaceId, OPERATORS);
+  return outcome;
 }
 
 interface FeedEvent {

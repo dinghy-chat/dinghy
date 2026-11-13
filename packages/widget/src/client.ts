@@ -14,6 +14,12 @@ export interface Presence {
   replySeconds: number | null;
 }
 
+/** An image, or a file that only downloads. `size` is in bytes. */
+export type Attachment = { url: string; removed?: never } & (
+  | { type: "image"; width: number; height: number }
+  | { type: "file"; name: string; size: number }
+);
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
@@ -23,13 +29,8 @@ export interface ChatMessage {
   fromVisitor: boolean;
   clientId: string | null;
   body: string | null;
-  image: { url: string; width: number; height: number } | null;
-  /** The image was deleted after 12 months, on Dinghy Cloud. */
-  imageRemoved: boolean;
-  /** A file that only downloads. `size` is in bytes. */
-  file: { name: string; size: number; url: string } | null;
-  /** The file was deleted after 12 months, on Dinghy Cloud. */
-  fileRemoved: boolean;
+  /** An `image` or `file` message's attachment. One deleted after 12 months keeps only its type. */
+  attachment: Attachment | { type: "image" | "file"; removed: true } | null;
   /** A reply from a workspace API key, such as the site's own bot. */
   fromBot: boolean;
   /** A hash of the operator's or the key's ID, which tells two authors with one name apart. */
@@ -164,7 +165,7 @@ export function createClient(
       const at = page();
       const response = await fetch(
         url(
-          `images?clientId=${clientId}&filename=${encodeURIComponent(file.name)}${at === undefined ? "" : `&page=${encodeURIComponent(at)}`}`,
+          `uploads?clientId=${clientId}&filename=${encodeURIComponent(file.name)}${at === undefined ? "" : `&page=${encodeURIComponent(at)}`}`,
         ),
         {
           method: "POST",

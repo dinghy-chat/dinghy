@@ -30,7 +30,6 @@ import {
   workspace as workspaceTable,
 } from "../src/db/schema.ts";
 import { type Database, withWorkspace } from "../src/db/tenant.ts";
-import { createImages } from "../src/images.ts";
 import { createLive, createSignals, OPERATORS } from "../src/live.ts";
 import { createLiveVisitors, type LiveVisitors } from "../src/live-visitors.ts";
 import { appendMessage } from "../src/messages.ts";
@@ -38,6 +37,7 @@ import type { FetchClientDocument } from "../src/oauth-client.ts";
 import { createPush } from "../src/push.ts";
 import { localStore } from "../src/storage.ts";
 import { setSuspended, signalSuspension } from "../src/suspension.ts";
+import { createUploads } from "../src/uploads.ts";
 import { createWorkspace } from "../src/workspaces.ts";
 import { createTestDatabase } from "./database.ts";
 import { AUTH_SECRET, DATABASE_URL, VALKEY_URL } from "./env.ts";
@@ -137,8 +137,8 @@ export async function startE2EServer(
     valkey,
     checks: { postgres: ok, valkey: ok },
     widgetDirectory: directory,
-    images: createImages({
-      store: localStore(join(directory, "images")),
+    uploads: createUploads({
+      store: localStore(join(directory, "uploads")),
       secret: AUTH_SECRET,
       publicUrl: apiOrigin,
       now: () => Date.now() + imageClockMs,
@@ -174,7 +174,7 @@ export async function startE2EServer(
   return {
     pushed,
     /** Expires every image URL handed out so far, as a tab left open for an hour finds. */
-    expireImageUrls() {
+    expireUploadUrls() {
       imageClockMs += 60 * 60_000;
     },
     /** For the cloud's helpers in ee/, which run the worker's passes on the same databases. */

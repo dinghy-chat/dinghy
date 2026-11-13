@@ -43,14 +43,17 @@ In a read-only or suspended workspace, operators can read and export, and a writ
 
 ## Two-step sign-in
 
-An operator can turn on two-step sign-in, with a TOTP code (RFC 6238: 30 seconds, 6 digits). A new session of that operator then answers 401 `two_factor_required` on every operator route, the event stream, an upload's end and OAuth consent included, until it passes the check. Only `GET /v1/operator/me`, the check and `POST /v1/auth/sign-out` work before. `me` answers `twoFactor`: `off`, `on`, or `required` while the session waits for the check, and then lists no workspace. API keys and OAuth tokens never need it.
+An operator can turn on two-step sign-in, with a TOTP code (RFC 6238: 30 seconds, 6 digits). A new session of that operator then answers 401 `two_factor_required` on every operator route, the event stream, an upload's end and OAuth consent included, until it passes the check. Only `GET /v1/operator/me`, the check and `POST /v1/auth/sign-out` work before. `me` answers `twoFactor`: `off`, `on`, or `required` while the session waits for the check, and then lists no workspace. It also answers `recoveryCodesLeft`, the recovery codes not used yet, or null unless `twoFactor` is `on`. API keys and OAuth tokens never need it.
 
 - `POST /v1/operator/two-factor/setup` returns a new secret, as base32 and as an `otpauth://` URI for a QR code. It answers 409 `two_factor_on` when it is on already.
 - `POST /v1/operator/two-factor/enable` with `{ "code" }` confirms the setup with a first code, turns it on, counts this session as passed and returns 10 `recoveryCodes`. They never show again. Every other session of the account must pass the check.
 - `POST /v1/operator/two-factor/check` with `{ "code" }` passes the check, with a code from the app or a recovery code.
+- `POST /v1/operator/two-factor/recovery-codes` with `{ "code" }` returns 10 new `recoveryCodes`, which show only now, and the old ones stop working. It takes only a current 6-digit code from the app, not a recovery code, and writes a `two_factor.recovery_regenerated` audit line.
 - `POST /v1/operator/two-factor/disable` with `{ "code" }` turns it off. Sessions that never passed the check end.
 
-A wrong code, or one used before, answers 400 `wrong_code`. A code from the app works once, and so does a recovery code. After 5 wrong codes in 15 minutes, the check and the turn-off answer 429 `too_many_attempts` and end the session, and they refuse every code until 15 minutes after the first wrong one. When Valkey does not answer, they check no code and answer 503 `check_unavailable`, because the limit cannot count.
+A wrong code, or one used before, answers 400 `wrong_code`. A code from the app works once, and so does a recovery code. After 5 wrong codes in 15 minutes, the check, new recovery codes and the turn-off answer 429 `too_many_attempts` and end the session, and they refuse every code until 15 minutes after the first wrong one. When Valkey does not answer, they check no code and answer 503 `check_unavailable`, because the limit cannot count. When the stored secret does not open, because `AUTH_SECRET` changed, they answer 500 `two_factor_unreadable`, and only the server's admin can turn it off, with `chat two-factor-reset`.
+
+With a mail server, the account gets an email when two-step sign-in is turned on, turned off, by the operator or by `chat two-factor-reset`, when a recovery code is used, and when the 5th wrong code ends a session.
 
 ## Sending without duplicates
 
@@ -75,13 +78,13 @@ A message's `kind` is `text`, `image` or `file` for what people wrote, and `note
 
 ### Images and files
 
-`POST /v1/widget/{key}/images` and `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/images` take an image or a file as the raw request body, with `clientId` in the query. One message carries one image or one file.
+`POST /v1/widget/{key}/uploads` and `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/uploads` take an image or a file as the raw request body, with `clientId` in the query. One message carries one image or one file, as its `attachment`, which is null on any other message.
 
-- PNG, JPEG and WebP bytes become an `image` message, whatever their name. Dinghy encodes each image again, up to 5 MB and 16 megapixels, and a message has `image: { url, width, height }`.
-- Any other file needs `filename` in the query, such as `filename=Order%201042.pdf`. Its extension must be PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, and its first bytes must match the type where the type has a signature. It can be up to 10 MB. Dinghy stores it as it came, keeps its name with letters, digits, spaces and `._()-` only, up to 100 characters, and answers a `file` message with `file: { name, size, url }`, `size` in bytes.
-- Anything else answers 400 `type_not_allowed`, with the allowed types in its message. Visitors may send files only while the widget's `visitorFiles` setting is on, which it is by default. With it off, a visitor's file answers 400 `not_an_image`. Operators and API keys can always send files.
+- PNG, JPEG and WebP bytes become an `image` message, whatever their name. Dinghy encodes each image again, up to 5 MB and 16 megapixels, and a message has `attachment: { type: "image", url, width, height }`.
+- Any other file needs `filename` in the query, such as `filename=Order%201042.pdf`. Its extension must be PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, and its first bytes must match the type where the type has a signature. It can be up to 10 MB. Dinghy stores it as it came, keeps its name with letters, digits, spaces and `._()-` only, up to 100 characters, and answers a `file` message with `attachment: { type: "file", url, name, size }`, `size` in bytes.
+- Anything else answers 400 `type_not_allowed`, with the allowed types in its message. Visitors may send files only while the widget's `visitorFiles` setting is on, which it is by default for a new workspace. A workspace from before the release that added files has it off until an owner or admin turns it on. With it off, a visitor's file answers 400 `not_an_image`. Operators and API keys can always send files.
 
-The `url` of an image or a file is signed and works for at least 15 minutes. A file's URL serves only a download: `Content-Disposition: attachment` with its name, `Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. Dinghy does not scan files for viruses. On Dinghy Cloud, a file counts toward the workspace's storage as an image does, and goes after 12 months: then `file` is null and `fileRemoved` is true. A full workspace answers 507 `storage_full`, and text still sends. Reply emails and transcripts show a file by its name, with a link to the conversation, never as an attachment.
+The `url` of an image or a file is signed and works for at least 15 minutes. A file's URL serves only a download: `Content-Disposition: attachment` with its name, `Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. Dinghy does not scan files for viruses. On Dinghy Cloud, a file counts toward the workspace's storage as an image does, and goes after 12 months: then `attachment` is `{ type, removed: true }`, with `type` `image` or `file`. A full workspace answers 507 `storage_full`, and text still sends. Reply emails and transcripts show a file by its name, with a link to the conversation, never as an attachment.
 
 An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
 
@@ -103,9 +106,9 @@ With a session, any member adds a label with `POST .../labels` and `{ "name", "c
 | `assign` | `operatorId`, a member or `null` | Assigns it, and makes a person handle it, as `PUT .../assignee` with a session does. A non-member answers 400 `not_a_member` |
 | `label` | `labelId` | Puts the label on it. A missing label answers 404 |
 | `mark_read` | | Marks it read up to its newest message, for the signed-in operator. It is the only action a read-only or suspended workspace allows, and the others answer 402 `read_only` or 403 `suspended` there |
-| `delete` | | Deletes it, with its messages and images. Owners and admins only |
+| `delete` | | Deletes it, with its messages, images and files. Owners and admins only |
 
-It answers `{ "results": [{ "conversationId", "result" }] }`, one per ID in the order sent, with a repeated ID once. `result` is `ok`, `unchanged` when it already was as asked (for `mark_read`, when it was read up to its newest message already), `not_found`, or `not_allowed` for each conversation of a member's `delete`. Each conversation goes through the same code as the single action, with its own event, so webhooks and alerts behave as if done one by one. They change 25 to a transaction, so a failure partway keeps the transactions before it, and a retry of the same request is safe. There is no bulk reply.
+It answers `{ "results": [{ "conversationId", "result" }] }`, one per ID in the order sent, with a repeated ID once. `result` is `ok`, `unchanged` when it already was as asked (for `mark_read`, when it was read up to its newest message already), or `not_found`. A member's `delete` answers 403 `forbidden` for the whole request, as the single delete does. Each conversation goes through the same code as the single action, with its own event, so webhooks and alerts behave as if done one by one. They change 25 to a transaction, so a failure partway keeps the transactions before it, and a retry of the same request is safe. There is no bulk reply.
 
 ### Notes
 
@@ -139,7 +142,7 @@ A send can quote one earlier message of the same conversation: pass its ID as `r
 
 `PATCH /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}` with `{ "body" }`, and a note's `mentions`, changes the text of the signed-in operator's own text reply or note, and sets `editedAt`. It works only while the visitor has not seen the reply: it answers 409 `message_seen` once the visitor read it in the chat, or once a reply email or a transcript carried it or is being sent. A reply email still waiting reads the text when it goes, so it carries the edit. Nobody edits a visitor's message, and API keys and MCP cannot edit.
 
-`DELETE` on the same path deletes a message: an operator deletes their own, and an owner or admin deletes anyone's, a visitor's too, such as a pasted card number. The row stays, so positions, receipts and quotes keep working: `deleted` is true, and `body` and `image` are null in every answer, webhook and export. Its image goes from storage as other deleted images do. API keys cannot delete.
+`DELETE` on the same path deletes a message: an operator deletes their own, and an owner or admin deletes anyone's, a visitor's too, such as a pasted card number. The row stays, so positions, receipts and quotes keep working: `deleted` is true, and `body` and `attachment` are null in every answer and webhook, and `body` is null in the export. Its image or file goes from storage as other deleted ones do. API keys cannot delete.
 
 An edit adds a `message.updated` event and a delete a `message.deleted` event, in the same transaction. The widget's stream and message list send the message again at that event's position, with its `seq` unchanged, so a client replaces its copy by `id` and keeps sorting by `seq`.
 
@@ -180,7 +183,7 @@ The mail forwarder posts each email to `POST /v1/inbound-email` as the raw messa
 - 200 `{ "ok": true }` when it took the email, when it had already taken it, and when it dropped an automatic answer: one with `Auto-Submitted` other than `no`, `Precedence: bulk` or `list`, or a common out-of-office subject.
 - 401 `bad_signature`, 411 `length_required`, 413 `too_large` for an email over 25 MB or with more than 100,000 characters of text, 404 `not_found` when no recipient in `To`, `Cc` or `Delivered-To` is a current reply address, 403 `blocked` for a blocked visitor and `suspended` for a suspended workspace, 402 `payment_required` or `read_only` for a workspace that waits for payment or is read-only, 429 `too_many_requests` past 20 emails to one address in an hour, and 503 `busy` when 4 emails are being received or the image queue is full. A forwarder retries on 429 and 503, and refuses the email on the other errors.
 
-The email becomes the visitor's messages in the address's conversation, never in another, and reopens it when it is closed, as a widget message does. They alert the team and go to webhooks like any visitor message, with `via: "email"`. Up to 5 attachments come first, one message each, with the same checks and limits as `POST /v1/widget/{key}/images`, and `visitorFiles` decides whether files other than images go in. An inline image under 16 KB, one inside the HTML such as a signature logo, is skipped, because it would come with every answer. A larger one, such as a pasted screenshot, counts as an attachment. The text comes last: the plain text part, or the HTML part made into text with its entities decoded. It is cut where the quote of the marker starts: the marker as a whole line, once quote marks go, and the block of lines just above it when that block names the quote, such as "On Monday, Acme wrote:" or Outlook's `From:` and `Sent:` lines, in English, French or Spanish. Any other block, such as "Order: 1042", is the visitor's text and stays. Without the marker it stays whole. Text longer than a message goes in as consecutive messages of up to 10,000 characters each, split at a paragraph or line break when one is near, and at most 10 of them. When an attachment is left out, a note in the visitor's language says so at the end of the text, as part of its `body`. Their `clientId` is `email:` and the SHA-256 of the email's `Message-ID`, or of the whole email when it has none, with `:1` to `:5` for the attachments and `:text1`, `:text2` and on for the text, so a forwarder's retry adds nothing. A `From` other than the visitor's email is taken, and sets `fromOtherAddress`.
+The email becomes the visitor's messages in the address's conversation, never in another, and reopens it when it is closed, as a widget message does. They alert the team and go to webhooks like any visitor message, with `via: "email"`. Up to 5 attachments come first, one message each, with the same checks and limits as `POST /v1/widget/{key}/uploads`, and `visitorFiles` decides whether files other than images go in. An inline image under 16 KB, one inside the HTML such as a signature logo, is skipped, because it would come with every answer. A larger one, such as a pasted screenshot, counts as an attachment. The text comes last: the plain text part, or the HTML part made into text with its entities decoded. It is cut where the quote of the marker starts: the marker as a whole line, once quote marks go, and the block of lines just above it when that block names the quote, such as "On Monday, Acme wrote:" or Outlook's `From:` and `Sent:` lines, in English, French or Spanish. Any other block, such as "Order: 1042", is the visitor's text and stays. Without the marker it stays whole. Text longer than a message goes in as consecutive messages of up to 10,000 characters each, split at a paragraph or line break when one is near, and at most 10 of them. When an attachment is left out, a note in the visitor's language says so at the end of the text, as part of its `body`. Their `clientId` is `email:` and the SHA-256 of the email's `Message-ID`, or of the whole email when it has none, with `:1` to `:5` for the attachments and `:text1`, `:text2` and on for the text, so a forwarder's retry adds nothing. A `From` other than the visitor's email is taken, and sets `fromOtherAddress`.
 
 ## The widget's look
 
@@ -395,7 +398,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `conversation.assigned` | A conversation's assignee changes, or is cleared |
 | `conversation.handoff` | An API key's bot handed the conversation to people |
 | `conversation.given_back` | An operator gave the conversation back to the bots |
-| `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `labelId` and `added`, true when it was put on |
+| `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `label`, `{ id, name, color }`, and `action`, `added` or `removed`. If the label is deleted before the send, Dinghy sends nothing. |
 
 Drafts send no webhook. The body is JSON:
 
@@ -412,7 +415,7 @@ Drafts send no webhook. The body is JSON:
 }
 ```
 
-`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`. They hold the state when the request is sent, which can be later than the change, such as after a retry. A test visitor's conversation has `visitor.isTest: true`.
+`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`, and only `conversation.labeled` has `data.label`. They hold the state when the request is sent, which can be later than the change, such as after a retry. A test visitor's conversation has `visitor.isTest: true`.
 
 Each request has these headers:
 
@@ -543,7 +546,7 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 
 | Tool | Level | What it does |
 |---|---|---|
-| `list_conversations` | Chats | Lists open or closed conversations, newest activity first. Pass `nextCursor` back as `cursor` for the next page |
+| `list_conversations` | Chats | Lists open or closed conversations, newest activity first. `label`, a label's ID, keeps only the conversations with it, as the list route's `label` does. Pass `nextCursor` back as `cursor` for the next page |
 | `search_conversations` | Chats | Finds conversations by the visitor's name, email or user ID, or by message text |
 | `get_conversation` | Chats | Reads a conversation: its messages, notes among them with `kind: "note"`, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
 | `reply` | Chats | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Quote an earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |

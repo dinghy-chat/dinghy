@@ -91,7 +91,7 @@ token="$(widget -X POST "$base/v1/widget/$key/visitors" | sed 's/.*"token":"\([^
 send "Written on the old version" >/dev/null
 printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' | base64 -d >"$work/one.png"
 curl -s -o /dev/null -H "Origin: $site" -H "Authorization: Bearer $token" -H 'content-type: image/png' \
-  --data-binary @"$work/one.png" "$base/v1/widget/$key/images?clientId=image$RANDOM$RANDOM"
+  --data-binary @"$work/one.png" "$base/v1/widget/$key/uploads?clientId=image$RANDOM$RANDOM"
 path="$(messages | sed -n 's#.*"url":"http://localhost:[0-9]*\(/v1/files/[^"]*\)".*#\1#p' | tail -1)"
 curl -sf -o "$work/reencoded.png" "$base$path"
 [ "$(major "${current[@]}")" = "$old_major" ] && pass "the install runs on Postgres $old_major" || fail "the install runs on another version"

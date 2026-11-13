@@ -61,6 +61,15 @@ export function createAuth({ db, secret, baseURL }: AuthOptions) {
         deletedAt: { type: "date", required: false, input: false },
         // Set by its own route, which also clears the operator's presence.
         away: { type: "boolean", required: false, input: false },
+        // Set by the two-step sign-in routes. With the session's own, it gives the second step's
+        // state with no query of its own.
+        twoFactorOn: { type: "boolean", required: false, input: false },
+      },
+    },
+    session: {
+      additionalFields: {
+        // When this session passed the second step. Set by the two-step sign-in routes only.
+        twoFactorAt: { type: "date", required: false, input: false },
       },
     },
     // Its own logs would hold a failed query's parameters, such as tokens.

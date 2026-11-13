@@ -13,9 +13,9 @@ import { chatLinkUrl, createChatLink } from "./chat-link.ts";
 import { loadConfig } from "./config.ts";
 import { attachment, message, visitor } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { createImages, type Images } from "./images.ts";
 import { appendMessage } from "./messages.ts";
 import { localStore } from "./storage.ts";
+import { createUploads, type Uploads } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const APP = "https://chat.example.com";
@@ -28,7 +28,7 @@ let database: TestDatabase;
 let db: Database;
 let owner: Database;
 let directory: string;
-let images: Images;
+let uploads: Uploads;
 let app: App;
 let space: NewWorkspace;
 
@@ -39,7 +39,7 @@ beforeAll(async () => {
   owner = database.connect("migrator", 1).db;
   directory = await mkdtemp(join(tmpdir(), "dinghy-origin-"));
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
-  images = createImages({
+  uploads = createUploads({
     store: localStore(directory),
     secret: AUTH_SECRET,
     publicUrl: APP,
@@ -48,7 +48,7 @@ beforeAll(async () => {
   app = createApp({
     auth: createAuth({ db, secret: AUTH_SECRET, baseURL: APP }),
     db,
-    images,
+    uploads,
     logger,
     operatorDirectory: directory,
     publicUrl: APP,
@@ -66,7 +66,7 @@ afterAll(async () => {
 async function stored(bytes: Uint8Array, contentType: string): Promise<URL> {
   const attachmentId = randomUUID();
   const storageKey = `${space.id}/${attachmentId}`;
-  await images.store.put(storageKey, bytes, contentType);
+  await uploads.store.put(storageKey, bytes, contentType);
   await withWorkspace(db, space.id, async (tx) => {
     const [row] = await tx
       .insert(visitor)
@@ -79,7 +79,7 @@ async function stored(bytes: Uint8Array, contentType: string): Promise<URL> {
       {
         clientId: randomUUID(),
         attachment: {
-          kind: "image",
+          type: "image",
           attachmentId,
           storageKey,
           byteSize: bytes.byteLength,
@@ -90,7 +90,7 @@ async function stored(bytes: Uint8Array, contentType: string): Promise<URL> {
       },
     );
   });
-  return new URL(images.url(space.id, attachmentId));
+  return new URL(uploads.url(space.id, attachmentId));
 }
 
 const png = () =>
@@ -98,7 +98,7 @@ const png = () =>
     .png()
     .toBuffer();
 
-describe("a separate origin for user images", () => {
+describe("a separate origin for user uploads", () => {
   test("image URLs use it, and it serves the image with headers that stop scripts", async () => {
     const url = await stored(await png(), "image/png");
     expect(url.origin).toBe(FILES);
@@ -110,7 +110,7 @@ describe("a separate origin for user images", () => {
     expect(response.headers.get("content-disposition")).toBe("inline");
   });
 
-  test("the app's origin does not serve images", async () => {
+  test("the app's origin does not serve uploads", async () => {
     const url = await stored(await png(), "image/png");
     const onApp = new URL(`${url.pathname}${url.search}`, APP);
     expect((await app.request(onApp.toString())).status).toBe(404);
@@ -122,7 +122,7 @@ describe("a separate origin for user images", () => {
     }
     const url = await stored(await png(), "image/png");
     expect((await app.request(url.toString(), { method: "POST" })).status).toBe(404);
-    // The app itself still works on its own origin, and its pages may show these images.
+    // The app itself still works on its own origin, and its pages may show these uploads.
     const page = await app.request(new URL("/", APP).toString());
     expect(page.status).toBe(200);
     expect(page.headers.get("content-security-policy")).toContain(`img-src 'self' data: ${FILES};`);
@@ -178,15 +178,30 @@ describe("a separate origin for user images", () => {
       AUTH_SECRET,
       PUBLIC_URL: APP,
     };
-    expect(loadConfig({ ...base, IMAGES_ORIGIN: FILES }).IMAGES_ORIGIN).toBe(FILES);
-    expect(() => loadConfig({ ...base, IMAGES_ORIGIN: `${APP}/files` })).toThrow(/IMAGES_ORIGIN/);
+    expect(loadConfig({ ...base, UPLOADS_ORIGIN: FILES }).UPLOADS_ORIGIN).toBe(FILES);
+    expect(() => loadConfig({ ...base, UPLOADS_ORIGIN: `${APP}/files` })).toThrow(/UPLOADS_ORIGIN/);
+  });
+
+  test("the old name IMAGES_ORIGIN still works, with the same host check", () => {
+    const base = {
+      DATABASE_URL: "postgres://x@localhost/x",
+      VALKEY_URL: "redis://localhost",
+      AUTH_SECRET,
+      PUBLIC_URL: APP,
+    };
+    expect(loadConfig({ ...base, IMAGES_ORIGIN: FILES }).UPLOADS_ORIGIN).toBe(FILES);
+    const other = "https://uploads.example.net";
+    expect(
+      loadConfig({ ...base, IMAGES_ORIGIN: FILES, UPLOADS_ORIGIN: other }).UPLOADS_ORIGIN,
+    ).toBe(other);
+    expect(() => loadConfig({ ...base, IMAGES_ORIGIN: `${APP}/files` })).toThrow(/UPLOADS_ORIGIN/);
   });
 });
 
 describe("with no separate origin", () => {
-  test("the app's origin serves images, with the same headers", async () => {
-    const plain = createImages({ store: images.store, secret: AUTH_SECRET, publicUrl: APP });
-    const server = createApp({ db, images: plain, logger, checks: { postgres: ok, valkey: ok } });
+  test("the app's origin serves uploads, with the same headers", async () => {
+    const plain = createUploads({ store: uploads.store, secret: AUTH_SECRET, publicUrl: APP });
+    const server = createApp({ db, uploads: plain, logger, checks: { postgres: ok, valkey: ok } });
     const attachmentId = randomUUID();
     const url = new URL(plain.url(space.id, attachmentId));
     expect(url.origin).toBe(APP);

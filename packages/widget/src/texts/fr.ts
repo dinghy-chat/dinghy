@@ -58,5 +58,5 @@ export const fr: Texts = {
   quoteDeleted: "Message d'origine supprimé",
   quoteImage: "Image",
   messageDeleted: "Message supprimé",
-  botTyping: "{name} écrit…",
+  botTyping: "{name} écrit...",
 };

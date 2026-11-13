@@ -5,6 +5,15 @@ export const MINUTE_MS = 60_000;
 const CLOCK: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
 const SHORT_DATE: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
 
+/** The browser's IANA time zone, or UTC when it names none. */
+export const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+/** The days' names, Monday first, as the server keeps them. 2024-01-01 was a Monday. */
+export const weekdayNames = (weekday: "short" | "long") =>
+  Array.from({ length: 7 }, (_, index) =>
+    new Date(2024, 0, 1 + index).toLocaleDateString([], { weekday }),
+  );
+
 /** "3:07 PM", in this browser's time zone or in the one given. */
 export const clockTime = (at: string | Date, timeZone?: string) =>
   new Date(at).toLocaleTimeString([], timeZone === undefined ? CLOCK : { ...CLOCK, timeZone });

@@ -6,13 +6,13 @@ import type { App } from "./app.ts";
 import { WEBHOOK_EVENTS, type WebhookEvent } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, INVALID, KEY_LIMITED, WRONG_ORIGIN } from "./errors.ts";
-import type { Images } from "./images.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, type OperatorNotice } from "./live.ts";
 import { closedFailure } from "./member.ts";
 import { type Cursor, formatCursor, listWorkspaceEvents, parseCursor } from "./messages.ts";
 import type { RateLimit } from "./rate-limit.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
+import type { Uploads } from "./uploads.ts";
 import { isWebhookEvent, labelChange, webhookData, webhookTypes } from "./webhooks.ts";
 
 const PATH = "/v1/events";
@@ -87,7 +87,7 @@ function keyNotice(raw: string): string | null {
 
 interface KeyEventsOptions {
   db: Database;
-  images: Images | undefined;
+  uploads: Uploads | undefined;
   limits: Limits;
   live: Live;
   logger: Logger;
@@ -102,7 +102,7 @@ interface KeyEventsOptions {
  * a row that the client has.
  */
 const readPage = (
-  { db, images }: Pick<KeyEventsOptions, "db" | "images">,
+  { db, uploads }: Pick<KeyEventsOptions, "db" | "uploads">,
   workspaceId: string,
   wanted: Set<WebhookEvent> | null,
   position: Cursor | undefined,
@@ -136,7 +136,7 @@ const readPage = (
     });
     const bodies = await webhookData(
       tx,
-      images,
+      uploads,
       workspaceId,
       wantedEvents.map((one) => one.subject),
     );

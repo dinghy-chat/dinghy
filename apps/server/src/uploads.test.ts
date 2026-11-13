@@ -12,17 +12,17 @@ import { S3 } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
 import { attachment, visitor, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { appendMessage, ConversationClosedError } from "./messages.ts";
+import { localStore, type ObjectStore, s3Store } from "./storage.ts";
 import {
-  createImages,
-  type Images,
+  createUploads,
   imageFormat,
   MAX_BYTES,
   MAX_FILE_BYTES,
   MAX_UPLOADS_PER_ADDRESS,
   processImage,
-} from "./images.ts";
-import { appendMessage, ConversationClosedError } from "./messages.ts";
-import { localStore, type ObjectStore, s3Store } from "./storage.ts";
+  type Uploads,
+} from "./uploads.ts";
 import { purgeDeletedWorkspaces } from "./workspace-delete.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -94,7 +94,7 @@ beforeAll(async () => {
   worker = database.connect("worker", 1).db;
   a = await createWorkspace(db, "A", [ORIGIN]);
   b = await createWorkspace(db, "B", [ORIGIN]);
-  directory = await mkdtemp(join(tmpdir(), "dinghy-images-"));
+  directory = await mkdtemp(join(tmpdir(), "dinghy-uploads-"));
 }, 30_000);
 
 afterAll(async () => {
@@ -192,7 +192,7 @@ describe.each([
   ["S3-compatible storage", s3ForTest],
 ])("with %s", (_name, makeStore) => {
   let store: ObjectStore;
-  let images: Images;
+  let uploads: Uploads;
   let app: App;
 
   const newVisitor = async (key = a.publicKey) => {
@@ -209,7 +209,7 @@ describe.each([
     clientId: string = crypto.randomUUID(),
     key = a.publicKey,
   ) =>
-    app.request(`/v1/widget/${key}/images?clientId=${clientId}`, {
+    app.request(`/v1/widget/${key}/uploads?clientId=${clientId}`, {
       method: "POST",
       headers: { origin: ORIGIN, authorization: `Bearer ${token}` },
       ...(body === undefined ? {} : { body: body as Uint8Array<ArrayBuffer> }),
@@ -219,12 +219,12 @@ describe.each([
     id: string;
     kind: string;
     body: string | null;
-    image: { url: string; width: number; height: number };
+    attachment: { type: "image"; url: string; width: number; height: number };
   }
 
   const uploadFile = (token: string, body: Uint8Array, filename?: string, key = a.publicKey) =>
     app.request(
-      `/v1/widget/${key}/images?clientId=${crypto.randomUUID()}${filename === undefined ? "" : `&filename=${encodeURIComponent(filename)}`}`,
+      `/v1/widget/${key}/uploads?clientId=${crypto.randomUUID()}${filename === undefined ? "" : `&filename=${encodeURIComponent(filename)}`}`,
       {
         method: "POST",
         headers: { origin: ORIGIN, authorization: `Bearer ${token}` },
@@ -234,7 +234,7 @@ describe.each([
 
   interface SentFile {
     id: string;
-    file: { name: string; size: number; url: string };
+    attachment: { type: "file"; name: string; size: number; url: string };
   }
 
   const fetchFile = (url: string) => app.request(url.replace(PUBLIC_URL, ""));
@@ -247,8 +247,8 @@ describe.each([
 
   beforeAll(async () => {
     store = await makeStore();
-    images = createImages({ store, secret: "a-test-secret", publicUrl: PUBLIC_URL });
-    app = createApp({ db, images, logger, checks: { postgres: ok, valkey: ok } });
+    uploads = createUploads({ store, secret: "a-test-secret", publicUrl: PUBLIC_URL });
+    app = createApp({ db, uploads, logger, checks: { postgres: ok, valkey: ok } });
   });
 
   test("a valid image becomes a message, and its signed URL serves the re-encoded bytes", async () => {
@@ -256,9 +256,9 @@ describe.each([
     expect(response.status).toBe(201);
     const sent = (await response.json()) as Sent;
     expect(sent).toMatchObject({ kind: "image", body: null });
-    expect(sent.image).toMatchObject({ width: 40, height: 20 });
-    expect(sent.image.url.startsWith(PUBLIC_URL)).toBe(true);
-    const file = await fetchFile(sent.image.url);
+    expect(sent.attachment).toMatchObject({ type: "image", width: 40, height: 20 });
+    expect(sent.attachment.url.startsWith(PUBLIC_URL)).toBe(true);
+    const file = await fetchFile(sent.attachment.url);
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toBe("image/png");
     expect(file.headers.get("x-content-type-options")).toBe("nosniff");
@@ -266,7 +266,7 @@ describe.each([
     // The app reads the file to save it on the device.
     expect(file.headers.get("access-control-allow-origin")).toBe("*");
     // An expired URL's 404 too, so a page on another origin can tell it from a failure.
-    const expired = new URL(sent.image.url);
+    const expired = new URL(sent.attachment.url);
     expired.searchParams.set("expires", "1");
     const gone = await fetchFile(expired.toString());
     expect(gone.status).toBe(404);
@@ -281,14 +281,14 @@ describe.each([
     const second = await upload(token, await png(), "retry-image");
     expect(second.status).toBe(200);
     expect(((await second.json()) as Sent).id).toBe(first.id);
-    const attachmentId = new URL(first.image.url).pathname.split("/").at(-1) ?? "";
+    const attachmentId = new URL(first.attachment.url).pathname.split("/").at(-1) ?? "";
     const rows = await withWorkspace(db, a.id, (tx) =>
       tx.select().from(attachment).where(eq(attachment.id, attachmentId)),
     );
     expect(rows).toHaveLength(1);
     await expect(exists(rows[0]?.storageKey ?? "")).resolves.toBe(true);
     // The retry's own copy was discarded, so the file serves the original.
-    expect((await fetchFile(first.image.url)).status).toBe(200);
+    expect((await fetchFile(first.attachment.url)).status).toBe(200);
   });
 
   test.each([
@@ -326,10 +326,9 @@ describe.each([
         expect(sent).toMatchObject({
           kind: "file",
           body: null,
-          image: null,
-          file: { name: `Notes.${extension}`, size: bytes.length },
+          attachment: { type: "file", name: `Notes.${extension}`, size: bytes.length },
         });
-        const download = await fetchFile(sent.file.url);
+        const download = await fetchFile(sent.attachment.url);
         expect(download.status).toBe(200);
         expect(download.headers.get("content-type")).toBe("application/octet-stream");
         expect(download.headers.get("content-disposition")).toBe(
@@ -364,7 +363,7 @@ describe.each([
       const sent = (await (
         await uploadFile(await newVisitor(), page, "page.txt")
       ).json()) as SentFile;
-      const download = await fetchFile(sent.file.url);
+      const download = await fetchFile(sent.attachment.url);
       expect(download.headers.get("content-type")).toBe("application/octet-stream");
       expect(download.headers.get("content-disposition")).toMatch(/^attachment;/);
       expect(download.headers.get("content-security-policy")).toContain("sandbox");
@@ -373,9 +372,12 @@ describe.each([
     test("an image named as a file is still an image, encoded again", async () => {
       const response = await uploadFile(await newVisitor(), await png(), "report.pdf");
       expect(response.status).toBe(201);
-      const sent = (await response.json()) as Sent & { file: null };
-      expect(sent).toMatchObject({ kind: "image", file: null, image: { width: 40, height: 20 } });
-      const shown = await fetchFile(sent.image.url);
+      const sent = (await response.json()) as Sent;
+      expect(sent).toMatchObject({
+        kind: "image",
+        attachment: { type: "image", width: 40, height: 20 },
+      });
+      const shown = await fetchFile(sent.attachment.url);
       expect(shown.headers.get("content-type")).toBe("image/png");
       expect(shown.headers.get("content-disposition")).toBe("inline");
     });
@@ -384,8 +386,8 @@ describe.each([
       const sent = (await (
         await uploadFile(await newVisitor(), ALLOWED.pdf, "../Résumé (été)\u202e.pdf")
       ).json()) as SentFile;
-      expect(sent.file.name).toBe("_Résumé (été)_.pdf");
-      const download = await fetchFile(sent.file.url);
+      expect(sent.attachment.name).toBe("_Résumé (été)_.pdf");
+      const download = await fetchFile(sent.attachment.url);
       expect(download.headers.get("content-disposition")).toBe(
         `attachment; filename="_R_sum_ (_t_)_.pdf"; filename*=UTF-8''_R%C3%A9sum%C3%A9%20%28%C3%A9t%C3%A9%29_.pdf`,
       );
@@ -411,7 +413,7 @@ describe.each([
 
   test("an upload with no token or from another site is refused", async () => {
     expect((await upload("dbt_wrong", await png())).status).toBe(401);
-    const response = await app.request(`/v1/widget/${a.publicKey}/images?clientId=x`, {
+    const response = await app.request(`/v1/widget/${a.publicKey}/uploads?clientId=x`, {
       method: "POST",
       headers: { origin: "https://evil.example.com" },
       body: (await png()) as Uint8Array<ArrayBuffer>,
@@ -433,7 +435,7 @@ describe.each([
           await store.put(key, bytes, type);
         },
       };
-      const failing = createImages({ store: watching, secret: "s", publicUrl: PUBLIC_URL });
+      const failing = createUploads({ store: watching, secret: "s", publicUrl: PUBLIC_URL });
       await expect(
         failing.receive(
           new Request("http://x", { method: "POST", body: await png() }),
@@ -495,7 +497,7 @@ describe.each([
           await purgeDeletedWorkspaces(worker);
         },
       };
-      const racingImages = createImages({ store: racing, secret: "s", publicUrl: PUBLIC_URL });
+      const racingImages = createUploads({ store: racing, secret: "s", publicUrl: PUBLIC_URL });
       await expect(
         racingImages.receive(
           new Request("http://x", { method: "POST", body: await png() }),
@@ -523,7 +525,7 @@ describe.each([
     beforeAll(async () => {
       sent = (await (await upload(await newVisitor(), await png())).json()) as Sent;
     });
-    const parts = () => new URL(sent.image.url);
+    const parts = () => new URL(sent.attachment.url);
 
     test("HEAD answers the headers and opens no file", async () => {
       let opened = 0;
@@ -531,7 +533,7 @@ describe.each([
         db,
         logger,
         checks: { postgres: ok, valkey: ok },
-        images: createImages({
+        uploads: createUploads({
           store: {
             ...store,
             get: (key) => {
@@ -543,7 +545,7 @@ describe.each([
           publicUrl: PUBLIC_URL,
         }),
       });
-      const response = await counting.request(sent.image.url.replace(PUBLIC_URL, ""), {
+      const response = await counting.request(sent.attachment.url.replace(PUBLIC_URL, ""), {
         method: "HEAD",
       });
       expect(response.status).toBe(200);
@@ -556,13 +558,13 @@ describe.each([
         db,
         logger,
         checks: { postgres: ok, valkey: ok },
-        images: createImages({
+        uploads: createUploads({
           store: { ...store, get: () => Promise.reject(new Error("The store timed out")) },
           secret: "a-test-secret",
           publicUrl: PUBLIC_URL,
         }),
       });
-      const response = await failing.request(sent.image.url.replace(PUBLIC_URL, ""));
+      const response = await failing.request(sent.attachment.url.replace(PUBLIC_URL, ""));
       expect(response.status).toBe(503);
       expect(response.headers.get("access-control-allow-origin")).toBe("*");
     });
@@ -585,14 +587,14 @@ describe.each([
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         vi.setSystemTime(start);
-        const first = images.url(workspaceId, attachmentId);
+        const first = uploads.url(workspaceId, attachmentId);
         vi.setSystemTime(start + 4 * 60_000 + 59_000);
-        expect(images.url(workspaceId, attachmentId)).toBe(first);
+        expect(uploads.url(workspaceId, attachmentId)).toBe(first);
         // Even the last moment of its bucket hands out a URL with 15 minutes left.
         const expires = Number(new URL(first).searchParams.get("expires"));
         expect(expires * 1000 - Date.now()).toBeGreaterThanOrEqual(15 * 60_000);
         vi.setSystemTime(start + 5 * 60_000);
-        expect(images.url(workspaceId, attachmentId)).not.toBe(first);
+        expect(uploads.url(workspaceId, attachmentId)).not.toBe(first);
       } finally {
         vi.useRealTimers();
       }
@@ -600,14 +602,14 @@ describe.each([
 
     test("an expired URL fails", async () => {
       const [workspaceId, attachmentId] = parts().pathname.split("/").slice(3);
-      expect(images.verify(workspaceId ?? "", attachmentId ?? "", "1000", "x")).toBe(false);
+      expect(uploads.verify(workspaceId ?? "", attachmentId ?? "", "1000", "x")).toBe(false);
     });
 
     test("a signature for one image does not open another", async () => {
       const other = (await (await upload(await newVisitor(), await png())).json()) as Sent;
       const url = parts();
       const [workspaceId] = url.pathname.split("/").slice(3);
-      const otherId = new URL(other.image.url).pathname.split("/").at(-1);
+      const otherId = new URL(other.attachment.url).pathname.split("/").at(-1);
       url.pathname = `/v1/files/${workspaceId}/${otherId}`;
       expect((await fetchFile(url.toString())).status).toBe(404);
     });
@@ -633,13 +635,13 @@ describe.each([
     const history = await app.request(`/v1/widget/${a.publicKey}/messages`, {
       headers: { origin: ORIGIN, authorization: `Bearer ${other}` },
     });
-    expect(await history.text()).not.toContain(new URL(sent.image.url).pathname);
+    expect(await history.text()).not.toContain(new URL(sent.attachment.url).pathname);
   });
 });
 
 describe("uploads that stall or crawl", () => {
-  const images = () =>
-    createImages({
+  const uploads = () =>
+    createUploads({
       store: localStore(directory),
       secret: "s",
       publicUrl: PUBLIC_URL,
@@ -667,7 +669,7 @@ describe("uploads that stall or crawl", () => {
   const commit = async () => ({ created: true });
 
   test("one address cannot hold more uploads than its limit, and another still can", async () => {
-    const shared = images();
+    const shared = uploads();
     const address = "198.51.100.7";
     const stalled = Array.from({ length: MAX_UPLOADS_PER_ADDRESS }, () =>
       shared.receive(paced([], 0, false), a.id, commit, address, null),
@@ -692,7 +694,7 @@ describe("uploads that stall or crawl", () => {
 
   test("a stalled upload times out", async () => {
     const started = Date.now();
-    const outcome = await images().receive(paced([], 0, false), a.id, commit, randomUUID(), null);
+    const outcome = await uploads().receive(paced([], 0, false), a.id, commit, randomUUID(), null);
     expect(outcome).toEqual({ refused: "too_slow" });
     expect(Date.now() - started).toBeLessThan(2000);
   });
@@ -707,20 +709,20 @@ describe("uploads that stall or crawl", () => {
     expect(bytes.length).toBeGreaterThan(6 * 70 * 1024);
     const size = Math.ceil(bytes.length / 6);
     const chunks = Array.from({ length: 6 }, (_, i) => bytes.subarray(i * size, (i + 1) * size));
-    const outcome = await images().receive(paced(chunks, 80), a.id, commit, randomUUID(), null);
+    const outcome = await uploads().receive(paced(chunks, 80), a.id, commit, randomUUID(), null);
     expect(outcome).toEqual({ result: { created: true } });
   });
 
   test("one byte at a time cannot hold the budget past the idle time", async () => {
     const started = Date.now();
     const drip = Array.from({ length: 200 }, () => new Uint8Array(1));
-    const outcome = await images().receive(paced(drip, 50), a.id, commit, randomUUID(), null);
+    const outcome = await uploads().receive(paced(drip, 50), a.id, commit, randomUUID(), null);
     expect(outcome).toEqual({ refused: "too_slow" });
     expect(Date.now() - started).toBeLessThan(2000);
   });
 
   test("uploads in one workspace cannot block another", async () => {
-    const shared = images();
+    const shared = uploads();
     const big = new Uint8Array(MAX_FILE_BYTES);
     const holders = Array.from({ length: 2 }, () =>
       shared.receive(paced([big], 0, false), a.id, commit, randomUUID(), null),
@@ -740,7 +742,7 @@ describe("uploads that stall or crawl", () => {
   });
 
   test("the global budget refuses uploads once it is full, across workspaces", async () => {
-    const shared = images();
+    const shared = uploads();
     const big = new Uint8Array(MAX_FILE_BYTES);
     // Four files' worth, held by uploads that stall after sending their bytes.
     const holders = Array.from({ length: 4 }, (_, i) =>
@@ -755,7 +757,7 @@ describe("uploads that stall or crawl", () => {
   });
 
   test("stalled connections do not block another image", async () => {
-    const shared = images();
+    const shared = uploads();
     const stalled = Array.from({ length: 20 }, () =>
       shared.receive(paced([], 0, false), a.id, commit, randomUUID(), null),
     );
@@ -769,7 +771,7 @@ describe("uploads that stall or crawl", () => {
 
 describe("many small files that decode to large images", () => {
   test("the decode queue is limited, whatever the file size", async () => {
-    const images = createImages({
+    const uploads = createUploads({
       store: localStore(directory),
       secret: "s",
       publicUrl: PUBLIC_URL,
@@ -783,7 +785,7 @@ describe("many small files that decode to large images", () => {
     expect(tiny.length).toBeLessThan(300_000);
     const outcomes = await Promise.all(
       Array.from({ length: 30 }, () =>
-        images.receive(
+        uploads.receive(
           new Request("http://x", { method: "POST", body: tiny }),
           a.id,
           async () => ({
@@ -804,12 +806,12 @@ describe("many small files that decode to large images", () => {
 
 describe("a burst of uploads", () => {
   test("it is refused past the limit and stays inside a set memory limit", async () => {
-    const images = createImages({
+    const uploads = createUploads({
       store: localStore(directory),
       secret: "s",
       publicUrl: PUBLIC_URL,
     });
-    const app = createApp({ db, images, logger, checks: { postgres: ok, valkey: ok } });
+    const app = createApp({ db, uploads, logger, checks: { postgres: ok, valkey: ok } });
     const created = await app.request(`/v1/widget/${a.publicKey}/visitors`, {
       method: "POST",
       headers: { origin: ORIGIN },
@@ -844,7 +846,7 @@ describe("a burst of uploads", () => {
       Array.from({ length: 30 }, (_, i) => {
         const sender = senders[i % senders.length] ?? { publicKey: "", token };
         return app.request(
-          `/v1/widget/${sender.publicKey}/images?clientId=${crypto.randomUUID()}`,
+          `/v1/widget/${sender.publicKey}/uploads?clientId=${crypto.randomUUID()}`,
           {
             method: "POST",
             headers: { origin: ORIGIN, authorization: `Bearer ${sender.token}` },

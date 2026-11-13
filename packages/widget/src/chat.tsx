@@ -11,7 +11,7 @@ import {
 } from "./compose.ts";
 import { cleanContext } from "./context.ts";
 import "./globals.ts";
-import { hoursState, knownHours } from "./hours.ts";
+import { type HoursState, hoursState, knownHours } from "./hours.ts";
 import { loadTexts, pickLocale } from "./locale.ts";
 import { emit, reportConversation } from "./page-events.ts";
 import { useDraftPreview, usePageReports } from "./page-reports.ts";
@@ -75,7 +75,7 @@ function isTypingNotice(value: unknown): value is TypingNotice {
 }
 
 function merge(lines: Line[], message: ChatMessage): Line[] {
-  const { kind } = message;
+  const { kind, attachment } = message;
   const note = kind === "closed" || kind === "reopened" ? kind : undefined;
   const line: Line = {
     ...(note && { note }),
@@ -84,13 +84,10 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
     // A removed image or file, or a deleted message, reads as a note where it was.
     body: message.deleted
       ? t("messageDeleted")
-      : message.imageRemoved
-        ? t("imageRemoved")
-        : message.fileRemoved
-          ? t("fileRemoved")
-          : (message.body ?? ""),
-    image: message.image,
-    download: message.file,
+      : attachment?.removed
+        ? t(`${attachment.type}Removed`)
+        : (message.body ?? ""),
+    attachment: attachment?.removed ? null : attachment,
     quote: message.replyTo,
     gone: message.deleted,
     fromVisitor: message.fromVisitor,
@@ -317,6 +314,23 @@ function Chat({
     const timer = setTimeout(() => setBotTyping(null), BOT_TYPING_MS);
     return () => clearTimeout(timer);
   }, [botTyping]);
+
+  // Not read in render, which every keystroke brings: once for the hours, then again at each
+  // opening or closing, which a timer waits for.
+  const [hours, setHours] = useState<HoursState | null>(null);
+  const savedHours = saved?.hours ?? null;
+  useEffect(() => {
+    if (savedHours === null) return setHours(null);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      const state = hoursState(savedHours, Date.now());
+      setHours(state);
+      const change = state.open ? state.closesAt : state.reopensAt;
+      if (change !== null) timer = setTimeout(update, change.getTime() - Date.now());
+    };
+    update();
+    return () => clearTimeout(timer);
+  }, [savedHours]);
 
   const { online, members, emailReplies, replySeconds } = usePresence(
     client,
@@ -595,8 +609,7 @@ function Chat({
         id,
         seq: null,
         body,
-        image: null,
-        download: null,
+        attachment: null,
         fromVisitor: true,
         author: null,
         status: "sending",
@@ -607,7 +620,7 @@ function Chat({
   };
 
   // An image's URL expires after 15 minutes. Replaying from the start gives every line a new one.
-  const refreshImages = () => {
+  const refreshUploads = () => {
     if (Date.now() - lastRefresh.current < REFRESH_LIMIT_MS) return;
     lastRefresh.current = Date.now();
     cursor.current = null;
@@ -655,8 +668,6 @@ function Chat({
   };
 
   if (!shown) return null;
-  // Read on each render, which the presence answer brings every 30 seconds while the chat is open.
-  const hours = saved.hours && hoursState(saved.hours, Date.now());
   const everChatted = chatted || lines.length > 0;
   const closed = hours?.open === false;
   // In this order, because a lost connection matters most and an empty chat matters least.
@@ -748,7 +759,7 @@ function Chat({
               line={line}
               showAuthor={startsRun(lines, index)}
               onView={() => setViewing(line.id)}
-              onImageError={refreshImages}
+              onUploadError={refreshUploads}
               onRetry={() => void deliver(line.id, line.body, line.file, line.quote?.id)}
               onReply={
                 line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
@@ -775,9 +786,9 @@ function Chat({
           onClick={() => viewer.current?.close()}
         >
           <img
-            src={lines.find((line) => line.id === viewing)?.image?.url}
+            src={lines.find((line) => line.id === viewing)?.attachment?.url}
             alt={t("imageAlt")}
-            onError={refreshImages}
+            onError={refreshUploads}
           />
         </dialog>
       )}

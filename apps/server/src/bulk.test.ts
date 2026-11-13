@@ -26,7 +26,7 @@ const operatorWakes: string[] = [];
 const inSpace = (workspaceId: string, path: string) =>
   `/v1/operator/workspaces/${workspaceId}${path}`;
 
-type Result = "ok" | "not_found" | "not_allowed" | "unchanged";
+type Result = "ok" | "not_found" | "unchanged";
 
 /** A workspace with an owner, a member and `count` conversations, each from its own visitor. */
 async function team(count: number) {
@@ -206,10 +206,13 @@ describe("bulk actions", () => {
   });
 
   test("delete is for owners and admins, and goes in batches", async () => {
-    const { space, boss, member, ids, results } = await team(30);
+    const { space, boss, member, ids, bulk, results } = await team(30);
     const deleteAll = (cookie: string) =>
       results(cookie, { action: "delete", conversationIds: ids });
-    expect(new Set(await deleteAll(member.cookie))).toEqual(new Set(["not_allowed"]));
+    const refused = await bulk(member.cookie, { action: "delete", conversationIds: ids });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error: { code: "forbidden" } });
+    expect(await eventsOf(space.id, "conversation.deleted")).toHaveLength(0);
     expect(new Set(await deleteAll(boss.cookie))).toEqual(new Set(["ok"]));
     expect(await deleteAll(boss.cookie)).toEqual(Array(30).fill("not_found"));
     expect(await eventsOf(space.id, "conversation.deleted")).toHaveLength(30);

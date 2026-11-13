@@ -715,6 +715,41 @@
       "when": 1794594125892,
       "tag": "0101_visitor_email_replies_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1794597415725,
+      "tag": "0102_existing_visitor_files_off",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1794597471128,
+      "tag": "0103_workspace_owned_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1794598091489,
+      "tag": "0104_two_factor_on",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1794598092042,
+      "tag": "0105_two_factor_on_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1794599531201,
+      "tag": "0106_purge_without_cascading_tables",
+      "breakpoints": true
     }
   ]
 }

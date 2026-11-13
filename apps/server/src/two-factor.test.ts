@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { base32 } from "@better-auth/utils/base32";
@@ -6,21 +7,21 @@ import { eq } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
 import sharp from "sharp";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { authenticatorCode } from "../test/authenticator.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
-import { addOperator, signIn } from "../test/operators.ts";
+import { addOperator, captureMail, signIn } from "../test/operators.ts";
 import { asOperator, ORIGIN, withKey } from "../test/requests.ts";
 import { readStream } from "../test/sse.ts";
 import { SITE, visitorStarts } from "../test/visitors.ts";
-import { type App, createApp } from "./app.ts";
+import { type App, type AppOptions, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { operatorTwoFactor, session } from "./db/schema.ts";
+import { operator, operatorTwoFactor, session } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { localStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
@@ -34,6 +35,12 @@ const logger = pino(
     },
   },
 );
+const mail = captureMail();
+/** The subjects of the emails sent to `email`, once `count` arrived: they go after the answer. */
+const subjectsTo = async (email: string, count: number) => {
+  await vi.waitFor(() => expect(mail.countTo(email)).toBeGreaterThanOrEqual(count));
+  return mail.sent.filter((one) => one.to === email).map((one) => one.subject);
+};
 const audits = (event: string, operatorId: string) =>
   lines.filter((line) => line.event === event && line.operatorId === operatorId);
 
@@ -80,7 +87,8 @@ beforeAll(async () => {
     live,
     logger,
     valkey,
-    images: createImages({
+    mailer: mail,
+    uploads: createUploads({
       store: localStore(tmpdir()),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
@@ -95,6 +103,18 @@ afterAll(async () => {
   valkey.disconnect();
   await database.drop();
 });
+
+/** Another app on the same database, with no mail server unless `options` gives one. */
+const otherApp = (options: Partial<AppOptions> = {}) =>
+  createApp({
+    auth,
+    db,
+    live,
+    logger,
+    valkey,
+    checks: { postgres: async () => {}, valkey: async () => {} },
+    ...options,
+  });
 
 const inSpace = (path = "") => `/v1/operator/workspaces/${space.id}${path}`;
 const call = (cookie: string, method: string, path: string, body?: unknown) =>
@@ -125,6 +145,14 @@ async function ownerWithTwoFactor() {
 const twoFactorOf = async (cookie: string) => {
   const me = await call(cookie, "GET", "/v1/operator/me");
   return ((await me.json()) as { twoFactor: string }).twoFactor;
+};
+/** The account's flag, which the session check reads with the session. */
+const flagOf = async (operatorId: string) => {
+  const [row] = await owner
+    .select({ twoFactorOn: operator.twoFactorOn })
+    .from(operator)
+    .where(eq(operator.id, operatorId));
+  return row?.twoFactorOn;
 };
 const check = (cookie: string, code: string) =>
   call(cookie, "POST", "/v1/operator/two-factor/check", { code });
@@ -159,6 +187,7 @@ describe("turning it on", () => {
     expect(enabled.status).toBe(200);
     const { recoveryCodes } = (await enabled.json()) as { recoveryCodes: string[] };
     expect(new Set(recoveryCodes).size).toBe(10);
+    expect(await flagOf(person.id)).toBe(true);
     // The session that turned it on passed it, and keeps working.
     expect(await twoFactorOf(person.cookie)).toBe("on");
     expect((await call(person.cookie, "GET", inSpace())).status).toBe(200);
@@ -273,14 +302,7 @@ describe("a new session", () => {
       enableOfflineQueue: false,
       maxRetriesPerRequest: 0,
     });
-    const outage = createApp({
-      auth,
-      db,
-      live,
-      logger,
-      valkey: down,
-      checks: { postgres: async () => {}, valkey: async () => {} },
-    });
+    const outage = otherApp({ valkey: down });
     const person = await ownerWithTwoFactor();
     const cookie = await signIn(app, auth, person.email);
     const refused = await asOperator(outage, cookie, "POST", "/v1/operator/two-factor/check", {
@@ -301,6 +323,47 @@ describe("a new session", () => {
   });
 });
 
+describe("new recovery codes", () => {
+  const codesLeft = async (cookie: string) =>
+    (
+      (await (await call(cookie, "GET", "/v1/operator/me")).json()) as {
+        recoveryCodesLeft: number | null;
+      }
+    ).recoveryCodesLeft;
+  const renew = (cookie: string, code: string) =>
+    call(cookie, "POST", "/v1/operator/two-factor/recovery-codes", { code });
+
+  test("need a current app code, replace the old set, and me counts what is left", async () => {
+    const person = await ownerWithTwoFactor();
+    expect(await codesLeft(person.cookie)).toBe(10);
+    const [oldCode, otherOld] = person.recoveryCodes;
+    const waiting = await signIn(app, auth, person.email);
+    // Before the check, me says nothing about the codes.
+    expect(await codesLeft(waiting)).toBeNull();
+    expect((await check(waiting, oldCode ?? "")).status).toBe(200);
+    expect(await codesLeft(person.cookie)).toBe(9);
+    // A recovery code cannot make more of itself.
+    expect(await codeOf(await renew(person.cookie, otherOld ?? ""))).toBe("wrong_code");
+    expect(await codeOf(await renew(person.cookie, "000000"))).toBe("wrong_code");
+    const renewed = await renew(person.cookie, await authenticatorCode(person.secret));
+    expect(renewed.status).toBe(200);
+    const { recoveryCodes } = (await renewed.json()) as { recoveryCodes: string[] };
+    expect(new Set(recoveryCodes).size).toBe(10);
+    expect(await codesLeft(person.cookie)).toBe(10);
+    expect(audits("two_factor.recovery_regenerated", person.id)).toHaveLength(1);
+    const next = await signIn(app, auth, person.email);
+    expect(await codeOf(await check(next, otherOld ?? ""))).toBe("wrong_code");
+    expect((await check(next, recoveryCodes[0] ?? "")).status).toBe(200);
+    expect(await codesLeft(person.cookie)).toBe(9);
+  });
+
+  test("answer two_factor_off, and me counts none, when it is off", async () => {
+    const person = await newOwner();
+    expect(await codesLeft(person.cookie)).toBeNull();
+    expect(await codeOf(await renew(person.cookie, "123456"))).toBe("two_factor_off");
+  });
+});
+
 describe("turning it off", () => {
   test("needs a current code, and ends the sessions that never passed", async () => {
     const person = await ownerWithTwoFactor();
@@ -314,6 +377,7 @@ describe("turning it off", () => {
     });
     expect(off.status).toBe(200);
     expect(await twoFactorOf(person.cookie)).toBe("off");
+    expect(await flagOf(person.id)).toBe(false);
     expect(await codeOf(await call(waiting, "GET", "/v1/operator/me"))).toBe("unauthorized");
     expect(audits("two_factor.disabled", person.id)).toHaveLength(1);
   });
@@ -412,7 +476,7 @@ describe("every way in", () => {
         });
       },
     });
-    const pending = app.request(inSpace(`/conversations/${conversationId}/images?clientId=late`), {
+    const pending = app.request(inSpace(`/conversations/${conversationId}/uploads?clientId=late`), {
       method: "POST",
       headers: { cookie: uploading, origin: ORIGIN, "content-type": "image/png" },
       body,
@@ -446,7 +510,7 @@ describe("every way in", () => {
 });
 
 /** Runs `chat two-factor-reset` for `email`, as the server's admin does. */
-function resetFromCli(email: string) {
+function resetFromCli(email: string, env: Record<string, string> = {}) {
   return new Promise<{ code: number | null; out: string }>((resolve) => {
     const child = spawn(process.execPath, [CLI, "two-factor-reset", email], {
       env: {
@@ -455,6 +519,7 @@ function resetFromCli(email: string) {
         VALKEY_URL,
         AUTH_SECRET,
         PUBLIC_URL,
+        ...env,
       },
     });
     let out = "";
@@ -465,6 +530,117 @@ function resetFromCli(email: string) {
   });
 }
 
+/**
+ * The least of an SMTP server, for the command's one email: it accepts every message and keeps
+ * its text.
+ */
+async function fakeSmtp() {
+  const received: string[] = [];
+  const server = createServer((socket) => {
+    let inData = false;
+    let message = "";
+    socket.write("220 test\r\n");
+    socket.on("data", (chunk) => {
+      for (const line of chunk.toString().split("\r\n").slice(0, -1)) {
+        if (inData) {
+          if (line === ".") {
+            inData = false;
+            received.push(message);
+            socket.write("250 ok\r\n");
+          } else message += `${line}\n`;
+        } else if (line.startsWith("DATA")) {
+          inData = true;
+          message = "";
+          socket.write("354 go\r\n");
+        } else if (line.startsWith("QUIT")) socket.end("221 bye\r\n");
+        else socket.write("250 ok\r\n");
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  return { url: `smtp://127.0.0.1:${port}`, received, close: () => server.close() };
+}
+
+describe("security emails", () => {
+  test("turning it on, a recovery code and turning it off each email the account", async () => {
+    const person = await ownerWithTwoFactor();
+    expect(await subjectsTo(person.email, 1)).toEqual([
+      "Two-step sign-in is on for your Dinghy account",
+    ]);
+    const next = await signIn(app, auth, person.email);
+    expect((await check(next, person.recoveryCodes[0] ?? "")).status).toBe(200);
+    expect((await subjectsTo(person.email, 2))[1]).toBe(
+      "A recovery code was used on your Dinghy account",
+    );
+    const off = await call(person.cookie, "POST", "/v1/operator/two-factor/disable", {
+      code: await authenticatorCode(person.secret, 1),
+    });
+    expect(off.status).toBe(200);
+    expect((await subjectsTo(person.email, 3))[2]).toBe(
+      "Two-step sign-in is off for your Dinghy account",
+    );
+  });
+
+  test("a lockout emails once, as the limit is reached", async () => {
+    const person = await ownerWithTwoFactor();
+    const cookie = await signIn(app, auth, person.email);
+    for (let tries = 1; tries <= 5; tries += 1) await check(cookie, "000000");
+    const lockout = "Too many wrong codes on your Dinghy account";
+    expect(await subjectsTo(person.email, 2)).toContain(lockout);
+    const later = await signIn(app, auth, person.email);
+    expect((await check(later, "000000")).status).toBe(429);
+    const sent = await subjectsTo(person.email, 2);
+    expect(sent.filter((subject) => subject === lockout)).toHaveLength(1);
+  });
+
+  test("with no mail server, it turns on and off and sends nothing", async () => {
+    const quiet = otherApp();
+    const person = await newOwner();
+    const ask = (path: string, body?: unknown) =>
+      asOperator(quiet, person.cookie, "POST", `/v1/operator/two-factor/${path}`, body);
+    const { secret } = (await (await ask("setup")).json()) as { secret: string };
+    expect((await ask("enable", { code: await authenticatorCode(secret, -1) })).status).toBe(200);
+    expect((await ask("disable", { code: await authenticatorCode(secret) })).status).toBe(200);
+    expect(mail.countTo(person.email)).toBe(0);
+  });
+
+  test("chat two-factor-reset emails the account when the server has a mail server", async () => {
+    const person = await ownerWithTwoFactor();
+    const smtp = await fakeSmtp();
+    const result = await resetFromCli(person.email, {
+      SMTP_URL: smtp.url,
+      MAIL_FROM: "Dinghy <dinghy@example.com>",
+    });
+    smtp.close();
+    expect(result.code).toBe(0);
+    expect(smtp.received).toHaveLength(1);
+    expect(smtp.received[0]).toContain(`To: ${person.email}`);
+    expect(smtp.received[0]).toContain("The admin of your Dinghy server turned off");
+  });
+});
+
+describe("a changed AUTH_SECRET", () => {
+  test("answers two_factor_unreadable rather than a server error", async () => {
+    const person = await ownerWithTwoFactor();
+    const moved = createAuth({
+      db,
+      secret: "another-test-secret-with-at-least-32-characters",
+      baseURL: PUBLIC_URL,
+    });
+    const changed = otherApp({ auth: moved });
+    const cookie = await signIn(changed, moved, person.email);
+    const refused = await asOperator(changed, cookie, "POST", "/v1/operator/two-factor/check", {
+      code: await authenticatorCode(person.secret, 1),
+    });
+    expect(refused.status).toBe(500);
+    expect(await codeOf(refused)).toBe("two_factor_unreadable");
+    // The admin's reset is the way back.
+    expect((await resetFromCli(person.email)).code).toBe(0);
+  });
+});
+
 describe("the account", () => {
   test("chat two-factor-reset turns it off and ends every session", async () => {
     const person = await ownerWithTwoFactor();
@@ -474,6 +650,7 @@ describe("the account", () => {
     expect(result.out).toContain(person.id);
     const rows = await owner.select().from(session).where(eq(session.userId, person.id));
     expect(rows).toEqual([]);
+    expect(await flagOf(person.id)).toBe(false);
     expect(await twoFactorOf(await signIn(app, auth, person.email))).toBe("off");
   });
 
@@ -487,9 +664,16 @@ describe("the account", () => {
     const person = await ownerWithTwoFactor();
     // Another owner stays, so the workspace passes to them.
     await newOwner();
-    const deleted = await call(person.cookie, "POST", "/v1/operator/account/delete", {
-      email: person.email,
-    });
+    // With no mail server, the typed email confirms the delete at once.
+    const deleted = await asOperator(
+      otherApp(),
+      person.cookie,
+      "POST",
+      "/v1/operator/account/delete",
+      {
+        email: person.email,
+      },
+    );
     expect(deleted.status).toBe(200);
     const rows = await owner
       .select()

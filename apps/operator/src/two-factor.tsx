@@ -1,26 +1,28 @@
 /** @jsxImportSource react */
 import { type FormEvent, useState } from "react";
 import { encode } from "uqr";
+import { TWO_FACTOR_CODE_MAX } from "../../../packages/widget/src/shared.ts";
 import {
-  ApiError,
   checkTwoFactor,
   disableTwoFactor,
   enableTwoFactor,
   type Me,
+  newRecoveryCodes,
   signOut,
   startTwoFactor,
 } from "./api.ts";
 import { AuthPage } from "./scene.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { CopyButton, CopyField, ErrorNote, Field, failureText } from "./ui.tsx";
 
 /** The empty modules around the code that a scanner needs, as the QR standard asks. */
 const QR_QUIET_MODULES = 4;
 const RECOVERY_FILE = "dinghy-recovery-codes.txt";
-/** The server's limit once spaces are gone, so a code typed with spaces always fits. */
-const CODE_MAX_LENGTH = 40;
 
-/** A refused code: wrong, the session ended after too many, or the server cannot count tries. */
+/**
+ * A refused code: wrong, the session ended after too many, or the server cannot count tries. A
+ * secret the server cannot read has its own error code, so another failure never asks for a reset.
+ */
 const codeFailure = (failure: unknown): TextId =>
   failureText(failure, {
     400: "twoFactorWrongCode",
@@ -42,21 +44,11 @@ function QrCode({ text }: { text: string }) {
   );
 }
 
-/** A form with one code field, its error and its buttons. */
-function CodeForm({
-  label,
-  submit,
-  numeric,
-  onSubmit,
-  onCancel,
-}: {
-  label: TextId;
-  submit: TextId;
-  /** Only a 6-digit code, with no recovery code. */
-  numeric: boolean;
-  onSubmit(code: string): Promise<void>;
-  onCancel?(): void;
-}) {
+/**
+ * A code field's state: the code, its error, and the send that clears and sets them. Once locked,
+ * too many wrong codes ended the session, so the field gives way to a way back to sign-in.
+ */
+function useCode(onSubmit: (code: string) => Promise<void>) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,13 +63,47 @@ function CodeForm({
       setBusy(false);
     }
   };
+  return { code, setCode, error, busy, send, isLocked: error === "twoFactorLocked" };
+}
+
+/** A form with one code field, its error and its buttons, or the lockout and a way back. */
+function CodeForm({
+  label,
+  submit,
+  numeric,
+  onSubmit,
+  onCancel,
+  onLocked,
+}: {
+  label: TextId;
+  submit: TextId;
+  /** Only a 6-digit code, with no recovery code. */
+  numeric: boolean;
+  onSubmit(code: string): Promise<void>;
+  onCancel?(): void;
+  /** Leads back to sign-in, on a route that counts wrong codes. */
+  onLocked?(): void;
+}) {
+  const { code, setCode, error, busy, send, isLocked } = useCode(onSubmit);
+  if (isLocked && onLocked !== undefined) {
+    return (
+      <div className="stack">
+        <ErrorNote text={error} />
+        <div className="actions">
+          <button type="button" className="pill dark" onClick={onLocked}>
+            {t("twoFactorSignInAgain")}
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <form className="stack" onSubmit={send}>
       <Field
         label={t(label)}
         autoComplete="one-time-code"
         inputMode={numeric ? "numeric" : "text"}
-        maxLength={CODE_MAX_LENGTH}
+        maxLength={TWO_FACTOR_CODE_MAX}
         required
         value={code}
         onChange={setCode}
@@ -165,6 +191,7 @@ function Setup({
   );
 }
 
+/** Turns it off with a code. Afterwards, or after a lockout, onDone reads the account again. */
 function TurnOff({ onDone, onCancel }: { onDone(): void; onCancel(): void }) {
   return (
     <div className="stack">
@@ -174,15 +201,11 @@ function TurnOff({ onDone, onCancel }: { onDone(): void; onCancel(): void }) {
         submit="twoFactorTurnOff"
         numeric={false}
         onSubmit={async (code) => {
-          try {
-            await disableTwoFactor(code);
-          } catch (failure) {
-            // Too many wrong codes ended the session, so the app signs in again.
-            if (!(failure instanceof ApiError && failure.status === 429)) throw failure;
-          }
+          await disableTwoFactor(code);
           onDone();
         }}
         onCancel={onCancel}
+        onLocked={onDone}
       />
     </div>
   );
@@ -192,9 +215,13 @@ type Step =
   | { kind: "idle" }
   | { kind: "setup"; secret: string; uri: string }
   | { kind: "codes"; codes: string[] }
+  | { kind: "new-codes" }
   | { kind: "turning-off" };
 
-/** The Profile row: turn it on with a QR code and a first code, or off with a current code. */
+/**
+ * The Profile row: turn it on with a QR code and a first code, make new recovery codes, or turn it
+ * off with a current code.
+ */
 export function TwoFactorRow({ me, onChanged }: { me: Me; onChanged(): void }) {
   const [step, setStep] = useState<Step>({ kind: "idle" });
   const [error, setError] = useState<TextId | null>(null);
@@ -223,12 +250,39 @@ export function TwoFactorRow({ me, onChanged }: { me: Me; onChanged(): void }) {
   }
   if (step.kind === "codes") return <RecoveryCodes codes={step.codes} onDone={finish} />;
   if (step.kind === "turning-off") return <TurnOff onDone={finish} onCancel={idle} />;
+  if (step.kind === "new-codes") {
+    return (
+      <div className="stack">
+        <p className="hint">{t("twoFactorNewCodesHelp")}</p>
+        <CodeForm
+          label="twoFactorCode"
+          submit="twoFactorNewCodesConfirm"
+          numeric
+          onSubmit={async (code) =>
+            setStep({ kind: "codes", codes: (await newRecoveryCodes(code)).recoveryCodes })
+          }
+          onCancel={idle}
+          onLocked={finish}
+        />
+      </div>
+    );
+  }
   const isOn = me.twoFactor === "on";
   return (
     <div className="stack">
       {isOn && <p className="note">{t("twoFactorIsOn")}</p>}
+      {me.recoveryCodesLeft !== null && (
+        <p className="hint">
+          {plural(me.recoveryCodesLeft, "twoFactorCodesLeftOne", "twoFactorCodesLeftMany")}
+        </p>
+      )}
       <ErrorNote text={error} />
       <div className="actions">
+        {isOn && (
+          <button type="button" className="pill" onClick={() => setStep({ kind: "new-codes" })}>
+            {t("twoFactorNewCodes")}
+          </button>
+        )}
         <button
           type="button"
           className={isOn ? "pill" : "pill dark"}
@@ -249,23 +303,11 @@ export function TwoFactorCheck({
   onPassed(): void;
   onSignedOut(): void;
 }) {
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      await checkTwoFactor(code.trim());
-      onPassed();
-    } catch (failure) {
-      setError(codeFailure(failure));
-      setBusy(false);
-    }
-  };
-  // Too many wrong codes ended the session.
-  if (error === "twoFactorLocked") {
+  const { code, setCode, error, busy, send, isLocked } = useCode(async (typed) => {
+    await checkTwoFactor(typed);
+    onPassed();
+  });
+  if (isLocked) {
     return (
       <AuthPage time="noon">
         <ErrorNote text={error} />
@@ -276,13 +318,13 @@ export function TwoFactorCheck({
     );
   }
   return (
-    <AuthPage time="noon" onSubmit={submit}>
+    <AuthPage time="noon" onSubmit={send}>
       <h1>{t("twoFactorCheckTitle")}</h1>
       <p className="note">{t("twoFactorCheckHelp")}</p>
       <Field
         label={t("twoFactorCodeOrRecovery")}
         autoComplete="one-time-code"
-        maxLength={CODE_MAX_LENGTH}
+        maxLength={TWO_FACTOR_CODE_MAX}
         required
         value={code}
         onChange={setCode}

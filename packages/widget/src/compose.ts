@@ -81,27 +81,78 @@ export function refusalProblem(code: string | null, file: File) {
   return "imageFailed";
 }
 
-/** A file's size as both apps show it beside its name, such as 340 KB or 2.4 MB. */
-export const fileSize = (bytes: number) =>
-  bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+/** A file's size as both apps show it beside its name, such as 340 kB or 2.4 MB, or 2,4 Mo in French. */
+export function fileSize(bytes: number, locale: Intl.LocalesArgument): string {
+  const kilobytes = bytes / 1024;
+  const isSmall = kilobytes < 1024;
+  const digits = isSmall ? 0 : 1;
+  return new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: isSmall ? "kilobyte" : "megabyte",
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(isSmall ? Math.max(1, kilobytes) : kilobytes / 1024);
+}
 
 /**
- * Saves a file through a blob URL. A link cannot do it: a browser ignores `download` on a link to
- * another origin and opens the address instead, and an old address is gone. False when the URL
- * expired, as a new one from a fresh load can still save it.
+ * Saves a file through a blob URL, and answers the server's status. A link cannot do it: a browser
+ * ignores `download` on a link to another origin and opens the address instead, and an old address
+ * is gone.
  */
-export async function saveFile(url: string, name: string): Promise<boolean> {
+async function saveFile(url: string, name: string): Promise<number> {
   const response = await fetch(url);
-  if (response.status === 404) return false;
-  if (!response.ok) throw new Error(`The file answered ${response.status}`);
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(await response.blob());
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href));
-  return true;
+  if (response.ok) {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href));
+  }
+  return response.status;
+}
+
+/**
+ * A click on a file's link. A URL lives 15 minutes, so when the server says this one expired, it
+ * asks once for a new one and saves with it. The device's clock does not decide, as it can be
+ * wrong. Any other failure ends the click, and the visitor or operator can click again.
+ */
+export async function saveWithRefresh(
+  url: string,
+  name: string,
+  newUrl: () => Promise<string>,
+): Promise<void> {
+  try {
+    if ((await saveFile(url, name)) === 404) await saveFile(await newUrl(), name);
+  } catch {
+    // The network failed. Nothing to tell: the link stays, and another click tries again.
+  }
+}
+
+/**
+ * A file link's URLs, starting from the one the link shows. offer() takes each new one. wait()
+ * answers the URL after the one that expired: the current one when it changed already, since
+ * another file's refresh can come before this file's 404, or else the next one offered, after
+ * asking for it. It never answers the expired URL or an empty one.
+ */
+export function urlWaiter(shown: string) {
+  let current = shown;
+  let expired = "";
+  // A second click's wait replaces the first one's, which then never saves.
+  let resolveNext = (_url: string) => {};
+  return {
+    offer(url: string) {
+      current = url;
+      if (url && url !== expired) resolveNext(url);
+    },
+    wait(stale: string, askForUrls: () => void): Promise<string> {
+      expired = stale;
+      return new Promise((resolve) => {
+        if (current && current !== stale) return resolve(current);
+        resolveNext = resolve;
+        askForUrls();
+      });
+    },
+  };
 }
 
 /**

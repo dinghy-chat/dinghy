@@ -132,16 +132,16 @@ interface ChatPageOptions {
   db: Database;
   rateLimit: RateLimit;
   /** The separate origin for images, if the server has one, for the page's policy. */
-  imagesOrigin: string | undefined;
+  uploadsOrigin: string | undefined;
 }
 
 /**
  * The page a reply email links to: the visitor's conversation, full page, in the widget's own chat.
  * It runs on this server's origin, and the widget API lets a chat link's token in from here only.
  */
-export function registerChatPage(app: App, { db, rateLimit, imagesOrigin }: ChatPageOptions) {
+export function registerChatPage(app: App, { db, rateLimit, uploadsOrigin }: ChatPageOptions) {
   app.use("/chat/*", limitByIp(rateLimit, "chat-link", 30, 60));
-  const images = imagesOrigin === undefined ? "" : ` ${imagesOrigin}`;
+  const images = uploadsOrigin === undefined ? "" : ` ${uploadsOrigin}`;
   const chatCsp = `default-src 'none'; script-src 'self'; connect-src 'self'${images}; img-src 'self'${images}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 
   app.get("/chat/:token", async (c) => {

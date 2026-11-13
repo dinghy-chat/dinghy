@@ -104,6 +104,7 @@
                   "two_factor_off",
                   "two_factor_on",
                   "two_factor_required",
+                  "two_factor_unreadable",
                   "type_not_allowed",
                   "unauthorized",
                   "unsupported_media_type",
@@ -461,9 +462,29 @@
           "token": "vt_…"
         }
       },
-      "Image": {
-        "type": ["object", "null"],
+      "Attachment": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ImageAttachment"
+          },
+          {
+            "$ref": "#/components/schemas/FileAttachment"
+          },
+          {
+            "$ref": "#/components/schemas/RemovedAttachment"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "ImageAttachment": {
+        "type": "object",
         "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["image"]
+          },
           "url": {
             "type": "string"
           },
@@ -474,22 +495,40 @@
             "type": "number"
           }
         },
-        "required": ["url", "width", "height"]
+        "required": ["type", "url", "width", "height"]
       },
-      "File": {
-        "type": ["object", "null"],
+      "FileAttachment": {
+        "type": "object",
         "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["file"]
+          },
+          "url": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
           "size": {
             "type": "number"
-          },
-          "url": {
-            "type": "string"
           }
         },
-        "required": ["name", "size", "url"]
+        "required": ["type", "url", "name", "size"]
+      },
+      "RemovedAttachment": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["image", "file"]
+          },
+          "removed": {
+            "type": "boolean",
+            "enum": [true]
+          }
+        },
+        "required": ["type", "removed"]
       },
       "Quote": {
         "type": ["object", "null"],
@@ -537,17 +576,8 @@
           "body": {
             "type": ["string", "null"]
           },
-          "image": {
-            "$ref": "#/components/schemas/Image"
-          },
-          "imageRemoved": {
-            "type": "boolean"
-          },
-          "file": {
-            "$ref": "#/components/schemas/File"
-          },
-          "fileRemoved": {
-            "type": "boolean"
+          "attachment": {
+            "$ref": "#/components/schemas/Attachment"
           },
           "replyTo": {
             "$ref": "#/components/schemas/Quote"
@@ -579,10 +609,7 @@
           "fromVisitor",
           "clientId",
           "body",
-          "image",
-          "imageRemoved",
-          "file",
-          "fileRemoved",
+          "attachment",
           "replyTo",
           "deleted",
           "fromBot",
@@ -599,10 +626,7 @@
           "fromVisitor": true,
           "clientId": "m_4f9a2c",
           "body": "Do you have a yearly plan?",
-          "image": null,
-          "imageRemoved": false,
-          "file": null,
-          "fileRemoved": false,
+          "attachment": null,
           "replyTo": null,
           "deleted": false,
           "fromBot": false,
@@ -786,6 +810,9 @@
           "twoFactor": {
             "type": "string",
             "enum": ["off", "on", "required"]
+          },
+          "recoveryCodesLeft": {
+            "type": ["integer", "null"]
           }
         },
         "required": [
@@ -797,7 +824,8 @@
           "workspaces",
           "billing",
           "contact",
-          "twoFactor"
+          "twoFactor",
+          "recoveryCodesLeft"
         ]
       },
       "InboxWorkspace": {
@@ -1086,17 +1114,8 @@
               "body": {
                 "type": ["string", "null"]
               },
-              "image": {
-                "$ref": "#/components/schemas/Image"
-              },
-              "imageRemoved": {
-                "type": "boolean"
-              },
-              "file": {
-                "$ref": "#/components/schemas/File"
-              },
-              "fileRemoved": {
-                "type": "boolean"
+              "attachment": {
+                "$ref": "#/components/schemas/Attachment"
               },
               "replyTo": {
                 "$ref": "#/components/schemas/Quote"
@@ -1140,10 +1159,7 @@
               "authorName",
               "clientId",
               "body",
-              "image",
-              "imageRemoved",
-              "file",
-              "fileRemoved",
+              "attachment",
               "replyTo",
               "editedAt",
               "deleted",
@@ -1192,10 +1208,7 @@
           "authorName": "Sam",
           "clientId": "r_81b3d0",
           "body": "Yes, it is two months free.",
-          "image": null,
-          "imageRemoved": false,
-          "file": null,
-          "fileRemoved": false,
+          "attachment": null,
           "replyTo": {
             "id": "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
             "authorName": "Ada",
@@ -2276,7 +2289,7 @@
                 },
                 "result": {
                   "type": "string",
-                  "enum": ["ok", "not_found", "not_allowed", "unchanged"]
+                  "enum": ["ok", "not_found", "unchanged"]
                 }
               },
               "required": ["conversationId", "result"]
@@ -2482,7 +2495,7 @@
                 },
                 "required": ["used", "limit"]
               },
-              "imageBytes": {
+              "uploadBytes": {
                 "type": "object",
                 "properties": {
                   "used": {
@@ -2495,7 +2508,7 @@
                 "required": ["used", "limit"]
               }
             },
-            "required": ["operators", "imageBytes"]
+            "required": ["operators", "uploadBytes"]
           },
           "deletion": {
             "type": "object",
@@ -2503,7 +2516,7 @@
               "conversations": {
                 "type": "number"
               },
-              "images": {
+              "uploads": {
                 "type": "number"
               },
               "members": {
@@ -2513,7 +2526,7 @@
                 "type": "boolean"
               }
             },
-            "required": ["conversations", "images", "members", "onlyWorkspace"]
+            "required": ["conversations", "uploads", "members", "onlyWorkspace"]
           }
         },
         "required": ["publicKey", "allowedOrigins", "signingSecret", "usage", "deletion"]
@@ -3053,10 +3066,7 @@
                     "fromVisitor": true,
                     "clientId": "m_4f9a2c",
                     "body": "Do you have a yearly plan?",
-                    "image": null,
-                    "imageRemoved": false,
-                    "file": null,
-                    "fileRemoved": false,
+                    "attachment": null,
                     "replyTo": null,
                     "deleted": false,
                     "fromBot": false,
@@ -3096,10 +3106,7 @@
                     "fromVisitor": true,
                     "clientId": "m_4f9a2c",
                     "body": "Do you have a yearly plan?",
-                    "image": null,
-                    "imageRemoved": false,
-                    "file": null,
-                    "fileRemoved": false,
+                    "attachment": null,
                     "replyTo": null,
                     "deleted": false,
                     "fromBot": false,
@@ -3350,7 +3357,7 @@
         }
       }
     },
-    "/v1/widget/{key}/images": {
+    "/v1/widget/{key}/uploads": {
       "post": {
         "security": [
           {
@@ -3439,10 +3446,7 @@
                     "fromVisitor": true,
                     "clientId": "m_4f9a2c",
                     "body": "Do you have a yearly plan?",
-                    "image": null,
-                    "imageRemoved": false,
-                    "file": null,
-                    "fileRemoved": false,
+                    "attachment": null,
                     "replyTo": null,
                     "deleted": false,
                     "fromBot": false,
@@ -3482,10 +3486,7 @@
                     "fromVisitor": true,
                     "clientId": "m_4f9a2c",
                     "body": "Do you have a yearly plan?",
-                    "image": null,
-                    "imageRemoved": false,
-                    "file": null,
-                    "fileRemoved": false,
+                    "attachment": null,
                     "replyTo": null,
                     "deleted": false,
                     "fromBot": false,
@@ -5067,6 +5068,145 @@
               }
             }
           },
+          "500": {
+            "description": "two_factor_unreadable: the stored secret does not open, because AUTH_SECRET changed. The server's admin runs `chat two-factor-reset`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "check_unavailable: the server cannot count attempts right now, so it checks no code. Retry later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/two-factor/recovery-codes": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Make a new set of 10 recovery codes, with a current code from the authenticator app. The old ones stop working",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "6 digits from the authenticator app, or a recovery code. Spaces do not count, and without them it has 1 to 40 characters."
+                  }
+                },
+                "required": ["code"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "10 recovery codes, which replace the old ones. This is the only time they show",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recoveryCodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["recoveryCodes"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. wrong_code: not a current 6-digit code from the app, or one already used. A recovery code does not work here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "two_factor_off: two-step sign-in is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_attempts: 5 wrong codes in 15 minutes. The session ended. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "two_factor_unreadable: the stored secret does not open, because AUTH_SECRET changed. The server's admin runs `chat two-factor-reset`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "check_unavailable: the server cannot count attempts right now, so it checks no code. Retry later",
             "content": {
@@ -5176,6 +5316,16 @@
           },
           "429": {
             "description": "too_many_attempts: 5 wrong codes in 15 minutes. The session ended. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "two_factor_unreadable: the stored secret does not open, because AUTH_SECRET changed. The server's admin runs `chat two-factor-reset`",
             "content": {
               "application/json": {
                 "schema": {
@@ -6448,7 +6598,7 @@
         }
       }
     },
-    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/images": {
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/uploads": {
       "post": {
         "security": [
           {
@@ -15023,7 +15173,7 @@
           }
         ],
         "summary": "Close, assign, label, mark read or delete several conversations",
-        "description": "Each conversation changes as the single action would, with its own event, so webhooks and alerts behave as if done one by one. They change in transactions of 25, so a failure partway keeps the batches before it. `mark_read` reads each one up to its newest message, for the signed-in operator, and is the only action a read-only or suspended workspace allows. `delete` is for owners and admins: for a member, every result is `not_allowed`. There is no bulk reply.",
+        "description": "Each conversation changes as the single action would, with its own event, so webhooks and alerts behave as if done one by one. They change in transactions of 25, so a failure partway keeps the batches before it. `mark_read` reads each one up to its newest message, for the signed-in operator, and is the only action a read-only or suspended workspace allows. `delete` is for owners and admins, and answers 403 for a member. There is no bulk reply.",
         "parameters": [
           {
             "schema": {
@@ -15087,7 +15237,7 @@
             }
           },
           "403": {
-            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
             "content": {
               "application/json": {
                 "schema": {

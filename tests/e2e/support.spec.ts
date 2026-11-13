@@ -1,5 +1,6 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { say, visitor } from "./chat.ts";
 import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -27,24 +28,10 @@ test.beforeEach(async () => {
   await server.setWidgetSettings({ title: null, greeting: null, away: null, primary: null });
 });
 
-async function say(page: Page, text: string) {
-  await page.getByRole("textbox", { name: "Your message" }).fill(text);
-  await page.getByRole("textbox", { name: "Your message" }).press("Enter");
-  await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
-}
-
-async function visitor(browser: Browser, path: string, text: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await page.goto(`${server.hostOrigin}${path}`);
-  await page.getByRole("button", { name: "Open chat" }).click();
-  await say(page, text);
-  return page;
-}
-
 test("the reply email's link opens the conversation on its own page, to read and reply", async ({
   browser,
 }) => {
-  await visitor(browser, "/pricing", "Is there a yearly plan?");
+  await visitor(browser, server, "/pricing", "Is there a yearly plan?");
   await server.reply("Yes, two months free.");
   await server.setWidgetSettings({ title: "Talk to E2E", primary: "#1f6bff" });
   const link = await server.chatLink();
@@ -112,7 +99,7 @@ test("the widget uses the workspace's own title and greeting", async ({ page }) 
 test("the operator sees the visitor online, their device and the page they moved to", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "/app", "Where is billing?");
+  const customer = await visitor(browser, server, "/app", "Where is billing?");
   // The widget waits a moment after a change of address, for the new title.
   const reported = customer.waitForRequest(
     (request) =>
@@ -124,10 +111,11 @@ test("the operator sees the visitor online, their device and the page they moved
   await owner.locator(".row", { hasText: "Where is billing?" }).click();
   // The header says only that the chat is open. The device and the page are in the panel.
   await expect(owner.locator(".thread-head .visit")).toHaveText("Chat is open");
-  const facts = owner.locator(".visitor-panel .place-tiles", { hasText: "Chrome" });
-  await expect(facts).toBeVisible();
-  const page = facts.getByRole("link");
-  await expect(page).toHaveText(/\/app\/settings$/);
+  await expect(owner.locator(".visitor-panel .place-tiles")).toContainText("Chrome");
+  // The page they are on now is named by the title it set after the move, and links to its path.
+  const page = owner.locator(".visitor-panel .journey li.now .page-name");
+  await expect(page).toHaveText("Billing settings");
+  await expect(page).toHaveAttribute("title", /\/app\/settings$/);
   await expect(page).toHaveAttribute("target", "_blank");
   await expect(page).toHaveAttribute("rel", "noopener noreferrer");
 });
@@ -135,8 +123,8 @@ test("the operator sees the visitor online, their device and the page they moved
 test("search finds a conversation by its text, and Escape returns to the list", async ({
   browser,
 }) => {
-  await visitor(browser, "/pricing", "My invoice number is 4417");
-  await visitor(browser, "/pricing", "Something unrelated");
+  await visitor(browser, server, "/pricing", "My invoice number is 4417");
+  await visitor(browser, server, "/pricing", "Something unrelated");
   const owner = await signedIn(browser, server, "owner@example.com");
   const field = owner.getByRole("searchbox", { name: "Search conversations" });
   await field.fill("invoice number");
@@ -173,7 +161,7 @@ test("a visitor who never chatted stores nothing and reports no page", async ({ 
 });
 
 test("the operator sees the pages the visitor went through, newest first", async ({ browser }) => {
-  const customer = await visitor(browser, "/app", "Which plan do I have?");
+  const customer = await visitor(browser, server, "/app", "Which plan do I have?");
   // The widget waits a moment after a change of address, for the new title.
   const reported = customer.waitForRequest(
     (request) =>
@@ -195,7 +183,7 @@ test("the operator sees the pages the visitor went through, newest first", async
 test("the Analytics page shows the workspace's numbers for the chosen period", async ({
   browser,
 }) => {
-  await visitor(browser, "/pricing", "Counting this one");
+  await visitor(browser, server, "/pricing", "Counting this one");
   await server.reply("Answered.");
   const owner = await signedIn(browser, server, "owner@example.com");
   await owner.getByRole("button", { name: "Analytics" }).click();
@@ -228,10 +216,10 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
 
 test("Analytics compares the period with the one just before", async ({ browser }) => {
   // Before the last 7 days, and slower than 5 minutes: 10 minutes.
-  await visitor(browser, "/pricing", "A question last week");
+  await visitor(browser, server, "/pricing", "A question last week");
   await server.reply("Sorry for the wait.");
   await server.backdateLatest(10 * 24, 600);
-  await visitor(browser, "/pricing", "A question today");
+  await visitor(browser, server, "/pricing", "A question today");
   await server.reply("Right away.");
   const owner = await signedIn(browser, server, "owner@example.com");
   await owner.getByRole("button", { name: "Analytics" }).click();
@@ -257,7 +245,7 @@ test("Analytics compares the period with the one just before", async ({ browser 
 test("a message in the open conversation chimes while another page hides it", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "/pricing", "First question");
+  const customer = await visitor(browser, server, "/pricing", "First question");
   const owner = await signedIn(browser, server, "owner@example.com");
   // Counts each chime, which starts its notes with an oscillator.
   await owner.evaluate(() => {

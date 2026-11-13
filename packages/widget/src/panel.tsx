@@ -4,8 +4,15 @@
 import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
-import type { ChatMessage } from "./client.ts";
-import { acceptedFiles, fileSize, isComposing, isImage, saveFile } from "./compose.ts";
+import type { Attachment } from "./client.ts";
+import {
+  acceptedFiles,
+  fileSize,
+  isComposing,
+  isImage,
+  saveWithRefresh,
+  urlWaiter,
+} from "./compose.ts";
 import { EMOJIS, insertEmoji, SMILEY_ICON } from "./emoji.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { type Quote, quoteStandIn } from "./quote.ts";
@@ -164,8 +171,8 @@ const DOWNLOAD_ICON: Paths = [
 ];
 
 const ATTACH_ICON: Paths = [
-  "M180.75,104.75,204,128l-82.06,81.94a48,48,0,0,1-67.88-67.88L153.37,41.37a32,32,0,0,1,45.26,45.26Z",
-  "M209.66,122.34a8,8,0,0,1,0,11.32l-82.05,82a56,56,0,0,1-79.2-79.21L147.67,35.73a40,40,0,1,1,56.61,56.55L105,193A24,24,0,1,1,71,159L154.3,74.38A8,8,0,1,1,165.7,85.6L82.39,170.31a8,8,0,1,0,11.27,11.36L192.93,81A24,24,0,1,0,159,47L59.76,147.68a40,40,0,1,0,56.53,56.62l82.06-82A8,8,0,0,1,209.66,122.34Z",
+  "M181,105,204,128l-82,82a48,48,0,0,1-68-68L153,41a32,32,0,0,1,45,45Z",
+  "M210,122a8,8,0,0,1,0,11l-82,82a56,56,0,0,1-79-79L148,36a40,40,0,1,1,57,57L105,193A24,24,0,1,1,71,159L154,74A8,8,0,1,1,166,86L82,170a8,8,0,1,0,11,11L193,81A24,24,0,1,0,159,47L60,148a40,40,0,1,0,57,57l82-82A8,8,0,0,1,210,122Z",
 ];
 /** A robot, for a reply from an API key. Drawn for this widget. */
 const BOT_ICON =
@@ -173,8 +180,8 @@ const BOT_ICON =
 /** A curved arrow back, for Reply. Drawn for this widget. */
 const REPLY_ICON: Paths = ["", "M112 56 24 128l88 72v-48c56 0 96 16 120 56-8-72-48-120-120-128z"];
 const SEND_ICON: Paths = [
-  "M227.91,134.86,59.93,231a8,8,0,0,1-11.44-9.67L80,128,48.49,34.72a8,8,0,0,1,11.44-9.67l168,95.85A8,8,0,0,1,227.91,134.86Z",
-  "M231.87,114l-168-95.89A16,16,0,0,0,40.92,37.34L71.55,128,40.92,218.67A16,16,0,0,0,56,240a16.15,16.15,0,0,0,7.93-2.1l167.92-96.05a16,16,0,0,0,.05-27.89ZM56,224a.56.56,0,0,0,0-.12L85.74,136H144a8,8,0,0,0,0-16H85.74L56.06,32.16A.46.46,0,0,0,56,32l168,95.83Z",
+  "M228,135,60,231a8,8,0,0,1-11-10L80,128,48,35a8,8,0,0,1,11-10l168,96A8,8,0,0,1,228,135Z",
+  "M232,114l-168-96A16,16,0,0,0,41,37L72,128,41,219A16,16,0,0,0,56,240a16,16,0,0,0,8-2l168-96a16,16,0,0,0,0-28ZM56,224a1,1,0,0,0,0,0L86,136H144a8,8,0,0,0,0-16H86L56,32A0,0,0,0,0,56,32l168,96Z",
 ];
 
 /** Who sent a reply, as the widget shows it. Its ID is the server's hash of the author's. */
@@ -187,8 +194,7 @@ export interface Line {
   /** Null until the server confirms it. Confirmed lines sort by this, and pending ones go last. */
   seq: bigint | null;
   body: string;
-  image: ChatMessage["image"];
-  download: ChatMessage["file"];
+  attachment: Attachment | null;
   /** Held until the server confirms it, so a retry can send it again. */
   file?: File;
   fromVisitor: boolean;
@@ -349,14 +355,24 @@ function replyTime(seconds: number): string {
     : t("replyHours").replace("{n}", `${Math.round(minutes / 60)}`);
 }
 
-/** "We're back Monday at 9:00 AM", on the visitor's own clock, in the chat's language. */
+/**
+ * Beyond this, a weekday alone could mean two dates, so the line adds the date. A reopening on
+ * today's weekday but not today is always further.
+ */
+const WEEKDAY_ONLY_MS = 6 * 86_400_000;
+
+/**
+ * "We're back Monday at 9:00 AM", or "Monday, November 23" further ahead, on the visitor's own
+ * clock, in the chat's language.
+ */
 export function backLine(at: Date, now: Date): string {
   const time = at.toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" });
-  return at.toDateString() === now.toDateString()
-    ? t("backToday").replace("{time}", time)
-    : t("backAt")
-        .replace("{day}", at.toLocaleDateString(language(), { weekday: "long" }))
-        .replace("{time}", time);
+  if (at.toDateString() === now.toDateString()) return t("backToday").replace("{time}", time);
+  const day = at.toLocaleDateString(language(), {
+    weekday: "long",
+    ...(+at - +now > WEEKDAY_ONLY_MS && { month: "long", day: "numeric" }),
+  });
+  return t("backAt").replace("{day}", day).replace("{time}", time);
 }
 
 /**
@@ -462,47 +478,33 @@ function Quoted({ quote }: { quote: Quote }) {
 }
 
 /**
- * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so when the
- * server says one expired, it asks once for new URLs and saves again with the line's new one. The
- * device's clock does not decide, as it can be wrong.
+ * A file's link, which saves the file and never leaves the page. After an expired URL, the line's
+ * next one comes with the new URLs that onExpired asks for.
  */
 function FileLink({
   download,
   mine,
   onExpired,
 }: {
-  download: NonNullable<Line["download"]>;
+  download: Extract<Attachment, { type: "file" }>;
   mine: boolean;
   onExpired(): void;
 }) {
-  // Each click asks for a save. It ends with the save, with any failure but an expired URL, or with
-  // a second expired one.
-  const [clicks, setClicks] = useState(0);
-  // The expired URL, which waits for the new one that onExpired brings.
-  const expired = useRef<string | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new URL or a click asks for a save.
-  useEffect(() => {
-    if (clicks === 0 || download.url === expired.current) return;
-    const end = () => setClicks(0);
-    saveFile(download.url, download.name).then((isSaved) => {
-      if (isSaved || expired.current !== null) return end();
-      expired.current = download.url;
-      onExpired();
-    }, end);
-  }, [clicks, download.url]);
+  const [urls] = useState(() => urlWaiter(download.url));
+  useEffect(() => urls.offer(download.url), [urls, download.url]);
   return (
     <a
       class={mine ? "msg mine doc" : "msg doc"}
       href={download.url}
       onClick={(event) => {
         event.preventDefault();
-        expired.current = null;
-        setClicks((count) => count + 1);
+        // This render's props, so a later render's new URL does not change what expired.
+        void saveWithRefresh(download.url, download.name, () => urls.wait(download.url, onExpired));
       }}
     >
       <Icon paths={DOWNLOAD_ICON} />
       <span>{download.name}</span>
-      <small>{fileSize(download.size)}</small>
+      <small>{fileSize(download.size, language())}</small>
     </a>
   );
 }
@@ -515,14 +517,14 @@ export function ChatLine({
   line,
   showAuthor,
   onView,
-  onImageError,
+  onUploadError,
   onRetry,
   onReply,
 }: {
   line: Line;
   showAuthor: boolean;
   onView(): void;
-  onImageError(): void;
+  onUploadError(): void;
   onRetry(): void;
   /** Only on the team's messages: quotes this one in the next message. */
   onReply?: (() => void) | undefined;
@@ -536,7 +538,7 @@ export function ChatLine({
           {line.author.name}
         </div>
       )}
-      {line.image !== null ? (
+      {line.attachment?.type === "image" ? (
         <button
           type="button"
           class={line.fromVisitor ? "shot mine" : "shot"}
@@ -544,16 +546,16 @@ export function ChatLine({
           onClick={onView}
         >
           <img
-            src={line.image.url}
-            width={line.image.width}
-            height={line.image.height}
+            src={line.attachment.url}
+            width={line.attachment.width}
+            height={line.attachment.height}
             alt={t("imageAlt")}
             loading="lazy"
-            onError={onImageError}
+            onError={onUploadError}
           />
         </button>
-      ) : line.download !== null ? (
-        <FileLink download={line.download} mine={line.fromVisitor} onExpired={onImageError} />
+      ) : line.attachment ? (
+        <FileLink download={line.attachment} mine={line.fromVisitor} onExpired={onUploadError} />
       ) : line.file !== undefined ? (
         <div class="msg mine">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>
       ) : (

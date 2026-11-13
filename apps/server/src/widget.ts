@@ -31,14 +31,6 @@ import {
   verifyHostToken,
   visitorAuthorId,
 } from "./identity.ts";
-import {
-  FileSchema,
-  fileView,
-  ImageSchema,
-  type Images,
-  imageView,
-  refuseImage,
-} from "./images.ts";
 import { Body, ClientId, Filename } from "./inputs.ts";
 import {
   PAGE_PATH_MAX,
@@ -75,6 +67,8 @@ import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
 import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
+import { canonicalTimeZone, isTimeZone } from "./time.ts";
+import { AttachmentSchema, attachmentView, refuseUpload, type Uploads } from "./uploads.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
@@ -312,16 +306,6 @@ const leaveRoute = createRoute({
   },
 });
 
-/** The time zone, when the server knows it too. */
-function knownTimeZone(timeZone: string | undefined): string | null {
-  if (timeZone === undefined) return null;
-  try {
-    return new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Only the origin of where the visitor came from, never its path. The site's own pages are no
  * source: each page load is a new tab, and a click from one page to the next sends the last one.
@@ -380,13 +364,8 @@ const MessageSchema = z
     fromVisitor: z.boolean(),
     clientId: z.string().nullable(),
     body: z.string().nullable(),
-    image: ImageSchema.nullable(),
-    // The image was deleted after 12 months, on Dinghy Cloud.
-    imageRemoved: z.boolean(),
-    // A `file` message's file, which only downloads.
-    file: FileSchema.nullable(),
-    // The file was deleted after 12 months, on Dinghy Cloud.
-    fileRemoved: z.boolean(),
+    // An `image` or `file` message's upload. A file only downloads.
+    attachment: AttachmentSchema.nullable(),
     // The message this one quotes, or null. Its author is a first name, as on replies.
     replyTo: QuoteSchema.nullable(),
     // An operator deleted it, so it shows as a placeholder with no body.
@@ -411,10 +390,7 @@ const MessageSchema = z
       fromVisitor: true,
       clientId: "m_4f9a2c",
       body: "Do you have a yearly plan?",
-      image: null,
-      imageRemoved: false,
-      file: null,
-      fileRemoved: false,
+      attachment: null,
       replyTo: null,
       deleted: false,
       fromBot: false,
@@ -479,7 +455,7 @@ const sendMessageRoute = createRoute({
 
 const sendUploadRoute = createRoute({
   method: "post",
-  path: "/v1/widget/{key}/images",
+  path: "/v1/widget/{key}/uploads",
   security: VISITOR_TOKEN,
   summary:
     "Send an image or a file as the raw request body. A retry with the same clientId returns the original",
@@ -580,7 +556,7 @@ const shownName = (author: MessageAuthor, isKey: boolean) =>
 
 /** A message as the widget shows it. `authors` holds the reply authors by operator or key ID. */
 function messageView(
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   urls: ImageUrls,
   workspaceId: string,
   authors: Map<string, MessageAuthor>,
@@ -590,8 +566,7 @@ function messageView(
     seq,
     createdAt,
     clientId,
-    image,
-    file,
+    attachment,
     authorOperatorId,
     authorApiKeyId,
     replyTo,
@@ -621,8 +596,7 @@ function messageView(
         : urls.picture(authorOperatorId, author?.pictureUpdatedAt ?? null),
     authorId: authorId === null || author === undefined ? null : visitorAuthorId(authorId),
     createdAt: createdAt.toISOString(),
-    image: imageView(images, workspaceId, image),
-    file: fileView(images, workspaceId, file),
+    attachment: attachmentView(uploads, workspaceId, attachment),
   };
 }
 
@@ -948,7 +922,7 @@ async function notePlace(
   return newest?.id ?? null;
 }
 
-/** Whether Settings > Appearance lets visitors send files as well as images. */
+/** Whether Settings > Appearance lets visitors send files as well as uploads. */
 async function visitorFilesAllowed(tx: Transaction, workspaceId: string): Promise<boolean> {
   const [row] = await tx
     .select({ allowed: widgetSettings.visitorFiles })
@@ -996,7 +970,7 @@ function limitFor(method: string, path: string): [string, number, number] {
   if (method === "GET") return ["widget-read", 600, 60];
   if (path.endsWith("/visitors")) return ["widget-visitors", 20, 3600];
   if (path.endsWith("/messages")) return ["widget-send", 60, 60];
-  if (path.endsWith("/images")) return ["widget-image", 20, 60];
+  if (path.endsWith("/uploads")) return ["widget-upload", 20, 60];
   // A single-page site reports each change of address, and a page should not need more.
   if (path.endsWith("/page")) return ["widget-page", 30, 60];
   if (path.endsWith("/context")) return ["widget-context", 30, 60];
@@ -1012,7 +986,7 @@ const NO_AUTHORS = new Map<string, MessageAuthor>();
 
 interface WidgetOptions {
   db: Database;
-  images: Images | undefined;
+  uploads: Uploads | undefined;
   imageUrls: ImageUrls;
   ipSecret: string;
   limits: Limits;
@@ -1047,7 +1021,7 @@ export function registerWidgetRoutes(
   app: App,
   {
     db,
-    images,
+    uploads,
     imageUrls: urls,
     ipSecret,
     limits,
@@ -1064,7 +1038,7 @@ export function registerWidgetRoutes(
   }: WidgetOptions,
 ): void {
   const view = (workspaceId: string, message: VisitorMessage, authors = NO_AUTHORS) =>
-    messageView(images, urls, workspaceId, authors, message);
+    messageView(uploads, urls, workspaceId, authors, message);
 
   /** A page of the visitor's messages, with the authors of its replies. */
   const readPage = (
@@ -1120,7 +1094,7 @@ export function registerWidgetRoutes(
   // The longest message is well under this, and it stops an oversized body before it is parsed.
   const smallBody = bodyLimit({ maxSize: 64 * 1024 });
   app.use("/v1/widget/:key/*", (c, next) =>
-    c.req.path.endsWith("/images") ? next() : smallBody(c, next),
+    c.req.path.endsWith("/uploads") ? next() : smallBody(c, next),
   );
 
   app.openapi(sendMessageRoute, async (c) => {
@@ -1264,7 +1238,7 @@ export function registerWidgetRoutes(
     );
   });
 
-  if (images !== undefined) {
+  if (uploads !== undefined) {
     app.openapi(sendUploadRoute, async (c) => {
       const found = c.get("workspace");
       const identified = await identify(c);
@@ -1279,7 +1253,7 @@ export function registerWidgetRoutes(
       if (checked.blocked) return c.json(BLOCKED, 403);
       const outcome = await catchInvalidQuote(
         catchClosed(
-          images.receive(
+          uploads.receive(
             c.req.raw,
             found.id,
             (attachment) =>
@@ -1305,7 +1279,7 @@ export function registerWidgetRoutes(
       if (outcome instanceof InvalidReplyToError) return c.json(INVALID_REPLY_TO, 400);
       // Closed while the upload arrived: the same answer as an unknown key.
       if (outcome instanceof WorkspaceClosedError) return c.json(ORIGIN_NOT_ALLOWED, 403);
-      if ("refused" in outcome) return refuseImage(c, outcome.refused);
+      if ("refused" in outcome) return refuseUpload(c, outcome.refused);
       if (outcome.result.created) {
         wakeConversation(live, found.id, identified.visitorId);
       }
@@ -1393,7 +1367,9 @@ export function registerWidgetRoutes(
     }
     await sites.siteSeen(found.id, c.req.header("origin") ?? "");
     const country = countryOf(c.get("clientIp"));
-    const zone = knownTimeZone(timeZone);
+    // The time zone, when the server knows it too, under one spelling.
+    const zone =
+      timeZone !== undefined && isTimeZone(timeZone) ? canonicalTimeZone(timeZone) : null;
     // A token that no longer works still counts the tab, as a visitor with none.
     const visitorId =
       token.kind === null ? null : await knownVisitor(db, found, c.req.param("key"), token);

@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, count, eq, isNull, not, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, isNull, not, notInArray } from "drizzle-orm";
 import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
@@ -15,6 +15,7 @@ import {
 } from "./db/schema.ts";
 import {
   type Database,
+  lockWrites,
   operatorWorkspaces,
   type Transaction,
   withWorkspace,
@@ -29,7 +30,7 @@ import {
   RATE_LIMITED,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { WORKSPACE_PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import {
   type AuthorizeRequest,
   type AuthorizeResult,
@@ -144,7 +145,7 @@ const grantRoute = createRoute({
   summary:
     "Approve an OAuth client for this workspace. Owners and admins only. It replaces the operator's earlier grant to the same client, and answers the redirect with the code",
   request: {
-    params: z.object({ workspaceId: z.uuid() }),
+    params: workspaceParams,
     body: {
       required: true,
       content: {
@@ -298,7 +299,7 @@ async function approve(
     .for("no key update");
   if (approver === undefined || !allowed.settings(approver.role)) return { kind: "forbidden" };
   // Two approvals at once take turns, so neither passes the limit.
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`oauth-grants:${workspaceId}`}))`);
+  await lockWrites(tx, "oauth-grants", workspaceId);
   const replaced = await replaceableGrants(tx, workspaceId, operatorId, request.client.id);
   if ((await liveGrantCount(tx, workspaceId, replaced)) >= GRANT_LIMIT) return { kind: "limit" };
   await revokeKeys(tx, workspaceId, replaced);

@@ -17,7 +17,7 @@ import {
 } from "./errors.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { containing, isChat, previewBody } from "./messages.ts";
 import { deleteConversations } from "./moderation.ts";
 import type { VisitorPresence } from "./presence.ts";
@@ -32,7 +32,6 @@ const NOTE_MAX = 5000;
 
 const SIGNED_IN = failure("signed_in", "The host site sets this person's name and email.");
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const contactParams = workspaceParams.extend({ visitorId: z.uuid() });
 
 const ContactSchema = z

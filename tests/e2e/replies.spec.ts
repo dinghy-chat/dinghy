@@ -1,5 +1,6 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { answer, say, visitor } from "./chat.ts";
 import { signedIn } from "./links.ts";
 import { openSettings } from "./settings.ts";
 
@@ -22,27 +23,6 @@ test.beforeEach(async () => {
   await server.closeConversations();
 });
 
-async function visitor(browser: Browser, text: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await page.goto(`${server.hostOrigin}/`);
-  await page.getByRole("button", { name: "Open chat" }).click();
-  await say(page, text);
-  return page;
-}
-
-async function say(page: Page, text: string) {
-  await page.getByRole("textbox", { name: "Your message" }).fill(text);
-  await page.getByRole("textbox", { name: "Your message" }).press("Enter");
-  await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
-}
-
-async function answer(page: Page, text: string) {
-  const reply = page.getByRole("textbox", { name: "Your reply" });
-  await reply.fill(text);
-  await reply.press("Enter");
-  await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
-}
-
 /** Opens the "…" beside the operator app's bubble that holds this text, and picks an item. */
 async function messageAction(page: Page, text: string, item: string, row = ".bubble-row") {
   const bubble = page.locator(row, { hasText: text });
@@ -54,7 +34,7 @@ async function messageAction(page: Page, text: string, item: string, row = ".bub
 test("an operator quotes the visitor, and the visitor quotes the operator back", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "Do you ship to **Canada**?");
+  const customer = await visitor(browser, server, "/", "Do you ship to **Canada**?");
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "Do you ship to" }).click();
 
@@ -89,7 +69,7 @@ test("an operator quotes the visitor, and the visitor quotes the operator back",
 });
 
 test("Escape drops the quote, and a click on a quote shows the original", async ({ browser }) => {
-  const customer = await visitor(browser, "The first question");
+  const customer = await visitor(browser, server, "/", "The first question");
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "The first question" }).click();
 
@@ -117,7 +97,7 @@ test("Escape drops the quote, and a click on a quote shows the original", async 
 test("an operator edits a reply before the visitor sees it, and deletes a message", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "My card is 4242 4242 4242 4242");
+  const customer = await visitor(browser, server, "/", "My card is 4242 4242 4242 4242");
   // The visitor leaves, so the next reply stays unread and can still change.
   await customer.context().close();
   const alice = await signedIn(browser, server, "alice@example.com");
@@ -143,7 +123,7 @@ test("an operator edits a reply before the visitor sees it, and deletes a messag
 test("a deleted message leaves its quotes at once, in the widget's live chat", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "My password is hunter2");
+  const customer = await visitor(browser, server, "/", "My password is hunter2");
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "My password is" }).click();
   await messageAction(alice, "My password is", "Reply");
@@ -163,7 +143,7 @@ test("a deleted message leaves its quotes at once, in the widget's live chat", a
 });
 
 test("an edit that fails keeps the editor and its text, with the reason", async ({ browser }) => {
-  const customer = await visitor(browser, "Where is my parcel?");
+  const customer = await visitor(browser, server, "/", "Where is my parcel?");
   await customer.getByRole("button", { name: "Close chat" }).click();
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "Where is my parcel?" }).click();
@@ -183,7 +163,7 @@ test("an edit that fails keeps the editor and its text, with the reason", async 
 });
 
 test("a deleted reply leaves the widget's unread count", async ({ browser }) => {
-  const customer = await visitor(browser, "Is anyone there?");
+  const customer = await visitor(browser, server, "/", "Is anyone there?");
   await customer.getByRole("button", { name: "Close chat" }).click();
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "Is anyone there?" }).click();
@@ -201,7 +181,7 @@ test("a deleted reply leaves the widget's unread count", async ({ browser }) => 
 test("an operator adds a note that the visitor never sees, and a note draft keeps its tab", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "Can I get a refund?");
+  const customer = await visitor(browser, server, "/", "Can I get a refund?");
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "Can I get a refund?" }).click();
 
@@ -230,7 +210,7 @@ test("an operator adds a note that the visitor never sees, and a note draft keep
   await expect(customer.getByText("Refund approved")).toHaveCount(0);
 
   // A note's draft keeps its tab, so it never comes back as a reply.
-  const other = await visitor(browser, "Another question");
+  const other = await visitor(browser, server, "/", "Another question");
   await alice.locator(".row", { hasText: "Another question" }).click();
   await expect(alice.getByRole("radio", { name: "Reply" })).toBeChecked();
   await alice.getByRole("radio", { name: "Note" }).check();
@@ -259,7 +239,7 @@ test("a member saves a reply in Settings, and / inserts it; @ mentions a teammat
   browser,
 }) => {
   await server.createOperator("ben@example.com", { role: "member" });
-  const customer = await visitor(browser, "How do refunds work?");
+  const customer = await visitor(browser, server, "/", "How do refunds work?");
   const alice = await signedIn(browser, server, "alice@example.com");
 
   await openSettings(alice, "Saved replies");
@@ -324,7 +304,7 @@ test("a member saves a reply in Settings, and / inserts it; @ mentions a teammat
 test("a visitor's reply by email says so to the team, and from which address", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "Answered from my phone");
+  const customer = await visitor(browser, server, "/", "Answered from my phone");
   // As the inbound route stores one: the server's own tests post real emails.
   await server.owner.execute(
     `update message set metadata = '{"via":"email","fromOtherAddress":true}' where body = 'Answered from my phone'`,

@@ -65,9 +65,10 @@ send() { # send <port> <token> <text>
   widget -H "Authorization: Bearer $2" -H 'content-type: application/json' \
     -d "{\"clientId\":\"$RANDOM$RANDOM\",\"body\":\"$3\"}" "http://127.0.0.1:$1/v1/widget/$key/messages"
 }
-send_image() { # send_image <port> <token>
+# Released versions take uploads at images, and this one at uploads, so the caller names the route its image has.
+send_image() { # send_image <port> <token> <uploads|images>
   curl -s -H "Origin: $site" -H "Authorization: Bearer $2" -H 'content-type: image/png' \
-    --data-binary @"$work/one.png" "http://127.0.0.1:$1/v1/widget/$key/images?clientId=image$RANDOM$RANDOM"
+    --data-binary @"$work/one.png" "http://127.0.0.1:$1/v1/widget/$key/$3?clientId=image$RANDOM$RANDOM"
 }
 read_stream() { # read_stream <port> <token> <query>, for a few seconds
   timeout 4 curl -sN -H "Origin: $site" -H "Authorization: Bearer $2" \
@@ -112,7 +113,7 @@ setup "$a"
 key_a="$key"
 token="$(new_visitor "$a_port")"
 send "$a_port" "$token" "Hello before the backup" >/dev/null
-send_image "$a_port" "$token" >/dev/null
+send_image "$a_port" "$token" uploads >/dev/null
 path="$(image_url "$a_port" "$token")"
 curl -sf -o "$work/reencoded.png" "http://127.0.0.1:$a_port$path"
 old_cursor="$(read_stream "$a_port" "$token" "" | cursor_of)"
@@ -268,7 +269,7 @@ key_c="$key"
 secret_key="$backup_key"
 token_c="$(new_visitor "$c_port")"
 send "$c_port" "$token_c" "A RECOGNIZABLE SECRET MESSAGE" >/dev/null
-send_image "$c_port" "$token_c" >/dev/null
+send_image "$c_port" "$token_c" uploads >/dev/null
 path_c="$(image_url "$c_port" "$token_c")"
 curl -sf -o "$work/reencoded.png" "http://127.0.0.1:$c_port$path_c"
 if ls_images="$(s3 GET '/dinghy-images?list-type=2')" && grep -q "$key_c\|<Key>" <<<"$ls_images"; then
@@ -330,7 +331,7 @@ for previous in "${previous_images[@]}"; do
   COMPOSE_YAML="$previous_yaml" setup "$d"
   token_d="$(new_visitor "$d_port")"
   send "$d_port" "$token_d" "Written on the previous release" >/dev/null
-  send_image "$d_port" "$token_d" >/dev/null
+  send_image "$d_port" "$token_d" images >/dev/null
   path_d="$(image_url "$d_port" "$token_d")"
   curl -sf -o "$work/reencoded.png" "http://127.0.0.1:$d_port$path_d"
   COMPOSE_YAML="$previous_yaml" DINGHY_IMAGE="$previous" DINGHY_PORT="$d_port" compose "$d" down >/dev/null 2>&1

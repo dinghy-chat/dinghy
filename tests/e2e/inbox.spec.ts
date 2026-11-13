@@ -1,9 +1,13 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { answer, say, visitor } from "./chat.ts";
 import { inboxFilter } from "./filters.ts";
 import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
+
+// The visitor's page, whose query and fragment the inbox must not show.
+const PRICING = "/pricing?coupon=SECRET#top";
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
@@ -26,27 +30,6 @@ test.beforeEach(async () => {
   await server.closeConversations();
 });
 
-async function visitor(browser: Browser, text: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await page.goto(`${server.hostOrigin}/pricing?coupon=SECRET#top`);
-  await page.getByRole("button", { name: "Open chat" }).click();
-  await say(page, text);
-  return page;
-}
-
-async function say(page: Page, text: string) {
-  await page.getByRole("textbox", { name: "Your message" }).fill(text);
-  await page.getByRole("textbox", { name: "Your message" }).press("Enter");
-  await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
-}
-
-async function answer(page: Page, text: string) {
-  const reply = page.getByRole("textbox", { name: "Your reply" });
-  await reply.fill(text);
-  await reply.press("Enter");
-  await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
-}
-
 const row = (page: Page, text: string) => page.locator(".row", { hasText: text });
 const openCount = (page: Page) => page.locator(".nav .count:not(.live)");
 const favicon = (page: Page) => page.locator('link[rel="icon"]');
@@ -66,7 +49,7 @@ async function snooze(page: Page, name: string) {
 test("a snoozed conversation leaves the count until the visitor writes again", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "Snooze me");
+  const customer = await visitor(browser, server, PRICING, "Snooze me");
   const operator = await signedIn(browser, server, "alice@example.com");
   await expect(openCount(operator)).toHaveText("1");
   await row(operator, "Snooze me").click();
@@ -98,7 +81,7 @@ test("a snoozed conversation leaves the count until the visitor writes again", a
 });
 
 test("each reply shows who sent it, and your own say You", async ({ browser }) => {
-  const customer = await visitor(browser, "Who is answering?");
+  const customer = await visitor(browser, server, PRICING, "Who is answering?");
   const alice = await signedIn(browser, server, "alice@example.com");
   const bob = await signedIn(browser, server, "bob@example.com");
 
@@ -125,8 +108,11 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
 
   // A signed-out visitor has a short code, and the thread shows the page without its query.
   await expect(alice.locator(".thread-head h2")).toHaveText(/^Visitor [0-9A-Z]{4}$/);
-  // The last page is in the visitor's panel, by its path.
-  await expect(alice.locator(".visitor-panel")).toContainText("/pricing");
+  // The last page is in the visitor's panel, named by its title, with its path and no query on
+  // the link. Every page of the test site has the title "Host".
+  const lastPage = alice.locator(".visitor-panel .journey .page-name").first();
+  await expect(lastPage).toHaveText("Host");
+  await expect(lastPage).toHaveAttribute("title", /\/pricing$/);
   await expect(alice.locator(".thread")).not.toContainText("SECRET");
 
   for (const page of [customer, alice, bob]) await page.context().close();
@@ -140,14 +126,14 @@ test("the Inbox item, the tab title and the favicon count the conversations that
   await expect(operator).toHaveTitle("Dinghy");
 
   // A new message arrives live, with no reload.
-  const first = await visitor(browser, "First question");
+  const first = await visitor(browser, server, PRICING, "First question");
   await expect(openCount(operator)).toHaveText("1");
   await expect(operator).toHaveTitle("(1) Dinghy");
   await expect(row(operator, "First question").locator(".chip.warn")).toHaveText(
     "Waiting for a reply",
   );
 
-  const second = await visitor(browser, "Second question");
+  const second = await visitor(browser, server, PRICING, "Second question");
   await expect(openCount(operator)).toHaveText("2");
   await expect(operator).toHaveTitle("(2) Dinghy");
 
@@ -192,7 +178,7 @@ test("a hidden tab's title counts a visitor who writes while it is hidden", asyn
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  const writer = await visitor(browser, "Written while hidden");
+  const writer = await visitor(browser, server, PRICING, "Written while hidden");
   await operator.clock.runFor(60_000);
   await expect(operator).toHaveTitle("(1) Dinghy");
   for (const page of [writer, operator]) await page.context().close();
@@ -212,8 +198,8 @@ test("a row shows the visitor's country as a flag on the avatar, and names it", 
 });
 
 test("a draft stays with its conversation when the operator opens another", async ({ browser }) => {
-  const one = await visitor(browser, "Draft one");
-  const two = await visitor(browser, "Draft two");
+  const one = await visitor(browser, server, PRICING, "Draft one");
+  const two = await visitor(browser, server, PRICING, "Draft two");
   const operator = await signedIn(browser, server, "alice@example.com");
   const reply = operator.getByRole("textbox", { name: "Your reply" });
   await row(operator, "Draft one").click();
@@ -234,7 +220,7 @@ test("a draft stays with its conversation when the operator opens another", asyn
 });
 
 test("a failed action says so", async ({ browser }) => {
-  const customer = await visitor(browser, "Close me later");
+  const customer = await visitor(browser, server, PRICING, "Close me later");
   const operator = await signedIn(browser, server, "alice@example.com");
   await row(operator, "Close me later").click();
   await operator.route("**/conversations/*", (route) =>
@@ -261,7 +247,7 @@ test("an operator changes their name in Profile, which has no password", async (
   await expect(page.locator(".me")).toContainText("Carol King");
 
   // The inbox's assignment dropdown shows the new name too, without a reload.
-  const customer = await visitor(browser, "Who is Carol now?");
+  const customer = await visitor(browser, server, PRICING, "Who is Carol now?");
   await page.getByRole("button", { name: "Inbox" }).click();
   await row(page, "Who is Carol now?").click();
   await page.getByRole("button", { name: /^Who answers/ }).click();
@@ -277,7 +263,7 @@ test("an operator changes their name in Profile, which has no password", async (
 test("the Closed switch lists closed conversations, by keyboard too, and a reload keeps it", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "Close this one");
+  const customer = await visitor(browser, server, PRICING, "Close this one");
   const page = await signedIn(browser, server, "alice@example.com");
   await row(page, "Close this one").click();
   await page.getByRole("button", { name: "Close", exact: true }).click();
@@ -301,7 +287,10 @@ test("the Closed switch lists closed conversations, by keyboard too, and a reloa
 });
 
 test("Mine and Unassigned follow assignments as they change", async ({ browser }) => {
-  const customers = [await visitor(browser, "For Alice"), await visitor(browser, "For Bob")];
+  const customers = [
+    await visitor(browser, server, PRICING, "For Alice"),
+    await visitor(browser, server, PRICING, "For Bob"),
+  ];
   const alice = await signedIn(browser, server, "alice@example.com");
   const bob = await signedIn(browser, server, "bob@example.com");
   const assign = async (text: string, name: string) => {
@@ -337,7 +326,7 @@ test("Mine and Unassigned follow assignments as they change", async ({ browser }
 test("an old Closed link opens the Inbox with Closed picked, and a conversation link its state", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "Linked and closed");
+  const customer = await visitor(browser, server, PRICING, "Linked and closed");
   const page = await signedIn(browser, server, "alice@example.com");
   await row(page, "Linked and closed").click();
   await page.getByRole("button", { name: "Close", exact: true }).click();
@@ -363,8 +352,8 @@ test("an old Closed link opens the Inbox with Closed picked, and a conversation 
 });
 
 test("each operator sees the conversations they have not read, with a dot", async ({ browser }) => {
-  const customer = await visitor(browser, "Is anyone reading?");
-  const other = await visitor(browser, "Another question");
+  const customer = await visitor(browser, server, PRICING, "Is anyone reading?");
+  const other = await visitor(browser, server, PRICING, "Another question");
   const alice = await signedIn(browser, server, "alice@example.com");
   const bob = await signedIn(browser, server, "bob@example.com");
   const dot = (page: Page, text: string) =>

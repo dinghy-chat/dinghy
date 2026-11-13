@@ -34,8 +34,8 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { localStore, type ObjectStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { startWorker } from "./worker.ts";
 import { createWorkspace, widgetWorkspace } from "./workspaces.ts";
 
@@ -116,7 +116,7 @@ async function purgeUntilGone(workspaceId: string) {
   } finally {
     await worker.stop();
   }
-  expect(await readdir(join(directory, "images", workspaceId)).catch(() => [])).toEqual([]);
+  expect(await readdir(join(directory, "uploads", workspaceId)).catch(() => [])).toEqual([]);
 }
 
 beforeAll(async () => {
@@ -128,14 +128,14 @@ beforeAll(async () => {
   valkey = new Redis(VALKEY_URL, { enableOfflineQueue: false, maxRetriesPerRequest: 1 });
   directory = await mkdtemp(join(tmpdir(), "dinghy-workspace-delete-"));
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
-  store = localStore(join(directory, "images"));
+  store = localStore(join(directory, "uploads"));
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   app = createApp({
     auth,
     db,
     logger,
     valkey,
-    images: createImages({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL }),
+    uploads: createUploads({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL }),
     trustedProxyHops: 1,
     limitScale: 100,
     operatorDirectory: directory,
@@ -237,6 +237,7 @@ describe("the owner's delete", () => {
     await owner
       .insert(widgetSiteSeen)
       .values({ workspaceId: created.id, origin: "https://home.example" });
+    // A saved reply and a label on the conversation, which go with the workspace row by cascade.
     await owner
       .insert(savedReply)
       .values({ workspaceId: created.id, shortcut: "hello", body: "Hello" });
@@ -339,7 +340,7 @@ const settingsOf = async (space: { id: string; cookie: string }) => {
     cookie: space.cookie,
   });
   return (await response.json()) as {
-    deletion: { conversations: number; images: number; members: number; onlyWorkspace: boolean };
+    deletion: { conversations: number; uploads: number; members: number; onlyWorkspace: boolean };
   };
 };
 
@@ -431,7 +432,7 @@ test("the settings count what a delete removes", async () => {
   });
   expect((await settingsOf(space)).deletion).toEqual({
     conversations: 2,
-    images: 1,
+    uploads: 1,
     // The owner and the teammate. A removed member is not on the team.
     members: 2,
     onlyWorkspace: false,

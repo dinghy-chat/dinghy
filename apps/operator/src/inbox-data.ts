@@ -16,7 +16,7 @@ import { useLatestLoad, useLoad } from "./load.ts";
 import { chime, prepareSound } from "./sound.ts";
 import { readStored, store } from "./stored.ts";
 import { useWaitingBadge } from "./tab-badge.ts";
-import { t } from "./text.ts";
+import { oneOrMany, t } from "./text.ts";
 
 const PAGE_SIZE = 50;
 /** The longest delay setTimeout keeps: a longer one fires at once. */
@@ -70,7 +70,7 @@ function useTeam(
       .filter((id) => id !== meId)
       .flatMap((id) => members.find((member) => member.id === id)?.name ?? []);
     if (names.length === 0) return null;
-    return t(names.length === 1 ? "isReplying" : "areReplying", { names: names.join(", ") });
+    return t(oneOrMany(names.length, "isReplying", "areReplying"), { names: names.join(", ") });
   };
   return { members, loadMembers, replying, leavePresence: leave };
 }
@@ -217,9 +217,11 @@ export function useInboxData({
     onAccountChanged();
   }, [live.accountVersion, onAccountChanged]);
   const team = useTeam(api, meId, selected, live.visible, live.teamVersion);
-  // A label's add, change or delete is a workspace change, so they load again with `me`.
+  // A change to a label or a saved reply is a workspace change, so they load again with `me`.
   // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
   const labels = useLoad(() => api.labels(), [api, live.accountVersion]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
+  const savedReplies = useLoad(() => api.savedReplies(), [api, live.accountVersion]);
   // A team of one has nothing to filter. The roster is empty only until it loads, and the
   // address's filter holds until then.
   const isTeam = team.members.length > 1;
@@ -247,5 +249,6 @@ export function useInboxData({
     labels: labels.data?.labels ?? [],
     labelsLoaded: labels.data !== null,
     reloadLabels: labels.reload,
+    savedReplies: savedReplies.data?.savedReplies ?? [],
   };
 }

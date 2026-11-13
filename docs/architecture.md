@@ -27,7 +27,7 @@ Compose adds two one-shot services from the same image: `init` writes the secret
 
 ## Tenant isolation
 
-A workspace is a tenant. `operator`, its picture, its two-step sign-in and its session tables are global and hold no workspace data. An export leaves the two-step sign-in out, because it belongs to the account. Its TOTP secret is encrypted with AES-256-GCM, with a key derived from `AUTH_SECRET` by HKDF, and its recovery codes are stored as keyed hashes. Every other table has a `workspace_id`.
+A workspace is a tenant. `operator`, its picture, its two-step sign-in and its session tables are global and hold no workspace data. An export leaves the two-step sign-in out, because it belongs to the account. Its TOTP secret is encrypted with AES-256-GCM, with a key derived from `AUTH_SECRET` by HKDF, and its recovery codes are stored as keyed hashes. The operator's `two_factor_on` column says whether it is on, so BetterAuth's one session query also gives the second step's state. Every other table has a `workspace_id`.
 
 Two layers keep workspaces apart:
 
@@ -74,6 +74,8 @@ Background work lives in Postgres tables, and the worker claims rows with `FOR U
 4. Delete stored images and files that are queued for deletion.
 5. Prune old events and finished rows, expired chat links and reply addresses unused for 90 days. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
 6. Purge workspaces that an owner deleted.
+
+The purge is the Postgres function `purge_deleted_workspaces()`. Older tables have a `DELETE` line in it. A new table that a workspace owns declares its `workspace_id` with `ownedByWorkspace()` in `schema.ts` instead. That references `workspace` with `ON DELETE CASCADE`, so its rows go with the workspace row and a new feature does not rewrite the function.
 
 Each step runs on its own, so a step that fails is logged and the others still run. Every 30 seconds at most, a worker records that its loop still finishes, and `/readyz` reports `"worker":"stale"` when no worker did for 5 minutes. On Dinghy Cloud, the subscription lifecycle runs in the same loop with its own 10-minute claim, because one step can wait on Stripe and on email.
 

@@ -24,9 +24,11 @@ import {
 import {
   type BusinessHours,
   HEADER_FACES_MAX,
+  LABEL_NAME_MAX,
   LOCALES,
   MESSAGE_MAX,
   RADIUS_MAX_PX,
+  SAVED_REPLY_BODY_MAX,
   SAVED_REPLY_SHORTCUT,
   WIDGET_DEFAULTS,
 } from "../../../../packages/widget/src/shared.ts";
@@ -37,6 +39,11 @@ const workspaceId = () =>
   uuid("workspace_id")
     .notNull()
     .references(() => workspace.id);
+/** A workspace's row that goes with it, so the purge needs no line for its table. */
+const ownedByWorkspace = () =>
+  uuid("workspace_id")
+    .notNull()
+    .references(() => workspace.id, { onDelete: "cascade" });
 
 export const memberRole = pgEnum("member_role", ["owner", "admin", "member"]);
 export const conversationStatus = pgEnum("conversation_status", ["open", "closed"]);
@@ -160,6 +167,9 @@ export const operator = pgTable("operator", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   // The operator's own status, in every workspace. While away, the widget does not count them online.
   away: boolean("away").notNull().default(false),
+  // True while two-step sign-in is on, as `operator_two_factor.enabled_at` says. Here, so the
+  // session check reads it with the session and needs no query of its own.
+  twoFactorOn: boolean("two_factor_on").notNull().default(false),
   // Cloud only. When the cloud's welcome email went out, so an account gets it once, whatever it does after.
   welcomedAt: timestamp("welcomed_at", { withTimezone: true }),
   createdAt: createdAt(),
@@ -735,9 +745,7 @@ export const replyAddress = pgTable(
 export const pageView = pgTable(
   "page_view",
   {
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
+    workspaceId: ownedByWorkspace(),
     id: id(),
     visitorId: uuid("visitor_id").notNull(),
     // The page's origin and path. Never a query string or hash.
@@ -1087,9 +1095,7 @@ export const draftReply = pgTable(
 export const widgetSiteSeen = pgTable(
   "widget_site_seen",
   {
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
+    workspaceId: ownedByWorkspace(),
     // An exact origin, such as https://app.example.com.
     origin: text("origin").notNull(),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1164,8 +1170,9 @@ export const webhookDelivery = pgTable(
     type: text("type").$type<WebhookEvent>().notNull(),
     conversationId: uuid("conversation_id").notNull(),
     messageId: uuid("message_id"),
-    // A `conversation.labeled` delivery's label, and whether it was added or removed. Not a foreign
-    // key, so a delivery still says which label went after someone deletes it.
+    // A `conversation.labeled` delivery's label, and whether it was added or removed, both null on
+    // other deliveries, as webhook_delivery_label checks. Not a foreign key, so a delivery still says
+    // which label went after someone deletes it.
     labelId: uuid("label_id"),
     labelAdded: boolean("label_added"),
     attempts: integer("attempts").notNull().default(0),
@@ -1482,13 +1489,11 @@ export const welcomeLink = pgTable(
   ],
 );
 
-export const SAVED_REPLY_BODY_MAX = 5000;
-
 /** A reply the team writes once, and an operator inserts in the composer by typing `/`. */
 export const savedReply = pgTable(
   "saved_reply",
   {
-    workspaceId: workspaceId(),
+    workspaceId: ownedByWorkspace(),
     id: id(),
     // What follows `/` in the composer, such as `refund-policy`.
     shortcut: text("shortcut").notNull(),
@@ -1548,13 +1553,12 @@ export const LABEL_COLORS = [
   "purple",
 ] as const;
 export const labelColor = pgEnum("label_color", LABEL_COLORS);
-export const LABEL_NAME_MAX = 40;
 
 /** A label the team puts on conversations, such as "billing", to sort and count them. */
 export const label = pgTable(
   "label",
   {
-    workspaceId: workspaceId(),
+    workspaceId: ownedByWorkspace(),
     id: id(),
     name: text("name").notNull(),
     color: labelColor("color").notNull().default("gray"),
@@ -1574,7 +1578,7 @@ export const label = pgTable(
 export const conversationLabel = pgTable(
   "conversation_label",
   {
-    workspaceId: workspaceId(),
+    workspaceId: ownedByWorkspace(),
     conversationId: uuid("conversation_id").notNull(),
     labelId: uuid("label_id").notNull(),
     createdAt: createdAt(),
