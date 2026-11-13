@@ -45,7 +45,6 @@ const BY_CODE: Record<string, TextId> = {
   saved_reply_shortcut_taken: "savedReplyShortcutTaken",
   label_limit: "labelLimit",
   label_name_taken: "labelNameTaken",
-  two_factor_unreadable: "twoFactorUnreadable",
 };
 
 /**

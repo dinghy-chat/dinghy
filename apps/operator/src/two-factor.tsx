@@ -2,7 +2,6 @@
 import { type FormEvent, useState } from "react";
 import { encode } from "uqr";
 import {
-  ApiError,
   checkTwoFactor,
   disableTwoFactor,
   enableTwoFactor,
@@ -21,11 +20,15 @@ const RECOVERY_FILE = "dinghy-recovery-codes.txt";
 /** The server's limit once spaces are gone, so a code typed with spaces always fits. */
 const CODE_MAX_LENGTH = 40;
 
-/** A refused code: wrong, the session ended after too many, or the server cannot count tries. */
+/**
+ * A refused code: wrong, the session ended after too many, the server cannot read the secret, or
+ * it cannot count tries.
+ */
 const codeFailure = (failure: unknown): TextId =>
   failureText(failure, {
     400: "twoFactorWrongCode",
     429: "twoFactorLocked",
+    500: "twoFactorUnreadable",
     503: "twoFactorUnavailable",
   });
 
@@ -43,7 +46,10 @@ function QrCode({ text }: { text: string }) {
   );
 }
 
-/** A code field's state: the code, its error, and the send that clears and sets them. */
+/**
+ * A code field's state: the code, its error, and the send that clears and sets them. Once locked,
+ * too many wrong codes ended the session, so the field gives way to a way back to sign-in.
+ */
 function useCode(onSubmit: (code: string) => Promise<void>) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<TextId | null>(null);
@@ -59,16 +65,17 @@ function useCode(onSubmit: (code: string) => Promise<void>) {
       setBusy(false);
     }
   };
-  return { code, setCode, error, busy, send };
+  return { code, setCode, error, busy, send, isLocked: error === "twoFactorLocked" };
 }
 
-/** A form with one code field, its error and its buttons. */
+/** A form with one code field, its error and its buttons, or the lockout and a way back. */
 function CodeForm({
   label,
   submit,
   numeric,
   onSubmit,
   onCancel,
+  onLocked,
 }: {
   label: TextId;
   submit: TextId;
@@ -76,8 +83,22 @@ function CodeForm({
   numeric: boolean;
   onSubmit(code: string): Promise<void>;
   onCancel?(): void;
+  /** Leads back to sign-in, on a route that counts wrong codes. */
+  onLocked?(): void;
 }) {
-  const { code, setCode, error, busy, send } = useCode(onSubmit);
+  const { code, setCode, error, busy, send, isLocked } = useCode(onSubmit);
+  if (isLocked && onLocked !== undefined) {
+    return (
+      <div className="stack">
+        <ErrorNote text={error} />
+        <div className="actions">
+          <button type="button" className="pill dark" onClick={onLocked}>
+            {t("twoFactorSignInAgain")}
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <form className="stack" onSubmit={send}>
       <Field
@@ -172,21 +193,8 @@ function Setup({
   );
 }
 
+/** Turns it off with a code. Afterwards, or after a lockout, onDone reads the account again. */
 function TurnOff({ onDone, onCancel }: { onDone(): void; onCancel(): void }) {
-  const [isLocked, setIsLocked] = useState(false);
-  // Too many wrong codes ended the session, so the button leads back to sign-in.
-  if (isLocked) {
-    return (
-      <div className="stack">
-        <ErrorNote text="twoFactorLocked" />
-        <div className="actions">
-          <button type="button" className="pill dark" onClick={onDone}>
-            {t("twoFactorSignInAgain")}
-          </button>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className="stack">
       <p className="hint">{t("twoFactorOffHelp")}</p>
@@ -195,16 +203,11 @@ function TurnOff({ onDone, onCancel }: { onDone(): void; onCancel(): void }) {
         submit="twoFactorTurnOff"
         numeric={false}
         onSubmit={async (code) => {
-          try {
-            await disableTwoFactor(code);
-          } catch (failure) {
-            if (!(failure instanceof ApiError && failure.status === 429)) throw failure;
-            setIsLocked(true);
-            return;
-          }
+          await disableTwoFactor(code);
           onDone();
         }}
         onCancel={onCancel}
+        onLocked={onDone}
       />
     </div>
   );
@@ -261,6 +264,7 @@ export function TwoFactorRow({ me, onChanged }: { me: Me; onChanged(): void }) {
             setStep({ kind: "codes", codes: (await newRecoveryCodes(code)).recoveryCodes })
           }
           onCancel={idle}
+          onLocked={finish}
         />
       </div>
     );
@@ -301,12 +305,11 @@ export function TwoFactorCheck({
   onPassed(): void;
   onSignedOut(): void;
 }) {
-  const { code, setCode, error, busy, send } = useCode(async (typed) => {
+  const { code, setCode, error, busy, send, isLocked } = useCode(async (typed) => {
     await checkTwoFactor(typed);
     onPassed();
   });
-  // Too many wrong codes ended the session.
-  if (error === "twoFactorLocked") {
+  if (isLocked) {
     return (
       <AuthPage time="noon">
         <ErrorNote text={error} />
