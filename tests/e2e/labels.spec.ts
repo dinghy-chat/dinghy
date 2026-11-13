@@ -81,8 +81,11 @@ test("X, Shift-click and the box beside the count choose rows, and Close closes 
 
   await bar.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("menuitem", { name: "Mark read" }).click();
+  // The first row was open, so it was read already and does not count as marked.
   await expect(
-    page.getByRole("status").filter({ hasText: "Marked 3 conversations read." }),
+    page
+      .getByRole("status")
+      .filter({ hasText: "Marked 2 conversations read. 1 needed no change." }),
   ).toBeVisible();
   await expect(bar).toHaveCount(0);
   await rows.nth(0).hover();
