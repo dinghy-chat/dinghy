@@ -348,9 +348,9 @@ export const SAVED_REPLY_SHORTCUT_MAX = 32;
  * A saved reply's shortcut, what follows `/` in the composer. The form, the server and the database
  * check it.
  */
-export const SAVED_REPLY_SHORTCUT = new RegExp(
-  `^[a-z0-9][a-z0-9-]{0,${SAVED_REPLY_SHORTCUT_MAX - 1}}$`,
-);
+// Built in a call marked pure, so the widget's bundles, which never use it, drop it.
+export const SAVED_REPLY_SHORTCUT = /* @__PURE__ */ (() =>
+  new RegExp(`^[a-z0-9][a-z0-9-]{0,${SAVED_REPLY_SHORTCUT_MAX - 1}}$`))();
 
 /**
  * The limits of saved replies, labels and bulk changes. The server and the database check them, and
