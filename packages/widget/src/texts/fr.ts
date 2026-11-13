@@ -40,8 +40,7 @@ export const fr: Texts = {
     "Envoyez une image, ou un fichier PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 ou MOV.",
   fileRemoved: "Fichier supprimé au bout de 12 mois",
   emailTitle: "Recevez nos réponses par e-mail",
-  emailAfterFirst:
-    "Si vous quittez la page, vous recevrez aussi nos réponses par e-mail.",
+  emailAfterFirst: "Si vous quittez la page, vous recevrez aussi nos réponses par e-mail.",
   emailBeforeFirst: "Laissez votre adresse e-mail pour que nous puissions vous répondre",
   emailLabel: "Votre adresse e-mail",
   emailPlaceholder: "nom@exemple.com",
