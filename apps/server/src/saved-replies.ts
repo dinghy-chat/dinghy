@@ -65,7 +65,6 @@ const workspaceParams = z.object({ workspaceId: z.uuid() });
 const savedReplyParams = workspaceParams.extend({ savedReplyId: z.uuid() });
 
 const WRITE_ERRORS = {
-  ...MEMBER_WRITE_ERRORS,
   409: errorAnswer(
     `saved_reply_shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has ${SAVED_REPLY_LIMIT} already`,
   ),
@@ -93,7 +92,11 @@ const addRoute = createRoute({
     params: workspaceParams,
     body: jsonBody(z.object({ shortcut: Shortcut, body: ReplyBody })),
   },
-  responses: { 201: jsonAnswer("The saved reply", SavedReply), ...WRITE_ERRORS },
+  responses: {
+    201: jsonAnswer("The saved reply", SavedReply),
+    ...MEMBER_WRITE_ERRORS,
+    ...WRITE_ERRORS,
+  },
 });
 
 const changeRoute = createRoute({
@@ -103,9 +106,19 @@ const changeRoute = createRoute({
   summary: "Change a saved reply's shortcut or text. Any member can",
   request: {
     params: savedReplyParams,
-    body: jsonBody(z.object({ shortcut: Shortcut.optional(), body: ReplyBody.optional() })),
+    body: jsonBody(
+      z
+        .object({ shortcut: Shortcut.optional(), body: ReplyBody.optional() })
+        .refine((change) => change.shortcut !== undefined || change.body !== undefined, {
+          message: "Send a shortcut, a text or both.",
+        }),
+    ),
   },
-  responses: { 200: jsonAnswer("The saved reply", SavedReply), ...WRITE_ERRORS },
+  responses: {
+    200: jsonAnswer("The saved reply", SavedReply),
+    ...MEMBER_WRITE_ERRORS,
+    ...WRITE_ERRORS,
+  },
 });
 
 const deleteRoute = createRoute({

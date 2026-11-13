@@ -128,6 +128,8 @@ describe("saved replies", () => {
       shortcut: "hello",
     });
     expect(renamed.status).toBe(409);
+    const empty = await asOperator(app, boss.cookie, "PATCH", `${base(space.id)}/${other.id}`, {});
+    expect(empty.status).toBe(400);
     // Another workspace has its own shortcuts.
     const elsewhere = await team();
     const theirs = await asOperator(app, elsewhere.boss.cookie, "POST", base(elsewhere.space.id), {
