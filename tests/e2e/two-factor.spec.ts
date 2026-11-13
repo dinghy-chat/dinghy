@@ -100,7 +100,7 @@ test("too many wrong codes while turning it off end the session, and say so", as
   await page.context().close();
 });
 
-test("a lost phone starts a recovery from the code screen, and a signed-in device cancels it", async ({
+test("a lost app starts a removal request from the code screen, and a signed-in device cancels it at once", async ({
   browser,
 }) => {
   await server.createOperator("cara@example.com");
@@ -113,20 +113,20 @@ test("a lost phone starts a recovery from the code screen, and a signed-in devic
   await openLink(lost, await server.signInLink("cara@example.com"));
   await expect(lost.getByRole("heading", { name: "Enter your code" })).toBeVisible();
   await lost
-    .getByRole("button", { name: "Lost your authenticator and your recovery codes?" })
+    .getByRole("button", { name: "Lost your authenticator app and your recovery codes?" })
     .click();
   await lost.getByRole("button", { name: "Start the 72-hour wait" }).click();
-  await expect(lost.getByText("Two-step sign-in is removed from your account on")).toBeVisible();
+  await expect(lost.getByText("Two-step sign-in will be removed on")).toBeVisible();
 
   // Another owner sees it in Settings > Team.
   const dan = await signedIn(browser, server, "dan@example.com");
   await openSettings(dan, "Team");
-  await expect(dan.getByRole("cell", { name: "Recovery pending" })).toBeVisible();
+  await expect(dan.getByRole("cell", { name: "Removal requested" })).toBeVisible();
 
-  await page.reload();
+  // The signed-in device, open since before the request, shows it with no reload.
   const banner = page.getByText("Someone asked to remove two-step sign-in from your account.");
   await expect(banner).toBeVisible();
-  await page.getByRole("button", { name: "Cancel the recovery" }).click();
+  await page.getByRole("button", { name: "Cancel the request" }).click();
   await expect(banner).toHaveCount(0);
 
   // The session that never passed the check ended with the cancel.

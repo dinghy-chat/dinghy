@@ -2,7 +2,7 @@
 import { type FormEvent, useState } from "react";
 import {
   askSignInLink,
-  cancelRecoveryByLink,
+  cancelRemovalByLink,
   confirmAccountDelete,
   redeemJoinLink,
   redeemSignInLink,
@@ -165,11 +165,11 @@ const PURPOSES = {
     help: "linkDeleteAccountHelp",
     again: null,
   },
-  // The recovery's emails carry it. It works only while the recovery waits.
-  "cancel-recovery": {
-    title: "linkCancelRecoveryTitle",
-    button: "recoveryBannerCancel",
-    help: "linkCancelRecoveryHelp",
+  // A removal request's emails carry it. It works only while the request waits.
+  "cancel-removal": {
+    title: "linkCancelRemovalTitle",
+    button: "removalCancel",
+    help: "linkCancelRemovalHelp",
     again: null,
   },
 } satisfies Record<string, { title: TextId; button: TextId; help: TextId; again: string | null }>;
@@ -180,7 +180,7 @@ const isPurpose = (value: string): value is Purpose => Object.hasOwn(PURPOSES, v
 /** What a used or expired link says, for the kinds that no page can make again. */
 const SPENT_LINK: Partial<Record<Purpose, TextId>> = {
   "delete-account": "deleteLinkInvalid",
-  "cancel-recovery": "linkCancelRecoveryInvalid",
+  "cancel-removal": "linkCancelRemovalInvalid",
 };
 
 /**
@@ -203,8 +203,8 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
         setFinished("deleted");
         return;
       }
-      if (kind === "cancel-recovery") {
-        await cancelRecoveryByLink(token);
+      if (kind === "cancel-removal") {
+        await cancelRemovalByLink(token);
         setFinished("cancelled");
         return;
       }
@@ -222,9 +222,9 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
   };
 
   if (finished === "deleted") return <AccountDeleted />;
-  if (finished === "cancelled") return <RecoveryCancelled />;
+  if (finished === "cancelled") return <RemovalCancelled />;
   const { again } = PURPOSES[kind];
-  // Only the invite, the Profile page or a new recovery makes a new link of these kinds.
+  // Only the invite, the Profile page or a new removal request makes a new link of these kinds.
   const spent = SPENT_LINK[kind] ?? "joinLinkInvalid";
   // A refused join link is used up too, so its button would only say the link expired.
   if (error === "linkInvalid" || (again === null && error !== null && SPENT.has(error))) {
@@ -251,13 +251,13 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
   );
 }
 
-/** After a recovery's cancel link: what the cancel means, and the way to sign in. */
-function RecoveryCancelled() {
+/** After a removal request's cancel link: what the cancel means, and the way to sign in. */
+function RemovalCancelled() {
   return (
     <AuthPage time="noon">
-      <h1>{t("recoveryCancelledTitle")}</h1>
+      <h1>{t("removalCancelledTitle")}</h1>
       <p className="note" role="status">
-        {t("recoveryCancelledHelp")}
+        {t("removalCancelledHelp")}
       </p>
       <AppLink className="btn primary large" href="/">
         {t("linkSignIn")}

@@ -368,9 +368,9 @@ export interface Me {
   twoFactor: "off" | "on" | "required";
   /** The recovery codes not used yet. Null unless `twoFactor` is `on`. */
   recoveryCodesLeft: number | null;
-  /** When a waiting recovery removes two-step sign-in, unless someone cancels it, or null. */
-  recoveryCompletesAt: string | null;
-  /** A recovery or a reset removed two-step sign-in, so this sign-in asks to turn it on again. */
+  /** When a waiting request removes two-step sign-in, unless someone cancels it, or null. */
+  removalCompletesAt: string | null;
+  /** A removal request or a reset removed two-step sign-in, so this sign-in asks to turn it on. */
   asksTwoFactorAgain: boolean;
 }
 
@@ -405,8 +405,8 @@ export interface Member {
   email: string;
   role: Role;
   pictureUrl: string | null;
-  /** Whether the member turned on two-step sign-in. `recovery`: a request to remove it waits. */
-  twoFactor: "off" | "on" | "recovery";
+  /** Whether the member turned on two-step sign-in, and whether a request to remove it waits. */
+  twoFactor: "off" | "on" | "removal_requested";
   /** Whether you may reset their two-step sign-in now. */
   canResetTwoFactor: boolean;
 }
@@ -620,14 +620,13 @@ export const disableTwoFactor = (code: string) =>
 export const checkTwoFactor = (code: string) =>
   post<{ ok: true }>("/v1/operator/two-factor/check", { code });
 /** Asks to remove two-step sign-in after the wait, from the code screen. */
-export const askRecovery = () =>
-  post<{ completesAt: string }>("/v1/operator/two-factor/recovery", {});
-/** Cancels the account's waiting recovery, from a session that passed the check. */
-export const cancelRecovery = () =>
-  post<{ ok: true }>("/v1/operator/two-factor/recovery/cancel", {});
-/** Cancels a waiting recovery with its link's token, from the button on the page the link opens. */
-export const cancelRecoveryByLink = (token: string) =>
-  post<{ ok: true }>("/v1/two-factor-recovery/cancel", { token });
+export const askRemoval = () =>
+  post<{ completesAt: string }>("/v1/operator/two-factor/removal", {});
+/** Cancels the account's waiting removal request, from a session that passed the check. */
+export const cancelRemoval = () => post<{ ok: true }>("/v1/operator/two-factor/removal/cancel", {});
+/** Cancels a waiting removal request with its link's token, from the page the link opens. */
+export const cancelRemovalByLink = (token: string) =>
+  post<{ ok: true }>("/v1/account/two-factor-removal/cancel", { token });
 /** Stops asking to turn two-step sign-in on again. */
 export const skipTwoFactorPrompt = () =>
   post<{ ok: true }>("/v1/operator/two-factor/skip-prompt", {});

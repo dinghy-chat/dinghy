@@ -125,13 +125,13 @@ type Leaving = { member: Member; self: boolean };
 const TWO_FACTOR_TEXT: Record<Member["twoFactor"], TextId> = {
   off: "teamTwoFactorOff",
   on: "teamTwoFactorOn",
-  recovery: "teamTwoFactorRecovery",
+  removal_requested: "teamTwoFactorRemoval",
 };
 /** The same, on a phone, where the cell's column is gone. Off shows nothing there. */
 const TWO_FACTOR_PHONE_TEXT: Record<Member["twoFactor"], TextId | null> = {
   off: null,
   on: "teamTwoFactorOnPhone",
-  recovery: "teamTwoFactorRecoveryPhone",
+  removal_requested: "teamTwoFactorRemovalPhone",
 };
 
 /**

@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { BillingBanner, WaitingBanner } from "../../../ee/operator/billing.tsx";
-import { type BillingState, cancelRecovery, type Me, type WorkspaceApi } from "./api.ts";
+import { ApiError, type BillingState, cancelRemoval, type Me, type WorkspaceApi } from "./api.ts";
 import { BotsPausedBanner } from "./bots.tsx";
 import { dayTime } from "./format.ts";
 import { Icon } from "./icons.tsx";
@@ -45,27 +45,28 @@ function SuspendedBanner({ contact }: { contact: string | null }) {
  * On every session that passed the check while someone asks to remove two-step sign-in: the one
  * place in the app where the real owner can stop it.
  */
-function RecoveryBanner({
-  completesAt,
-  onCancelled,
-}: {
-  completesAt: string;
-  onCancelled(): void;
-}) {
-  const cancel = useAction(() => {
-    toast("recoveryCancelledTitle");
-    onCancelled();
-  });
+function RemovalBanner({ completesAt, onCancelled }: { completesAt: string; onCancelled(): void }) {
+  const cancel = useAction(onCancelled);
+  // A 409 means no request waits any more: a code, a link or another device came first, so `me`
+  // loads again with no toast.
+  const run = async () => {
+    try {
+      await cancelRemoval();
+      toast("removalCancelledTitle");
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 409)) throw error;
+    }
+  };
   return (
     <div className="banner billing-banner" role="status">
-      <span>{t("recoveryBanner", { date: dayTime(completesAt) })}</span>
+      <span>{t("removalBanner", { date: dayTime(completesAt) })}</span>
       <button
         type="button"
         className="btn light small"
         disabled={cancel.busy}
-        onClick={() => void cancel.run(cancelRecovery)}
+        onClick={() => void cancel.run(run)}
       >
-        {t("recoveryBannerCancel")}
+        {t("removalCancel")}
       </button>
       <ErrorNote text={cancel.failure} />
     </div>
@@ -101,8 +102,8 @@ function PlanBanner({
 }
 
 /**
- * The banners above every page: a lost stream, a recovery that waits, a workspace just deleted,
- * the plan, and paused bots.
+ * The banners above every page: a lost stream, a removal request that waits, a workspace just
+ * deleted, the plan, and paused bots.
  */
 export function InboxBanners({
   lost,
@@ -112,7 +113,7 @@ export function InboxBanners({
   botsPausedBy,
   botsPausedAt,
   onResumeBots,
-  onRecoveryCancelled,
+  onRemovalCancelled,
   ...plan
 }: PlanProps & {
   lost: boolean;
@@ -127,7 +128,7 @@ export function InboxBanners({
   /** Null for a member, who cannot resume them. */
   onResumeBots: (() => void) | null;
   /** A cancel changes `me`, which then loads again. */
-  onRecoveryCancelled(): void;
+  onRemovalCancelled(): void;
 }) {
   return (
     <>
@@ -136,11 +137,8 @@ export function InboxBanners({
           {t("reconnecting")}
         </div>
       )}
-      {plan.me.recoveryCompletesAt !== null && (
-        <RecoveryBanner
-          completesAt={plan.me.recoveryCompletesAt}
-          onCancelled={onRecoveryCancelled}
-        />
+      {plan.me.removalCompletesAt !== null && (
+        <RemovalBanner completesAt={plan.me.removalCompletesAt} onCancelled={onRemovalCancelled} />
       )}
       {deletedName !== null && (
         <div className="banner deleted-banner" role="status">

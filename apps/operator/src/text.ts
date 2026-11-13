@@ -855,7 +855,7 @@ const en = {
   twoFactorConfirm: "Turn on",
   twoFactorRecoveryTitle: "Save your recovery codes",
   twoFactorRecoveryHelp:
-    "If you lose your phone, each code signs you in once in place of a 6-digit code. This is the only time they show.",
+    "If you lose your authenticator app, each code signs you in once in place of a 6-digit code. This is the only time they show.",
   twoFactorRecoveryCopy: "Copy the codes",
   twoFactorRecoveryDownload: "Download",
   twoFactorRecoverySaved: "I saved them",
@@ -873,39 +873,39 @@ const en = {
     "This server cannot read your two-step sign-in, because its settings changed. Ask its admin to reset it.",
   twoFactorCheckTitle: "Enter your code",
   twoFactorCheckHelp:
-    "Open your authenticator app and enter the 6-digit code for Dinghy. Lost your phone? Enter a recovery code.",
+    "Open your authenticator app and enter the 6-digit code for Dinghy. Lost your authenticator app? Enter a recovery code.",
   twoFactorCheckButton: "Continue",
   twoFactorSignInAgain: "Back to sign-in",
   twoFactorAgainTitle: "Turn on two-step sign-in again?",
   twoFactorAgainHelp:
-    "A recovery or a teammate removed it from your account. Turn it on again, so that someone who reads your email still cannot sign in.",
+    "Two-step sign-in was removed from your account. Turn it on again, so that your email alone can't sign you in.",
   twoFactorAgainSkip: "Not now",
-  recoveryLost: "Lost your authenticator and your recovery codes?",
-  recoveryAskTitle: "Remove two-step sign-in",
-  recoveryAskHelp:
-    "Dinghy removes it from your account after 72 hours, so you can sign in with the email link alone. We tell you by email and on your devices, and we tell the owners and admins of your workspaces, so any of you can stop it if it wasn't you.",
-  recoveryAskButton: "Start the 72-hour wait",
-  recoveryWaiting:
-    "Two-step sign-in is removed from your account on {date}. Found your phone or a recovery code? Enter it to stop the recovery.",
-  recoveryManualCloud:
-    "Nobody else can be warned, so a person at Dinghy checks this recovery by hand. Write to {contact} with your last invoice number and the last 4 digits of the card that pays for Dinghy.",
-  recoveryManualSelfHosted:
-    "Nobody else can be warned, so this recovery needs a check by hand. Ask the person who runs this Dinghy server to turn off two-step sign-in for you.",
-  recoveryBlocked: "A recovery was cancelled in the last 7 days, so a new one cannot start yet.",
-  recoverySignInAgain:
-    "A recovery starts only within 15 minutes of an email link. Sign out, then sign in again.",
-  recoveryBanner:
-    "Someone asked to remove two-step sign-in from your account. It happens on {date} unless you cancel it.",
-  recoveryBannerCancel: "Cancel the recovery",
-  recoveryCancelledTitle: "The recovery is cancelled",
-  recoveryCancelledHelp:
-    "Two-step sign-in stays on. If you didn't ask for the recovery, someone can most likely read your email: change its password and turn on its own two-step sign-in.",
+  removalLost: "Lost your authenticator app and your recovery codes?",
+  removalAskTitle: "Remove two-step sign-in",
+  removalAskHelp:
+    "After {hours} hours, Dinghy removes two-step sign-in, and you sign in with the email link alone. We tell you by email and on your signed-in devices, and we email the owners and admins of your workspaces. Any of them can stop the request.",
+  removalAskButton: "Start the {hours}-hour wait",
+  removalWaiting:
+    "Two-step sign-in will be removed on {date}. We emailed you the details. Found your app or a recovery code? Enter it above to stop the request.",
+  removalManualCloud:
+    "Your workspaces have no other owner or admin, and you have no other signed-in device, to confirm this. Write to {contact} with your last invoice number and the last 4 digits of the card that pays for Dinghy.",
+  removalManualSelfHosted:
+    "This server can't confirm the request on its own. Ask the person who runs it to turn off two-step sign-in for you.",
+  removalBlocked: "A request was cancelled in the last {days} days, so a new one cannot start yet.",
+  removalSignInAgain:
+    "A request starts only within {minutes} minutes of an email link. Sign out, then sign in again.",
+  removalBanner:
+    "Someone asked to remove two-step sign-in from your account. It happens on {date} unless you cancel the request.",
+  removalCancel: "Cancel the request",
+  removalCancelledTitle: "The request is cancelled",
+  removalCancelledHelp:
+    "Two-step sign-in stays on. If you didn't ask for it, someone can most likely read your email: change its password and turn on its own two-step sign-in.",
   teamTwoFactor: "Two-step sign-in",
   teamTwoFactorOn: "On",
   teamTwoFactorOff: "Off",
   teamTwoFactorOnPhone: "Two-step sign-in on",
-  teamTwoFactorRecovery: "Recovery pending",
-  teamTwoFactorRecoveryPhone: "Two-step sign-in recovery pending",
+  teamTwoFactorRemoval: "Removal requested",
+  teamTwoFactorRemovalPhone: "Two-step sign-in removal requested",
   teamResetTwoFactor: "Reset two-step sign-in for {name}",
   teamResetTwoFactorBlocked:
     "You can reset two-step sign-in only for a teammate in a role below yours who is in no other workspace.",
@@ -935,10 +935,10 @@ const en = {
   emailMismatch: "That email does not match your account. Enter the email you use to sign in.",
   linkDeleteAccountTitle: "Delete your account",
   linkDeleteAccountHelp: "This deletes your Dinghy account for good. It can't be undone.",
-  linkCancelRecoveryTitle: "Cancel the recovery",
-  linkCancelRecoveryHelp:
-    "Someone asked to remove two-step sign-in from your Dinghy account. If it wasn't you, cancel it, then secure your email account.",
-  linkCancelRecoveryInvalid: "This recovery already ended, or someone cancelled it.",
+  linkCancelRemovalTitle: "Cancel the request",
+  linkCancelRemovalHelp:
+    "Someone asked to remove two-step sign-in from your Dinghy account. If it wasn't you, cancel the request, then secure your email account.",
+  linkCancelRemovalInvalid: "This request already ended, or someone cancelled it.",
   usageFullFiles:
     "File storage is full. An owner or admin can delete conversations with images or files to make space.",
   settingsGroupYou: "You",
