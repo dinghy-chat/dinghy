@@ -247,14 +247,14 @@ async function spendCode(tx: Transaction, keys: Keys, operatorId: string, code: 
     .from(operatorTwoFactor)
     .where(and(ours, isNotNull(operatorTwoFactor.enabledAt)))
     .for("update");
-  if (row === undefined) return "wrong" as const;
+  if (row === undefined) return "wrong";
   const secret = unseal(keys, operatorId, row.secret);
   // The recovery codes' hashes are keyed by AUTH_SECRET too, so no code can pass.
-  if (secret === null) return "unreadable" as const;
+  if (secret === null) return "unreadable";
   const step = await matchingStep(secret, code);
   if (step !== null) {
     // A step at or before the last one used is a code seen before.
-    if (row.lastStep !== null && step <= row.lastStep) return "wrong" as const;
+    if (row.lastStep !== null && step <= row.lastStep) return "wrong";
     await tx.update(operatorTwoFactor).set({ lastStep: step }).where(ours);
     return "totp" as const;
   }
@@ -329,6 +329,16 @@ const UNREADABLE_TEXT =
 const UNAVAILABLE_TEXT =
   "check_unavailable: the server cannot count attempts right now, so it checks no code. Retry later";
 
+/** The answers of every route that checks a code under the limit. */
+const CODE_ERRORS = {
+  400: errorAnswer(
+    "invalid_request: the request is not valid. wrong_code: the code is not right, or it was already used",
+  ),
+  429: errorAnswer(LOCKED_TEXT),
+  500: errorAnswer(UNREADABLE_TEXT),
+  503: errorAnswer(UNAVAILABLE_TEXT),
+};
+
 const setupRoute = createRoute({
   method: "post",
   path: "/v1/operator/two-factor/setup",
@@ -375,13 +385,8 @@ const checkRoute = createRoute({
   responses: {
     200: { description: "This session passed", content: okContent },
     ...OPERATOR_WRITE_ERRORS,
-    400: errorAnswer(
-      "invalid_request: the request is not valid. wrong_code: the code is not right, or it was already used",
-    ),
+    ...CODE_ERRORS,
     409: errorAnswer("two_factor_off: two-step sign-in is off"),
-    429: errorAnswer(LOCKED_TEXT),
-    500: errorAnswer(UNREADABLE_TEXT),
-    503: errorAnswer(UNAVAILABLE_TEXT),
   },
 });
 
@@ -397,13 +402,11 @@ const recoveryCodesRoute = createRoute({
       z.object({ recoveryCodes: z.array(z.string()) }),
     ),
     ...OPERATOR_WRITE_ERRORS,
+    ...CODE_ERRORS,
     400: errorAnswer(
       `invalid_request: the request is not valid. wrong_code: not a current ${DIGITS}-digit code from the app, or one already used. A recovery code does not work here`,
     ),
     409: errorAnswer("two_factor_off: two-step sign-in is off"),
-    429: errorAnswer(LOCKED_TEXT),
-    500: errorAnswer(UNREADABLE_TEXT),
-    503: errorAnswer(UNAVAILABLE_TEXT),
   },
 });
 
@@ -417,15 +420,13 @@ const disableRoute = createRoute({
   responses: {
     200: { description: "Two-step sign-in is off", content: okContent },
     ...OPERATOR_WRITE_ERRORS,
-    400: errorAnswer(
-      "invalid_request: the request is not valid. wrong_code: the code is not right, or it was already used",
-    ),
+    ...CODE_ERRORS,
     409: errorAnswer("two_factor_off: two-step sign-in is already off"),
-    429: errorAnswer(LOCKED_TEXT),
-    500: errorAnswer(UNREADABLE_TEXT),
-    503: errorAnswer(UNAVAILABLE_TEXT),
   },
 });
+
+/** How a code fared under the limit. */
+type CodeCheck = "passed" | "wrong" | "locked" | "unreadable" | "unavailable";
 
 interface TwoFactorOptions {
   db: Database;
@@ -462,15 +463,15 @@ export function registerTwoFactorRoutes(
     c: Context<AppEnv>,
     code: string,
     effect: (tx: Transaction) => Promise<unknown>,
-  ) => {
+  ): Promise<CodeCheck> => {
     const operatorId = c.get("operatorId");
     const ip = c.get("clientIp");
     const endSession = () => db.delete(session).where(eq(session.id, c.get("sessionId")));
     const tries = await limit.attempt(operatorId);
-    if (tries === null) return "unavailable" as const;
+    if (tries === null) return "unavailable";
     if (tries > TWO_FACTOR_MAX_FAILURES) {
       await endSession();
-      return "locked" as const;
+      return "locked";
     }
     const used = await db.transaction(async (tx) => {
       const spent = await spendCode(tx, keys, operatorId, code);
@@ -479,7 +480,7 @@ export function registerTwoFactorRoutes(
     });
     if (used === "unreadable") {
       logger.error({ operatorId }, "a two-step sign-in secret does not open: AUTH_SECRET changed");
-      return "unreadable" as const;
+      return "unreadable";
     }
     if (used !== "wrong") {
       await limit.clear(operatorId);
@@ -487,14 +488,23 @@ export function registerTwoFactorRoutes(
         audit(logger, "two_factor.recovery_used", { operatorId, ip });
         tell(c, recoveryUsedMail());
       }
-      return "passed" as const;
+      return "passed";
     }
     audit(logger, "two_factor.failed", { operatorId, ip }, "warn");
-    if (tries < TWO_FACTOR_MAX_FAILURES) return "wrong" as const;
+    if (tries < TWO_FACTOR_MAX_FAILURES) return "wrong";
     await endSession();
     // Once, as the limit is reached. The refused codes after it send nothing.
     tell(c, lockoutMail(TWO_FACTOR_MAX_FAILURES, WINDOW_MINUTES));
-    return "locked" as const;
+    return "locked";
+  };
+
+  /** The answer for a code that did not pass, or null when it passed. */
+  const refuseCode = (c: Context<AppEnv>, checked: CodeCheck) => {
+    if (checked === "wrong") return c.json(WRONG_CODE, 400);
+    if (checked === "locked") return tooManyAttempts(c, limit);
+    if (checked === "unreadable") return c.json(TWO_FACTOR_UNREADABLE, 500);
+    if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
+    return null;
   };
 
   app.openapi(setupRoute, async (c) => {
@@ -525,10 +535,8 @@ export function registerTwoFactorRoutes(
     const checked = await checkCode(c, c.req.valid("json").code, (tx) =>
       tx.update(session).set({ twoFactorAt: new Date() }).where(eq(session.id, sessionId)),
     );
-    if (checked === "wrong") return c.json(WRONG_CODE, 400);
-    if (checked === "locked") return tooManyAttempts(c, limit);
-    if (checked === "unreadable") return c.json(TWO_FACTOR_UNREADABLE, 500);
-    if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
+    const refused = refuseCode(c, checked);
+    if (refused !== null) return refused;
     return c.json({ ok: true as const }, 200);
   });
 
@@ -545,10 +553,8 @@ export function registerTwoFactorRoutes(
         .set({ recoveryCodes: hashes })
         .where(eq(operatorTwoFactor.operatorId, operatorId)),
     );
-    if (checked === "wrong") return c.json(WRONG_CODE, 400);
-    if (checked === "locked") return tooManyAttempts(c, limit);
-    if (checked === "unreadable") return c.json(TWO_FACTOR_UNREADABLE, 500);
-    if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
+    const refused = refuseCode(c, checked);
+    if (refused !== null) return refused;
     audit(logger, "two_factor.recovery_regenerated", { operatorId, ip: c.get("clientIp") });
     return c.json({ recoveryCodes: codes }, 200);
   });
@@ -557,10 +563,8 @@ export function registerTwoFactorRoutes(
     if (c.get("twoFactor") === "off") return c.json(TWO_FACTOR_OFF, 409);
     const operatorId = c.get("operatorId");
     const checked = await checkCode(c, c.req.valid("json").code, (tx) => turnOff(tx, operatorId));
-    if (checked === "wrong") return c.json(WRONG_CODE, 400);
-    if (checked === "locked") return tooManyAttempts(c, limit);
-    if (checked === "unreadable") return c.json(TWO_FACTOR_UNREADABLE, 500);
-    if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
+    const refused = refuseCode(c, checked);
+    if (refused !== null) return refused;
     audit(logger, "two_factor.disabled", { operatorId, ip: c.get("clientIp") });
     tell(c, twoFactorOffMail("operator"));
     return c.json({ ok: true as const }, 200);
