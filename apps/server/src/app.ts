@@ -543,7 +543,7 @@ export function createApp({
       keepsLastWorkspace: cloud === undefined,
     });
     registerWidgetSettingsRoutes(app, db, urls, live);
-    registerBusinessHoursRoutes(app, db);
+    registerBusinessHoursRoutes(app, db, live);
     if (alerts !== undefined) {
       registerAlertRoutes(app, {
         db,

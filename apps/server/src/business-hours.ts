@@ -14,7 +14,9 @@ import {
   MEMBER_ERRORS,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
+import type { Live } from "./live.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
+import { changeWorkspace } from "./messages.ts";
 import { maySetUp } from "./team.ts";
 
 const PATH = `${WORKSPACE_PREFIX}/{workspaceId}/business-hours`;
@@ -128,9 +130,9 @@ export async function saveBusinessHours(
 /**
  * Settings > Business hours. Every member reads them, and only an owner, an admin or a Setup key
  * changes them. The widget reads them with its appearance, so a save reaches sites as the
- * appearance's cache ends.
+ * appearance's cache ends. A save records `workspace.changed`, so open operator apps read them again.
  */
-export function registerBusinessHoursRoutes(app: App, db: Database): void {
+export function registerBusinessHoursRoutes(app: App, db: Database, live: Live): void {
   app.use(putRoute.getRoutingPath(), async (c, next) => {
     if (c.req.method === "PUT" && !maySetUp(c.get("actor"), c.get("memberRole"))) {
       return c.json(FORBIDDEN, 403);
@@ -147,7 +149,10 @@ export function registerBusinessHoursRoutes(app: App, db: Database): void {
   app.openapi(putRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const hours = c.req.valid("json");
-    await withWorkspace(db, id, (tx) => saveBusinessHours(tx, id, hours));
+    await changeWorkspace(db, live, id, async (tx) => {
+      await saveBusinessHours(tx, id, hours);
+      return hours;
+    });
     return c.json(hours, 200);
   });
 }

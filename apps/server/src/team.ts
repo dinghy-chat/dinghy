@@ -49,9 +49,9 @@ import { type Mailer, recipientRejected } from "./mailer.ts";
 import { OPEN_WHILE_CLOSED } from "./member.ts";
 import {
   assignConversation,
+  changeWorkspace,
   markHistoryRead,
   recordTeamChange,
-  recordWorkspaceChange,
 } from "./messages.ts";
 import { revokeGrantsOf } from "./oauth-grants.ts";
 import type { ImageUrls } from "./public-images.ts";
@@ -1003,14 +1003,13 @@ export function registerTeamRoutes(
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { name } = c.req.valid("json");
-    await withWorkspace(db, id, async (tx) => {
+    // Open apps read `me` again on the event.
+    const renamed = await changeWorkspace(db, live, id, async (tx) => {
       await tx.update(workspace).set({ name }).where(eq(workspace.id, id));
-      await recordWorkspaceChange(tx, id);
+      return { name };
     });
-    // Open apps read `me` again on the event. A lost signal only delays it until the next one.
-    live.wake(id, OPERATORS);
     auditChange("workspace.renamed", id, c.get("operatorId"));
-    return c.json({ name }, 200);
+    return c.json(renamed, 200);
   });
 
   app.openapi(assignRoute, async (c) => {

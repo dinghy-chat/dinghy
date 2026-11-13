@@ -21,9 +21,9 @@ import {
   okContent,
 } from "./errors.ts";
 import { boundedText } from "./inputs.ts";
-import { type Live, OPERATORS } from "./live.ts";
+import type { Live } from "./live.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
-import { recordWorkspaceChange } from "./messages.ts";
+import { changeWorkspace } from "./messages.ts";
 
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/saved-replies`;
 
@@ -177,7 +177,7 @@ export function registerSavedReplyRoutes(app: App, db: Database, live: Live): vo
   app.openapi(addRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const input = c.req.valid("json");
-    const outcome = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       const refused = await refusal(tx, id, input.shortcut, null);
       if (refused !== null) return refused;
       const [row] = await tx
@@ -185,11 +185,9 @@ export function registerSavedReplyRoutes(app: App, db: Database, live: Live): vo
         .values({ workspaceId: id, ...input })
         .returning(columns);
       if (row === undefined) throw new Error("The saved reply insert returned no row");
-      await recordWorkspaceChange(tx, id);
       return view(row);
     });
     if ("error" in outcome) return c.json(outcome, 409);
-    live.wake(id, OPERATORS);
     return c.json(outcome, 201);
   });
 
@@ -197,7 +195,7 @@ export function registerSavedReplyRoutes(app: App, db: Database, live: Live): vo
     const id = c.get("memberWorkspaceId");
     const { savedReplyId } = c.req.valid("param");
     const input = c.req.valid("json");
-    const outcome = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       const refused = await refusal(tx, id, input.shortcut, savedReplyId);
       if (refused !== null) return refused;
       const [row] = await tx
@@ -205,30 +203,24 @@ export function registerSavedReplyRoutes(app: App, db: Database, live: Live): vo
         .set({ ...input, updatedAt: sql`now()` })
         .where(thisReply(id, savedReplyId))
         .returning(columns);
-      if (row === undefined) return null;
-      await recordWorkspaceChange(tx, id);
-      return view(row);
+      return row === undefined ? null : view(row);
     });
     if (outcome === null) return c.json(NOT_FOUND, 404);
     if ("error" in outcome) return c.json(outcome, 409);
-    live.wake(id, OPERATORS);
     return c.json(outcome, 200);
   });
 
   app.openapi(deleteRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { savedReplyId } = c.req.valid("param");
-    const isDeleted = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       const deleted = await tx
         .delete(savedReply)
         .where(thisReply(id, savedReplyId))
         .returning({ id: savedReply.id });
-      if (deleted.length === 0) return false;
-      await recordWorkspaceChange(tx, id);
-      return true;
+      return deleted.length === 0 ? null : { ok: true as const };
     });
-    if (!isDeleted) return c.json(NOT_FOUND, 404);
-    live.wake(id, OPERATORS);
-    return c.json({ ok: true as const }, 200);
+    if (outcome === null) return c.json(NOT_FOUND, 404);
+    return c.json(outcome, 200);
   });
 }

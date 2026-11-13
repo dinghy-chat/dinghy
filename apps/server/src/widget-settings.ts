@@ -40,8 +40,8 @@ import {
 } from "./errors.ts";
 import { visitorAuthorId } from "./identity.ts";
 import { processLogo, refuseImage } from "./images.ts";
-import { type Live, OPERATORS } from "./live.ts";
-import { isChat, recordWorkspaceChange } from "./messages.ts";
+import type { Live } from "./live.ts";
+import { changeWorkspace, isChat } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
 import { maySetUp } from "./team.ts";
@@ -352,18 +352,12 @@ export function registerWidgetSettingsRoutes(
     });
   }
 
-  /**
-   * Runs a change of the logo, which the workspace menu shows too, so open apps read `me` again on
-   * the event. A lost signal only delays it until the next one.
-   */
-  const changeLogo = async (workspaceId: string, write: (tx: Transaction) => Promise<unknown>) => {
-    const saved = await change(workspaceId, async (tx) => {
+  /** Runs a change of the logo, which the workspace menu shows too, so open apps read `me` again. */
+  const changeLogo = (workspaceId: string, write: (tx: Transaction) => Promise<unknown>) =>
+    changeWorkspace(db, live, workspaceId, async (tx) => {
       await write(tx);
-      await recordWorkspaceChange(tx, workspaceId);
+      return readAppearance(tx, urls, workspaceId);
     });
-    live.wake(workspaceId, OPERATORS);
-    return saved;
-  };
 
   /** Runs a change, and answers with the settings after it. */
   const change = (workspaceId: string, write: (tx: Transaction) => Promise<unknown>) =>

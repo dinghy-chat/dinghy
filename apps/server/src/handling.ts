@@ -29,9 +29,9 @@ import {
   authorNames,
   catchClosed,
   catchConversationClosed,
+  changeWorkspace,
   conversationVisitor,
   type KeySource,
-  recordWorkspaceChange,
   WorkspaceClosedError,
 } from "./messages.ts";
 import { allowed, NOT_A_MEMBER } from "./team.ts";
@@ -326,13 +326,11 @@ export function registerHandlingRoutes(app: App, options: HandlingOptions): void
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { paused } = c.req.valid("json");
-    const pausedBy = await withWorkspace(db, id, async (tx) => {
-      const name = await setBotsPaused(tx, id, c.get("operatorId"), paused);
-      await recordWorkspaceChange(tx, id);
-      return name;
-    });
-    live.wake(id, OPERATORS);
-    return c.json({ paused, pausedBy }, 200);
+    const saved = await changeWorkspace(db, live, id, async (tx) => ({
+      paused,
+      pausedBy: await setBotsPaused(tx, id, c.get("operatorId"), paused),
+    }));
+    return c.json(saved, 200);
   });
 
   app.openapi(typingRoute, async (c) => {

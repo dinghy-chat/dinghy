@@ -42,14 +42,17 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import {
+  type Database,
   type Transaction,
   type WorkspaceAccess,
   welcomeAccess,
+  withWorkspace,
   workspaceAccess,
   writable,
   writableFor,
 } from "./db/tenant.ts";
 import { type Limits, NO_LIMITS, StorageFullError } from "./limits.ts";
+import { type Live, OPERATORS } from "./live.ts";
 
 type MessageKind = (typeof message.$inferSelect)["kind"];
 
@@ -1734,11 +1737,29 @@ export async function recordBillingChange(tx: Transaction, workspaceId: string):
 }
 
 /**
- * Tells every open operator app to read `me` again, for a new name or logo, and the saved replies.
+ * Runs a settings write in the workspace's context, such as a new name, logo, saved reply or label.
+ * The work answers a refusal (`{ error }`) or null for a missing row when it changed nothing.
+ * Otherwise this records `workspace.changed` in the same transaction and wakes the open operator
+ * apps after the commit, so they read `me` and the settings again. A lost wake only delays that
+ * until the next one.
  */
-export async function recordWorkspaceChange(tx: Transaction, workspaceId: string): Promise<void> {
-  const seq = await nextSeq(tx, workspaceId);
-  await tx.insert(event).values({ workspaceId, seq, kind: "workspace.changed" });
+export async function changeWorkspace<T extends object | null>(
+  db: Database,
+  live: Live,
+  workspaceId: string,
+  work: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  const isChange = (outcome: T) => outcome !== null && !("error" in outcome);
+  const outcome = await withWorkspace(db, workspaceId, async (tx) => {
+    const done = await work(tx);
+    if (isChange(done)) {
+      const seq = await nextSeq(tx, workspaceId);
+      await tx.insert(event).values({ workspaceId, seq, kind: "workspace.changed" });
+    }
+    return done;
+  });
+  if (isChange(outcome)) live.wake(workspaceId, OPERATORS);
+  return outcome;
 }
 
 interface FeedEvent {

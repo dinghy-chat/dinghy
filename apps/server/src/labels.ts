@@ -28,7 +28,7 @@ import {
 import { boundedText } from "./inputs.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
-import { lockWorkspace, nextSeq, recordWorkspaceChange, wantsWebhook } from "./messages.ts";
+import { changeWorkspace, lockWorkspace, nextSeq, wantsWebhook } from "./messages.ts";
 import { allowed } from "./team.ts";
 
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/labels`;
@@ -264,7 +264,7 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
   app.openapi(addRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const input = c.req.valid("json");
-    const outcome = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       const refused = await refusal(tx, id, input.name, null);
       if (refused !== null) return refused;
       const [row] = await tx
@@ -272,11 +272,9 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
         .values({ workspaceId: id, ...input })
         .returning(columns);
       if (row === undefined) throw new Error("The label insert returned no row");
-      await recordWorkspaceChange(tx, id);
       return row;
     });
     if ("error" in outcome) return c.json(outcome, 409);
-    live.wake(id, OPERATORS);
     return c.json(outcome, 201);
   });
 
@@ -285,7 +283,7 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
     const id = c.get("memberWorkspaceId");
     const { labelId } = c.req.valid("param");
     const input = c.req.valid("json");
-    const outcome = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       const refused = await refusal(tx, id, input.name, labelId);
       if (refused !== null) return refused;
       const [row] = await tx
@@ -293,13 +291,10 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
         .set(input)
         .where(thisLabel(id, labelId))
         .returning(columns);
-      if (row === undefined) return null;
-      await recordWorkspaceChange(tx, id);
-      return row;
+      return row ?? null;
     });
     if (outcome === null) return c.json(NOT_FOUND, 404);
     if ("error" in outcome) return c.json(outcome, 409);
-    live.wake(id, OPERATORS);
     return c.json(outcome, 200);
   });
 
@@ -307,20 +302,17 @@ export function registerLabelRoutes(app: App, db: Database, live: Live): void {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const { labelId } = c.req.valid("param");
-    const isDeleted = await withWorkspace(db, id, async (tx) => {
+    const outcome = await changeWorkspace(db, live, id, async (tx) => {
       // The workspace lock first, as in every label write.
       await lockWorkspace(tx, id);
       const deleted = await tx
         .delete(label)
         .where(thisLabel(id, labelId))
         .returning({ id: label.id });
-      if (deleted.length === 0) return false;
-      await recordWorkspaceChange(tx, id);
-      return true;
+      return deleted.length === 0 ? null : { ok: true as const };
     });
-    if (!isDeleted) return c.json(NOT_FOUND, 404);
-    live.wake(id, OPERATORS);
-    return c.json({ ok: true as const }, 200);
+    if (outcome === null) return c.json(NOT_FOUND, 404);
+    return c.json(outcome, 200);
   });
 
   app.openapi(putRoute, async (c) => {
