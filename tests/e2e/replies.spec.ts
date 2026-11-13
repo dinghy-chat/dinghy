@@ -273,10 +273,13 @@ test("a member saves a reply in Settings, and / inserts it; @ mentions a teammat
   await alice.getByRole("button", { name: "Inbox", exact: true }).click();
   await alice.locator(".row", { hasText: "How do refunds work?" }).click();
 
-  // "/" at the start of a word opens the picker, which finds the reply by its shortcut or text.
+  // "/" at the start of a word opens the picker, which finds the reply by its shortcut only.
   const reply = alice.getByRole("textbox", { name: "Your reply" });
   await reply.pressSequentially("Hi! /30");
   const replies = alice.getByRole("listbox", { name: "Saved replies" });
+  await expect(replies.getByRole("option")).toHaveCount(0);
+  await reply.fill("");
+  await reply.pressSequentially("Hi! /fund");
   await expect(replies.getByRole("option")).toHaveText([
     "/refundYou get a full refund within 30 days.",
   ]);

@@ -1,17 +1,18 @@
 /** @jsxImportSource react */
 import { useId, useState } from "react";
 import { plainText } from "../../../packages/widget/src/markdown.ts";
+import { SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
 import type { SavedReply, WorkspaceApi } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { AddForm, ErrorNote, Field, failureText, Loading, Page } from "./ui.tsx";
+import { AddForm, ErrorNote, Field, failureText, Loading, Page, StatusNote } from "./ui.tsx";
 
 // The server's limits, so the form cannot send what it refuses.
 const SHORTCUT_MAX = 32;
 const BODY_MAX = 5000;
-const SHORTCUT = /^[a-z0-9][a-z0-9-]*$/;
+const SAVED_REPLIES_MAX = 200;
 
 type Typed = { shortcut: string; body: string };
 const EMPTY: Typed = { shortcut: "", body: "" };
@@ -52,7 +53,8 @@ function ReplyFields({ value, onChange }: { value: Typed; onChange(value: Typed)
   );
 }
 
-const isComplete = (typed: Typed) => SHORTCUT.test(typed.shortcut) && typed.body.trim() !== "";
+const isComplete = (typed: Typed) =>
+  SAVED_REPLY_SHORTCUT.test(typed.shortcut) && typed.body.trim() !== "";
 
 /** Settings > Saved replies: every member adds, changes and deletes the team's replies. */
 export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
@@ -88,6 +90,7 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
   };
 
   const list = replies.data?.savedReplies;
+  const isFull = list !== undefined && list.length >= SAVED_REPLIES_MAX;
   return (
     <Page title={t("pageSavedReplies")} context={t("savedRepliesContext")}>
       {list === undefined ? (
@@ -139,12 +142,13 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
                     type="button"
                     className="pill small"
                     aria-label={t("savedReplyEditLabel", { shortcut: reply.shortcut })}
-                    onClick={() =>
+                    onClick={() => {
+                      setAdding(null);
                       setEditing({
                         id: reply.id,
                         typed: { shortcut: reply.shortcut, body: reply.body },
-                      })
-                    }
+                      });
+                    }}
                   >
                     {t("savedReplyEdit")}
                   </button>
@@ -162,22 +166,26 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
           )}
         </ul>
       )}
-      <AddForm
-        isOpen={adding !== null}
-        newLabel={t("savedReplyNew")}
-        submitLabel={t("savedReplyAdd")}
-        canSubmit={!busy && adding !== null && isComplete(adding)}
-        onOpen={() => {
-          setEditing(null);
-          setAdding(EMPTY);
-        }}
-        onCancel={() => setAdding(null)}
-        onSubmit={() => {
-          if (adding !== null) void add(adding);
-        }}
-      >
-        {adding !== null && <ReplyFields value={adding} onChange={setAdding} />}
-      </AddForm>
+      {isFull ? (
+        <StatusNote text="savedReplyLimit" />
+      ) : (
+        <AddForm
+          isOpen={adding !== null}
+          newLabel={t("savedReplyNew")}
+          submitLabel={t("savedReplyAdd")}
+          canSubmit={!busy && adding !== null && isComplete(adding)}
+          onOpen={() => {
+            setEditing(null);
+            setAdding(EMPTY);
+          }}
+          onCancel={() => setAdding(null)}
+          onSubmit={() => {
+            if (adding !== null) void add(adding);
+          }}
+        >
+          {adding !== null && <ReplyFields value={adding} onChange={setAdding} />}
+        </AddForm>
+      )}
       <ErrorNote text={failure} />
       {deleting !== null && (
         <Confirm

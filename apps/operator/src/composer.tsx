@@ -288,7 +288,7 @@ export function Composer({
   /** What `/` and `@` offer here: saved replies, and teammates in a note. */
   picks: PickerSources;
 }) {
-  const picker = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   // A phone keeps the formatting buttons behind one toggle, so the field gets the row.
   const [showsFormats, setShowsFormats] = useState(false);
   const formatsId = useId();
@@ -312,14 +312,14 @@ export function Composer({
     onEscape,
     onFiles,
     openLink: () => setTypedLink(editor.getAttributes("link").href ?? ""),
-    pick: (key) => choices.press(key),
+    pick: (key) => picker.press(key),
     picking: {},
   };
   const latest = useRef(now);
   latest.current = now;
   const editor = useComposerEditor(draft, latest, editing);
-  const choices = usePicker(editor, picks);
-  now.picking = { listId: choices.listId, activeId: choices.activeId };
+  const picker = usePicker(editor, picks);
+  now.picking = { listId: picker.listId, activeId: picker.activeId };
   const active = useEditorState({
     editor,
     selector: ({ editor: current }) =>
@@ -327,7 +327,7 @@ export function Composer({
   });
   // The label, the placeholder and the picker's chosen item show once the editor draws again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: isNote and the chosen item change them.
-  useEffect(() => editor.view.dispatch(editor.state.tr), [editor, isNote, choices.activeId]);
+  useEffect(() => editor.view.dispatch(editor.state.tr), [editor, isNote, picker.activeId]);
 
   const href = typedLink === null ? undefined : linkHref(typedLink);
   const closeLink = () => {
@@ -382,7 +382,7 @@ export function Composer({
         {above}
         {/* The key that comes back here, while the box is empty and has no focus. */}
         {!editing && draft === "" && <Keys keys={isNote ? "n" : "r"} />}
-        {choices.list}
+        {picker.list}
         <EditorContent editor={editor} className="compose-text" />
         {typedLink !== null && (
           <div className="link-field">
@@ -425,7 +425,7 @@ export function Composer({
           {onFiles !== undefined && (
             <>
               <input
-                ref={picker}
+                ref={fileInput}
                 className="file"
                 type="file"
                 multiple
@@ -442,7 +442,7 @@ export function Composer({
                 className="icon-button"
                 aria-label={t("attach")}
                 title={t("attach")}
-                onClick={() => picker.current?.click()}
+                onClick={() => fileInput.current?.click()}
               >
                 <Icon name="clip" size={18} />
               </button>

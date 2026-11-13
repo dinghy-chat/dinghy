@@ -36,6 +36,7 @@ function useMarkRead(
   api: WorkspaceApi,
   conversationId: string,
   lines: Line[],
+  rewriteVersion: number,
   inView: boolean,
   onRead: (conversationId: string) => void,
 ) {
@@ -44,20 +45,24 @@ function useMarkRead(
     (max, line) => (line.seq !== null && (max === null || line.seq > max) ? line.seq : max),
     null,
   );
-  const sent = useRef<bigint | null>(null);
+  // An edit sends it again: it may mention this operator in a note, and reading the newest message
+  // reads the edits too.
+  const sent = useRef<{ seq: bigint; rewriteVersion: number } | null>(null);
   useEffect(() => {
     if (!visible || !inView || newest === null) return;
-    if (sent.current !== null && sent.current >= newest) return;
-    sent.current = newest;
+    const last = sent.current;
+    if (last !== null && last.seq >= newest && last.rewriteVersion === rewriteVersion) return;
+    const sending = { seq: newest, rewriteVersion };
+    sent.current = sending;
     onRead(conversationId);
     // Again once saved, as a list load that left before the save may have brought the dot back.
     api.markRead(conversationId, newest.toString()).then(
       () => onRead(conversationId),
       () => {
-        if (sent.current === newest) sent.current = null;
+        if (sent.current === sending) sent.current = null;
       },
     );
-  }, [api, conversationId, newest, visible, inView, onRead]);
+  }, [api, conversationId, newest, rewriteVersion, visible, inView, onRead]);
 }
 
 /** What the info dialog says about a line: its time, its author and, for a reply, its receipt. */
@@ -90,6 +95,7 @@ export function Thread({
   setDraft,
   receiptsVersion,
   rewriteVersion,
+  accountVersion,
   draftsVersion,
   typingDraft,
   botTyping,
@@ -123,6 +129,8 @@ export function Thread({
   receiptsVersion(visitorId: string): number;
   /** Goes up when someone edits or deletes a message here, so this loads every message again. */
   rewriteVersion: number;
+  /** Goes up when the workspace changed, such as its saved replies. */
+  accountVersion: number;
   /** Goes up when a bot's suggested reply here changed. */
   draftsVersion: number;
   /** What the visitor is typing and has not sent, or null. */
@@ -170,7 +178,7 @@ export function Thread({
     onLoaded,
   });
   const { conversation, online, welcome, receipts, lines, sendFiles } = thread;
-  useMarkRead(api, conversationId, lines, inView, onRead);
+  useMarkRead(api, conversationId, lines, rewriteVersion, inView, onRead);
   const actions = useMessageActions({ api, conversationId, act, keep: thread.keep });
   const suggestions = useSuggestedReplies({
     api,
@@ -189,7 +197,8 @@ export function Thread({
     onBack,
   });
   const panel = usePanel();
-  const savedReplies = useLoad(() => api.savedReplies(), [api]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
+  const savedReplies = useLoad(() => api.savedReplies(), [api, accountVersion]);
   const visitorId = conversation?.visitor.id ?? null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   const contact = useLoad(

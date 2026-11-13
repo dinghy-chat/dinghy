@@ -316,8 +316,6 @@ export interface SavedReply {
   shortcut: string;
   /** Markdown, as a message's. */
   body: string;
-  /** The member who added it, or null once they left. */
-  createdBy: string | null;
   updatedAt: string;
 }
 

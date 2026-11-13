@@ -41,6 +41,22 @@ interface Typed {
   to: number;
 }
 
+/** The item the arrows chose, for the trigger at `from` and the word typed after it. */
+export interface Chosen {
+  from: number;
+  word: string;
+  index: number;
+}
+
+/**
+ * The chosen item of the open list: the one the arrows chose for this trigger and word, within the
+ * items it has now, or else the first. A new trigger or word starts at the first.
+ */
+export const chosenIndex = (chosen: Chosen, active: Typed, count: number): number =>
+  chosen.from === active.from && chosen.word === active.word
+    ? Math.min(chosen.index, Math.max(count - 1, 0))
+    : 0;
+
 const isTrigger = (text: string | undefined): text is Trigger => text === "/" || text === "@";
 
 /** The trigger before the caret and the word after it, or null. */
@@ -65,7 +81,7 @@ export function usePicker(editor: Editor, sources: PickerSources) {
     editor,
     selector: ({ editor: current }) => typedTrigger(current),
   });
-  const [chosen, setChosen] = useState({ word: "", index: 0 });
+  const [chosen, setChosen] = useState<Chosen>({ from: -1, word: "", index: 0 });
   // Where Escape closed it. Once the trigger is gone, after a space or a send, the next one opens.
   const [closedAt, setClosedAt] = useState<number | null>(null);
   const isTyping = typed !== null;
@@ -74,20 +90,19 @@ export function usePicker(editor: Editor, sources: PickerSources) {
   }, [isTyping]);
   const listId = useId();
   const find = typed === null ? undefined : sources[typed.trigger];
-  const open = typed !== null && find !== undefined && typed.from !== closedAt ? typed : null;
-  const items = open === null || find === undefined ? [] : find(open.word).slice(0, SHOWN_MAX);
-  // A new word starts at the first match.
-  const index = open !== null && chosen.word === open.word ? chosen.index : 0;
+  const active = typed !== null && find !== undefined && typed.from !== closedAt ? typed : null;
+  const items = active === null || find === undefined ? [] : find(active.word).slice(0, SHOWN_MAX);
+  const index = active === null ? 0 : chosenIndex(chosen, active, items.length);
   const optionId = (at: number) => `${listId}-${at}`;
 
   const insert = (item: PickerItem) => {
-    if (open !== null) item.insert(editor, open);
+    if (active !== null) item.insert(editor, active);
   };
   /** Takes a key while the picker is open. False lets the editor have it. */
   const press = (key: PickerKey): boolean => {
-    if (open === null) return false;
+    if (active === null) return false;
     if (key === "Escape") {
-      setClosedAt(open.from);
+      setClosedAt(active.from);
       return true;
     }
     const item = items[index];
@@ -95,20 +110,20 @@ export function usePicker(editor: Editor, sources: PickerSources) {
     if (key === "Enter" || key === "Tab") insert(item);
     else {
       const step = key === "ArrowDown" ? 1 : items.length - 1;
-      setChosen({ word: open.word, index: (index + step) % items.length });
+      setChosen({ from: active.from, word: active.word, index: (index + step) % items.length });
     }
     return true;
   };
 
-  const list = open !== null && (
+  const list = active !== null && (
     <div
       className="popup up side-start picker"
       id={listId}
       role="listbox"
-      aria-label={t(TEXT[open.trigger].list)}
+      aria-label={t(TEXT[active.trigger].list)}
     >
       {items.length === 0 ? (
-        <p className="picker-none">{t(TEXT[open.trigger].none)}</p>
+        <p className="picker-none">{t(TEXT[active.trigger].none)}</p>
       ) : (
         items.map((item, at) => (
           <div
@@ -137,18 +152,21 @@ export function usePicker(editor: Editor, sources: PickerSources) {
     press,
     list,
     /** For the editor's ARIA attributes: the open list and its chosen item. */
-    listId: open === null ? undefined : listId,
+    listId: active === null ? undefined : listId,
     activeId: items[index] === undefined ? undefined : optionId(index),
   };
 }
 
-/** The saved replies whose shortcut or text holds the typed word, those whose shortcut starts with it first. */
+/**
+ * The saved replies whose shortcut holds the typed word, those that start with it first. Only the
+ * shortcut, so Enter after ordinary text such as `/billing` sends it.
+ */
 const savedReplyItems =
   (replies: SavedReply[]) =>
   (typed: string): PickerItem[] => {
     const word = typed.toLowerCase();
     return replies
-      .filter((reply) => reply.shortcut.includes(word) || reply.body.toLowerCase().includes(word))
+      .filter((reply) => reply.shortcut.includes(word))
       .sort((a, b) => Number(b.shortcut.startsWith(word)) - Number(a.shortcut.startsWith(word)))
       .map((reply) => ({
         id: reply.id,
@@ -191,19 +209,37 @@ export const composerPicks = (
   ...(isNote && { "@": memberItems(members.filter((member) => member.id !== meId)) }),
 });
 
+// What follows a name that goes on, such as `Anna` in `@Annabel`.
+const NAME_GOES_ON = /^[\p{L}\p{N}]/u;
+
 /** Whether the text holds `@name` as a whole name, not the start of a longer one. */
-const names = (body: string, name: string) =>
+const hasMention = (body: string, name: string) =>
   body
     .split(`@${name}`)
     .slice(1)
-    .some((after) => !/^[\p{L}\p{N}]/u.test(after));
+    .some((after) => !NAME_GOES_ON.test(after));
+
+/** The text without its whole `@name` mentions. */
+function withoutMention(body: string, name: string): string {
+  const [first = "", ...rest] = body.split(`@${name}`);
+  return rest.reduce(
+    (text, after) => `${text}${NAME_GOES_ON.test(after) ? `@${name}` : ""}${after}`,
+    first,
+  );
+}
 
 /**
  * The teammates a note mentions: those whose `@Name` it holds, as the picker writes it or as typed.
- * The server keeps current members only, and alerts each of them.
+ * Longer names match first, and each match leaves the text, so `@Anna Smith` or `@Jean-Luc` never
+ * also mentions Anna or Jean. The server keeps current members only, and alerts each of them.
  */
-export const mentionsIn = (body: string, members: Member[]): string[] =>
-  members
-    .filter((member) => names(body, member.name))
-    .map((member) => member.id)
-    .slice(0, MENTIONS_MAX);
+export function mentionsIn(body: string, members: Member[]): string[] {
+  let rest = body;
+  const mentioned: string[] = [];
+  for (const member of [...members].sort((one, other) => other.name.length - one.name.length)) {
+    if (!hasMention(rest, member.name)) continue;
+    mentioned.push(member.id);
+    rest = withoutMention(rest, member.name);
+  }
+  return mentioned.slice(0, MENTIONS_MAX);
+}
