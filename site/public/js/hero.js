@@ -229,12 +229,16 @@ class Voyage {
 
   async run() {
     let first = 0;
+    // The first trip starts in view, so the boat is there when the page opens.
+    let inView = true;
     for (;;) {
       this.boat.setSize(this.small ? 104 : 138);
       const offscreen = this.boat.size / 2 + (this.small ? 120 : 170);
       this.boat.turn(1, false);
-      this.boat.x = -offscreen;
       this.speak("question", first);
+      const start = Math.max(this.water.width * 0.12, this.bubble.element.offsetWidth / 2 + 16);
+      this.boat.x = inView ? start : -offscreen;
+      inView = false;
       await this.sail(this.water.width + offscreen);
       const last = this.rotation.index;
       this.rotation = null;
