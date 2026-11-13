@@ -12,6 +12,7 @@ import {
   invite,
   operator,
   operatorPicture,
+  operatorTwoFactor,
   pushSubscription,
   session,
   verification,
@@ -303,6 +304,8 @@ async function deleteAccount(
         }
         left.push(workspaceId);
       }
+      // Before the sessions, in the order a code's check locks them, so the two cannot deadlock.
+      await tx.delete(operatorTwoFactor).where(eq(operatorTwoFactor.operatorId, operatorId));
       await tx.delete(session).where(eq(session.userId, operatorId));
       await tx.delete(account).where(eq(account.userId, operatorId));
       await tx.delete(pushSubscription).where(eq(pushSubscription.operatorId, operatorId));

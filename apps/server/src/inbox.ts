@@ -80,6 +80,7 @@ import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { allowed } from "./team.ts";
+import { twoFactorState } from "./two-factor.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
 export const SNOOZE_CLOSED = failure(
@@ -877,7 +878,10 @@ const listedView = (row: ConversationSummary, pictureUrl: string | null) => ({
 /** The session ended or the operator left the workspace during an upload. Its transaction rolls back. */
 class AccessEndedError extends Error {}
 
-/** The session is current and its operator is still a member: one statement, as each wake runs it. */
+/**
+ * The session is current, passed two-step sign-in if its operator has it on, and its operator is
+ * still a member: one statement, as each wake runs it.
+ */
 async function mayStillRead(
   tx: Transaction,
   sessionId: string,
@@ -890,6 +894,7 @@ async function mayStillRead(
              where ${session.id} = ${sessionId} and ${session.userId} = ${operatorId}
                and ${session.expiresAt} > now()
            )
+       and ${twoFactorState(sessionId)} <> 'required'
        and exists (
              select 1 from operator_workspaces(${operatorId}) where workspace_id = ${workspaceId}
            ) as ok`);

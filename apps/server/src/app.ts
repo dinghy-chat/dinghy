@@ -52,6 +52,7 @@ import { type Role, registerTeamRoutes } from "./team.ts";
 import { createTestVisitors, registerTestVisitorRoutes } from "./test-visitors.ts";
 import { MINUTE_MS } from "./time.ts";
 import { registerExportRoute } from "./transfer.ts";
+import { registerTwoFactorRoutes, type TwoFactorState } from "./two-factor.ts";
 import {
   createWebhooks,
   PUBLIC_ONLY,
@@ -129,6 +130,8 @@ export interface AppEnv {
     operatorAway: boolean;
     /** The signed-in operator's session, which a stream checks again on each wake. */
     sessionId: string;
+    /** Whether this session passed two-step sign-in, or needs it. */
+    twoFactor: TwoFactorState;
     memberWorkspaceId: string;
     memberRole: Role;
     clientIp: string;
@@ -402,6 +405,14 @@ export function createApp({
       mailer,
       rateLimit,
       signup: cloud !== undefined,
+      valkey,
+    });
+    registerTwoFactorRoutes(app, {
+      db,
+      live,
+      logger,
+      // AUTH_SECRET itself. A fallback to a random secret would change the keys at each restart.
+      authSecret: auth.options.secret,
       valkey,
     });
     // Right after the session check, so every workspace route runs behind it, whatever its order.

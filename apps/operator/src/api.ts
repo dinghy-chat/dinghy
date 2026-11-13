@@ -297,6 +297,8 @@ export interface Me {
   billing: boolean;
   /** Who to write to about a suspension, on Dinghy Cloud. Null on a self-hosted server. */
   contact: string | null;
+  /** `required`: it is on, and this session must pass the check before anything else works. */
+  twoFactor: "off" | "on" | "required";
 }
 
 export type Role = "owner" | "admin" | "member";
@@ -325,6 +327,8 @@ export interface Member {
   email: string;
   role: Role;
   pictureUrl: string | null;
+  /** Whether the member turned on two-step sign-in. */
+  twoFactor: "off" | "on";
 }
 
 export interface PendingInvite {
@@ -520,6 +524,17 @@ export const setAway = (away: boolean) =>
     method: "PUT",
     body: JSON.stringify({ away }),
   });
+/** Starts turning on two-step sign-in: a new secret, which works once a code confirms it. */
+export const startTwoFactor = () =>
+  post<{ secret: string; uri: string }>("/v1/operator/two-factor/setup", {});
+/** Confirms the setup with a code, and returns the recovery codes, which show only now. */
+export const enableTwoFactor = (code: string) =>
+  post<{ recoveryCodes: string[] }>("/v1/operator/two-factor/enable", { code });
+export const disableTwoFactor = (code: string) =>
+  post<{ ok: true }>("/v1/operator/two-factor/disable", { code });
+/** The second step of a sign-in, with a code from the app or a recovery code. */
+export const checkTwoFactor = (code: string) =>
+  post<{ ok: true }>("/v1/operator/two-factor/check", { code });
 /**
  * Deletes the account. With email, a link goes to it and `deleted` is false. Without, the typed
  * email confirms, and the account is gone.

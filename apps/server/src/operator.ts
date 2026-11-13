@@ -20,6 +20,7 @@ import {
   OPERATOR_ERRORS,
   OPERATOR_POST_ERRORS,
   safeErrorFields,
+  TWO_FACTOR_REQUIRED,
   UNAUTHORIZED,
   WRONG_ORIGIN,
 } from "./errors.ts";
@@ -37,6 +38,7 @@ import { WORKSPACE_PREFIX } from "./member.ts";
 import { countWaiting } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
+import { readTwoFactorState, type TwoFactorState } from "./two-factor.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
 const AccountName = z.strictObject({
@@ -100,6 +102,9 @@ const meRoute = createRoute({
               // Who a suspended workspace's operators write to: Dinghy Cloud's address, or null on
               // a self-hosted server, whose admin they already know.
               contact: z.string().nullable(),
+              // `required`: two-step sign-in is on and this session has not passed it yet, so
+              // only the check, this route and sign-out work.
+              twoFactor: z.enum(["off", "on", "required"]),
             })
             .openapi("Operator"),
         },
@@ -158,6 +163,9 @@ const removePictureRoute = createRoute({
   summary: "Remove your picture, so your initials show again",
   responses: { 200: pictureAnswer, ...OPERATOR_POST_ERRORS },
 });
+
+/** The routes a session can use before it passes two-step sign-in. Sign-out is BetterAuth's. */
+const BEFORE_SECOND_STEP = new Set(["GET /v1/operator/me", "POST /v1/operator/two-factor/check"]);
 
 /** The routes whose body is an image, read as bytes rather than as text. */
 const PUBLIC_IMAGE_PATH = /\/(logo|picture)$/;
@@ -245,6 +253,7 @@ export function registerOperatorRoutes(
       operatorEmail: string;
       operatorAway: boolean;
       sessionId: string;
+      twoFactor: TwoFactorState;
     };
   }>(async (c, next) => {
     // A key in a bearer header, which a browser never sends on its own, so it needs no Origin. It
@@ -276,6 +285,13 @@ export function registerOperatorRoutes(
     for (const cookie of headers.getSetCookie()) c.header("set-cookie", cookie, { append: true });
     // The delete ends the account's sessions, and this holds even if one were left.
     if (found === null || found.user.deletedAt != null) return c.json(UNAUTHORIZED, 401);
+    // Every operator route passes here, so this is the one place the second step is enforced.
+    // A stream's drains and an upload's end read the same rule again, in `mayStillRead`.
+    const twoFactor = await readTwoFactorState(db, found.session.id);
+    if (twoFactor === "required" && !BEFORE_SECOND_STEP.has(`${c.req.method} ${c.req.path}`)) {
+      return c.json(TWO_FACTOR_REQUIRED, 401);
+    }
+    c.set("twoFactor", twoFactor);
     c.set("actor", { kind: "operator", operatorId: found.user.id, name: found.user.name });
     c.set("operatorId", found.user.id);
     c.set("operatorName", found.user.name);
@@ -345,6 +361,9 @@ export function registerOperatorRoutes(
     }
     const found = await auth.api.getSession({ headers: c.req.raw.headers });
     if (found === null) return c.json(UNAUTHORIZED, 401);
+    if ((await readTwoFactorState(db, found.session.id)) === "required") {
+      return c.json(TWO_FACTOR_REQUIRED, 401);
+    }
     const [changed] = await db
       .update(operator)
       .set({ name: parsed.data.name })
@@ -408,6 +427,8 @@ export function registerOperatorRoutes(
 
   app.openapi(meRoute, async (c) => {
     const id = c.get("operatorId");
+    // Before the second step, the session proves only the mailbox, so it learns no workspace.
+    const hasPassedCheck = c.get("twoFactor") !== "required";
     const [picture] = await db
       .select({ pictureUpdatedAt: operator.pictureUpdatedAt })
       .from(operator)
@@ -420,31 +441,34 @@ export function registerOperatorRoutes(
         pictureUrl: imageUrls.picture(id, picture?.pictureUpdatedAt ?? null),
         away: c.get("operatorAway"),
         workspaces: await Promise.all(
-          (await operatorWorkspaces(db, id)).map(async ({ access, ...membership }) => {
-            const { workspaceId, role } = membership;
-            const { face, soleOwner, heir } = await withWorkspace(db, workspaceId, async (tx) => {
-              const sole = await isSoleOwner(tx, workspaceId, role);
+          (hasPassedCheck ? await operatorWorkspaces(db, id) : []).map(
+            async ({ access, ...membership }) => {
+              const { workspaceId, role } = membership;
+              const { face, soleOwner, heir } = await withWorkspace(db, workspaceId, async (tx) => {
+                const sole = await isSoleOwner(tx, workspaceId, role);
+                return {
+                  face: await readWorkspaceFace(tx, imageUrls, workspaceId),
+                  soleOwner: sole,
+                  heir: sole ? ((await heirOf(tx, workspaceId, id))?.name ?? null) : null,
+                };
+              });
               return {
-                face: await readWorkspaceFace(tx, imageUrls, workspaceId),
-                soleOwner: sole,
-                heir: sole ? ((await heirOf(tx, workspaceId, id))?.name ?? null) : null,
+                ...membership,
+                ...accessFlags(access),
+                name: face?.name ?? "",
+                logoUrl: face?.logoUrl ?? null,
+                botsPaused: face?.botsPaused ?? false,
+                botsPausedBy: face?.botsPausedBy ?? null,
+                botsPausedAt: face?.botsPausedAt ?? null,
+                soleOwner,
+                heir,
               };
-            });
-            return {
-              ...membership,
-              ...accessFlags(access),
-              name: face?.name ?? "",
-              logoUrl: face?.logoUrl ?? null,
-              botsPaused: face?.botsPaused ?? false,
-              botsPausedBy: face?.botsPausedBy ?? null,
-              botsPausedAt: face?.botsPausedAt ?? null,
-              soleOwner,
-              heir,
-            };
-          }),
+            },
+          ),
         ),
         billing,
         contact,
+        twoFactor: c.get("twoFactor"),
       },
       200,
     );

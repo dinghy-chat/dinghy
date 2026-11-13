@@ -176,6 +176,9 @@ export const session = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    // When this session passed the second step. A new session starts without it, and an operator
+    // with two-step sign-in on can use only the check, `me` and sign-out until it is set.
+    twoFactorAt: timestamp("two_factor_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -1278,6 +1281,24 @@ export const operatorPicture = pgTable("operator_picture", {
     .primaryKey()
     .references(() => operator.id, { onDelete: "cascade" }),
   data: bytea("data").notNull(),
+});
+
+/**
+ * An operator's two-step sign-in. Global, as the operator is, and never exported: it belongs to the
+ * account, not to a workspace.
+ */
+export const operatorTwoFactor = pgTable("operator_two_factor", {
+  operatorId: uuid("operator_id")
+    .primaryKey()
+    .references(() => operator.id, { onDelete: "cascade" }),
+  // The TOTP secret, encrypted with a key derived from AUTH_SECRET: nonce, ciphertext and tag.
+  secret: bytea("secret").notNull(),
+  // Null while the setup waits for its first code. Two-step sign-in is on once this is set.
+  enabledAt: timestamp("enabled_at", { withTimezone: true }),
+  // The last time step a code was accepted for, so the same code never works twice.
+  lastStep: bigint("last_step", { mode: "number" }),
+  // Keyed hashes of the recovery codes not used yet. A use removes its hash.
+  recoveryCodes: text("recovery_codes").array().notNull().default(sql`'{}'::text[]`),
 });
 
 /**

@@ -29,7 +29,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | Status | Codes | When |
 |---|---|---|
 | 400 | `invalid_request`, `invalid_reply_to`, `bad_origin`, `not_a_member` | The request does not match its schema, a reply quotes a message that is not in its conversation, a site is not an `http` or `https` origin, or an operator ID is not in the workspace |
-| 401 | `unauthorized` | No token or session, or one that is no longer valid |
+| 401 | `unauthorized`, `two_factor_required` | No token or session, or one that is no longer valid. With `two_factor_required`, the session must pass [two-step sign-in](#two-step-sign-in) first |
 | 402 | `payment_required`, `read_only` | On the cloud plan, a workspace that is not paid for. A self-hosted install never answers 402 |
 | 403 | `origin_not_allowed`, `suspended`, `forbidden`, `blocked` | The site is not allowed or the widget is off, the workspace is suspended, the role or the key's level does not allow it, or an operator blocked the visitor |
 | 404 | `not_found` | It does not exist, or it is in another workspace |
@@ -37,9 +37,20 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 409 | `human_handling`, `bots_paused`, `drafts_text_only` | For an API key: a person handles the conversation and the key sends directly, an owner or admin paused every bot, or a key in draft mode sent an image. See [Bots](#bots-reply-modes-drafts-notes-and-handoff) |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
-| 503 | `busy` | The server is overloaded for a moment. Try again |
+| 503 | `busy`, `check_unavailable` | The server is overloaded for a moment, or it cannot count [two-step sign-in](#two-step-sign-in) attempts. Try again |
 
 In a read-only or suspended workspace, operators can read and export, and a write answers 402 `read_only` or 403 `suspended`. A route whose OpenAPI entry has `x-workspace-access: closed` still works then: presence, removing a member and revoking an invite. Deleting the workspace, with `x-workspace-access: always`, works in every state, also while a cloud workspace waits for its first payment. On Dinghy Cloud, an operator of a read-only workspace can still send a text reply in its welcome chat, which is the route with `x-workspace-access: welcome`; anywhere else it answers 402 `read_only`.
+
+## Two-step sign-in
+
+An operator can turn on two-step sign-in, with a TOTP code (RFC 6238: 30 seconds, 6 digits). A new session of that operator then answers 401 `two_factor_required` on every operator route, the event stream, an upload's end and OAuth consent included, until it passes the check. Only `GET /v1/operator/me`, the check and `POST /v1/auth/sign-out` work before. `me` answers `twoFactor`: `off`, `on`, or `required` while the session waits for the check, and then lists no workspace. API keys and OAuth tokens never need it.
+
+- `POST /v1/operator/two-factor/setup` returns a new secret, as base32 and as an `otpauth://` URI for a QR code. It answers 409 `two_factor_on` when it is on already.
+- `POST /v1/operator/two-factor/enable` with `{ "code" }` confirms the setup with a first code, turns it on, counts this session as passed and returns 10 `recoveryCodes`. They never show again. Every other session of the account must pass the check.
+- `POST /v1/operator/two-factor/check` with `{ "code" }` passes the check, with a code from the app or a recovery code.
+- `POST /v1/operator/two-factor/disable` with `{ "code" }` turns it off. Sessions that never passed the check end.
+
+A wrong code, or one used before, answers 400 `wrong_code`. A code from the app works once, and so does a recovery code. After 5 wrong codes in 15 minutes, the check and the turn-off answer 429 `too_many_attempts` and end the session, and they refuse every code until 15 minutes after the first wrong one. When Valkey does not answer, they check no code and answer 503 `check_unavailable`, because the limit cannot count.
 
 ## Sending without duplicates
 

@@ -5,6 +5,7 @@
   "type": "module",
   "license": "AGPL-3.0-only",
   "dependencies": {
+    "@better-auth/utils": "^0.5.1",
     "@hono/node-server": "^2.1.6",
     "@hono/zod-openapi": "^1.6.3",
     "@sentry/node": "11.9.0",

@@ -117,6 +117,20 @@ The same menu sets you **Available** or **Away**, and a dot on your picture show
 
 **Theme** picks light, dark or **Use device setting** for the operator app. It applies only to this browser.
 
+### Two-step sign-in
+
+After the email link, two-step sign-in asks for a 6-digit code from an authenticator app, such as 1Password, Google Authenticator or Authy. Someone who can read your email still cannot sign in. API keys and connected apps do not use it: they are workspace keys, not sign-ins.
+
+To turn it on, open **Profile**, select **Turn on** under **Two-step sign-in**, and scan the QR code with the app, or type the key under it. Enter the code the app shows, then select **Turn on**. Dinghy then shows 10 recovery codes, once. Copy or download them, and keep them somewhere other than your phone. Each one signs you in once in place of a code. Your other open sessions ask for a code at their next request.
+
+Each new sign-in then opens **Enter your code** after the link. Nothing else in the app works until you enter a code from the app or a recovery code. A code works once. After 5 wrong codes in 15 minutes, Dinghy signs you out and refuses every code until 15 minutes after the first wrong one.
+
+To turn it off, select **Turn off** and enter a code from the app or a recovery code. Sessions that never passed the check end.
+
+**Settings > Team** shows who has it on.
+
+If you lose your phone and your recovery codes, ask the person who runs your Dinghy server to run `chat two-factor-reset <email>`, as [Self-hosting](self-hosting.md#common-commands) shows. It turns two-step sign-in off and ends your sessions. On Dinghy Cloud, write to hello@dinghy.chat. Support resets it only with proof from outside your mailbox, such as the invoice number and the last four digits of the card, because anyone who reads your mailbox already has the first step.
+
 ### Delete your account
 
 **Delete my account** is in **Profile** too, on the payment screen, on the screen that asks for an invite, and on the workspace setup once you have been in a workspace. It takes you out of every workspace, ends your sessions, and erases your name and email. The workspaces keep their conversations, and your old replies show as from "Former team member".

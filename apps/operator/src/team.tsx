@@ -152,6 +152,9 @@ function MemberRow({
               {self && <span className="you">{t("you")}</span>}
             </strong>
             <span className="phone-only">{member.email}</span>
+            {member.twoFactor === "on" && (
+              <span className="phone-only">{t("teamTwoFactorOnPhone")}</span>
+            )}
           </span>
         </div>
       </td>
@@ -169,6 +172,9 @@ function MemberRow({
         ) : (
           <span className="chip">{t(ROLE_TEXT[member.role])}</span>
         )}
+      </td>
+      <td className="two-factor-cell">
+        {t(member.twoFactor === "on" ? "teamTwoFactorOn" : "teamTwoFactorOff")}
       </td>
       <td className="end-cell">
         {canRemove && (
@@ -490,6 +496,9 @@ export function TeamPage({
               {t("email")}
             </th>
             <th scope="col">{t("teamRole")}</th>
+            <th scope="col" className="two-factor-cell">
+              {t("teamTwoFactor")}
+            </th>
             <th scope="col" className="end-cell">
               <span className="visually-hidden">{t("teamActions")}</span>
             </th>

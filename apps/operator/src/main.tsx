@@ -15,6 +15,7 @@ import { readStored, store } from "./stored.ts";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
 import { Toaster } from "./toast.tsx";
+import { TwoFactorCheck } from "./two-factor.tsx";
 
 applyTheme(savedTheme());
 followNotificationClicks();
@@ -85,6 +86,10 @@ function App() {
   if (me === "loading" || meta === "loading") {
     // An operator who used the app on this device most likely has it open again.
     return rememberedWorkspace() === null ? <SceneLoading /> : <ShellLoading />;
+  }
+  // Before every page, the consent page too: the server refuses all else until the check passes.
+  if (me?.twoFactor === "required") {
+    return <TwoFactorCheck onPassed={load} onSignedOut={signedOut} />;
   }
   const inviteToken = query.get("token");
   if (path === "/invite" && inviteToken !== null) {

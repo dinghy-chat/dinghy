@@ -68,6 +68,7 @@ export const ERROR_CODES = [
   "blocked",
   "bots_paused",
   "busy",
+  "check_unavailable",
   "checkout_retry_later",
   "conversation_closed",
   "drafts_text_only",
@@ -92,6 +93,7 @@ export const ERROR_CODES = [
   "mail_failed",
   "message_seen",
   "name_mismatch",
+  "no_setup",
   "no_customer",
   "no_email",
   "not_a_member",
@@ -116,10 +118,14 @@ export const ERROR_CODES = [
   "too_many_requests",
   "too_many_streams",
   "too_slow",
+  "two_factor_off",
+  "two_factor_on",
+  "two_factor_required",
   "unauthorized",
   "unsupported_media_type",
   "webhook_limit",
   "workspace_deleted",
+  "wrong_code",
 ] as const;
 type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -134,6 +140,11 @@ export const CONVERSATION_CLOSED = failure(
 );
 /** No session, or the account was deleted. */
 export const UNAUTHORIZED = failure("unauthorized", "Sign in to continue.");
+/** A session of an operator with two-step sign-in on, before it passed the check. */
+export const TWO_FACTOR_REQUIRED = failure(
+  "two_factor_required",
+  "Enter a code from your authenticator app to continue.",
+);
 /** A write to the operator API from a page that is not this server's own. */
 export const WRONG_ORIGIN = failure("origin_not_allowed", "This site may not do this.");
 /** A sign-in or join link that expired or was already used. */
@@ -215,7 +226,10 @@ export const WIDGET_WRITE_ERRORS = {
 
 /** The answers every operator route can give, from the session check. */
 export const OPERATOR_ERRORS = {
-  401: errorAnswer("unauthorized: no valid session, or the API key is not valid or was revoked"),
+  401: errorAnswer(
+    "unauthorized: no valid session, or the API key is not valid or was revoked. " +
+      "two_factor_required: the session has not passed two-step sign-in yet",
+  ),
 };
 /** Any operator request but a GET: it must come from the server's own pages. */
 export const OPERATOR_POST_ERRORS = {
