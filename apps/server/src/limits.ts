@@ -20,7 +20,7 @@ export interface Limits {
    * It runs after the member's row is written, so the lock order matches every other team change.
    */
   operatorsFit(tx: Transaction, workspaceId: string): Promise<boolean>;
-  /** May the workspace store this many more image bytes? Runs in the transaction that stores them. */
+  /** May the workspace store this many more bytes of images and files? Runs where they are stored. */
   mayStore(tx: Transaction, workspaceId: string, bytes: number): Promise<boolean>;
   /**
    * Admits one open stream, which counts until `release` or until `leaseMs` passes. Null means the
@@ -52,10 +52,10 @@ export class OperatorLimitError extends Error {
   }
 }
 
-/** An image would take the workspace past its storage limit. The transaction rolls back. */
+/** An upload would take the workspace past its storage limit. The transaction rolls back. */
 export class StorageFullError extends Error {
   constructor() {
-    super("The workspace has no room for this image.");
+    super("The workspace has no room for this upload.");
   }
 }
 

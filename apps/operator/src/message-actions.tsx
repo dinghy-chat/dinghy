@@ -51,7 +51,7 @@ export function lineMenu(
   });
   const info = item("messageInfo", "info", act.info);
   if (line.deleted) return [info];
-  const isText = line.image === null && !line.imageRemoved && line.body !== "";
+  const isText = line.kind === "text" || line.kind === "note";
   const isMine = line.authorOperatorId === who.meId;
   const items: MenuItem[] = [];
   // A reply cannot quote a note, as the visitor would see the quote.

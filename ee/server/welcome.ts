@@ -26,7 +26,7 @@ import { type Live, wakeConversation } from "../../apps/server/src/live.ts";
 import {
   appendMessage,
   joinVisitor,
-  type NewImage,
+  type NewAttachment,
   type StoredMessage,
 } from "../../apps/server/src/messages.ts";
 import type { ObjectStore } from "../../apps/server/src/storage.ts";
@@ -228,15 +228,15 @@ async function chatVisitor(tx: Transaction, side: Side) {
 
 /**
  * Copies a reply as a visitor message on the other side, under both locks. Nothing goes when the
- * other side blocked its visitor or the other workspace is suspended or deleted. An image goes only
- * when the other workspace has room for it, and a message with nothing left to copy goes nowhere.
+ * other side blocked its visitor or the other workspace is suspended or deleted. An image or a file
+ * goes only when the other workspace has room for it, and a message with nothing left to copy goes nowhere.
  * Like any visitor message, the copy reopens a closed chat.
  */
 async function copyInto(
   tx: Transaction,
   other: Side,
   reply: StoredMessage,
-  file: NewImage | undefined,
+  file: NewAttachment | undefined,
   limits: Limits,
 ): Promise<{ visitorId: string; usedFile: boolean } | null> {
   const access = await welcomeAccess(
@@ -247,11 +247,11 @@ async function copyInto(
   if (!writableFor(access, { welcome: true })) return null;
   const theirs = await chatVisitor(tx, other);
   if (theirs === null || theirs.blockedAt !== null) return null;
-  const image =
+  const attachment =
     file !== undefined && (await limits.mayStore(tx, other.workspaceId, file.byteSize))
       ? file
       : undefined;
-  if (reply.body === null && image === undefined) return null;
+  if (reply.body === null && attachment === undefined) return null;
   await appendMessage(
     tx,
     other.workspaceId,
@@ -259,22 +259,22 @@ async function copyInto(
     {
       clientId: copyClientId(reply.id),
       ...(reply.body !== null && { body: reply.body }),
-      ...(image !== undefined && { image }),
+      ...(attachment !== undefined && { attachment }),
     },
     limits,
   );
-  return { visitorId: theirs.id, usedFile: image !== undefined };
+  return { visitorId: theirs.id, usedFile: attachment !== undefined };
 }
 
-/** A copy of an image's file under the other workspace's own key, made before the transaction. */
-async function copyFile(store: ObjectStore, workspaceId: string, image: NewImage) {
-  const contents = await store.get(image.storageKey);
+/** A copy of an image or a file under the other workspace's own key, made before the transaction. */
+async function copyFile(store: ObjectStore, workspaceId: string, upload: NewAttachment) {
+  const contents = await store.get(upload.storageKey);
   if (contents === null) return undefined;
   const bytes = new Uint8Array(await new Response(contents).arrayBuffer());
   const attachmentId = randomUUID();
   const storageKey = `${workspaceId}/${attachmentId}`;
-  await store.put(storageKey, bytes, image.contentType);
-  return { ...image, attachmentId, storageKey };
+  await store.put(storageKey, bytes, upload.contentType);
+  return { ...upload, attachmentId, storageKey };
 }
 
 interface CopyDeps {
@@ -290,15 +290,15 @@ interface CopyDeps {
  * in the reply's own transaction. Visitor messages are never copied, so a copy never makes another.
  */
 export function createCopyReply({ db, limits, live, logger, store }: CopyDeps): CopyReply {
-  return async (workspaceId, conversationId, image) => {
+  return async (workspaceId, conversationId, upload) => {
     const own = { workspaceId, conversationId };
     const other = await withWorkspace(db, workspaceId, (tx) => otherSide(tx, own));
     if (other === null) return null;
     const file =
-      image === undefined || store === undefined
+      upload === undefined || store === undefined
         ? undefined
-        : await copyFile(store, other.workspaceId, image).catch((error: unknown) => {
-            logger.warn(safeErrorFields(error), "a welcome chat image was not copied");
+        : await copyFile(store, other.workspaceId, upload).catch((error: unknown) => {
+            logger.warn(safeErrorFields(error), "a welcome chat upload was not copied");
             return undefined;
           });
     let copied: { visitorId: string; usedFile: boolean } | null = null;

@@ -28,7 +28,7 @@ export const ROLE_TEXT: Record<Role, TextId> = {
 /** Answers that mean the same thing wherever they come from, by the server's error code. */
 const BY_CODE: Record<string, TextId> = {
   operator_limit: "operatorLimit",
-  storage_full: "imageNoRoom",
+  storage_full: "storageFull",
   suspended: "suspendedRefused",
   read_only: "readOnlyRefused",
   payment_required: "paymentRequiredRefused",

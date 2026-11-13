@@ -1,11 +1,21 @@
 import { z } from "@hono/zod-openapi";
 import { MENTIONS_MAX, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
+import { FILE_TYPES_TEXT } from "./files.ts";
 
 // The input schemas and words that routes and MCP tools share. This module imports no route or tool
 // module, so each of them can use these values when it loads.
 
 /** A write's ID that the client made, so a retry cannot create a duplicate. */
 export const ClientId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+
+/** An upload's file name, which the server cleans. An image needs none. */
+export const Filename = z
+  .string()
+  .max(1000)
+  .default("")
+  .openapi({
+    description: `The file's name, such as report.pdf. Its extension says the type, one of ${FILE_TYPES_TEXT}. An image needs none, as its bytes say what it is`,
+  });
 
 /** Text of one line or a few, with no NUL byte, which Postgres text cannot hold. */
 export const boundedText = (max: number) =>

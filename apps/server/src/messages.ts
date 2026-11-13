@@ -101,6 +101,14 @@ export interface QuoteRow {
   hasImage: boolean;
 }
 
+/** A file message's name. Null for any other message, and once the file was removed. */
+export const fileName = (metadata: SQLWrapper = message.metadata) =>
+  sql<string | null>`${metadata} #>> '{file,name}'`;
+
+/** What a list shows for a chat message: its text, or a file's name. Null for an image. */
+export const previewBody = (body: SQLWrapper, metadata: SQLWrapper) =>
+  sql<string | null>`coalesce(${body}, ${fileName(metadata)})`;
+
 /**
  * The quoted message, read in the same statement as each listed row, so a list costs one query.
  * The outer table is named, because a RETURNING clause would otherwise read the inner one.
@@ -112,7 +120,7 @@ const quoteColumn = sql<QuoteRow | null>`(
     'fromVisitor', q.author_visitor_id is not null,
     'byOperator', o.id is not null and o.deleted_at is null,
     'authorName', coalesce(o.name, k.name, v.name),
-    'body', q.body,
+    'body', ${previewBody(sql`q.body`, sql`q.metadata`)},
     'hasImage', q.kind = 'image')
   from message as q
   left join operator as o on o.id = q.author_operator_id
@@ -173,9 +181,13 @@ export interface StoredMessage {
   image: { attachmentId: string; width: number; height: number } | null;
   /** The image's file was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
+  /** A file that is not an image. `size` is in bytes. */
+  file: { attachmentId: string; name: string; size: number } | null;
+  /** The file was deleted after 12 months, on Dinghy Cloud. */
+  fileRemoved: boolean;
   replyTo: QuoteRow | null;
   editedAt: Date | null;
-  /** Deleted by an operator: its body and image are gone, and it shows as a placeholder. */
+  /** Deleted by an operator: its body and image or file are gone, and it shows as a placeholder. */
   deleted: boolean;
   /** When the visitor's read position first passed this reply, when known. */
   readAt: Date | null;
@@ -243,6 +255,8 @@ interface MessageRow {
 interface MessageMetadata {
   image?: StoredMessage["image"];
   imageRemoved?: boolean;
+  file?: StoredMessage["file"];
+  fileRemoved?: boolean;
   /** Set on a key's reply that came through MCP, and on an operator's that sent a draft. */
   via?: "mcp" | "draft";
   /** Set on a bot's handoff note: who it handed the conversation to, or null for the team. */
@@ -263,6 +277,8 @@ export function stored({
     ...row,
     image: meta?.image ?? null,
     imageRemoved: meta?.imageRemoved === true,
+    file: meta?.file ?? null,
+    fileRemoved: meta?.fileRemoved === true,
     fromVisitor: authorVisitorId !== null,
     deleted: deletedAt !== null,
     via:
@@ -338,14 +354,19 @@ async function visitorConversation(
 export const wantsWebhook = (workspaceId: string) =>
   sql<boolean>`exists (select 1 from ${webhook} where ${webhook.workspaceId} = ${workspaceId} and ${webhook.enabled})`;
 
-export interface NewImage {
+/** An image or a file that is stored, and waits for its message. */
+export type NewAttachment = {
   attachmentId: string;
   storageKey: string;
   byteSize: number;
   contentType: string;
-  width: number;
-  height: number;
-}
+} & ({ kind: "image"; width: number; height: number } | { kind: "file"; name: string });
+
+/** What a message's metadata holds about its image or file. */
+const attachmentMetadata = ({ attachmentId, ...upload }: NewAttachment): MessageMetadata =>
+  upload.kind === "image"
+    ? { image: { attachmentId, width: upload.width, height: upload.height } }
+    : { file: { attachmentId, name: upload.name, size: upload.byteSize } };
 
 /**
  * The quoted message is not a message people wrote in this conversation, or it was deleted. A reply
@@ -469,8 +490,9 @@ async function inWelcomeChat(tx: Transaction, workspaceId: string, author: Autho
  * of the sequence matches the order of commits, and a client at cursor N can never miss a message
  * below N that commits later. A retry leaves a gap in the sequence, which is harmless.
  *
- * Keep the caller's transaction short, because this lock serializes writes in the workspace. An image
- * counts against the plan's storage under the same lock, and throws StorageFullError past it.
+ * Keep the caller's transaction short, because this lock serializes writes in the workspace. An
+ * image or a file counts against the plan's storage under the same lock, and throws
+ * StorageFullError past it.
  *
  * The routes refuse a closed workspace up front, but an upload can take a while to arrive. So this
  * reads the workspace's access again under the lock, which `chat suspend` and the billing change to
@@ -492,8 +514,8 @@ export async function appendMessage(
     /** A bot's handoff note: who takes the conversation, with null for the team. */
     handoffTo?: string | null | undefined;
   } & (
-    | { image?: NewImage; note?: false }
-    | { image?: undefined; note: true; mentions?: string[] | undefined }
+    | { attachment?: NewAttachment; note?: false }
+    | { attachment?: undefined; note: true; mentions?: string[] | undefined }
   ),
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
@@ -551,10 +573,8 @@ export async function appendMessage(
       target.assignee === null &&
       !(await hasOperatorReply(tx, workspaceId, author.conversationId));
   }
-  if (
-    input.image !== undefined &&
-    !(await limits.mayStore(tx, workspaceId, input.image.byteSize))
-  ) {
+  const { attachment: upload } = input;
+  if (upload !== undefined && !(await limits.mayStore(tx, workspaceId, upload.byteSize))) {
     throw new StorageFullError();
   }
 
@@ -578,13 +598,7 @@ export async function appendMessage(
       )
     : [];
   const metadata: MessageMetadata = {
-    ...(input.image !== undefined && {
-      image: {
-        attachmentId: input.image.attachmentId,
-        width: input.image.width,
-        height: input.image.height,
-      },
-    }),
+    ...(upload !== undefined && attachmentMetadata(upload)),
     ...(input.source !== undefined && { via: input.source.via }),
     ...(input.handoffTo !== undefined && { handoff: { operatorId: input.handoffTo } }),
     ...(mentions.length > 0 && { mentions }),
@@ -595,7 +609,7 @@ export async function appendMessage(
       workspaceId,
       conversationId,
       seq: messageSeq,
-      kind: isNote ? "note" : input.image === undefined ? "text" : "image",
+      kind: isNote ? "note" : (upload?.kind ?? "text"),
       clientId: input.clientId,
       body: input.body ?? null,
       metadata,
@@ -608,16 +622,17 @@ export async function appendMessage(
     })
     .returning(messageColumns);
   if (row === undefined) throw new Error("The message insert returned no row");
-  if (input.image !== undefined) {
+  if (upload !== undefined) {
     await tx.insert(attachment).values({
       workspaceId,
-      id: input.image.attachmentId,
+      id: upload.attachmentId,
       messageId: row.id,
-      storageKey: input.image.storageKey,
-      byteSize: input.image.byteSize,
-      contentType: input.image.contentType,
-      width: input.image.width,
-      height: input.image.height,
+      storageKey: upload.storageKey,
+      byteSize: upload.byteSize,
+      contentType: upload.contentType,
+      ...(upload.kind === "image"
+        ? { width: upload.width, height: upload.height }
+        : { filename: upload.name }),
     });
   }
 
@@ -1176,6 +1191,7 @@ export async function listConversations(
   const newest = tx
     .select({
       body: message.body,
+      metadata: message.metadata,
       authorVisitorId: message.authorVisitorId,
       createdAt: message.createdAt,
     })
@@ -1195,7 +1211,7 @@ export async function listConversations(
     .select({
       ...conversationColumns,
       unread: unreadBy(operatorId),
-      lastBody: newest.body,
+      lastBody: previewBody(newest.body, newest.metadata),
       lastAuthorVisitorId: newest.authorVisitorId,
       lastCreatedAt: newest.createdAt,
     })
@@ -1740,6 +1756,7 @@ export async function searchConversations(
   const newest = tx
     .select({
       body: message.body,
+      metadata: message.metadata,
       authorVisitorId: message.authorVisitorId,
       createdAt: message.createdAt,
     })
@@ -1760,7 +1777,7 @@ export async function searchConversations(
       ...conversationColumns,
       unread: unreadBy(operatorId),
       hitBody: hit.body,
-      lastBody: newest.body,
+      lastBody: previewBody(newest.body, newest.metadata),
       lastAuthorVisitorId: newest.authorVisitorId,
       lastCreatedAt: newest.createdAt,
     })

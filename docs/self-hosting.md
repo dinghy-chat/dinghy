@@ -83,10 +83,10 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `COMPOSE_PROFILES=tls` | Starts Caddy with every command |
 | `DINGHY_PORT` | The local port when there is no domain |
 | `SMTP_URL`, `MAIL_FROM` | A mail server, such as `smtp://user:password@mail.example.com:587`. Sign-in links, operator alerts by email and replies to visitors who left all need it. Without one, `chat sign-in-link` makes the sign-in links |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Keeps images in a bucket, not on this disk |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Keeps images and files in a bucket, not on this disk |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | An encrypted copy of each backup in another place |
 | `BACKUP_HEARTBEAT_URL` | An address that `chat backup` pings after each backup that worked, such as a [healthchecks.io](https://healthchecks.io) check, so a monitor tells you when a night has none. Optional |
-| `IMAGES_ORIGIN` | A separate origin for images that visitors and operators send, such as `https://files.example.com`. Optional. See below |
+| `IMAGES_ORIGIN` | A separate origin for images and files that visitors and operators send, such as `https://files.example.com`. Optional. See below |
 | `TRUSTED_PROXY_HOPS` | See below |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent` |
 | `GEOIP_COUNTRY_FILE` | The country database for the live view, set by the Docker image to the copy of DB-IP's IP to Country Lite it downloads when it is built. Leave it as it is. Without the file, the live view shows no countries |
@@ -99,13 +99,13 @@ Without a mail server, Dinghy still works. Operators sign in with a link that yo
 
 ### A separate origin for images
 
-Images come from visitors you do not know. Dinghy re-encodes each one and serves it with headers that stop scripts, but a second origin adds one more wall: nothing served there can ever act as the app. To use one:
+Images and files come from visitors you do not know. Dinghy re-encodes each image, serves every other file only as a download, and sends both with headers that stop scripts, but a second origin adds one more wall: nothing served there can ever act as the app. Dinghy does not scan files for viruses. To use one:
 
 1. Point a second hostname at this server, such as `files.example.com`. A different registrable domain, such as `example-files.com`, is stronger still, because it shares no cookies with your site.
 2. Have your proxy pass it to the app, like your main domain. The bundled Caddy serves only `CHAT_DOMAIN`, so this needs your own proxy (see below).
 3. Set `IMAGES_ORIGIN=https://files.example.com` in `.env`, and run `docker compose up -d`.
 
-Image links then use that origin, with the same short-lived signed URLs. It answers only the image route, and the app's own origin stops serving images. Every image goes out with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: inline`, and only as PNG, JPEG or WebP, never as HTML or SVG. A host site with a Content Security Policy must allow the new origin in `img-src` for the widget's images.
+Image and file links then use that origin, with the same short-lived signed URLs. It answers only the image route, and the app's own origin stops serving images and files. Every image goes out with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: inline`, and only as PNG, JPEG or WebP, never as HTML or SVG. Every other file goes out with the same two headers, `Content-Disposition: attachment` and `Content-Type: application/octet-stream`, so a browser saves it and never shows it. A host site with a Content Security Policy must allow the new origin in `img-src` for the widget's images.
 
 ## Behind your own reverse proxy
 
@@ -119,7 +119,7 @@ Your proxy must:
 
 - Serve HTTPS for the domain. `CHAT_DOMAIN` makes the app expect `https://` and that domain, and sign-in refuses a request from any other origin. For another address, such as a port, set `PUBLIC_URL` instead.
 - Pass the `Host` and `Origin` headers through unchanged, and add the client's address to `X-Forwarded-For`.
-- Accept request bodies of at least 6 MB, because an image can be 5 MB. nginx allows 1 MB unless you set `client_max_body_size`.
+- Accept request bodies of at least 11 MB, because a file in the chat can be 10 MB. nginx allows 1 MB unless you set `client_max_body_size`.
 - Pass `Strict-Transport-Security` through, or set your own. The app sends `max-age=31536000` when `PUBLIC_URL` starts with `https://`, and so does the bundled Caddy. It tells browsers to use HTTPS for a year, so serve the domain over HTTPS first.
 - Not buffer the live streams. The app sends `X-Accel-Buffering: no` on them, which nginx follows. Another proxy may need streaming or flushing turned on for `text/event-stream`. A stream sends a heartbeat every 25 seconds, so an idle timeout of 60 seconds or more is enough.
 
@@ -132,7 +132,7 @@ location / {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_read_timeout 120s;
-    client_max_body_size 6m;
+    client_max_body_size 11m;
 }
 ```
 

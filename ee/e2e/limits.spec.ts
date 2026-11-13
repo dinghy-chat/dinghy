@@ -37,11 +37,11 @@ test("a workspace with 5 operators shows the limit when an owner creates an invi
   await expect(operators).toContainText("5 of 5");
   await expect(operators).toContainText("All team places are in use.");
   await expect(operators).toHaveClass(/full/);
-  const images = plan.locator(".meter", { hasText: "Image storage" });
+  const images = plan.locator(".meter", { hasText: "File storage" });
   await expect(images).toContainText("0 MB of 1 GB");
   await expect(images).toHaveClass(/ ok/);
   await expect(
-    page.getByText("Dinghy Cloud automatically deletes chat images after 12 months."),
+    page.getByText("Dinghy Cloud automatically deletes chat images and files after 12 months."),
   ).toBeVisible();
   // The Team page says how full it is, under its title, beside its Invite button.
   await settingsList(page).getByRole("link", { name: "Team" }).click();

@@ -19,13 +19,17 @@ export interface ChatMessage {
   conversationId: string;
   seq: string;
   /** `closed` and `reopened` are status lines, with no body. */
-  kind: "text" | "image" | "closed" | "reopened";
+  kind: "text" | "image" | "file" | "closed" | "reopened";
   fromVisitor: boolean;
   clientId: string | null;
   body: string | null;
   image: { url: string; width: number; height: number } | null;
   /** The image was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
+  /** A file that only downloads. `size` is in bytes. */
+  file: { name: string; size: number; url: string } | null;
+  /** The file was deleted after 12 months, on Dinghy Cloud. */
+  fileRemoved: boolean;
   /** A reply from a workspace API key, such as the site's own bot. */
   fromBot: boolean;
   /** A hash of the operator's or the key's ID, which tells two authors with one name apart. */
@@ -150,11 +154,11 @@ export function createClient(
         body: JSON.stringify({ seq }),
         keepalive: true,
       }),
-    sendImage: async (token: string, clientId: string, file: File) => {
+    sendUpload: async (token: string, clientId: string, file: File) => {
       const at = page();
       const response = await fetch(
         url(
-          `images?clientId=${clientId}${at === undefined ? "" : `&page=${encodeURIComponent(at)}`}`,
+          `images?clientId=${clientId}&filename=${encodeURIComponent(file.name)}${at === undefined ? "" : `&page=${encodeURIComponent(at)}`}`,
         ),
         {
           method: "POST",

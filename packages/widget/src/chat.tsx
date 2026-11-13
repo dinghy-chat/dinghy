@@ -1,7 +1,14 @@
 import { Fragment, render } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ChatMessage, createClient } from "./client.ts";
-import { imageProblem, inCommitOrder, newClientId, REFRESH_LIMIT_MS, REFUSED } from "./compose.ts";
+import {
+  inCommitOrder,
+  isImage,
+  newClientId,
+  REFRESH_LIMIT_MS,
+  REFUSED,
+  uploadProblem,
+} from "./compose.ts";
 import { cleanContext } from "./context.ts";
 import "./globals.ts";
 import { emit, reportConversation } from "./page-events.ts";
@@ -71,13 +78,16 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
     ...(note && { note }),
     id: message.id,
     seq: BigInt(message.seq),
-    // A removed image or a deleted message reads as a note where it was.
+    // A removed image or file, or a deleted message, reads as a note where it was.
     body: message.deleted
       ? t("messageDeleted")
       : message.imageRemoved
         ? t("imageRemoved")
-        : (message.body ?? ""),
+        : message.fileRemoved
+          ? t("fileRemoved")
+          : (message.body ?? ""),
     image: message.image,
+    download: message.file,
     quote: message.replyTo,
     gone: message.deleted,
     fromVisitor: message.fromVisitor,
@@ -533,7 +543,7 @@ function Chat({
       const post = (token: string) =>
         file === undefined
           ? client.send(token, lineId, body, quoteId ?? undefined)
-          : client.sendImage(token, lineId, file);
+          : client.sendUpload(token, lineId, file);
       const sent = await post(first).catch(async (error: unknown) => {
         // A tab open past the token's expiry asks the host for a new one and tries once more.
         // The client ID makes this safe.
@@ -558,7 +568,9 @@ function Chat({
       setLines((current) => merge(current, sent));
     } catch (error) {
       if (file !== undefined && error instanceof ApiError && REFUSED.includes(error.status)) {
-        setProblem(t(error.status === 507 ? "imageNoRoom" : "imageFailed"));
+        setProblem(
+          t(error.status === 507 ? "noRoom" : isImage(file) ? "imageFailed" : "fileWrongType"),
+        );
         setLines((current) => current.filter((line) => line.id !== lineId));
         return;
       }
@@ -581,6 +593,7 @@ function Chat({
         seq: null,
         body,
         image: null,
+        download: null,
         fromVisitor: true,
         author: null,
         status: "sending",
@@ -616,7 +629,7 @@ function Chat({
     // Once, before the loop, so a good file cannot erase the warning about the one before it.
     setProblem(null);
     for (const file of files) {
-      const problem = imageProblem(file);
+      const problem = uploadProblem(file, saved?.visitorFiles === true);
       if (problem !== null) {
         setProblem(t(problem));
         continue;
@@ -768,6 +781,7 @@ function Chat({
           onDraft={setDraft}
           onSubmit={submit}
           onFiles={sendFiles}
+          filesAllowed={saved.visitorFiles}
           quoting={quoting}
           onUnquote={() => setQuoting(null)}
         />

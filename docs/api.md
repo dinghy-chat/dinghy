@@ -34,7 +34,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 403 | `origin_not_allowed`, `suspended`, `forbidden`, `blocked` | The site is not allowed or the widget is off, the workspace is suspended, the role or the key's level does not allow it, or an operator blocked the visitor |
 | 404 | `not_found` | It does not exist, or it is in another workspace |
 | 409 | `conversation_closed`, `webhook_limit`, `site_limit`, `grant_limit`, `message_seen` | Reopen the conversation to reply or to snooze it, the workspace has 5 webhooks, 20 allowed sites or 50 connected apps already, or the visitor has seen the reply you tried to edit |
-| 409 | `human_handling`, `bots_paused`, `drafts_text_only` | For an API key: a person handles the conversation and the key sends directly, an owner or admin paused every bot, or a key in draft mode sent an image. See [Bots](#bots-reply-modes-drafts-notes-and-handoff) |
+| 409 | `human_handling`, `bots_paused`, `drafts_text_only` | For an API key: a person handles the conversation and the key sends directly, an owner or admin paused every bot, or a key in draft mode sent an image or a file. See [Bots](#bots-reply-modes-drafts-notes-and-handoff) |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
 | 503 | `busy`, `check_unavailable` | The server is overloaded for a moment, or it cannot count [two-step sign-in](#two-step-sign-in) attempts. Try again |
@@ -54,7 +54,7 @@ A wrong code, or one used before, answers 400 `wrong_code`. A code from the app 
 
 ## Sending without duplicates
 
-A message or an image carries a `clientId` that the client makes, such as `m_4f9a2c`. A retry with the same `clientId` returns the first message and creates nothing, so a client can retry a send after any network error.
+A message, an image or a file carries a `clientId` that the client makes, such as `m_4f9a2c`. A retry with the same `clientId` returns the first message and creates nothing, so a client can retry a send after any network error.
 
 A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry of that message answers true too. A visitor who has no open conversation but a closed one writes into their newest closed one: the send reopens it, with its assignee, and answers false. Its status line and `conversation.reopened` event come before the message, with the visitor as the author. Only a visitor's first message starts a conversation.
 
@@ -71,7 +71,17 @@ A message's `body` is plain text that the widget, the operator app and reply ema
 
 `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/transcript` emails the visitor the whole conversation now, open or closed, whatever the `transcript` setting says. It answers 409 `no_email` when the visitor gave no email and `email_unavailable` when the server sends no email. It adds a `transcript.requested` event, and the worker sends it at least once, as it does reply emails. A transcript drops the visitor's waiting reply email, unless that email also carries a reply from another conversation. Transcripts go to visitors only, never to operators.
 
-A message's `kind` is `text` or `image` for what people wrote, and `note` for a [note](#notes) that only the team sees. Closing or reopening a conversation writes a status line in the same transaction as its `conversation.closed` or `conversation.reopened` event and with the event's position, so the widget and the operator app show it in order: `kind` is `closed` or `reopened`, `body` is null, and the author is whoever made the change (an operator, an API key, or no one shown on Dinghy Cloud's welcome chat). A status line has no `message.created` event, so it raises no alert, no push and no webhook, it is never a conversation's `lastMessage`, and it counts toward neither unread replies nor first replies. A client that shows only chat skips these kinds.
+A message's `kind` is `text`, `image` or `file` for what people wrote, and `note` for a [note](#notes) that only the team sees. Closing or reopening a conversation writes a status line in the same transaction as its `conversation.closed` or `conversation.reopened` event and with the event's position, so the widget and the operator app show it in order: `kind` is `closed` or `reopened`, `body` is null, and the author is whoever made the change (an operator, an API key, or no one shown on Dinghy Cloud's welcome chat). A status line has no `message.created` event, so it raises no alert, no push and no webhook, it is never a conversation's `lastMessage`, and it counts toward neither unread replies nor first replies. A client that shows only chat skips these kinds.
+
+### Images and files
+
+`POST /v1/widget/{key}/images` and `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/images` take an image or a file as the raw request body, with `clientId` in the query. One message carries one image or one file.
+
+- PNG, JPEG and WebP bytes become an `image` message, whatever their name. Dinghy encodes each image again, up to 5 MB and 16 megapixels, and a message has `image: { url, width, height }`.
+- Any other file needs `filename` in the query, such as `filename=Order%201042.pdf`. Its extension must be PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, and its first bytes must match the type where the type has a signature. It can be up to 10 MB. Dinghy stores it as it came, keeps its name with letters, digits, spaces and `._()-` only, up to 100 characters, and answers a `file` message with `file: { name, size, url }`, `size` in bytes.
+- Anything else answers 400 `type_not_allowed`, with the allowed types in its message. Visitors may send files only while the widget's `visitorFiles` setting is on, which it is by default. With it off, a visitor's file answers 400 `not_an_image`. Operators and API keys can always send files.
+
+The `url` of an image or a file is signed and works for at least 15 minutes. A file's URL serves only a download: `Content-Disposition: attachment` with its name, `Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. Dinghy does not scan files for viruses. On Dinghy Cloud, a file counts toward the workspace's storage as an image does, and goes after 12 months: then `file` is null and `fileRemoved` is true. A full workspace answers 507 `storage_full`, and text still sends. Reply emails and transcripts show a file by its name, with a link to the conversation, never as an attachment.
 
 An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
 

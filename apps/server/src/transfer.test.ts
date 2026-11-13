@@ -309,6 +309,22 @@ afterEach(async () => {
   for (const install of installs.splice(keptInstalls)) await install.database.drop();
 });
 
+/** The archive's JSON with a change, and its images. */
+async function edited(change: (data: Record<string, unknown>) => void): Promise<Buffer> {
+  const parts: Uint8Array[] = [];
+  for await (const entry of readTar(once(archive))) {
+    if (entry.name === "export.json") {
+      const data = JSON.parse(Buffer.from(entry.bytes).toString());
+      change(data);
+      parts.push(...tarEntry(entry.name, Buffer.from(JSON.stringify(data))));
+    } else {
+      parts.push(...tarEntry(entry.name, entry.bytes));
+    }
+  }
+  parts.push(tarEnd());
+  return Buffer.concat(parts);
+}
+
 describe("an export", () => {
   test("holds only the requested workspace, and no signing secret", () => {
     const text = archive.toString("latin1");
@@ -384,7 +400,7 @@ describe("a round trip onto a fresh install", () => {
     const result = await importArchive(target.db, target.store, once(archive));
     expect(result.conversations).toBe(1);
     expect(result.messages).toBe(7);
-    expect(result.images).toBe(2);
+    expect(result.uploads).toBe(2);
     expect(result.newOperators).toHaveLength(3);
     keptInstalls = installs.length;
   }, 30_000);
@@ -706,6 +722,65 @@ describe("a round trip onto a fresh install", () => {
   });
 });
 
+describe("files in the chat", () => {
+  const pdf = Buffer.from("%PDF-1.7\nOrder 1042\n%%EOF\n");
+
+  test("a file comes along as it came, with its kind and name, beside an image", async () => {
+    const install = await freshInstall();
+    const space = await createWorkspace(install.db, "Files", [SITE]);
+    await addPerson(install, space.id, "owner");
+    const created = await install.app.request(`/v1/widget/${space.publicKey}/visitors`, {
+      method: "POST",
+      headers: { origin: SITE },
+    });
+    const { token } = (await created.json()) as { token: string };
+    const send = (query: string, body: Uint8Array) =>
+      install.app.request(`/v1/widget/${space.publicKey}/images?${query}`, {
+        method: "POST",
+        headers: { origin: SITE, authorization: `Bearer ${token}` },
+        body: body as Uint8Array<ArrayBuffer>,
+      });
+    expect((await send("clientId=pdf&filename=Order%201042.pdf", pdf)).status).toBe(201);
+    expect((await send("clientId=png", await png())).status).toBe(201);
+    const bytes = await collect(exportArchive(install.db, install.store, space.id));
+    let json: { attachments: unknown[] } | undefined;
+    for await (const entry of readTar(once(bytes))) {
+      if (entry.name === "export.json") json = JSON.parse(Buffer.from(entry.bytes).toString());
+    }
+    expect(json?.attachments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "file", filename: "Order 1042.pdf" }),
+        expect.objectContaining({ kind: "image" }),
+      ]),
+    );
+
+    const target = await freshInstall();
+    expect((await importArchive(target.db, target.store, once(bytes))).uploads).toBe(2);
+    const read = await target.app.request(`/v1/widget/${space.publicKey}/messages`, {
+      headers: { origin: SITE, authorization: `Bearer ${token}` },
+    });
+    const { messages } = (await read.json()) as {
+      messages: { kind: string; file: { name: string; size: number; url: string } | null }[];
+    };
+    const file = messages.find((one) => one.kind === "file")?.file;
+    expect(file).toMatchObject({ name: "Order 1042.pdf", size: pdf.length });
+    const url = new URL(file?.url ?? "");
+    const served = await target.app.request(`${url.pathname}${url.search}`);
+    expect(served.headers.get("content-disposition")).toMatch(/^attachment;/);
+    expect(Buffer.from(await served.arrayBuffer()).equals(pdf)).toBe(true);
+  }, 30_000);
+
+  test("an archive from before files, with no kind on its images, still imports them", async () => {
+    const old = await edited((data) => {
+      for (const row of data.attachments as Record<string, unknown>[]) delete row.kind;
+    });
+    const target = await freshInstall();
+    expect((await importArchive(target.db, target.store, once(old))).uploads).toBe(2);
+    const rows = await target.owner.select().from(attachment);
+    expect(rows.every((row) => row.filename === null && row.width === 4)).toBe(true);
+  }, 30_000);
+});
+
 describe("an operator on the new install", () => {
   test("with an account there keeps one login and joins the workspace", async () => {
     const target = await freshInstall();
@@ -753,22 +828,6 @@ describe("an operator on the new install", () => {
 });
 
 describe("a bad file changes nothing", () => {
-  /** The archive's JSON with a change, and its images. */
-  async function edited(change: (data: Record<string, unknown>) => void): Promise<Buffer> {
-    const parts: Uint8Array[] = [];
-    for await (const entry of readTar(once(archive))) {
-      if (entry.name === "export.json") {
-        const data = JSON.parse(Buffer.from(entry.bytes).toString());
-        change(data);
-        parts.push(...tarEntry(entry.name, Buffer.from(JSON.stringify(data))));
-      } else {
-        parts.push(...tarEntry(entry.name, entry.bytes));
-      }
-    }
-    parts.push(tarEnd());
-    return Buffer.concat(parts);
-  }
-
   async function refuses(bytes: Uint8Array, text?: string) {
     const target = await freshInstall();
     const before = (await target.owner.select().from(operator)).length;
@@ -896,6 +955,15 @@ describe("a bad file changes nothing", () => {
     );
   });
 
+  test("a file whose bytes do not match its type", async () => {
+    const renamed = await edited((data) => {
+      for (const row of data.attachments as Record<string, unknown>[]) {
+        Object.assign(row, { kind: "file", filename: "invoice.pdf" });
+      }
+    });
+    await refuses(renamed, "type_not_allowed");
+  });
+
   test("an image that is not an image", async () => {
     const parts: Uint8Array[] = [];
     for await (const entry of readTar(once(archive))) {
@@ -958,8 +1026,8 @@ test("an export skips an image deleted since it started, and still imports", asy
   const partial = await collect(exportArchive(install.db, removing, space.id));
   const target = await freshInstall();
   const result = await importArchive(target.db, target.store, once(partial));
-  expect(result.images).toBe(1);
-  expect(result.missingImages).toBe(1);
+  expect(result.uploads).toBe(1);
+  expect(result.missingUploads).toBe(1);
   expect(result.messages).toBe(7);
 });
 

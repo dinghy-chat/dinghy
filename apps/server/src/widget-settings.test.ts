@@ -46,6 +46,7 @@ const CHANGED = {
   branding: false,
   sound: false,
   transcript: false,
+  visitorFiles: false,
   headerFaces: "repliers",
   headerFaceCount: 5,
   headerDot: false,

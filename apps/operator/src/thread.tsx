@@ -210,7 +210,7 @@ export function Thread({
   // here never comes back as a reply after a reload or a visit to another conversation.
   const closed = conversation?.status === "closed";
   const mode: ComposeMode = closed || draft.isNote ? "note" : "reply";
-  const imagesOn = !readOnly && !suspended && mode === "reply";
+  const uploadsOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
   // The bot's draft whose text is in the composer: sending it sends the draft.
   const [editingDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
@@ -311,7 +311,7 @@ export function Thread({
   return (
     <div className="conversation-view">
       <section
-        className={dropping && !closed && imagesOn ? "thread drop" : "thread"}
+        className={dropping && !closed && uploadsOn ? "thread drop" : "thread"}
         aria-label={visitorName}
         onDragOver={(event) => {
           // A drag of selected text keeps its normal behavior.
@@ -324,7 +324,7 @@ export function Thread({
           setDropping(false);
           if (!event.dataTransfer.types.includes("Files")) return;
           event.preventDefault();
-          if (!closed && imagesOn) sendFiles(event.dataTransfer.files);
+          if (!closed && uploadsOn) sendFiles(event.dataTransfer.files);
         }}
       >
         <ThreadHead
@@ -416,7 +416,7 @@ export function Thread({
               draft={draft.text}
               setDraft={(text) => setDraft({ text, isNote: mode === "note" })}
               onSend={send}
-              onFiles={imagesOn ? sendFiles : undefined}
+              onFiles={uploadsOn ? sendFiles : undefined}
               picks={composerPicks(
                 savedReplies.data?.savedReplies ?? [],
                 members,

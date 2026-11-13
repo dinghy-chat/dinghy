@@ -25,6 +25,8 @@ const mine = (kind: "text" | "note"): Line => ({
   body: "Hello",
   image: null,
   imageRemoved: false,
+  download: null,
+  fileRemoved: false,
   fromVisitor: false,
   kind,
   createdAt: "2026-11-12T10:00:00.000Z",

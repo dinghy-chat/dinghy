@@ -18,7 +18,7 @@ import {
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
-import { containing, isChat } from "./messages.ts";
+import { containing, isChat, previewBody } from "./messages.ts";
 import { deleteConversations } from "./moderation.ts";
 import type { VisitorPresence } from "./presence.ts";
 import { allowed } from "./team.ts";
@@ -341,7 +341,7 @@ const contactConversations = (tx: Transaction, workspaceId: string, visitorId: s
     FROM conversation AS c
     LEFT JOIN operator AS assignee ON assignee.id = c.assignee_operator_id
     LEFT JOIN LATERAL (
-      SELECT m.body FROM message AS m
+      SELECT ${previewBody(sql`m.body`, sql`m.metadata`)} AS body FROM message AS m
       WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
         AND ${isChat(sql`m.kind`)} AND m.deleted_at IS NULL
       ORDER BY m.seq DESC LIMIT 1

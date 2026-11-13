@@ -531,7 +531,8 @@ describe("copies between the two sides", () => {
         { kind: "visitor", visitorId: guest[0]?.id ?? "" },
         {
           clientId: randomUUID(),
-          image: {
+          attachment: {
+            kind: "image",
             attachmentId: randomUUID(),
             storageKey: `${acme.workspaceId}/full`,
             byteSize: MAX_IMAGE_BYTES,

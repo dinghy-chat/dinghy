@@ -54,7 +54,7 @@ How a workspace's widget looks and behaves lives in `widget_settings`, one row p
 
 The loader asks for them on each page view at `GET /v1/widget/{key}/appearance`, which any site may read and a browser keeps for 5 minutes, then draws the launcher. The chat bundle uses the same answer. The snippet's attributes and `Dinghy.configure()` win over it. The answer also names up to 3 members who replied last, by first name and picture, so its ETag hashes the whole answer rather than the row's change time.
 
-A logo and an operator's picture are small WebP files in Postgres, in `workspace_logo` and `operator_picture`, and do not count as image storage. Their addresses carry the upload's time, so they cache for good.
+A logo and an operator's picture are small WebP files in Postgres, in `workspace_logo` and `operator_picture`, and do not count as file storage. Their addresses carry the upload's time, so they cache for good.
 
 ## Live signals
 
@@ -69,7 +69,7 @@ Background work lives in Postgres tables, and the worker claims rows with `FOR U
 1. Fan out alerts: turn new visitor messages into one delivery per operator device and email.
 2. Fan out webhooks: turn each event that a workspace's webhooks asked for into one delivery per webhook. An event is flagged for this only when its workspace had an enabled webhook when it committed.
 3. Send the claimed deliveries: web push, email and webhooks. Webhooks have their own slots, so a slow receiver never holds an alert back.
-4. Delete stored image files that are queued for deletion.
+4. Delete stored images and files that are queued for deletion.
 5. Prune old events and finished rows. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
 6. Purge workspaces that an owner deleted.
 

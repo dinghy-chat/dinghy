@@ -9,7 +9,10 @@ import { createSlots } from "../../apps/server/src/rate-limit.ts";
 
 /** The plan's limits, confirmed by the owner on 2026-11-07. */
 export const MAX_OPERATORS = 5;
-/** Counted from the stored bytes after the re-encode, in decimal units like the price page. */
+/**
+ * Images and files, counted from the stored bytes after an image's re-encode, in decimal units like
+ * the price page.
+ */
 const MAX_IMAGE_BYTES = 1_000_000_000;
 /**
  * A CX23 held 20,000 open streams in about 1 GB (docs/measurements.md). A widget stream is open

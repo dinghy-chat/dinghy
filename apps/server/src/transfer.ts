@@ -26,6 +26,7 @@ import {
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
+import { allowedFileName, FILE_TYPE } from "./files.ts";
 import { sha256Hex } from "./identity.ts";
 import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
@@ -36,7 +37,8 @@ import { WidgetSettingsSchema } from "./widget-settings.ts";
 
 const VERSION = 1;
 const JSON_NAME = "export.json";
-const IMAGE_PREFIX = "images/";
+// Files too, under the name archives had when they held only images.
+const UPLOAD_PREFIX = "images/";
 const INSERT_BATCH = 500;
 /** Messages are read and written to JSON this many at a time, so no export holds them all. */
 const EXPORT_PAGE = 5000;
@@ -56,11 +58,13 @@ const ExportFile = z.strictObject({
     allowedOrigins: z.array(z.string().max(300)).max(200),
     eventSeq: seq,
     feedGeneration: z.number().int().min(1).max(999_999_999),
-    // A file from before the typing preview or the sound has no key, and each starts on.
+    // A file from before the typing preview, the sound or files in the chat has no key, and each
+    // starts on.
     widget: WidgetSettingsSchema.extend({
       typingPreview: z.boolean().default(true),
       sound: z.boolean().default(true),
       transcript: z.boolean().default(true),
+      visitorFiles: z.boolean().default(true),
     }),
     // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z
@@ -157,7 +161,24 @@ const ExportFile = z.strictObject({
       createdAt: date,
     }),
   ),
-  attachments: z.array(z.strictObject({ id, messageId: id, createdAt: date })),
+  attachments: z.array(
+    z.union([
+      // A file from before files in the chat has no kind, and holds only images.
+      z.strictObject({
+        id,
+        messageId: id,
+        createdAt: date,
+        kind: z.literal("image").default("image"),
+      }),
+      z.strictObject({
+        id,
+        messageId: id,
+        createdAt: date,
+        kind: z.literal("file"),
+        filename: z.string().max(1000),
+      }),
+    ]),
+  ),
   emailStops: z.array(z.strictObject({ addressHash: z.string().max(128), createdAt: date })),
   // A file from before saved replies has none.
   savedReplies: z
@@ -389,6 +410,9 @@ async function readWorkspace(
           id: row.id,
           messageId: row.messageId,
           createdAt: iso(row.createdAt),
+          ...(row.filename === null
+            ? { kind: "image" as const }
+            : { kind: "file" as const, filename: row.filename }),
         })),
         emailStops: stops.map((row) => ({
           addressHash: row.addressHash,
@@ -415,7 +439,7 @@ async function readWorkspace(
 }
 
 /**
- * Writes the archive piece by piece, so images never all sit in memory. A store that fails ends the
+ * Writes the archive piece by piece, so images and files never all sit in memory. A store that fails ends the
  * stream with an error, and the missing end marker then makes an import refuse the file.
  */
 export async function* exportArchive(
@@ -429,8 +453,8 @@ export async function* exportArchive(
   for (const [attachmentId, storageKey] of read.storageKeys) {
     const stream = await store.get(storageKey);
     if (stream === null) {
-      // Deleted since the read, and then the message simply has no image. If its row is still here,
-      // the file is missing, as when the store settings are wrong. Going on would lose the image.
+      // Deleted since the read, and then the message simply has none. If its row is still here, the
+      // object is missing, as when the store settings are wrong. Going on would lose it.
       const rows = await withWorkspace(db, workspaceId, (tx) =>
         tx
           .select({ id: attachment.id })
@@ -439,14 +463,14 @@ export async function* exportArchive(
       );
       if (rows.length > 0) {
         throw new Error(
-          `The stored file for image ${attachmentId} is missing. Check the storage settings, or restore the file, and try again.`,
+          `The stored file for upload ${attachmentId} is missing. Check the storage settings, or restore the file, and try again.`,
         );
       }
       continue;
     }
     const parts: Uint8Array[] = [];
     for await (const part of stream) parts.push(part);
-    yield* tarEntry(`${IMAGE_PREFIX}${attachmentId}`, Buffer.concat(parts));
+    yield* tarEntry(`${UPLOAD_PREFIX}${attachmentId}`, Buffer.concat(parts));
   }
   yield tarEnd();
 }
@@ -458,9 +482,9 @@ interface ImportResult {
   name: string;
   conversations: number;
   messages: number;
-  images: number;
-  /** Images that were deleted while the export ran, so these messages have none. */
-  missingImages: number;
+  uploads: number;
+  /** Images and files that were deleted while the export ran, so these messages have none. */
+  missingUploads: number;
   /** Operators with no account here before this import. They sign in by link. */
   newOperators: string[];
 }
@@ -513,10 +537,28 @@ async function readExportFile(entries: Entries): Promise<ExportData> {
 }
 
 /**
- * Stores each image the file holds, encoded again, and records its key in `stored` at once, so a
+ * An entry's bytes as an upload stores them, because this file may have come from anywhere: an
+ * image encoded again, and a file as it came, after the same check of its type.
+ */
+async function checkedUpload(row: ExportData["attachments"][number], bytes: Uint8Array) {
+  if (row.kind === "image") {
+    const processed = await processImage(bytes);
+    if (typeof processed === "string") {
+      throw new ImportError(`Image ${row.id} cannot be used: ${processed}.`);
+    }
+    const { data, contentType, width, height } = processed;
+    return { data, contentType, width, height };
+  }
+  const filename = allowedFileName(row.filename, bytes);
+  if (filename === null) throw new ImportError(`File ${row.id} cannot be used: type_not_allowed.`);
+  return { data: bytes, contentType: FILE_TYPE, filename };
+}
+
+/**
+ * Stores each image and file the archive holds, and records its key in `stored` at once, so a
  * failure can remove what was stored.
  */
-async function storeImages(
+async function storeUploads(
   entries: Entries,
   data: ExportData,
   store: ObjectStore,
@@ -524,36 +566,30 @@ async function storeImages(
 ): Promise<(typeof attachment.$inferInsert)[]> {
   const workspaceId = data.workspace.id;
   const wanted = new Map(data.attachments.map((row) => [row.id, row]));
-  const images: (typeof attachment.$inferInsert)[] = [];
+  const uploads: (typeof attachment.$inferInsert)[] = [];
   for await (const { name, bytes } of entries) {
-    const attachmentId = name.startsWith(IMAGE_PREFIX) ? name.slice(IMAGE_PREFIX.length) : "";
+    const attachmentId = name.startsWith(UPLOAD_PREFIX) ? name.slice(UPLOAD_PREFIX.length) : "";
     const row = wanted.get(attachmentId);
     // Exact names only, so an entry cannot name a path outside this workspace's files.
     if (row === undefined) {
       throw new ImportError(`This file has an unexpected entry: ${name.slice(0, 100)}`);
     }
-    // Encoded again, as an upload is, because this file may have come from anywhere.
-    const processed = await processImage(bytes);
-    if (typeof processed === "string") {
-      throw new ImportError(`Image ${attachmentId} cannot be used: ${processed}.`);
-    }
+    const { data: checked, ...upload } = await checkedUpload(row, bytes);
     // Unique to this import, so cleaning up a failure cannot touch another import's files.
     const storageKey = `${workspaceId}/${attachmentId}-${randomUUID()}`;
-    await store.put(storageKey, processed.data, processed.contentType);
+    await store.put(storageKey, checked, upload.contentType);
     stored.push(storageKey);
-    images.push({
+    uploads.push({
+      ...upload,
       workspaceId,
       id: attachmentId,
       messageId: row.messageId,
       storageKey,
-      byteSize: processed.data.length,
-      contentType: processed.contentType,
-      width: processed.width,
-      height: processed.height,
+      byteSize: checked.length,
       createdAt: new Date(row.createdAt),
     });
   }
-  return images;
+  return uploads;
 }
 
 /** The file's logo, encoded again as an upload is, because this file may have come from anywhere. */
@@ -568,7 +604,7 @@ async function readLogo(data: ExportData): Promise<Buffer | null> {
 async function insertWorkspace(
   tx: Transaction,
   data: ExportData,
-  images: (typeof attachment.$inferInsert)[],
+  uploads: (typeof attachment.$inferInsert)[],
   logo: Buffer | null,
 ): Promise<string[]> {
   const workspaceId = data.workspace.id;
@@ -712,7 +748,7 @@ async function insertWorkspace(
       })),
     );
   }
-  for (const rows of batches(images)) await tx.insert(attachment).values(rows);
+  for (const rows of batches(uploads)) await tx.insert(attachment).values(rows);
   for (const rows of batches(data.pageViews)) {
     await tx.insert(pageView).values(
       rows.map((row) => ({
@@ -748,7 +784,7 @@ async function insertWorkspace(
 }
 
 /**
- * Adds an exported workspace to this install. It stores the images first and commits every row in
+ * Adds an exported workspace to this install. It stores the uploads first and commits every row in
  * one transaction, so a failure at any point leaves nothing behind. A workspace that exists here is
  * refused, so a repeated import changes nothing.
  */
@@ -759,7 +795,7 @@ export async function importArchive(
 ): Promise<ImportResult> {
   const stored: string[] = [];
   // True once only the commit is left. After that a failure may be a lost reply from a commit that
-  // worked, and a stray file costs less than rows whose images are gone.
+  // worked, and a stray file costs less than rows whose uploads are gone.
   let reachedCommit = false;
   try {
     const entries = readTar(chunks);
@@ -773,9 +809,9 @@ export async function importArchive(
     }
 
     const logo = await readLogo(data);
-    const images = await storeImages(entries, data, store, stored);
+    const uploads = await storeUploads(entries, data, store, stored);
     const newOperators = await withWorkspace(db, workspaceId, async (tx) => {
-      const created = await insertWorkspace(tx, data, images, logo);
+      const created = await insertWorkspace(tx, data, uploads, logo);
       await markHistoryRead(tx, workspaceId);
       reachedCommit = true;
       return created;
@@ -785,8 +821,8 @@ export async function importArchive(
       name: data.workspace.name,
       conversations: data.conversations.length,
       messages: data.messages.length,
-      images: images.length,
-      missingImages: data.attachments.length - images.length,
+      uploads: uploads.length,
+      missingUploads: data.attachments.length - uploads.length,
       newOperators,
     };
   } catch (error) {
@@ -807,11 +843,11 @@ const exportRoute = createRoute({
   method: "get",
   path: "/v1/operator/workspaces/{workspaceId}/export",
   security: SESSION,
-  summary: "Download this workspace's data and images as a tar file. Owners only.",
+  summary: "Download this workspace's data, images and files as a tar file. Owners only.",
   request: { params: z.object({ workspaceId: z.uuid() }) },
   responses: {
     200: {
-      description: "A tar file with export.json and the images",
+      description: "A tar file with export.json, and the images and files",
       content: { "application/x-tar": { schema: z.string() } },
     },
     ...MEMBER_ERRORS,

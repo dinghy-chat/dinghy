@@ -618,11 +618,11 @@ async function transfer(
   try {
     const result = await importArchive(db, store, createReadStream(file));
     console.log(
-      `Imported ${result.name} (${result.workspaceId}): ${result.conversations} conversations, ${result.messages} messages, ${result.images} images.`,
+      `Imported ${result.name} (${result.workspaceId}): ${result.conversations} conversations, ${result.messages} messages, ${result.uploads} images and files.`,
     );
-    if (result.missingImages > 0) {
+    if (result.missingUploads > 0) {
       console.log(
-        `${result.missingImages} images were deleted during the export, so they are gone.`,
+        `${result.missingUploads} images and files were deleted during the export, so they are gone.`,
       );
     }
     console.log("It has a new signing secret. An owner can copy it from Settings.");

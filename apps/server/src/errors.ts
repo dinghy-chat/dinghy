@@ -121,6 +121,7 @@ export const ERROR_CODES = [
   "two_factor_off",
   "two_factor_on",
   "two_factor_required",
+  "type_not_allowed",
   "unauthorized",
   "unsupported_media_type",
   "webhook_limit",
@@ -268,15 +269,15 @@ export const ROLE_WRITE_ERRORS = {
   403: errorAnswer(`forbidden: this role may not do this. ${SUSPENDED_TEXT}. ${WRONG_ORIGIN_TEXT}`),
 };
 
-/** An image upload's own refusals, on the widget and in the inbox. */
-export const IMAGE_UPLOAD_ERRORS = {
+/** An upload's own refusals, on the widget and in the inbox. */
+export const UPLOAD_ERRORS = {
   400: errorAnswer(
-    "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels",
+    "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP, where only images may come. type_not_allowed: neither an image nor an allowed file, by its name's extension and its first bytes. too_many_pixels: over 16 megapixels",
   ),
   408: errorAnswer("too_slow: the upload took too long"),
-  413: errorAnswer("too_large: the image is over 5 MB"),
+  413: errorAnswer("too_large: an image over 5 MB, or another file over 10 MB"),
   503: errorAnswer(
-    "busy: too many images at once, or the workspace is busy. Retry after `retry-after`",
+    "busy: too many uploads at once, or the workspace is busy. Retry after `retry-after`",
   ),
-  507: errorAnswer("storage_full: the workspace has no room for more images"),
+  507: errorAnswer("storage_full: the workspace has no room for more images or files"),
 };

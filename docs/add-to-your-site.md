@@ -123,8 +123,8 @@ Dinghy.on("message:sent", ({ body }) => analytics.track("chat message sent"));
 | `open`, `close` | The chat opens or closes | Nothing |
 | `unread` | The unread count changes, and once at once | The count |
 | `conversation` | The visitor starts or ends having an open conversation, and once at once | `true` or `false` |
-| `message:sent` | The visitor's message reached Dinghy | `{ body }`, with `body` null for an image |
-| `message:received` | A reply arrives while the page is open | `{ body }`, with `body` null for an image |
+| `message:sent` | The visitor's message reached Dinghy | `{ body }`, with `body` null for an image or a file |
+| `message:received` | A reply arrives while the page is open | `{ body }`, with `body` null for an image or a file |
 | `conversation:started` | The visitor's message started a new conversation. A message after a close reopens the conversation instead, and does not send this | Nothing |
 
 A callback that throws does not stop the chat or the other callbacks. The browser reports its error.
@@ -285,11 +285,12 @@ connect-src https://chat.example.com;
 img-src https://chat.example.com;
 ```
 
-If your Dinghy serves images from a separate origin (`IMAGES_ORIGIN`), allow that origin in `img-src` too.
+If your Dinghy serves images from a separate origin (`IMAGES_ORIGIN`), allow that origin in `img-src` too. A file in the chat downloads through a plain link, so it needs no directive.
 
 ## What visitors can do
 
 - Send text and images. They can paste, drag or pick an image. An image must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels.
+- Send files, unless an owner or admin turned off **Visitors can send files** in **Settings > Appearance**. A file can be a PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, up to 10 MB. The chat shows its name and size, and it only downloads, never opens in the page. Dinghy does not scan files for viruses.
 - Read the chat again after a refresh.
 - See an unread count on the button.
 - Leave an email, if they are not signed in and your Dinghy install has a mail server. They then get your reply by email if they left the page. With no mail server, the widget does not ask.

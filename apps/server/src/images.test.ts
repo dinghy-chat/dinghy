@@ -10,13 +10,14 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { S3 } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
-import { attachment, visitor, workspace } from "./db/schema.ts";
+import { attachment, visitor, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import {
   createImages,
   type Images,
   imageFormat,
   MAX_BYTES,
+  MAX_FILE_BYTES,
   MAX_UPLOADS_PER_ADDRESS,
   processImage,
 } from "./images.ts";
@@ -39,6 +40,29 @@ function noise(width: number, height: number, channels: 3 | 4 = 3) {
 const png = (width = 40, height = 20) => noise(width, height).png().toBuffer();
 const jpeg = (width = 40, height = 20) => noise(width, height).jpeg().toBuffer();
 const webp = (width = 40, height = 20) => noise(width, height).webp().toBuffer();
+
+/** The smallest bytes each allowed type accepts: its signature, where it has one. */
+const zip = Buffer.from("PK\x03\x04 a zip's entries", "latin1");
+const ole = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0]);
+const movie = Buffer.from("\x00\x00\x00\x18ftypisom", "latin1");
+const ALLOWED = {
+  pdf: Buffer.from("%PDF-1.7\n%%EOF\n"),
+  txt: Buffer.from("Order 1042 never arrived."),
+  csv: Buffer.from("order,total\n1042,19.90\n"),
+  log: Buffer.from("12:00:01 ERROR checkout failed\n"),
+  json: Buffer.from('{"order":1042}'),
+  zip,
+  docx: zip,
+  xlsx: zip,
+  pptx: zip,
+  odt: zip,
+  ods: zip,
+  doc: ole,
+  xls: ole,
+  ppt: ole,
+  mp4: movie,
+  mov: movie,
+};
 
 let database: TestDatabase;
 let db: Database;
@@ -198,6 +222,21 @@ describe.each([
     image: { url: string; width: number; height: number };
   }
 
+  const uploadFile = (token: string, body: Uint8Array, filename?: string, key = a.publicKey) =>
+    app.request(
+      `/v1/widget/${key}/images?clientId=${crypto.randomUUID()}${filename === undefined ? "" : `&filename=${encodeURIComponent(filename)}`}`,
+      {
+        method: "POST",
+        headers: { origin: ORIGIN, authorization: `Bearer ${token}` },
+        body: body as Uint8Array<ArrayBuffer>,
+      },
+    );
+
+  interface SentFile {
+    id: string;
+    file: { name: string; size: number; url: string };
+  }
+
   const fetchFile = (url: string) => app.request(url.replace(PUBLIC_URL, ""));
 
   const exists = async (key: string) => {
@@ -254,10 +293,114 @@ describe.each([
     expect((await upload(await newVisitor(), body)).status).toBe(status);
   });
 
-  test("a file over 5 MB is refused before it is read", async () => {
-    const response = await upload(await newVisitor(), new Uint8Array(MAX_BYTES + 1));
+  test("an upload over 10 MB is refused before it is read", async () => {
+    const response = await upload(await newVisitor(), new Uint8Array(MAX_FILE_BYTES + 1));
     expect(response.status).toBe(413);
     expect(response.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+  });
+
+  test("an image over 5 MB is refused, whatever its name", async () => {
+    const big = Buffer.alloc(MAX_BYTES + 1);
+    (await png()).copy(big);
+    const response = await uploadFile(await newVisitor(), big, "big.pdf");
+    expect(response.status).toBe(413);
+  });
+
+  describe("files", () => {
+    test.each(Object.entries(ALLOWED))(
+      "a %s is stored as it came, and only downloads",
+      async (extension, bytes) => {
+        const response = await uploadFile(
+          await newVisitor(),
+          bytes,
+          `Notes.${extension.toUpperCase()}`,
+        );
+        expect(response.status).toBe(201);
+        const sent = (await response.json()) as SentFile;
+        expect(sent).toMatchObject({
+          kind: "file",
+          body: null,
+          image: null,
+          file: { name: `Notes.${extension}`, size: bytes.length },
+        });
+        const download = await fetchFile(sent.file.url);
+        expect(download.status).toBe(200);
+        expect(download.headers.get("content-type")).toBe("application/octet-stream");
+        expect(download.headers.get("content-disposition")).toBe(
+          `attachment; filename="Notes.${extension}"; filename*=UTF-8''Notes.${extension}`,
+        );
+        expect(download.headers.get("x-content-type-options")).toBe("nosniff");
+        expect(download.headers.get("content-security-policy")).toContain("sandbox");
+        expect(Buffer.from(await download.arrayBuffer()).equals(bytes)).toBe(true);
+      },
+    );
+
+    test.each([
+      [
+        "an SVG named .pdf",
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+        "a.pdf",
+      ],
+      ["HTML named .docx", "<!doctype html><script>alert(1)</script>", "a.docx"],
+      ["a type outside the list", '<svg xmlns="http://www.w3.org/2000/svg"/>', "logo.svg"],
+      ["an executable", "MZ\x90\x00", "setup.exe"],
+      ["a file with no name", "%PDF-1.7", undefined],
+    ])("%s is refused with the list of types", async (_name, text, filename) => {
+      const response = await uploadFile(await newVisitor(), Buffer.from(text), filename);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        error: { code: "type_not_allowed", message: expect.stringContaining("PDF, TXT, CSV") },
+      });
+    });
+
+    test("HTML named .txt has no signature to check, so it only ever downloads", async () => {
+      const page = Buffer.from("<!doctype html><script>alert(1)</script>");
+      const sent = (await (
+        await uploadFile(await newVisitor(), page, "page.txt")
+      ).json()) as SentFile;
+      const download = await fetchFile(sent.file.url);
+      expect(download.headers.get("content-type")).toBe("application/octet-stream");
+      expect(download.headers.get("content-disposition")).toMatch(/^attachment;/);
+      expect(download.headers.get("content-security-policy")).toContain("sandbox");
+    });
+
+    test("an image named as a file is still an image, encoded again", async () => {
+      const response = await uploadFile(await newVisitor(), await png(), "report.pdf");
+      expect(response.status).toBe(201);
+      const sent = (await response.json()) as Sent & { file: null };
+      expect(sent).toMatchObject({ kind: "image", file: null, image: { width: 40, height: 20 } });
+      const shown = await fetchFile(sent.image.url);
+      expect(shown.headers.get("content-type")).toBe("image/png");
+      expect(shown.headers.get("content-disposition")).toBe("inline");
+    });
+
+    test("a name outside ASCII downloads under its own name, with a plain one for old clients", async () => {
+      const sent = (await (
+        await uploadFile(await newVisitor(), ALLOWED.pdf, "../Résumé (été)\u202e.pdf")
+      ).json()) as SentFile;
+      expect(sent.file.name).toBe("_Résumé (été)_.pdf");
+      const download = await fetchFile(sent.file.url);
+      expect(download.headers.get("content-disposition")).toBe(
+        `attachment; filename="_R_sum_ (_t_)_.pdf"; filename*=UTF-8''_R%C3%A9sum%C3%A9%20%28%C3%A9t%C3%A9%29_.pdf`,
+      );
+    });
+
+    test("with Visitors can send files off, a visitor's file is refused and an image still goes", async () => {
+      const closed = await createWorkspace(db, "Images only", [ORIGIN]);
+      await withWorkspace(db, closed.id, (tx) =>
+        tx
+          .update(widgetSettings)
+          .set({ visitorFiles: false })
+          .where(eq(widgetSettings.workspaceId, closed.id)),
+      );
+      const token = await newVisitor(closed.publicKey);
+      const refused = await uploadFile(token, ALLOWED.pdf, "notes.pdf", closed.publicKey);
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toMatchObject({ error: { code: "not_an_image" } });
+      expect((await uploadFile(token, await png(), "photo.png", closed.publicKey)).status).toBe(
+        201,
+      );
+    });
   });
 
   test("an upload with no token or from another site is refused", async () => {
@@ -291,6 +434,7 @@ describe.each([
           a.id,
           () => Promise.reject(error),
           randomUUID(),
+          null,
         ),
       ).rejects.toBe(error);
       return put[0] ?? "";
@@ -350,16 +494,17 @@ describe.each([
         racingImages.receive(
           new Request("http://x", { method: "POST", body: await png() }),
           doomed.id,
-          (image) =>
+          (attachment) =>
             withWorkspace(db, doomed.id, (tx) =>
               appendMessage(
                 tx,
                 doomed.id,
                 { kind: "visitor", visitorId },
-                { clientId: "c", image },
+                { clientId: "c", attachment },
               ),
             ),
           randomUUID(),
+          null,
         ),
       ).rejects.toThrow();
       expect(stored).not.toBe("");
@@ -503,27 +648,29 @@ describe("uploads that stall or crawl", () => {
     const shared = images();
     const address = "198.51.100.7";
     const stalled = Array.from({ length: MAX_UPLOADS_PER_ADDRESS }, () =>
-      shared.receive(paced([], 0, false), a.id, commit, address),
+      shared.receive(paced([], 0, false), a.id, commit, address, null),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
     const body = await png();
     const request = () => new Request("http://x", { method: "POST", body });
     // Another workspace does not help, because the budget this protects is shared by all of them.
-    expect(await shared.receive(request(), b.id, commit, address)).toEqual({ refused: "busy" });
-    expect(await shared.receive(request(), a.id, commit, "198.51.100.8")).toEqual({
+    expect(await shared.receive(request(), b.id, commit, address, null)).toEqual({
+      refused: "busy",
+    });
+    expect(await shared.receive(request(), a.id, commit, "198.51.100.8", null)).toEqual({
       result: { created: true },
     });
     const outcomes = await Promise.all(stalled);
     expect(outcomes.every((outcome) => "refused" in outcome)).toBe(true);
     // A finished upload frees its place.
-    expect(await shared.receive(request(), a.id, commit, address)).toEqual({
+    expect(await shared.receive(request(), a.id, commit, address, null)).toEqual({
       result: { created: true },
     });
   });
 
   test("a stalled upload times out", async () => {
     const started = Date.now();
-    const outcome = await images().receive(paced([], 0, false), a.id, commit, randomUUID());
+    const outcome = await images().receive(paced([], 0, false), a.id, commit, randomUUID(), null);
     expect(outcome).toEqual({ refused: "too_slow" });
     expect(Date.now() - started).toBeLessThan(2000);
   });
@@ -538,33 +685,33 @@ describe("uploads that stall or crawl", () => {
     expect(bytes.length).toBeGreaterThan(6 * 70 * 1024);
     const size = Math.ceil(bytes.length / 6);
     const chunks = Array.from({ length: 6 }, (_, i) => bytes.subarray(i * size, (i + 1) * size));
-    const outcome = await images().receive(paced(chunks, 80), a.id, commit, randomUUID());
+    const outcome = await images().receive(paced(chunks, 80), a.id, commit, randomUUID(), null);
     expect(outcome).toEqual({ result: { created: true } });
   });
 
   test("one byte at a time cannot hold the budget past the idle time", async () => {
     const started = Date.now();
     const drip = Array.from({ length: 200 }, () => new Uint8Array(1));
-    const outcome = await images().receive(paced(drip, 50), a.id, commit, randomUUID());
+    const outcome = await images().receive(paced(drip, 50), a.id, commit, randomUUID(), null);
     expect(outcome).toEqual({ refused: "too_slow" });
     expect(Date.now() - started).toBeLessThan(2000);
   });
 
   test("uploads in one workspace cannot block another", async () => {
     const shared = images();
-    const big = new Uint8Array(MAX_BYTES);
+    const big = new Uint8Array(MAX_FILE_BYTES);
     const holders = Array.from({ length: 2 }, () =>
-      shared.receive(paced([big], 0, false), a.id, commit, randomUUID()),
+      shared.receive(paced([big], 0, false), a.id, commit, randomUUID(), null),
     );
     await new Promise((resolve) => setTimeout(resolve, 30));
     // That is this workspace's whole share, so its next upload waits for those to go.
     const request = () => new Request("http://x", { method: "POST", body: Buffer.alloc(1000) });
-    expect(await shared.receive(request(), a.id, commit, randomUUID())).toEqual({
+    expect(await shared.receive(request(), a.id, commit, randomUUID(), null)).toEqual({
       refused: "busy",
     });
     // Another workspace still has its own.
     const other = new Request("http://x", { method: "POST", body: await png() });
-    expect(await shared.receive(other, b.id, commit, randomUUID())).toEqual({
+    expect(await shared.receive(other, b.id, commit, randomUUID(), null)).toEqual({
       result: { created: true },
     });
     await Promise.all(holders);
@@ -572,14 +719,14 @@ describe("uploads that stall or crawl", () => {
 
   test("the global budget refuses uploads once it is full, across workspaces", async () => {
     const shared = images();
-    const big = new Uint8Array(MAX_BYTES);
-    // Eight images' worth, held by uploads that stall after sending their bytes.
-    const holders = Array.from({ length: 8 }, (_, i) =>
-      shared.receive(paced([big], 0, false), `workspace-${i}`, commit, randomUUID()),
+    const big = new Uint8Array(MAX_FILE_BYTES);
+    // Four files' worth, held by uploads that stall after sending their bytes.
+    const holders = Array.from({ length: 4 }, (_, i) =>
+      shared.receive(paced([big], 0, false), `workspace-${i}`, commit, randomUUID(), null),
     );
     await new Promise((resolve) => setTimeout(resolve, 50));
     const request = new Request("http://x", { method: "POST", body: Buffer.alloc(1000) });
-    expect(await shared.receive(request, "another-workspace", commit, randomUUID())).toEqual({
+    expect(await shared.receive(request, "another-workspace", commit, randomUUID(), null)).toEqual({
       refused: "busy",
     });
     await Promise.all(holders);
@@ -588,10 +735,10 @@ describe("uploads that stall or crawl", () => {
   test("stalled connections do not block another image", async () => {
     const shared = images();
     const stalled = Array.from({ length: 20 }, () =>
-      shared.receive(paced([], 0, false), a.id, commit, randomUUID()),
+      shared.receive(paced([], 0, false), a.id, commit, randomUUID(), null),
     );
     const request = new Request("http://x", { method: "POST", body: await png() });
-    expect(await shared.receive(request, a.id, commit, randomUUID())).toEqual({
+    expect(await shared.receive(request, a.id, commit, randomUUID(), null)).toEqual({
       result: { created: true },
     });
     await Promise.all(stalled);
@@ -621,6 +768,7 @@ describe("many small files that decode to large images", () => {
             created: true,
           }),
           randomUUID(),
+          null,
         ),
       ),
     );
@@ -690,7 +838,7 @@ describe("a burst of uploads", () => {
     expect(busy.length).toBeGreaterThan(0);
     expect(busy[0]?.headers.get("retry-after")).toBe("1");
     expect(statuses.every((status) => status === 201 || status === 503)).toBe(true);
-    // Eight images' worth of bytes held, and one decoding. Far below what 30 at once would need.
+    // Four files' worth of bytes held, and one decoding. Far below what 30 at once would need.
     expect((peak - before) / 1024 / 1024).toBeLessThan(700);
     const files = await readdir(join(directory, a.id));
     expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);

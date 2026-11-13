@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  imageProblem,
   inCommitOrder,
+  isImage,
   newClientId,
   REFRESH_LIMIT_MS,
   REFUSED,
+  uploadProblem,
 } from "../../../packages/widget/src/compose.ts";
 import {
   ApiError,
@@ -28,6 +29,9 @@ export interface Line {
   image: Message["image"];
   /** The image was deleted after 12 months, and the line says so. */
   imageRemoved: boolean;
+  download: Message["file"];
+  /** The file was deleted after 12 months, and the line says so. */
+  fileRemoved: boolean;
   /** Held until the server confirms it, so a retry can send it again. */
   file?: File;
   fromVisitor: boolean;
@@ -60,6 +64,8 @@ function merge(lines: Line[], message: Message): Line[] {
     body: message.body ?? "",
     image: message.image,
     imageRemoved: message.imageRemoved,
+    download: message.file,
+    fileRemoved: message.fileRemoved,
     fromVisitor: message.fromVisitor,
     kind: message.kind,
     createdAt: message.createdAt,
@@ -175,12 +181,14 @@ export function useThreadLines({
       const sent =
         file === undefined
           ? await api.reply(conversationId, id, body, replyToId, kind === "note", mentions)
-          : await api.replyImage(conversationId, id, file, replyToId);
+          : await api.replyUpload(conversationId, id, file, replyToId);
       setLines((current) => merge(current, sent));
       onChanged();
     } catch (error) {
       if (file !== undefined && error instanceof ApiError && REFUSED.includes(error.status)) {
-        setProblem(error.status === 507 ? "imageNoRoom" : "imageFailed");
+        setProblem(
+          error.status === 507 ? "storageFull" : isImage(file) ? "imageFailed" : "fileWrongType",
+        );
         setLines((current) => current.filter((line) => line.id !== id));
         return;
       }
@@ -196,7 +204,7 @@ export function useThreadLines({
   const pending = (
     body: string,
     replyTo: Quote | null,
-    kind: "text" | "image" | "note",
+    kind: "text" | "image" | "file" | "note",
     mentions: string[] = [],
   ): Line => ({
     id: newClientId(),
@@ -204,6 +212,8 @@ export function useThreadLines({
     body,
     image: null,
     imageRemoved: false,
+    download: null,
+    fileRemoved: false,
     fromVisitor: false,
     kind,
     authorOperatorId: meId,
@@ -229,12 +239,12 @@ export function useThreadLines({
     // Once, before the loop, so a good file cannot erase the warning about the one before it.
     setProblem(null);
     for (const file of files) {
-      const problem = imageProblem(file);
+      const problem = uploadProblem(file, true);
       if (problem !== null) {
         setProblem(problem);
         continue;
       }
-      const line = { ...pending("", null, "image"), file };
+      const line = { ...pending("", null, isImage(file) ? "image" : "file"), file };
       setLines((current) => [...current, line]);
       void deliver(line);
     }

@@ -22,7 +22,7 @@ import {
 import { runLifecycle } from "./lifecycle.ts";
 import { registerOnboardingStop } from "./lifecycle-emails.ts";
 import { createLimits, type LimitOptions } from "./limits.ts";
-import { removeOldImages } from "./retention.ts";
+import { removeOldUploads } from "./retention.ts";
 import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
 import { createCopyReply, type WelcomeSettings, welcomeFace, welcomeProblem } from "./welcome.ts";
 
@@ -163,7 +163,7 @@ export interface CloudWorkerDeps {
 export type CloudWorkerStep = (pass: { mailer: Mailer | undefined }) => Promise<void>;
 
 /**
- * The cloud's worker pass: images older than 12 months go, and with billing, the subscription
+ * The cloud's worker pass: images and files older than 12 months go, and with billing, the subscription
  * lifecycle runs. None on a self-hosted install.
  */
 export function cloudWorkerStep(
@@ -176,8 +176,8 @@ export function cloudWorkerStep(
       ? undefined
       : createBilling(settings.billing, db, logger, signals);
   return async ({ mailer }) => {
-    const removed = await removeOldImages(db);
-    if (removed > 0) logger.info({ removed }, "removed images older than 12 months");
+    const removed = await removeOldUploads(db);
+    if (removed > 0) logger.info({ removed }, "removed images and files older than 12 months");
     if (billing !== undefined) {
       await runLifecycle({
         db,

@@ -1,7 +1,9 @@
 /** @jsxImportSource react */
 import { createElement, type ReactNode } from "react";
+import { fileSize, isImage } from "../../../packages/widget/src/compose.ts";
 import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import { clockTime, isToday } from "./format.ts";
+import { Icon } from "./icons.tsx";
 import { type Receipt, ReceiptLine } from "./receipts.tsx";
 import { t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
@@ -24,7 +26,7 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
   );
 };
 
-/** A message's bubble: its quote and text, its image, or what stands in for them. */
+/** A message's bubble: its quote and text, its image or file, or what stands in for them. */
 function Bubble({
   line,
   quote,
@@ -62,8 +64,23 @@ function Bubble({
       </div>
     );
   }
+  if (line.download !== null) {
+    return (
+      <div className={`msg${side}`}>
+        {quote}
+        <a className="file-link" href={line.download.url} download>
+          <Icon name="download" size={20} />
+          <span className="file-name">{line.download.name}</span>
+          <span className="file-size">{fileSize(line.download.size)}</span>
+        </a>
+      </div>
+    );
+  }
   if (line.imageRemoved) return <div className={`msg${side} removed`}>{t("imageRemoved")}</div>;
-  if (line.file !== undefined) return <div className="msg">{t("imageSending")}</div>;
+  if (line.fileRemoved) return <div className={`msg${side} removed`}>{t("fileRemoved")}</div>;
+  if (line.file !== undefined) {
+    return <div className="msg">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>;
+  }
   return createElement(
     "div",
     { className: `msg${side}` },
