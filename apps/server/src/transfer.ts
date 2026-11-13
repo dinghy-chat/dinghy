@@ -714,7 +714,7 @@ async function insertWorkspace(
       workspaceId,
       operatorId,
       role: member.role,
-      removedAt: member.removedAt === null ? null : new Date(member.removedAt),
+      removedAt: dateOrNull(member.removedAt),
       alertEmail: member.alertEmail,
       createdAt: new Date(member.createdAt),
     });
@@ -736,7 +736,7 @@ async function insertWorkspace(
         name: row.name,
         tokenHash: sha256Hex(`imported:${randomBytes(32).toString("base64url")}`),
         createdBy: mapOperator(row.createdBy) ?? "",
-        lastUsedAt: row.lastUsedAt === null ? null : new Date(row.lastUsedAt),
+        lastUsedAt: dateOrNull(row.lastUsedAt),
         revokedAt: row.revokedAt === null ? importedAt : new Date(row.revokedAt),
         createdAt: new Date(row.createdAt),
       })),
@@ -755,10 +755,10 @@ async function insertWorkspace(
         pageContext: row.pageContext,
         identityIssuedAt: row.identityIssuedAt === null ? null : BigInt(row.identityIssuedAt),
         lastReadSeq: BigInt(row.lastReadSeq),
-        blockedAt: row.blockedAt === null ? null : new Date(row.blockedAt),
+        blockedAt: dateOrNull(row.blockedAt),
         device: row.device,
         lastPage: row.lastPage,
-        lastSeenAt: row.lastSeenAt === null ? null : new Date(row.lastSeenAt),
+        lastSeenAt: dateOrNull(row.lastSeenAt),
         note: row.note,
         country: row.country,
         timeZone: row.timeZone,
@@ -822,15 +822,9 @@ async function insertWorkspace(
     );
   }
   for (const rows of batches(data.savedReplies)) {
-    await tx.insert(savedReply).values(
-      rows.map((row) => ({
-        workspaceId,
-        id: row.id,
-        shortcut: row.shortcut,
-        body: row.body,
-        updatedAt: new Date(row.updatedAt),
-      })),
-    );
+    await tx
+      .insert(savedReply)
+      .values(rows.map((row) => ({ workspaceId, ...row, updatedAt: new Date(row.updatedAt) })));
   }
   for (const rows of batches(data.labels)) {
     await tx
