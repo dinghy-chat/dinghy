@@ -45,8 +45,6 @@ CREATE OR REPLACE FUNCTION purge_deleted_workspaces()
         DELETE FROM lifecycle_email WHERE workspace_id = target;
         DELETE FROM subscription WHERE workspace_id = target;
         DELETE FROM workspace_member WHERE workspace_id = target;
-        -- Saved replies, labels and conversation labels go with the workspace by cascade, as a new
-        -- table should, so it needs no line here.
         IF NOT EXISTS (SELECT 1 FROM storage_deletion WHERE workspace_id = target) THEN
           DELETE FROM workspace WHERE id = target;
           removed := removed + 1;

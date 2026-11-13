@@ -1095,9 +1095,7 @@ export const draftReply = pgTable(
 export const widgetSiteSeen = pgTable(
   "widget_site_seen",
   {
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
+    workspaceId: ownedByWorkspace(),
     // An exact origin, such as https://app.example.com.
     origin: text("origin").notNull(),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1172,8 +1170,9 @@ export const webhookDelivery = pgTable(
     type: text("type").$type<WebhookEvent>().notNull(),
     conversationId: uuid("conversation_id").notNull(),
     messageId: uuid("message_id"),
-    // A `conversation.labeled` delivery's label, and whether it was added or removed. Not a foreign
-    // key, so a delivery still says which label went after someone deletes it.
+    // A `conversation.labeled` delivery's label, and whether it was added or removed, both null on
+    // other deliveries, as webhook_delivery_label checks. Not a foreign key, so a delivery still says
+    // which label went after someone deletes it.
     labelId: uuid("label_id"),
     labelAdded: boolean("label_added"),
     attempts: integer("attempts").notNull().default(0),

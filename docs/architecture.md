@@ -75,7 +75,7 @@ Background work lives in Postgres tables, and the worker claims rows with `FOR U
 5. Prune old events and finished rows, expired chat links and reply addresses unused for 90 days. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
 6. Purge workspaces that an owner deleted.
 
-The purge is the Postgres function `purge_deleted_workspaces()`. Older tables have a `DELETE` line in it. A new table that a workspace owns references `workspace` with `ON DELETE CASCADE` instead, as `business_hours` does, so its rows go with the workspace row and a new feature does not rewrite the function.
+The purge is the Postgres function `purge_deleted_workspaces()`. Older tables have a `DELETE` line in it. A new table that a workspace owns declares its `workspace_id` with `ownedByWorkspace()` in `schema.ts` instead. That references `workspace` with `ON DELETE CASCADE`, so its rows go with the workspace row and a new feature does not rewrite the function.
 
 Each step runs on its own, so a step that fails is logged and the others still run. Every 30 seconds at most, a worker records that its loop still finishes, and `/readyz` reports `"worker":"stale"` when no worker did for 5 minutes. On Dinghy Cloud, the subscription lifecycle runs in the same loop with its own 10-minute claim, because one step can wait on Stripe and on email.
 
