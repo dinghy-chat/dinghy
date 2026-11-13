@@ -9,6 +9,9 @@ const LIMITS: Record<string, number> = {
   // from 2,291). The label and square launchers before it took it to 2,300.
   "loader.js": 2700,
   "page.js": 1000,
+  // 26,000 since the next opening is exact across daylight saving changes, which the owner asked
+  // for on 2026-11-13 (25,974 with it, from 25,777): the clock changes of the week ahead, and the
+  // moments the clock reads a range's start.
   // 25,800 since files in the chat and business hours with languages met on 2026-11-13 (25,777 with
   // both). Each had its own limit before: 24,760 for files in the chat after their review (24,747
   // with them, from 24,488), and 24,950 for business hours and languages after their review (24,903
@@ -39,7 +42,7 @@ const LIMITS: Record<string, number> = {
   // 22,200 since the new composer and header, the closed line and the reply chime, which the
   // owner asked for on 2026-11-11 (22,162 with them, from 21,585). Markdown in messages and the
   // typing preview took it to 21,600 the same day, and the emoji picker before them to 20,500.
-  "widget.js": 25_800,
+  "widget.js": 26_000,
 };
 
 test("each language but English is a file of its own, and the chat holds no other", async () => {

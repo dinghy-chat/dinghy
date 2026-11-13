@@ -85,6 +85,33 @@ describe("business hours", () => {
     expect(reopens(early, "2026-11-01T06:15:00Z")).toBe("2026-11-01T06:45:00.000Z");
   });
 
+  test("a range that summer time skips whole never announces an opening inside it", () => {
+    const skipped: BusinessHours = {
+      timeZone: "America/New_York",
+      week: { ...WEEKDAYS_IN("UTC").week, sun: [["02:00", "02:30"]] },
+    };
+    // 01:45 on the night the clocks jump from 02:00 to 03:00: Monday's 9:00 comes first.
+    expect(reopens(skipped, "2026-03-08T06:45:00Z")).toBe("2026-03-09T13:00:00.000Z");
+  });
+
+  test("a range that winter time repeats opens again 15 minutes later, not a week later", () => {
+    const repeated: BusinessHours = {
+      timeZone: "America/New_York",
+      week: { ...WEEKDAYS_IN("UTC").week, sun: [["01:00", "01:30"]] },
+    };
+    // 01:45 summer time; at 02:00 the clocks go back to 01:00, inside the range again.
+    expect(reopens(repeated, "2026-11-01T05:45:00Z")).toBe("2026-11-01T06:00:00.000Z");
+  });
+
+  test("the clocks going back into the middle of a range open it at once", () => {
+    const night: BusinessHours = {
+      timeZone: "America/New_York",
+      week: { ...WEEKDAYS_IN("UTC").week, sun: [["00:30", "01:30"]] },
+    };
+    // 01:40 summer time, closed; at 02:00 the clocks read 01:00, which the range holds.
+    expect(reopens(night, "2026-11-01T05:40:00Z")).toBe("2026-11-01T06:00:00.000Z");
+  });
+
   test("follow a zone with a half-hour offset", () => {
     expect(reopens(WEEKDAYS_IN("Asia/Kolkata"), "2026-11-16T13:00:00Z")).toBe(
       "2026-11-17T03:30:00.000Z",
