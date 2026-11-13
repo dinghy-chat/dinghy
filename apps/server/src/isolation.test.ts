@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,6 +65,13 @@ const GOOD_AUTH = "tBHItJI5svbpez7KI4CCXg";
 const INBOUND = {
   domain: "reply.example.com",
   secret: "an-inbound-secret-of-at-least-32-characters",
+  // Nothing listens on port 1, so a download from Shipmail would fail with a 500.
+  shipmail: {
+    apiBase: "http://127.0.0.1:1",
+    apiKey: "sm_live_isolation",
+    webhookSecret: "a-shipmail-webhook-secret",
+    mailboxId: "mbx_replies",
+  },
 };
 const logger = pino({ level: "silent" });
 const pushKeys = { ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" };
@@ -485,6 +492,27 @@ const ATTACKS: Record<string, Attack> = {
     });
     expect(answer.status).toBe(404);
     expect(await owner.select().from(message).where(eq(message.body, "Crossed over"))).toEqual([]);
+  },
+
+  "POST /v1/inbound-email/shipmail": async ({ server }) => {
+    // Shipmail's events for another mailbox, such as another team's on the same account, reach
+    // nothing. The emails of this one go through the same intake as POST /v1/inbound-email.
+    const body = JSON.stringify({
+      event_type: "message.received",
+      data: { mailbox_id: "mbx_other", email_id: "eml_other" },
+    });
+    const time = Math.floor(Date.now() / 1000);
+    const answer = await server.request("/v1/inbound-email/shipmail", {
+      method: "POST",
+      headers: {
+        "x-shipmail-timestamp": String(time),
+        "x-shipmail-signature": createHmac("sha256", INBOUND.shipmail.webhookSecret)
+          .update(`v1=${time}\n${body}`)
+          .digest("hex"),
+      },
+      body,
+    });
+    expect(answer.status).toBe(200);
   },
 
   // ---- An operator of workspace A against workspace B.

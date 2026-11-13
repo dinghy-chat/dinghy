@@ -22,23 +22,26 @@ import {
 } from "./messages.ts";
 import { type RateLimit, TOO_MANY_REQUESTS } from "./rate-limit.ts";
 import { SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
+import type { ShipmailInbound } from "./shipmail-inbound.ts";
 import { HOUR_SECONDS, MINUTE_SECONDS } from "./time.ts";
 import type { Uploads } from "./uploads.ts";
 import { REPLY_MARKERS, visitorWords } from "./visitor-words.ts";
 import { signatureDigest } from "./webhooks.ts";
 
-/** The settings for replies by email. */
+/** The settings for replies by email. At least one of the two receivers is on. */
 export interface InboundEmail {
   /** The domain of reply addresses, whose mail reaches this server. */
   domain: string;
-  /** Signs each email the forwarder posts. */
-  secret: string;
+  /** Signs each email the raw forwarder posts. Without it, that route is off. */
+  secret?: string | undefined;
+  /** Shipmail's webhook for the mailbox that gets the replies. Without it, that route is off. */
+  shipmail?: ShipmailInbound | undefined;
 }
 
 const PATH = "/v1/inbound-email";
 const REPLY_ADDRESS_DAYS = 90;
-const EMAIL_MAX_MB = 25;
-const EMAIL_MAX_BYTES = EMAIL_MAX_MB * 1024 * 1024;
+export const EMAIL_MAX_MB = 25;
+export const EMAIL_MAX_BYTES = EMAIL_MAX_MB * 1024 * 1024;
 const ATTACHMENTS_MAX = 5;
 /** A signature logo is smaller; a pasted screenshot is larger. */
 const INLINE_IMAGE_MIN_BYTES = 16 * 1024;
@@ -310,11 +313,11 @@ async function findAddress(tx: Transaction, workspaceId: string, token: string) 
 
 type FoundAddress = NonNullable<Awaited<ReturnType<typeof findAddress>>>;
 
-const OK = { ok: true as const };
-const BAD_SIGNATURE = failure("bad_signature", "The signature is missing, stale or wrong.");
+export const OK = { ok: true as const };
+export const BAD_SIGNATURE = failure("bad_signature", "The signature is missing, stale or wrong.");
 const LENGTH_REQUIRED = failure("length_required", "Send the email with a Content-Length.");
 const TEXT_MAX = (TEXT_PARTS_MAX * MESSAGE_MAX).toLocaleString("en-US");
-const SIGNATURE_TOLERANCE_MINUTES = SIGNATURE_TOLERANCE_SECONDS / MINUTE_SECONDS;
+export const SIGNATURE_TOLERANCE_MINUTES = SIGNATURE_TOLERANCE_SECONDS / MINUTE_SECONDS;
 const TOO_LARGE = failure(
   "too_large",
   `An email can be up to ${EMAIL_MAX_MB} MB, with up to ${TEXT_MAX} characters of text.`,

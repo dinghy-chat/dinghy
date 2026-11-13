@@ -4604,6 +4604,71 @@
         }
       }
     },
+    "/v1/inbound-email/shipmail": {
+      "post": {
+        "summary": "Receive a visitor's reply by email, from Shipmail",
+        "description": "For Shipmail's webhook, and only on a server with `INBOUND_EMAIL_DOMAIN`, `SHIPMAIL_API_KEY`, `SHIPMAIL_WEBHOOK_SECRET` and `SHIPMAIL_MAILBOX_ID` set. The body is Shipmail's JSON event, up to 256 KB. `X-Shipmail-Signature` is the hex HMAC-SHA256 of \"v1=<X-Shipmail-Timestamp>\\n<body>\" under SHIPMAIL_WEBHOOK_SECRET, and the time must be within 5 minutes. Any event but `message.received` in SHIPMAIL_MAILBOX_ID gets a 200 and is ignored. For that one, the server downloads the email, up to 25 MB, and takes it as `POST /v1/inbound-email` does. It then deletes the message from the mailbox: once taken, once dropped as an automatic answer, and once refused for good, such as for an unknown address. Shipmail retries any other answer, and a retry adds nothing.",
+        "responses": {
+          "200": {
+            "description": "Taken, dropped or refused for good, or an event the server ignores",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "bad_signature: the signature is missing, more than 5 minutes old, or wrong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the event is over 256 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: too many emails to this address in an hour. The message stays",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: too many emails are being received, or the image queue is full. The message stays",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/waiting": {
       "get": {
         "security": [

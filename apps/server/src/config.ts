@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { InboundEmail } from "./inbound-email.ts";
 import type { PushKeys } from "./push.ts";
+import type { ShipmailInbound } from "./shipmail-inbound.ts";
 
 const schema = z.object({
   DATABASE_URL: z.url(),
@@ -51,10 +52,21 @@ const schema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
-  // Visitors reply to their emails only when both are set: the domain whose mail the forwarder
-  // posts to this server, such as reply.example.com, and the secret that signs each post.
+  // Visitors reply to their emails when the domain of the reply addresses is set, such as
+  // reply.example.com, with at least one way for that mail to reach this server: the secret that
+  // signs each post of the raw forwarder, or the three Shipmail settings below.
   INBOUND_EMAIL_DOMAIN: z.hostname().optional(),
   INBOUND_EMAIL_SECRET: z.string().min(32).optional(),
+  // Shipmail's webhook for the mailbox that gets the replies: the API key that downloads and
+  // deletes each email, the webhook's signing secret, and the mailbox. All three or none.
+  SHIPMAIL_API_KEY: z.string().min(1).optional(),
+  SHIPMAIL_WEBHOOK_SECRET: z.string().min(1).optional(),
+  SHIPMAIL_MAILBOX_ID: z.string().min(1).optional(),
+  // Tests point this at a local fake.
+  SHIPMAIL_API_BASE: z
+    .url()
+    .default("https://shipmail.to/api/v1")
+    .transform((url) => url.replace(/\/+$/, "")),
   // The metrics route stays off unless this is set, because it should not be public.
   METRICS_TOKEN: z.string().min(16).optional(),
   // The cloud plan's billing, read by ee/server. It stays off unless all three are set, so a
@@ -96,6 +108,8 @@ const FROM_FILES = [
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "INBOUND_EMAIL_SECRET",
+  "SHIPMAIL_API_KEY",
+  "SHIPMAIL_WEBHOOK_SECRET",
 ] as const;
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
@@ -147,9 +161,29 @@ export function pushKeysFromConfig(config: Config): PushKeys | undefined {
 
 export function inboundEmailFromConfig(config: Config): InboundEmail | undefined {
   const { INBOUND_EMAIL_DOMAIN: domain, INBOUND_EMAIL_SECRET: secret } = config;
-  if (domain === undefined && secret === undefined) return undefined;
-  if (domain === undefined || secret === undefined) {
-    throw new Error("Set INBOUND_EMAIL_DOMAIN and INBOUND_EMAIL_SECRET together.");
+  const shipmail = shipmailFromConfig(config);
+  if (domain === undefined && secret === undefined && shipmail === undefined) return undefined;
+  if (domain === undefined || (secret === undefined && shipmail === undefined)) {
+    throw new Error(
+      "Set INBOUND_EMAIL_DOMAIN with INBOUND_EMAIL_SECRET, or with SHIPMAIL_API_KEY, SHIPMAIL_WEBHOOK_SECRET and SHIPMAIL_MAILBOX_ID, or with all four.",
+    );
   }
-  return { domain: domain.toLowerCase(), secret };
+  return { domain: domain.toLowerCase(), secret, shipmail };
+}
+
+function shipmailFromConfig(config: Config): ShipmailInbound | undefined {
+  const {
+    SHIPMAIL_API_KEY: apiKey,
+    SHIPMAIL_WEBHOOK_SECRET: webhookSecret,
+    SHIPMAIL_MAILBOX_ID: mailboxId,
+  } = config;
+  if (apiKey === undefined && webhookSecret === undefined && mailboxId === undefined) {
+    return undefined;
+  }
+  if (apiKey === undefined || webhookSecret === undefined || mailboxId === undefined) {
+    throw new Error(
+      "Set SHIPMAIL_API_KEY, SHIPMAIL_WEBHOOK_SECRET and SHIPMAIL_MAILBOX_ID together.",
+    );
+  }
+  return { apiBase: config.SHIPMAIL_API_BASE, apiKey, webhookSecret, mailboxId };
 }

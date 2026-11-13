@@ -48,7 +48,7 @@ A cursor is `generation.seq`. A restore or an import gives the workspace a new r
 
 Each send carries an ID that the client made. A retry with the same ID returns the first message, so it cannot create a duplicate.
 
-A visitor's reply by email comes the same way. A mail forwarder posts the raw email to the web side, signed, and `apps/server/src/inbound-email.ts` writes it as the visitor's messages with `appendMessage`, under the same lock. The reply address names its workspace, as a chat link's token does, so the lookup runs in that workspace's transaction, and its stored conversation is the only one the message can go to. The email's `Message-ID` gives the client ID, so a forwarder's retry finds the first messages. No queue holds the email: the forwarder keeps it until Dinghy answers.
+A visitor's reply by email comes the same way. A mail forwarder posts the raw email to the web side, signed, and `apps/server/src/inbound-email.ts` writes it as the visitor's messages with `appendMessage`, under the same lock. The reply address names its workspace, as a chat link's token does, so the lookup runs in that workspace's transaction, and its stored conversation is the only one the message can go to. The email's `Message-ID` gives the client ID, so a forwarder's retry finds the first messages. No queue holds the email: the forwarder keeps it until Dinghy answers. Shipmail is the other way in: its webhook names a message in a mailbox, and `apps/server/src/shipmail-inbound.ts` downloads it, takes it through the same intake, and deletes it only once it went in or was refused for good, so the mailbox is the queue.
 
 ## The widget's settings
 
