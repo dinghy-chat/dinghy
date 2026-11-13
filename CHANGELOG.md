@@ -6,7 +6,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Added
 
-- Replies by email through Shipmail: with `SHIPMAIL_API_KEY`, `SHIPMAIL_WEBHOOK_SECRET` and `SHIPMAIL_MAILBOX_ID` set beside `INBOUND_EMAIL_DOMAIN`, Shipmail's `message.received` webhook brings visitors' answers in, with no forwarder. Dinghy downloads each email from the mailbox, takes it as a forwarded one, and deletes it once it went in or was refused for good. An email for an unpaid or suspended workspace stays in the mailbox, comes in by itself once the workspace opens again, and is deleted after 90 days if it never opens. `INBOUND_EMAIL_SECRET` is now needed only for the forwarder, and both can be on. [Self-hosting](docs/self-hosting.md#receive-replies-through-shipmail) has the setup. API: `POST /v1/inbound-email/shipmail`.
+- Replies by email through Shipmail: with `SHIPMAIL_API_KEY`, `SHIPMAIL_WEBHOOK_SECRET` and `SHIPMAIL_MAILBOX_ID` set beside `INBOUND_EMAIL_DOMAIN`, Shipmail's `message.received` webhook brings visitors' answers in, with no forwarder. Dinghy downloads each email from the mailbox, takes it as a forwarded one, and deletes it once it went in or was refused for good. An email for an unpaid or suspended workspace stays in the mailbox, comes in by itself within a minute or two of the workspace opening again, and is deleted after 90 days if it never does. The worker sweeps the mailbox once a minute, so a reply whose webhook delivery failed still comes in. `INBOUND_EMAIL_SECRET` is now needed only for the forwarder, and both can be on. [Self-hosting](docs/self-hosting.md#receive-replies-through-shipmail) has the setup. API: `POST /v1/inbound-email/shipmail`.
 
 ### Changed
 
