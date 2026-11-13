@@ -976,6 +976,15 @@ const ATTACKS: Record<string, Attack> = {
     const answer = await as(anna, "POST", "/v1/operator/two-factor/check", { code: "000000" });
     expect(answer.status).toBe(409);
   },
+  "POST /v1/operator/two-factor/recovery-codes": async ({ operator: as, anna, bea }) => {
+    const before = await pendingSetupOf(bea.id);
+    // It acts only on the caller's own account, where it is off.
+    const answer = await as(anna, "POST", "/v1/operator/two-factor/recovery-codes", {
+      code: "000000",
+    });
+    expect(answer.status).toBe(409);
+    expect(await pendingSetupOf(bea.id)).toEqual(before);
+  },
   "POST /v1/operator/two-factor/disable": async ({ operator: as, anna, bea }) => {
     const before = await pendingSetupOf(bea.id);
     const answer = await as(anna, "POST", "/v1/operator/two-factor/disable", { code: "000000" });
