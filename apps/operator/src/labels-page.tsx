@@ -71,7 +71,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
         <ul className="items">
           {list.map((label) =>
             editing?.id === label.id ? (
-              <li key={label.id} className="item-row">
+              <li key={label.id} className="item-row label-row">
                 <EditForm
                   label={t("labelEditLabel", { name: label.name })}
                   canSubmit={!busy && editing.typed.name.trim() !== ""}
@@ -85,7 +85,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
                 </EditForm>
               </li>
             ) : (
-              <li key={label.id} className="item-row">
+              <li key={label.id} className="item-row label-row">
                 <span className="label-pill" data-color={label.color}>
                   {label.name}
                 </span>
