@@ -7,7 +7,7 @@ import { Icon } from "./icons.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
 import { composerPicks, mentionsIn } from "./picker.tsx";
-import { hasReceipt, receiptOf } from "./receipts.tsx";
+import { shownReceipts } from "./receipts.tsx";
 import { t } from "./text.ts";
 import {
   BotTyping,
@@ -202,7 +202,7 @@ export function ThreadLog({
   const { editing, setEditing } = actions;
   const visitorName = title(conversation);
   const face = conversation.visitor.pictureUrl;
-  const lastReply = lines.reduce((last, line, index) => (hasReceipt(line) ? index : last), -1);
+  const receiptFor = shownReceipts(lines, receipts);
   const { before } = olderDrafts;
   const staleAt =
     before === null
@@ -216,7 +216,6 @@ export function ThreadLog({
 
   const renderLine = (line: Line, index: number) => {
     const meta = groupMeta(lines, index, who.meId);
-    const receipt = !hasReceipt(line) || receipts === null ? null : receiptOf(line.seq, receipts);
     return (
       <>
         {/* The welcome chat's founder has a face, as an operator does in the widget. */}
@@ -261,8 +260,7 @@ export function ThreadLog({
             ) : null
           }
           flash={flashId === line.id}
-          receipt={receipt}
-          isLastReply={index === lastReply}
+          receipt={receiptFor.get(line.id) ?? null}
           onView={() => setViewing(line.id)}
           onImageError={onImageError}
           onRetry={() => onRetry(line)}
