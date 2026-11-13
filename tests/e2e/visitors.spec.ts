@@ -1,5 +1,6 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { visitor } from "./chat.ts";
 import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -23,21 +24,11 @@ test.afterAll(async () => {
   await server.stop();
 });
 
-async function visitor(browser: Browser, text: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await page.goto(`${server.hostOrigin}/pricing`);
-  await page.getByRole("button", { name: "Open chat" }).click();
-  await page.getByRole("textbox", { name: "Your message" }).fill(text);
-  await page.getByRole("textbox", { name: "Your message" }).press("Enter");
-  await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
-  return page;
-}
-
 test("the operator sees the visitor's draft, the read receipt and the visitor's panel", async ({
   browser,
 }) => {
   const operator = await signedIn(browser, server, "vera@example.com");
-  const widget = await visitor(browser, "Do you have **yearly** plans?");
+  const widget = await visitor(browser, server, "/pricing", "Do you have **yearly** plans?");
   // The widget's page installed it, and the chat is the test chat.
   await operator.getByRole("button", { name: /^Get started/ }).click();
   const steps = operator.getByRole("region", { name: "Get started" });
@@ -204,7 +195,7 @@ test("the operator edits, blocks and deletes a contact from the contact page's m
   browser,
 }) => {
   const operator = await signedIn(browser, server, "vera@example.com");
-  const widget = await visitor(browser, "Please forget me");
+  const widget = await visitor(browser, server, "/pricing", "Please forget me");
   await operator.locator(".row", { hasText: "forget me" }).click();
   await operator.getByRole("button", { name: "View contact" }).click();
   const contact = operator.locator(".contact-page");

@@ -147,6 +147,28 @@ interface World {
 
 const inWorkspace = (id: string, path = "") => `/v1/operator/workspaces/${id}${path}`;
 
+/**
+ * Sends a request on the other workspace's row under each workspace's path, and checks that both
+ * answer 404 and that `read` finds the row as it was.
+ */
+async function refusedInBoth(
+  { operator, anna, a, b }: World,
+  method: string,
+  path: string,
+  read: () => Promise<unknown>,
+  body?: unknown,
+) {
+  const before = await read();
+  for (const space of [a.id, b.id]) {
+    expect((await operator(anna, method, inWorkspace(space, path), body)).status).toBe(404);
+  }
+  expect(await read()).toEqual(before);
+}
+
+const savedReplyRow = (id: string) => owner.select().from(savedReply).where(eq(savedReply.id, id));
+const labelRow = (id: string) => owner.select().from(label).where(eq(label.id, id));
+const webhookRow = (id: string) => owner.select().from(webhook).where(eq(webhook.id, id));
+
 /** A draft by the key, waiting in the conversation, written straight to the database. */
 async function draftIn(workspaceId: string, conversationId: string, apiKeyId: string) {
   const [row] = await owner
@@ -1474,23 +1496,14 @@ const ATTACKS: Record<string, Attack> = {
     expect(rows.map((row) => row.shortcut)).not.toContain("crossing");
   },
   "PATCH /v1/operator/workspaces/:workspaceId/saved-replies/:savedReplyId": async (world) => {
-    const { operator: as, anna, a, b, replyB } = world;
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/saved-replies/${replyB.id}`);
-      expect((await as(anna, "PATCH", path, { body: "changed across" })).status).toBe(404);
-    }
-    const [row] = await owner.select().from(savedReply).where(eq(savedReply.id, replyB.id));
-    expect(row?.body).toBe(replyB.body);
+    const path = `/saved-replies/${world.replyB.id}`;
+    await refusedInBoth(world, "PATCH", path, () => savedReplyRow(world.replyB.id), {
+      body: "changed across",
+    });
   },
   "DELETE /v1/operator/workspaces/:workspaceId/saved-replies/:savedReplyId": async (world) => {
-    const { operator: as, anna, a, b, replyB } = world;
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/saved-replies/${replyB.id}`);
-      expect((await as(anna, "DELETE", path)).status).toBe(404);
-    }
-    expect(await owner.select().from(savedReply).where(eq(savedReply.id, replyB.id))).toHaveLength(
-      1,
-    );
+    const path = `/saved-replies/${world.replyB.id}`;
+    await refusedInBoth(world, "DELETE", path, () => savedReplyRow(world.replyB.id));
   },
   "GET /v1/operator/workspaces/:workspaceId/labels": async (world) => {
     const { operator: as, withKey, anna, a, b, keyA, labelB } = world;
@@ -1510,22 +1523,15 @@ const ATTACKS: Record<string, Attack> = {
     expect(rows.map((row) => row.name)).not.toContain("Planted");
   },
   "PATCH /v1/operator/workspaces/:workspaceId/labels/:labelId": async (world) => {
-    const { operator: as, anna, a, b, labelB } = world;
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/labels/${labelB.id}`);
-      expect((await as(anna, "PATCH", path, { name: "Renamed across" })).status).toBe(404);
-    }
-    const [row] = await owner.select().from(label).where(eq(label.id, labelB.id));
-    expect(row?.name).toBe(labelB.name);
+    const path = `/labels/${world.labelB.id}`;
+    await refusedInBoth(world, "PATCH", path, () => labelRow(world.labelB.id), {
+      name: "Renamed across",
+    });
   },
   "DELETE /v1/operator/workspaces/:workspaceId/labels/:labelId": async (world) => {
-    const { operator: as, anna, a, b, labelB } = world;
-    for (const space of [a.id, b.id]) {
-      expect((await as(anna, "DELETE", inWorkspace(space, `/labels/${labelB.id}`))).status).toBe(
-        404,
-      );
-    }
-    expect(await owner.select().from(label).where(eq(label.id, labelB.id))).toHaveLength(1);
+    await refusedInBoth(world, "DELETE", `/labels/${world.labelB.id}`, () =>
+      labelRow(world.labelB.id),
+    );
   },
   "PUT /v1/operator/workspaces/:workspaceId/conversations/:conversationId/labels/:labelId": async ({
     operator: as,
@@ -1629,13 +1635,8 @@ const ATTACKS: Record<string, Attack> = {
     expect(await owner.select().from(webhook).where(eq(webhook.id, hookB.id))).toHaveLength(1);
   },
   "POST /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/rotate-secret": async (world) => {
-    const { operator: as, anna, a, b, hookB } = world;
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/webhooks/${hookB.id}/rotate-secret`);
-      expect((await as(anna, "POST", path, {})).status).toBe(404);
-    }
-    const [row] = await owner.select().from(webhook).where(eq(webhook.id, hookB.id));
-    expect(row?.secret).toBe(hookB.secret);
+    const path = `/webhooks/${world.hookB.id}/rotate-secret`;
+    await refusedInBoth(world, "POST", path, () => webhookRow(world.hookB.id), {});
   },
   "POST /v1/operator/workspaces/:workspaceId/webhooks/:webhookId/test": async (world) => {
     const { operator: as, anna, a, b, hookB } = world;
@@ -2082,17 +2083,14 @@ const ATTACKS: Record<string, Attack> = {
     expect(await inB()).toEqual(before);
   },
   "PATCH /v1/operator/workspaces/:workspaceId/api-keys/:keyId": async (world) => {
-    const { operator: as, withKey, anna, a, b, keyA, keyB } = world;
+    const { withKey, a, keyA, keyB } = world;
     const body = { name: "Stolen", replyMode: "send" };
-    for (const space of [a.id, b.id]) {
-      const path = inWorkspace(space, `/api-keys/${keyB.id}`);
-      expect((await as(anna, "PATCH", path, body)).status).toBe(404);
-    }
+    const keyBRow = () => owner.select().from(apiKey).where(eq(apiKey.id, keyB.id));
+    await refusedInBoth(world, "PATCH", `/api-keys/${keyB.id}`, keyBRow, body);
     expect(
       (await withKey(keyA.token, "PATCH", inWorkspace(a.id, `/api-keys/${keyA.id}`), body)).status,
     ).toBe(403);
-    const [row] = await owner.select().from(apiKey).where(eq(apiKey.id, keyB.id));
-    expect(row?.name).toBe("Helper B");
+    expect((await keyBRow())[0]?.name).toBe("Helper B");
   },
 };
 

@@ -1,5 +1,6 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import { visitor } from "./chat.ts";
 import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -17,24 +18,14 @@ test.afterAll(async () => {
   await server.stop();
 });
 
-async function visitor(browser: Browser, text: string) {
-  const page = await (await browser.newContext()).newPage();
-  await page.goto(`${server.hostOrigin}/`);
-  await page.getByRole("button", { name: "Open chat" }).click();
-  const field = page.getByRole("textbox", { name: "Your message" });
-  await field.fill(text);
-  await field.press("Enter");
-  await expect(page.locator(".state", { hasText: "Sending" })).toHaveCount(0);
-}
-
 const current = (page: Page) => page.locator('.row[aria-current="true"]');
 
 test("the keyboard moves through the Inbox, replies, and closes a chat to open the next", async ({
   browser,
 }) => {
   await server.closeConversations();
-  await visitor(browser, "First question");
-  await visitor(browser, "Second question");
+  await visitor(browser, server, "/", "First question");
+  await visitor(browser, server, "/", "Second question");
   const operator = await signedIn(browser, server, "alice@example.com");
   const rows = operator.locator(".row");
   await expect(rows).toHaveCount(2);
@@ -67,7 +58,7 @@ test("the keyboard moves through the Inbox, replies, and closes a chat to open t
   await expect(current(operator)).not.toHaveText(first);
 
   // A second E while the first saves does not skip past the chat the first opened.
-  await visitor(browser, "Third question");
+  await visitor(browser, server, "/", "Third question");
   await expect(rows).toHaveCount(2);
   const left = (await current(operator).textContent()) ?? "";
   await operator.keyboard.press("e");
@@ -93,7 +84,7 @@ test("the keyboard moves through the Inbox, replies, and closes a chat to open t
 
 test("Help opens the shortcuts, which the operator can turn off", async ({ browser }) => {
   await server.closeConversations();
-  await visitor(browser, "Any question");
+  await visitor(browser, server, "/", "Any question");
   const operator = await signedIn(browser, server, "alice@example.com");
   await expect(operator.locator(".row")).toHaveCount(1);
 
