@@ -85,7 +85,6 @@ export function ThreadLine({
   editor,
   flash,
   receipt,
-  isLastReply,
   onView,
   onImageError,
   onRetry,
@@ -99,13 +98,8 @@ export function ThreadLine({
   editor: ReactNode;
   /** Highlighted for a moment, after a click on a quote of it or a link to it. */
   flash: boolean;
-  /** How far the visitor has seen this reply. Null for a visitor's message. */
+  /** The receipt line under this reply, or null when it shows none. */
   receipt: Receipt | null;
-  /**
-   * The last reply's receipt shows under its bubble. An earlier one shows beside its bubble while
-   * the pointer is on it, over the empty side, so nothing in the thread moves.
-   */
-  isLastReply: boolean;
   onView(): void;
   onImageError(): void;
   onRetry(): void;
@@ -125,10 +119,9 @@ export function ThreadLine({
             onImageError={onImageError}
           />
           {menu}
-          {receipt !== null && !isLastReply && <ReceiptLine receipt={receipt} later />}
         </div>
       )}
-      {receipt !== null && isLastReply && <ReceiptLine receipt={receipt} later={false} />}
+      {receipt !== null && <ReceiptLine receipt={receipt} />}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}
       {line.status === "failed" && (
         <button type="button" className="retry" onClick={onRetry}>

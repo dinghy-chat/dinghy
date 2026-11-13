@@ -2816,24 +2816,6 @@ img.ws-tile {
 .receipt.emailFailed {
   color: var(--bad);
 }
-/* An earlier reply's line shows beside its bubble, past the "…", with the pointer on it. It sits
-   over the empty side of the thread, so nothing moves, and screen readers always read it. */
-.receipt.later {
-  position: absolute;
-  right: 100%;
-  bottom: 6px;
-  margin: 0 4px 0 0;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.12s;
-  pointer-events: none;
-}
-/* A phone has no room beside the bubble, and its Info item says the same. */
-@media (hover: hover) and (min-width: 761px) {
-  .bubble-row:is(:hover, :focus-within) > .receipt.later {
-    opacity: 1;
-  }
-}
 /* A visitor's unsent words, faded, with three dots that move. */
 .msg.draft {
   align-self: flex-start;

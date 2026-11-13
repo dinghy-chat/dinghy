@@ -28,14 +28,32 @@ export function receiptOf(seq: bigint, receipts: ReplyReceipts): Receipt {
 }
 
 /**
- * The small line under a reply: a check and what happened to it. Under the last reply it always
- * shows. An earlier one shows beside its bubble while the pointer is on it, and screen readers
- * read it either way.
+ * The replies that show a receipt line, by message id: the last reply, the last one read in the
+ * chat, and any whose email failed. The visitor reads in order, so the read line marks every reply
+ * above it as read too. Each reply's Info gives its own times.
  */
-export function ReceiptLine({ receipt, later }: { receipt: Receipt; later: boolean }) {
+export function shownReceipts(lines: Line[], receipts: ReplyReceipts | null): Map<string, Receipt> {
+  const shown = new Map<string, Receipt>();
+  if (receipts === null) return shown;
+  let lastRead: string | null = null;
+  let last: [string, Receipt] | null = null;
+  for (const line of lines) {
+    if (!hasReceipt(line)) continue;
+    const receipt = receiptOf(line.seq, receipts);
+    if (receipt === "emailFailed") shown.set(line.id, receipt);
+    if (receipt === "read") lastRead = line.id;
+    last = [line.id, receipt];
+  }
+  if (lastRead !== null) shown.set(lastRead, "read");
+  if (last !== null) shown.set(...last);
+  return shown;
+}
+
+/** The small line under a reply: a check and what happened to it. */
+export function ReceiptLine({ receipt }: { receipt: Receipt }) {
   const { text, icon } = RECEIPTS[receipt];
   return (
-    <div className={`receipt ${receipt}${later ? " later" : ""}`}>
+    <div className={`receipt ${receipt}`}>
       <Icon name={icon} size={14} />
       {t(text)}
     </div>
