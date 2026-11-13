@@ -7,7 +7,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Added
 
 - Saved replies: the team writes common answers once in **Settings > Saved replies**, and anyone inserts one by typing **/** in the reply or note box, then changes it before sending. Every member can add, change and delete them, up to 200 per workspace. The API lists them at `GET .../saved-replies`, and MCP has `list_saved_replies`, so a bot can answer in the team's words.
-- Mentions in notes: type **@** in a note to pick a teammate. Each member a note mentions gets an alert with its text, by push and by email as their alert settings say, and the conversation is unread for them. An edit alerts only the members it mentions anew. The API takes `mentions` on a note, and MCP's `add_note` takes them too.
+- Mentions in notes: type **@** in a note to pick a teammate. Each member a note mentions gets an alert with its text, by push and by email as their alert settings say, and the conversation is unread for them. An edit alerts only the members it newly mentions. The API takes `mentions` on a note, and MCP's `add_note` takes them too.
 
 ## [0.28.0] - 2026-11-13
 

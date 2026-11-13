@@ -18,7 +18,7 @@ To write something only your team sees, choose **Note** above the reply box, wri
 
 To ask a teammate about a chat, type **@** in a note and pick them from the list, or type `@` and their name as it shows in **Team**. The note keeps `@Name` in its text. Each teammate it mentions, up to 10, gets an alert with the note's text, by push and by email as their [alert settings](#get-alerts) say, even when the chat is not theirs, and the conversation shows as unread for them. A note with no mention alerts nobody. When you edit a note, only the teammates it did not mention before get an alert.
 
-To answer a common question in your team's words, type **/** at the start of a word in the reply box or the note box. A list shows the [saved replies](#saved-replies) whose shortcut or text holds what you type after it. Use the arrow keys to choose one, and press Enter or Tab to put its text in the box, where you can change it before you send. Esc closes the list.
+To answer a common question in your team's words, type **/** at the start of a word in the reply box or the note box. A list shows the [saved replies](#saved-replies) whose shortcut holds what you type after it. Use the arrow keys to choose one, and press Enter or Tab to put its text in the box, where you can change it before you send. Esc closes the list.
 
 When you close a conversation, a visitor who gave an email gets the whole conversation by email 5 minutes later, if someone on the team replied, with a link to continue the chat. Reopening it within the 5 minutes cancels it. **Email transcript** in the conversation's **…** menu sends it now. **Settings > Appearance** turns the email at close off.
 
@@ -180,7 +180,7 @@ Someone in two workspaces switches between them with the workspace name at the t
 
 ### Saved replies
 
-**Settings > Saved replies** holds the replies your team writes once and inserts with **/**. Every member can add, change and delete them. **New saved reply** asks for a **Shortcut**, of lowercase letters, digits and dashes, such as `refund-policy`, and the **Text**, with the same formatting as a message. A workspace keeps up to 200, and each shortcut is used once. A saved reply has no placeholders, such as the visitor's name, because most visitors do not give one. Bots read them too, through the API and MCP, so they can answer in your team's words.
+**Settings > Saved replies** holds the replies your team writes once and inserts with **/**. Every member can add, change and delete them. **New saved reply** asks for a **Shortcut**, of lowercase letters, digits and dashes, such as `refund-policy`, and the **Text**, with the same formatting as a message. A workspace keeps up to 200, and no two saved replies share a shortcut. A saved reply has no placeholders, such as the visitor's name, because most visitors do not give one. Bots read them too, through the API and MCP, so they can answer in your team's words.
 
 **Settings > Workspace** is for owners and admins. It has these sections:
 

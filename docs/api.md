@@ -81,14 +81,14 @@ A note can mention members: pass their operator IDs, from `GET .../members` or t
 
 - Each member a note mentions gets an alert with the note's text, by push and by email as their email alert setting says, even when the conversation is assigned to someone else. A member the note names in its text but not in `mentions` gets nothing.
 - The conversation is unread for each of them until they read past the note.
-- An edit takes `mentions` too, and replaces the list. Only the members it did not mention before get an alert, and removing a mention sends nothing. An edit with no `mentions` clears them.
+- An edit takes `mentions` too, and replaces the list. Only the members it did not mention before get an alert, and removing a mention sends nothing. An edit with no `mentions` keeps them.
 - A workspace export keeps them, and an import maps them to the operators of the new server.
 
 ### Saved replies
 
-Saved replies are the team's own answers to common questions, which an operator inserts in the composer by typing `/`. `GET /v1/operator/workspaces/{workspaceId}/saved-replies` lists them by `shortcut`, with `id`, `body` in Markdown, `createdBy` (the member who added it, or null once they left) and `updatedAt`. Any member, and any API key, reads them, and MCP has `list_saved_replies`, so a bot can answer in the team's words.
+Saved replies are the team's own answers to common questions, which an operator inserts in the composer by typing `/`. `GET /v1/operator/workspaces/{workspaceId}/saved-replies` lists them by `shortcut`, with `id`, `body` in Markdown and `updatedAt`. Any member, and any API key, reads them, and MCP has `list_saved_replies`, so a bot can answer in the team's words.
 
-With a session, any member adds one with `POST .../saved-replies` and `{ "shortcut", "body" }`, changes one with `PATCH .../saved-replies/{savedReplyId}` and either field, and deletes one with `DELETE`. A shortcut is 1 to 32 lowercase letters, digits and dashes, starts with a letter or a digit, and is unique in the workspace: a second one answers 409 `shortcut_taken`. A body is 1 to 5,000 characters. A workspace keeps up to 200, and the next answers 409 `saved_reply_limit`. API keys cannot change them.
+With a session, any member adds one with `POST .../saved-replies` and `{ "shortcut", "body" }`, changes one with `PATCH .../saved-replies/{savedReplyId}` and either field, and deletes one with `DELETE`. A shortcut is 1 to 32 lowercase letters, digits and dashes, starts with a letter or a digit, and is unique in the workspace: a second one answers 409 `saved_reply_shortcut_taken`. A body is 1 to 5,000 characters. A workspace keeps up to 200, and the next answers 409 `saved_reply_limit`. API keys cannot change them.
 
 ### Quotes, edits and deletes
 
