@@ -242,9 +242,9 @@ test("setContext reaches the server only after the first message, cleaned", asyn
   expect(reports).toEqual([]);
 
   await sendMessage(page, "Context please");
-  await expect.poll(() => reports).toEqual([{ context: { plan: "pro", seats: 3 } }]);
+  await expect.poll(() => reports).toEqual([{ locale: "en", context: { plan: "pro", seats: 3 } }]);
   await page.evaluate(() => (window as unknown as Win).Dinghy.setContext({ plan: "team" }));
-  await expect.poll(() => reports.at(-1)).toEqual({ context: { plan: "team" } });
+  await expect.poll(() => reports.at(-1)).toEqual({ locale: "en", context: { plan: "team" } });
 });
 
 test("show, hide and configure move the launcher and the chat follows its side", async ({
