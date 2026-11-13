@@ -94,6 +94,15 @@ describe("business hours", () => {
     expect(reopens(skipped, "2026-03-08T06:45:00Z")).toBe("2026-03-09T13:00:00.000Z");
   });
 
+  test("a weekly range that summer time skips opens the week after", () => {
+    const sundays: BusinessHours = {
+      timeZone: "America/New_York",
+      week: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [["02:00", "02:30"]] },
+    };
+    // This Sunday's 02:00 never comes, so the next one is on 15 March.
+    expect(reopens(sundays, "2026-03-07T12:00:00Z")).toBe("2026-03-15T06:00:00.000Z");
+  });
+
   test("a range that winter time repeats opens again 15 minutes later, not a week later", () => {
     const repeated: BusinessHours = {
       timeZone: "America/New_York",

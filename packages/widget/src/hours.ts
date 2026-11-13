@@ -2,6 +2,8 @@ import { type BusinessHours, WEEKDAYS, type Weekday } from "./shared.ts";
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 1440 * MINUTE_MS;
+// Two weeks: a clock change can skip a range that comes once a week, and then it opens a week later.
+const SEARCH_DAYS = 14;
 
 /** Open now, or closed until a time, which is null for a week with no hours. */
 type HoursState = { open: true } | { open: false; reopensAt: Date | null };
@@ -51,12 +53,12 @@ function isOpenAt({ timeZone, week }: BusinessHours, at: number): boolean {
 }
 
 /**
- * The moments of the week ahead when the clock changes for daylight saving, to the minute. There,
- * the clock can jump into a range without ever reading its start.
+ * The moments of the next two weeks when the clock changes for daylight saving, to the minute.
+ * There, the clock can jump into a range without ever reading its start.
  */
 function clockChanges(timeZone: string, now: number): number[] {
   const changes: number[] = [];
-  for (let day = 0; day <= WEEKDAYS.length; day += 1) {
+  for (let day = 0; day <= SEARCH_DAYS; day += 1) {
     let before = now - (now % MINUTE_MS) + day * DAY_MS;
     let after = before + DAY_MS;
     const offset = offsetAt(before, timeZone);
@@ -107,7 +109,7 @@ export function hoursState(hours: BusinessHours, now: number): HoursState {
   const midnight = wall - (wall % DAY_MS);
   const today = WEEKDAYS.indexOf(day);
   const moments = clockChanges(timeZone, now);
-  for (let ahead = 0; ahead <= WEEKDAYS.length; ahead += 1) {
+  for (let ahead = 0; ahead <= SEARCH_DAYS; ahead += 1) {
     for (const [start] of week[WEEKDAYS[(today + ahead) % WEEKDAYS.length] as Weekday]) {
       moments.push(...readings(midnight + ahead * DAY_MS + sinceMidnight(start), timeZone));
     }
