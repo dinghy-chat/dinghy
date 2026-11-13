@@ -7,6 +7,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Upgrading
 
 - Behind your own reverse proxy, accept request bodies of at least 11 MB, such as `client_max_body_size 11m;` in nginx, because a file in the chat can be 10 MB. The bundled Caddy needs no change.
+- If you set `IMAGES_ORIGIN` and your site has a Content Security Policy, allow that origin in `connect-src` as well as `img-src`, because the chat fetches a file to save it.
 
 ### Added
 

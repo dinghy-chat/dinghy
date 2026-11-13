@@ -37,7 +37,12 @@ const ZIP = [
 ];
 // The Office formats from before 2007 are OLE compound files.
 const OLE = [{ at: 0, bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] }];
-const MOVIE = [{ at: 4, bytes: ascii("ftyp") }];
+const MP4 = [{ at: 4, bytes: ascii("ftyp") }];
+// An older QuickTime movie starts with any of its top-level atoms, not always `ftyp`.
+const QUICKTIME = ["ftyp", "moov", "mdat", "wide", "free", "skip", "pnot"].map((atom) => ({
+  at: 4,
+  bytes: ascii(atom),
+}));
 
 /**
  * What a file's first bytes may be, by extension. Text has none to check, and every file is served
@@ -58,8 +63,8 @@ const SIGNATURES: Record<FileExtension, Signature[] | null> = {
   doc: OLE,
   xls: OLE,
   ppt: OLE,
-  mp4: MOVIE,
-  mov: MOVIE,
+  mp4: MP4,
+  mov: QUICKTIME,
 };
 
 /** The bytes start as one of the type's signatures, or the type has none to check. */

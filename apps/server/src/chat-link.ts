@@ -123,7 +123,7 @@ interface ChatPageOptions {
 export function registerChatPage(app: App, { db, rateLimit, imagesOrigin }: ChatPageOptions) {
   app.use("/chat/*", limitByIp(rateLimit, "chat-link", 30, 60));
   const images = imagesOrigin === undefined ? "" : ` ${imagesOrigin}`;
-  const chatCsp = `default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'${images}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+  const chatCsp = `default-src 'none'; script-src 'self'; connect-src 'self'${images}; img-src 'self'${images}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 
   app.get("/chat/:token", async (c) => {
     const token = c.req.param("token");

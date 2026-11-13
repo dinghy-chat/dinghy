@@ -87,10 +87,6 @@ export const fileSize = (bytes: number) =>
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
-/** True once a signed file URL has expired. Its `expires` is in seconds. */
-export const hasExpired = (url: string) =>
-  Number(new URL(url).searchParams.get("expires")) * 1000 < Date.now();
-
 /**
  * Saves a file through a blob URL. A link cannot do it: a browser ignores `download` on a link to
  * another origin and opens the address instead, and an old address is gone.

@@ -26,6 +26,9 @@ test("a type with a signature needs it at the start, or at its place", () => {
   expect(allowedFileName("a.pdf", Buffer.from(" %PDF-1.4"))).toBeNull();
   expect(allowedFileName("a.mp4", Buffer.from("\x00\x00\x00\x20ftypmp42", "latin1"))).toBe("a.mp4");
   expect(allowedFileName("a.mp4", Buffer.from("ftypmp42"))).toBeNull();
+  // An older QuickTime movie can start with another top-level atom.
+  expect(allowedFileName("a.mov", Buffer.from("\x00\x00\x00\x08wide", "latin1"))).toBe("a.mov");
+  expect(allowedFileName("a.mp4", Buffer.from("\x00\x00\x00\x08wide", "latin1"))).toBeNull();
 });
 
 test("a zip may be empty, or one part of a split archive", () => {

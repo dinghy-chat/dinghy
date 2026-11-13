@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
-import { createElement, type ReactNode, useEffect, useState } from "react";
-import { fileSize, hasExpired, isImage, saveFile } from "../../../packages/widget/src/compose.ts";
+import { createElement, type ReactNode, useEffect, useRef, useState } from "react";
+import { fileSize, isImage, saveFile } from "../../../packages/widget/src/compose.ts";
 import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import { clockTime, isToday } from "./format.ts";
 import { Icon } from "./icons.tsx";
@@ -27,8 +27,9 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
 };
 
 /**
- * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so an old
- * one, or one the server refused, asks for new URLs, and the save waits for the line's new one.
+ * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so when the
+ * server refuses one, it asks once for new URLs and saves again with the line's new one. The device's
+ * clock does not decide, as it can be wrong.
  */
 function FileLink({
   download,
@@ -37,12 +38,21 @@ function FileLink({
   download: NonNullable<Line["download"]>;
   onExpired(): void;
 }) {
-  // Each click tries again, and a save sets it back to 0. A failure waits for a new URL or a click.
+  // Each click asks for a save, and a save or a second refusal sets it back to 0.
   const [clicks, setClicks] = useState(0);
+  // The URL the server refused, which waits for the new one that onExpired brings.
+  const refused = useRef<string | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new URL or a click asks for a save.
   useEffect(() => {
-    if (clicks === 0 || hasExpired(download.url)) return;
-    saveFile(download.url, download.name).then(() => setClicks(0), onExpired);
+    if (clicks === 0 || download.url === refused.current) return;
+    saveFile(download.url, download.name).then(
+      () => setClicks(0),
+      () => {
+        if (refused.current !== null) return setClicks(0);
+        refused.current = download.url;
+        onExpired();
+      },
+    );
   }, [clicks, download.url]);
   return (
     <a
@@ -50,8 +60,8 @@ function FileLink({
       href={download.url}
       onClick={(event) => {
         event.preventDefault();
+        refused.current = null;
         setClicks((count) => count + 1);
-        if (hasExpired(download.url)) onExpired();
       }}
     >
       <Icon name="download" size={20} />
