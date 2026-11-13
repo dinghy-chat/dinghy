@@ -85,7 +85,7 @@ const fr: VisitorWords = {
   continueChat: "Continuer la conversation",
   replyAbove: "Écrivez votre réponse au-dessus de cette ligne",
   attachmentsLeftOut: (count, max) =>
-    `${count === 1 ? "1 pièce jointe n'a pas été ajoutée" : `${count} pièces jointes n'ont pas été ajoutées`}. Le chat en accepte ${max} au plus par e-mail, dans les types et les tailles qu'il autorise.`,
+    `${count === 1 ? "1 pièce jointe n'a pas été ajoutée" : `${count} pièces jointes n'ont pas été ajoutées`}. Le chat accepte jusqu'à ${max} pièces jointes par e-mail, aux formats et aux tailles qu'il autorise.`,
   time: utcTime("fr"),
 };
 

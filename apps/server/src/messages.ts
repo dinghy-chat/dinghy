@@ -163,7 +163,7 @@ type Channel = (typeof CHANNELS)[number];
 
 /**
  * A write that did not come the default way: a key's through MCP, an operator's that sent a draft,
- * or a visitor's reply by email, which may come from another address than the visitor's.
+ * or a visitor's reply by email, which may come from an address other than the visitor's email.
  */
 export type MessageSource =
   | { via: "mcp" }
@@ -204,7 +204,7 @@ export interface StoredMessage {
    * visitor's reply by email. Null for anyone else's message.
    */
   via: Channel | null;
-  /** A reply by email from another address than the visitor's. */
+  /** A reply by email from an address other than the visitor's email. */
   fromOtherAddress: boolean;
   /** A bot's handoff note: who it handed the conversation to, with null for the team. */
   handoff: { operatorId: string | null } | null;

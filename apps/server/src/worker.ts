@@ -18,7 +18,6 @@ import {
 import { workerHeartbeat } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import type { Images } from "./images.ts";
-import { replyHeaders } from "./inbound-email.ts";
 import { noLive, type Signals } from "./live.ts";
 import { MAIL_CONNECTIONS, type Mailer } from "./mailer.ts";
 import { pruneOAuth } from "./oauth-grants.ts";
@@ -195,7 +194,7 @@ export function startWorker({
         "list-unsubscribe": `<${plan.stopUrl}>`,
         "list-unsubscribe-post": "List-Unsubscribe=One-Click",
       }),
-      ...(plan.replyTo !== undefined && replyHeaders(plan.replyTo)),
+      ...(plan.replyTo !== undefined && { "reply-to": plan.replyTo }),
     };
     await bounded.send(plan.to, plan.subject, plan.text, headers, plan.html);
     return "sent";

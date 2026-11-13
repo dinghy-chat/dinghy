@@ -911,12 +911,34 @@ describe("email", () => {
     const replyTo = mail?.headers?.["reply-to"] ?? "";
     expect(replyTo).toMatch(/^reply\+[0-9a-f]{32}\.[0-9a-z]{25}@reply\.example\.com$/);
     expect(replyTo.split("@")[0]?.length).toBeLessThanOrEqual(64);
-    expect(mail?.headers?.["message-id"]).toMatch(/^<[0-9a-f-]{36}@reply\.example\.com>$/);
     const [address] = await owner
       .select()
       .from(replyAddress)
       .where(eq(replyAddress.visitorId, from));
     expect(address?.conversationId).toBe(written.message.conversationId);
+  });
+
+  test("a reply email that carries two conversations takes replies for the newest reply's", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    const [second] = await owner
+      .insert(conversation)
+      .values({ workspaceId: space.id, visitorId: from })
+      .returning({ id: conversation.id });
+    await operatorWrites(anna, written.message.conversationId, "Answer to the first");
+    await operatorWrites(anna, second?.id ?? "", "Answer to the second");
+    await fanOutAll();
+    await makeDue();
+    runWorker({ mail: true, inboundDomain: "reply.example.com" });
+    await until(() => mails.length === 1, "the email");
+    expect(mails[0]?.text).toContain("Answer to the first");
+    expect(mails[0]?.text).toContain("Answer to the second");
+    const addresses = await owner
+      .select({ conversationId: replyAddress.conversationId })
+      .from(replyAddress)
+      .where(eq(replyAddress.visitorId, from));
+    expect(addresses).toEqual([{ conversationId: second?.id }]);
   });
 
   test("a visitor whose chat spoke Spanish gets the reply email in Spanish", async () => {

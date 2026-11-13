@@ -91,6 +91,7 @@ export const ERROR_CODES = [
   "label_name_taken",
   "last_owner",
   "last_workspace",
+  "length_required",
   "link_invalid",
   "mail_failed",
   "message_seen",

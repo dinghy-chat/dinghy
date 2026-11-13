@@ -699,6 +699,7 @@ async function replyEmailPlan(
   const replies = await tx
     .select({
       seq: message.seq,
+      conversationId: message.conversationId,
       body: message.body,
       kind: message.kind,
       filename: filename(),
@@ -744,10 +745,13 @@ async function replyEmailPlan(
     publicUrl,
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
+  // The email can carry replies from several of the visitor's conversations, and its one reply
+  // address goes to the conversation of the newest.
+  const newest = replies.at(-1)?.conversationId ?? conversationId;
   const replyTo =
     inboundDomain === undefined
       ? undefined
-      : await createReplyAddress(tx, workspaceId, visitorId, conversationId, inboundDomain);
+      : await createReplyAddress(tx, workspaceId, visitorId, newest, inboundDomain);
   const authors = await messageAuthors(tx, workspaceId, replies);
   const words = visitorWords(target.locale);
   const written = replies.map((reply) => ({

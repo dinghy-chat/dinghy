@@ -223,7 +223,7 @@ export interface Message {
    * `email`: the visitor replied to an email.
    */
   via: "api" | "mcp" | "draft" | "email" | null;
-  /** A reply by email from another address than the visitor's. */
+  /** A reply by email from an address other than the visitor's email. */
   fromOtherAddress: boolean;
   /** A bot's handoff note: the member it handed the conversation to, or null for the team. */
   handoff: { operatorId: string | null } | null;

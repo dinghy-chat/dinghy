@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,7 @@ import { Redis } from "iovalkey";
 import { pino } from "pino";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
@@ -14,10 +15,11 @@ import { inboundEmailFromConfig, loadConfig } from "./config.ts";
 import { conversation, event, message, replyAddress, visitor } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { createImages } from "./images.ts";
-import { createReplyAddress, pruneReplyAddresses, replyText } from "./inbound-email.ts";
+import { createReplyAddress, pruneReplyAddresses, replyText, textParts } from "./inbound-email.ts";
 import { appendMessage, setConversationStatus } from "./messages.ts";
 import { localStore } from "./storage.ts";
 import { DAY_MS } from "./time.ts";
+import { signature } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const DOMAIN = "reply.example.com";
@@ -93,6 +95,8 @@ interface Attachment {
   filename: string;
   type: string;
   content: Buffer;
+  /** An image inside the HTML, referenced by this Content-ID. */
+  contentId?: string;
 }
 
 interface Mail {
@@ -133,28 +137,42 @@ function mime({
   const parts = attachments.map((one) =>
     [
       `Content-Type: ${one.type}; name="${one.filename}"`,
-      `Content-Disposition: attachment; filename="${one.filename}"`,
+      ...(one.contentId === undefined
+        ? [`Content-Disposition: attachment; filename="${one.filename}"`]
+        : [`Content-Disposition: inline`, `Content-ID: <${one.contentId}>`]),
       "Content-Transfer-Encoding: base64",
       "",
       one.content.toString("base64").replace(/.{76}/g, "$&\r\n"),
     ].join("\r\n"),
   );
+  // Inline images make the email multipart/related, as mail apps send them.
+  const related = attachments.some((one) => one.contentId !== undefined);
   return [
     ...head,
-    'Content-Type: multipart/mixed; boundary="b"',
+    `Content-Type: multipart/${related ? "related" : "mixed"}; boundary="b"`,
     "",
     ...[body.join("\r\n"), ...parts].flatMap((part) => ["--b", part]),
     "--b--",
   ].join("\r\n");
 }
 
-const signature = (raw: string, time = Math.floor(Date.now() / 1000), secret = SECRET) =>
-  `t=${time},v1=${createHmac("sha256", secret).update(`${time}.`).update(raw).digest("hex")}`;
+const sign = (raw: string, time = Math.floor(Date.now() / 1000), secret = SECRET) =>
+  signature(secret, time, raw);
 
-const post = (raw: string, sign = signature(raw), server = app) =>
+/** Posts as the forwarder does, with the Content-Length that a fixed-size body has. */
+const post = (
+  raw: string,
+  signed = sign(raw),
+  server = app,
+  length: string | null = String(Buffer.byteLength(raw)),
+) =>
   server.request("/v1/inbound-email", {
     method: "POST",
-    headers: { "content-type": "message/rfc822", "dinghy-inbound-signature": sign },
+    headers: {
+      "content-type": "message/rfc822",
+      "dinghy-inbound-signature": signed,
+      ...(length !== null && { "content-length": length }),
+    },
     body: raw,
   });
 
@@ -185,7 +203,7 @@ describe("the settings", () => {
   test("without both, the route is off, and one alone stops the server", async () => {
     const off = createApp({ db, logger, checks: { postgres: ok, valkey: ok } });
     const raw = mime({ to: "reply+x@reply.example.com", text: "Hi" });
-    expect((await post(raw, signature(raw), off)).status).toBe(404);
+    expect((await post(raw, sign(raw), off)).status).toBe(404);
     expect(() => loadConfig({ ...base, INBOUND_EMAIL_DOMAIN: DOMAIN })).not.toThrow();
     expect(inboundEmailFromConfig(loadConfig(base))).toBeUndefined();
     expect(() =>
@@ -208,26 +226,35 @@ describe("the signature", () => {
     const chat = await newChat();
     const raw = mime({ to: await addressFor(a, chat), text: "Signed?" });
     const now = Math.floor(Date.now() / 1000);
-    for (const sign of [
+    for (const signed of [
       "",
-      signature(raw, now, "another-secret-of-at-least-32-characters"),
-      signature(`${raw} `, now),
-      signature(raw, now - 6 * 60),
-      signature(raw, now + 6 * 60),
+      sign(raw, now, "another-secret-of-at-least-32-characters"),
+      sign(`${raw} `, now),
+      sign(raw, now - 6 * 60),
+      sign(raw, now + 6 * 60),
     ]) {
-      const answer = await post(raw, sign);
+      const answer = await post(raw, signed);
       expect(answer.status).toBe(401);
       expect(await answer.json()).toMatchObject({ error: { code: "bad_signature" } });
     }
     expect(await messagesOf(chat.conversationId)).toEqual([]);
-    expect((await post(raw, signature(raw, now - 4 * 60))).status).toBe(200);
+    expect((await post(raw, sign(raw, now - 4 * 60))).status).toBe(200);
   });
 
-  test("a body over 25 MB is refused before it is read", async () => {
-    const raw = "a".repeat(25 * 1024 * 1024 + 1);
-    const answer = await post(raw, "t=0,v1=0");
+  test("a length over 25 MB is refused before the body is read", async () => {
+    // The body is small: only the declared length can refuse it.
+    const answer = await post("a", "t=0,v1=0", app, String(25 * 1024 * 1024 + 1));
     expect(answer.status).toBe(413);
     expect(await answer.json()).toMatchObject({ error: { code: "too_large" } });
+  });
+
+  test("a body without a Content-Length is refused before it is read", async () => {
+    const chat = await newChat();
+    const raw = mime({ to: await addressFor(a, chat), text: "Streamed" });
+    const answer = await post(raw, sign(raw), app, null);
+    expect(answer.status).toBe(411);
+    expect(await answer.json()).toMatchObject({ error: { code: "length_required" } });
+    expect(await messagesOf(chat.conversationId)).toEqual([]);
   });
 });
 
@@ -299,6 +326,53 @@ describe("a reply", () => {
     expect((await messagesOf(chat.conversationId))[0]?.body).toBe("Got it & thanks!\nAda");
   });
 
+  test("from an HTML-only mail app decodes entities, before the marker is found", async () => {
+    const chat = await newChat();
+    const html =
+      "<div>Merci, &ccedil;a marche&nbsp;&#x21;</div><div>&Agrave; bient&ocirc;t &#8211; Ada</div><br>" +
+      "<div>Le lun. 13 nov., Acme a &eacute;crit&#160;:</div>" +
+      "<blockquote><p>&Eacute;crivez votre r&eacute;ponse au-dessus de cette ligne</p><p>Bonjour,</p></blockquote>";
+    expect((await post(mime({ to: await addressFor(a, chat), html }))).status).toBe(200);
+    expect((await messagesOf(chat.conversationId)).map((line) => line.body)).toEqual([
+      "Merci, ça marche !\nÀ bientôt – Ada",
+    ]);
+  });
+
+  test("longer than a message goes in as several, and a retry adds none", async () => {
+    const chat = await newChat();
+    const first = "a".repeat(MESSAGE_MAX - 100);
+    const second = "b".repeat(MESSAGE_MAX - 30);
+    const raw = mime({
+      to: await addressFor(a, chat),
+      text: `${first}\n\n${second}`,
+      attachments: [
+        { filename: "run.exe", type: "application/octet-stream", content: Buffer.from("MZ") },
+      ],
+    });
+    expect((await post(raw)).status).toBe(200);
+    expect((await post(raw)).status).toBe(200);
+    const lines = await messagesOf(chat.conversationId);
+    // The note does not fit beside the second part, so it comes whole after it.
+    expect(lines.map((line) => line.body)).toEqual([
+      first,
+      second,
+      "1 attachment was left out. The chat takes up to 5 per email, of the types and sizes it allows.",
+    ]);
+    expect(lines.map((line) => line.clientId.replace(/^email:[0-9a-f]{64}/, ""))).toEqual([
+      ":text1",
+      ":text2",
+      ":text3",
+    ]);
+  });
+
+  test("with more than 10 messages of text is refused, and adds nothing", async () => {
+    const chat = await newChat();
+    const text = Array.from({ length: 11 }, () => "x".repeat(MESSAGE_MAX)).join("\n\n");
+    const answer = await post(mime({ to: await addressFor(a, chat), text }));
+    expect(answer.status).toBe(413);
+    expect(await messagesOf(chat.conversationId)).toEqual([]);
+  });
+
   test("sent again by the forwarder adds nothing, with or without a Message-ID", async () => {
     const chat = await newChat();
     const to = await addressFor(a, chat);
@@ -311,7 +385,7 @@ describe("a reply", () => {
     const lines = await messagesOf(chat.conversationId);
     expect(lines.map((line) => line.kind)).toEqual(["image", "text", "image", "text"]);
     expect(lines[0]?.clientId).toMatch(/^email:[0-9a-f]{64}:1$/);
-    expect(lines[1]?.clientId).toMatch(/^email:[0-9a-f]{64}$/);
+    expect(lines[1]?.clientId).toMatch(/^email:[0-9a-f]{64}:text1$/);
   });
 
   test("from another address is taken, and the team sees it", async () => {
@@ -399,8 +473,32 @@ describe("attachments", () => {
     const lines = await messagesOf(chat.conversationId);
     expect(lines.map((line) => line.kind)).toEqual(["file", "file", "file", "text"]);
     expect(lines.at(-1)?.body).toBe(
-      "Voici\n\n4 pièces jointes n'ont pas été ajoutées. Le chat en accepte 5 au plus par e-mail, dans les types et les tailles qu'il autorise.",
+      "Voici\n\n4 pièces jointes n'ont pas été ajoutées. Le chat accepte jusqu'à 5 pièces jointes par e-mail, aux formats et aux tailles qu'il autorise.",
     );
+  });
+
+  test("a small inline image, such as a signature logo, is skipped, and a large one kept", async () => {
+    const chat = await newChat();
+    // Random pixels do not compress, so this PNG is well over 16 KB.
+    const noise = Buffer.from(Array.from({ length: 96 * 96 * 3 }, () => randomInt(256)));
+    const screenshot = await sharp(noise, { raw: { width: 96, height: 96, channels: 3 } })
+      .png()
+      .toBuffer();
+    expect(screenshot.byteLength).toBeGreaterThan(16 * 1024);
+    const raw = mime({
+      to: await addressFor(a, chat),
+      text: "See the screenshot",
+      attachments: [
+        { filename: "logo.png", type: "image/png", content: await png(), contentId: "logo" },
+        { filename: "shot.png", type: "image/png", content: screenshot, contentId: "shot" },
+      ],
+    });
+    expect((await post(raw)).status).toBe(200);
+    const lines = await messagesOf(chat.conversationId);
+    expect(lines.map((line) => [line.kind, line.body])).toEqual([
+      ["image", null],
+      ["text", "See the screenshot"],
+    ]);
   });
 
   test("with no text, the note stands alone", async () => {
@@ -484,24 +582,71 @@ describe("the address", () => {
 });
 
 describe("the text", () => {
-  const domain = DOMAIN;
-
   test.each([
     ["en", "On Mon, Acme wrote:", "> Write your reply above this line"],
     ["fr", "Le lun. 13 nov., Acme a écrit :", "> Écrivez votre réponse au-dessus de cette ligne"],
     ["es", "El lun, 13 nov, Acme escribió:", "> Escribe tu respuesta encima de esta línea"],
   ])("is cut at the marker line in %s, with the line that names the quote", (_, said, marker) => {
-    expect(replyText(`Merci\n\n${said}\n${marker}\n> Hi,\n> More`, domain)).toBe("Merci");
+    expect(replyText(`Merci\n\n${said}\n${marker}\n> Hi,\n> More`)).toBe("Merci");
   });
 
-  test("is cut at a quoted header with Dinghy's Message-ID", () => {
-    const text = `Thanks\n\n-----Original Message-----\nMessage-ID: <9d2f@${domain}>\nHi,`;
-    expect(replyText(text, domain)).toBe("Thanks\n\n-----Original Message-----");
+  test("keeps a reply that mentions the marker in a sentence", () => {
+    const text = 'What does "Write your reply above this line" mean?\nI wrote below it.\n\nAda';
+    expect(replyText(text)).toBe(text);
+  });
+
+  test("is cut at Outlook's headers above an unquoted copy", () => {
+    const text = [
+      "It works now, thanks.",
+      "",
+      "________________________________",
+      "From: Acme <support@acme.example>",
+      "Sent: Monday, November 13, 2026 10:00 AM",
+      "To: Ada <ada@example.com>",
+      "Subject: Acme replied to your message",
+      "",
+      "Write your reply above this line",
+      "",
+      "Hi,",
+    ].join("\r\n");
+    expect(replyText(text)).toBe("It works now, thanks.");
+  });
+
+  test("is cut at a Gmail attribution that wraps onto two lines", () => {
+    const text = [
+      "Thanks!",
+      "",
+      "On Mon, 13 Nov 2026 at 10:00, Acme Support Team <",
+      "support@acme.example> wrote:",
+      "",
+      "> Write your reply above this line",
+      ">",
+      "> Hi,",
+    ].join("\n");
+    expect(replyText(text)).toBe("Thanks!");
+  });
+
+  test("keeps the visitor's text right above the quote when nothing names it", () => {
+    expect(replyText("Thanks\nAda\n\n> Write your reply above this line\n> Hi,")).toBe(
+      "Thanks\nAda",
+    );
   });
 
   test("keeps everything without a marker, signatures too", () => {
     const text = "Thanks:\n\n> Some quote\n\n-- \nAda Lovelace\nAnalytical Engines Ltd";
-    expect(replyText(text, domain)).toBe(text);
+    expect(replyText(text)).toBe(text);
+  });
+
+  test("is split into messages within the limit, at a paragraph or line break near the end", () => {
+    const paragraph = "a".repeat(MESSAGE_MAX - 10);
+    expect(textParts(`${paragraph}\n\n${"b".repeat(20)}`)).toEqual([paragraph, "b".repeat(20)]);
+    const line = "c".repeat(MESSAGE_MAX - 5);
+    expect(textParts(`${line}\n${"d".repeat(20)}`)).toEqual([line, "d".repeat(20)]);
+    // With no break near, the cut falls at the limit and never inside an emoji.
+    const emoji = `${"e".repeat(MESSAGE_MAX - 1)}😀f`;
+    expect(textParts(emoji)).toEqual(["e".repeat(MESSAGE_MAX - 1), "😀f"]);
+    expect(textParts("g".repeat(MESSAGE_MAX * 10))).toHaveLength(10);
+    expect(textParts("g".repeat(MESSAGE_MAX * 10 + 1))).toBeNull();
   });
 });
 

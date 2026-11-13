@@ -164,8 +164,8 @@ async function checkEndpoint(url: string, policy: WebhookPolicy): Promise<string
 }
 
 /** `Dinghy-Signature`: the time, and the HMAC-SHA256 of "time.body" with the webhook's secret. */
-export function signature(secret: string, timestamp: number, body: string): string {
-  const digest = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
+export function signature(secret: string, timestamp: number, body: string | Uint8Array): string {
+  const digest = createHmac("sha256", secret).update(`${timestamp}.`).update(body).digest("hex");
   return `t=${timestamp},v1=${digest}`;
 }
 

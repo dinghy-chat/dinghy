@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,6 +52,7 @@ import { appendMessage } from "./messages.ts";
 import { createPush } from "./push.ts";
 import { localStore } from "./storage.ts";
 import { emailStopUrl } from "./visitor-email.ts";
+import { signature } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -438,11 +439,12 @@ const ATTACKS: Record<string, Attack> = {
     );
     const moved = address.replace(b.id.replaceAll("-", ""), a.id.replaceAll("-", ""));
     const raw = `From: x@example.com\r\nTo: ${moved}\r\nSubject: Re\r\n\r\nCrossed over`;
-    const time = Math.floor(Date.now() / 1000);
-    const digest = createHmac("sha256", INBOUND.secret).update(`${time}.${raw}`).digest("hex");
     const answer = await server.request("/v1/inbound-email", {
       method: "POST",
-      headers: { "dinghy-inbound-signature": `t=${time},v1=${digest}` },
+      headers: {
+        "content-length": String(Buffer.byteLength(raw)),
+        "dinghy-inbound-signature": signature(INBOUND.secret, Math.floor(Date.now() / 1000), raw),
+      },
       body: raw,
     });
     expect(answer.status).toBe(404);

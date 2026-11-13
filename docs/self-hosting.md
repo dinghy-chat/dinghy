@@ -117,7 +117,7 @@ Each email to a visitor then has its own reply address, `reply+<workspace>.<toke
 1. Pick a subdomain for the reply addresses, such as `reply.example.com`, on a domain that Cloudflare runs. It takes no other mail, so use a subdomain that nothing else uses.
 2. In Cloudflare, open **Email > Email Routing** for the domain, and add the subdomain. Cloudflare adds its MX and TXT records.
 3. Make a secret of at least 32 characters, such as with `openssl rand -hex 32`.
-4. Create a Worker with the code below. In its settings, add the variable `DINGHY_URL`, your `PUBLIC_URL`, and the secret `INBOUND_EMAIL_SECRET`, with the value from step 3.
+4. Create a Worker with the code below. In its settings, add the variable `DINGHY_URL` with your `PUBLIC_URL` as its value, and the secret `INBOUND_EMAIL_SECRET` with the value from step 3.
 5. In **Email Routing > Routing rules** for the subdomain, set the catch-all address to **Send to a Worker**, and pick this Worker.
 6. In `.env`, set `INBOUND_EMAIL_DOMAIN=reply.example.com` and `INBOUND_EMAIL_SECRET` to the same secret, then run `docker compose up -d --wait`.
 
@@ -127,10 +127,7 @@ export default {
   async email(message, env) {
     const body = new Uint8Array(await new Response(message.raw).arrayBuffer());
     const time = Math.floor(Date.now() / 1000);
-    const prefix = new TextEncoder().encode(`${time}.`);
-    const signed = new Uint8Array(prefix.length + body.length);
-    signed.set(prefix);
-    signed.set(body, prefix.length);
+    const signed = await new Blob([`${time}.`, body]).arrayBuffer();
     const key = await crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(env.INBOUND_EMAIL_SECRET),
@@ -149,18 +146,25 @@ export default {
       body,
     });
     if (answer.ok) return;
-    // Busy, down, or over the address's limit: the error makes the sender's server try again later.
-    if (answer.status === 429 || answer.status >= 500) {
-      throw new Error(`Dinghy answered ${answer.status}`);
+    // A retry cannot fix these two, so the sender gets a permanent refusal.
+    if (answer.status === 404) {
+      message.setReject("This address takes no replies. Open the chat on the website to write.");
+      return;
     }
-    message.setReject("This address takes no replies. Open the chat on the website to write.");
+    if (answer.status === 413) {
+      message.setReject("This email is too large. Open the chat on the website to write.");
+      return;
+    }
+    // Anything else, such as 401 from secrets that differ, or a busy or down server, throws instead
+    // of rejecting the email for good, and shows in the Worker's logs.
+    throw new Error(`Dinghy answered ${answer.status}`);
   },
 };
 ```
 
 To test it, answer a reply email from Dinghy. The answer shows in the conversation within seconds. If it does not, the Worker's logs in Cloudflare show what Dinghy answered: 401 means the two secrets differ or the server's clock is more than 5 minutes off, and 404 means the address is not a current one.
 
-Dinghy takes the plain text of the answer, or its HTML made into text. Each email from Dinghy starts with "Write your reply above this line", and Dinghy keeps only what is above the quote of that line. Without the line, it keeps the whole text, and it never cuts a signature. Up to 5 attachments go in the conversation, with the same types and size limits as the chat. An email is at most 25 MB, and the server holds at most 4 at a time, so a fifth waits for the forwarder's retry. Out-of-office answers and other automatic emails are dropped, and one address takes at most 20 emails an hour.
+Dinghy takes the plain text of the answer, or its HTML made into text. Each email from Dinghy starts with "Write your reply above this line", and Dinghy keeps only what is above the quote of that line. Without the line, it keeps the whole text, and it never cuts a signature. Up to 5 attachments go in the conversation, with the same types and size limits as the chat. An email is at most 25 MB, so a proxy of your own must accept 26 MB on `/v1/inbound-email` (see [below](#behind-your-own-reverse-proxy)). The server holds at most 4 emails at a time, so a fifth waits for the forwarder's retry. Out-of-office answers and other automatic emails are dropped, and one address takes at most 20 emails an hour.
 
 ## Behind your own reverse proxy
 
@@ -174,7 +178,7 @@ Your proxy must:
 
 - Serve HTTPS for the domain. `CHAT_DOMAIN` makes the app expect `https://` and that domain, and sign-in refuses a request from any other origin. For another address, such as a port, set `PUBLIC_URL` instead.
 - Pass the `Host` and `Origin` headers through unchanged, and add the client's address to `X-Forwarded-For`.
-- Accept request bodies of at least 11 MB, because a file in the chat can be 10 MB. nginx allows 1 MB unless you set `client_max_body_size`.
+- Accept request bodies of at least 11 MB, because a file in the chat can be 10 MB. With [replies by email](#replies-by-email) on, accept 26 MB on `/v1/inbound-email`, or everywhere, because an email can be 25 MB. A proxy's 413 makes the Worker reject the email for good. nginx allows 1 MB unless you set `client_max_body_size`.
 - Pass `Strict-Transport-Security` through, or set your own. The app sends `max-age=31536000` when `PUBLIC_URL` starts with `https://`, and so does the bundled Caddy. It tells browsers to use HTTPS for a year, so serve the domain over HTTPS first.
 - Not buffer the live streams. The app sends `X-Accel-Buffering: no` on them, which nginx follows. Another proxy may need streaming or flushing turned on for `text/event-stream`. A stream sends a heartbeat every 25 seconds, so an idle timeout of 60 seconds or more is enough.
 
@@ -188,6 +192,15 @@ location / {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_read_timeout 120s;
     client_max_body_size 11m;
+}
+
+# Only with replies by email on.
+location = /v1/inbound-email {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    client_max_body_size 26m;
 }
 ```
 

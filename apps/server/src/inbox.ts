@@ -185,7 +185,7 @@ export const InboxMessage = z
     // A key's reply: sent through the REST API or through MCP. `draft`: an operator sent a key's
     // draft, and is its author. `email`: the visitor replied to an email. Null for anyone else's.
     via: z.enum(CHANNELS).nullable(),
-    // A reply by email from another address than the visitor's, such as one it was forwarded from.
+    // A reply by email from an address other than the visitor's email, such as a forwarding one.
     // False for any other message.
     fromOtherAddress: z.boolean(),
     // A bot's handoff note: the member it handed the conversation to, or null for the whole team.

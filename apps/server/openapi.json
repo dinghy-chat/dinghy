@@ -71,6 +71,7 @@
                   "label_name_taken",
                   "last_owner",
                   "last_workspace",
+                  "length_required",
                   "link_invalid",
                   "mail_failed",
                   "message_seen",
@@ -4453,7 +4454,7 @@
     "/v1/inbound-email": {
       "post": {
         "summary": "Receive a visitor's reply by email, as raw MIME",
-        "description": "For the mail forwarder, and only on a server with `INBOUND_EMAIL_DOMAIN` and `INBOUND_EMAIL_SECRET` set. The body is the email as it arrived, up to 25 MB. `Dinghy-Inbound-Signature` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<body>\" under INBOUND_EMAIL_SECRET>`, and the time must be within 5 minutes. The email goes to the conversation of its `reply+…` recipient as the visitor's message, with `via: \"email\"`. Sending it again adds nothing. Answers from robots, such as out-of-office replies, are dropped with a 200.",
+        "description": "For the mail forwarder, and only on a server with `INBOUND_EMAIL_DOMAIN` and `INBOUND_EMAIL_SECRET` set. The body is the email as it arrived, up to 25 MB, with a `Content-Length`. `Dinghy-Inbound-Signature` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<body>\" under INBOUND_EMAIL_SECRET>`, and the time must be within 5 minutes. The email goes to the conversation of its `reply+…` recipient as the visitor's messages, with `via: \"email\"`. Sending it again adds nothing. Answers from robots, such as out-of-office replies, are dropped with a 200.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4512,8 +4513,18 @@
               }
             }
           },
+          "411": {
+            "description": "length_required: the request has no Content-Length",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "413": {
-            "description": "too_large: the email is over 25 MB",
+            "description": "too_large: the email is over 25 MB, or its text is over 100,000 characters (10 messages)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4533,7 +4544,7 @@
             }
           },
           "503": {
-            "description": "busy: too many emails at once, or an attachment could not be read yet",
+            "description": "busy: 4 emails are being received, or the image queue is full",
             "content": {
               "application/json": {
                 "schema": {

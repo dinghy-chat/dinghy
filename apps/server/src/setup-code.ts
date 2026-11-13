@@ -288,7 +288,7 @@ export function identitySetup(language: IdentityLanguage, publicKey: string) {
 
 // Webhook signatures ------------------------------------------------------------------------------
 
-/** The oldest `t` a receiver should accept, as the samples check it. */
+/** The oldest `t` a receiver of a Dinghy signature accepts: the samples, and inbound emails. */
 export const SIGNATURE_TOLERANCE_SECONDS = 300;
 
 const VERIFIERS: Record<WebhookLanguage, string> = {

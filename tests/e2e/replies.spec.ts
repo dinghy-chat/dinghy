@@ -331,8 +331,8 @@ test("a visitor's reply by email says so to the team, and from which address", a
   );
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "Answered from my phone" }).click();
-  await expect(alice.getByText("Sent by email from a different address")).toBeVisible();
+  await expect(alice.getByText("Replied by email from another address")).toBeVisible();
   await customer.reload();
   await expect(customer.getByText("Answered from my phone")).toBeVisible();
-  await expect(customer.getByText(/Sent by email/)).toHaveCount(0);
+  await expect(customer.getByText(/Replied by email/)).toHaveCount(0);
 });

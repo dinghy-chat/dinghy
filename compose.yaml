@@ -153,7 +153,7 @@ services:
       IMAGES_ORIGIN: ${IMAGES_ORIGIN:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
-      # Optional. Both on, visitors can answer their emails. See docs/self-hosting.md.
+      # Optional. Set both to let visitors answer their emails by email. See docs/self-hosting.md.
       INBOUND_EMAIL_DOMAIN: ${INBOUND_EMAIL_DOMAIN:-}
       INBOUND_EMAIL_SECRET: ${INBOUND_EMAIL_SECRET:-}
       # Optional. true lets webhooks go over http and to private addresses on your own network.
