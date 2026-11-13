@@ -10,8 +10,9 @@ import {
   type failure,
   jsonAnswer,
   jsonBody,
-  MEMBER_WRITE_ERRORS,
+  FORBIDDEN,
   NOT_FOUND,
+  ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { setLabel } from "./labels.ts";
 import { type Live, OPERATORS } from "./live.ts";
@@ -32,7 +33,7 @@ import { allowed, assignIn, isActiveMember, NOT_A_MEMBER } from "./team.ts";
  */
 const BATCH = 25;
 
-const RESULTS = ["ok", "not_found", "not_allowed", "unchanged"] as const;
+const RESULTS = ["ok", "not_found", "unchanged"] as const;
 type Result = (typeof RESULTS)[number];
 
 const Ids = z
@@ -64,8 +65,7 @@ type BulkAction = z.infer<typeof BulkRequest>;
 const BulkResults = z
   .object({
     // One per ID, in the request's order. `unchanged`: it already was as asked, or for `mark_read`
-    // it was read up to its newest message already. `not_allowed`: a member's delete, which only
-    // owners and admins may do.
+    // it was read up to its newest message already.
     results: z.array(z.object({ conversationId: z.string(), result: z.enum(RESULTS) })),
   })
   .openapi("BulkResults");
@@ -78,11 +78,11 @@ const bulkRoute = createRoute({
   path: `${WORKSPACE_PREFIX}/{workspaceId}/conversations/bulk`,
   security: SESSION,
   summary: "Close, assign, label, mark read or delete several conversations",
-  description: `Each conversation changes as the single action would, with its own event, so webhooks and alerts behave as if done one by one. They change in transactions of ${BATCH}, so a failure partway keeps the batches before it. \`mark_read\` reads each one up to its newest message, for the signed-in operator, and is the only action a read-only or suspended workspace allows. \`delete\` is for owners and admins: for a member, every result is \`not_allowed\`. There is no bulk reply.`,
+  description: `Each conversation changes as the single action would, with its own event, so webhooks and alerts behave as if done one by one. They change in transactions of ${BATCH}, so a failure partway keeps the batches before it. \`mark_read\` reads each one up to its newest message, for the signed-in operator, and is the only action a read-only or suspended workspace allows. \`delete\` is for owners and admins, and answers 403 for a member. There is no bulk reply.`,
   request: { params: workspaceParams, body: jsonBody(BulkRequest) },
   responses: {
     200: jsonAnswer("A result for each conversation", BulkResults),
-    ...MEMBER_WRITE_ERRORS,
+    ...ROLE_WRITE_ERRORS,
     400: errorAnswer(
       "invalid_request: the request is not valid. not_a_member: the assignee is not a member",
     ),
@@ -149,19 +149,13 @@ async function labelExists(db: Database, workspaceId: string, labelId: string) {
   return found !== undefined;
 }
 
-interface Caller {
-  operatorId: string;
-  mayDelete: boolean;
-}
-
 /** The change for an action, or an error answer for the whole request. */
 async function changeFor(
   db: Database,
   workspaceId: string,
   request: BulkAction,
-  caller: Caller,
+  operatorId: string,
 ): Promise<BatchChange | { refused: ReturnType<typeof failure>; status: 400 | 404 }> {
-  const { operatorId } = caller;
   switch (request.action) {
     case "close":
       return eachOne(async (tx, row) =>
@@ -214,7 +208,6 @@ async function changeFor(
       // message does. One delete per conversation would lock a visitor after the workspace, and
       // deadlock with a message.
       return async (tx, found) => {
-        if (!caller.mayDelete) return found.map(() => "not_allowed");
         await deleteConversations(tx, workspaceId, found);
         return found.map(() => "ok");
       };
@@ -241,11 +234,10 @@ export function registerBulkRoute(app: App, db: Database, live: Live): void {
       const refused = closedFailure(access);
       return c.json(refused.body, refused.status);
     }
-    const caller = {
-      operatorId: c.get("operatorId"),
-      mayDelete: allowed.settings(c.get("memberRole")),
-    };
-    const change = await changeFor(db, workspaceId, request, caller);
+    if (request.action === "delete" && !allowed.settings(c.get("memberRole"))) {
+      return c.json(FORBIDDEN, 403);
+    }
+    const change = await changeFor(db, workspaceId, request, c.get("operatorId"));
     if (typeof change !== "function") return c.json(change.refused, change.status);
     const ids = [...new Set(request.conversationIds)];
     const done = await inBatches(db, workspaceId, ids, change, (batch) =>

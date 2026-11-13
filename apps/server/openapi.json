@@ -2276,7 +2276,7 @@
                 },
                 "result": {
                   "type": "string",
-                  "enum": ["ok", "not_found", "not_allowed", "unchanged"]
+                  "enum": ["ok", "not_found", "unchanged"]
                 }
               },
               "required": ["conversationId", "result"]
@@ -15023,7 +15023,7 @@
           }
         ],
         "summary": "Close, assign, label, mark read or delete several conversations",
-        "description": "Each conversation changes as the single action would, with its own event, so webhooks and alerts behave as if done one by one. They change in transactions of 25, so a failure partway keeps the batches before it. `mark_read` reads each one up to its newest message, for the signed-in operator, and is the only action a read-only or suspended workspace allows. `delete` is for owners and admins: for a member, every result is `not_allowed`. There is no bulk reply.",
+        "description": "Each conversation changes as the single action would, with its own event, so webhooks and alerts behave as if done one by one. They change in transactions of 25, so a failure partway keeps the batches before it. `mark_read` reads each one up to its newest message, for the signed-in operator, and is the only action a read-only or suspended workspace allows. `delete` is for owners and admins, and answers 403 for a member. There is no bulk reply.",
         "parameters": [
           {
             "schema": {
@@ -15087,7 +15087,7 @@
             }
           },
           "403": {
-            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
             "content": {
               "application/json": {
                 "schema": {

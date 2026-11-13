@@ -105,7 +105,7 @@ With a session, any member adds a label with `POST .../labels` and `{ "name", "c
 | `mark_read` | | Marks it read up to its newest message, for the signed-in operator. It is the only action a read-only or suspended workspace allows, and the others answer 402 `read_only` or 403 `suspended` there |
 | `delete` | | Deletes it, with its messages, images and files. Owners and admins only |
 
-It answers `{ "results": [{ "conversationId", "result" }] }`, one per ID in the order sent, with a repeated ID once. `result` is `ok`, `unchanged` when it already was as asked (for `mark_read`, when it was read up to its newest message already), `not_found`, or `not_allowed` for each conversation of a member's `delete`. Each conversation goes through the same code as the single action, with its own event, so webhooks and alerts behave as if done one by one. They change 25 to a transaction, so a failure partway keeps the transactions before it, and a retry of the same request is safe. There is no bulk reply.
+It answers `{ "results": [{ "conversationId", "result" }] }`, one per ID in the order sent, with a repeated ID once. `result` is `ok`, `unchanged` when it already was as asked (for `mark_read`, when it was read up to its newest message already), or `not_found`. A member's `delete` answers 403 `forbidden` for the whole request, as the single delete does. Each conversation goes through the same code as the single action, with its own event, so webhooks and alerts behave as if done one by one. They change 25 to a transaction, so a failure partway keeps the transactions before it, and a retry of the same request is safe. There is no bulk reply.
 
 ### Notes
 
