@@ -4,7 +4,7 @@ import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import { type Actor, actorFields } from "./api-keys.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
@@ -14,6 +14,7 @@ import type { HandledPayload } from "./bots.ts";
 import {
   apiKey,
   event,
+  label,
   type LabeledPayload,
   type MessagePayload,
   operator,
@@ -859,11 +860,26 @@ export function labelChange(type: WebhookEvent, payload: unknown): WebhookSubjec
   return { labelId, added };
 }
 
+/** The labels the subjects name, by ID, as `{ id, name, color }`. */
+async function findLabels(tx: Transaction, workspaceId: string, subjects: WebhookSubject[]) {
+  const ids = [
+    ...new Set(subjects.flatMap((one) => (one.label === null ? [] : [one.label.labelId]))),
+  ];
+  const rows =
+    ids.length === 0
+      ? []
+      : await tx
+          .select({ id: label.id, name: label.name, color: label.color })
+          .from(label)
+          .where(and(eq(label.workspaceId, workspaceId), inArray(label.id, ids)));
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
 /**
  * The `data` of webhook events, in the same shapes as the operator API: the conversation, and the
- * message each names, in the subjects' order. It reads each kind of row in one query. A string says
- * why there is nothing to send. The webhooks and the key event stream both build their bodies with
- * this.
+ * message or label each names, in the subjects' order. It reads each kind of row in one query. A
+ * string says why there is nothing to send. The webhooks and the key event stream both build their
+ * bodies with this.
  */
 export async function webhookData(
   tx: Transaction,
@@ -882,11 +898,16 @@ export async function webhookData(
     subjects.flatMap((one) => (one.messageId === null ? [] : [one.messageId])),
   );
   const names = await authorNames(tx, workspaceId, [...messages.values()]);
+  const labels = await findLabels(tx, workspaceId, subjects);
   return subjects.map((subject) => {
     const found = conversations.get(subject.conversationId);
     if (found === undefined) return "The conversation was deleted.";
     const data: Record<string, unknown> = { conversation: conversationView(found, null) };
-    if (subject.label !== null) return { ...data, ...subject.label };
+    if (subject.label !== null) {
+      const named = labels.get(subject.label.labelId);
+      if (named === undefined) return "The label was deleted.";
+      return { ...data, label: named, action: subject.label.added ? "added" : "removed" };
+    }
     if (subject.messageId === null) return data;
     const stored = messages.get(subject.messageId);
     if (stored === undefined) return "The message was deleted.";
@@ -930,7 +951,7 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     if (payload.conversationId !== undefined) {
       for (const type of types) {
         const eventId = randomUUID();
-        const label = labelChange(type, found.payload);
+        const labelChanged = labelChange(type, found.payload);
         for (const hook of hooks.filter((one) => one.events.includes(type))) {
           rows.push({
             workspaceId,
@@ -939,8 +960,8 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
             type,
             conversationId: payload.conversationId,
             messageId: type.startsWith("message.") ? (payload.messageId ?? null) : null,
-            labelId: label?.labelId ?? null,
-            labelAdded: label?.added ?? null,
+            labelId: labelChanged?.labelId ?? null,
+            labelAdded: labelChanged?.added ?? null,
             createdAt: found.createdAt,
           });
         }

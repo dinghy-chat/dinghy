@@ -617,7 +617,7 @@ describe("replays and refusals", () => {
     expect(unknown.status).toBe(404);
   });
 
-  test("a label's add and removal arrive with the label and whether it was added, also on a replay", async () => {
+  test("a label's add and removal arrive with the label and the action, also on a replay", async () => {
     const hook = await addWebhook(["conversation.labeled"]);
     const { conversationId } = await visitorStarts(app, space.publicKey, "Invoice question");
     const made = await asOperator(app, boss.cookie, "POST", inSpace("/labels"), {
@@ -631,10 +631,11 @@ describe("replays and refusals", () => {
     // Deliveries go out side by side, so they can arrive in either order.
     const bodies = received
       .map((request) => verified(request, hook.secret))
-      .sort((a, b) => Number(b.data.added) - Number(a.data.added));
-    expect(bodies.map((one) => [one.type, one.data.labelId, one.data.added])).toEqual([
-      ["conversation.labeled", labelId, true],
-      ["conversation.labeled", labelId, false],
+      .sort((a, b) => String(a.data.action).localeCompare(String(b.data.action)));
+    const billing = { id: labelId, name: "Billing", color: "gray" };
+    expect(bodies.map((one) => [one.type, one.data.label, one.data.action])).toEqual([
+      ["conversation.labeled", billing, "added"],
+      ["conversation.labeled", billing, "removed"],
     ]);
     expect(bodies[0]?.data.conversation).toMatchObject({ id: conversationId, labelIds: [] });
     const [first] = await deliveries(hook.id);
@@ -647,7 +648,27 @@ describe("replays and refusals", () => {
     );
     await runWorker();
     const replayed = verified(received.at(-1) as Received, hook.secret);
-    expect(replayed.data).toMatchObject({ labelId });
+    expect(replayed.data).toMatchObject({ label: billing });
+  });
+
+  test("a label deleted before the send has nothing to send", async () => {
+    const hook = await addWebhook(["conversation.labeled"]);
+    await runWorker();
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Refund please");
+    const made = await asOperator(app, boss.cookie, "POST", inSpace("/labels"), { name: "Gone" });
+    const { id: labelId } = (await made.json()) as { id: string };
+    await asOperator(
+      app,
+      boss.cookie,
+      "PUT",
+      inSpace(`/conversations/${conversationId}/labels/${labelId}`),
+    );
+    await asOperator(app, boss.cookie, "DELETE", inSpace(`/labels/${labelId}`));
+    const before = received.length;
+    await runWorker();
+    expect(received.length).toBe(before);
+    const [row] = await deliveriesOf(hook.id);
+    expect(row).toMatchObject({ outcome: "failed", lastError: "The label was deleted." });
   });
 
   test("a replay of an old event still gets its day of retries", async () => {

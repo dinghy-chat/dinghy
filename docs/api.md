@@ -395,7 +395,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `conversation.assigned` | A conversation's assignee changes, or is cleared |
 | `conversation.handoff` | An API key's bot handed the conversation to people |
 | `conversation.given_back` | An operator gave the conversation back to the bots |
-| `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `labelId` and `added`, true when it was put on |
+| `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `label`, `{ id, name, color }`, and `action`, `added` or `removed`. A label deleted before the request is sent has nothing to send |
 
 Drafts send no webhook. The body is JSON:
 
@@ -412,7 +412,7 @@ Drafts send no webhook. The body is JSON:
 }
 ```
 
-`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`. They hold the state when the request is sent, which can be later than the change, such as after a retry. A test visitor's conversation has `visitor.isTest: true`.
+`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`, and only `conversation.labeled` has `data.label`. They hold the state when the request is sent, which can be later than the change, such as after a retry. A test visitor's conversation has `visitor.isTest: true`.
 
 Each request has these headers:
 
