@@ -13,6 +13,7 @@ import { sha256Hex } from "./identity.ts";
 import type { Images } from "./images.ts";
 import type { Limits } from "./limits.ts";
 import { type Signals, wakeConversation } from "./live.ts";
+import { closedFailure } from "./member.ts";
 import {
   appendMessage,
   catchClosed,
@@ -22,9 +23,9 @@ import {
 } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
-import { HOUR_SECONDS } from "./time.ts";
+import { HOUR_SECONDS, MINUTE_SECONDS } from "./time.ts";
 import { REPLY_MARKERS, visitorWords } from "./visitor-words.ts";
-import { signature } from "./webhooks.ts";
+import { signatureDigest } from "./webhooks.ts";
 
 /** The settings for replies by email. */
 export interface InboundEmail {
@@ -36,16 +37,17 @@ export interface InboundEmail {
 
 const PATH = "/v1/inbound-email";
 const REPLY_ADDRESS_DAYS = 90;
-const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
-const MAX_ATTACHMENTS = 5;
+const EMAIL_MAX_MB = 25;
+const EMAIL_MAX_BYTES = EMAIL_MAX_MB * 1024 * 1024;
+const ATTACHMENTS_MAX = 5;
 /** A signature logo is smaller; a pasted screenshot is larger. */
 const INLINE_IMAGE_MIN_BYTES = 16 * 1024;
 /** The text goes in as at most this many messages, so one email cannot fill a conversation. */
-const MAX_TEXT_PARTS = 10;
+const TEXT_PARTS_MAX = 10;
 /** How far back from a part's end a paragraph or line break may be to end the part there. */
 const BREAK_SEARCH_CHARS = 1000;
 const MESSAGES_PER_ADDRESS_PER_HOUR = 20;
-/** Emails this process holds at once, each up to 25 MB, so many cannot fill its memory. */
+/** Emails this process holds at once, each up to EMAIL_MAX_BYTES, so many cannot fill its memory. */
 const EMAILS_AT_ONCE = 4;
 const SIGNATURE_HEADER = "dinghy-inbound-signature";
 
@@ -88,11 +90,11 @@ const unquoted = (line: string) => line.replace(/^[>\s]+/, "").trimEnd();
 
 // Outlook's header lines above a copy, in English, French and Spanish, and the rule of
 // underscores or dashes above them. Any other "Name: value" line is the visitor's text.
-const HEADER_LINE = /^(from|sent|date|to|cc|subject|de|envoyé|à|objet|enviado|para|asunto) ?: /iu;
-const FROM_LINE = /^(from|de) ?: /i;
+const HEADER_LINE = /^(from|sent|date|to|cc|subject|de|envoyé|à|objet|enviado|para|asunto)\s?: /iu;
+const FROM_LINE = /^(from|de)\s?: /i;
 const RULE_LINE = /^(_{5,}|-{3,}.*-{3,})$/;
 // The end of a line such as "On Monday, Acme wrote:", which may wrap onto two lines.
-const WROTE_LINE = /\b(wrote|a écrit|escribió) ?:$/iu;
+const WROTE_LINE = /\b(wrote|a écrit|escribió)\s?:$/iu;
 
 /** The block above a quote names it: a "wrote:" line, or Outlook's headers from From: on. */
 const isAttribution = (block: string[]) =>
@@ -240,10 +242,7 @@ function parseSignature(header: string | undefined): Signed | null {
 
 // The pattern fixes v1 at 32 bytes, so timingSafeEqual never throws on length.
 const signatureMatches = (secret: string, signed: Signed, body: Uint8Array) =>
-  timingSafeEqual(
-    Buffer.from(signature(secret, signed.time, body).split(",v1=")[1] ?? "", "hex"),
-    signed.digest,
-  );
+  timingSafeEqual(signatureDigest(secret, signed.time, body), signed.digest);
 
 /** The reply address, if current, with what the message needs to know about its visitor. */
 async function findAddress(tx: Transaction, workspaceId: string, token: string) {
@@ -295,20 +294,20 @@ type FoundAddress = NonNullable<Awaited<ReturnType<typeof findAddress>>>;
 const OK = { ok: true as const };
 const BAD_SIGNATURE = failure("bad_signature", "The signature is missing, stale or wrong.");
 const LENGTH_REQUIRED = failure("length_required", "Send the email with a Content-Length.");
+const TEXT_MAX = (TEXT_PARTS_MAX * MESSAGE_MAX).toLocaleString("en-US");
+const SIGNATURE_TOLERANCE_MINUTES = SIGNATURE_TOLERANCE_SECONDS / MINUTE_SECONDS;
 const TOO_LARGE = failure(
   "too_large",
-  "An email can be up to 25 MB, with up to 100,000 characters of text.",
+  `An email can be up to ${EMAIL_MAX_MB} MB, with up to ${TEXT_MAX} characters of text.`,
 );
 const BUSY = failure("busy", "Too many emails at once. Try again.");
 const BLOCKED = failure("blocked", "This visitor cannot send messages.");
-const CLOSED = failure("forbidden", "This workspace takes no messages now.");
 
 const inboundEmailRoute = createRoute({
   method: "post",
   path: PATH,
   summary: "Receive a visitor's reply by email, as raw MIME",
-  description:
-    'For the mail forwarder, and only on a server with `INBOUND_EMAIL_DOMAIN` and `INBOUND_EMAIL_SECRET` set. The body is the email as it arrived, up to 25 MB, with a `Content-Length`. `Dinghy-Inbound-Signature` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" under INBOUND_EMAIL_SECRET>`, and the time must be within 5 minutes. The email goes to the conversation of its `reply+…` recipient as the visitor\'s messages, with `via: "email"`. Sending it again adds nothing. Answers from robots, such as out-of-office replies, are dropped with a 200.',
+  description: `For the mail forwarder, and only on a server with \`INBOUND_EMAIL_DOMAIN\` and \`INBOUND_EMAIL_SECRET\` set. The body is the email as it arrived, up to ${EMAIL_MAX_MB} MB, with a \`Content-Length\`. \`Dinghy-Inbound-Signature\` is \`t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" under INBOUND_EMAIL_SECRET>\`, and the time must be within ${SIGNATURE_TOLERANCE_MINUTES} minutes. The email goes to the conversation of its \`reply+…\` recipient as the visitor's messages, with \`via: "email"\`. Sending it again adds nothing. Answers from robots, such as out-of-office replies, are dropped with a 200.`,
   request: {
     body: { content: { "message/rfc822": { schema: z.string() } }, required: true },
   },
@@ -317,17 +316,26 @@ const inboundEmailRoute = createRoute({
       description: "Taken, or dropped as an automatic answer",
       content: { "application/json": { schema: z.object({ ok: z.literal(true) }) } },
     },
-    401: errorAnswer("bad_signature: the signature is missing, more than 5 minutes old, or wrong"),
+    401: errorAnswer(
+      `bad_signature: the signature is missing, more than ${SIGNATURE_TOLERANCE_MINUTES} minutes old, or wrong`,
+    ),
+    402: errorAnswer(
+      "payment_required: the workspace waits for payment. read_only: the subscription ended",
+    ),
     403: errorAnswer(
-      "blocked: the team blocked this visitor. forbidden: the workspace takes no messages now",
+      "blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
     ),
     404: errorAnswer("not_found: no current reply address among the recipients"),
     411: errorAnswer("length_required: the request has no Content-Length"),
     413: errorAnswer(
-      "too_large: the email is over 25 MB, or its text is over 100,000 characters (10 messages)",
+      `too_large: the email is over ${EMAIL_MAX_MB} MB, or its text is over ${TEXT_MAX} characters (${TEXT_PARTS_MAX} messages)`,
     ),
-    429: errorAnswer("too_many_requests: over 20 emails to this address in an hour"),
-    503: errorAnswer("busy: 4 emails are being received, or the image queue is full"),
+    429: errorAnswer(
+      `too_many_requests: over ${MESSAGES_PER_ADDRESS_PER_HOUR} emails to this address in an hour`,
+    ),
+    503: errorAnswer(
+      `busy: ${EMAILS_AT_ONCE} emails are being received, or the image queue is full`,
+    ),
   },
 });
 
@@ -349,7 +357,7 @@ export function registerInboundEmail(app: App, options: InboundOptions): void {
   app.openapi(inboundEmailRoute, async (c) => {
     const length = c.req.header("content-length");
     if (length === undefined || !/^\d{1,12}$/.test(length)) return c.json(LENGTH_REQUIRED, 411);
-    if (Number(length) > MAX_EMAIL_BYTES) return c.json(TOO_LARGE, 413);
+    if (Number(length) > EMAIL_MAX_BYTES) return c.json(TOO_LARGE, 413);
     const signed = parseSignature(c.req.header(SIGNATURE_HEADER));
     if (signed === null) return c.json(BAD_SIGNATURE, 401);
     if (held >= EMAILS_AT_ONCE) {
@@ -389,7 +397,10 @@ async function receive(c: Context, options: InboundOptions, body: Buffer) {
   );
   if (wait !== null) return tooManyRequests(c, wait);
   const outcome = await catchClosed(addMessages(options, workspaceId, address, email, body));
-  if (outcome instanceof WorkspaceClosedError) return c.json(CLOSED, 403);
+  if (outcome instanceof WorkspaceClosedError) {
+    const refused = closedFailure(outcome.access);
+    return c.json(refused.body, refused.status);
+  }
   if (outcome === "too_long") return c.json(TOO_LARGE, 413);
   if (outcome === "busy") {
     c.header("retry-after", "1");
@@ -415,11 +426,11 @@ function partEnd(text: string, start: number): number {
   return /[\uD800-\uDBFF]/.test(text[limit - 1] ?? "") ? limit - 1 : limit;
 }
 
-/** The text as consecutive messages, or null when it needs more than MAX_TEXT_PARTS of them. */
+/** The text as consecutive messages, or null when it needs more than TEXT_PARTS_MAX of them. */
 export function textParts(text: string): string[] | null {
   const parts: string[] = [];
   for (let at = 0; at < text.length; ) {
-    if (parts.length === MAX_TEXT_PARTS) return null;
+    if (parts.length === TEXT_PARTS_MAX) return null;
     const end = partEnd(text, at);
     const part = text.slice(at, end).trim();
     if (part !== "") parts.push(part);
@@ -473,7 +484,7 @@ async function addMessages(
   );
   if (files === "busy") return files;
   const words = visitorWords(address.locale);
-  const note = files.leftOut > 0 ? words.attachmentsLeftOut(files.leftOut, MAX_ATTACHMENTS) : "";
+  const note = files.leftOut > 0 ? words.attachmentsLeftOut(files.leftOut, ATTACHMENTS_MAX) : "";
   let created = files.created;
   for (const [index, part] of withNote(parts, note).entries()) {
     const added = await append(`${clientId}:text${index + 1}`, { body: part });
@@ -507,7 +518,7 @@ async function addAttachments(
   let leftOut = 0;
   const attachments = email.attachments.filter((one) => !isSmallInlineImage(one));
   for (const [index, { content, filename }] of attachments.entries()) {
-    if (images === undefined || index >= MAX_ATTACHMENTS) {
+    if (images === undefined || index >= ATTACHMENTS_MAX) {
       leftOut += 1;
       continue;
     }

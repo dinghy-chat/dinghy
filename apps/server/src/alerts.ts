@@ -120,8 +120,10 @@ interface Written {
 }
 
 /** A message's words in an alert: its text, or what stands in for its image or its file. */
-const messageText = (said: Pick<Written, "body" | "kind" | "filename">) =>
-  said.kind === "file" ? text.aFile(said.filename) : (said.body ?? text.anImage);
+const messageText = (
+  said: Pick<Written, "body" | "kind" | "filename">,
+  words: Pick<VisitorWords, "aFile" | "anImage">,
+) => (said.kind === "file" ? words.aFile(said.filename) : (said.body ?? words.anImage));
 
 /** Sends to each of the operator's devices. A device that is gone is deleted. */
 export async function sendToOperator(
@@ -619,7 +621,7 @@ export function planDelivery(
       const by = (author === null ? undefined : names.get(author)) ?? text.someone;
       return operatorPlan(tx, row, from, { mention: written.body ?? "", by }, threadUrl);
     }
-    return operatorPlan(tx, row, from, { body: messageText(written) }, threadUrl);
+    return operatorPlan(tx, row, from, { body: messageText(written, text) }, threadUrl);
   });
 }
 
@@ -823,7 +825,7 @@ export function replyLetter(
 ): { subject: string; text: string; html: string } {
   const written = replies.map((reply) => ({
     ...reply,
-    body: reply.kind === "file" ? words.aFile(reply.filename) : (reply.body ?? words.anImage),
+    body: messageText(reply, words),
   }));
   const plain = written.map((reply) => quotedText(reply.quote, reply.body, words)).join("\n\n");
   const paragraphs = [words.repliedTo(place.name), plain, words.answerHere(links.chatUrl)];

@@ -12,7 +12,7 @@ import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
 import { inboundEmailFromConfig, loadConfig } from "./config.ts";
-import { conversation, event, message, replyAddress, visitor } from "./db/schema.ts";
+import { conversation, event, message, replyAddress, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { createImages } from "./images.ts";
 import { createReplyAddress, pruneReplyAddresses, replyText, textParts } from "./inbound-email.ts";
@@ -427,6 +427,20 @@ describe("a reply", () => {
       .where(eq(visitor.id, chat.visitorId));
     const answer = await post(mime({ to, text: "Let me in" }));
     expect(answer.status).toBe(403);
+    expect(await messagesOf(chat.conversationId)).toEqual([]);
+  });
+
+  test("to a suspended workspace is refused as suspended", async () => {
+    const space = await createWorkspace(db, "Paused", ["https://p.example.com"]);
+    const chat = await newChat(space);
+    const to = await addressFor(space, chat);
+    await owner
+      .update(workspace)
+      .set({ suspendedAt: new Date() })
+      .where(eq(workspace.id, space.id));
+    const answer = await post(mime({ to, text: "Anyone there?" }));
+    expect(answer.status).toBe(403);
+    expect(await answer.json()).toMatchObject({ error: { code: "suspended" } });
     expect(await messagesOf(chat.conversationId)).toEqual([]);
   });
 });
