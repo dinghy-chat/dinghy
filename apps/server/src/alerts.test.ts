@@ -2157,24 +2157,18 @@ describe("notes", () => {
     expect(await unread(author)).toBe(false);
   });
 
-  test("an edit that mentions a member makes the conversation unread for them until they read it", async () => {
+  test("an edit that mentions a member leaves what they read as read", async () => {
     const author = await addOperator(`author-${randomUUID()}@example.com`);
     const ben = await addOperator(`ben-${randomUUID()}@example.com`);
     const { conversationId } = await quietConversation();
     const note = await noteWrites(author, conversationId, "Look at this");
-    const readsUpTo = (seq: bigint) =>
-      withWorkspace(app, space.id, (tx) =>
-        markConversationRead(tx, space.id, conversationId, ben, seq),
-      );
-    const unread = () =>
-      withWorkspace(app, space.id, (tx) => isUnread(tx, space.id, conversationId, ben));
-    await readsUpTo(note.message.seq);
-    expect(await unread()).toBe(false);
+    await withWorkspace(app, space.id, (tx) =>
+      markConversationRead(tx, space.id, conversationId, ben, note.message.seq),
+    );
 
     await noteEdits(author, conversationId, note.message.id, [ben]);
-    expect(await unread()).toBe(true);
-    // The app reads up to the newest message, which the edit did not move.
-    await readsUpTo(note.message.seq);
-    expect(await unread()).toBe(false);
+    expect(
+      await withWorkspace(app, space.id, (tx) => isUnread(tx, space.id, conversationId, ben)),
+    ).toBe(false);
   });
 });

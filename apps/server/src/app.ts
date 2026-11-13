@@ -499,7 +499,7 @@ export function createApp({
     registerContactRoutes(app, { db, live, visitorPresence });
     registerLiveVisitorRoutes(app, db, liveVisitors);
     registerGetStartedRoutes(app, db);
-    registerSavedReplyRoutes(app, db);
+    registerSavedReplyRoutes(app, db, live);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
     registerTeamRoutes(app, {
       auth,

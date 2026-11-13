@@ -17,6 +17,7 @@ import {
   okContent,
 } from "./errors.ts";
 import { boundedText } from "./inputs.ts";
+import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
 import { recordWorkspaceChange } from "./messages.ts";
 
@@ -156,7 +157,11 @@ async function refusal(
   return taken ? SHORTCUT_TAKEN : null;
 }
 
-export function registerSavedReplyRoutes(app: App, db: Database): void {
+/**
+ * The saved replies routes. Each write records `workspace.changed` and wakes the open operator apps,
+ * which then load the saved replies again. A lost wake only delays it until the next one.
+ */
+export function registerSavedReplyRoutes(app: App, db: Database, live: Live): void {
   const thisReply = (workspaceId: string, savedReplyId: string) =>
     and(eq(savedReply.workspaceId, workspaceId), eq(savedReply.id, savedReplyId));
 
@@ -181,6 +186,7 @@ export function registerSavedReplyRoutes(app: App, db: Database): void {
       return view(row);
     });
     if ("error" in outcome) return c.json(outcome, 409);
+    live.wake(id, OPERATORS);
     return c.json(outcome, 201);
   });
 
@@ -202,6 +208,7 @@ export function registerSavedReplyRoutes(app: App, db: Database): void {
     });
     if (outcome === null) return c.json(NOT_FOUND, 404);
     if ("error" in outcome) return c.json(outcome, 409);
+    live.wake(id, OPERATORS);
     return c.json(outcome, 200);
   });
 
@@ -218,6 +225,7 @@ export function registerSavedReplyRoutes(app: App, db: Database): void {
       return true;
     });
     if (!isDeleted) return c.json(NOT_FOUND, 404);
+    live.wake(id, OPERATORS);
     return c.json({ ok: true as const }, 200);
   });
 }

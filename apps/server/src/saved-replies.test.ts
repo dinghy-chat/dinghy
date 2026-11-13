@@ -10,6 +10,7 @@ import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import { savedReply } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
+import type { Live } from "./live.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const logger = pino({ level: "silent" });
@@ -49,6 +50,21 @@ async function list(cookie: string, workspaceId: string) {
   return ((await response.json()) as { savedReplies: SavedReply[] }).savedReplies;
 }
 
+/** The workspaces each write woke, so a test can see that open apps hear of it. */
+const wakes: string[] = [];
+const live: Live = {
+  wake(workspaceId) {
+    wakes.push(workspaceId);
+  },
+  revoke() {},
+  tell() {},
+  tellVisitor() {},
+  async subscribe() {
+    return () => {};
+  },
+  stop() {},
+};
+
 beforeAll(async () => {
   database = await createTestDatabase();
   await database.migrate();
@@ -56,7 +72,7 @@ beforeAll(async () => {
   owner = database.connect("migrator").db;
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   const ok = async () => {};
-  app = createApp({ db, logger, auth, checks: { postgres: ok, valkey: ok } });
+  app = createApp({ db, logger, auth, live, checks: { postgres: ok, valkey: ok } });
 }, 30_000);
 
 afterAll(async () => {
@@ -64,8 +80,9 @@ afterAll(async () => {
 });
 
 describe("saved replies", () => {
-  test("any member adds, changes and deletes one, and the list goes by shortcut", async () => {
+  test("any member adds, changes and deletes one, the list goes by shortcut, and each write wakes the apps", async () => {
     const { space, member } = await team();
+    const wakesBefore = wakes.length;
     const add = (shortcut: string, body: string) =>
       asOperator(app, member.cookie, "POST", base(space.id), { shortcut, body });
     const refund = await add("refund", "Full refund within 30 days.");
@@ -91,6 +108,8 @@ describe("saved replies", () => {
     expect((await list(member.cookie, space.id)).map((one) => one.shortcut)).toEqual(["hello"]);
     const again = await asOperator(app, member.cookie, "DELETE", `${base(space.id)}/${made.id}`);
     expect(again.status).toBe(404);
+    // Two adds, a change and a delete. The missing one changed nothing.
+    expect(wakes.slice(wakesBefore)).toEqual(Array(4).fill(space.id));
   });
 
   test("a shortcut is unique in its workspace, and only lowercase letters, digits and dashes", async () => {

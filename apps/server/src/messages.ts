@@ -1066,10 +1066,9 @@ export const conversationHasTestVisitor = (alias: SQL) => sql<boolean>`exists (
 
 /**
  * Whether the conversation in the query has a visitor message, or a note that mentions this
- * operator, past their read position. A note counts from its last edit, which may have added the
- * mention. An API key, null here, has no position, so nothing is unread for it. A bot's test
- * visitor is never unread, as it alerts nobody. Any other note is not a message, so it is never
- * unread. The probe reads the conversation's messages through message_conversation_idx.
+ * operator, past their read position. An API key, null here, has no position, so nothing is unread
+ * for it. A bot's test visitor is never unread, as it alerts nobody. Any other note is not a
+ * message, so it is never unread. The probe walks message_conversation_idx from the position up.
  */
 function unreadBy(operatorId: string | null) {
   if (operatorId === null) return sql<boolean>`false`;
@@ -1077,12 +1076,9 @@ function unreadBy(operatorId: string | null) {
   return sql<boolean>`not ${conversationHasTestVisitor(sql`${conversation}`)} and exists (
     select 1 from ${message} as m
     where m.workspace_id = ${conversation}.workspace_id and m.conversation_id = ${conversation}.id
+      and (m.author_visitor_id is not null or m.kind = 'note' and m.metadata->'mentions' ? ${operatorId})
       and m.deleted_at is null
-      and case
-        when m.author_visitor_id is not null then m.seq
-        when m.kind = 'note' and m.metadata->'mentions' ? ${operatorId}
-          then coalesce(m.changed_seq, m.seq)
-      end > coalesce((
+      and m.seq > coalesce((
         select r.read_seq from ${conversationRead} as r
         where r.workspace_id = ${conversation}.workspace_id and r.conversation_id = ${conversation}.id
           and r.operator_id = ${operatorId}
@@ -1106,8 +1102,7 @@ export async function isUnread(
 
 /**
  * Moves an operator's read position in a conversation forward to `seq`. It never moves back, as
- * tabs can report out of order, and it stops at the conversation's newest message. Reading that one
- * reads every edit before it too, such as one that mentions the operator in a note. False when the
+ * tabs can report out of order, and it stops at the conversation's newest message. False when the
  * conversation does not exist.
  */
 export async function markConversationRead(
@@ -1119,15 +1114,11 @@ export async function markConversationRead(
 ): Promise<boolean> {
   const result = await tx.execute(sql`
     insert into ${conversationRead} (workspace_id, conversation_id, operator_id, read_seq)
-    select c.workspace_id, c.id, ${operatorId},
-           case when ${seq}::bigint >= newest.seq then newest.change else ${seq}::bigint end
+    select c.workspace_id, c.id, ${operatorId}, least(${seq}::bigint, coalesce((
+             select max(m.seq) from ${message} as m
+             where m.workspace_id = c.workspace_id and m.conversation_id = c.id
+           ), 0))
     from ${conversation} as c
-    cross join lateral (
-      select coalesce(max(m.seq), 0) as seq,
-             coalesce(max(coalesce(m.changed_seq, m.seq)), 0) as change
-      from ${message} as m
-      where m.workspace_id = c.workspace_id and m.conversation_id = c.id
-    ) as newest
     where c.workspace_id = ${workspaceId} and c.id = ${conversationId}
     on conflict (workspace_id, conversation_id, operator_id) do update
       set read_seq = greatest(${conversationRead}.read_seq, excluded.read_seq)
@@ -1149,7 +1140,7 @@ export async function markHistoryRead(
     insert into ${conversationRead} (workspace_id, conversation_id, operator_id, read_seq)
     select ${workspaceId}, newest.conversation_id, member.operator_id, newest.seq
     from (
-      select m.conversation_id, max(coalesce(m.changed_seq, m.seq)) as seq from ${message} as m
+      select m.conversation_id, max(m.seq) as seq from ${message} as m
       where m.workspace_id = ${workspaceId} group by m.conversation_id
     ) as newest
     join ${workspaceMember} as member

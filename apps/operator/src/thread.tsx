@@ -36,7 +36,6 @@ function useMarkRead(
   api: WorkspaceApi,
   conversationId: string,
   lines: Line[],
-  rewriteVersion: number,
   inView: boolean,
   onRead: (conversationId: string) => void,
 ) {
@@ -45,24 +44,20 @@ function useMarkRead(
     (max, line) => (line.seq !== null && (max === null || line.seq > max) ? line.seq : max),
     null,
   );
-  // An edit sends it again: it may mention this operator in a note, and reading the newest message
-  // reads the edits too.
-  const sent = useRef<{ seq: bigint; rewriteVersion: number } | null>(null);
+  const sent = useRef<bigint | null>(null);
   useEffect(() => {
     if (!visible || !inView || newest === null) return;
-    const last = sent.current;
-    if (last !== null && last.seq >= newest && last.rewriteVersion === rewriteVersion) return;
-    const sending = { seq: newest, rewriteVersion };
-    sent.current = sending;
+    if (sent.current !== null && sent.current >= newest) return;
+    sent.current = newest;
     onRead(conversationId);
     // Again once saved, as a list load that left before the save may have brought the dot back.
     api.markRead(conversationId, newest.toString()).then(
       () => onRead(conversationId),
       () => {
-        if (sent.current === sending) sent.current = null;
+        if (sent.current === newest) sent.current = null;
       },
     );
-  }, [api, conversationId, newest, rewriteVersion, visible, inView, onRead]);
+  }, [api, conversationId, newest, visible, inView, onRead]);
 }
 
 /** What the info dialog says about a line: its time, its author and, for a reply, its receipt. */
@@ -178,7 +173,7 @@ export function Thread({
     onLoaded,
   });
   const { conversation, online, welcome, receipts, lines, sendFiles } = thread;
-  useMarkRead(api, conversationId, lines, rewriteVersion, inView, onRead);
+  useMarkRead(api, conversationId, lines, inView, onRead);
   const actions = useMessageActions({ api, conversationId, act, keep: thread.keep });
   const suggestions = useSuggestedReplies({
     api,
