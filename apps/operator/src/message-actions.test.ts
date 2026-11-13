@@ -38,7 +38,6 @@ const mine = (kind: "text" | "note"): Line => ({
   editedAt: null,
   deleted: false,
   via: null,
-  fromOtherAddress: false,
   handoff: null,
   mentions: [],
 });

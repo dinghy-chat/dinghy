@@ -1051,113 +1051,135 @@
         "required": ["until"]
       },
       "InboxMessage": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "conversationId": {
-            "type": "string"
-          },
-          "seq": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "enum": ["text", "image", "closed", "reopened", "file", "note"]
-          },
-          "fromVisitor": {
-            "type": "boolean"
-          },
-          "authorOperatorId": {
-            "type": ["string", "null"]
-          },
-          "authorApiKeyId": {
-            "type": ["string", "null"]
-          },
-          "authorName": {
-            "type": ["string", "null"]
-          },
-          "clientId": {
-            "type": "string"
-          },
-          "body": {
-            "type": ["string", "null"]
-          },
-          "image": {
-            "$ref": "#/components/schemas/Image"
-          },
-          "imageRemoved": {
-            "type": "boolean"
-          },
-          "file": {
-            "$ref": "#/components/schemas/File"
-          },
-          "fileRemoved": {
-            "type": "boolean"
-          },
-          "replyTo": {
-            "$ref": "#/components/schemas/Quote"
-          },
-          "editedAt": {
-            "type": ["string", "null"]
-          },
-          "deleted": {
-            "type": "boolean"
-          },
-          "readAt": {
-            "type": ["string", "null"]
-          },
-          "via": {
-            "type": ["string", "null"],
-            "enum": ["api", "mcp", "draft", "email", null]
-          },
-          "fromOtherAddress": {
-            "type": "boolean"
-          },
-          "handoff": {
-            "type": ["object", "null"],
+        "allOf": [
+          {
+            "type": "object",
             "properties": {
-              "operatorId": {
+              "id": {
+                "type": "string"
+              },
+              "conversationId": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["text", "image", "closed", "reopened", "file", "note"]
+              },
+              "fromVisitor": {
+                "type": "boolean"
+              },
+              "authorOperatorId": {
                 "type": ["string", "null"]
+              },
+              "authorApiKeyId": {
+                "type": ["string", "null"]
+              },
+              "authorName": {
+                "type": ["string", "null"]
+              },
+              "clientId": {
+                "type": "string"
+              },
+              "body": {
+                "type": ["string", "null"]
+              },
+              "image": {
+                "$ref": "#/components/schemas/Image"
+              },
+              "imageRemoved": {
+                "type": "boolean"
+              },
+              "file": {
+                "$ref": "#/components/schemas/File"
+              },
+              "fileRemoved": {
+                "type": "boolean"
+              },
+              "replyTo": {
+                "$ref": "#/components/schemas/Quote"
+              },
+              "editedAt": {
+                "type": ["string", "null"]
+              },
+              "deleted": {
+                "type": "boolean"
+              },
+              "readAt": {
+                "type": ["string", "null"]
+              },
+              "handoff": {
+                "type": ["object", "null"],
+                "properties": {
+                  "operatorId": {
+                    "type": ["string", "null"]
+                  }
+                },
+                "required": ["operatorId"]
+              },
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "createdAt": {
+                "type": "string"
               }
             },
-            "required": ["operatorId"]
+            "required": [
+              "id",
+              "conversationId",
+              "seq",
+              "kind",
+              "fromVisitor",
+              "authorOperatorId",
+              "authorApiKeyId",
+              "authorName",
+              "clientId",
+              "body",
+              "image",
+              "imageRemoved",
+              "file",
+              "fileRemoved",
+              "replyTo",
+              "editedAt",
+              "deleted",
+              "readAt",
+              "handoff",
+              "mentions",
+              "createdAt"
+            ]
           },
-          "mentions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "createdAt": {
-            "type": "string"
+          {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "via": {
+                    "type": ["string", "null"],
+                    "enum": ["api", "mcp", "draft", null]
+                  }
+                },
+                "required": ["via"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "via": {
+                    "type": "string",
+                    "enum": ["email"]
+                  },
+                  "fromOtherAddress": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["via", "fromOtherAddress"]
+              }
+            ]
           }
-        },
-        "required": [
-          "id",
-          "conversationId",
-          "seq",
-          "kind",
-          "fromVisitor",
-          "authorOperatorId",
-          "authorApiKeyId",
-          "authorName",
-          "clientId",
-          "body",
-          "image",
-          "imageRemoved",
-          "file",
-          "fileRemoved",
-          "replyTo",
-          "editedAt",
-          "deleted",
-          "readAt",
-          "via",
-          "fromOtherAddress",
-          "handoff",
-          "mentions",
-          "createdAt"
         ],
         "example": {
           "id": "1e4b9c7d-3a52-4f80-8b6e-0c2d9f1a7e35",
@@ -1185,7 +1207,6 @@
           "deleted": false,
           "readAt": null,
           "via": null,
-          "fromOtherAddress": false,
           "handoff": null,
           "mentions": [],
           "createdAt": "2026-11-08T09:31:00.000Z"
@@ -4493,8 +4514,18 @@
               }
             }
           },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "blocked: the team blocked this visitor. forbidden: the workspace takes no messages now",
+            "description": "blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
             "content": {
               "application/json": {
                 "schema": {

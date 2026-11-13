@@ -143,7 +143,7 @@ A send can quote one earlier message of the same conversation: pass its ID as `r
 
 An edit adds a `message.updated` event and a delete a `message.deleted` event, in the same transaction. The widget's stream and message list send the message again at that event's position, with its `seq` unchanged, so a client replaces its copy by `id` and keeps sorting by `seq`.
 
-A message has `via`: `api` or `mcp` for a key's reply, `draft` for a draft an operator sent, `email` for a visitor's message that came as a [reply by email](#replies-by-email), and null otherwise. `fromOtherAddress` is true on a reply by email that came from an address other than the visitor's email, and false on every other message. `readAt` is when the visitor's read position first passed a reply, null before that and for replies read before this field existed. `GET .../messages/{messageId}/receipt` answers `{ readAt, emailedAt }`, where `emailedAt` is when the first reply email or transcript after the reply went out.
+A message has `via`: `api` or `mcp` for a key's reply, `draft` for a draft an operator sent, `email` for a visitor's message that came as a [reply by email](#replies-by-email), and null otherwise. Only a message with `via: "email"` has `fromOtherAddress`, which is true when the email came from an address other than the visitor's email. `readAt` is when the visitor's read position first passed a reply, null before that and for replies read before this field existed. `GET .../messages/{messageId}/receipt` answers `{ readAt, emailedAt }`, where `emailedAt` is when the first reply email or transcript after the reply went out.
 
 ## Visitors
 

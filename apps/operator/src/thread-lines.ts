@@ -12,9 +12,11 @@ import {
   ApiError,
   type Conversation,
   type Message,
+  type MessageVia,
   type PageView,
   type Quote,
   type ReplyReceipts,
+  viaOf,
   type WelcomeChat,
   type WorkspaceApi,
 } from "./api.ts";
@@ -22,7 +24,7 @@ import { useLatestLoad } from "./load.ts";
 import type { TextId } from "./text.ts";
 import { failureText } from "./ui.tsx";
 
-export interface Line {
+interface LineFields {
   id: string;
   /** Null until the server confirms it. Confirmed lines sort by this, and pending ones go last. */
   seq: bigint | null;
@@ -50,13 +52,13 @@ export interface Line {
   replyTo: Quote | null;
   editedAt: string | null;
   deleted: boolean;
-  via: Message["via"];
-  fromOtherAddress: boolean;
   /** A bot's handoff note: whom it handed the conversation to, with null for the team. */
   handoff: Message["handoff"];
   /** The members a note mentions. */
   mentions: string[];
 }
+
+export type Line = LineFields & MessageVia;
 
 /** Adds a confirmed message in commit order, and replaces its pending line if it has one. */
 function merge(lines: Line[], message: Message): Line[] {
@@ -78,8 +80,7 @@ function merge(lines: Line[], message: Message): Line[] {
     replyTo: message.replyTo,
     editedAt: message.editedAt,
     deleted: message.deleted,
-    via: message.via,
-    fromOtherAddress: message.fromOtherAddress,
+    ...viaOf(message),
     handoff: message.handoff,
     mentions: message.mentions,
   };
@@ -227,7 +228,6 @@ export function useThreadLines({
     editedAt: null,
     deleted: false,
     via: null,
-    fromOtherAddress: false,
     handoff: null,
     mentions,
   });

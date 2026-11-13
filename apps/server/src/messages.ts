@@ -173,7 +173,7 @@ export type MessageSource =
 /** How a key's write came, when not through the REST API. */
 export type KeySource = Extract<MessageSource, { via: "mcp" }>;
 
-export interface StoredMessage {
+interface StoredFields {
   id: string;
   conversationId: string;
   seq: bigint;
@@ -199,13 +199,6 @@ export interface StoredMessage {
   deleted: boolean;
   /** When the visitor's read position first passed this reply, when known. */
   readAt: Date | null;
-  /**
-   * A key's reply: through the API or MCP. `draft`: an operator sent a key's draft. `email`: a
-   * visitor's reply by email. Null for anyone else's message.
-   */
-  via: Channel | null;
-  /** A reply by email from an address other than the visitor's email. */
-  fromOtherAddress: boolean;
   /** A bot's handoff note: who it handed the conversation to, with null for the team. */
   handoff: { operatorId: string | null } | null;
   /** The members a note mentions. Empty for any other message. */
@@ -214,6 +207,17 @@ export interface StoredMessage {
   changeSeq: bigint;
   createdAt: Date;
 }
+
+/**
+ * A key's reply: through the API or MCP. `draft`: an operator sent a key's draft. Null for anyone
+ * else's message. `email`: a visitor's reply by email, which may come from an address other than
+ * the visitor's email.
+ */
+type MessageVia =
+  | { via: Exclude<Channel, "email"> | null; fromOtherAddress?: never }
+  | { via: "email"; fromOtherAddress: boolean };
+
+export type StoredMessage = StoredFields & MessageVia;
 
 /** A message the visitor may get: any kind but a note. */
 export type VisitorMessage = StoredMessage & { kind: (typeof VISITOR_KINDS)[number] };
@@ -268,12 +272,21 @@ interface MessageMetadata {
   file?: StoredMessage["file"];
   fileRemoved?: boolean;
   /** Set on a key's reply that came through MCP, an operator's that sent a draft, and an email. */
-  via?: "mcp" | "draft" | "email";
+  via?: Exclude<Channel, "api">;
+  /** Set on a reply by email from an address other than the visitor's email. */
   fromOtherAddress?: true;
   /** Set on a bot's handoff note: who it handed the conversation to, or null for the team. */
   handoff?: { operatorId: string | null };
   /** Set on a note that mentions members. */
   mentions?: string[];
+}
+
+/** A key's message without a `via` came through the REST API, which writes none. */
+function viaOf(meta: MessageMetadata | null, authorApiKeyId: string | null): MessageVia {
+  if (meta?.via === "email")
+    return { via: "email", fromOtherAddress: meta.fromOtherAddress === true };
+  if (meta?.via === "draft") return { via: "draft" };
+  return { via: authorApiKeyId === null ? null : (meta?.via ?? "api") };
 }
 
 export function stored({
@@ -292,13 +305,7 @@ export function stored({
     fileRemoved: meta?.fileRemoved === true,
     fromVisitor: authorVisitorId !== null,
     deleted: deletedAt !== null,
-    via:
-      meta?.via === "draft" || meta?.via === "email"
-        ? meta.via
-        : row.authorApiKeyId === null
-          ? null
-          : (meta?.via ?? "api"),
-    fromOtherAddress: meta?.fromOtherAddress === true,
+    ...viaOf(meta, row.authorApiKeyId),
     handoff: meta?.handoff ?? null,
     mentions: meta?.mentions ?? [],
     changeSeq: changedSeq ?? row.seq,

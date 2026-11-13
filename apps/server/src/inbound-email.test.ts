@@ -677,15 +677,23 @@ describe("the text", () => {
   });
 });
 
-test("a stored message from email says how it came", async () => {
-  const chat = await newChat();
-  const result = await withWorkspace(db, a.id, (tx) =>
-    appendMessage(
-      tx,
-      a.id,
-      { kind: "visitor", visitorId: chat.visitorId, conversationId: chat.conversationId },
-      { clientId: "email:x", body: "Hi", source: { via: "email", fromOtherAddress: true } },
-    ),
-  );
-  expect(result.message).toMatchObject({ via: "email", fromOtherAddress: true });
-});
+test.each([
+  [{ via: "email", fromOtherAddress: true } as const, { via: "email", fromOtherAddress: true }],
+  [{ via: "email", fromOtherAddress: false } as const, { via: "email", fromOtherAddress: false }],
+  [undefined, { via: null }],
+])(
+  "a stored message says how it came, with fromOtherAddress only by email",
+  async (source, via) => {
+    const chat = await newChat();
+    const result = await withWorkspace(db, a.id, (tx) =>
+      appendMessage(
+        tx,
+        a.id,
+        { kind: "visitor", visitorId: chat.visitorId, conversationId: chat.conversationId },
+        { clientId: randomUUID(), body: "Hi", source },
+      ),
+    );
+    expect(result.message).toMatchObject(via);
+    expect("fromOtherAddress" in result.message).toBe(source !== undefined);
+  },
+);
