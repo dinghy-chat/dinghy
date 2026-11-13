@@ -349,14 +349,27 @@ function replyTime(seconds: number): string {
     : t("replyHours").replace("{n}", `${Math.round(minutes / 60)}`);
 }
 
-/** "We're back Monday at 9:00 AM", on the visitor's own clock, in the chat's language. */
+const DAY_MS = 86_400_000;
+/** Beyond this many days, a weekday alone could mean two dates, so the line adds the date. */
+const WEEKDAY_ONLY_DAYS = 6;
+
+/**
+ * "We're back Monday at 9:00 AM", or "Monday, November 23" further ahead, on the visitor's own
+ * clock, in the chat's language.
+ */
 export function backLine(at: Date, now: Date): string {
   const time = at.toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" });
-  return at.toDateString() === now.toDateString()
-    ? t("backToday").replace("{time}", time)
-    : t("backAt")
-        .replace("{day}", at.toLocaleDateString(language(), { weekday: "long" }))
-        .replace("{time}", time);
+  if (at.toDateString() === now.toDateString()) return t("backToday").replace("{time}", time);
+  const midnight = (moment: Date) => new Date(moment).setHours(0, 0, 0, 0);
+  // Rounded, as a day with a clock change is an hour short or long.
+  const days = Math.round((midnight(at) - midnight(now)) / DAY_MS);
+  const day = at.toLocaleDateString(
+    language(),
+    days > WEEKDAY_ONLY_DAYS
+      ? { weekday: "long", month: "long", day: "numeric" }
+      : { weekday: "long" },
+  );
+  return t("backAt").replace("{day}", day).replace("{time}", time);
 }
 
 /**

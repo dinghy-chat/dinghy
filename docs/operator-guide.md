@@ -193,7 +193,7 @@ Someone in two workspaces switches between them with the workspace name at the t
 
 **Settings > Business hours** says when your team answers. Owners and admins see it. Turn on **Use business hours**, pick the **Time zone**, which starts as your browser's, and give each day up to 3 ranges, such as 9:00 to 12:30 and 14:00 to 18:00. A day with no range is closed, and a range that ends at 00:00 runs until midnight.
 
-Outside these hours, the chat's header shows your away message from **Settings > Appearance** and "We're back Monday at 9:00 AM", on the visitor's own clock, in place of **Online** or the usual reply time, even when a member is online. It asks for the visitor's email before the first message, or after it for a visitor who has chatted, whatever the email setting says, so your reply can reach them. Visitors can still write, and nothing is added to the conversation. Inside the hours, the header works as before. Pages of your site that open after a save follow the change within 5 minutes.
+Outside these hours, the chat's header shows your away message from **Settings > Appearance** and "We're back Monday at 9:00 AM", on the visitor's own clock and with the date when that is more than 6 days away, in place of **Online** or the usual reply time, even when a member is online. It asks for the visitor's email before the first message, or after it for a visitor who has chatted, whatever the email setting says, so your reply can reach them. Visitors can still write, and nothing is added to the conversation. Inside the hours, the header works as before. Pages of your site that open after a save follow the change within 5 minutes.
 
 ## The other settings
 

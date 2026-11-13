@@ -1,6 +1,9 @@
-import { describe, expect, test } from "vitest";
-import { headerFaces } from "./panel.tsx";
+import { afterEach, describe, expect, test } from "vitest";
+import { backLine, headerFaces } from "./panel.tsx";
 import { type SavedAppearance, type TeamFace, WIDGET_DEFAULTS, withDefaults } from "./shared.ts";
+import { setLanguage } from "./text.ts";
+import { es } from "./texts/es.ts";
+import { fr } from "./texts/fr.ts";
 
 const face = (id: string): TeamFace => ({ id, name: id, pictureUrl: null });
 const maya = face("maya");
@@ -49,4 +52,25 @@ describe("the header's faces", () => {
 test("an answer from before the header settings still shows a header", () => {
   const { headerFaces: _mode, headerFaceCount: _count, faces: _faces, ...old } = saved({});
   expect(ids(headerFaces(withDefaults(old), []))).toEqual(["sam", "maya"]);
+});
+
+describe("the line that says when the team is back", () => {
+  afterEach(() => setLanguage("en", {}));
+  // Monday 16 November 2026, 20:00 on the visitor's clock.
+  const now = new Date(2026, 10, 16, 20, 0);
+  const clean = (line: string) => line.replace(/\s/g, " ");
+
+  test("says today, or the weekday within the coming week", () => {
+    expect(clean(backLine(new Date(2026, 10, 16, 21, 0), now))).toBe("We're back today at 9:00 PM");
+    expect(clean(backLine(new Date(2026, 10, 22, 9, 0), now))).toBe("We're back Sunday at 9:00 AM");
+  });
+
+  test("adds the date when the reopening is more than 6 days away, in each language", () => {
+    const later = new Date(2026, 10, 23, 9, 0);
+    expect(clean(backLine(later, now))).toBe("We're back Monday, November 23 at 9:00 AM");
+    setLanguage("fr", fr);
+    expect(clean(backLine(later, now))).toBe("De retour lundi 23 novembre à 9:00");
+    setLanguage("es", es);
+    expect(clean(backLine(later, now))).toBe("Volvemos el lunes, 23 de noviembre (9:00)");
+  });
 });
