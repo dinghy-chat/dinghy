@@ -145,6 +145,12 @@ function HelpMenu({ onShortcuts }: { onShortcuts(): void }) {
         {
           label: t("helpDocs"),
           lead: <Icon name="book" size={18} />,
+          // It opens in a new tab.
+          trail: (
+            <span className="item-external">
+              <Icon name="arrowUpRight" size={14} />
+            </span>
+          ),
           onSelect: () => open(`${DOCS_URL}operator-guide`, "_blank", "noopener,noreferrer"),
         },
         {

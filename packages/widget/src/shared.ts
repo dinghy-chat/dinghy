@@ -227,6 +227,8 @@ export interface WidgetContext {
   page?: boolean;
   /** Set by identify() and cleared by reset(). */
   identity: Identity | null;
+  /** The token the chat got from an identify() function, so the loader's beat can send it. */
+  hostToken: string | null;
   /** The last setContext() value, as the page gave it. */
   pageContext: unknown;
   /** The chat bundle sets this when it runs, then opens the chat if `wanted` asks for it. */

@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { Icon } from "./icons.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { DocLink, useModal } from "./ui.tsx";
@@ -175,7 +176,18 @@ export function ShortcutsDialog({ onClose }: { onClose(): void }) {
       }}
     >
       <div className="dialog-body">
-        <h2 id={titleId}>{t("keysTitle")}</h2>
+        <div className="shortcuts-head">
+          <h2 id={titleId}>{t("keysTitle")}</h2>
+          <DocLink path="operator-guide#keyboard-shortcuts" text="keysDocsLink" />
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t("close")}
+            onClick={() => dialog.current?.close()}
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </div>
         <div className={on ? "keys-groups" : "keys-groups off"}>
           {GROUPS.map((group) => (
             <section key={group.title}>
@@ -186,8 +198,11 @@ export function ShortcutsDialog({ onClose }: { onClose(): void }) {
                     <dt>{t(text)}</dt>
                     <dd>
                       {/* The Keys chip hides with the keys off, so the sheet keeps its own. */}
-                      {keys.split(" ").map((key) => (
-                        <kbd key={key}>{keyName(key)}</kbd>
+                      {keys.split(" ").map((key, index) => (
+                        <Fragment key={key}>
+                          {index > 0 && <span className="then">{t("keysThen")}</span>}
+                          <kbd>{keyName(key)}</kbd>
+                        </Fragment>
                       ))}
                     </dd>
                   </div>
@@ -196,7 +211,7 @@ export function ShortcutsDialog({ onClose }: { onClose(): void }) {
             </section>
           ))}
         </div>
-        <label className="check">
+        <label className="check keys-switch">
           <span className="setting-label">
             {t("keysOn")}
             <small className="hint">{t("keysOnHelp")}</small>
@@ -207,12 +222,6 @@ export function ShortcutsDialog({ onClose }: { onClose(): void }) {
             onChange={(event) => setShortcutsOn(event.target.checked)}
           />
         </label>
-        <div className="dialog-actions">
-          <DocLink path="operator-guide#keyboard-shortcuts" text="keysDocsLink" />
-          <button type="button" className="pill dark" onClick={() => dialog.current?.close()}>
-            {t("infoDone")}
-          </button>
-        </div>
       </div>
     </dialog>
   );

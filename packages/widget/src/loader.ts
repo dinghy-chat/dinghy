@@ -98,6 +98,7 @@ if (script && publicKey) {
     appearance,
     attribute,
     identity: null,
+    hostToken: null,
     pageContext: null,
     state,
     listeners,
@@ -124,7 +125,7 @@ if (script && publicKey) {
    * loaded yet, and the next visitor in this browser must not inherit this one's data.
    */
   const endSession = () => {
-    context.identity = context.pageContext = null;
+    context.identity = context.pageContext = context.hostToken = null;
     context.wanted = undefined;
     context.chat?.session();
   };
@@ -156,6 +157,7 @@ if (script && publicKey) {
     },
     identify(next) {
       context.identity = next;
+      context.hostToken = null;
       context.chat?.session();
       load();
     },
@@ -216,7 +218,14 @@ if (script && publicKey) {
     let referrer: string | undefined = document.referrer;
     const beat = () => {
       if (document.visibilityState !== "visible") return;
-      const token = typeof context.identity === "string" ? context.identity : readToken(publicKey);
+      // A signed-in visitor's own token, once the chat has one, so the contact gets its country.
+      const { identity } = context;
+      const token =
+        identity === null
+          ? readToken(publicKey)
+          : typeof identity === "string"
+            ? identity
+            : context.hostToken;
       fetch(`${url}beat`, {
         method: "POST",
         keepalive: true,
