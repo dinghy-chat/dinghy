@@ -420,7 +420,7 @@ test("on a phone, the list and the thread take turns", async ({ browser }) => {
   expect(overflow).toBe(false);
 });
 
-test("on a phone, the sections sit in a tab bar and the formats wait behind Aa", async ({
+test("on a phone, the sections sit in a tab bar and the reply text takes the full width", async ({
   browser,
 }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
@@ -433,12 +433,14 @@ test("on a phone, the sections sit in a tab bar and the formats wait behind Aa",
   await expect(operator.getByRole("heading", { name: "Contacts" })).toBeVisible();
   await tabs.getByRole("button", { name: "Inbox" }).click();
 
-  // A thread has its own Back, so the tab bar goes, and the reply takes one row.
+  // A thread has its own Back, so the tab bar goes. The text has the full width, with the tools
+  // and send under it.
   await row(operator, "Tab bar test").click();
   await expect(tabs).toBeHidden();
   const send = await operator.getByRole("button", { name: "Send" }).boundingBox();
   const field = await reply(operator).boundingBox();
-  expect(Math.abs((send?.y ?? 0) - (field?.y ?? 0))).toBeLessThan(10);
+  expect(field?.x ?? 0).toBeLessThan(40);
+  expect(send?.y ?? 0).toBeGreaterThan((field?.y ?? 0) + (field?.height ?? 0) - 1);
   const bold = operator.getByRole("button", { name: /^Bold/ });
   await expect(bold).toBeHidden();
   const formats = operator.getByRole("button", { name: "Formatting" });

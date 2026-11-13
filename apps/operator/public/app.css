@@ -5708,49 +5708,21 @@ button.quote:hover {
   .compose .tools-divider {
     display: none;
   }
-  /* One row: attach, emoji, Aa, the field and send. The formats show above the field. */
-  .compose:not(.editing) .box {
-    grid-template-columns: repeat(3, auto) minmax(0, 1fr) auto;
-    align-items: end;
-    gap: 0;
+  /* The text takes the full width. Attach, emoji and Aa sit under it, and send stays alone at the
+     right, away from them. Aa opens the formats between the text and the tools. */
+  .compose-tools {
+    flex-wrap: wrap;
   }
-  .compose:not(.editing) .box > * {
-    grid-column: 1 / -1;
-  }
-  .compose:not(.editing) .compose-tools {
-    display: contents;
-  }
-  .compose:not(.editing) .compose-tools > * {
-    grid-row: 3;
-  }
-  .compose:not(.editing) .compose-text {
-    grid-row: 3;
-    grid-column: 4;
-  }
-  .compose:not(.editing) :is(.send, .send-note) {
-    grid-column: 5;
-  }
-  .compose:not(.editing) .format-tools {
-    grid-row: 2;
-    grid-column: 1 / -1;
+  .compose.formatting .format-tools {
+    flex-basis: 100%;
+    order: -1;
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
     border-bottom: 1px solid var(--line);
   }
-  /* The link's address takes the formats' row while it is open. */
-  .compose:not(.editing) .link-field {
-    grid-row: 2;
-  }
   .compose.linking .format-tools {
     display: none;
-  }
-  .compose.editing .compose-tools {
-    flex-wrap: wrap;
-  }
-  .compose.editing .format-tools {
-    flex-basis: 100%;
-    order: -1;
   }
   .closed,
   .thread > .bad {
