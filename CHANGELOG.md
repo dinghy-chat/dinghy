@@ -4,6 +4,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Keyboard shortcuts in the operator app: **?** lists them, **/** searches, **G** then **I**, **C**, **V**, **A** or **S** opens a view, **J** and **K** move through the Inbox, **R** and **N** write a reply or a note, **E** closes the conversation and opens the next one, **A** and **I** assign, **.** opens the **…** menu, and **P** shows the visitor's panel. **Esc** leaves the reply box. The app shows each key where it applies, and a switch in the list turns the single keys off for this browser.
+- **Help** in the sidebar, with the documentation and the keyboard shortcuts.
+
 ## [0.26.0] - 2026-11-12
 
 ### Changed
