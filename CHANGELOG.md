@@ -12,7 +12,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - `IMAGES_ORIGIN` is now `UPLOADS_ORIGIN`; the old name still works until the next release.
 - If you set `UPLOADS_ORIGIN` and your site has a Content Security Policy, allow that origin in `connect-src` as well as `img-src`, because the chat fetches a file to save it.
 - API: the upload routes `POST /v1/widget/{key}/images` and `POST .../conversations/{conversationId}/images` are now `.../uploads`, with no alias, because they take files as well as images.
-- API: in a workspace's settings, `usage.imageBytes` is now `usage.storageBytes`, and `deletion.images` is now `deletion.uploads`, as both count files too.
+- API: in a workspace's settings, `usage.imageBytes` is now `usage.uploadBytes`, and `deletion.images` is now `deletion.uploads`, as both count files too.
 - API: a message's `image` and `imageRemoved` are now one `attachment`, in every answer, stream event and webhook: `{ type: "image", url, width, height }`, `{ type: "file", url, name, size }`, `{ type, removed: true }` once Dinghy Cloud deleted it after 12 months, or null. `kind` stays as it was.
 
 ### Added

@@ -143,7 +143,7 @@ services:
       # Optional. Without a mail server, a visitor who left the page does not learn about a reply.
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
-      # Optional. Without these, images stay in the images volume.
+      # Optional. Without these, uploads stay in the volume named images.
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-}
       S3_BUCKET: ${S3_BUCKET:-}

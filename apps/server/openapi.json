@@ -2495,7 +2495,7 @@
                 },
                 "required": ["used", "limit"]
               },
-              "storageBytes": {
+              "uploadBytes": {
                 "type": "object",
                 "properties": {
                   "used": {
@@ -2508,7 +2508,7 @@
                 "required": ["used", "limit"]
               }
             },
-            "required": ["operators", "storageBytes"]
+            "required": ["operators", "uploadBytes"]
           },
           "deletion": {
             "type": "object",

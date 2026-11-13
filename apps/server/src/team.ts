@@ -173,7 +173,7 @@ const Settings = z
       .object({
         operators: z.object({ used: z.number(), limit: z.number() }),
         // Images and files, in bytes.
-        storageBytes: z.object({ used: z.number(), limit: z.number() }),
+        uploadBytes: z.object({ used: z.number(), limit: z.number() }),
       })
       .nullable(),
     // What a delete removes, and whether it is refused: on a self-hosted server, the only

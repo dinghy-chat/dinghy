@@ -267,7 +267,7 @@ describe("operators: 5 per workspace on the cloud", () => {
     };
     expect(body.usage).toEqual({
       operators: { used: 1, limit: 5 },
-      storageBytes: { used: 0, limit: Math.floor(imageSize * 2.5) },
+      uploadBytes: { used: 0, limit: Math.floor(imageSize * 2.5) },
     });
   });
 });
@@ -352,9 +352,9 @@ describe("uploads: a byte limit per workspace on the cloud", () => {
     expect((await call(cloud, "DELETE", path, boss)).status).toBe(404);
     expect(await storedBytes(space)).toBe(0);
     const usage = (await (await call(cloud, "GET", inSpace(space, "/settings"), boss)).json()) as {
-      usage: { storageBytes: { used: number } };
+      usage: { uploadBytes: { used: number } };
     };
-    expect(usage.usage.storageBytes.used).toBe(0);
+    expect(usage.usage.uploadBytes.used).toBe(0);
     // With room again, an upload works.
     expect((await upload(cloud, space, bearer, "192.0.2.4")).status).toBe(201);
     expect(await storedBytes(space)).toBe(imageSize);

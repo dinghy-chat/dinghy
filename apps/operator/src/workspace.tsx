@@ -110,8 +110,8 @@ const operatorsText = (usage: Usage) =>
   });
 const imagesText = (usage: Usage) =>
   t("usageOf", {
-    used: formatBytes(usage.storageBytes.used),
-    limit: formatBytes(usage.storageBytes.limit),
+    used: formatBytes(usage.uploadBytes.used),
+    limit: formatBytes(usage.uploadBytes.limit),
   });
 
 /** The plan's limits and how much of each is used, on Dinghy Cloud. */
@@ -132,8 +132,8 @@ function PlanRow({ usage }: { usage: Usage }) {
         />
         <Meter
           label={t("usageFiles")}
-          used={usage.storageBytes.used}
-          limit={usage.storageBytes.limit}
+          used={usage.uploadBytes.used}
+          limit={usage.uploadBytes.limit}
           text={imagesText(usage)}
           note="usageFilesNote"
           full="usageFullFiles"

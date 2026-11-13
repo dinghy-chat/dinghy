@@ -418,7 +418,7 @@ export interface BlockedVisitor extends VisitorIdentity {
 
 export interface Usage {
   operators: { used: number; limit: number };
-  storageBytes: { used: number; limit: number };
+  uploadBytes: { used: number; limit: number };
 }
 
 export interface WorkspaceSettings {

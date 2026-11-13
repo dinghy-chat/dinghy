@@ -398,7 +398,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `conversation.assigned` | A conversation's assignee changes, or is cleared |
 | `conversation.handoff` | An API key's bot handed the conversation to people |
 | `conversation.given_back` | An operator gave the conversation back to the bots |
-| `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `label`, `{ id, name, color }`, and `action`, `added` or `removed`. A label deleted before the request is sent has nothing to send |
+| `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `label`, `{ id, name, color }`, and `action`, `added` or `removed`. If the label is deleted before the send, Dinghy sends nothing. |
 
 Drafts send no webhook. The body is JSON:
 
