@@ -304,7 +304,7 @@ test("a member saves a reply in Settings, and / inserts it; @ mentions a teammat
 test("a visitor's reply by email says so to the team, and from which address", async ({
   browser,
 }) => {
-  const customer = await visitor(browser, "Answered from my phone");
+  const customer = await visitor(browser, server, "/", "Answered from my phone");
   // As the inbound route stores one: the server's own tests post real emails.
   await server.owner.execute(
     `update message set metadata = '{"via":"email","fromOtherAddress":true}' where body = 'Answered from my phone'`,
