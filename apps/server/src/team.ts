@@ -15,11 +15,19 @@ import {
   conversation,
   invite,
   operator,
+  twoFactorRemoval,
   verification,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
-import { type Database, lockLiveOperator, type Transaction, withWorkspace } from "./db/tenant.ts";
+import {
+  type Database,
+  lockAccount,
+  lockLiveOperator,
+  operatorWorkspaces,
+  type Transaction,
+  withWorkspace,
+} from "./db/tenant.ts";
 import {
   errorAnswer,
   FORBIDDEN,
@@ -41,10 +49,10 @@ import {
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
 import { emailAddressHash, normalizeOrigins, sha256Hex } from "./identity.ts";
-import { inviteMail, joinMail } from "./letter.ts";
+import { inviteMail, joinMail, teamResetMail, twoFactorOffMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { type Mailer, recipientRejected } from "./mailer.ts";
+import { type Mailer, recipientRejected, sendQuietly } from "./mailer.ts";
 import { conversationParams, OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import {
   assignConversation,
@@ -56,6 +64,7 @@ import { revokeGrantsOf } from "./oauth-grants.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { MINUTE_MS } from "./time.ts";
+import { removeTwoFactor, waitingRemoval } from "./two-factor-removal.ts";
 import { isOnlyWorkspace } from "./workspace-delete.ts";
 
 export type Role = "owner" | "admin" | "member";
@@ -87,6 +96,10 @@ const EMAIL_REJECTED = failure(
   "The mail server says this address does not exist. Check it and try again.",
 );
 const MAIL_FAILED = failure("mail_failed", "The invite email could not be sent. Try again soon.");
+const TEAMMATE_TWO_FACTOR_OFF = failure(
+  "two_factor_off",
+  "Two-step sign-in is off for this teammate.",
+);
 const OTHER_EMAIL = failure("invite_other_email", "This invite is for another email address.");
 
 const RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 };
@@ -99,6 +112,8 @@ export const allowed = {
   changeRole: (role: Role) => role === "owner",
   remove: (role: Role, target: Role, isSelf: boolean) =>
     isSelf || role === "owner" || (role === "admin" && target === "member"),
+  // Owners reset admins and members, admins reset members, and nobody outranks an owner.
+  resetTwoFactor: (role: Role, target: Role) => RANK[role] > RANK[target],
 };
 
 /** Owners and admins, and a Setup key, which the member check let through to a Setup route. */
@@ -156,8 +171,12 @@ const Member = z
     role: roleEnum,
     // The member's picture, which they set on their profile. Null with none.
     pictureUrl: z.string().nullable(),
-    // Whether the member turned on two-step sign-in.
-    twoFactor: z.enum(["off", "on"]),
+    // Whether the member turned on two-step sign-in. `removal_requested`: it is on, and a request to
+    // remove it waits, which the member or anyone they ask can cancel.
+    twoFactor: z.enum(["off", "on", "removal_requested"]),
+    // Whether you may reset the member's two-step sign-in now: it is on, they rank below you, and
+    // they are in no other workspace.
+    canResetTwoFactor: z.boolean(),
   })
   .openapi("Member");
 const PendingInvite = z
@@ -224,6 +243,20 @@ const removeMemberRoute = createRoute({
     200: ok,
     ...ROLE_WRITE_ERRORS,
     409: errorAnswer("last_owner: this is the last owner"),
+  },
+});
+
+const resetTwoFactorRoute = createRoute({
+  method: "post",
+  path: `${PREFIX}/members/{operatorId}/two-factor-reset`,
+  security: SESSION,
+  summary:
+    "Turn off a teammate's two-step sign-in, for one who lost their authenticator app and their recovery codes. Owners reset admins and members, and admins reset members, only for a teammate in no other workspace. It removes the secret and the recovery codes and ends the teammate's sessions. The teammate and the other owners get an email",
+  request: { params: memberParams },
+  responses: {
+    200: ok,
+    ...ROLE_WRITE_ERRORS,
+    409: errorAnswer("two_factor_off: two-step sign-in is off for this teammate"),
   },
 });
 
@@ -689,6 +722,57 @@ export async function isActiveMember(tx: Transaction, workspaceId: string, opera
   return member !== undefined;
 }
 
+type TeammateReset =
+  | { kind: "forbidden" }
+  | { kind: "not_found" }
+  | { kind: "two_factor_off" }
+  | {
+      kind: "ok";
+      teammate: { name: string; email: string };
+      otherOwners: { email: string }[];
+    };
+
+/**
+ * Removes a teammate's two-step sign-in, as a completed removal request does. Only for a teammate in no
+ * other workspace, whose other teams could not check this, and the refusal is the same as for a
+ * role that may not, so it tells nothing about other workspaces. Run it in the workspace's context.
+ */
+async function resetTeammate(
+  tx: Transaction,
+  workspaceId: string,
+  actorId: string,
+  targetId: string,
+): Promise<TeammateReset> {
+  // The teammate's account first, as every change to two-step sign-in locks it, then the roles, as
+  // a role change locks them, so neither can change under the checks below.
+  await lockAccount(tx, targetId);
+  const members = await tx
+    .select({
+      id: workspaceMember.operatorId,
+      role: workspaceMember.role,
+      name: operator.name,
+      email: operator.email,
+    })
+    .from(workspaceMember)
+    .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
+    .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)))
+    .orderBy(asc(workspaceMember.operatorId))
+    .for("no key update", { of: workspaceMember });
+  const actor = members.find((member) => member.id === actorId);
+  const target = members.find((member) => member.id === targetId);
+  if (actor === undefined) return { kind: "forbidden" };
+  if (target === undefined) return { kind: "not_found" };
+  if (!allowed.resetTwoFactor(actor.role, target.role)) return { kind: "forbidden" };
+  if ((await operatorWorkspaces(tx, targetId)).length > 1) return { kind: "forbidden" };
+  if (!(await removeTwoFactor(tx, targetId))) return { kind: "two_factor_off" };
+  await recordTeamChange(tx, workspaceId);
+  return {
+    kind: "ok",
+    teammate: target,
+    otherOwners: members.filter((member) => member.role === "owner" && member.id !== actorId),
+  };
+}
+
 export const NOT_A_MEMBER = failure("not_a_member", "This person is not in this workspace.");
 
 interface TeamOptions {
@@ -705,10 +789,13 @@ interface TeamOptions {
   keepsLastWorkspace: boolean;
 }
 
-/** Whether a member turned on two-step sign-in. */
-const TWO_FACTOR_ON_OFF = sql<
-  "off" | "on"
->`case when ${operator.twoFactorOn} then 'on' else 'off' end`;
+/** Whether a member turned on two-step sign-in, and whether a request waits to remove it. */
+const TWO_FACTOR_STATE = sql<"off" | "on" | "removal_requested">`case
+  when not ${operator.twoFactorOn} then 'off'
+  when exists (select 1 from ${twoFactorRemoval} where ${waitingRemoval(sql`${operator.id}`)})
+    then 'removal_requested'
+  else 'on'
+end`;
 
 /** The workspace's members, by name. */
 export function listMembers(tx: Transaction, workspaceId: string) {
@@ -719,7 +806,10 @@ export function listMembers(tx: Transaction, workspaceId: string) {
       email: operator.email,
       role: workspaceMember.role,
       pictureUpdatedAt: operator.pictureUpdatedAt,
-      twoFactor: TWO_FACTOR_ON_OFF,
+      twoFactor: TWO_FACTOR_STATE,
+      isInOtherWorkspace: sql<boolean>`exists (
+        select 1 from operator_workspaces(${operator.id}) as joined
+        where joined.workspace_id <> ${workspaceId})`,
     })
     .from(workspaceMember)
     .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
@@ -738,10 +828,15 @@ export function registerTeamRoutes(
     audit(logger, event, { workspaceId, operatorId, ...fields });
   app.openapi(listMembersRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
+    const role = c.get("memberRole");
     const rows = await withWorkspace(db, id, (tx) => listMembers(tx, id));
-    const members = rows.map(({ pictureUpdatedAt, ...member }) => ({
+    const members = rows.map(({ pictureUpdatedAt, isInOtherWorkspace, ...member }) => ({
       ...member,
       pictureUrl: imageUrls.picture(member.id, pictureUpdatedAt),
+      canResetTwoFactor:
+        member.twoFactor !== "off" &&
+        allowed.resetTwoFactor(role, member.role) &&
+        !isInOtherWorkspace,
     }));
     return c.json({ members }, 200);
   });
@@ -792,6 +887,31 @@ export function registerTeamRoutes(
     auditChange("member.removed", c.get("memberWorkspaceId"), c.get("operatorId"), {
       targetId: operatorId,
     });
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(resetTwoFactorRoute, async (c) => {
+    const { operatorId } = c.req.valid("param");
+    const workspaceId = c.get("memberWorkspaceId");
+    const actorId = c.get("operatorId");
+    const reset = await withWorkspace(db, workspaceId, (tx) =>
+      resetTeammate(tx, workspaceId, actorId, operatorId),
+    );
+    if (reset.kind === "forbidden") return c.json(FORBIDDEN, 403);
+    if (reset.kind === "not_found") return c.json(NOT_FOUND, 404);
+    if (reset.kind === "two_factor_off") return c.json(TEAMMATE_TWO_FACTOR_OFF, 409);
+    // The drains check the session again and end the teammate's streams.
+    live.wake(workspaceId, OPERATORS);
+    auditChange("two_factor.reset_by_member", workspaceId, actorId, { targetId: operatorId });
+    const actorName = c.get("operatorName");
+    const mails = [
+      { to: reset.teammate.email, mail: twoFactorOffMail({ teammate: actorName }) },
+      ...reset.otherOwners.map((owner) => ({
+        to: owner.email,
+        mail: teamResetMail(actorName, reset.teammate),
+      })),
+    ];
+    for (const { to, mail } of mails) sendQuietly(mailer, logger, to, mail);
     return c.json({ ok: true as const }, 200);
   });
 
@@ -1131,9 +1251,7 @@ export function registerTeamRoutes(
       offer.workspaceName,
       offer.inviterName,
     );
-    mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {
-      logger.error(safeErrorFields(err), "could not send a join link");
-    });
+    sendQuietly(mailer, logger, email, mail);
     return c.json({ workspaceId: null }, 200);
   });
 

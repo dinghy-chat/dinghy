@@ -8,7 +8,7 @@ import { Redis } from "iovalkey";
 import { pino } from "pino";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { authenticatorCode } from "../test/authenticator.ts";
+import { authenticatorCode, turnOnTwoFactor } from "../test/authenticator.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { addOperator, captureMail, signIn } from "../test/operators.ts";
@@ -17,7 +17,7 @@ import { readStream } from "../test/sse.ts";
 import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, type AppOptions, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { operator, operatorTwoFactor, session } from "./db/schema.ts";
+import { operator, operatorTwoFactor, session, twoFactorRemoval } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { localStore } from "./storage.ts";
@@ -131,15 +131,7 @@ async function newOwner() {
 /** An owner who turned on two-step sign-in, with the step that turned it on used up. */
 async function ownerWithTwoFactor() {
   const person = await newOwner();
-  const setup = await call(person.cookie, "POST", "/v1/operator/two-factor/setup");
-  expect(setup.status).toBe(200);
-  const { secret } = (await setup.json()) as { secret: string };
-  const enabled = await call(person.cookie, "POST", "/v1/operator/two-factor/enable", {
-    code: await authenticatorCode(secret, -1),
-  });
-  expect(enabled.status).toBe(200);
-  const { recoveryCodes } = (await enabled.json()) as { recoveryCodes: string[] };
-  return { ...person, secret, recoveryCodes };
+  return { ...person, ...(await turnOnTwoFactor(app, person.cookie)) };
 }
 
 const twoFactorOf = async (cookie: string) => {
@@ -187,6 +179,8 @@ describe("turning it on", () => {
     expect(enabled.status).toBe(200);
     const { recoveryCodes } = (await enabled.json()) as { recoveryCodes: string[] };
     expect(new Set(recoveryCodes).size).toBe(10);
+    // 16 letters of 32 each: 80 random bits, above the 64 that NIST asks for.
+    for (const one of recoveryCodes) expect(one).toMatch(/^[a-z2-7]{4}(-[a-z2-7]{4}){3}$/);
     expect(await flagOf(person.id)).toBe(true);
     // The session that turned it on passed it, and keeps working.
     expect(await twoFactorOf(person.cookie)).toBe("on");
@@ -660,10 +654,12 @@ describe("the account", () => {
     expect((await call(person.cookie, "GET", inSpace())).status).toBe(200);
   });
 
-  test("deleting the account removes its secret and recovery codes", async () => {
+  test("deleting the account removes its secret, recovery codes and removal request", async () => {
     const person = await ownerWithTwoFactor();
-    // Another owner stays, so the workspace passes to them.
+    // Another owner stays, so the workspace passes to them, and can stop the removal request.
     await newOwner();
+    const waiting = await signIn(app, auth, person.email);
+    expect((await call(waiting, "POST", "/v1/operator/two-factor/removal")).status).toBe(200);
     // With no mail server, the typed email confirms the delete at once.
     const deleted = await asOperator(
       otherApp(),
@@ -680,5 +676,10 @@ describe("the account", () => {
       .from(operatorTwoFactor)
       .where(eq(operatorTwoFactor.operatorId, person.id));
     expect(rows).toEqual([]);
+    const requests = await owner
+      .select()
+      .from(twoFactorRemoval)
+      .where(eq(twoFactorRemoval.operatorId, person.id));
+    expect(requests).toEqual([]);
   });
 });

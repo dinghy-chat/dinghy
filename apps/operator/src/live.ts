@@ -164,8 +164,13 @@ export function useChanges(
                 }));
               }
               if (kind === "team.changed") setTeamVersion((current) => current + 1);
-              // Both change `me`: the billing state, a suspension, or the workspace's name or logo.
-              if (kind === "billing.changed" || kind === "workspace.changed") {
+              // Each changes `me`: the billing state, a suspension, the workspace's name or logo,
+              // or a role or a request to remove two-step sign-in, which a banner shows.
+              if (
+                kind === "billing.changed" ||
+                kind === "workspace.changed" ||
+                kind === "team.changed"
+              ) {
                 setAccountVersion((current) => current + 1);
               }
             },

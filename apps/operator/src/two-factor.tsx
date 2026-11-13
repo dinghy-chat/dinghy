@@ -1,16 +1,26 @@
 /** @jsxImportSource react */
 import { type FormEvent, useState } from "react";
 import { encode } from "uqr";
-import { TWO_FACTOR_CODE_MAX } from "../../../packages/widget/src/shared.ts";
 import {
+  TWO_FACTOR_CODE_MAX,
+  TWO_FACTOR_REMOVAL_BLOCK_DAYS,
+  TWO_FACTOR_REMOVAL_FRESH_MINUTES,
+  TWO_FACTOR_REMOVAL_WAIT_HOURS,
+} from "../../../packages/widget/src/shared.ts";
+import {
+  ApiError,
+  askRemoval,
   checkTwoFactor,
   disableTwoFactor,
   enableTwoFactor,
   type Me,
   newRecoveryCodes,
   signOut,
+  skipTwoFactorPrompt,
   startTwoFactor,
 } from "./api.ts";
+import { dayTime } from "./format.ts";
+import { useAction } from "./load.ts";
 import { AuthPage } from "./scene.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { CopyButton, CopyField, ErrorNote, Field, failureText } from "./ui.tsx";
@@ -295,17 +305,96 @@ export function TwoFactorRow({ me, onChanged }: { me: Me; onChanged(): void }) {
   );
 }
 
+/** Where a request that nobody else can confirm goes: Dinghy Cloud, or the server's admin. */
+function ManualReview({ contact }: { contact: string | null }) {
+  if (contact === null) return <p className="note">{t("removalManualSelfHosted")}</p>;
+  const [before, after] = t("removalManualCloud").split("{contact}");
+  return (
+    <p className="note">
+      {before}
+      <a href={`mailto:${contact}`}>{contact}</a>
+      {after}
+    </p>
+  );
+}
+
+/** The refusals that only this screen shows, by the server's error code. */
+const REMOVAL_REFUSALS: Record<string, string> = {
+  removal_blocked: t("removalBlocked", { days: TWO_FACTOR_REMOVAL_BLOCK_DAYS }),
+  sign_in_again: t("removalSignInAgain", { minutes: TWO_FACTOR_REMOVAL_FRESH_MINUTES }),
+};
+
+type RemovalFailure = { kind: "manual_review" } | { kind: "refused"; text: string };
+
+/**
+ * For someone who lost their app and their codes: a request that removes two-step sign-in after
+ * the wait, or the way to a manual review. Once one waits, the date it ends.
+ */
+function RemovalRequest({ me, onChanged }: { me: Me; onChanged(): void }) {
+  const [isOpen, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<RemovalFailure | null>(null);
+  const ask = async () => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      await askRemoval();
+      onChanged();
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : null;
+      if (code === "manual_review") return setFailure({ kind: "manual_review" });
+      const known = code === null ? undefined : REMOVAL_REFUSALS[code];
+      setFailure({ kind: "refused", text: known ?? t(failureText(error, {})) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (me.removalCompletesAt !== null) {
+    return (
+      <p className="note" role="status">
+        {t("removalWaiting", { date: dayTime(me.removalCompletesAt) })}
+      </p>
+    );
+  }
+  if (failure?.kind === "manual_review") return <ManualReview contact={me.contact} />;
+  if (!isOpen) {
+    return (
+      <button type="button" className="btn link" onClick={() => setOpen(true)}>
+        {t("removalLost")}
+      </button>
+    );
+  }
+  const hours = TWO_FACTOR_REMOVAL_WAIT_HOURS;
+  return (
+    <div className="stack">
+      <strong>{t("removalAskTitle")}</strong>
+      <p className="note">{t("removalAskHelp", { hours })}</p>
+      {failure !== null && (
+        <p className="bad" role="alert">
+          {failure.text}
+        </p>
+      )}
+      <button type="button" className="btn outline" disabled={busy} onClick={() => void ask()}>
+        {t("removalAskButton", { hours })}
+      </button>
+    </div>
+  );
+}
+
 /** After the email link, for an operator with two-step sign-in on: nothing else opens before it. */
 export function TwoFactorCheck({
-  onPassed,
+  me,
+  onChanged,
   onSignedOut,
 }: {
-  onPassed(): void;
+  me: Me;
+  /** The check passed, or a removal request started: `me` loads again. */
+  onChanged(): void;
   onSignedOut(): void;
 }) {
   const { code, setCode, error, busy, send, isLocked } = useCode(async (typed) => {
     await checkTwoFactor(typed);
-    onPassed();
+    onChanged();
   });
   if (isLocked) {
     return (
@@ -339,6 +428,28 @@ export function TwoFactorCheck({
         onClick={() => void signOut().finally(onSignedOut)}
       >
         {t("signOut")}
+      </button>
+      <RemovalRequest me={me} onChanged={onChanged} />
+    </AuthPage>
+  );
+}
+
+/** The first page after a removal request or a reset removed it: turn it on again, or skip. */
+export function TwoFactorAgain({ me, onDone }: { me: Me; onDone(): void }) {
+  const skip = useAction(onDone);
+  return (
+    <AuthPage time="noon">
+      <h1>{t("twoFactorAgainTitle")}</h1>
+      <p className="note">{t("twoFactorAgainHelp")}</p>
+      <TwoFactorRow me={me} onChanged={onDone} />
+      <ErrorNote text={skip.failure} />
+      <button
+        type="button"
+        className="btn link"
+        disabled={skip.busy}
+        onClick={() => void skip.run(skipTwoFactorPrompt)}
+      >
+        {t("twoFactorAgainSkip")}
       </button>
     </AuthPage>
   );

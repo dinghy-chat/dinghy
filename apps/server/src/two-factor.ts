@@ -18,7 +18,7 @@ import { SESSION } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { audit } from "./audit.ts";
 import { operator, operatorTwoFactor, session } from "./db/schema.ts";
-import { type Database, operatorWorkspaces, type Transaction } from "./db/tenant.ts";
+import { type Database, lockAccount, operatorWorkspaces, type Transaction } from "./db/tenant.ts";
 import {
   errorAnswer,
   failure,
@@ -26,7 +26,6 @@ import {
   jsonBody,
   OPERATOR_WRITE_ERRORS,
   okContent,
-  safeErrorFields,
 } from "./errors.ts";
 import { lockoutMail, recoveryUsedMail, twoFactorOffMail, twoFactorOnMail } from "./letter.ts";
 import { type Live, OPERATORS } from "./live.ts";
@@ -36,7 +35,8 @@ import {
   TWO_FACTOR_WINDOW_SECONDS,
   tooManyAttempts,
 } from "./login-limit.ts";
-import type { Mailer } from "./mailer.ts";
+import { type Mail, type Mailer, sendQuietly } from "./mailer.ts";
+import { afterRemovalCancel, cancelRemoval } from "./two-factor-removal.ts";
 
 /** RFC 6238's defaults, which every authenticator app reads. */
 const PERIOD_SECONDS = 30;
@@ -49,8 +49,10 @@ const ISSUER = "Dinghy";
 const TOTP_CODE = new RegExp(`^\\d{${DIGITS}}$`);
 
 const RECOVERY_CODE_COUNT = 10;
-/** Each character is one of 32, so a code holds 50 random bits. */
-const RECOVERY_CODE_LENGTH = 10;
+/** Each character is one of 32, so a code holds 80 random bits, above the 64 that NIST asks for. */
+const RECOVERY_CODE_LENGTH = 16;
+/** Letters per group between dashes, so a code is easy to read and type. */
+const RECOVERY_GROUP_LENGTH = 4;
 const RECOVERY_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
 
 const NONCE_BYTES = 12;
@@ -83,15 +85,12 @@ export const twoFactorState = (sessionId: string) => sql<TwoFactorState | null>`
   join ${operator} o on o.id = s.user_id
   where s.id = ${sessionId})`;
 
-/**
- * Locks the account's row, first, as an account's delete and a setup's start do, so the
- * transactions that change two-step sign-in and the delete take turns without a deadlock.
- */
-const lockAccount = (tx: Transaction, operatorId: string) =>
-  tx.select({ id: operator.id }).from(operator).where(eq(operator.id, operatorId)).for("update");
-
+// Turning it on answers the prompt that a removal request or a reset left.
 const setTwoFactorOn = (tx: Transaction, operatorId: string, twoFactorOn: boolean) =>
-  tx.update(operator).set({ twoFactorOn }).where(eq(operator.id, operatorId));
+  tx
+    .update(operator)
+    .set(twoFactorOn ? { twoFactorOn, asksTwoFactorAgain: false } : { twoFactorOn })
+    .where(eq(operator.id, operatorId));
 
 /** Two keys from AUTH_SECRET, each with its own purpose, so neither can stand in for the other. */
 function deriveKeys(authSecret: string) {
@@ -146,8 +145,11 @@ function newRecoveryCode(): string {
   const letters = [...randomBytes(RECOVERY_CODE_LENGTH)].map(
     (byte) => RECOVERY_ALPHABET[byte % RECOVERY_ALPHABET.length],
   );
-  const half = RECOVERY_CODE_LENGTH / 2;
-  return `${letters.slice(0, half).join("")}-${letters.slice(half).join("")}`;
+  const groups = [];
+  for (let start = 0; start < RECOVERY_CODE_LENGTH; start += RECOVERY_GROUP_LENGTH) {
+    groups.push(letters.slice(start, start + RECOVERY_GROUP_LENGTH).join(""));
+  }
+  return groups.join("-");
 }
 
 /** Keyed, so a copy of the database alone cannot test guesses. Case and dashes do not matter. */
@@ -274,27 +276,6 @@ async function turnOff(tx: Transaction, operatorId: string) {
   await tx.delete(operatorTwoFactor).where(eq(operatorTwoFactor.operatorId, operatorId));
   await setTwoFactorOn(tx, operatorId, false);
   await tx.delete(session).where(and(eq(session.userId, operatorId), isNull(session.twoFactorAt)));
-}
-
-/**
- * For the server's admin, when an operator lost their app and their recovery codes. Every session
- * of the account ends, so a session that waited at the second step does not pass without it.
- * Returns false, changing nothing, when it was off.
- */
-export async function resetTwoFactor(db: Database, operatorId: string): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    await lockAccount(tx, operatorId);
-    const removed = await tx
-      .delete(operatorTwoFactor)
-      .where(
-        and(eq(operatorTwoFactor.operatorId, operatorId), isNotNull(operatorTwoFactor.enabledAt)),
-      )
-      .returning({ operatorId: operatorTwoFactor.operatorId });
-    if (removed.length === 0) return false;
-    await setTwoFactorOn(tx, operatorId, false);
-    await tx.delete(session).where(eq(session.userId, operatorId));
-    return true;
-  });
 }
 
 const CodeBody = z.strictObject({
@@ -445,13 +426,11 @@ export function registerTwoFactorRoutes(
 ) {
   const keys = deriveKeys(authSecret);
   const limit = createTwoFactorLimit(valkey, logger);
+  const notices = { db, signals: live, logger, mailer };
 
   /** Emails the account, after the answer: a mail server that fails changes nothing here. */
-  const tell = (c: Context<AppEnv>, mail: { subject: string; body: string }) => {
-    mailer?.send(c.get("operatorEmail"), mail.subject, mail.body).catch((err: unknown) => {
-      logger.error(safeErrorFields(err), "could not send a two-step sign-in email");
-    });
-  };
+  const tell = (c: Context<AppEnv>, mail: Mail) =>
+    sendQuietly(mailer, logger, c.get("operatorEmail"), mail);
 
   /**
    * Uses a code under the limit, with `effect` in the same transaction. The wrong code that reaches
@@ -472,10 +451,13 @@ export function registerTwoFactorRoutes(
       await endSession();
       return "locked";
     }
-    const used = await db.transaction(async (tx) => {
+    const { used, cancelled } = await db.transaction(async (tx) => {
       const spent = await spendCode(tx, keys, operatorId, code);
-      if (spent === "totp" || spent === "recovery") await effect(tx);
-      return spent;
+      if (spent !== "totp" && spent !== "recovery") return { used: spent, cancelled: false };
+      await effect(tx);
+      // A correct code while a removal request waits: the owner found their app or their codes.
+      // After the effect, so a check's own session has passed and stays.
+      return { used: spent, cancelled: await cancelRemoval(tx, operatorId) };
     });
     if (used === "unreadable") {
       logger.error({ operatorId }, "a two-step sign-in secret does not open: AUTH_SECRET changed");
@@ -483,6 +465,9 @@ export function registerTwoFactorRoutes(
     }
     if (used !== "wrong") {
       await limit.clear(operatorId);
+      if (cancelled) {
+        afterRemovalCancel(notices, { id: operatorId, email: c.get("operatorEmail") }, "code", ip);
+      }
       if (used === "recovery") {
         audit(logger, "two_factor.recovery_used", { operatorId, ip });
         tell(c, recoveryUsedMail());

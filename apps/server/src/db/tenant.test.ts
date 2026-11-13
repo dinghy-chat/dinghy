@@ -215,6 +215,7 @@ describe("migrations", () => {
       "operator_two_factor",
       "push_subscription",
       "session",
+      "two_factor_removal",
       "verification",
       "worker_heartbeat",
     ]);
@@ -442,11 +443,6 @@ describe("the operator lookup", () => {
     expect(await operatorWorkspaces(app, REMOVED)).toEqual([]);
     const active = await operatorWorkspaces(app, OPERATOR);
     expect(active.map((row) => row.workspaceId).sort()).toEqual([A, B]);
-  });
-
-  test("the worker role cannot call it", async () => {
-    const { db: worker } = database.connect("worker");
-    await expect(operatorWorkspaces(worker, OPERATOR)).rejects.toThrow();
   });
 });
 

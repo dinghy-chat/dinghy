@@ -9,6 +9,7 @@ const member = (id: string, name: string): Member => ({
   role: "member",
   pictureUrl: null,
   twoFactor: "off",
+  canResetTwoFactor: false,
 });
 
 const anna = member("anna", "Anna");

@@ -855,7 +855,7 @@ const en = {
   twoFactorConfirm: "Turn on",
   twoFactorRecoveryTitle: "Save your recovery codes",
   twoFactorRecoveryHelp:
-    "If you lose your phone, each code signs you in once in place of a 6-digit code. This is the only time they show.",
+    "If you lose your authenticator app, each code signs you in once in place of a 6-digit code. This is the only time they show.",
   twoFactorRecoveryCopy: "Copy the codes",
   twoFactorRecoveryDownload: "Download",
   twoFactorRecoverySaved: "I saved them",
@@ -873,13 +873,46 @@ const en = {
     "This server cannot read your two-step sign-in, because its settings changed. Ask its admin to reset it.",
   twoFactorCheckTitle: "Enter your code",
   twoFactorCheckHelp:
-    "Open your authenticator app and enter the 6-digit code for Dinghy. Lost your phone? Enter a recovery code.",
+    "Open your authenticator app and enter the 6-digit code for Dinghy. Lost your authenticator app? Enter a recovery code.",
   twoFactorCheckButton: "Continue",
   twoFactorSignInAgain: "Back to sign-in",
+  twoFactorAgainTitle: "Turn on two-step sign-in again?",
+  twoFactorAgainHelp:
+    "Two-step sign-in was removed from your account. Turn it on again, so that your email alone can't sign you in.",
+  twoFactorAgainSkip: "Not now",
+  removalLost: "Lost your authenticator app and your recovery codes?",
+  removalAskTitle: "Remove two-step sign-in",
+  removalAskHelp:
+    "After {hours} hours, Dinghy removes two-step sign-in, and you sign in with the email link alone. We tell you by email and on your signed-in devices, and we email the owners and admins of your workspaces. Any of them can stop the request.",
+  removalAskButton: "Start the {hours}-hour wait",
+  removalWaiting:
+    "Two-step sign-in will be removed on {date}. We emailed you the details. Found your app or a recovery code? Enter it above to stop the request.",
+  removalManualCloud:
+    "Your workspaces have no other owner or admin, and you have no other signed-in device, to confirm this. Write to {contact} with your last invoice number and the last 4 digits of the card that pays for Dinghy.",
+  removalManualSelfHosted:
+    "This server can't confirm the request on its own. Ask the person who runs it to turn off two-step sign-in for you.",
+  removalBlocked: "A request was cancelled in the last {days} days, so a new one cannot start yet.",
+  removalSignInAgain:
+    "A request starts only within {minutes} minutes of an email link. Sign out, then sign in again.",
+  removalBanner:
+    "Someone asked to remove two-step sign-in from your account. It happens on {date} unless you cancel the request.",
+  removalCancel: "Cancel the request",
+  removalCancelledTitle: "The request is cancelled",
+  removalCancelledHelp:
+    "Two-step sign-in stays on. If you didn't ask for it, someone can most likely read your email: change its password and turn on its own two-step sign-in.",
   teamTwoFactor: "Two-step sign-in",
   teamTwoFactorOn: "On",
   teamTwoFactorOff: "Off",
   teamTwoFactorOnPhone: "Two-step sign-in on",
+  teamTwoFactorRemoval: "Removal requested",
+  teamTwoFactorRemovalPhone: "Two-step sign-in removal requested",
+  teamResetTwoFactor: "Reset two-step sign-in for {name}",
+  teamResetTwoFactorBlocked:
+    "You can reset two-step sign-in only for a teammate in a role below yours who is in no other workspace.",
+  teamResetTwoFactorTitle: "Reset two-step sign-in for {name}?",
+  teamResetTwoFactorText:
+    "First check with {name} by voice or in person that they asked. Someone who reads their email could pretend to be them. They then sign in with the email link alone, and they and the other owners get an email.",
+  teamResetTwoFactorYes: "Reset",
   deleteAccountTitle: "Delete my account",
   deleteAccountHelp:
     'Your name and email are erased, and your old replies show as from "Former team member". A workspace you alone own passes to a teammate, or is deleted if nobody else is in it.',
@@ -902,6 +935,10 @@ const en = {
   emailMismatch: "That email does not match your account. Enter the email you use to sign in.",
   linkDeleteAccountTitle: "Delete your account",
   linkDeleteAccountHelp: "This deletes your Dinghy account for good. It can't be undone.",
+  linkCancelRemovalTitle: "Cancel the request",
+  linkCancelRemovalHelp:
+    "Someone asked to remove two-step sign-in from your Dinghy account. If it wasn't you, cancel the request, then secure your email account.",
+  linkCancelRemovalInvalid: "This request already ended, or someone cancelled it.",
   usageFullFiles:
     "File storage is full. An owner or admin can delete conversations with images or files to make space.",
   settingsGroupYou: "You",

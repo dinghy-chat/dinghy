@@ -35,6 +35,7 @@ import {
   pageView,
   pushSubscription,
   savedReply,
+  twoFactorRemoval,
   verification,
   visitor,
   webhook,
@@ -236,6 +237,19 @@ const widgetSettingsOf = async (workspaceId: string) =>
 
 const pictureOf = async (operatorId: string) =>
   (await owner.select().from(operatorPicture).where(eq(operatorPicture.operatorId, operatorId)))[0];
+
+/** The account's waiting removal request, made first if it has none. */
+async function waitingRemovalOf(operatorId: string) {
+  await owner
+    .insert(twoFactorRemoval)
+    .values({
+      operatorId,
+      completesAt: new Date(Date.now() + 60_000),
+      cancelTokenHash: `hash of ${operatorId}`,
+    })
+    .onConflictDoNothing();
+  return owner.select().from(twoFactorRemoval).where(eq(twoFactorRemoval.operatorId, operatorId));
+}
 
 /**
  * Bea's two-step setup, started but never confirmed, so her session keeps working for the other
@@ -989,6 +1003,50 @@ const ATTACKS: Record<string, Attack> = {
     const before = await pendingSetupOf(bea.id);
     const answer = await as(anna, "POST", "/v1/operator/two-factor/disable", { code: "000000" });
     expect(answer.status).toBe(409);
+    expect(await pendingSetupOf(bea.id)).toEqual(before);
+  },
+  "POST /v1/operator/two-factor/removal": async ({ operator: as, anna, bea }) => {
+    const before = await waitingRemovalOf(bea.id);
+    // It acts only on the caller's own account, where it is off.
+    const answer = await as(anna, "POST", "/v1/operator/two-factor/removal");
+    expect(answer.status).toBe(409);
+    expect(await waitingRemovalOf(bea.id)).toEqual(before);
+  },
+  "POST /v1/operator/two-factor/removal/cancel": async ({ operator: as, anna, bea }) => {
+    const before = await waitingRemovalOf(bea.id);
+    const answer = await as(anna, "POST", "/v1/operator/two-factor/removal/cancel");
+    expect(answer.status).toBe(409);
+    expect(await waitingRemovalOf(bea.id)).toEqual(before);
+  },
+  "POST /v1/account/two-factor-removal/cancel": async ({ server, bea }) => {
+    const before = await waitingRemovalOf(bea.id);
+    // The stored hash is not a token: only the emailed token cancels.
+    const response = await server.request("/v1/account/two-factor-removal/cancel", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ token: before[0]?.cancelTokenHash }),
+    });
+    expect(response.status).toBe(400);
+    expect(await waitingRemovalOf(bea.id)).toEqual(before);
+  },
+  "POST /v1/operator/two-factor/skip-prompt": async ({ operator: as, anna, bea }) => {
+    await owner.update(operator).set({ asksTwoFactorAgain: true }).where(eq(operator.id, bea.id));
+    expect((await as(anna, "POST", "/v1/operator/two-factor/skip-prompt")).status).toBe(200);
+    const [row] = await owner.select().from(operator).where(eq(operator.id, bea.id));
+    expect(row?.asksTwoFactorAgain).toBe(true);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/members/:operatorId/two-factor-reset": async ({
+    operator: as,
+    anna,
+    bea,
+    a,
+    b,
+  }) => {
+    const before = await pendingSetupOf(bea.id);
+    for (const workspaceId of [a.id, b.id]) {
+      const path = inWorkspace(workspaceId, `/members/${bea.id}/two-factor-reset`);
+      expect((await as(anna, "POST", path)).status).toBe(404);
+    }
     expect(await pendingSetupOf(bea.id)).toEqual(before);
   },
   "DELETE /v1/operator/me/picture": async ({ operator: as, anna, bea }) => {

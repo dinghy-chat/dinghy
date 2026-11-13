@@ -122,6 +122,46 @@ const ROLES = ["owner", "admin", "member"] as const;
 /** Who is about to leave or be removed, for the dialog that asks first. */
 type Leaving = { member: Member; self: boolean };
 
+const TWO_FACTOR_TEXT: Record<Member["twoFactor"], TextId> = {
+  off: "teamTwoFactorOff",
+  on: "teamTwoFactorOn",
+  removal_requested: "teamTwoFactorRemoval",
+};
+/** The same, on a phone, where the cell's column is gone. Off shows nothing there. */
+const TWO_FACTOR_PHONE_TEXT: Record<Member["twoFactor"], TextId | null> = {
+  off: null,
+  on: "teamTwoFactorOnPhone",
+  removal_requested: "teamTwoFactorRemovalPhone",
+};
+
+/**
+ * Resets a teammate's two-step sign-in. Every teammate it does not apply to shows the same tip, so
+ * the button tells nothing about the teammate's other workspaces.
+ */
+function ResetTwoFactorButton({ member, onReset }: { member: Member; onReset(): void }) {
+  const label = t("teamResetTwoFactor", { name: member.name });
+  const blocked = !member.canResetTwoFactor;
+  return (
+    <Tip text={blocked ? t("teamResetTwoFactorBlocked") : label}>
+      {(tipId) => (
+        // Blocked, it stays focusable, so a keyboard reaches its tip too.
+        <button
+          type="button"
+          className="icon-button quiet-danger"
+          aria-label={label}
+          aria-describedby={blocked ? tipId : undefined}
+          aria-disabled={blocked}
+          onClick={() => {
+            if (!blocked) onReset();
+          }}
+        >
+          <Icon name="lock" size={18} />
+        </button>
+      )}
+    </Tip>
+  );
+}
+
 function MemberRow({
   member,
   me,
@@ -129,6 +169,7 @@ function MemberRow({
   lastOwner,
   onRole,
   onRemove,
+  onResetTwoFactor,
 }: {
   member: Member;
   me: Me;
@@ -137,8 +178,10 @@ function MemberRow({
   lastOwner: boolean;
   onRole(role: Role): void;
   onRemove(self: boolean): void;
+  onResetTwoFactor(): void;
 }) {
   const self = member.id === me.id;
+  const phoneTwoFactor = TWO_FACTOR_PHONE_TEXT[member.twoFactor];
   const canRemove = self || role === "owner" || (role === "admin" && member.role === "member");
   const removeText = self ? t("leaveWorkspace") : t("removeMember", { name: member.name });
   return (
@@ -152,9 +195,7 @@ function MemberRow({
               {self && <span className="you">{t("you")}</span>}
             </strong>
             <span className="phone-only">{member.email}</span>
-            {member.twoFactor === "on" && (
-              <span className="phone-only">{t("teamTwoFactorOnPhone")}</span>
-            )}
+            {phoneTwoFactor !== null && <span className="phone-only">{t(phoneTwoFactor)}</span>}
           </span>
         </div>
       </td>
@@ -173,10 +214,11 @@ function MemberRow({
           <span className="chip">{t(ROLE_TEXT[member.role])}</span>
         )}
       </td>
-      <td className="two-factor-cell">
-        {t(member.twoFactor === "on" ? "teamTwoFactorOn" : "teamTwoFactorOff")}
-      </td>
+      <td className="two-factor-cell">{t(TWO_FACTOR_TEXT[member.twoFactor])}</td>
       <td className="end-cell">
+        {role !== "member" && !self && member.twoFactor !== "off" && (
+          <ResetTwoFactorButton member={member} onReset={onResetTwoFactor} />
+        )}
         {canRemove && (
           <Tip text={self && lastOwner ? t("leaveBlockedTip") : removeText}>
             {(tipId) => (
@@ -456,6 +498,7 @@ export function TeamPage({
   const [inviting, setInviting] = useState(false);
   const [leaving, setLeaving] = useState<Leaving | null>(null);
   const [revoking, setRevoking] = useState<PendingInvite | null>(null);
+  const [resetting, setResetting] = useState<Member | null>(null);
   const owners = team.members.filter((member) => member.role === "owner").length;
   const lastOwner =
     owners === 1 && team.members.some((one) => one.id === me.id && one.role === "owner");
@@ -512,6 +555,7 @@ export function TeamPage({
               lastOwner={member.role === "owner" && owners === 1}
               onRole={(next) => void team.act(api.setRole(member.id, next))}
               onRemove={(self) => setLeaving({ member, self })}
+              onResetTwoFactor={() => setResetting(member)}
             />
           ))}
           {manages &&
@@ -538,6 +582,18 @@ export function TeamPage({
             void team.act(api.revokeInvite(revoking.id));
           }}
           onCancel={() => setRevoking(null)}
+        />
+      )}
+      {resetting !== null && (
+        <Confirm
+          title={t("teamResetTwoFactorTitle", { name: resetting.name })}
+          text={t("teamResetTwoFactorText", { name: resetting.name })}
+          confirm={t("teamResetTwoFactorYes")}
+          onConfirm={() => {
+            setResetting(null);
+            void team.act(api.resetTwoFactor(resetting.id));
+          }}
+          onCancel={() => setResetting(null)}
         />
       )}
       {leaving !== null && (

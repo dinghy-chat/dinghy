@@ -16,8 +16,11 @@ export const EMAIL_COLORS = {
   onDark: "#ffffff",
 };
 
-/** Who turned off two-step sign-in: the operator in the app, or the server's admin. */
-type TwoFactorOffBy = "operator" | "admin";
+/**
+ * Who turned off two-step sign-in: the operator in the app, the server's admin, a removal request
+ * at the end of its wait, or a teammate who manages the workspace, by name.
+ */
+type TwoFactorOffBy = "operator" | "admin" | "removal" | { teammate: string };
 
 // Every email is plain text in one voice: a greeting, a few short paragraphs and the same sign-off.
 // Every string has a key here or next to its sender, so a locale can be added later.
@@ -66,11 +69,68 @@ const text = {
   ],
   twoFactorOffSubject: "Two-step sign-in is off for your Dinghy account",
   twoFactorOffBody: (by: TwoFactorOffBy) => [
-    by === "operator"
-      ? "Two-step sign-in was turned off for your Dinghy account. A sign-in now needs only the email link."
-      : "The admin of your Dinghy server turned off two-step sign-in for your account and signed out its sessions. A sign-in now needs only the email link.",
+    `${text.twoFactorOffBy(by)} A sign-in now needs only the email link.`,
     "You can turn it on again in Profile.",
     text.twoFactorNotYou,
+  ],
+  twoFactorOffBy: (by: TwoFactorOffBy) => {
+    if (typeof by === "object") {
+      return `${shownName(by.teammate)}, who manages your workspace, turned off two-step sign-in for your Dinghy account and signed out its sessions.`;
+    }
+    return {
+      operator: "Two-step sign-in was turned off for your Dinghy account.",
+      admin:
+        "The admin of your Dinghy server turned off two-step sign-in for your account and signed out its sessions.",
+      removal:
+        "Two-step sign-in was removed from your Dinghy account, as someone asked, and every session signed out.",
+    }[by];
+  },
+  removalCancelLink: (url: string) => [
+    "Wasn't you? Cancel it with this link, then secure your email account, because someone can read it:",
+    url,
+  ],
+  removalFoundApp:
+    "Was it you? Then there is nothing to do. Found your authenticator app or a recovery code? Sign in and enter a code, and the request ends.",
+  removalRequestedSubject: "Someone asked to remove two-step sign-in from your Dinghy account",
+  removalRequestedBody: (url: string, waitHours: number) => [
+    `You, or someone who can read your email, asked to remove two-step sign-in from your Dinghy account, because the authenticator app and the recovery codes are lost. Unless the request is cancelled, it is removed in ${waitHours} hours, and every session signs out.`,
+    text.removalFoundApp,
+    ...text.removalCancelLink(url),
+  ],
+  removalReminderSubject: (hours: number) =>
+    `Two-step sign-in will be removed from your Dinghy account in ${hours} hours`,
+  removalReminderBody: (url: string, hours: number) => [
+    `In ${hours} hours, two-step sign-in is removed from your Dinghy account, as someone asked, and every session signs out.`,
+    text.removalFoundApp,
+    ...text.removalCancelLink(url),
+  ],
+  removalUnconfirmedSubject:
+    "The request to remove two-step sign-in from your Dinghy account stopped",
+  removalUnconfirmedBody: [
+    "The request to remove two-step sign-in from your Dinghy account stopped before its wait began, because nobody but you could be warned: your workspaces have no other owner or admin, and none of your devices has passed two-step sign-in. Nothing changed.",
+    'Sign in with your authenticator app or a recovery code if you find one. If not, open Dinghy and choose "Lost your authenticator app" again: it says who can remove it for you.',
+  ],
+  removalCancelledSubject:
+    "The request to remove two-step sign-in from your Dinghy account was cancelled",
+  removalCancelledBody: (blockDays: number) => [
+    `The request to remove two-step sign-in from your Dinghy account was cancelled, and any sign-in that stopped at the code screen was signed out. No new request can start for ${blockDays} days.`,
+    "If you asked for it and then found your authenticator app, there is nothing more to do.",
+    "If you did not ask for it, someone can most likely read your email. Change your email password, check its forwarding rules and turn on its own two-step sign-in.",
+  ],
+  teamRemovalSubject: (name: string) => `${name} asked to remove two-step sign-in on Dinghy`,
+  teamRemovalBody: (name: string, email: string, waitHours: number) => [
+    `${name} (${email}) asked to remove two-step sign-in from their Dinghy account, because they lost their authenticator app and their recovery codes. Unless they cancel the request, it is removed in ${waitHours} hours.`,
+    `Check with ${name} by voice or in person. If they did not ask for it, someone may be reading their email: ask them to cancel the request, with the link in their email or the banner in Dinghy, and to secure their email account.`,
+  ],
+  teamRemovalDoneSubject: (name: string) => `Two-step sign-in was removed for ${name} on Dinghy`,
+  teamRemovalDoneBody: (name: string, email: string) => [
+    `Two-step sign-in was removed from the Dinghy account of ${name} (${email}), as they asked at the end of the wait, and their sessions signed out.`,
+    `If ${name} did not ask for it, someone may be reading their email. Remove them in Settings > Team until they secure it.`,
+  ],
+  teamResetSubject: (name: string) => `Two-step sign-in was reset for ${name} on Dinghy`,
+  teamResetBody: (actor: string, name: string, email: string) => [
+    `${actor} turned off two-step sign-in for ${name} (${email}) and signed out their sessions. ${name} now signs in with the email link only.`,
+    `If you did not expect this, check with ${actor} and ${name}.`,
   ],
   recoveryUsedSubject: "A recovery code was used on your Dinghy account",
   recoveryUsedBody: () => [
@@ -241,6 +301,60 @@ export const lockoutMail = (failures: number, minutes: number) => ({
   subject: text.lockoutSubject,
   body: letter(text.lockoutBody(failures, minutes)),
 });
+
+/** A person's name in another person's email: one line, and short enough for a subject. */
+const shownName = (name: string) => (oneLine(name) ?? "").slice(0, WORKSPACE_NAME_MAX);
+
+/** Someone asked to remove two-step sign-in. `url` opens the page that cancels the request. */
+export const removalRequestedMail = (url: string, waitHours: number) => ({
+  subject: text.removalRequestedSubject,
+  body: letter(text.removalRequestedBody(url, waitHours)),
+});
+
+/** A removal request ends in `hours`. `url` opens the page that cancels it. */
+export const removalReminderMail = (url: string, hours: number) => ({
+  subject: text.removalReminderSubject(hours),
+  body: letter(text.removalReminderBody(url, hours)),
+});
+
+/** A removal request stopped before its wait, because only the account's own mailbox could be warned. */
+export const removalUnconfirmedMail = () => ({
+  subject: text.removalUnconfirmedSubject,
+  body: letter(text.removalUnconfirmedBody),
+});
+
+/** A removal request was cancelled, which most often means someone else asked for it. */
+export const removalCancelledMail = (blockDays: number) => ({
+  subject: text.removalCancelledSubject,
+  body: letter(text.removalCancelledBody(blockDays)),
+});
+
+/** To the owners and admins of an account's workspaces, which a removal request warns. No link. */
+export function teamRemovalMail(account: { name: string; email: string }, waitHours: number) {
+  const name = shownName(account.name);
+  return {
+    subject: text.teamRemovalSubject(name),
+    body: letter(text.teamRemovalBody(name, account.email, waitHours)),
+  };
+}
+
+/** To the same owners and admins, once the request removed two-step sign-in. */
+export function teamRemovalDoneMail(account: { name: string; email: string }) {
+  const name = shownName(account.name);
+  return {
+    subject: text.teamRemovalDoneSubject(name),
+    body: letter(text.teamRemovalDoneBody(name, account.email)),
+  };
+}
+
+/** To a workspace's other owners, after a teammate's reset. */
+export function teamResetMail(actorName: string, account: { name: string; email: string }) {
+  const name = shownName(account.name);
+  return {
+    subject: text.teamResetSubject(name),
+    body: letter(text.teamResetBody(shownName(actorName), name, account.email)),
+  };
+}
 
 /** The sentence that says how long a link works, for the emails in ee/. */
 export const LINK_LASTS = text.linkLasts;

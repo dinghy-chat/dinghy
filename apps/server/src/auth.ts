@@ -24,9 +24,16 @@ export { LINK_MINUTES };
 /**
  * What a link is for. It picks the confirm page's button and where the browser goes after it.
  * `add-workspace` is a sign-in that lands on the workspace setup, for cloud signup with an account.
- * `delete-account` deletes the account that asked for it.
+ * `delete-account` deletes the account that asked for it. `cancel-removal` cancels a request to
+ * remove two-step sign-in.
  */
-type LinkPurpose = "sign-in" | "signup" | "add-workspace" | "join" | "delete-account";
+type LinkPurpose =
+  | "sign-in"
+  | "signup"
+  | "add-workspace"
+  | "join"
+  | "delete-account"
+  | "cancel-removal";
 
 /**
  * The link an email carries: a page of the operator app, whose button uses the token. Opening it

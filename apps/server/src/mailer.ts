@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import type { Logger } from "pino";
+import { safeErrorFields } from "./errors.ts";
 
 export interface Mailer {
   /** `html` is an optional second version of the same email, for mail apps that show HTML. */
@@ -9,6 +11,27 @@ export interface Mailer {
     headers?: Record<string, string>,
     html?: string,
   ): Promise<void>;
+}
+
+/** One plain-text email, as the builders in letter.ts make them. */
+export interface Mail {
+  subject: string;
+  body: string;
+}
+
+/**
+ * Sends one email after the answer, and logs a failure: what committed stays, whatever the mail
+ * server does. Without a mailer, it sends nothing.
+ */
+export function sendQuietly(
+  mailer: Mailer | undefined,
+  logger: Logger,
+  to: string,
+  mail: Mail,
+): void {
+  mailer?.send(to, mail.subject, mail.body).catch((err: unknown) => {
+    logger.error(safeErrorFields(err), "could not send an email");
+  });
 }
 
 /** The mail server refused the address itself, such as a mailbox that does not exist. */

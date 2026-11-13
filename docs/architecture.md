@@ -27,7 +27,7 @@ Compose adds two one-shot services from the same image: `init` writes the secret
 
 ## Tenant isolation
 
-A workspace is a tenant. `operator`, its picture, its two-step sign-in and its session tables are global and hold no workspace data. An export leaves the two-step sign-in out, because it belongs to the account. Its TOTP secret is encrypted with AES-256-GCM, with a key derived from `AUTH_SECRET` by HKDF, and its recovery codes are stored as keyed hashes. The operator's `two_factor_on` column says whether it is on, so BetterAuth's one session query also gives the second step's state. Every other table has a `workspace_id`.
+A workspace is a tenant. `operator`, its picture, its two-step sign-in and its session tables are global and hold no workspace data. An export leaves the two-step sign-in out, because it belongs to the account. Its TOTP secret is encrypted with AES-256-GCM, with a key derived from `AUTH_SECRET` by HKDF, and its recovery codes are stored as keyed hashes. The operator's `two_factor_on` column says whether it is on, so BetterAuth's one session query also gives the second step's state. A request to remove two-step sign-in is global as well: `two_factor_removal`, with one waiting request per account. Every other table has a `workspace_id`.
 
 Two layers keep workspaces apart:
 
@@ -64,6 +64,18 @@ Valkey carries only signals: "workspace W has new events". An instance that hold
 
 Dinghy does not use Postgres `LISTEN/NOTIFY`, because `NOTIFY` takes a global lock at commit. It does not use SQLite, because several instances must share one database.
 
+## Removing two-step sign-in without a code
+
+An operator who lost their authenticator app and their recovery codes can ask, on the code screen, to remove two-step sign-in after 72 hours. Whoever reads the mailbox can ask too, because the email link is the first step. The wait alone stops nobody who holds the mailbox, since they get the same emails. What stops them is a warning to someone else, so a request starts only when someone besides the mailbox can cancel it: another owner or admin of one of the account's workspaces, or a session of the account that passed the check and has not expired. A push subscription does not count, because nothing proves that it still reaches a device.
+
+Only a session that an email link made in the last 15 minutes can ask. An old session left at the code screen is not proof that its holder reads the mailbox now. The request reads the session and the account again under the account's row lock, so a teammate's reset or a code that passed meanwhile wins.
+
+The worker sends the first warning: an email with a cancel link to the account, a push to its devices, and an email to the owners and admins. The request is marked warned only after the account's email went out and, when the account has owners or admins to warn, at least one of theirs. A failed send is tried again with the alerts' backoff, and the 72 hours count from the warning. A request never completes before its warning, so with a mail server that never answers it waits. The reminder 24 hours before the end goes the same way.
+
+A cancel, by the link, the banner or a correct code, means that someone else likely reads the mailbox. It signs out every session that never passed the check, and blocks new requests for 7 days. The cancel link's token is an HMAC of the request's ID with a key from `AUTH_SECRET`, and the table holds only its hash. Only the button's POST cancels, because mail scanners open links.
+
+A signed-out solo owner whose mailbox is stolen has nobody to warn, so the wait would only delay the attacker. That case goes to manual review: Dinghy Cloud's support, or `chat two-factor-reset` on a self-hosted server.
+
 ## The worker's jobs
 
 Background work lives in Postgres tables, and the worker claims rows with `FOR UPDATE SKIP LOCKED` and a claim that expires. So several workers can run at once, and a crashed worker's rows come back after the claim ends. One loop, in `apps/server/src/worker.ts`, runs these in order:
@@ -72,8 +84,9 @@ Background work lives in Postgres tables, and the worker claims rows with `FOR U
 2. Fan out webhooks: turn each event that a workspace's webhooks asked for into one delivery per webhook. An event is flagged for this only when its workspace had an enabled webhook when it committed.
 3. Send the claimed deliveries: web push, email and webhooks. Webhooks have their own slots, so a slow receiver never holds an alert back.
 4. Delete stored images and files that are queued for deletion.
-5. Prune old events and finished rows, expired chat links and reply addresses unused for 90 days. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
-6. Purge workspaces that an owner deleted.
+5. Send the warnings of requests to remove two-step sign-in, and complete the requests whose wait ended.
+6. Prune old events and finished rows, expired chat links and reply addresses unused for 90 days. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
+7. Purge workspaces that an owner deleted.
 
 The purge is the Postgres function `purge_deleted_workspaces()`. Older tables have a `DELETE` line in it. A new table that a workspace owns declares its `workspace_id` with `ownedByWorkspace()` in `schema.ts` instead. That references `workspace` with `ON DELETE CASCADE`, so its rows go with the workspace row and a new feature does not rewrite the function.
 
