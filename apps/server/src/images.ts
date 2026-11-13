@@ -459,6 +459,12 @@ export function registerImageFiles(app: App, db: Database, images: Images, logge
       await next();
     });
   }
+  // The apps read a file to save it. The signed URL is the only key, and no cookie goes along. Every
+  // answer has it, a 404 too, so a page on another origin can tell an expired URL from a failure.
+  app.use("/v1/files/*", async (c, next) => {
+    await next();
+    c.res.headers.set("access-control-allow-origin", "*");
+  });
   app.get("/v1/files/:workspaceId/:attachmentId", async (c) => {
     if (filesHost !== undefined && !onFilesHost(c.req.url)) return c.json(NOT_FOUND, 404);
     const { workspaceId, attachmentId } = c.req.param();
@@ -497,8 +503,6 @@ export function registerImageFiles(app: App, db: Database, images: Images, logge
       "x-content-type-options": "nosniff",
       "content-security-policy": "default-src 'none'; sandbox",
       "cross-origin-resource-policy": "cross-origin",
-      // The app reads the file to save it. The signed URL is the only key, and no cookie goes along.
-      "access-control-allow-origin": "*",
       "referrer-policy": "no-referrer",
     };
     // Before opening the file, because Hono drops a HEAD response's body without closing it.

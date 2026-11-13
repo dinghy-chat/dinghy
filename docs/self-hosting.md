@@ -105,7 +105,7 @@ Images and files come from visitors you do not know. Dinghy re-encodes each imag
 2. Have your proxy pass it to the app, like your main domain. The bundled Caddy serves only `CHAT_DOMAIN`, so this needs your own proxy (see below).
 3. Set `IMAGES_ORIGIN=https://files.example.com` in `.env`, and run `docker compose up -d`.
 
-Image and file links then use that origin, with the same short-lived signed URLs. It answers only the image route, and the app's own origin stops serving images and files. Every image goes out with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: inline`, and only as PNG, JPEG or WebP, never as HTML or SVG. Every other file goes out with the same two headers, `Content-Disposition: attachment` and `Content-Type: application/octet-stream`, so a browser saves it and never shows it. A host site with a Content Security Policy must allow the new origin in `img-src` for the widget's images.
+Image and file links then use that origin, with the same short-lived signed URLs. It answers only the image route, and the app's own origin stops serving images and files. Every image goes out with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: inline`, and only as PNG, JPEG or WebP, never as HTML or SVG. Every other file goes out with the same two headers, `Content-Disposition: attachment` and `Content-Type: application/octet-stream`, so a browser saves it and never shows it. A host site with a Content Security Policy must allow the new origin in `img-src` for the widget's images, and in `connect-src`, as the widget fetches a file to save it.
 
 ## Behind your own reverse proxy
 

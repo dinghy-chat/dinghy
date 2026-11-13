@@ -265,6 +265,12 @@ describe.each([
     expect(file.headers.get("content-security-policy")).toContain("sandbox");
     // The app reads the file to save it on the device.
     expect(file.headers.get("access-control-allow-origin")).toBe("*");
+    // An expired URL's 404 too, so a page on another origin can tell it from a failure.
+    const expired = new URL(sent.image.url);
+    expired.searchParams.set("expires", "1");
+    const gone = await fetchFile(expired.toString());
+    expect(gone.status).toBe(404);
+    expect(gone.headers.get("access-control-allow-origin")).toBe("*");
     const metadata = await sharp(Buffer.from(await file.arrayBuffer())).metadata();
     expect(metadata.format).toBe("png");
   });

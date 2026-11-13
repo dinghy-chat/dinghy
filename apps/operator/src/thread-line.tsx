@@ -28,8 +28,8 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
 
 /**
  * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so when the
- * server refuses one, it asks once for new URLs and saves again with the line's new one. The device's
- * clock does not decide, as it can be wrong.
+ * server says one expired, it asks once for new URLs and saves again with the line's new one. The
+ * device's clock does not decide, as it can be wrong.
  */
 function FileLink({
   download,
@@ -38,21 +38,20 @@ function FileLink({
   download: NonNullable<Line["download"]>;
   onExpired(): void;
 }) {
-  // Each click asks for a save, and a save or a second refusal sets it back to 0.
+  // Each click asks for a save. It ends with the save, with any failure but an expired URL, or with
+  // a second expired one.
   const [clicks, setClicks] = useState(0);
-  // The URL the server refused, which waits for the new one that onExpired brings.
-  const refused = useRef<string | null>(null);
+  // The expired URL, which waits for the new one that onExpired brings.
+  const expired = useRef<string | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new URL or a click asks for a save.
   useEffect(() => {
-    if (clicks === 0 || download.url === refused.current) return;
-    saveFile(download.url, download.name).then(
-      () => setClicks(0),
-      () => {
-        if (refused.current !== null) return setClicks(0);
-        refused.current = download.url;
-        onExpired();
-      },
-    );
+    if (clicks === 0 || download.url === expired.current) return;
+    const end = () => setClicks(0);
+    saveFile(download.url, download.name).then((isSaved) => {
+      if (isSaved || expired.current !== null) return end();
+      expired.current = download.url;
+      onExpired();
+    }, end);
   }, [clicks, download.url]);
   return (
     <a
@@ -60,7 +59,7 @@ function FileLink({
       href={download.url}
       onClick={(event) => {
         event.preventDefault();
-        refused.current = null;
+        expired.current = null;
         setClicks((count) => count + 1);
       }}
     >

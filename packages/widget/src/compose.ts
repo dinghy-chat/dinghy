@@ -89,16 +89,19 @@ export const fileSize = (bytes: number) =>
 
 /**
  * Saves a file through a blob URL. A link cannot do it: a browser ignores `download` on a link to
- * another origin and opens the address instead, and an old address is gone.
+ * another origin and opens the address instead, and an old address is gone. False when the URL
+ * expired, as a new one from a fresh load can still save it.
  */
-export async function saveFile(url: string, name: string) {
+export async function saveFile(url: string, name: string): Promise<boolean> {
   const response = await fetch(url);
+  if (response.status === 404) return false;
   if (!response.ok) throw new Error(`The file answered ${response.status}`);
   const link = document.createElement("a");
   link.href = URL.createObjectURL(await response.blob());
   link.download = name;
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href));
+  return true;
 }
 
 /**
