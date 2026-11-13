@@ -1535,6 +1535,8 @@ button.workspace[aria-expanded="true"],
    off. */
 .popup.floating {
   position: fixed;
+  /* The window is its box, so 100% would stretch it across the screen. */
+  min-width: 200px;
   margin: 0;
 }
 /* A submenu beside its menu, lined up with its item by its script. */
@@ -2139,19 +2141,51 @@ img.ws-tile {
 .rows > li {
   position: relative;
 }
+/* A circle the avatar's size, so the box takes its place without a jump. */
 .row-pick {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: var(--navy);
-  cursor: pointer;
   position: absolute;
-  top: 24px;
-  left: 34px;
+  top: 14px;
+  left: 16px;
   z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin: 0;
+  border: 2px solid var(--field-line);
+  border-radius: 50%;
+  background: var(--surface);
+  appearance: none;
+  cursor: pointer;
   opacity: 0;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s;
   /* Hidden, a tap on the picture opens the conversation. */
   pointer-events: none;
+}
+/* The check, drawn as two sides of a turned box. */
+.row-pick::after {
+  content: "";
+  width: 6px;
+  height: 11px;
+  margin-top: -3px;
+  border: solid var(--field-line);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.row-pick:hover {
+  border-color: var(--navy);
+}
+.row-pick:hover::after {
+  border-color: var(--mute);
+}
+.row-pick:checked {
+  border-color: var(--fill);
+  background: var(--fill);
+}
+.row-pick:checked::after {
+  border-color: var(--on-fill);
 }
 .rows.selecting .row-pick,
 .row-pick:focus-visible {
@@ -2369,8 +2403,8 @@ img.ws-tile {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The visitor's email copies itself when clicked. */
-.copy-email {
+/* The visitor's name and email copy themselves when clicked. */
+.copy-text-button {
   display: block;
   max-width: 100%;
   padding: 0;
@@ -2382,13 +2416,19 @@ img.ws-tile {
   text-align: left;
   text-overflow: ellipsis;
   white-space: inherit;
-  cursor: copy;
+  cursor: pointer;
 }
-/* As the name, it never cuts: the heading measures it to shrink it to fit. */
-.panel-email .copy-email {
+/* An email as the name never cuts: the heading measures it to shrink it to fit. */
+.panel-email .copy-text-button {
   overflow: visible;
 }
-.copy-email:hover {
+/* A name keeps the heading's two lines. */
+.panel-name h3:not(.panel-email) > .copy-text-button {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.copy-text-button:hover {
   text-decoration: underline;
   text-decoration-color: var(--soft-edge);
   text-underline-offset: 3px;
@@ -5294,8 +5334,7 @@ button.quote:hover {
 .label-choice:hover {
   background: var(--soft);
 }
-.label-choice input,
-.bulk-all input {
+.label-choice input {
   width: 18px;
   height: 18px;
   margin: 0;
@@ -5314,6 +5353,40 @@ button.quote:hover {
   gap: 4px;
   min-height: 42px;
   margin: 0 16px 12px;
+}
+/* The box that chooses every row: a small circle, like the rows' own. */
+.bulk-all input {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  border: 1.5px solid var(--field-line);
+  border-radius: 50%;
+  background: var(--surface);
+  appearance: none;
+  cursor: pointer;
+}
+.bulk-all input:is(:checked, :indeterminate) {
+  border-color: var(--fill);
+  background: var(--fill);
+}
+.bulk-all input:checked::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border: solid var(--on-fill);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.bulk-all input:indeterminate::after {
+  content: "";
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--on-fill);
 }
 .bulk-all {
   display: flex;
@@ -5893,6 +5966,27 @@ button.quote:hover {
 }
 
 /* Toasts: one short message at the bottom center, over everything, which goes by itself. */
+/* The name of an icon, or a title, under the pointer or the focus. Its script places it. */
+.tooltip {
+  position: fixed;
+  z-index: 1100;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--on-fill);
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1.35;
+  box-shadow: 0 6px 18px rgb(11 34 57 / 0.18);
+  pointer-events: none;
+  animation: tooltip-in 0.12s ease-out;
+}
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+  }
+}
 .toasts {
   position: fixed;
   bottom: 24px;
