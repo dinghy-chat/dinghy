@@ -44,6 +44,10 @@ const en = {
   transcriptFile: (name: string | null) =>
     `Sent ${name === null ? "a file" : `the file ${name}`}. Open the chat to download it.`,
   continueChat: "Continue the chat",
+  // The first line of an email that takes replies. A reply is cut where its quote of this line starts.
+  replyAbove: "Write your reply above this line",
+  attachmentsLeftOut: (count: number, max: number) =>
+    `${count === 1 ? "1 attachment was" : `${count} attachments were`} left out. The chat takes up to ${max} per email, of the types and sizes it allows.`,
   time: utcTime("en"),
 };
 
@@ -79,6 +83,9 @@ const fr: VisitorWords = {
   transcriptFile: (name) =>
     `${name === null ? "Fichier envoyé" : `Fichier ${name} envoyé`}. Ouvrez le chat pour le télécharger.`,
   continueChat: "Continuer la conversation",
+  replyAbove: "Écrivez votre réponse au-dessus de cette ligne",
+  attachmentsLeftOut: (count, max) =>
+    `${count === 1 ? "1 pièce jointe n'a pas été ajoutée" : `${count} pièces jointes n'ont pas été ajoutées`}. Le chat en accepte ${max} au plus par e-mail, dans les types et les tailles qu'il autorise.`,
   time: utcTime("fr"),
 };
 
@@ -109,10 +116,16 @@ const es: VisitorWords = {
   transcriptFile: (name) =>
     `Se envió ${name === null ? "un archivo" : `el archivo ${name}`}. Abre el chat para descargarlo.`,
   continueChat: "Continuar la conversación",
+  replyAbove: "Escribe tu respuesta encima de esta línea",
+  attachmentsLeftOut: (count, max) =>
+    `${count === 1 ? "No se añadió 1 archivo adjunto" : `No se añadieron ${count} archivos adjuntos`}. El chat acepta hasta ${max} por correo, de los tipos y tamaños que permite.`,
   time: utcTime("es"),
 };
 
 const WORDS: Record<Locale, VisitorWords> = { en, fr, es };
+
+/** The marker line in every language, since a visitor's language may change between two emails. */
+export const REPLY_MARKERS = Object.values(WORDS).map((words) => words.replyAbove);
 
 /** The words for a visitor whose widget spoke this language, or English when it is not known. */
 export const visitorWords = (locale: Locale | null): VisitorWords => WORDS[locale ?? "en"];

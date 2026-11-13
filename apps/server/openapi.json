@@ -1109,7 +1109,10 @@
           },
           "via": {
             "type": ["string", "null"],
-            "enum": ["api", "mcp", "draft", null]
+            "enum": ["api", "mcp", "draft", "email", null]
+          },
+          "fromOtherAddress": {
+            "type": "boolean"
           },
           "handoff": {
             "type": ["object", "null"],
@@ -1150,6 +1153,7 @@
           "deleted",
           "readAt",
           "via",
+          "fromOtherAddress",
           "handoff",
           "mentions",
           "createdAt"
@@ -1180,6 +1184,7 @@
           "deleted": false,
           "readAt": null,
           "via": null,
+          "fromOtherAddress": false,
           "handoff": null,
           "mentions": [],
           "createdAt": "2026-11-08T09:31:00.000Z"
@@ -4434,6 +4439,101 @@
           },
           "429": {
             "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/inbound-email": {
+      "post": {
+        "summary": "Receive a visitor's reply by email, as raw MIME",
+        "description": "For the mail forwarder, and only on a server with `INBOUND_EMAIL_DOMAIN` and `INBOUND_EMAIL_SECRET` set. The body is the email as it arrived, up to 25 MB. `Dinghy-Inbound-Signature` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<body>\" under INBOUND_EMAIL_SECRET>`, and the time must be within 5 minutes. The email goes to the conversation of its `reply+…` recipient as the visitor's message, with `via: \"email\"`. Sending it again adds nothing. Answers from robots, such as out-of-office replies, are dropped with a 200.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "message/rfc822": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Taken, or dropped as an automatic answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "bad_signature: the signature is missing, more than 5 minutes old, or wrong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "blocked: the team blocked this visitor. forbidden: the workspace takes no messages now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: no current reply address among the recipients",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the email is over 25 MB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over 20 emails to this address in an hour",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: too many emails at once, or an attachment could not be read yet",
             "content": {
               "application/json": {
                 "schema": {

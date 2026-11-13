@@ -218,8 +218,13 @@ export interface Message {
   editedAt: string | null;
   /** Deleted: no body and no image or file, and the line says so. */
   deleted: boolean;
-  /** A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft. */
-  via: "api" | "mcp" | "draft" | null;
+  /**
+   * A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft.
+   * `email`: the visitor replied to an email.
+   */
+  via: "api" | "mcp" | "draft" | "email" | null;
+  /** A reply by email from another address than the visitor's. */
+  fromOtherAddress: boolean;
   /** A bot's handoff note: the member it handed the conversation to, or null for the team. */
   handoff: { operatorId: string | null } | null;
   /** The members a note mentions. Empty for any other message. */

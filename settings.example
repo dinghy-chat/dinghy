@@ -21,6 +21,12 @@ PUBLIC_URL=
 SMTP_URL=
 MAIL_FROM=
 
+# Optional. With both, visitors answer reply emails and transcripts by email: the domain whose mail
+# your forwarder posts to this server, such as reply.example.com, and a secret of at least 32
+# characters that signs each post. See "Replies by email" in docs/self-hosting.md.
+INBOUND_EMAIL_DOMAIN=
+INBOUND_EMAIL_SECRET=
+
 # Optional. Without these, images stay in a volume on this server.
 S3_ENDPOINT=
 S3_REGION=

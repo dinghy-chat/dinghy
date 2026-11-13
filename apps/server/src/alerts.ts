@@ -30,6 +30,7 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { createReplyAddress, pruneReplyAddresses } from "./inbound-email.ts";
 import { prunePageViews } from "./journey.ts";
 import { EMAIL_COLORS, letter, letterHtml } from "./letter.ts";
 import {
@@ -56,6 +57,7 @@ import {
   quotedText,
   sentToday,
   VISITOR_EMAILS_PER_DAY,
+  type VisitorLinks,
   visitorAuthorName,
   visitorLetterHtml,
   visitorLetterText,
@@ -539,6 +541,8 @@ export type AlertPlan =
       /** A second version for mail apps that show HTML, with the replies' formatting. */
       html?: string;
       stopUrl?: string;
+      /** The visitor's reply address, when replies by email are on. */
+      replyTo?: string | undefined;
       /** The first and last message a visitor's email carries, which the plan records. */
       carries?: { fromSeq: bigint; toSeq: bigint };
     }
@@ -555,6 +559,8 @@ export interface PlanOptions {
   secret: string;
   /** Where the workspace's logo is served: the image origin, or the app's. */
   imageOrigin: string;
+  /** The domain of reply addresses. Without it, a visitor's email takes no replies. */
+  inboundDomain?: string | undefined;
 }
 
 /** Reads what this row should send now, or null if it should send nothing. */
@@ -674,7 +680,7 @@ async function replyEmailPlan(
   row: ClaimedDelivery,
   visitorId: string,
   place: Place,
-  { publicUrl, secret }: PlanOptions,
+  { publicUrl, secret, inboundDomain }: PlanOptions,
 ): Promise<AlertPlan | null> {
   const { workspaceId, conversationId } = row;
   const [target] = await tx
@@ -738,6 +744,10 @@ async function replyEmailPlan(
     publicUrl,
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
+  const replyTo =
+    inboundDomain === undefined
+      ? undefined
+      : await createReplyAddress(tx, workspaceId, visitorId, conversationId, inboundDomain);
   const authors = await messageAuthors(tx, workspaceId, replies);
   const words = visitorWords(target.locale);
   const written = replies.map((reply) => ({
@@ -750,8 +760,9 @@ async function replyEmailPlan(
   return {
     channel: "email",
     to: target.email,
-    ...replyLetter(place, written, { chatUrl, stopUrl }, words),
+    ...replyLetter(place, written, { chatUrl, stopUrl, canReply: replyTo !== undefined }, words),
     stopUrl,
+    replyTo,
     carries: { fromSeq: replies[0]?.seq ?? 0n, toSeq: replies.at(-1)?.seq ?? 0n },
   };
 }
@@ -803,7 +814,7 @@ const replyHtml = (
 export function replyLetter(
   place: Place,
   replies: Written[],
-  links: { chatUrl: string; stopUrl: string },
+  links: VisitorLinks,
   words: VisitorWords,
 ): { subject: string; text: string; html: string } {
   const written = replies.map((reply) => ({
@@ -817,7 +828,7 @@ export function replyLetter(
     .join("");
   return {
     subject: words.replySubject(place.name),
-    text: visitorLetterText(place.name, paragraphs, links.stopUrl, words),
+    text: visitorLetterText(place.name, paragraphs, links, words),
     // The replies' Markdown shows as formatting here, and stays as typed in the text version.
     html: visitorLetterHtml(
       place.name,
@@ -1004,6 +1015,7 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
         WHERE expires_at < now()
         LIMIT ${PRUNE_BATCH})`);
     const links = await pruneChatLinks(db, PRUNE_BATCH);
+    const addresses = await pruneReplyAddresses(db, PRUNE_BATCH);
     const pages = await prunePageViews(db, PRUNE_BATCH);
     const counts = [
       events.rowCount ?? 0,
@@ -1011,6 +1023,7 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
       hooks.rowCount ?? 0,
       blocks.rowCount ?? 0,
       links,
+      addresses,
       pages,
     ];
     removed += counts.reduce((sum, count) => sum + count, 0);

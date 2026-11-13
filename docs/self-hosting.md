@@ -86,6 +86,7 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Keeps images and files in a bucket, not on this disk |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | An encrypted copy of each backup in another place |
 | `BACKUP_HEARTBEAT_URL` | An address that `chat backup` pings after each backup that worked, such as a [healthchecks.io](https://healthchecks.io) check, so a monitor tells you when a night has none. Optional |
+| `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_SECRET` | Let visitors answer reply emails and transcripts by email. Optional, and set both or neither. See below |
 | `IMAGES_ORIGIN` | A separate origin for images and files that visitors and operators send, such as `https://files.example.com`. Optional. See below |
 | `TRUSTED_PROXY_HOPS` | See below |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent` |
@@ -106,6 +107,60 @@ Images and files come from visitors you do not know. Dinghy re-encodes each imag
 3. Set `IMAGES_ORIGIN=https://files.example.com` in `.env`, and run `docker compose up -d`.
 
 Image and file links then use that origin, with the same short-lived signed URLs. It answers only the image route, and the app's own origin stops serving images and files. Every image goes out with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: inline`, and only as PNG, JPEG or WebP, never as HTML or SVG. Every other file goes out with the same two headers, `Content-Disposition: attachment` and `Content-Type: application/octet-stream`, so a browser saves it and never shows it. A host site with a Content Security Policy must allow the new origin in `img-src` for the widget's images, and in `connect-src`, as the widget fetches a file to save it.
+
+### Replies by email
+
+A visitor who left your site gets your team's replies and the transcript by email. With replies by email on, they can answer that email, and their answer lands in the conversation as if they had written in the chat. It is off until you set both settings, and it needs a mail server for the emails that go out (`SMTP_URL`).
+
+Each email to a visitor then has its own reply address, `reply+<workspace>.<token>@<INBOUND_EMAIL_DOMAIN>`, which leads to that one conversation. The address works until 90 days after its last use. Mail to it must reach Dinghy as the raw email, posted to `/v1/inbound-email` and signed with `INBOUND_EMAIL_SECRET` (see [the API](api.md#replies-by-email)). Dinghy documents one forwarder, a Cloudflare Email Worker, which needs a domain on Cloudflare and no paid plan. Other mail providers post their own formats, so they need an adapter that turns their post into this one.
+
+1. Pick a subdomain for the reply addresses, such as `reply.example.com`, on a domain that Cloudflare runs. It takes no other mail, so use a subdomain that nothing else uses.
+2. In Cloudflare, open **Email > Email Routing** for the domain, and add the subdomain. Cloudflare adds its MX and TXT records.
+3. Make a secret of at least 32 characters, such as with `openssl rand -hex 32`.
+4. Create a Worker with the code below. In its settings, add the variable `DINGHY_URL`, your `PUBLIC_URL`, and the secret `INBOUND_EMAIL_SECRET`, with the value from step 3.
+5. In **Email Routing > Routing rules** for the subdomain, set the catch-all address to **Send to a Worker**, and pick this Worker.
+6. In `.env`, set `INBOUND_EMAIL_DOMAIN=reply.example.com` and `INBOUND_EMAIL_SECRET` to the same secret, then run `docker compose up -d --wait`.
+
+```js
+// Posts each email to Dinghy as it arrived, signed with the secret that Dinghy shares.
+export default {
+  async email(message, env) {
+    const body = new Uint8Array(await new Response(message.raw).arrayBuffer());
+    const time = Math.floor(Date.now() / 1000);
+    const prefix = new TextEncoder().encode(`${time}.`);
+    const signed = new Uint8Array(prefix.length + body.length);
+    signed.set(prefix);
+    signed.set(body, prefix.length);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(env.INBOUND_EMAIL_SECRET),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const digest = new Uint8Array(await crypto.subtle.sign("HMAC", key, signed));
+    const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const answer = await fetch(new URL("/v1/inbound-email", env.DINGHY_URL), {
+      method: "POST",
+      headers: {
+        "content-type": "message/rfc822",
+        "dinghy-inbound-signature": `t=${time},v1=${hex}`,
+      },
+      body,
+    });
+    if (answer.ok) return;
+    // Busy, down, or over the address's limit: the error makes the sender's server try again later.
+    if (answer.status === 429 || answer.status >= 500) {
+      throw new Error(`Dinghy answered ${answer.status}`);
+    }
+    message.setReject("This address takes no replies. Open the chat on the website to write.");
+  },
+};
+```
+
+To test it, answer a reply email from Dinghy. The answer shows in the conversation within seconds. If it does not, the Worker's logs in Cloudflare show what Dinghy answered: 401 means the two secrets differ or the server's clock is more than 5 minutes off, and 404 means the address is not a current one.
+
+Dinghy takes the plain text of the answer, or its HTML made into text. Each email from Dinghy starts with "Write your reply above this line", and Dinghy keeps only what is above the quote of that line. Without the line, it keeps the whole text, and it never cuts a signature. Up to 5 attachments go in the conversation, with the same types and size limits as the chat. An email is at most 25 MB, and the server holds at most 4 at a time, so a fifth waits for the forwarder's retry. Out-of-office answers and other automatic emails are dropped, and one address takes at most 20 emails an hour.
 
 ## Behind your own reverse proxy
 

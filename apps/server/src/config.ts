@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import type { InboundEmail } from "./inbound-email.ts";
 import type { PushKeys } from "./push.ts";
 
 const schema = z.object({
@@ -50,6 +51,10 @@ const schema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  // Visitors reply to their emails only when both are set: the domain whose mail the forwarder
+  // posts to this server, such as reply.example.com, and the secret that signs each post.
+  INBOUND_EMAIL_DOMAIN: z.hostname().optional(),
+  INBOUND_EMAIL_SECRET: z.string().min(32).optional(),
   // The metrics route stays off unless this is set, because it should not be public.
   METRICS_TOKEN: z.string().min(16).optional(),
   // The cloud plan's billing, read by ee/server. It stays off unless all three are set, so a
@@ -90,6 +95,7 @@ const FROM_FILES = [
   "VAPID_SUBJECT",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
+  "INBOUND_EMAIL_SECRET",
 ] as const;
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
@@ -135,4 +141,13 @@ export function pushKeysFromConfig(config: Config): PushKeys | undefined {
     throw new Error("Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT together.");
   }
   return { publicKey, privateKey, subject };
+}
+
+export function inboundEmailFromConfig(config: Config): InboundEmail | undefined {
+  const { INBOUND_EMAIL_DOMAIN: domain, INBOUND_EMAIL_SECRET: secret } = config;
+  if (domain === undefined && secret === undefined) return undefined;
+  if (domain === undefined || secret === undefined) {
+    throw new Error("Set INBOUND_EMAIL_DOMAIN and INBOUND_EMAIL_SECRET together.");
+  }
+  return { domain: domain.toLowerCase(), secret };
 }

@@ -30,6 +30,7 @@ import {
   ipBlock,
   operator,
   pushSubscription,
+  replyAddress,
   visitor,
   widgetSettings,
   workspaceMember,
@@ -893,6 +894,29 @@ describe("email", () => {
     expect(mail?.html).toContain(`href="${new URL(chat ?? "", PUBLIC_URL).href}"`);
     expect(mail?.html).toContain(`href="${stop}"`);
     expect(mail?.html).not.toContain("<b>");
+  });
+
+  test("with replies by email on, a reply email asks for a reply above its first line", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const written = await visitorWrites(from, "Help");
+    await operatorWrites(anna, written.message.conversationId, "Answer");
+    await fanOutAll();
+    await makeDue();
+    runWorker({ mail: true, inboundDomain: "reply.example.com" });
+    await until(() => mails.length === 1, "the email");
+    const mail = mails[0];
+    expect(mail?.text).toMatch(/^Write your reply above this line\n\nHi,\n\n/);
+    expect(mail?.html).toMatch(/<body[^>]*>.*?>Write your reply above this line</);
+    const replyTo = mail?.headers?.["reply-to"] ?? "";
+    expect(replyTo).toMatch(/^reply\+[0-9a-f]{32}\.[0-9a-z]{25}@reply\.example\.com$/);
+    expect(replyTo.split("@")[0]?.length).toBeLessThanOrEqual(64);
+    expect(mail?.headers?.["message-id"]).toMatch(/^<[0-9a-f-]{36}@reply\.example\.com>$/);
+    const [address] = await owner
+      .select()
+      .from(replyAddress)
+      .where(eq(replyAddress.visitorId, from));
+    expect(address?.conversationId).toBe(written.message.conversationId);
   });
 
   test("a visitor whose chat spoke Spanish gets the reply email in Spanish", async () => {

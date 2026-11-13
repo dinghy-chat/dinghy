@@ -84,7 +84,7 @@ export function isBrowserToken(token: string): boolean {
 }
 
 /** How tokens, emails and addresses are stored or keyed, so the raw value is never kept. */
-export function sha256Hex(value: string): string {
+export function sha256Hex(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 

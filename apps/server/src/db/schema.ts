@@ -695,6 +695,40 @@ export const chatLink = pgTable(
 );
 
 /**
+ * The Reply-To address of an email to a visitor: a reply to it goes into this conversation. Only
+ * the token's hash is stored. It works until 90 days after its last use, and goes with its
+ * conversation.
+ */
+export const replyAddress = pgTable(
+  "reply_address",
+  {
+    workspaceId: workspaceId(),
+    id: id(),
+    tokenHash: text("token_hash").notNull().unique(),
+    visitorId: uuid("visitor_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "reply_address_visitor_fk",
+      columns: [table.workspaceId, table.visitorId],
+      foreignColumns: [visitor.workspaceId, visitor.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "reply_address_conversation_fk",
+      columns: [table.workspaceId, table.conversationId],
+      foreignColumns: [conversation.workspaceId, conversation.id],
+    }).onDelete("cascade"),
+    index("reply_address_conversation_idx").on(table.workspaceId, table.conversationId),
+    index("reply_address_visitor_idx").on(table.workspaceId, table.visitorId),
+    index("reply_address_last_used_idx").on(table.lastUsedAt),
+  ],
+);
+
+/**
  * A page a visitor who chatted went through, as the widget reported it. Only visitors who already
  * have a conversation get rows, at most 100 each, and the worker deletes rows after 90 days.
  */

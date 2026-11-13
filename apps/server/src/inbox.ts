@@ -183,8 +183,11 @@ export const InboxMessage = z
     // When the visitor first read this reply in the chat, when known.
     readAt: z.string().nullable(),
     // A key's reply: sent through the REST API or through MCP. `draft`: an operator sent a key's
-    // draft, and is its author. Null for anyone else's.
+    // draft, and is its author. `email`: the visitor replied to an email. Null for anyone else's.
     via: z.enum(CHANNELS).nullable(),
+    // A reply by email from another address than the visitor's, such as one it was forwarded from.
+    // False for any other message.
+    fromOtherAddress: z.boolean(),
     // A bot's handoff note: the member it handed the conversation to, or null for the whole team.
     // Null for any other message.
     handoff: z.object({ operatorId: z.string().nullable() }).nullable(),
@@ -219,6 +222,7 @@ export const InboxMessage = z
       deleted: false,
       readAt: null,
       via: null,
+      fromOtherAddress: false,
       handoff: null,
       mentions: [],
       createdAt: "2026-11-08T09:31:00.000Z",

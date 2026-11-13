@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useEffect, useId, useState } from "react";
 import { quoteStandIn } from "../../../packages/widget/src/quote.ts";
-import type { Quote, WorkspaceApi } from "./api.ts";
+import type { Message, Quote, WorkspaceApi } from "./api.ts";
 import { timeOrDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
@@ -120,7 +120,7 @@ export interface InfoLine {
   createdAt: string;
   /** Who wrote it, as the thread names them. */
   author: string;
-  via: "api" | "mcp" | "draft" | null;
+  via: Message["via"];
   /** A reply, whose receipt the info shows. Null for a visitor's message. */
   receipt: { isRead: boolean } | null;
 }
@@ -153,7 +153,14 @@ export function MessageInfo({
   const via: TextId | null =
     line.via === null
       ? null
-      : ({ api: "infoViaApi", mcp: "infoViaMcp", draft: "infoViaDraft" } as const)[line.via];
+      : (
+          {
+            api: "infoViaApi",
+            mcp: "infoViaMcp",
+            draft: "infoViaDraft",
+            email: "infoViaEmail",
+          } as const
+        )[line.via];
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
     <dialog

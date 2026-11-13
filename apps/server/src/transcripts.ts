@@ -20,6 +20,7 @@ import {
   widgetSettings,
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { createReplyAddress } from "./inbound-email.ts";
 import { EMAIL_COLORS } from "./letter.ts";
 import {
   conversationVisitor,
@@ -42,6 +43,7 @@ import {
   quotedText,
   sentToday,
   VISITOR_EMAILS_PER_DAY,
+  type VisitorLinks,
   visitorAuthorName,
   visitorLetterHtml,
   visitorLetterText,
@@ -154,7 +156,7 @@ export async function transcriptPlan(
   row: ClaimedDelivery,
   visitorId: string,
   place: Place,
-  { publicUrl, secret }: PlanOptions,
+  { publicUrl, secret, inboundDomain }: PlanOptions,
 ): Promise<AlertPlan | null> {
   const { workspaceId, conversationId, messageId, eventSeq } = row;
   const [state] = await tx
@@ -207,11 +209,17 @@ export async function transcriptPlan(
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, state.email);
+  const replyTo =
+    inboundDomain === undefined
+      ? undefined
+      : await createReplyAddress(tx, workspaceId, visitorId, conversationId, inboundDomain);
+  const links = { chatUrl, stopUrl, canReply: replyTo !== undefined };
   return {
     channel: "email",
     to: state.email,
-    ...transcriptLetter(place, lines, authors, { chatUrl, stopUrl }, visitorWords(state.locale)),
+    ...transcriptLetter(place, lines, authors, links, visitorWords(state.locale)),
     stopUrl,
+    replyTo,
     carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
   };
 }
@@ -245,10 +253,10 @@ export function transcriptLetter(
   place: Place,
   lines: TranscriptLine[],
   authors: Map<string, MessageAuthor>,
-  links: { chatUrl: string; stopUrl: string },
+  links: VisitorLinks,
   words: VisitorWords,
 ): { subject: string; text: string; html: string } {
-  const { chatUrl, stopUrl } = links;
+  const { chatUrl } = links;
   const heads = lines.map(
     (line) =>
       `${visitorAuthorName(line, authors, place.name, words)}, ${words.time(line.createdAt)}`,
@@ -282,7 +290,7 @@ export function transcriptLetter(
   ];
   return {
     subject: words.transcriptSubject(place.name),
-    text: visitorLetterText(place.name, paragraphs, stopUrl, words),
+    text: visitorLetterText(place.name, paragraphs, links, words),
     html: visitorLetterHtml(
       place.name,
       html,

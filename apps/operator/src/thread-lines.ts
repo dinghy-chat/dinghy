@@ -51,6 +51,7 @@ export interface Line {
   editedAt: string | null;
   deleted: boolean;
   via: Message["via"];
+  fromOtherAddress: boolean;
   /** A bot's handoff note: whom it handed the conversation to, with null for the team. */
   handoff: Message["handoff"];
   /** The members a note mentions. */
@@ -78,6 +79,7 @@ function merge(lines: Line[], message: Message): Line[] {
     editedAt: message.editedAt,
     deleted: message.deleted,
     via: message.via,
+    fromOtherAddress: message.fromOtherAddress,
     handoff: message.handoff,
     mentions: message.mentions,
   };
@@ -225,6 +227,7 @@ export function useThreadLines({
     editedAt: null,
     deleted: false,
     via: null,
+    fromOtherAddress: false,
     handoff: null,
     mentions,
   });

@@ -3,7 +3,11 @@ import { replyLetter } from "./alerts.ts";
 import { transcriptLetter } from "./transcripts.ts";
 import { visitorWords } from "./visitor-words.ts";
 
-const links = { chatUrl: "https://chat.example.com/chat/t", stopUrl: "https://chat.example.com/s" };
+const links = {
+  chatUrl: "https://chat.example.com/chat/t",
+  stopUrl: "https://chat.example.com/s",
+  canReply: false,
+};
 const acme = { name: "Acme", logoUrl: null };
 const english = visitorWords("en");
 const french = visitorWords("fr");

@@ -18,6 +18,7 @@ import {
 import { workerHeartbeat } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import type { Images } from "./images.ts";
+import { replyHeaders } from "./inbound-email.ts";
 import { noLive, type Signals } from "./live.ts";
 import { MAIL_CONNECTIONS, type Mailer } from "./mailer.ts";
 import { pruneOAuth } from "./oauth-grants.ts";
@@ -77,6 +78,8 @@ interface WorkerOptions {
   signals?: Signals | undefined;
   publicUrl: string;
   secret: string;
+  /** The domain of reply addresses. Without it, emails to visitors take no replies. */
+  inboundDomain?: string | undefined;
   /** How often the subscription lifecycle and the purge of deleted workspaces run. */
   lifecycleMs?: number;
   pollMs?: number;
@@ -160,6 +163,7 @@ export function startWorker({
   signals = noLive,
   publicUrl,
   secret,
+  inboundDomain,
   lifecycleMs = LIFECYCLE_EVERY_MS,
   pollMs = POLL_MS,
   retryMs = RETRY_MS,
@@ -186,13 +190,13 @@ export function startWorker({
       return result.sent > 0 ? "sent" : "skipped";
     }
     if (bounded === undefined) return "skipped";
-    const headers =
-      plan.stopUrl === undefined
-        ? undefined
-        : {
-            "list-unsubscribe": `<${plan.stopUrl}>`,
-            "list-unsubscribe-post": "List-Unsubscribe=One-Click",
-          };
+    const headers = {
+      ...(plan.stopUrl !== undefined && {
+        "list-unsubscribe": `<${plan.stopUrl}>`,
+        "list-unsubscribe-post": "List-Unsubscribe=One-Click",
+      }),
+      ...(plan.replyTo !== undefined && replyHeaders(plan.replyTo)),
+    };
     await bounded.send(plan.to, plan.subject, plan.text, headers, plan.html);
     return "sent";
   };
@@ -214,6 +218,7 @@ export function startWorker({
         publicUrl,
         secret,
         imageOrigin: images?.origin ?? publicUrl,
+        inboundDomain,
       });
       if (plan?.channel === "later") {
         await postponeDelivery(db, row, plan.until);
