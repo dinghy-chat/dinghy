@@ -274,7 +274,8 @@ export function Composer({
 }: {
   draft: string;
   setDraft(draft: string): void;
-  onSend(body: string): void;
+  /** The text, and the teammates `@` wrote in it, by name. */
+  onSend(body: string, picked: ReadonlyMap<string, string>): void;
   /** Undefined when only text can go, as in a read-only workspace's welcome chat. */
   onFiles: ((files: Iterable<File>) => void) | undefined;
   /** Escape in the box: cancels a quote or an edit. */
@@ -302,7 +303,8 @@ export function Composer({
     if (body === "") return;
     // An edit keeps its text until the server takes it, so a failed save loses nothing.
     if (!editing) setDraft("");
-    onSend(body);
+    onSend(body, new Map(picker.picked));
+    if (!editing) picker.picked.clear();
   };
   const now: Latest = {
     label: t(editing ? "editLabel" : isNote ? "composeNoteLabel" : "replyLabel"),

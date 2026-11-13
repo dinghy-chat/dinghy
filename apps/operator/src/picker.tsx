@@ -88,6 +88,8 @@ export function usePicker(editor: Editor, sources: PickerSources) {
   useEffect(() => {
     if (!isTyping) setClosedAt(null);
   }, [isTyping]);
+  // The teammates `@` wrote in, by the name it wrote, so two members with one name stay apart.
+  const [picked] = useState(() => new Map<string, string>());
   const listId = useId();
   const find = typed === null ? undefined : sources[typed.trigger];
   const active = typed !== null && find !== undefined && typed.from !== closedAt ? typed : null;
@@ -96,7 +98,9 @@ export function usePicker(editor: Editor, sources: PickerSources) {
   const optionId = (at: number) => `${listId}-${at}`;
 
   const insert = (item: PickerItem) => {
-    if (active !== null) item.insert(editor, active);
+    if (active === null) return;
+    item.insert(editor, active);
+    if (active.trigger === "@") picked.set(item.label, item.id);
   };
   /** Takes a key while the picker is open. False lets the editor have it. */
   const press = (key: PickerKey): boolean => {
@@ -151,6 +155,7 @@ export function usePicker(editor: Editor, sources: PickerSources) {
   return {
     press,
     list,
+    picked,
     /** For the editor's ARIA attributes: the open list and its chosen item. */
     listId: active === null ? undefined : listId,
     activeId: items[index] === undefined ? undefined : optionId(index),
@@ -229,17 +234,32 @@ function withoutMention(body: string, name: string): string {
 }
 
 /**
- * The teammates a note mentions: those whose `@Name` it holds, as the picker writes it or as typed.
- * Longer names match first, and each match leaves the text, so `@Anna Smith` or `@Jean-Luc` never
- * also mentions Anna or Jean. The server keeps current members only, and alerts each of them.
+ * The teammates a note mentions: those whose `@Name` it holds. A name the picker wrote, by `picked`
+ * (name to member), or one the note mentioned before an edit keeps its member, so two members with
+ * one name stay apart. Only a name typed by hand goes to the first member with that name. Longer
+ * names match first, and each match leaves the text, so `@Anna Smith` or `@Jean-Luc` never also
+ * mentions Anna or Jean. The server keeps current members only, and alerts each of them.
  */
-export function mentionsIn(body: string, members: Member[]): string[] {
+export function mentionsIn(
+  body: string,
+  members: Member[],
+  picked: ReadonlyMap<string, string>,
+  mentionedBefore: string[] = [],
+): string[] {
+  const known = new Map(
+    members
+      .filter((member) => mentionedBefore.includes(member.id))
+      .map((one) => [one.name, one.id]),
+  );
+  for (const [name, id] of picked) known.set(name, id);
+  const byHand = members.filter((member) => !known.has(member.name));
+  const candidates = [...[...known].map(([name, id]) => ({ id, name })), ...byHand];
   let rest = body;
   const mentioned: string[] = [];
-  for (const member of [...members].sort((one, other) => other.name.length - one.name.length)) {
-    if (!hasMention(rest, member.name)) continue;
-    mentioned.push(member.id);
-    rest = withoutMention(rest, member.name);
+  for (const one of candidates.sort((a, b) => b.name.length - a.name.length)) {
+    if (!hasMention(rest, one.name)) continue;
+    mentioned.push(one.id);
+    rest = withoutMention(rest, one.name);
   }
   return mentioned.slice(0, MENTIONS_MAX);
 }

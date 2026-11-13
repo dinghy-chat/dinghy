@@ -245,11 +245,11 @@ export function ThreadLog({
                 editing
                 draft={editing.draft}
                 setDraft={(draft) => setEditing({ ...editing, draft })}
-                onSend={(body) =>
+                onSend={(body, picked) =>
                   void actions.saveEdit(
                     line.id,
                     body,
-                    line.kind === "note" ? mentionsIn(body, members) : [],
+                    line.kind === "note" ? mentionsIn(body, members, picked, line.mentions) : [],
                   )
                 }
                 onFiles={undefined}

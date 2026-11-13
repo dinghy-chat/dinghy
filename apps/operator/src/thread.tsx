@@ -270,7 +270,7 @@ export function Thread({
   const visitorName = title(conversation);
   /** Who wrote a line, as this thread names them. */
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
-  const send = (body: string) => {
+  const send = (body: string, picked: ReadonlyMap<string, string>) => {
     if (editingDraft !== null) {
       // The composer emptied itself, so a failure puts the text back.
       return void suggestions.send(editingDraft, body).then((done) => {
@@ -282,7 +282,7 @@ export function Thread({
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
       mode === "note",
-      mode === "note" ? mentionsIn(body, members) : [],
+      mode === "note" ? mentionsIn(body, members, picked) : [],
     );
     setQuoting(null);
   };
