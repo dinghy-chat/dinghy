@@ -81,7 +81,7 @@ interface WorkerOptions {
   /** The domain of reply addresses. Without it, emails to visitors take no replies. */
   inboundDomain?: string | undefined;
   /** Sweeps the Shipmail mailbox for replies still to come in. Without it, Shipmail is off. */
-  sweepMailbox?: (() => Promise<void>) | undefined;
+  sweepMailbox?: ((stopping: AbortSignal) => Promise<void>) | undefined;
   /** How often the subscription lifecycle and the purge of deleted workspaces run. */
   lifecycleMs?: number;
   pollMs?: number;
@@ -349,7 +349,7 @@ export function startWorker({
   let sweepRun: Promise<void> | undefined;
   const startSweep = () => {
     if (sweepMailbox === undefined || sweepRun !== undefined) return;
-    sweepRun = sweepMailbox()
+    sweepRun = sweepMailbox(stopping.signal)
       .catch((err: unknown) => logger.error({ err, stage: "mailbox sweep" }, "worker stage failed"))
       .finally(() => {
         sweepRun = undefined;

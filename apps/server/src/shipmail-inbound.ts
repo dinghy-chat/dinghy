@@ -37,8 +37,12 @@ const EVENT_MAX_BYTES = 256 * 1024;
 const SHIPMAIL_TIMEOUT_MS = 30_000;
 /** The sweep leaves a younger message to its webhook delivery, which Shipmail may still retry. */
 const FRESH_MS = 10 * MINUTE_MS;
-/** Messages on each page of the sweep's listing. */
-const PAGE_SIZE = 100;
+/**
+ * Messages on each page of the sweep's listing. Shipmail lists each message with its whole body, so
+ * a page is read up to PAGE_MAX_BYTES, and one that is larger is read again a message at a time.
+ */
+const PAGE_SIZE = 10;
+const PAGE_MAX_BYTES = 64 * 1024 * 1024;
 /** The name of the session lock that keeps the sweep to one instance at a time. */
 const SWEEP_LOCK = "shipmail-sweep";
 const EVENT_TOO_LARGE = failure("too_large", `An event can be up to ${EVENT_MAX_BYTES / 1024} KB.`);
@@ -143,14 +147,18 @@ function shipmailInbox({ apiBase, apiKey, mailboxId }: ShipmailInbound) {
      * left the list, as a webhook's delete meanwhile can make it. The next sweep starts over.
      */
     async page(before: Date, cursor: string | null) {
-      const query = new URLSearchParams({ before: before.toISOString(), limit: String(PAGE_SIZE) });
-      if (cursor !== null) query.set("cursor", cursor);
-      const response = await call("GET", `?${query}`, { allowedStatuses: [409] });
-      if (response.status === 409) {
-        await drain(response);
-        return null;
+      for (const size of [PAGE_SIZE, 1]) {
+        const query = new URLSearchParams({ before: before.toISOString(), limit: String(size) });
+        if (cursor !== null) query.set("cursor", cursor);
+        const response = await call("GET", `?${query}`, { allowedStatuses: [409] });
+        if (response.status === 409) {
+          await drain(response);
+          return null;
+        }
+        const body = await readUpTo(response, PAGE_MAX_BYTES);
+        if (body !== null) return inboxPage.parse(JSON.parse(body.toString("utf8")));
       }
-      return inboxPage.parse(await response.json());
+      throw new Error("One message's listing is larger than the sweep reads");
     },
     /** The email as it arrived, "gone" once deleted, or "too_large" past the intake's limit. */
     async raw(emailId: string): Promise<Buffer | "gone" | "too_large"> {
@@ -228,7 +236,9 @@ interface SweepOptions {
  */
 export function mailboxSweep({ db, intake, domain, settings, logger }: SweepOptions) {
   const inbox = shipmailInbox(settings);
-  // A visitor can put the reply address in Cc, as a mail app's "Reply all" can.
+  // A visitor can put the reply address in Cc, as a mail app's "Reply all" can. One only in Bcc or
+  // Delivered-To names no workspace here, so it is downloaded on each sweep while its workspace is
+  // closed. That is rare, and the take keeps it, so nothing is lost.
   const workspaceOf = ({ to, cc }: InboxPage["data"][number]) =>
     [...(to ?? []), ...(cc ?? [])]
       .map(({ email }) => parseReplyAddress(email ?? "", domain))
@@ -244,13 +254,14 @@ export function mailboxSweep({ db, intake, domain, settings, logger }: SweepOpti
     await intake.hold(() => take(intake, inbox, message.id));
   };
 
-  const sweepPage = async ({ data }: InboxPage) => {
+  const sweepPage = async ({ data }: InboxPage, stopping: AbortSignal) => {
     const workspaceIds = data.map(workspaceOf);
     const closed = await closedWorkspaces(
       db,
       workspaceIds.filter((id) => id !== undefined),
     );
     for (const message of data) {
+      if (stopping.aborted) return;
       // One message that keeps failing must not hold back the ones after it.
       await sweepOne(closed, message).catch((err: unknown) =>
         logger.warn({ err, emailId: message.id }, "a Shipmail email failed and will retry"),
@@ -258,26 +269,26 @@ export function mailboxSweep({ db, intake, domain, settings, logger }: SweepOpti
     }
   };
 
-  const sweep = async () => {
+  const sweep = async (stopping: AbortSignal) => {
     const before = new Date(Date.now() - FRESH_MS);
     let page = await inbox.page(before, null);
-    while (page !== null) {
+    while (page !== null && !stopping.aborted) {
       // The next page first: its cursor names a message of this page, which a delete could remove.
       const cursor = page.pagination.next_cursor;
       const next = cursor === null ? null : await inbox.page(before, cursor);
-      await sweepPage(page);
+      await sweepPage(page, stopping);
       page = next;
     }
   };
 
-  return async (): Promise<void> => {
+  return async (stopping: AbortSignal): Promise<void> => {
     const client = await db.$client.connect();
     try {
       const lock = await client.query<{ locked: boolean }>(
         "SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
         [SWEEP_LOCK],
       );
-      if (lock.rows[0]?.locked === true) await sweep();
+      if (lock.rows[0]?.locked === true) await sweep(stopping);
     } finally {
       // Closing the connection frees the lock, even after a failure.
       client.release(true);

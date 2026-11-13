@@ -39,6 +39,7 @@ const FAKE_PAGE_MAX = 2;
  * move to Trash and a delete that works only in Trash. `failing` makes every call with that method
  * answer 500, `rawStatus` makes a message's download answer that status, and `downloads` holds
  * every download until it resolves. A message arrives now unless `receivedAt` says otherwise.
+ * `listedBodyBytes` gives each listed message a body of that size, as Shipmail lists them whole.
  */
 async function fakeShipmail() {
   const messages = new Map<string, string>();
@@ -47,7 +48,7 @@ async function fakeShipmail() {
   const calls: string[] = [];
   const failing = new Set<string>();
   const rawStatus = new Map<string, number>();
-  const fake = { downloads: Promise.resolve() };
+  const fake = { downloads: Promise.resolve(), listedBodyBytes: 0 };
   const server = createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
@@ -108,6 +109,7 @@ async function fakeShipmail() {
         id: emailId,
         to: header(emailId, "To"),
         cc: header(emailId, "Cc"),
+        body_values: { "1": { value: "x".repeat(fake.listedBodyBytes) } },
         received_at: arrivedAt(emailId).toISOString(),
       })),
       junk_total: null,
@@ -141,7 +143,7 @@ let valkey: Redis;
 let shipmail: Awaited<ReturnType<typeof fakeShipmail>>;
 let app: App;
 let space: NewWorkspace;
-let sweep: () => Promise<void>;
+let sweep: (stopping?: AbortSignal) => Promise<void>;
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -174,7 +176,8 @@ beforeAll(async () => {
     live: noLive,
     rateLimit: createRateLimit(valkey, logger),
   });
-  sweep = mailboxSweep({ db, intake, domain: DOMAIN, settings, logger });
+  const sweepOnce = mailboxSweep({ db, intake, domain: DOMAIN, settings, logger });
+  sweep = (stopping = new AbortController().signal) => sweepOnce(stopping);
 });
 
 beforeEach(() => {
@@ -182,6 +185,7 @@ beforeEach(() => {
   shipmail.failing.clear();
   shipmail.rawStatus.clear();
   shipmail.downloads = Promise.resolve();
+  shipmail.listedBodyBytes = 0;
 });
 
 afterAll(async () => {
@@ -563,6 +567,28 @@ describe("the mailbox sweep", () => {
     await setSuspended(kept.workspaceId, null);
     await sweep();
     expect(await bodiesOf(kept.conversationId)).toEqual(["Reply all"]);
+  });
+
+  test("reads a listing too large for one page a message at a time", async () => {
+    const first = await keptEmail("First");
+    const second = await keptEmail("Second");
+    for (const kept of [first, second]) await setSuspended(kept.workspaceId, null);
+    // Two of these make a page over the sweep's limit, which one of them alone stays under.
+    shipmail.listedBodyBytes = 33 * 1024 * 1024;
+    await sweep();
+    expect(shipmail.calls.some((call) => call.includes("limit=1"))).toBe(true);
+    expect(await bodiesOf(first.conversationId)).toEqual(["First"]);
+    expect(await bodiesOf(second.conversationId)).toEqual(["Second"]);
+  });
+
+  test("stops between messages once the worker stops", async () => {
+    const kept = await keptEmail("Later");
+    await setSuspended(kept.workspaceId, null);
+    const stopping = new AbortController();
+    stopping.abort();
+    await sweep(stopping.signal);
+    expect(await bodiesOf(kept.conversationId)).toEqual([]);
+    expect(shipmail.messages.has(kept.emailId)).toBe(true);
   });
 
   test("deletes an email older than the reply address's lifetime", async () => {
