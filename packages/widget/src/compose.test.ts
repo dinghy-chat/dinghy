@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import {
   acceptedFiles,
   fileExtension,
@@ -7,6 +7,7 @@ import {
   isComposing,
   newClientId,
   refusalProblem,
+  saveWithRefresh,
   uploadProblem,
 } from "./compose.ts";
 
@@ -84,4 +85,60 @@ test("a refused upload's text follows the server's error code", () => {
   expect(refusalProblem("not_an_image", pdf)).toBe("imageWrongType");
   expect(refusalProblem("type_not_allowed", png)).toBe("imageFailed");
   expect(refusalProblem("too_many_pixels", png)).toBe("imageFailed");
+});
+
+/** Answers each URL with its status, and records the URLs fetched and the names saved. */
+function fakeFiles(statuses: Record<string, number>) {
+  const fetched: string[] = [];
+  const saved: string[] = [];
+  vi.stubGlobal("fetch", async (url: string) => {
+    fetched.push(url);
+    return new Response("file", { status: statuses[url] ?? 500 });
+  });
+  vi.stubGlobal("document", {
+    createElement: () => ({
+      click(this: { download: string }) {
+        saved.push(this.download);
+      },
+    }),
+  });
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:file");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  return { fetched, saved };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+test("a file saves from its URL without asking for a new one", async () => {
+  const files = fakeFiles({ "/old": 200 });
+  const newUrl = vi.fn(async () => "/new");
+  await saveWithRefresh("/old", "a.pdf", newUrl);
+  expect(files.saved).toEqual(["a.pdf"]);
+  expect(newUrl).not.toHaveBeenCalled();
+});
+
+test("an expired URL asks once for a new one and saves with it", async () => {
+  const files = fakeFiles({ "/old": 404, "/new": 200 });
+  await saveWithRefresh("/old", "a.pdf", async () => "/new");
+  expect(files.fetched).toEqual(["/old", "/new"]);
+  expect(files.saved).toEqual(["a.pdf"]);
+});
+
+test("a second expired URL ends the click", async () => {
+  const files = fakeFiles({ "/old": 404, "/new": 404 });
+  const newUrl = vi.fn(async () => "/new");
+  await saveWithRefresh("/old", "a.pdf", newUrl);
+  expect(newUrl).toHaveBeenCalledOnce();
+  expect(files.saved).toEqual([]);
+});
+
+test("any other failure ends the click without a new URL", async () => {
+  const files = fakeFiles({ "/old": 500 });
+  const newUrl = vi.fn(async () => "/new");
+  await saveWithRefresh("/old", "a.pdf", newUrl);
+  expect(newUrl).not.toHaveBeenCalled();
+  expect(files.saved).toEqual([]);
 });

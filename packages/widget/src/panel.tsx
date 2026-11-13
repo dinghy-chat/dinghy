@@ -5,7 +5,7 @@ import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
 import type { ChatMessage } from "./client.ts";
-import { acceptedFiles, fileSize, isComposing, isImage, saveFile } from "./compose.ts";
+import { acceptedFiles, fileSize, isComposing, isImage, saveWithRefresh } from "./compose.ts";
 import { EMOJIS, insertEmoji, SMILEY_ICON } from "./emoji.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { type Quote, quoteStandIn } from "./quote.ts";
@@ -462,9 +462,8 @@ function Quoted({ quote }: { quote: Quote }) {
 }
 
 /**
- * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so when the
- * server says one expired, it asks once for new URLs and saves again with the line's new one. The
- * device's clock does not decide, as it can be wrong.
+ * A file's link, which saves the file and never leaves the page. After an expired URL, the line's
+ * next one comes with the new URLs that onExpired asks for.
  */
 function FileLink({
   download,
@@ -475,29 +474,26 @@ function FileLink({
   mine: boolean;
   onExpired(): void;
 }) {
-  // Each click asks for a save. It ends with the save, with any failure but an expired URL, or with
-  // a second expired one.
-  const [clicks, setClicks] = useState(0);
-  // The expired URL, which waits for the new one that onExpired brings.
-  const expired = useRef<string | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new URL or a click asks for a save.
+  // Waits for the line's next URL, after an expired one.
+  const nextUrl = useRef<((url: string) => void) | null>(null);
   useEffect(() => {
-    if (clicks === 0 || download.url === expired.current) return;
-    const end = () => setClicks(0);
-    saveFile(download.url, download.name).then((isSaved) => {
-      if (isSaved || expired.current !== null) return end();
-      expired.current = download.url;
-      onExpired();
-    }, end);
-  }, [clicks, download.url]);
+    nextUrl.current?.(download.url);
+    nextUrl.current = null;
+  }, [download.url]);
   return (
     <a
       class={mine ? "msg mine doc" : "msg doc"}
       href={download.url}
       onClick={(event) => {
         event.preventDefault();
-        expired.current = null;
-        setClicks((count) => count + 1);
+        nextUrl.current = null;
+        void saveWithRefresh(download.url, download.name, () => {
+          const next = new Promise<string>((resolve) => {
+            nextUrl.current = resolve;
+          });
+          onExpired();
+          return next;
+        });
       }}
     >
       <Icon paths={DOWNLOAD_ICON} />

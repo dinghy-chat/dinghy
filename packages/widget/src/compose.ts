@@ -92,7 +92,7 @@ export const fileSize = (bytes: number) =>
  * another origin and opens the address instead, and an old address is gone. False when the URL
  * expired, as a new one from a fresh load can still save it.
  */
-export async function saveFile(url: string, name: string): Promise<boolean> {
+async function saveFile(url: string, name: string): Promise<boolean> {
   const response = await fetch(url);
   if (response.status === 404) return false;
   if (!response.ok) throw new Error(`The file answered ${response.status}`);
@@ -102,6 +102,23 @@ export async function saveFile(url: string, name: string): Promise<boolean> {
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href));
   return true;
+}
+
+/**
+ * A click on a file's link. A URL lives 15 minutes, so when the server says this one expired, it
+ * asks once for a new one and saves with it. The device's clock does not decide, as it can be
+ * wrong. Any other failure ends the click, and the visitor or operator can click again.
+ */
+export async function saveWithRefresh(
+  url: string,
+  name: string,
+  newUrl: () => Promise<string>,
+): Promise<void> {
+  try {
+    if (!(await saveFile(url, name))) await saveFile(await newUrl(), name);
+  } catch {
+    // Nothing to tell: the link stays, and another click tries again.
+  }
 }
 
 /**
