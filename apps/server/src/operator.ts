@@ -10,7 +10,7 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, deliverLinks, redeemSignInToken } from "./auth.ts";
-import { operator, operatorPicture, operatorTwoFactor } from "./db/schema.ts";
+import { operator, operatorPicture, operatorTwoFactor, twoFactorRecovery } from "./db/schema.ts";
 import { accessFlags, type Database, operatorWorkspaces, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -32,7 +32,7 @@ import { WORKSPACE_PREFIX } from "./member.ts";
 import { countWaiting } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
-import { type TwoFactorState, twoFactorStateOf } from "./two-factor.ts";
+import { type TwoFactorState, twoFactorStateOf, waitingRecovery } from "./two-factor.ts";
 import {
   PUBLIC_IMAGE_MAX_BYTES,
   PUBLIC_IMAGE_TOO_LARGE,
@@ -107,6 +107,12 @@ const meRoute = createRoute({
               twoFactor: z.enum(["off", "on", "required"]),
               // How many recovery codes are not used yet. Null unless `twoFactor` is `on`.
               recoveryCodesLeft: z.number().int().nullable(),
+              // When a waiting recovery removes two-step sign-in, unless someone cancels it. Null
+              // when none waits.
+              recoveryCompletesAt: z.string().nullable(),
+              // True when a recovery or a reset removed two-step sign-in, and the operator has not
+              // turned it on again or skipped the prompt. Only while `twoFactor` is `off`.
+              asksTwoFactorAgain: z.boolean(),
             })
             .openapi("Operator"),
         },
@@ -167,7 +173,11 @@ const removePictureRoute = createRoute({
 });
 
 /** The routes a session can use before it passes two-step sign-in. Sign-out is BetterAuth's. */
-const BEFORE_SECOND_STEP = new Set(["GET /v1/operator/me", "POST /v1/operator/two-factor/check"]);
+const BEFORE_SECOND_STEP = new Set([
+  "GET /v1/operator/me",
+  "POST /v1/operator/two-factor/check",
+  "POST /v1/operator/two-factor/recovery",
+]);
 
 /** The routes whose body is an image, read as bytes rather than as text. */
 const PUBLIC_IMAGE_PATH = /\/(logo|picture)$/;
@@ -435,8 +445,11 @@ export function registerOperatorRoutes(
       .select({
         pictureUpdatedAt: operator.pictureUpdatedAt,
         recoveryCodesLeft: sql<number | null>`cardinality(${operatorTwoFactor.recoveryCodes})`,
+        recoveryCompletesAt: twoFactorRecovery.completesAt,
+        asksTwoFactorAgain: operator.asksTwoFactorAgain,
       })
       .from(operator)
+      .leftJoin(twoFactorRecovery, waitingRecovery(id))
       .leftJoin(operatorTwoFactor, eq(operatorTwoFactor.operatorId, operator.id))
       .where(eq(operator.id, id));
     return c.json(
@@ -477,6 +490,8 @@ export function registerOperatorRoutes(
         twoFactor: c.get("twoFactor"),
         recoveryCodesLeft:
           c.get("twoFactor") === "on" ? (account?.recoveryCodesLeft ?? null) : null,
+        recoveryCompletesAt: account?.recoveryCompletesAt?.toISOString() ?? null,
+        asksTwoFactorAgain: c.get("twoFactor") === "off" && account?.asksTwoFactorAgain === true,
       },
       200,
     );

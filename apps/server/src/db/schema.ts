@@ -170,6 +170,9 @@ export const operator = pgTable("operator", {
   // True while two-step sign-in is on, as `operator_two_factor.enabled_at` says. Here, so the
   // session check reads it with the session and needs no query of its own.
   twoFactorOn: boolean("two_factor_on").notNull().default(false),
+  // True after a recovery or a reset removed two-step sign-in, so the next sign-in asks to turn it
+  // on again. Turning it on, or the operator's skip, sets it back.
+  asksTwoFactorAgain: boolean("asks_two_factor_again").notNull().default(false),
   // Cloud only. When the cloud's welcome email went out, so an account gets it once, whatever it does after.
   welcomedAt: timestamp("welcomed_at", { withTimezone: true }),
   createdAt: createdAt(),
@@ -1373,6 +1376,45 @@ export const operatorTwoFactor = pgTable("operator_two_factor", {
   // Keyed hashes of the recovery codes not used yet. A use removes its hash.
   recoveryCodes: text("recovery_codes").array().notNull().default(sql`'{}'::text[]`),
 });
+
+/**
+ * A request to remove two-step sign-in from an account that lost its authenticator app and its
+ * recovery codes. It completes after a wait unless someone cancels it. Global, as the operator is:
+ * one account, whatever its workspaces.
+ */
+export const twoFactorRecovery = pgTable(
+  "two_factor_recovery",
+  {
+    id: id().primaryKey(),
+    operatorId: uuid("operator_id")
+      .notNull()
+      .references(() => operator.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+    completesAt: timestamp("completes_at", { withTimezone: true }).notNull(),
+    // SHA-256 of the token in the cancel link. It works only while the request waits.
+    cancelTokenHash: text("cancel_token_hash").notNull().unique(),
+    // When the email 24 hours before the end went out.
+    remindedAt: timestamp("reminded_at", { withTimezone: true }),
+    // A request waits while both are null. A cancel blocks new requests for a while.
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    // One waiting request per account, so a second ask changes nothing.
+    uniqueIndex("two_factor_recovery_waiting_idx")
+      .on(table.operatorId)
+      .where(sql`${table.cancelledAt} is null and ${table.completedAt} is null`),
+    index("two_factor_recovery_operator_idx").on(table.operatorId, table.cancelledAt),
+    // The worker's reminders and completions.
+    index("two_factor_recovery_due_idx")
+      .on(table.completesAt)
+      .where(sql`${table.cancelledAt} is null and ${table.completedAt} is null`),
+    check(
+      "two_factor_recovery_one_end",
+      sql`${table.cancelledAt} is null or ${table.completedAt} is null`,
+    ),
+  ],
+);
 
 /**
  * How the widget looks and what it says, one row per workspace, made with the workspace. It is

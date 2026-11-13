@@ -215,6 +215,7 @@ describe("migrations", () => {
       "operator_two_factor",
       "push_subscription",
       "session",
+      "two_factor_recovery",
       "verification",
       "worker_heartbeat",
     ]);

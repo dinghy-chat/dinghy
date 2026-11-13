@@ -29,6 +29,7 @@ import {
   retryDeletion,
 } from "./storage.ts";
 import { MINUTE_MS, RETENTION_MS } from "./time.ts";
+import { recoveryWorkerStep } from "./two-factor-recovery.ts";
 import type { Uploads } from "./uploads.ts";
 import {
   abandonWebhook,
@@ -173,6 +174,7 @@ export function startWorker({
   const bounded =
     mailer === undefined ? undefined : boundedMailer(mailer, stopping.signal, mailTimeoutMs);
   const cloudStep = cloudWorkerStep(cloud, { db, logger, publicUrl, secret, signals });
+  const recoveryStep = recoveryWorkerStep({ db, logger, mailer: bounded, publicUrl, secret });
   const channels = { push: push !== undefined, email: mailer !== undefined };
   let wake = () => {};
 
@@ -363,6 +365,7 @@ export function startWorker({
         lifecycleAt = Date.now() + lifecycleMs;
         // The cloud step keeps its own claim time, sized for slow Stripe calls and emails.
         await stage("cloud", async () => cloudStep?.({ mailer: bounded }));
+        await stage("two-factor recovery", recoveryStep);
         // Its uploads go through the deletions above, and the workspace row after them.
         await stage("purge", async () => {
           await purgeDeletedWorkspaces(db);

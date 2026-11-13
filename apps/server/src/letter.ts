@@ -16,8 +16,17 @@ export const EMAIL_COLORS = {
   onDark: "#ffffff",
 };
 
-/** Who turned off two-step sign-in: the operator in the app, or the server's admin. */
-type TwoFactorOffBy = "operator" | "admin";
+/**
+ * Who turned off two-step sign-in: the operator in the app, the server's admin, a recovery at the
+ * end of its wait, or a teammate who manages the workspace, by name.
+ */
+type TwoFactorOffBy = "operator" | "admin" | "recovery" | { teammate: string };
+
+/** How long a recovery waits, and when its reminder goes out. The emails say both. */
+export const RECOVERY_WAIT_HOURS = 72;
+export const RECOVERY_REMINDER_HOURS = 24;
+/** How long a cancel blocks new recovery requests. */
+export const RECOVERY_BLOCK_DAYS = 7;
 
 // Every email is plain text in one voice: a greeting, a few short paragraphs and the same sign-off.
 // Every string has a key here or next to its sender, so a locale can be added later.
@@ -66,11 +75,59 @@ const text = {
   ],
   twoFactorOffSubject: "Two-step sign-in is off for your Dinghy account",
   twoFactorOffBody: (by: TwoFactorOffBy) => [
-    by === "operator"
-      ? "Two-step sign-in was turned off for your Dinghy account. A sign-in now needs only the email link."
-      : "The admin of your Dinghy server turned off two-step sign-in for your account and signed out its sessions. A sign-in now needs only the email link.",
+    `${text.twoFactorOffBy(by)} A sign-in now needs only the email link.`,
     "You can turn it on again in Profile.",
     text.twoFactorNotYou,
+  ],
+  twoFactorOffBy: (by: TwoFactorOffBy) => {
+    if (typeof by === "object") {
+      return `${shownName(by.teammate)}, who manages your workspace, turned off two-step sign-in for your Dinghy account and signed out its sessions.`;
+    }
+    return {
+      operator: "Two-step sign-in was turned off for your Dinghy account.",
+      admin:
+        "The admin of your Dinghy server turned off two-step sign-in for your account and signed out its sessions.",
+      recovery: `Two-step sign-in was removed from your Dinghy account, ${RECOVERY_WAIT_HOURS} hours after someone asked for it, and every session signed out.`,
+    }[by];
+  },
+  recoveryCancelLink: (url: string) => [
+    "Wasn't you? Cancel it with this link, then secure your email account, because someone can read it:",
+    url,
+  ],
+  recoveryFoundPhone:
+    "Was it you? Then there is nothing to do. Found your phone or a recovery code? Sign in and enter a code, and the request ends.",
+  recoveryRequestedSubject: "Someone asked to remove two-step sign-in from your Dinghy account",
+  recoveryRequestedBody: (url: string) => [
+    `Someone asked to remove two-step sign-in from your Dinghy account, because they lost their authenticator app and their recovery codes. Unless it is cancelled, it is removed in ${RECOVERY_WAIT_HOURS} hours, and every session signs out.`,
+    text.recoveryFoundPhone,
+    ...text.recoveryCancelLink(url),
+  ],
+  recoveryReminderSubject: `Two-step sign-in leaves your Dinghy account in ${RECOVERY_REMINDER_HOURS} hours`,
+  recoveryReminderBody: (url: string) => [
+    `In ${RECOVERY_REMINDER_HOURS} hours, two-step sign-in is removed from your Dinghy account, as someone asked, and every session signs out.`,
+    text.recoveryFoundPhone,
+    ...text.recoveryCancelLink(url),
+  ],
+  recoveryCancelledSubject: "The recovery of your Dinghy account was cancelled",
+  recoveryCancelledBody: () => [
+    `The request to remove two-step sign-in from your Dinghy account was cancelled, and the sessions that never passed the code were signed out. No new request can start for ${RECOVERY_BLOCK_DAYS} days.`,
+    "If you asked for it and then found your phone, there is nothing more to do.",
+    "If you did not ask for it, someone can most likely read your email. Change your email password, check its forwarding rules and turn on its own two-step sign-in.",
+  ],
+  teamRecoverySubject: (name: string) => `${name} asked to remove two-step sign-in on Dinghy`,
+  teamRecoveryBody: (name: string, email: string) => [
+    `${name} (${email}) asked to remove two-step sign-in from their Dinghy account, because they lost their authenticator app and their recovery codes. Unless they cancel it, it is removed in ${RECOVERY_WAIT_HOURS} hours.`,
+    `Check with ${name} by voice or in person. If they did not ask for it, someone may be reading their email: ask them to cancel it, with the link in their email or the banner in Dinghy, and to secure their email account.`,
+  ],
+  teamRecoveryDoneSubject: (name: string) => `Two-step sign-in was removed for ${name} on Dinghy`,
+  teamRecoveryDoneBody: (name: string, email: string) => [
+    `Two-step sign-in was removed from the Dinghy account of ${name} (${email}), ${RECOVERY_WAIT_HOURS} hours after they asked for it, and their sessions signed out.`,
+    `If ${name} did not ask for it, someone may be reading their email. Remove them in Settings > Team until they secure it.`,
+  ],
+  teamResetSubject: (name: string) => `Two-step sign-in was reset for ${name} on Dinghy`,
+  teamResetBody: (actor: string, name: string, email: string) => [
+    `${actor} turned off two-step sign-in for ${name} (${email}) and signed out their sessions. ${name} now signs in with the email link only.`,
+    `If you did not expect this, check with ${actor} and ${name}.`,
   ],
   recoveryUsedSubject: "A recovery code was used on your Dinghy account",
   recoveryUsedBody: () => [
@@ -241,6 +298,54 @@ export const lockoutMail = (failures: number, minutes: number) => ({
   subject: text.lockoutSubject,
   body: letter(text.lockoutBody(failures, minutes)),
 });
+
+/** A person's name in another person's email: one line, and short enough for a subject. */
+const shownName = (name: string) => (oneLine(name) ?? "").slice(0, WORKSPACE_NAME_MAX);
+
+/** Someone asked to remove two-step sign-in. `url` opens the page that cancels it. */
+export const recoveryRequestedMail = (url: string) => ({
+  subject: text.recoveryRequestedSubject,
+  body: letter(text.recoveryRequestedBody(url)),
+});
+
+/** A recovery ends soon. `url` opens the page that cancels it. */
+export const recoveryReminderMail = (url: string) => ({
+  subject: text.recoveryReminderSubject,
+  body: letter(text.recoveryReminderBody(url)),
+});
+
+/** A recovery was cancelled, which most often means someone else asked for it. */
+export const recoveryCancelledMail = () => ({
+  subject: text.recoveryCancelledSubject,
+  body: letter(text.recoveryCancelledBody()),
+});
+
+/** To the owners and admins of an account's workspaces, which a recovery warns. No cancel link. */
+export function teamRecoveryMail(account: { name: string; email: string }) {
+  const name = shownName(account.name);
+  return {
+    subject: text.teamRecoverySubject(name),
+    body: letter(text.teamRecoveryBody(name, account.email)),
+  };
+}
+
+/** To the same owners and admins, once the recovery removed two-step sign-in. */
+export function teamRecoveryDoneMail(account: { name: string; email: string }) {
+  const name = shownName(account.name);
+  return {
+    subject: text.teamRecoveryDoneSubject(name),
+    body: letter(text.teamRecoveryDoneBody(name, account.email)),
+  };
+}
+
+/** To a workspace's other owners, after a teammate's reset. */
+export function teamResetMail(actorName: string, account: { name: string; email: string }) {
+  const name = shownName(account.name);
+  return {
+    subject: text.teamResetSubject(name),
+    body: letter(text.teamResetBody(shownName(actorName), name, account.email)),
+  };
+}
 
 /** The sentence that says how long a link works, for the emails in ee/. */
 export const LINK_LASTS = text.linkLasts;

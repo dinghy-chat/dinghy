@@ -750,6 +750,20 @@
       "when": 1794599531201,
       "tag": "0106_purge_without_cascading_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1794602348713,
+      "tag": "0107_two_factor_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1794602349271,
+      "tag": "0108_two_factor_recovery_grants",
+      "breakpoints": true
     }
   ]
 }
