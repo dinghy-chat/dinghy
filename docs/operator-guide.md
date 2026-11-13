@@ -12,7 +12,7 @@ Messages can carry a little formatting, written as Markdown: `**bold**`, `*itali
 
 To send an image or a file, paste it, drag it onto the chat, or select the attach button. An image must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels. A file can be a PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, up to 10 MB. A file shows as its name and size, and selecting it downloads it: Dinghy never opens a file in the page. Dinghy does not scan files for viruses, so open a visitor's file with the care you give an email attachment. A CSV can hold spreadsheet formulas that run when a spreadsheet app opens it, so open a visitor's CSV with the same care, or import it as plain text.
 
-Visitors can send the same files, unless an owner or admin turns off **Visitors can send files** in **Settings > Appearance**. Your team can always send files.
+Visitors can send the same files while **Visitors can send files** is on in **Settings > Appearance**. It is on for a new workspace, and off for one from before the release that added files, until an owner or admin turns it on. Your team can always send files.
 
 If a message shows "Not sent", select it to try again. A retry cannot create a second copy.
 
