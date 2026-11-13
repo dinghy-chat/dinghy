@@ -3215,7 +3215,8 @@ button.quote:hover {
   color: var(--mute);
   pointer-events: none;
 }
-.format-tools .icon-button[aria-pressed="true"] {
+.format-tools .icon-button[aria-pressed="true"],
+.box .tools-toggle[aria-pressed="true"] {
   background: var(--soft);
   color: var(--navy);
 }
@@ -3248,9 +3249,15 @@ button.quote:hover {
   gap: 2px;
   min-width: 0;
 }
-/* The Aa toggle shows only on a phone, where the formats wait behind it. */
-.format-toggle {
+/* The + toggle shows only on a phone, where attach, emoji and the formats wait behind it. */
+.tools-toggle {
   display: none;
+}
+.more-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
 }
 .format-tools {
   display: flex;
@@ -5701,16 +5708,21 @@ button.quote:hover {
     min-height: 40px;
     max-height: 160px;
   }
-  .format-toggle {
+  .tools-toggle {
     display: grid;
   }
-  .compose:not(.formatting) .format-tools,
-  .compose .tools-divider {
+  .compose:not(.tools-open) .more-tools,
+  .compose.linking .more-tools {
     display: none;
   }
-  /* One row: attach, emoji, Aa, the field and send. The formats show above the field. */
+  .more-tools .format-tools {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  /* One row: +, the field and send. Attach, emoji and the formats show above the field. */
   .compose:not(.editing) .box {
-    grid-template-columns: repeat(3, auto) minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: end;
     gap: 0;
   }
@@ -5723,32 +5735,29 @@ button.quote:hover {
   .compose:not(.editing) .compose-tools > * {
     grid-row: 3;
   }
+  .compose:not(.editing) .tools-toggle {
+    grid-column: 1;
+  }
   .compose:not(.editing) .compose-text {
     grid-row: 3;
-    grid-column: 4;
+    grid-column: 2;
   }
   .compose:not(.editing) :is(.send, .send-note) {
-    grid-column: 5;
+    grid-column: 3;
   }
-  .compose:not(.editing) .format-tools {
+  .compose:not(.editing) .more-tools {
     grid-row: 2;
     grid-column: 1 / -1;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
     border-bottom: 1px solid var(--line);
   }
-  /* The link's address takes the formats' row while it is open. */
+  /* The link's address takes the tools' row while it is open. */
   .compose:not(.editing) .link-field {
     grid-row: 2;
-  }
-  .compose.linking .format-tools {
-    display: none;
   }
   .compose.editing .compose-tools {
     flex-wrap: wrap;
   }
-  .compose.editing .format-tools {
+  .compose.editing .more-tools {
     flex-basis: 100%;
     order: -1;
   }

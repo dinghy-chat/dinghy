@@ -1024,6 +1024,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   formatBulleted: "Bulleted list",
   formatNumbered: "Numbered list",
   formatTools: "Formatting",
+  moreTools: "More tools",
   linkAddress: "Link address",
   linkPlaceholder: "Paste or type a link",
   withShortcut: "{name} ({keys})",

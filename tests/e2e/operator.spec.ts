@@ -420,7 +420,7 @@ test("on a phone, the list and the thread take turns", async ({ browser }) => {
   expect(overflow).toBe(false);
 });
 
-test("on a phone, the sections sit in a tab bar and the formats wait behind Aa", async ({
+test("on a phone, the sections sit in a tab bar and the reply tools wait behind +", async ({
   browser,
 }) => {
   const operator = await signedIn(browser, server, "anna@example.com");
@@ -439,11 +439,16 @@ test("on a phone, the sections sit in a tab bar and the formats wait behind Aa",
   const send = await operator.getByRole("button", { name: "Send" }).boundingBox();
   const field = await reply(operator).boundingBox();
   expect(Math.abs((send?.y ?? 0) - (field?.y ?? 0))).toBeLessThan(10);
+  // Only the + toggle sits before the text, so the text keeps most of the row.
+  expect(field?.x ?? 0).toBeLessThan(80);
   const bold = operator.getByRole("button", { name: /^Bold/ });
+  const emoji = operator.getByRole("button", { name: "Add an emoji" });
   await expect(bold).toBeHidden();
-  const formats = operator.getByRole("button", { name: "Formatting" });
-  await formats.click();
-  await expect(formats).toHaveAttribute("aria-pressed", "true");
+  await expect(emoji).toBeHidden();
+  const tools = operator.getByRole("button", { name: "More tools" });
+  await tools.click();
+  await expect(tools).toHaveAttribute("aria-pressed", "true");
+  await expect(emoji).toBeVisible();
   await reply(operator).fill("Phone");
   await reply(operator).selectText();
   await bold.click();
