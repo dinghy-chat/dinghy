@@ -3248,6 +3248,10 @@ button.quote:hover {
   gap: 2px;
   min-width: 0;
 }
+/* The Aa toggle shows only on a phone, where the formats wait behind it. */
+.format-toggle {
+  display: none;
+}
 .format-tools {
   display: flex;
   flex-wrap: wrap;
@@ -5697,39 +5701,28 @@ button.quote:hover {
     min-height: 40px;
     max-height: 160px;
   }
-  /* A phone has no format buttons. Typed Markdown, such as **bold** or "- ", still formats. */
-  .compose .format-tools,
+  .format-toggle {
+    display: grid;
+  }
+  .compose:not(.formatting) .format-tools,
   .compose .tools-divider {
     display: none;
   }
-  /* One row, as in a messaging app: attach, the field, emoji and send. */
-  .compose:not(.editing) .box {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-    align-items: end;
-    gap: 0;
+  /* The text takes the full width. Attach, emoji and Aa sit under it, and send stays alone at the
+     right, away from them. Aa opens the formats between the text and the tools. */
+  .compose-tools {
+    flex-wrap: wrap;
   }
-  .compose:not(.editing) .box > * {
-    grid-column: 1 / -1;
+  .compose.formatting .format-tools {
+    flex-basis: 100%;
+    order: -1;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--line);
   }
-  .compose:not(.editing) .compose-tools {
-    display: contents;
-  }
-  .compose:not(.editing) .compose-tools > * {
-    grid-row: 3;
-  }
-  .compose:not(.editing) .compose-text {
-    grid-row: 3;
-    grid-column: 2;
-  }
-  .compose:not(.editing) .emoji-picker {
-    grid-column: 3;
-  }
-  .compose:not(.editing) :is(.send, .send-note) {
-    grid-column: 4;
-  }
-  /* The link's address, from Cmd+K on a keyboard, opens above the field. */
-  .compose:not(.editing) .link-field {
-    grid-row: 2;
+  .compose.linking .format-tools {
+    display: none;
   }
   .closed,
   .thread > .bad {

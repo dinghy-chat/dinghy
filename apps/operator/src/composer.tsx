@@ -10,7 +10,7 @@ import {
   useEditorState,
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
 import { acceptedFiles } from "../../../packages/widget/src/compose.ts";
 import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
@@ -290,6 +290,9 @@ export function Composer({
   picks: PickerSources;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
+  // A phone keeps the formatting buttons behind one toggle, so the field gets the row.
+  const [showsFormats, setShowsFormats] = useState(false);
+  const formatsId = useId();
   // The address being typed for a link, or null while the link field is closed.
   const [typedLink, setTypedLink] = useState<string | null>(null);
   const isNote = mode?.value === "note";
@@ -359,6 +362,7 @@ export function Composer({
         "compose",
         editing && "editing",
         isNote && "note",
+        showsFormats && "formatting",
         typedLink !== null && "linking",
       ]
         .filter(Boolean)
@@ -447,8 +451,19 @@ export function Composer({
             </>
           )}
           <EmojiButton onPick={(emoji) => run(editor, (chain) => chain.insertContent(emoji))} />
+          <button
+            type="button"
+            className="icon-button format-toggle"
+            aria-label={t("formatTools")}
+            title={t("formatTools")}
+            aria-pressed={showsFormats}
+            aria-controls={formatsId}
+            onClick={() => setShowsFormats((shows) => !shows)}
+          >
+            <Icon name="textAa" size={18} />
+          </button>
           <span className="tools-divider" aria-hidden="true" />
-          <fieldset className="format-tools" aria-label={t("formatTools")}>
+          <fieldset id={formatsId} className="format-tools" aria-label={t("formatTools")}>
             {FORMATS.map((one, index) => {
               const label = shortcutLabel(one.name, one.key);
               return (
