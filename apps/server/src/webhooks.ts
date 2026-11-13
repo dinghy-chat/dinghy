@@ -23,7 +23,13 @@ import {
   webhook,
   webhookDelivery,
 } from "./db/schema.ts";
-import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
+import {
+  type Database,
+  enterWorkspace,
+  lockWrites,
+  type Transaction,
+  withWorkspace,
+} from "./db/tenant.ts";
 import {
   errorAnswer,
   failure,
@@ -49,7 +55,7 @@ import { requireSetUp, SETUP_DENIED } from "./team.ts";
 import { DAY_MS } from "./time.ts";
 
 /** At most this many webhooks per workspace. */
-const WEBHOOK_LIMIT = 5;
+export const WEBHOOK_LIMIT = 5;
 /** One request may take this long, from the connection to the answer's status. */
 const REQUEST_TIMEOUT_MS = 10_000;
 /** The first retry waits 30 seconds, doubling to an hour: 30 attempts last about a day. */
@@ -475,7 +481,10 @@ const replayRoute = createRoute({
 });
 
 const BAD_ENDPOINT = (reason: string) => failure("bad_endpoint", reason);
-const LIMIT = failure("webhook_limit", `A workspace can have ${WEBHOOK_LIMIT} webhooks.`);
+export const WEBHOOK_LIMIT_REACHED = failure(
+  "webhook_limit",
+  `A workspace can have ${WEBHOOK_LIMIT} webhooks.`,
+);
 const newSecret = () => `whsec_${randomBytes(32).toString("base64url")}`;
 
 const webhookColumns = {
@@ -578,7 +587,7 @@ export function createWebhooks({
       const secret = newSecret();
       const created = await withWorkspace(db, workspaceId, async (tx) => {
         // Two adds at once take turns, so neither can pass the limit.
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`webhooks:${workspaceId}`}))`);
+        await lockWrites(tx, "webhooks", workspaceId);
         const [existing] = await tx
           .select({ n: count() })
           .from(webhook)
@@ -757,7 +766,7 @@ export function registerWebhookRoutes(app: App, { webhooks }: { webhooks: Webhoo
       c.req.valid("json"),
     );
     if (made.kind === "bad_endpoint") return c.json(BAD_ENDPOINT(made.reason), 400);
-    if (made.kind === "limit") return c.json(LIMIT, 409);
+    if (made.kind === "limit") return c.json(WEBHOOK_LIMIT_REACHED, 409);
     return c.json({ ...made.webhook, secret: made.secret }, 201);
   });
 

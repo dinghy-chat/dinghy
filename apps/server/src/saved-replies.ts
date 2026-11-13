@@ -8,7 +8,7 @@ import {
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { savedReply } from "./db/schema.ts";
-import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { type Database, lockWrites, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
   failure,
@@ -150,14 +150,21 @@ async function refusal(
   shortcut: string | undefined,
   savedReplyId: string | null,
 ) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`saved-replies:${workspaceId}`}))`);
-  const rows = await tx
-    .select({ id: savedReply.id, shortcut: savedReply.shortcut })
+  await lockWrites(tx, "saved-replies", workspaceId);
+  const shortcutTaken =
+    shortcut === undefined
+      ? sql`false`
+      : sql`${savedReply.shortcut} = ${shortcut}
+          and ${savedReplyId === null ? sql`true` : sql`${savedReply.id} <> ${savedReplyId}`}`;
+  const [counts] = await tx
+    .select({
+      total: sql<number>`count(*)::int`,
+      taken: sql<number>`count(*) filter (where ${shortcutTaken})::int`,
+    })
     .from(savedReply)
     .where(eq(savedReply.workspaceId, workspaceId));
-  if (savedReplyId === null && rows.length >= SAVED_REPLY_LIMIT) return LIMIT;
-  const taken = rows.some((row) => row.shortcut === shortcut && row.id !== savedReplyId);
-  return taken ? SHORTCUT_TAKEN : null;
+  if (savedReplyId === null && (counts?.total ?? 0) >= SAVED_REPLY_LIMIT) return LIMIT;
+  return (counts?.taken ?? 0) > 0 ? SHORTCUT_TAKEN : null;
 }
 
 /**

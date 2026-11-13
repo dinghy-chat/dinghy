@@ -16,6 +16,18 @@ export async function enterWorkspace(tx: Transaction, workspaceId: string): Prom
 }
 
 /**
+ * Makes writes of one kind in a workspace take turns until the transaction ends, so two at once
+ * cannot both pass a limit or a uniqueness check. `kind` names the lock, such as "webhooks".
+ */
+export async function lockWrites(
+  tx: Transaction,
+  kind: string,
+  workspaceId: string,
+): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${kind}:${workspaceId}`}))`);
+}
+
+/**
  * Runs `work` in a transaction scoped to one workspace. Every tenant query goes through here.
  * Keep the work short: do not make a network call or hold a stream open inside it.
  *

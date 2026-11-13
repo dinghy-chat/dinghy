@@ -15,7 +15,7 @@ import { mcpSetupTools, type SetupToolOptions } from "./mcp-setup-tools.ts";
 import { closedFailure } from "./member.ts";
 import type { RateLimit } from "./rate-limit.ts";
 import { assignTo, NOT_A_MEMBER } from "./team.ts";
-import type { Webhooks } from "./webhooks.ts";
+import { WEBHOOK_LIMIT, WEBHOOK_LIMIT_REACHED, type Webhooks } from "./webhooks.ts";
 
 // MCP over Streamable HTTP, stateless: each POST holds one JSON-RPC message and gets one JSON answer.
 // There is no session and no event stream, so GET answers 405, as the spec allows.
@@ -296,7 +296,7 @@ function setupTools(webhooks: Webhooks): Tool[] {
     tool({
       name: "create_webhook",
       title: "Add a webhook",
-      description: `Adds a webhook that gets a signed POST for each event it asks for: ${WEBHOOK_EVENTS.join(", ")}. The URL must be https. The answer holds the signing secret once: store it to check the \`Dinghy-Signature\` header. A workspace has at most 5 webhooks.`,
+      description: `Adds a webhook that gets a signed POST for each event it asks for: ${WEBHOOK_EVENTS.join(", ")}. The URL must be https. The answer holds the signing secret once: store it to check the \`Dinghy-Signature\` header. A workspace has at most ${WEBHOOK_LIMIT} webhooks.`,
       input: z.object({
         url: z.string().trim().max(2000).describe("The https address that receives the events"),
         events: z.array(z.enum(WEBHOOK_EVENTS)).min(1).max(WEBHOOK_EVENTS.length),
@@ -304,9 +304,7 @@ function setupTools(webhooks: Webhooks): Tool[] {
       async run(input, { workspaceId, actor }) {
         const made = await webhooks.create(workspaceId, actor, { ...input, enabled: true });
         if (made.kind === "bad_endpoint") return { error: failure("bad_endpoint", made.reason) };
-        if (made.kind === "limit") {
-          return { error: failure("webhook_limit", "A workspace can have 5 webhooks.") };
-        }
+        if (made.kind === "limit") return { error: WEBHOOK_LIMIT_REACHED };
         return { data: { webhook: made.webhook, secret: made.secret } };
       },
     }),
