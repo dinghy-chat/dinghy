@@ -20,7 +20,7 @@ import {
   type NewAttachment,
   WorkspaceClosedError,
 } from "./messages.ts";
-import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
+import { type RateLimit, TOO_MANY_REQUESTS } from "./rate-limit.ts";
 import { SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
 import { HOUR_SECONDS, MINUTE_SECONDS } from "./time.ts";
 import type { Uploads } from "./uploads.ts";
@@ -358,75 +358,107 @@ const inboundEmailRoute = createRoute({
   },
 });
 
-interface InboundOptions {
+interface IntakeOptions {
   db: Database;
-  inbound: InboundEmail;
+  /** The domain of reply addresses, lower case. */
+  domain: string;
   uploads: Uploads | undefined;
   limits: Limits;
   live: Signals;
   rateLimit: RateLimit;
 }
 
+type Failure = ReturnType<typeof failure>;
+
+/**
+ * What became of an email. 200 took it, had taken it, or dropped it as an automatic answer. 429
+ * and 503 ask the sender to retry later. The rest refuse it for good.
+ */
+export type Received =
+  | { status: 200 }
+  | { status: 402 | 403 | 404 | 413; body: Failure }
+  | { status: 429 | 503; body: Failure; retryAfterSeconds: number };
+
+const BUSY_RETRY_SECONDS = 1;
+const BUSY_NOW = { status: 503, body: BUSY, retryAfterSeconds: BUSY_RETRY_SECONDS } as const;
+
+/**
+ * Takes in emails for every route that receives them. They share one count of the emails held,
+ * so the process holds at most EMAILS_AT_ONCE, whichever route they came by.
+ */
+export function createEmailIntake(options: IntakeOptions) {
+  let held = 0;
+  return {
+    /** Runs `work` while it holds one email, or answers busy without running it. */
+    async hold<T>(work: () => Promise<T>): Promise<T | typeof BUSY_NOW> {
+      if (held >= EMAILS_AT_ONCE) return BUSY_NOW;
+      held += 1;
+      try {
+        return await work();
+      } finally {
+        held -= 1;
+      }
+    },
+    /** Takes an email whose sender was checked, as the visitor's messages. */
+    receive: (body: Buffer) => receive(options, body),
+  };
+}
+
+export type EmailIntake = ReturnType<typeof createEmailIntake>;
+
+/** The answer to a sender that posted an email. */
+function receivedAnswer(c: Context, received: Received) {
+  if (received.status === 200) return c.json(OK, 200);
+  if ("retryAfterSeconds" in received) {
+    c.header("retry-after", String(received.retryAfterSeconds));
+  }
+  return c.json(received.body, received.status);
+}
+
 /**
  * The route the mail forwarder posts each reply to. It checks the length, the signature's age and
  * the emails it holds before it reads a byte of the body, so no request makes it hold more.
  */
-export function registerInboundEmail(app: App, options: InboundOptions): void {
-  let held = 0;
+export function registerInboundEmail(app: App, intake: EmailIntake, secret: string): void {
   app.openapi(inboundEmailRoute, async (c) => {
     const length = c.req.header("content-length");
     if (length === undefined || !/^\d{1,12}$/.test(length)) return c.json(LENGTH_REQUIRED, 411);
     if (Number(length) > EMAIL_MAX_BYTES) return c.json(TOO_LARGE, 413);
     const signed = parseSignature(c.req.header(SIGNATURE_HEADER));
     if (signed === null) return c.json(BAD_SIGNATURE, 401);
-    if (held >= EMAILS_AT_ONCE) {
-      c.header("retry-after", "1");
-      return c.json(BUSY, 503);
-    }
-    held += 1;
-    try {
+    const received = await intake.hold(async () => {
       const body = Buffer.from(await c.req.arrayBuffer());
-      if (!signatureMatches(options.inbound.secret, signed, body)) {
-        return c.json(BAD_SIGNATURE, 401);
-      }
-      return await receive(c, options, body);
-    } finally {
-      held -= 1;
-    }
+      return signatureMatches(secret, signed, body) ? intake.receive(body) : null;
+    });
+    return received === null ? c.json(BAD_SIGNATURE, 401) : receivedAnswer(c, received);
   });
 }
 
-async function receive(c: Context, options: InboundOptions, body: Buffer) {
-  const { db, inbound, rateLimit, live } = options;
+async function receive(options: IntakeOptions, body: Buffer): Promise<Received> {
+  const { db, domain, rateLimit, live } = options;
   const email = await PostalMime.parse(body);
-  if (isAutoReply(email)) return c.json(OK, 200);
-  const target = replyTarget(email, inbound.domain);
-  if (target === null) return c.json(NOT_FOUND, 404);
+  if (isAutoReply(email)) return { status: 200 };
+  const target = replyTarget(email, domain);
+  if (target === null) return { status: 404, body: NOT_FOUND };
   const { workspaceId } = target;
   const address = await withWorkspace(db, workspaceId, (tx) =>
     findAddress(tx, workspaceId, target.token),
   );
-  if (address === null) return c.json(NOT_FOUND, 404);
-  if (address.blocked) return c.json(BLOCKED, 403);
+  if (address === null) return { status: 404, body: NOT_FOUND };
+  if (address.blocked) return { status: 403, body: BLOCKED };
   const wait = await rateLimit.hit(
     "inbound-email",
     address.id,
     MESSAGES_PER_ADDRESS_PER_HOUR,
     HOUR_SECONDS,
   );
-  if (wait !== null) return tooManyRequests(c, wait);
+  if (wait !== null) return { status: 429, body: TOO_MANY_REQUESTS, retryAfterSeconds: wait };
   const outcome = await catchClosed(addMessages(options, workspaceId, address, email, body));
-  if (outcome instanceof WorkspaceClosedError) {
-    const refused = closedFailure(outcome.access);
-    return c.json(refused.body, refused.status);
-  }
-  if (outcome === "too_long") return c.json(TOO_LARGE, 413);
-  if (outcome === "busy") {
-    c.header("retry-after", "1");
-    return c.json(BUSY, 503);
-  }
+  if (outcome instanceof WorkspaceClosedError) return closedFailure(outcome.access);
+  if (outcome === "too_long") return { status: 413, body: TOO_LARGE };
+  if (outcome === "busy") return BUSY_NOW;
   if (outcome.created) wakeConversation(live, workspaceId, address.visitorId);
-  return c.json(OK, 200);
+  return { status: 200 };
 }
 
 /**
@@ -472,7 +504,7 @@ const withNote = (parts: string[], note: string) => {
  * conversation. The text comes last, so it can say which attachments were left out.
  */
 async function addMessages(
-  { db, uploads, limits }: InboundOptions,
+  { db, uploads, limits }: IntakeOptions,
   workspaceId: string,
   address: FoundAddress,
   email: Email,

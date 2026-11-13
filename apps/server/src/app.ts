@@ -29,7 +29,7 @@ import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { registerGetStartedRoutes } from "./get-started.ts";
 import { registerHandlingRoutes } from "./handling.ts";
-import { type InboundEmail, registerInboundEmail } from "./inbound-email.ts";
+import { createEmailIntake, type InboundEmail, registerInboundEmail } from "./inbound-email.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { registerKeyEvents } from "./key-events.ts";
 import { registerLabelRoutes } from "./labels.ts";
@@ -410,7 +410,9 @@ export function createApp({
     registerChatPage(app, { db, rateLimit, uploadsOrigin: uploads?.origin });
   }
   if (inboundEmail !== undefined) {
-    registerInboundEmail(app, { db, inbound: inboundEmail, uploads, limits, live, rateLimit });
+    const { domain } = inboundEmail;
+    const intake = createEmailIntake({ db, domain, uploads, limits, live, rateLimit });
+    registerInboundEmail(app, intake, inboundEmail.secret);
   }
   if (auth !== undefined) {
     registerOperatorRoutes(app, {

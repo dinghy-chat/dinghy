@@ -87,9 +87,14 @@ export function createSlots(valkey: Redis | null, logger: Logger, scale = 1): Sl
   };
 }
 
+export const TOO_MANY_REQUESTS = failure(
+  "too_many_requests",
+  "Too many requests. Try again later.",
+);
+
 export const tooManyRequests = (c: Context, retryAfter: number) => {
   c.header("retry-after", String(retryAfter));
-  return c.json(failure("too_many_requests", "Too many requests. Try again later."), 429);
+  return c.json(TOO_MANY_REQUESTS, 429);
 };
 
 /** A route limit per client address. */
