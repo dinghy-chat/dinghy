@@ -15,7 +15,7 @@ export interface Presence {
 }
 
 /** An image, or a file that only downloads. `size` is in bytes. */
-export type Upload = { url: string; removed?: never } & (
+export type Attachment = { url: string; removed?: never } & (
   | { type: "image"; width: number; height: number }
   | { type: "file"; name: string; size: number }
 );
@@ -29,8 +29,8 @@ export interface ChatMessage {
   fromVisitor: boolean;
   clientId: string | null;
   body: string | null;
-  /** An `image` or `file` message's upload. One deleted after 12 months keeps only its type. */
-  attachment: Upload | { type: "image" | "file"; removed: true } | null;
+  /** An `image` or `file` message's attachment. One deleted after 12 months keeps only its type. */
+  attachment: Attachment | { type: "image" | "file"; removed: true } | null;
   /** A reply from a workspace API key, such as the site's own bot. */
   fromBot: boolean;
   /** A hash of the operator's or the key's ID, which tells two authors with one name apart. */

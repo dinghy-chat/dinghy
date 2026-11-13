@@ -532,7 +532,7 @@ describe("copies between the two sides", () => {
         {
           clientId: randomUUID(),
           attachment: {
-            kind: "image",
+            type: "image",
             attachmentId: randomUUID(),
             storageKey: `${acme.workspaceId}/full`,
             byteSize: MAX_STORED_BYTES,

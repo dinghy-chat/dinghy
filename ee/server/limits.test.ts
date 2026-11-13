@@ -306,7 +306,7 @@ describe("uploads: a byte limit per workspace on the cloud", () => {
             {
               clientId: randomUUID(),
               attachment: {
-                kind: "image",
+                type: "image",
                 attachmentId,
                 storageKey: `${space.id}/${attachmentId}`,
                 byteSize: 100,

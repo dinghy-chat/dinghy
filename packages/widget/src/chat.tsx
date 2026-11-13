@@ -87,7 +87,7 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
       : attachment?.removed
         ? t(`${attachment.type}Removed`)
         : (message.body ?? ""),
-    upload: attachment?.removed ? null : attachment,
+    attachment: attachment?.removed ? null : attachment,
     quote: message.replyTo,
     gone: message.deleted,
     fromVisitor: message.fromVisitor,
@@ -609,7 +609,7 @@ function Chat({
         id,
         seq: null,
         body,
-        upload: null,
+        attachment: null,
         fromVisitor: true,
         author: null,
         status: "sending",
@@ -786,7 +786,7 @@ function Chat({
           onClick={() => viewer.current?.close()}
         >
           <img
-            src={lines.find((line) => line.id === viewing)?.upload?.url}
+            src={lines.find((line) => line.id === viewing)?.attachment?.url}
             alt={t("imageAlt")}
             onError={refreshUploads}
           />

@@ -174,8 +174,8 @@ export const processPicture = (bytes: Uint8Array) =>
 
 /** The checked bytes of an upload, before they are stored. */
 type Checked = { data: Uint8Array; contentType: string } & (
-  | { kind: "image"; width: number; height: number }
-  | { kind: "file"; name: string }
+  | { type: "image"; width: number; height: number }
+  | { type: "file"; name: string }
 );
 
 /** Images and the other files people send in the chat. */
@@ -249,7 +249,7 @@ export function createUploads({
       const name = allowedFileName(filename, bytes);
       return name === null
         ? "type_not_allowed"
-        : { kind: "file", name, data: bytes, contentType: FILE_TYPE };
+        : { type: "file", name, data: bytes, contentType: FILE_TYPE };
     }
     if (bytes.byteLength > MAX_BYTES) return "too_large";
     if (waitingToDecode >= MAX_WAITING_TO_DECODE) return "busy";
@@ -257,7 +257,7 @@ export function createUploads({
     const processed = await inTurn(() => processImage(bytes)).finally(() => {
       waitingToDecode -= 1;
     });
-    return typeof processed === "string" ? processed : { kind: "image", ...processed };
+    return typeof processed === "string" ? processed : { type: "image", ...processed };
   };
 
   /** Checks and stores the bytes, then hands them to `commit`, as `receive` says. */

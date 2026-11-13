@@ -4,7 +4,7 @@
 import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
-import type { Upload } from "./client.ts";
+import type { Attachment } from "./client.ts";
 import {
   acceptedFiles,
   fileSize,
@@ -194,7 +194,7 @@ export interface Line {
   /** Null until the server confirms it. Confirmed lines sort by this, and pending ones go last. */
   seq: bigint | null;
   body: string;
-  upload: Upload | null;
+  attachment: Attachment | null;
   /** Held until the server confirms it, so a retry can send it again. */
   file?: File;
   fromVisitor: boolean;
@@ -486,7 +486,7 @@ function FileLink({
   mine,
   onExpired,
 }: {
-  download: Extract<Upload, { type: "file" }>;
+  download: Extract<Attachment, { type: "file" }>;
   mine: boolean;
   onExpired(): void;
 }) {
@@ -538,7 +538,7 @@ export function ChatLine({
           {line.author.name}
         </div>
       )}
-      {line.upload?.type === "image" ? (
+      {line.attachment?.type === "image" ? (
         <button
           type="button"
           class={line.fromVisitor ? "shot mine" : "shot"}
@@ -546,16 +546,16 @@ export function ChatLine({
           onClick={onView}
         >
           <img
-            src={line.upload.url}
-            width={line.upload.width}
-            height={line.upload.height}
+            src={line.attachment.url}
+            width={line.attachment.width}
+            height={line.attachment.height}
             alt={t("imageAlt")}
             loading="lazy"
             onError={onUploadError}
           />
         </button>
-      ) : line.upload ? (
-        <FileLink download={line.upload} mine={line.fromVisitor} onExpired={onUploadError} />
+      ) : line.attachment ? (
+        <FileLink download={line.attachment} mine={line.fromVisitor} onExpired={onUploadError} />
       ) : line.file !== undefined ? (
         <div class="msg mine">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>
       ) : (

@@ -404,13 +404,13 @@ export type NewAttachment = {
   storageKey: string;
   byteSize: number;
   contentType: string;
-} & ({ kind: "image"; width: number; height: number } | { kind: "file"; name: string });
+} & ({ type: "image"; width: number; height: number } | { type: "file"; name: string });
 
 /** What a message's metadata holds about its image or file. */
-const attachmentMetadata = ({ attachmentId, ...upload }: NewAttachment): MessageMetadata =>
-  upload.kind === "image"
-    ? { image: { attachmentId, width: upload.width, height: upload.height } }
-    : { file: { attachmentId, name: upload.name, size: upload.byteSize } };
+const attachmentMetadata = ({ attachmentId, ...attachment }: NewAttachment): MessageMetadata =>
+  attachment.type === "image"
+    ? { image: { attachmentId, width: attachment.width, height: attachment.height } }
+    : { file: { attachmentId, name: attachment.name, size: attachment.byteSize } };
 
 /**
  * The quoted message is not a message people wrote in this conversation, or it was deleted. A reply
@@ -655,7 +655,7 @@ export async function appendMessage(
       workspaceId,
       conversationId,
       seq: messageSeq,
-      kind: isNote ? "note" : (upload?.kind ?? "text"),
+      kind: isNote ? "note" : (upload?.type ?? "text"),
       clientId: input.clientId,
       body: input.body ?? null,
       metadata,
@@ -676,7 +676,7 @@ export async function appendMessage(
       storageKey: upload.storageKey,
       byteSize: upload.byteSize,
       contentType: upload.contentType,
-      ...(upload.kind === "image"
+      ...(upload.type === "image"
         ? { width: upload.width, height: upload.height }
         : { filename: upload.name }),
     });

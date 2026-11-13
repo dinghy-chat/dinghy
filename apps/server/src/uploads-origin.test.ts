@@ -79,7 +79,7 @@ async function stored(bytes: Uint8Array, contentType: string): Promise<URL> {
       {
         clientId: randomUUID(),
         attachment: {
-          kind: "image",
+          type: "image",
           attachmentId,
           storageKey,
           byteSize: bytes.byteLength,
