@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { BULK_MAX } from "../../../packages/widget/src/shared.ts";
 import type { BulkAction, Conversation, Label, Member, WorkspaceApi } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { LabelDot } from "./labels.tsx";
@@ -16,8 +17,6 @@ import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { Avatar, failureText } from "./ui.tsx";
 
-/** The server's limit of conversations in one bulk request. */
-const BULK_MAX = 100;
 /** How long a finger rests on a row before it starts a selection. */
 const LONG_PRESS_MS = 500;
 

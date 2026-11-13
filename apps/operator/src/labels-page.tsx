@@ -1,14 +1,12 @@
 /** @jsxImportSource react */
 import { useState } from "react";
+import { LABEL_LIMIT, LABEL_NAME_MAX } from "../../../packages/widget/src/shared.ts";
 import type { Label, LabelColor, WorkspaceApi } from "./api.ts";
-import { COLOR_TEXT, LABEL_NAME_MAX, LabelDot } from "./labels.tsx";
+import { COLOR_TEXT, LabelDot } from "./labels.tsx";
 import { useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { AddForm, ErrorNote, Field, failureText, Loading, Page, StatusNote } from "./ui.tsx";
-
-// The server's limit, so the form cannot send what it refuses.
-const LABELS_MAX = 100;
 
 type Typed = { name: string; color: LabelColor };
 const EMPTY: Typed = { name: "", color: "gray" };
@@ -78,7 +76,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
   };
 
   const list = labels.data?.labels;
-  const isFull = list !== undefined && list.length >= LABELS_MAX;
+  const isFull = list !== undefined && list.length >= LABEL_LIMIT;
   return (
     <Page title={t("pageLabels")} context={t("labelsContext")}>
       {list === undefined ? (

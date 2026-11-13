@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, sql } from "drizzle-orm";
+import { LABEL_LIMIT, LABEL_NAME_MAX } from "../../../packages/widget/src/shared.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import {
@@ -7,7 +8,6 @@ import {
   conversationLabel,
   event,
   LABEL_COLORS,
-  LABEL_NAME_MAX,
   type LabeledPayload,
   label,
 } from "./db/schema.ts";
@@ -31,7 +31,6 @@ import { WORKSPACE_PREFIX } from "./member.ts";
 import { lockWorkspace, nextSeq, recordWorkspaceChange, wantsWebhook } from "./messages.ts";
 import { allowed } from "./team.ts";
 
-const LABEL_LIMIT = 100;
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/labels`;
 const ON_CONVERSATION = `${WORKSPACE_PREFIX}/{workspaceId}/conversations/{conversationId}/labels/{labelId}`;
 

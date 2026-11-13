@@ -1,12 +1,10 @@
 /** @jsxImportSource react */
 import { useId, useState } from "react";
+import { LABEL_NAME_MAX } from "../../../packages/widget/src/shared.ts";
 import type { Label, LabelColor } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { Popover } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-
-// The server's limit, so the picker cannot send a name it refuses.
-export const LABEL_NAME_MAX = 40;
 
 /** Every color a label can have, in the order Settings offers them. */
 export const COLOR_TEXT: Record<LabelColor, TextId> = {

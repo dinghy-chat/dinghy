@@ -24,9 +24,11 @@ import {
 import {
   type BusinessHours,
   HEADER_FACES_MAX,
+  LABEL_NAME_MAX,
   LOCALES,
   MESSAGE_MAX,
   RADIUS_MAX_PX,
+  SAVED_REPLY_BODY_MAX,
   SAVED_REPLY_SHORTCUT,
   WIDGET_DEFAULTS,
 } from "../../../../packages/widget/src/shared.ts";
@@ -1482,8 +1484,6 @@ export const welcomeLink = pgTable(
   ],
 );
 
-export const SAVED_REPLY_BODY_MAX = 5000;
-
 /** A reply the team writes once, and an operator inserts in the composer by typing `/`. */
 export const savedReply = pgTable(
   "saved_reply",
@@ -1548,7 +1548,6 @@ export const LABEL_COLORS = [
   "purple",
 ] as const;
 export const labelColor = pgEnum("label_color", LABEL_COLORS);
-export const LABEL_NAME_MAX = 40;
 
 /** A label the team puts on conversations, such as "billing", to sort and count them. */
 export const label = pgTable(

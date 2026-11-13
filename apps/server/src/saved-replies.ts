@@ -1,9 +1,13 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
+import {
+  SAVED_REPLY_BODY_MAX,
+  SAVED_REPLY_LIMIT,
+  SAVED_REPLY_SHORTCUT,
+} from "../../../packages/widget/src/shared.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { SAVED_REPLY_BODY_MAX, savedReply } from "./db/schema.ts";
+import { savedReply } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -21,7 +25,6 @@ import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
 import { recordWorkspaceChange } from "./messages.ts";
 
-const SAVED_REPLY_LIMIT = 200;
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/saved-replies`;
 
 const LIMIT = failure(

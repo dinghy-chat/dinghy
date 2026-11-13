@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq } from "drizzle-orm";
+import { BULK_MAX } from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { label } from "./db/schema.ts";
@@ -25,7 +26,6 @@ import {
 import { deleteConversations } from "./moderation.ts";
 import { allowed, assignIn, isActiveMember, NOT_A_MEMBER } from "./team.ts";
 
-const BULK_MAX = 100;
 /**
  * Conversations per transaction. Each change takes the workspace lock until its commit, so a short
  * batch lets visitors' messages in between.

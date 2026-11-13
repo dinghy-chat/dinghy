@@ -349,6 +349,17 @@ export const MENTIONS_MAX = 10;
 export const SAVED_REPLY_SHORTCUT = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 /**
+ * The limits of saved replies, labels and bulk changes. The server and the database check them, and
+ * the operator app keeps to them and names them in its texts.
+ */
+export const SAVED_REPLY_LIMIT = 200;
+export const SAVED_REPLY_BODY_MAX = 5000;
+export const LABEL_LIMIT = 100;
+export const LABEL_NAME_MAX = 40;
+/** The most conversations one bulk change takes. */
+export const BULK_MAX = 100;
+
+/**
  * A bot repeats its typing notice while it writes, so one that stops repeating has stopped: the
  * chat and the operator app drop it after this long with no update.
  */

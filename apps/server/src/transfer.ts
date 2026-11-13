@@ -2,7 +2,12 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
-import { LOCALES, SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
+import {
+  LABEL_NAME_MAX,
+  LOCALES,
+  SAVED_REPLY_BODY_MAX,
+  SAVED_REPLY_SHORTCUT,
+} from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
@@ -15,13 +20,11 @@ import {
   conversationLabel,
   emailStop,
   LABEL_COLORS,
-  LABEL_NAME_MAX,
   label,
   MESSAGE_KINDS,
   message,
   operator,
   pageView,
-  SAVED_REPLY_BODY_MAX,
   savedReply,
   visitor,
   widgetLanguage,

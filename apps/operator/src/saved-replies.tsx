@@ -1,7 +1,11 @@
 /** @jsxImportSource react */
 import { useId, useState } from "react";
 import { plainText } from "../../../packages/widget/src/markdown.ts";
-import { SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
+import {
+  SAVED_REPLY_BODY_MAX,
+  SAVED_REPLY_LIMIT,
+  SAVED_REPLY_SHORTCUT,
+} from "../../../packages/widget/src/shared.ts";
 import type { SavedReply, WorkspaceApi } from "./api.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
@@ -9,10 +13,8 @@ import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { AddForm, ErrorNote, Field, failureText, Loading, Page, StatusNote } from "./ui.tsx";
 
-// The server's limits, so the form cannot send what it refuses.
+// The longest shortcut SAVED_REPLY_SHORTCUT takes, so the field stops there.
 const SHORTCUT_MAX = 32;
-const BODY_MAX = 5000;
-const SAVED_REPLIES_MAX = 200;
 
 type Typed = { shortcut: string; body: string };
 const EMPTY: Typed = { shortcut: "", body: "" };
@@ -39,7 +41,7 @@ function ReplyFields({ value, onChange }: { value: Typed; onChange(value: Typed)
         <textarea
           id={bodyId}
           rows={5}
-          maxLength={BODY_MAX}
+          maxLength={SAVED_REPLY_BODY_MAX}
           required
           aria-describedby={hintId}
           value={value.body}
@@ -90,7 +92,7 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
   };
 
   const list = replies.data?.savedReplies;
-  const isFull = list !== undefined && list.length >= SAVED_REPLIES_MAX;
+  const isFull = list !== undefined && list.length >= SAVED_REPLY_LIMIT;
   return (
     <Page title={t("pageSavedReplies")} context={t("savedRepliesContext")}>
       {list === undefined ? (
