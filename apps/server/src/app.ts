@@ -61,7 +61,7 @@ import { createTestVisitors, registerTestVisitorRoutes } from "./test-visitors.t
 import { MINUTE_MS } from "./time.ts";
 import { registerExportRoute } from "./transfer.ts";
 import { registerTwoFactorRoutes, type TwoFactorState } from "./two-factor.ts";
-import { registerRecoveryRoutes } from "./two-factor-recovery.ts";
+import { registerRemovalRoutes } from "./two-factor-removal.ts";
 import { registerUploadFiles, type Uploads } from "./uploads.ts";
 import {
   createWebhooks,
@@ -434,16 +434,6 @@ export function createApp({
       valkey,
       mailer,
     });
-    registerRecoveryRoutes(app, {
-      db,
-      live,
-      logger,
-      mailer,
-      push: alerts?.push,
-      rateLimit,
-      publicUrl: String(auth.options.baseURL),
-      authSecret: auth.options.secret,
-    });
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);
     registerAccountDelete(app, {
@@ -455,6 +445,15 @@ export function createApp({
       mailer,
       publicUrl: String(auth.options.baseURL),
       rateLimit,
+    });
+    // After the account delete, whose limits on /v1/account/ the cancel link's route uses.
+    registerRemovalRoutes(app, {
+      db,
+      live,
+      logger,
+      mailer,
+      publicUrl: String(auth.options.baseURL),
+      authSecret: auth.options.secret,
     });
     // The founder's picture as the picture route serves it, for a new workspace's welcome chat.
     const welcomeFace = cloud?.welcomeFace;

@@ -80,7 +80,7 @@
                   "no_setup",
                   "no_customer",
                   "no_email",
-                  "no_recovery",
+                  "no_removal",
                   "not_a_member",
                   "not_an_image",
                   "not_found",
@@ -90,8 +90,8 @@
                   "payment_required",
                   "push_unavailable",
                   "read_only",
-                  "recovery_blocked",
-                  "recovery_not_needed",
+                  "removal_blocked",
+                  "removal_not_needed",
                   "saved_reply_limit",
                   "saved_reply_shortcut_taken",
                   "signed_in",
@@ -819,7 +819,7 @@
           "recoveryCodesLeft": {
             "type": ["integer", "null"]
           },
-          "recoveryCompletesAt": {
+          "removalCompletesAt": {
             "type": ["string", "null"]
           },
           "asksTwoFactorAgain": {
@@ -837,7 +837,7 @@
           "contact",
           "twoFactor",
           "recoveryCodesLeft",
-          "recoveryCompletesAt",
+          "removalCompletesAt",
           "asksTwoFactorAgain"
         ]
       },
@@ -2454,7 +2454,7 @@
           },
           "twoFactor": {
             "type": "string",
-            "enum": ["off", "on", "recovery"]
+            "enum": ["off", "on", "removal_requested"]
           },
           "canResetTwoFactor": {
             "type": "boolean"
@@ -5363,246 +5363,6 @@
         }
       }
     },
-    "/v1/operator/two-factor/recovery": {
-      "post": {
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Ask to remove two-step sign-in after 72 hours, for an operator who lost their authenticator app and their recovery codes. Only a session that has not passed the check, and that an email link made in the last 15 minutes. The account, its devices and the owners and admins of its workspaces are warned, and any of them can stop it. While a request waits, a new one changes nothing",
-        "responses": {
-          "200": {
-            "description": "The request that waits",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "completesAt": {
-                      "type": "string",
-                      "description": "When two-step sign-in is removed, unless someone cancels"
-                    }
-                  },
-                  "required": ["completesAt"]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "origin_not_allowed: the request did not come from this server's own pages",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "recovery_not_needed: this session passed the check, or two-step sign-in is off. sign_in_again: the session is older than 15 minutes. recovery_blocked: a recovery was cancelled in the last 7 days. manual_review: nobody else can be warned, or the server sends no email, so the server's admin must remove it",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/operator/two-factor/recovery/cancel": {
-      "post": {
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Cancel the account's waiting recovery, from a session that passed the check. Sessions that never passed it end, and no new request can start for 7 days",
-        "responses": {
-          "200": {
-            "description": "The recovery is cancelled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [true]
-                    }
-                  },
-                  "required": ["ok"]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "origin_not_allowed: the request did not come from this server's own pages",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "no_recovery: no recovery waits",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/operator/two-factor/skip-prompt": {
-      "post": {
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Stop asking to turn two-step sign-in on again, after a recovery or a reset removed it",
-        "responses": {
-          "200": {
-            "description": "The prompt is gone",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [true]
-                    }
-                  },
-                  "required": ["ok"]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "origin_not_allowed: the request did not come from this server's own pages",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/two-factor-recovery/cancel": {
-      "post": {
-        "summary": "Cancel a waiting recovery with the token from its email's link, from the button on the page the link opens. Sessions that never passed the check end, and no new request can start for 7 days",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "token": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  }
-                },
-                "required": ["token"],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The recovery is cancelled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [true]
-                    }
-                  },
-                  "required": ["ok"]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request: the request is not valid. link_invalid: the recovery already ended, or the link is wrong",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "origin_not_allowed: another site sent this",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/operator/account/delete": {
       "post": {
         "security": [
@@ -5797,6 +5557,246 @@
           },
           "502": {
             "description": "billing_unavailable: a subscription could not be canceled, so nothing was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/two-factor/removal": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Ask to remove two-step sign-in after 72 hours, for an operator who lost their authenticator app and their recovery codes. Only a session that has not passed the check, and that an email link made in the last 15 minutes. The worker warns the account, its devices and the owners and admins of its workspaces, and any of them can stop it. While a request waits, a new one changes nothing",
+        "responses": {
+          "200": {
+            "description": "The request that waits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "completesAt": {
+                      "type": "string",
+                      "description": "When two-step sign-in is removed, unless someone cancels. The wait counts from the first warning, so it can move by the time that warning takes"
+                    }
+                  },
+                  "required": ["completesAt"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "removal_not_needed: this session passed the check, or two-step sign-in is off. sign_in_again: the session is older than 15 minutes. removal_blocked: a request was cancelled in the last 7 days. manual_review: no other owner or admin and no other signed-in session can stop it, or the server sends no email, so the server's admin must remove it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/two-factor/removal/cancel": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Cancel the account's waiting removal request, from a session that passed the check. Sessions that never passed it end, and no new request can start for 7 days",
+        "responses": {
+          "200": {
+            "description": "The request is cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "no_removal: no removal request waits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/two-factor/skip-prompt": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Stop asking to turn two-step sign-in on again, after a removal request or a reset removed it",
+        "responses": {
+          "200": {
+            "description": "The prompt is gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/two-factor-removal/cancel": {
+      "post": {
+        "summary": "Cancel a waiting removal request with the token from its email's link, from the button on the page the link opens. Sessions that never passed the check end, and no new request can start for 7 days",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": ["token"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request is cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid. link_invalid: the request already ended, or the link is wrong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

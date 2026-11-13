@@ -9,7 +9,7 @@ import {
 import { base32 } from "@better-auth/utils/base32";
 import { createOTP } from "@better-auth/utils/otp";
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, eq, isNotNull, isNull, type SQL, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Context } from "hono";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
@@ -17,8 +17,8 @@ import { TWO_FACTOR_CODE_MAX } from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { audit } from "./audit.ts";
-import { operator, operatorTwoFactor, session, twoFactorRecovery } from "./db/schema.ts";
-import { type Database, operatorWorkspaces, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { operator, operatorTwoFactor, session } from "./db/schema.ts";
+import { type Database, lockAccount, operatorWorkspaces, type Transaction } from "./db/tenant.ts";
 import {
   errorAnswer,
   failure,
@@ -26,15 +26,8 @@ import {
   jsonBody,
   OPERATOR_WRITE_ERRORS,
   okContent,
-  safeErrorFields,
 } from "./errors.ts";
-import {
-  lockoutMail,
-  recoveryCancelledMail,
-  recoveryUsedMail,
-  twoFactorOffMail,
-  twoFactorOnMail,
-} from "./letter.ts";
+import { lockoutMail, recoveryUsedMail, twoFactorOffMail, twoFactorOnMail } from "./letter.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import {
   createTwoFactorLimit,
@@ -42,8 +35,8 @@ import {
   TWO_FACTOR_WINDOW_SECONDS,
   tooManyAttempts,
 } from "./login-limit.ts";
-import type { Mailer } from "./mailer.ts";
-import { recordTeamChange } from "./messages.ts";
+import { type Mail, type Mailer, sendQuietly } from "./mailer.ts";
+import { afterRemovalCancel, cancelRemoval } from "./two-factor-removal.ts";
 
 /** RFC 6238's defaults, which every authenticator app reads. */
 const PERIOD_SECONDS = 30;
@@ -92,14 +85,7 @@ export const twoFactorState = (sessionId: string) => sql<TwoFactorState | null>`
   join ${operator} o on o.id = s.user_id
   where s.id = ${sessionId})`;
 
-/**
- * Locks the account's row, first, as an account's delete and a setup's start do, so the
- * transactions that change two-step sign-in and the delete take turns without a deadlock.
- */
-export const lockAccount = (tx: Transaction, operatorId: string) =>
-  tx.select({ id: operator.id }).from(operator).where(eq(operator.id, operatorId)).for("update");
-
-// Turning it on answers the prompt that a recovery or a reset left.
+// Turning it on answers the prompt that a removal request or a reset left.
 const setTwoFactorOn = (tx: Transaction, operatorId: string, twoFactorOn: boolean) =>
   tx
     .update(operator)
@@ -292,107 +278,6 @@ async function turnOff(tx: Transaction, operatorId: string) {
   await tx.delete(session).where(and(eq(session.userId, operatorId), isNull(session.twoFactorAt)));
 }
 
-/** A recovery request waits until it is cancelled or completed. */
-export const RECOVERY_WAITS = and(
-  isNull(twoFactorRecovery.cancelledAt),
-  isNull(twoFactorRecovery.completedAt),
-);
-
-/** The account's recovery request that waits, if any. A query may name the account by its column. */
-export const waitingRecovery = (operatorId: string | SQL) =>
-  and(eq(twoFactorRecovery.operatorId, operatorId), RECOVERY_WAITS);
-
-/**
- * Removes two-step sign-in for an account that lost its app and its recovery codes: the secret and
- * every recovery code go, not only the flag, so nothing of the old setup can pass again. Every
- * session ends, so one that waited at the second step does not pass without it, a waiting recovery
- * request ends, and the next sign-in asks to turn it on again. A completed recovery, a teammate's
- * reset and the server's admin all remove it this way. Returns false, changing nothing, when it
- * was off.
- */
-export async function removeTwoFactor(tx: Transaction, operatorId: string): Promise<boolean> {
-  await lockAccount(tx, operatorId);
-  const removed = await tx
-    .delete(operatorTwoFactor)
-    .where(
-      and(eq(operatorTwoFactor.operatorId, operatorId), isNotNull(operatorTwoFactor.enabledAt)),
-    )
-    .returning({ operatorId: operatorTwoFactor.operatorId });
-  if (removed.length === 0) return false;
-  await tx
-    .update(operator)
-    .set({ twoFactorOn: false, asksTwoFactorAgain: true })
-    .where(eq(operator.id, operatorId));
-  await tx.delete(session).where(eq(session.userId, operatorId));
-  await tx
-    .update(twoFactorRecovery)
-    .set({ completedAt: new Date() })
-    .where(waitingRecovery(operatorId));
-  return true;
-}
-
-/** For the server's admin, by `chat two-factor-reset`. */
-export const resetTwoFactor = (db: Database, operatorId: string): Promise<boolean> =>
-  db.transaction((tx) => removeTwoFactor(tx, operatorId));
-
-/**
- * Cancels the account's waiting recovery request. Whoever cancels holds a code, a session that
- * passed or the link, so the request likely came from someone who reads the mailbox: the sessions
- * that never passed the check end with it. Returns false when none waited.
- */
-export async function cancelRecovery(tx: Transaction, operatorId: string): Promise<boolean> {
-  // The account first, in the order that a code's check and a removal lock them.
-  await lockAccount(tx, operatorId);
-  const cancelled = await tx
-    .update(twoFactorRecovery)
-    .set({ cancelledAt: new Date() })
-    .where(waitingRecovery(operatorId))
-    .returning({ id: twoFactorRecovery.id });
-  if (cancelled.length === 0) return false;
-  await tx.delete(session).where(and(eq(session.userId, operatorId), isNull(session.twoFactorAt)));
-  return true;
-}
-
-/**
- * Tells every open Team page in the account's workspaces that its two-step sign-in changed. A lost
- * signal loses nothing: the page reads the members again when it opens.
- */
-export async function signalTeams(db: Database, live: Live, operatorId: string): Promise<void> {
-  for (const { workspaceId } of await operatorWorkspaces(db, operatorId)) {
-    await withWorkspace(db, workspaceId, (tx) => recordTeamChange(tx, workspaceId));
-    live.wake(workspaceId, OPERATORS);
-  }
-}
-
-/** What a cancel tells, and through which channels. */
-export interface RecoveryNotices {
-  db: Database;
-  live: Live;
-  logger: Logger;
-  mailer: Mailer | undefined;
-}
-
-/**
- * After a cancel commits: the audit line, an email that the mailbox is likely stolen, and the Team
- * pages. Each send goes after the answer, so a mail server that fails changes nothing here, and a
- * lost Team signal loses nothing.
- */
-export function afterRecoveryCancel(
-  { db, live, logger, mailer }: RecoveryNotices,
-  account: { id: string; email: string },
-  by: "code" | "link" | "session",
-  ip: string,
-): void {
-  audit(logger, "two_factor.recovery_cancelled", { operatorId: account.id, by, ip });
-  const mail = recoveryCancelledMail();
-  mailer?.send(account.email, mail.subject, mail.body).catch((err: unknown) => {
-    logger.error(safeErrorFields(err), "could not send a two-step sign-in email");
-  });
-  signalTeams(db, live, account.id).catch((err: unknown) => {
-    logger.warn(safeErrorFields(err), "could not signal a Team change");
-  });
-}
-
 const CodeBody = z.strictObject({
   // Spaces go here, once, so every check below sees the code as the app shows it.
   code: z
@@ -541,14 +426,11 @@ export function registerTwoFactorRoutes(
 ) {
   const keys = deriveKeys(authSecret);
   const limit = createTwoFactorLimit(valkey, logger);
-  const notices = { db, live, logger, mailer };
+  const notices = { db, signals: live, logger, mailer };
 
   /** Emails the account, after the answer: a mail server that fails changes nothing here. */
-  const tell = (c: Context<AppEnv>, mail: { subject: string; body: string }) => {
-    mailer?.send(c.get("operatorEmail"), mail.subject, mail.body).catch((err: unknown) => {
-      logger.error(safeErrorFields(err), "could not send a two-step sign-in email");
-    });
-  };
+  const tell = (c: Context<AppEnv>, mail: Mail) =>
+    sendQuietly(mailer, logger, c.get("operatorEmail"), mail);
 
   /**
    * Uses a code under the limit, with `effect` in the same transaction. The wrong code that reaches
@@ -573,9 +455,9 @@ export function registerTwoFactorRoutes(
       const spent = await spendCode(tx, keys, operatorId, code);
       if (spent !== "totp" && spent !== "recovery") return { used: spent, cancelled: false };
       await effect(tx);
-      // A correct code during a recovery's wait: the owner found their phone or their codes. After
-      // the effect, so a check's own session has passed and stays.
-      return { used: spent, cancelled: await cancelRecovery(tx, operatorId) };
+      // A correct code while a removal request waits: the owner found their app or their codes.
+      // After the effect, so a check's own session has passed and stays.
+      return { used: spent, cancelled: await cancelRemoval(tx, operatorId) };
     });
     if (used === "unreadable") {
       logger.error({ operatorId }, "a two-step sign-in secret does not open: AUTH_SECRET changed");
@@ -584,7 +466,7 @@ export function registerTwoFactorRoutes(
     if (used !== "wrong") {
       await limit.clear(operatorId);
       if (cancelled) {
-        afterRecoveryCancel(notices, { id: operatorId, email: c.get("operatorEmail") }, "code", ip);
+        afterRemovalCancel(notices, { id: operatorId, email: c.get("operatorEmail") }, "code", ip);
       }
       if (used === "recovery") {
         audit(logger, "two_factor.recovery_used", { operatorId, ip });

@@ -15,7 +15,7 @@ import {
   operatorTwoFactor,
   pushSubscription,
   session,
-  twoFactorRecovery,
+  twoFactorRemoval,
   verification,
   workspace,
   workspaceMember,
@@ -33,13 +33,12 @@ import {
   LINK_INVALID,
   OPERATOR_WRITE_ERRORS,
   RATE_LIMITED,
-  safeErrorFields,
   WRONG_ORIGIN,
 } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
 import { deleteAccountMail } from "./letter.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import type { Mailer } from "./mailer.ts";
+import { type Mailer, sendQuietly } from "./mailer.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { leaveWorkspace, type Role } from "./team.ts";
 import { MINUTE_MS } from "./time.ts";
@@ -308,7 +307,7 @@ async function deleteAccount(
       // The account's row first, then these, in the order a code's check locks them, so the two
       // cannot deadlock.
       await tx.delete(operatorTwoFactor).where(eq(operatorTwoFactor.operatorId, operatorId));
-      await tx.delete(twoFactorRecovery).where(eq(twoFactorRecovery.operatorId, operatorId));
+      await tx.delete(twoFactorRemoval).where(eq(twoFactorRemoval.operatorId, operatorId));
       await tx.delete(session).where(eq(session.userId, operatorId));
       await tx.delete(account).where(eq(account.userId, operatorId));
       await tx.delete(pushSubscription).where(eq(pushSubscription.operatorId, operatorId));
@@ -428,14 +427,14 @@ export function registerAccountDelete(
       expiresAt: new Date(Date.now() + LINK_MINUTES * MINUTE_MS),
     });
     const mail = deleteAccountMail(confirmUrl(publicUrl, "delete-account", token));
-    mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {
-      logger.error(safeErrorFields(err), "could not send an account delete link");
-    });
+    sendQuietly(mailer, logger, email, mail);
     audit(logger, "account.delete_link_sent", { operatorId });
     return c.json({ deleted: false }, 200);
   });
 
-  app.use("/v1/account/*", limitByIp(rateLimit, "account-delete-link", 20, 60));
+  // Every /v1/account/ route takes an emailed link's token, with no session: the delete link's
+  // and the removal request's cancel link.
+  app.use("/v1/account/*", limitByIp(rateLimit, "account-link", 20, 60));
   app.use("/v1/account/*", bodyLimit({ maxSize: 8 * 1024 }));
   app.openapi(confirmRoute, async (c) => {
     if (c.req.header("origin") !== publicOrigin) return c.json(WRONG_ORIGIN, 403);

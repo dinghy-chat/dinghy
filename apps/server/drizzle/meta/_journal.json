@@ -764,6 +764,20 @@
       "when": 1794602349271,
       "tag": "0108_two_factor_recovery_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1794603931680,
+      "tag": "0109_two_factor_removal",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1794604300431,
+      "tag": "0110_two_factor_removal_grants",
+      "breakpoints": true
     }
   ]
 }

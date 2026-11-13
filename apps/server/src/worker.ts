@@ -29,7 +29,7 @@ import {
   retryDeletion,
 } from "./storage.ts";
 import { MINUTE_MS, RETENTION_MS } from "./time.ts";
-import { recoveryWorkerStep } from "./two-factor-recovery.ts";
+import { removalWorkerStep } from "./two-factor-removal.ts";
 import type { Uploads } from "./uploads.ts";
 import {
   abandonWebhook,
@@ -174,7 +174,16 @@ export function startWorker({
   const bounded =
     mailer === undefined ? undefined : boundedMailer(mailer, stopping.signal, mailTimeoutMs);
   const cloudStep = cloudWorkerStep(cloud, { db, logger, publicUrl, secret, signals });
-  const recoveryStep = recoveryWorkerStep({ db, logger, mailer: bounded, publicUrl, secret });
+  const removalStep = removalWorkerStep({
+    db,
+    logger,
+    mailer: bounded,
+    push,
+    signals,
+    publicUrl,
+    secret,
+    retryMs,
+  });
   const channels = { push: push !== undefined, email: mailer !== undefined };
   let wake = () => {};
 
@@ -353,6 +362,8 @@ export function startWorker({
         busy = (await stage("deliveries", startDeliveries)) || busy;
         busy = (await stage("webhooks", startWebhooks)) || busy;
         busy = (await stage("file deletions", deleteFiles)) || busy;
+        // Each pass, so a removal request's first warning goes out within seconds.
+        busy = (await stage("two-factor removal", removalStep)) || busy;
       }
       if (Date.now() >= pruneAt) {
         pruneAt = Date.now() + PRUNE_EVERY_MS;
@@ -365,7 +376,6 @@ export function startWorker({
         lifecycleAt = Date.now() + lifecycleMs;
         // The cloud step keeps its own claim time, sized for slow Stripe calls and emails.
         await stage("cloud", async () => cloudStep?.({ mailer: bounded }));
-        await stage("two-factor recovery", recoveryStep);
         // Its uploads go through the deletions above, and the workspace row after them.
         await stage("purge", async () => {
           await purgeDeletedWorkspaces(db);

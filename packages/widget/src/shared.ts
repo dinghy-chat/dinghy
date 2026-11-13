@@ -365,9 +365,19 @@ export const BULK_MAX = 100;
 
 /**
  * The longest two-step sign-in code the server takes once spaces are gone, well above a recovery
- * code's 11. The operator app's field stops there, so a code typed with spaces always fits.
+ * code's 19 characters with its dashes. The operator app's field stops there, so a code typed with
+ * spaces always fits.
  */
 export const TWO_FACTOR_CODE_MAX = 40;
+
+/**
+ * The rules of a request to remove two-step sign-in, which the server applies and the operator app
+ * names: the wait before it completes, how long a cancel blocks a new request, and how recent the
+ * email link of the session that asks must be.
+ */
+export const TWO_FACTOR_REMOVAL_WAIT_HOURS = 72;
+export const TWO_FACTOR_REMOVAL_BLOCK_DAYS = 7;
+export const TWO_FACTOR_REMOVAL_FRESH_MINUTES = 15;
 
 /**
  * A bot repeats its typing notice while it writes, so one that stops repeating has stopped: the

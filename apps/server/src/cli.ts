@@ -39,7 +39,7 @@ import {
 } from "./db/migrate.ts";
 import { ROLES, type RoleName } from "./db/roles.ts";
 import * as schema from "./db/schema.ts";
-import { type Database, enterWorkspace, withWorkspace } from "./db/tenant.ts";
+import { type Database, enterWorkspace, lockAccount, withWorkspace } from "./db/tenant.ts";
 import { safeErrorFields } from "./errors.ts";
 import { normalizeOrigin } from "./identity.ts";
 import { runInit, type SetupAnswers, widgetSnippet, writePushKeys } from "./install.ts";
@@ -49,7 +49,7 @@ import { createMailer } from "./mailer.ts";
 import { type ObjectStore, storeFromConfig } from "./storage.ts";
 import { setSuspended, signalSuspension } from "./suspension.ts";
 import { exportArchive, ImportError, importArchive } from "./transfer.ts";
-import { resetTwoFactor } from "./two-factor.ts";
+import { removeTwoFactor } from "./two-factor-removal.ts";
 import { createWorkspace, insertWorkspace, workspaceKeys, workspacesTable } from "./workspaces.ts";
 
 // Update this when a release stops supporting a direct upgrade from older data. Zero means any.
@@ -742,7 +742,11 @@ async function twoFactorResetCommand(db: Database, config: Config, email: string
     console.error(`No operator has the email ${email}.`);
     return 1;
   }
-  if (!(await resetTwoFactor(db, found.id))) {
+  const removed = await db.transaction(async (tx) => {
+    await lockAccount(tx, found.id);
+    return removeTwoFactor(tx, found.id);
+  });
+  if (!removed) {
     console.error(`Two-step sign-in is off for ${email}. Nothing changed.`);
     return 1;
   }

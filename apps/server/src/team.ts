@@ -15,13 +15,14 @@ import {
   conversation,
   invite,
   operator,
-  twoFactorRecovery,
+  twoFactorRemoval,
   verification,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
 import {
   type Database,
+  lockAccount,
   lockLiveOperator,
   operatorWorkspaces,
   type Transaction,
@@ -51,7 +52,7 @@ import { emailAddressHash, normalizeOrigins, sha256Hex } from "./identity.ts";
 import { inviteMail, joinMail, teamResetMail, twoFactorOffMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { type Mailer, recipientRejected } from "./mailer.ts";
+import { type Mailer, recipientRejected, sendQuietly } from "./mailer.ts";
 import { conversationParams, OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import {
   assignConversation,
@@ -63,7 +64,7 @@ import { revokeGrantsOf } from "./oauth-grants.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { MINUTE_MS } from "./time.ts";
-import { lockAccount, removeTwoFactor, waitingRecovery } from "./two-factor.ts";
+import { removeTwoFactor, waitingRemoval } from "./two-factor-removal.ts";
 import { isOnlyWorkspace } from "./workspace-delete.ts";
 
 export type Role = "owner" | "admin" | "member";
@@ -170,9 +171,9 @@ const Member = z
     role: roleEnum,
     // The member's picture, which they set on their profile. Null with none.
     pictureUrl: z.string().nullable(),
-    // Whether the member turned on two-step sign-in. `recovery`: it is on, and a request to remove
-    // it waits, which the member or anyone they ask can cancel.
-    twoFactor: z.enum(["off", "on", "recovery"]),
+    // Whether the member turned on two-step sign-in. `removal_requested`: it is on, and a request to
+    // remove it waits, which the member or anyone they ask can cancel.
+    twoFactor: z.enum(["off", "on", "removal_requested"]),
     // Whether you may reset the member's two-step sign-in now: it is on, they rank below you, and
     // they are in no other workspace.
     canResetTwoFactor: z.boolean(),
@@ -732,7 +733,7 @@ type TeammateReset =
     };
 
 /**
- * Removes a teammate's two-step sign-in, as a completed recovery does. Only for a teammate in no
+ * Removes a teammate's two-step sign-in, as a completed removal request does. Only for a teammate in no
  * other workspace, whose other teams could not check this, and the refusal is the same as for a
  * role that may not, so it tells nothing about other workspaces. Run it in the workspace's context.
  */
@@ -788,11 +789,11 @@ interface TeamOptions {
   keepsLastWorkspace: boolean;
 }
 
-/** Whether a member turned on two-step sign-in, and whether a recovery waits to remove it. */
-const TWO_FACTOR_STATE = sql<"off" | "on" | "recovery">`case
+/** Whether a member turned on two-step sign-in, and whether a request waits to remove it. */
+const TWO_FACTOR_STATE = sql<"off" | "on" | "removal_requested">`case
   when not ${operator.twoFactorOn} then 'off'
-  when exists (select 1 from ${twoFactorRecovery} where ${waitingRecovery(sql`${operator.id}`)})
-    then 'recovery'
+  when exists (select 1 from ${twoFactorRemoval} where ${waitingRemoval(sql`${operator.id}`)})
+    then 'removal_requested'
   else 'on'
 end`;
 
@@ -910,12 +911,7 @@ export function registerTeamRoutes(
         mail: teamResetMail(actorName, reset.teammate),
       })),
     ];
-    // After the answer: a mail server that fails changes nothing that committed.
-    for (const { to, mail } of mails) {
-      mailer?.send(to, mail.subject, mail.body).catch((err: unknown) => {
-        logger.error(safeErrorFields(err), "could not send a two-step sign-in reset email");
-      });
-    }
+    for (const { to, mail } of mails) sendQuietly(mailer, logger, to, mail);
     return c.json({ ok: true as const }, 200);
   });
 
@@ -1255,9 +1251,7 @@ export function registerTeamRoutes(
       offer.workspaceName,
       offer.inviterName,
     );
-    mailer.send(email, mail.subject, mail.body).catch((err: unknown) => {
-      logger.error(safeErrorFields(err), "could not send a join link");
-    });
+    sendQuietly(mailer, logger, email, mail);
     return c.json({ workspaceId: null }, 200);
   });
 

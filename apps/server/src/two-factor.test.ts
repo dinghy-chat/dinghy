@@ -17,7 +17,7 @@ import { readStream } from "../test/sse.ts";
 import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, type AppOptions, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { operator, operatorTwoFactor, session, twoFactorRecovery } from "./db/schema.ts";
+import { operator, operatorTwoFactor, session, twoFactorRemoval } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { localStore } from "./storage.ts";
@@ -654,12 +654,12 @@ describe("the account", () => {
     expect((await call(person.cookie, "GET", inSpace())).status).toBe(200);
   });
 
-  test("deleting the account removes its secret, recovery codes and recovery request", async () => {
+  test("deleting the account removes its secret, recovery codes and removal request", async () => {
     const person = await ownerWithTwoFactor();
-    // Another owner stays, so the workspace passes to them, and is warned of the recovery.
+    // Another owner stays, so the workspace passes to them, and can stop the removal request.
     await newOwner();
     const waiting = await signIn(app, auth, person.email);
-    expect((await call(waiting, "POST", "/v1/operator/two-factor/recovery")).status).toBe(200);
+    expect((await call(waiting, "POST", "/v1/operator/two-factor/removal")).status).toBe(200);
     // With no mail server, the typed email confirms the delete at once.
     const deleted = await asOperator(
       otherApp(),
@@ -678,8 +678,8 @@ describe("the account", () => {
     expect(rows).toEqual([]);
     const requests = await owner
       .select()
-      .from(twoFactorRecovery)
-      .where(eq(twoFactorRecovery.operatorId, person.id));
+      .from(twoFactorRemoval)
+      .where(eq(twoFactorRemoval.operatorId, person.id));
     expect(requests).toEqual([]);
   });
 });

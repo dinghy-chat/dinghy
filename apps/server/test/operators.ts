@@ -61,7 +61,7 @@ export function pressLinkButton(app: Server, url: string): Promise<Response> | R
   const paths: Record<string, string> = {
     join: "/v1/invites/open",
     "delete-account": "/v1/account/delete",
-    "cancel-recovery": "/v1/two-factor-recovery/cancel",
+    "cancel-removal": "/v1/account/two-factor-removal/cancel",
   };
   const path = paths[parsed.searchParams.get("for") ?? ""] ?? "/v1/auth/magic-link/verify";
   return app.request(path, {

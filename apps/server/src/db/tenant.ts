@@ -134,6 +134,23 @@ export async function lockLiveOperator(tx: Transaction, operatorId: string): Pro
   if (result.rows.length === 0) throw new AccountDeletedError();
 }
 
+/**
+ * Locks an account's row first, as its delete and every change to its two-step sign-in do, so they
+ * take turns without a deadlock. The delete's FOR UPDATE still waits for this lock. Not FOR UPDATE
+ * here: a reply or an assignment checks the operator row with a foreign key, which takes FOR KEY
+ * SHARE, and a teammate's reset, which holds the workspace's member rows, must not wait for it.
+ * Returns the account's name and email, read under the lock.
+ */
+export async function lockAccount(
+  tx: Transaction,
+  operatorId: string,
+): Promise<{ name: string; email: string } | undefined> {
+  const result = await tx.execute<{ name: string; email: string }>(
+    sql`select name, email from operator where id = ${operatorId} for no key update`,
+  );
+  return result.rows[0];
+}
+
 interface Membership {
   workspaceId: string;
   role: "owner" | "admin" | "member";
