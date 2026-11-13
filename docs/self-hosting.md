@@ -192,7 +192,7 @@ curl -X POST https://shipmail.to/api/v1/webhooks \
 5. Copy the `secret` from the answer into `SHIPMAIL_WEBHOOK_SECRET`. Shipmail shows it only this once.
 6. In `.env`, set `INBOUND_EMAIL_DOMAIN=reply.example.com` and the three `SHIPMAIL_` settings, then run `docker compose up -d --wait`.
 
-Dinghy deletes each email from the mailbox once it took it, dropped it as an automatic answer, or refused it for good, such as for an address that is not a current one or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox, so nothing is lost while the workspace is closed. It does not come in when the workspace opens again: Dinghy answered its delivery with 200, and Shipmail replays only a failed delivery. Once the workspace is open again, read those emails in the mailbox in Shipmail and answer the visitors from the conversation. When the server is busy or Shipmail cannot be reached, Dinghy answers with an error, the email stays, and Shipmail retries. A retry never adds the email twice. Shipmail's webhook deliveries show what Dinghy answered: 401 means the webhook secret differs or the server's clock is more than 5 minutes off, and 500 means Dinghy could not download or delete the email, so check the API key and its scopes.
+Dinghy deletes each email from the mailbox once it took it, dropped it as an automatic answer, or refused it for good, such as for an address that is not a current one or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox, so nothing is lost while the workspace is closed. It comes in by itself once the workspace opens again, within the worker's next passes, and Dinghy then deletes it from the mailbox. If the workspace never opens again, Dinghy deletes the email from the mailbox after 90 days. When the server is busy or Shipmail cannot be reached, Dinghy answers with an error, the email stays, and Shipmail retries. A retry never adds the email twice. Shipmail's webhook deliveries show what Dinghy answered: 401 means the webhook secret differs or the server's clock is more than 5 minutes off, and 500 means Dinghy could not download or delete the email, so check the API key and its scopes.
 
 #### What Dinghy keeps
 
@@ -270,7 +270,7 @@ The image runs in one of three roles, the word after the image in `command`:
 
 - `all`, the default, runs the web server and the worker in one process. One server needs nothing else.
 - `web` answers requests and holds the live streams. It needs `DATABASE_URL`, `VALKEY_URL` and `AUTH_SECRET`, as `app` gets them from its secrets. `VALKEY_URL` carries Valkey's password, as `redis://:<password>@valkey:6379`.
-- `worker` sends alerts and emails, deletes files and workspaces, and prunes old events. It also needs `WORKER_DATABASE_URL`.
+- `worker` sends alerts and emails, deletes files and workspaces, and prunes old events. It also needs `WORKER_DATABASE_URL`. With Shipmail set, it also takes the replies kept for closed workspaces, through `DATABASE_URL`.
 
 To grow, run more `web` instances behind one load balancer, and one or more `worker` instances. They share Postgres and Valkey, so any instance can answer any request. Several workers are safe, because each claims its jobs with `SKIP LOCKED`. [Architecture](architecture.md) explains how the parts fit together.
 

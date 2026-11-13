@@ -48,7 +48,7 @@ A cursor is `generation.seq`. A restore or an import gives the workspace a new r
 
 Each send carries an ID that the client made. A retry with the same ID returns the first message, so it cannot create a duplicate.
 
-A visitor's reply by email comes the same way. A mail forwarder posts the raw email to the web side, signed, and `apps/server/src/inbound-email.ts` writes it as the visitor's messages with `appendMessage`, under the same lock. The reply address names its workspace, as a chat link's token does, so the lookup runs in that workspace's transaction, and its stored conversation is the only one the message can go to. The email's `Message-ID` gives the client ID, so a forwarder's retry finds the first messages. No queue holds the email: the forwarder keeps it until Dinghy answers. Shipmail is the other way in: its webhook names a message in a mailbox, and `apps/server/src/shipmail-inbound.ts` downloads it, takes it through the same intake, and deletes it only once it went in or was refused for good, so the mailbox is the queue.
+A visitor's reply by email comes the same way. A mail forwarder posts the raw email to the web side, signed, and `apps/server/src/inbound-email.ts` writes it as the visitor's messages with `appendMessage`, under the same lock. The reply address names its workspace, as a chat link's token does, so the lookup runs in that workspace's transaction, and its stored conversation is the only one the message can go to. The email's `Message-ID` gives the client ID, so a forwarder's retry finds the first messages. No queue holds the email: the forwarder keeps it until Dinghy answers. Shipmail is the other way in: its webhook names a message in a mailbox, and `apps/server/src/shipmail-inbound.ts` downloads it, takes it through the same intake, and deletes it only once it went in or was refused for good, so the mailbox is the queue. An email for an unpaid or suspended workspace stays there, and a `shipmail_held_email` row keeps its Shipmail ID for the worker.
 
 ## The widget's settings
 
@@ -85,8 +85,9 @@ Background work lives in Postgres tables, and the worker claims rows with `FOR U
 3. Send the claimed deliveries: web push, email and webhooks. Webhooks have their own slots, so a slow receiver never holds an alert back.
 4. Delete stored images and files that are queued for deletion.
 5. Send the warnings of requests to remove two-step sign-in, and complete the requests whose wait ended.
-6. Prune old events and finished rows, expired chat links and reply addresses unused for 90 days. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
-7. Purge workspaces that an owner deleted.
+6. Take the reply emails kept in the Shipmail mailbox once their workspace opens again, and delete the ones kept for 90 days. This step runs beside the loop, as its Shipmail calls can take minutes, and it writes the messages through the app's database role, so the worker's role writes none.
+7. Prune old events and finished rows, expired chat links and reply addresses unused for 90 days. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
+8. Purge workspaces that an owner deleted.
 
 The purge is the Postgres function `purge_deleted_workspaces()`. Older tables have a `DELETE` line in it. A new table that a workspace owns declares its `workspace_id` with `ownedByWorkspace()` in `schema.ts` instead. That references `workspace` with `ON DELETE CASCADE`, so its rows go with the workspace row and a new feature does not rewrite the function.
 
