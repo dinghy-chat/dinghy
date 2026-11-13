@@ -195,7 +195,7 @@ export interface Images {
   url(workspaceId: string, attachmentId: string): string;
   verify(workspaceId: string, attachmentId: string, expires: string, signature: string): boolean;
   store: ObjectStore;
-  /** The separate origin that serves images, from IMAGES_ORIGIN, or undefined to use the app's. */
+  /** The separate origin that serves images and files, from IMAGES_ORIGIN, or undefined to use the app's. */
   origin: string | undefined;
 }
 
@@ -204,8 +204,8 @@ interface ImagesOptions {
   secret: string;
   publicUrl: string;
   /**
-   * A separate origin for user images, such as https://files.example.com. Image URLs then use it,
-   * and the image route answers only there, so a file can never run in the app's origin.
+   * A separate origin for user images and files, such as https://files.example.com. Their URLs then
+   * use it, and the file route answers only there, so a file can never run in the app's origin.
    */
   origin?: string | undefined;
   readIdleMs?: number;
@@ -503,9 +503,9 @@ export function registerImageFiles(app: App, db: Database, images: Images, logge
     };
     // Before opening the file, because Hono drops a HEAD response's body without closing it.
     if (c.req.method === "HEAD") return c.body(null, 200, headers);
-    // A stream, so slow readers of a large image cannot hold it in memory many times over.
+    // A stream, so slow readers of a large file cannot hold it in memory many times over.
     const contents = await images.store.get(row.storageKey).catch((error: unknown) => {
-      logger.error(safeErrorFields(error), "could not read an image");
+      logger.error(safeErrorFields(error), "could not read an image or a file");
       return null;
     });
     if (contents === null) return c.json(NOT_FOUND, 404);

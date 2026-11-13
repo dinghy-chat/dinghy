@@ -89,3 +89,62 @@ test("a type outside the list is refused in the widget, with the types it takes"
   await expect(page.getByText("PDF, TXT, CSV", { exact: false })).toBeVisible();
   await expect(page.locator(".doc")).toHaveCount(0);
 });
+
+test("files turned off during a visit are refused, with the image types", async ({ page }) => {
+  await openWidget(page);
+  // The widget loaded with files on, so only the server can refuse this one.
+  await server.setWidgetSettings({ visitorFiles: false });
+  try {
+    await page.locator("input[type=file]").setInputFiles(pdfFile);
+    await expect(page.getByText("Send a PNG, JPEG or WebP image.")).toBeVisible();
+    await expect(page.locator(".doc")).toHaveCount(0);
+  } finally {
+    await server.setWidgetSettings({ visitorFiles: true });
+  }
+});
+
+test("a file whose URL expired still downloads in the widget, and the page stays", async ({
+  page,
+}) => {
+  await openWidget(page);
+  await page.locator("input[type=file]").setInputFiles(pdfFile);
+  const line = page.locator(".doc.mine", { hasText: "Order 1042.pdf" });
+  await expect(line).toBeVisible();
+  let requests = 0;
+  await page.route("**/v1/files/**", async (route) => {
+    requests += 1;
+    // The first URL has expired by the time it reaches the server, as in a tab left open.
+    if (requests === 1) server.expireImageUrls();
+    return route.continue();
+  });
+  const [download] = await Promise.all([page.waitForEvent("download"), line.click()]);
+  expect(await readFile(await download.path())).toEqual(PDF);
+  expect(requests).toBe(2);
+  expect(new URL(page.url()).pathname).toBe("/plain");
+});
+
+test("a file whose URL expired still downloads in the operator app", async ({ browser }) => {
+  const widgetContext = await browser.newContext();
+  const widget = await widgetContext.newPage();
+  await openWidget(widget);
+  await widget.locator("input[type=file]").setInputFiles(pdfFile);
+  await expect(widget.locator(".doc.mine")).toContainText("Order 1042.pdf");
+
+  const operatorContext = await browser.newContext();
+  const operator = await operatorContext.newPage();
+  await openInbox(operator);
+  const link = operator.locator(".file-link", { hasText: "Order 1042.pdf" });
+  await expect(link).toBeVisible();
+  let requests = 0;
+  await operator.route("**/v1/files/**", async (route) => {
+    requests += 1;
+    if (requests === 1) server.expireImageUrls();
+    return route.continue();
+  });
+  const [download] = await Promise.all([operator.waitForEvent("download"), link.click()]);
+  expect(download.suggestedFilename()).toBe("Order 1042.pdf");
+  expect(await readFile(await download.path())).toEqual(PDF);
+  expect(requests).toBe(2);
+  await widgetContext.close();
+  await operatorContext.close();
+});

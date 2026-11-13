@@ -131,12 +131,12 @@ function PlanRow({ usage }: { usage: Usage }) {
           full="usageFullTeam"
         />
         <Meter
-          label={t("usageImages")}
+          label={t("usageFiles")}
           used={usage.imageBytes.used}
           limit={usage.imageBytes.limit}
           text={imagesText(usage)}
-          note="usageImagesNote"
-          full="usageFullImages"
+          note="usageFilesNote"
+          full="usageFullFiles"
         />
       </div>
     </PageRow>
@@ -145,13 +145,13 @@ function PlanRow({ usage }: { usage: Usage }) {
 
 type Deletion = WorkspaceSettings["deletion"];
 
-/** "This permanently deletes 312 conversations and 40 images. It removes workspace access for 3 team members, ..." */
+/** "This permanently deletes 312 conversations and 40 images and files. It removes workspace access for 3 team members, ..." */
 function deletionText({ conversations, images, members }: Deletion): string {
   const count = (value: number, one: TextId, many: TextId) =>
     value === 1 ? t(one) : t(many, { count: value });
   return t("deleteWorkspaceCounts", {
     conversations: count(conversations, "deleteCountConversationsOne", "deleteCountConversations"),
-    images: count(images, "deleteCountImagesOne", "deleteCountImages"),
+    files: count(images, "deleteCountFilesOne", "deleteCountFiles"),
     members: count(members, "deleteCountMembersOne", "deleteCountMembers"),
   });
 }

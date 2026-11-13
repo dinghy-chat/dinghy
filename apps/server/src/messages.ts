@@ -102,12 +102,12 @@ export interface QuoteRow {
 }
 
 /** A file message's name. Null for any other message, and once the file was removed. */
-export const fileName = (metadata: SQLWrapper = message.metadata) =>
+export const filename = (metadata: SQLWrapper = message.metadata) =>
   sql<string | null>`${metadata} #>> '{file,name}'`;
 
 /** What a list shows for a chat message: its text, or a file's name. Null for an image. */
 export const previewBody = (body: SQLWrapper, metadata: SQLWrapper) =>
-  sql<string | null>`coalesce(${body}, ${fileName(metadata)})`;
+  sql<string | null>`coalesce(${body}, ${filename(metadata)})`;
 
 /**
  * The quoted message, read in the same statement as each listed row, so a list costs one query.
@@ -1065,8 +1065,22 @@ export async function conversationVisitor(
   return row;
 }
 
+type ChatKind = (typeof CHAT_KINDS)[number];
+
+/** A chat message's kind, for a subquery that `isChat` already filtered. */
+const chatKind = () => sql<ChatKind>`${message.kind}`.as("kind");
+
+/** The newest chat message of a conversation, as a list shows it. */
+export interface LastMessage {
+  body: string | null;
+  /** A file that was removed has no body, and only its kind tells it from an image. */
+  kind: ChatKind;
+  fromVisitor: boolean;
+  createdAt: Date;
+}
+
 export interface ConversationSummary extends ConversationRow {
-  lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null;
+  lastMessage: LastMessage | null;
   unread: boolean;
 }
 
@@ -1191,6 +1205,7 @@ export async function listConversations(
   const newest = tx
     .select({
       body: message.body,
+      kind: chatKind(),
       metadata: message.metadata,
       authorVisitorId: message.authorVisitorId,
       createdAt: message.createdAt,
@@ -1212,6 +1227,7 @@ export async function listConversations(
       ...conversationColumns,
       unread: unreadBy(operatorId),
       lastBody: previewBody(newest.body, newest.metadata),
+      lastKind: newest.kind,
       lastAuthorVisitorId: newest.authorVisitorId,
       lastCreatedAt: newest.createdAt,
     })
@@ -1234,13 +1250,14 @@ export async function listConversations(
   return {
     conversations: rows
       .slice(0, limit)
-      .map(({ lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
+      .map(({ lastBody, lastKind, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
         ...withSnooze(row),
         lastMessage:
-          lastCreatedAt === null
+          lastCreatedAt === null || lastKind === null
             ? null
             : {
                 body: lastBody,
+                kind: lastKind,
                 fromVisitor: lastAuthorVisitorId !== null,
                 createdAt: lastCreatedAt,
               },
@@ -1756,6 +1773,7 @@ export async function searchConversations(
   const newest = tx
     .select({
       body: message.body,
+      kind: chatKind(),
       metadata: message.metadata,
       authorVisitorId: message.authorVisitorId,
       createdAt: message.createdAt,
@@ -1778,6 +1796,7 @@ export async function searchConversations(
       unread: unreadBy(operatorId),
       hitBody: hit.body,
       lastBody: previewBody(newest.body, newest.metadata),
+      lastKind: newest.kind,
       lastAuthorVisitorId: newest.authorVisitorId,
       lastCreatedAt: newest.createdAt,
     })
@@ -1789,15 +1808,18 @@ export async function searchConversations(
     .orderBy(desc(conversation.updatedAt), desc(conversation.id));
   // The matching message's text is the preview. Who wrote last and when still come from the
   // newest message, so a conversation shows as waiting only when the visitor wrote last.
-  return rows.map(({ hitBody, lastBody, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
-    ...withSnooze(row),
-    lastMessage:
-      lastCreatedAt === null
-        ? null
-        : {
-            body: hitBody ?? lastBody,
-            fromVisitor: lastAuthorVisitorId !== null,
-            createdAt: lastCreatedAt,
-          },
-  }));
+  return rows.map(
+    ({ hitBody, lastBody, lastKind, lastAuthorVisitorId, lastCreatedAt, ...row }) => ({
+      ...withSnooze(row),
+      lastMessage:
+        lastCreatedAt === null || lastKind === null
+          ? null
+          : {
+              body: hitBody ?? lastBody,
+              kind: hitBody === null ? lastKind : "text",
+              fromVisitor: lastAuthorVisitorId !== null,
+              createdAt: lastCreatedAt,
+            },
+    }),
+  );
 }

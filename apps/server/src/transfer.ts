@@ -26,7 +26,7 @@ import {
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
-import { allowedFileName, FILE_TYPE } from "./files.ts";
+import { allowedFileName, FILE_TYPE, FILENAME_INPUT_MAX } from "./files.ts";
 import { sha256Hex } from "./identity.ts";
 import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
@@ -175,7 +175,7 @@ const ExportFile = z.strictObject({
         messageId: id,
         createdAt: date,
         kind: z.literal("file"),
-        filename: z.string().max(1000),
+        filename: z.string().max(FILENAME_INPUT_MAX),
       }),
     ]),
   ),
@@ -546,8 +546,7 @@ async function checkedUpload(row: ExportData["attachments"][number], bytes: Uint
     if (typeof processed === "string") {
       throw new ImportError(`Image ${row.id} cannot be used: ${processed}.`);
     }
-    const { data, contentType, width, height } = processed;
-    return { data, contentType, width, height };
+    return processed;
   }
   const filename = allowedFileName(row.filename, bytes);
   if (filename === null) throw new ImportError(`File ${row.id} cannot be used: type_not_allowed.`);

@@ -5,6 +5,7 @@ import {
   newClientId,
   REFRESH_LIMIT_MS,
   REFUSED,
+  refusalProblem,
   uploadProblem,
 } from "../../../packages/widget/src/compose.ts";
 import {
@@ -187,7 +188,7 @@ export function useThreadLines({
     } catch (error) {
       if (file !== undefined && error instanceof ApiError && REFUSED.includes(error.status)) {
         setProblem(
-          error.status === 507 ? "storageFull" : isImage(file) ? "imageFailed" : "fileWrongType",
+          error.code === "storage_full" ? "storageFull" : refusalProblem(error.code, file),
         );
         setLines((current) => current.filter((line) => line.id !== id));
         return;

@@ -4,6 +4,7 @@ import {
   detailRows,
   isWaiting,
   linkText,
+  messagePreview,
   pageName,
   pagePath,
   presenceLine,
@@ -62,7 +63,12 @@ describe("waiting", () => {
       pictureUrl: null,
       isTest: false,
     },
-    lastMessage: { body: "hi", fromVisitor: true, createdAt: "2026-11-07T10:00:00.000Z" },
+    lastMessage: {
+      body: "hi",
+      kind: "text",
+      fromVisitor: true,
+      createdAt: "2026-11-07T10:00:00.000Z",
+    },
     welcome: false,
     handler: null,
     bot: null,
@@ -75,7 +81,12 @@ describe("waiting", () => {
   });
 
   test("a reply, a closed conversation or no message does not wait", () => {
-    const reply = { body: "ok", fromVisitor: false, createdAt: base.updatedAt };
+    const reply = {
+      body: "ok",
+      kind: "text" as const,
+      fromVisitor: false,
+      createdAt: base.updatedAt,
+    };
     expect(isWaiting({ ...base, lastMessage: reply })).toBe(false);
     expect(isWaiting({ ...base, status: "closed" })).toBe(false);
     expect(isWaiting({ ...base, lastMessage: null })).toBe(false);
@@ -180,4 +191,11 @@ describe("details and authors", () => {
       replyAuthor({ authorOperatorId: "x", authorApiKeyId: null, authorName: null }, "me"),
     ).toBe("A teammate");
   });
+});
+
+test("a last message without words shows the word for its kind, so a removed file is no image", () => {
+  expect(messagePreview("**Hi**", "text")).toBe("Hi");
+  expect(messagePreview("invoice.pdf", "file")).toBe("invoice.pdf");
+  expect(messagePreview(null, "file")).toBe("File");
+  expect(messagePreview(null, "image")).toBe("Image");
 });

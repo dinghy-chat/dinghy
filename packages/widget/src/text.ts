@@ -24,7 +24,7 @@ const en = {
   sending: "Sending...",
   failed: "Not sent. Select to try again.",
   reconnecting: "Reconnecting...",
-  attach: "Attach an image",
+  attachImage: "Attach an image",
   attachFile: "Attach an image or a file",
   emoji: "Add an emoji",
   imageAlt: "An image in this conversation",

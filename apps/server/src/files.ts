@@ -10,6 +10,9 @@ export const FILE_TYPES_TEXT = FILE_EXTENSIONS.map((one) => one.toUpperCase()).j
 /** Every file goes out as a download, so its type never matters to a browser. */
 export const FILE_TYPE = "application/octet-stream";
 
+/** The longest name an upload or an import may give, in characters, before it is cleaned and cut. */
+export const FILENAME_INPUT_MAX = 1000;
+
 /** The longest name a file keeps, in characters, with its extension. */
 const NAME_MAX = 100;
 // Letters and digits in any script, and a few marks. Anything else, such as a slash, a quote or a
@@ -25,17 +28,23 @@ interface Signature {
   at: number;
   bytes: number[];
 }
-const ZIP = { at: 0, bytes: ascii("PK\x03\x04") };
+// A ZIP starts with its first entry, or with its end record when it is empty, or with the mark of
+// an archive split into parts.
+const ZIP = [
+  { at: 0, bytes: ascii("PK\x03\x04") },
+  { at: 0, bytes: ascii("PK\x05\x06") },
+  { at: 0, bytes: ascii("PK\x07\x08") },
+];
 // The Office formats from before 2007 are OLE compound files.
-const OLE = { at: 0, bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] };
-const MOVIE = { at: 4, bytes: ascii("ftyp") };
+const OLE = [{ at: 0, bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] }];
+const MOVIE = [{ at: 4, bytes: ascii("ftyp") }];
 
 /**
- * What a file's first bytes must be, by extension. Text has none to check, and every file is
- * served as a download all the same.
+ * What a file's first bytes may be, by extension. Text has none to check, and every file is served
+ * as a download all the same.
  */
-const SIGNATURES: Record<FileExtension, Signature | null> = {
-  pdf: { at: 0, bytes: ascii("%PDF-") },
+const SIGNATURES: Record<FileExtension, Signature[] | null> = {
+  pdf: [{ at: 0, bytes: ascii("%PDF-") }],
   txt: null,
   csv: null,
   log: null,
@@ -53,6 +62,10 @@ const SIGNATURES: Record<FileExtension, Signature | null> = {
   mov: MOVIE,
 };
 
+/** The bytes start as one of the type's signatures, or the type has none to check. */
+const hasSignature = (bytes: Uint8Array, signatures: Signature[] | null) =>
+  signatures === null || signatures.some(({ at, bytes: start }) => startsWith(bytes, start, at));
+
 /**
  * The file's name, cleaned and cut to 100 characters with its extension kept, or null when its
  * extension is not one people may send or its first bytes do not match it.
@@ -64,8 +77,7 @@ export function allowedFileName(name: string, bytes: Uint8Array): string | null 
     .replace(/^[ .]+|[ .]+$/g, "");
   const extension = fileExtension(clean);
   if (extension === null) return null;
-  const signature = SIGNATURES[extension];
-  if (signature !== null && !startsWith(bytes, signature.bytes, signature.at)) return null;
+  if (!hasSignature(bytes, SIGNATURES[extension])) return null;
   const base = Array.from(clean.slice(0, clean.lastIndexOf(".")))
     .slice(0, NAME_MAX - extension.length - 1)
     .join("");

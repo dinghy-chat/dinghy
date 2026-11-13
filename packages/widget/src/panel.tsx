@@ -5,7 +5,7 @@ import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
 import type { ChatMessage } from "./client.ts";
-import { acceptedFiles, fileSize, isComposing, isImage } from "./compose.ts";
+import { acceptedFiles, fileSize, hasExpired, isComposing, isImage, saveFile } from "./compose.ts";
 import { EMOJIS, insertEmoji, SMILEY_ICON } from "./emoji.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { type Quote, quoteStandIn } from "./quote.ts";
@@ -447,6 +447,43 @@ function Quoted({ quote }: { quote: Quote }) {
 }
 
 /**
+ * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so an old
+ * one, or one the server refused, asks for new URLs, and the save waits for the line's new one.
+ */
+function FileLink({
+  download,
+  mine,
+  onExpired,
+}: {
+  download: NonNullable<Line["download"]>;
+  mine: boolean;
+  onExpired(): void;
+}) {
+  // Each click tries again, and a save sets it back to 0. A failure waits for a new URL or a click.
+  const [clicks, setClicks] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new URL or a click asks for a save.
+  useEffect(() => {
+    if (clicks === 0 || hasExpired(download.url)) return;
+    saveFile(download.url, download.name).then(() => setClicks(0), onExpired);
+  }, [clicks, download.url]);
+  return (
+    <a
+      class={mine ? "msg mine doc" : "msg doc"}
+      href={download.url}
+      onClick={(event) => {
+        event.preventDefault();
+        setClicks((count) => count + 1);
+        if (hasExpired(download.url)) onExpired();
+      }}
+    >
+      <Icon paths={DOWNLOAD_ICON} />
+      <span>{download.name}</span>
+      <small>{fileSize(download.size)}</small>
+    </a>
+  );
+}
+
+/**
  * One message in the log, with its sending state or a retry button. The first reply of a run shows
  * who sent it.
  */
@@ -492,11 +529,7 @@ export function ChatLine({
           />
         </button>
       ) : line.download !== null ? (
-        <a class={line.fromVisitor ? "msg mine doc" : "msg doc"} href={line.download.url} download>
-          <Icon paths={DOWNLOAD_ICON} />
-          <span>{line.download.name}</span>
-          <small>{fileSize(line.download.size)}</small>
-        </a>
+        <FileLink download={line.download} mine={line.fromVisitor} onExpired={onImageError} />
       ) : line.file !== undefined ? (
         <div class="msg mine">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>
       ) : (
@@ -627,6 +660,7 @@ export function Composer({
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const [emojis, setEmojis] = useState(false);
+  const attachLabel = t(filesAllowed ? "attachFile" : "attachImage");
   // The box grows with the text, up to its CSS max-height, and shrinks again after a send.
   // biome-ignore lint/correctness/useExhaustiveDependencies: each new draft asks for a new height.
   useLayoutEffect(() => {
@@ -664,7 +698,7 @@ export function Composer({
         type="file"
         multiple
         accept={acceptedFiles(filesAllowed)}
-        aria-label={t(filesAllowed ? "attachFile" : "attach")}
+        aria-label={attachLabel}
         tabIndex={-1}
         onChange={(event) => {
           onFiles(event.currentTarget.files ?? []);
@@ -683,7 +717,7 @@ export function Composer({
         <button
           type="button"
           class="tool"
-          aria-label={t(filesAllowed ? "attachFile" : "attach")}
+          aria-label={attachLabel}
           onClick={() => picker.current?.click()}
         >
           <Icon paths={ATTACH_ICON} />

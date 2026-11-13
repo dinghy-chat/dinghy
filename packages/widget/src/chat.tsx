@@ -3,10 +3,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preac
 import { ApiError, type ChatMessage, createClient } from "./client.ts";
 import {
   inCommitOrder,
-  isImage,
   newClientId,
   REFRESH_LIMIT_MS,
   REFUSED,
+  refusalProblem,
   uploadProblem,
 } from "./compose.ts";
 import { cleanContext } from "./context.ts";
@@ -568,9 +568,7 @@ function Chat({
       setLines((current) => merge(current, sent));
     } catch (error) {
       if (file !== undefined && error instanceof ApiError && REFUSED.includes(error.status)) {
-        setProblem(
-          t(error.status === 507 ? "noRoom" : isImage(file) ? "imageFailed" : "fileWrongType"),
-        );
+        setProblem(t(error.code === "storage_full" ? "noRoom" : refusalProblem(error.code, file)));
         setLines((current) => current.filter((line) => line.id !== lineId));
         return;
       }

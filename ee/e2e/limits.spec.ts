@@ -37,9 +37,9 @@ test("a workspace with 5 operators shows the limit when an owner creates an invi
   await expect(operators).toContainText("5 of 5");
   await expect(operators).toContainText("All team places are in use.");
   await expect(operators).toHaveClass(/full/);
-  const images = plan.locator(".meter", { hasText: "File storage" });
-  await expect(images).toContainText("0 MB of 1 GB");
-  await expect(images).toHaveClass(/ ok/);
+  const files = plan.locator(".meter", { hasText: "File storage" });
+  await expect(files).toContainText("0 MB of 1 GB");
+  await expect(files).toHaveClass(/ ok/);
   await expect(
     page.getByText("Dinghy Cloud automatically deletes chat images and files after 12 months."),
   ).toBeVisible();

@@ -6,6 +6,7 @@ import {
   inCommitOrder,
   isComposing,
   newClientId,
+  refusalProblem,
   uploadProblem,
 } from "./compose.ts";
 
@@ -71,4 +72,16 @@ test("a replay in order, and a late line, both end in commit order", () => {
     ...Array.from({ length: 2000 }, (_, index) => `m${index + 1}`),
     "pending",
   ]);
+});
+
+test("a refused upload's text follows the server's error code", () => {
+  const pdf = new File(["%PDF-"], "a.pdf", { type: "application/pdf" });
+  const png = new File(["not a png"], "a.png", { type: "image/png" });
+  expect(refusalProblem("too_large", pdf)).toBe("fileTooLarge");
+  expect(refusalProblem("too_large", png)).toBe("imageTooLarge");
+  expect(refusalProblem("type_not_allowed", pdf)).toBe("fileWrongType");
+  // The widget's files were turned off after it loaded.
+  expect(refusalProblem("not_an_image", pdf)).toBe("imageWrongType");
+  expect(refusalProblem("type_not_allowed", png)).toBe("imageFailed");
+  expect(refusalProblem("too_many_pixels", png)).toBe("imageFailed");
 });

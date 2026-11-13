@@ -67,11 +67,43 @@ export function uploadProblem(
   return file.size > MAX_FILE_BYTES ? "fileTooLarge" : null;
 }
 
+/**
+ * What to tell about an upload the server refused, by its error code, as a text key both apps
+ * define. A full workspace is the caller's own text.
+ */
+export function refusalProblem(code: string | null, file: File) {
+  if (code === "too_large") return isImage(file) ? "imageTooLarge" : "fileTooLarge";
+  // The browser called it an image, and the server could not read it as one.
+  if (isImage(file)) return "imageFailed";
+  if (code === "type_not_allowed") return "fileWrongType";
+  // The widget's files were turned off after it loaded.
+  if (code === "not_an_image") return "imageWrongType";
+  return "imageFailed";
+}
+
 /** A file's size as both apps show it beside its name, such as 340 KB or 2.4 MB. */
 export const fileSize = (bytes: number) =>
   bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+/** True once a signed file URL has expired. Its `expires` is in seconds. */
+export const hasExpired = (url: string) =>
+  Number(new URL(url).searchParams.get("expires")) * 1000 < Date.now();
+
+/**
+ * Saves a file through a blob URL. A link cannot do it: a browser ignores `download` on a link to
+ * another origin and opens the address instead, and an old address is gone.
+ */
+export async function saveFile(url: string, name: string) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`The file answered ${response.status}`);
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(await response.blob());
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href));
+}
 
 /**
  * Adds a confirmed line in commit order. Pending lines have no seq yet, and stay last. Lines nearly

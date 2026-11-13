@@ -6,7 +6,7 @@ import { type Actor, actorId, type KeyActor, keyStillValid } from "./api-keys.ts
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { keyGate, takeOver } from "./bots.ts";
-import { MESSAGE_KINDS, session, welcomeLink } from "./db/schema.ts";
+import { CHAT_KINDS, MESSAGE_KINDS, session, welcomeLink } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
@@ -68,6 +68,7 @@ import {
   InvalidReplyToError,
   isUnread,
   type KeySource,
+  type LastMessage,
   listConversationMessages,
   listConversations,
   listWorkspaceEvents,
@@ -288,7 +289,13 @@ const Conversation = z
       isTest: z.boolean(),
     }),
     lastMessage: z
-      .object({ body: z.string().nullable(), fromVisitor: z.boolean(), createdAt: z.string() })
+      .object({
+        // The text, or a file's name. Null for an image, and for a file that was removed.
+        body: z.string().nullable(),
+        kind: z.enum(CHAT_KINDS),
+        fromVisitor: z.boolean(),
+        createdAt: z.string(),
+      })
       .nullable(),
     // Set while an operator has snoozed it: it waits for nobody until `until`, or with `until` null
     // until the visitor writes. Null when it is not snoozed.
@@ -400,6 +407,7 @@ const listRoute = createRoute({
                 },
                 lastMessage: {
                   body: "Do you have a yearly plan?",
+                  kind: "text",
                   fromVisitor: true,
                   createdAt: "2026-11-08T09:30:00.000Z",
                 },
@@ -852,7 +860,7 @@ function handlerOf(row: ConversationRow): z.infer<typeof ConversationHandler> | 
 /** A conversation as the operator API and webhooks show it. */
 export function conversationView(
   row: ConversationRow,
-  lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null,
+  lastMessage: LastMessage | null,
   pictureUrl: string | null = null,
 ) {
   return {

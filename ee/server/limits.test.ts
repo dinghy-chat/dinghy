@@ -21,7 +21,7 @@ import {
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { createImages, processImage } from "../../apps/server/src/images.ts";
 import { StorageFullError } from "../../apps/server/src/limits.ts";
-import { appendMessage } from "../../apps/server/src/messages.ts";
+import { appendMessage, listConversations } from "../../apps/server/src/messages.ts";
 import { localStore } from "../../apps/server/src/storage.ts";
 import { startWorker } from "../../apps/server/src/worker.ts";
 import { createWorkspace, type NewWorkspace } from "../../apps/server/src/workspaces.ts";
@@ -89,7 +89,7 @@ beforeAll(async () => {
   cloud = app({
     signup: "early",
     limits: {
-      maxImageBytes: Math.floor(imageSize * 2.5),
+      maxStoredBytes: Math.floor(imageSize * 2.5),
       maxStreams: { widget: 2, operator: 1 },
     },
   });
@@ -294,7 +294,7 @@ describe("images: a byte limit per workspace on the cloud", () => {
       tx.insert(visitor).values({ workspaceId: space.id, externalId: "v" }).returning(),
     );
     const visitorId = row?.id ?? "";
-    const limits = createLimits(valkey, logger, { maxImageBytes: 350 });
+    const limits = createLimits(valkey, logger, { maxStoredBytes: 350 });
     const results = await Promise.allSettled(
       Array.from({ length: 8 }, () => {
         const attachmentId = randomUUID();
@@ -518,6 +518,11 @@ describe("images older than 12 months", () => {
     });
     const [row] = await owner.select().from(message).where(eq(message.id, sent.id));
     expect(row?.metadata).toEqual({ fileRemoved: true });
+    // With its name gone, the inbox tells it from an image by its kind.
+    const listed = await withWorkspace(db, space.id, (tx) =>
+      listConversations(tx, space.id, null, "open", { kind: "all" }, undefined, 10),
+    );
+    expect(listed.conversations[0]?.lastMessage).toMatchObject({ body: null, kind: "file" });
   });
 
   test("two workers at once queue each old image's file once", async () => {

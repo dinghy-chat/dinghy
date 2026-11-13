@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
-import { createElement, type ReactNode } from "react";
-import { fileSize, isImage } from "../../../packages/widget/src/compose.ts";
+import { createElement, type ReactNode, useEffect, useState } from "react";
+import { fileSize, hasExpired, isImage, saveFile } from "../../../packages/widget/src/compose.ts";
 import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import { clockTime, isToday } from "./format.ts";
 import { Icon } from "./icons.tsx";
@@ -25,6 +25,41 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
     isBare ? "" : ")",
   );
 };
+
+/**
+ * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so an old
+ * one, or one the server refused, asks for new URLs, and the save waits for the line's new one.
+ */
+function FileLink({
+  download,
+  onExpired,
+}: {
+  download: NonNullable<Line["download"]>;
+  onExpired(): void;
+}) {
+  // Each click tries again, and a save sets it back to 0. A failure waits for a new URL or a click.
+  const [clicks, setClicks] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new URL or a click asks for a save.
+  useEffect(() => {
+    if (clicks === 0 || hasExpired(download.url)) return;
+    saveFile(download.url, download.name).then(() => setClicks(0), onExpired);
+  }, [clicks, download.url]);
+  return (
+    <a
+      className="file-link"
+      href={download.url}
+      onClick={(event) => {
+        event.preventDefault();
+        setClicks((count) => count + 1);
+        if (hasExpired(download.url)) onExpired();
+      }}
+    >
+      <Icon name="download" size={20} />
+      <span className="file-name">{download.name}</span>
+      <span className="file-size">{fileSize(download.size)}</span>
+    </a>
+  );
+}
 
 /** A message's bubble: its quote and text, its image or file, or what stands in for them. */
 function Bubble({
@@ -68,11 +103,7 @@ function Bubble({
     return (
       <div className={`msg${side}`}>
         {quote}
-        <a className="file-link" href={line.download.url} download>
-          <Icon name="download" size={20} />
-          <span className="file-name">{line.download.name}</span>
-          <span className="file-size">{fileSize(line.download.size)}</span>
-        </a>
+        <FileLink download={line.download} onExpired={onImageError} />
       </div>
     );
   }

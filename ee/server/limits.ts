@@ -13,7 +13,7 @@ export const MAX_OPERATORS = 5;
  * Images and files, counted from the stored bytes after an image's re-encode, in decimal units like
  * the price page.
  */
-const MAX_IMAGE_BYTES = 1_000_000_000;
+const MAX_STORED_BYTES = 1_000_000_000;
 /**
  * A CX23 held 20,000 open streams in about 1 GB (docs/measurements.md). A widget stream is open
  * only while a visitor's tab is visible with the chat open or a conversation going, so 2,000 at
@@ -25,7 +25,7 @@ const MAX_OPERATOR_STREAMS = 50;
 
 export interface LimitOptions {
   maxOperators?: number;
-  maxImageBytes?: number;
+  maxStoredBytes?: number;
   maxStreams?: Record<StreamKind, number>;
 }
 
@@ -45,7 +45,7 @@ async function members(tx: Transaction, workspaceId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-async function imageBytes(tx: Transaction, workspaceId: string): Promise<number> {
+async function storedBytes(tx: Transaction, workspaceId: string): Promise<number> {
   const [row] = await tx
     .select({ bytes: sum(attachment.byteSize) })
     .from(attachment)
@@ -58,7 +58,7 @@ export function createLimits(
   logger: Logger,
   {
     maxOperators = MAX_OPERATORS,
-    maxImageBytes = MAX_IMAGE_BYTES,
+    maxStoredBytes = MAX_STORED_BYTES,
     maxStreams = { widget: MAX_WIDGET_STREAMS, operator: MAX_OPERATOR_STREAMS },
   }: LimitOptions = {},
 ): Limits {
@@ -88,7 +88,7 @@ export function createLimits(
     },
     async mayStore(tx, workspaceId, bytes) {
       await lockWorkspace(tx, workspaceId);
-      return (await imageBytes(tx, workspaceId)) + bytes <= maxImageBytes;
+      return (await storedBytes(tx, workspaceId)) + bytes <= maxStoredBytes;
     },
     // In Valkey, because a stream has no stored row, and it must not take the lock that message
     // writes need. During a Valkey outage it admits everything, as the rate limits do.
@@ -97,7 +97,7 @@ export function createLimits(
     async usage(tx, workspaceId) {
       return {
         operators: { used: await members(tx, workspaceId), limit: maxOperators },
-        imageBytes: { used: await imageBytes(tx, workspaceId), limit: maxImageBytes },
+        imageBytes: { used: await storedBytes(tx, workspaceId), limit: maxStoredBytes },
       };
     },
   };

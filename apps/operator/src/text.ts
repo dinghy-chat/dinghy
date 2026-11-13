@@ -92,7 +92,7 @@ const en = {
   invitePendingOne: "Invite pending · 1 day left",
   invitePendingMany: "Invite pending · {days} days left",
   usageOperatorsNote: "This limit includes team members and pending invites.",
-  usageImagesNote: "Dinghy Cloud automatically deletes chat images and files after 12 months.",
+  usageFilesNote: "Dinghy Cloud automatically deletes chat images and files after 12 months.",
   sceneMorning: "Early morning. The boat sets out on a calm sea.",
   sceneForenoon: "Mid-morning. The boat sails on.",
   sceneNoon: "Midday. The boat is halfway across.",
@@ -179,6 +179,7 @@ const en = {
   attach: "Attach an image or a file",
   emoji: "Add an emoji",
   image: "Image",
+  file: "File",
   imageAlt: "An image in this conversation",
   imageSending: "Sending an image...",
   imageTooLarge: "This image is larger than 5 MB. Choose a smaller image.",
@@ -267,10 +268,10 @@ const en = {
     'Says "Online" while someone is online, and your away message when nobody is.',
   widgetStatusReplyTimeHelp:
     'While someone is online, says "Usually replies in 2 min", from your median first reply time over 30 days. With no replies yet, it says "Online".',
-  widgetEmailTitle: "Files, email, sound and branding",
+  widgetFilesEmailTitle: "Files, email, sound and branding",
   widgetVisitorFiles: "Visitors can send files",
   widgetVisitorFilesHelp:
-    "PDF, text, CSV, JSON, ZIP, Office and OpenDocument files, and MP4 or MOV videos, up to 10 MB, besides images. Your team can always send files.",
+    "PDF, TXT, CSV, LOG, JSON, ZIP, Office, OpenDocument, MP4 and MOV files up to 10 MB, as well as images. Your team can always send files.",
   widgetSound: "Play a sound for new replies",
   widgetSoundHelp: "A soft chime when a reply arrives and the visitor is not looking at the chat.",
   widgetEmailAsk: "Ask visitors for their email",
@@ -386,7 +387,7 @@ const en = {
     "This workspace has reached its limit of 5 team members, including pending invites. Ask an owner or admin to free a place.",
   usageTitle: "Plan and usage",
   usageOperators: "Team members",
-  usageImages: "File storage",
+  usageFiles: "File storage",
   usageOf: "{used} of {limit}",
   usageNear: "Almost at the limit.",
   usageFullTeam:
@@ -744,11 +745,11 @@ const en = {
   deleteWorkspaceButton: "Delete the workspace",
   deleteWorkspaceFailed: "The workspace could not be deleted. Try again.",
   deleteWorkspaceCounts:
-    "This permanently deletes {conversations} and {images}. It removes workspace access for {members}, but keeps their Dinghy accounts.",
+    "This permanently deletes {conversations} and {files}. It removes workspace access for {members}, but keeps their Dinghy accounts.",
   deleteCountConversationsOne: "1 conversation",
   deleteCountConversations: "{count} conversations",
-  deleteCountImagesOne: "1 image or file",
-  deleteCountImages: "{count} images and files",
+  deleteCountFilesOne: "1 image or file",
+  deleteCountFiles: "{count} images and files",
   deleteCountMembersOne: "1 team member",
   deleteCountMembers: "{count} team members",
   deleteWorkspaceExport: "Download an export first",
@@ -811,7 +812,7 @@ const en = {
   emailMismatch: "That email does not match your account. Enter the email you use to sign in.",
   linkDeleteAccountTitle: "Delete your account",
   linkDeleteAccountHelp: "This deletes your Dinghy account for good. It can't be undone.",
-  usageFullImages:
+  usageFullFiles:
     "File storage is full. An owner or admin can delete conversations with images or files to make space.",
   settingsGroupYou: "You",
   settingsGroupWorkspace: "Workspace",

@@ -23,7 +23,7 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { EMAIL_COLORS, letter } from "./letter.ts";
 import {
   conversationVisitor,
-  fileName,
+  filename,
   isChat,
   joinVisitor,
   type MessageAuthor,
@@ -198,7 +198,7 @@ export async function transcriptPlan(
       .select({
         seq: message.seq,
         body: message.body,
-        fileName: fileName(),
+        filename: filename(),
         kind: message.kind,
         authorVisitorId: message.authorVisitorId,
         authorOperatorId: message.authorOperatorId,
@@ -239,7 +239,7 @@ export async function transcriptPlan(
 interface TranscriptLine {
   body: string | null;
   /** Null for any message but a file, and once the file was removed. */
-  fileName: string | null;
+  filename: string | null;
   kind: (typeof message.$inferSelect)["kind"];
   authorVisitorId: string | null;
   authorOperatorId: string | null;
@@ -253,7 +253,7 @@ interface TranscriptLine {
  * has them. Null for text.
  */
 const standIn = (line: TranscriptLine) =>
-  line.kind === "image" ? text.image : line.kind === "file" ? text.file(line.fileName) : null;
+  line.kind === "image" ? text.image : line.kind === "file" ? text.file(line.filename) : null;
 
 /** The transcript's words: each message under its author and time, as text and as HTML. */
 export function transcriptLetter(

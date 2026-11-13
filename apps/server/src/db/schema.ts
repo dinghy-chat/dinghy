@@ -507,9 +507,9 @@ export const attachment = pgTable(
       foreignColumns: [message.workspaceId, message.id],
     }),
     index("attachment_message_idx").on(table.workspaceId, table.messageId),
-    // The cloud's image limit sums a workspace's bytes under the workspace lock: an index-only scan.
+    // The cloud's storage limit sums a workspace's bytes under the workspace lock: an index-only scan.
     index("attachment_bytes_idx").on(table.workspaceId, table.byteSize),
-    // The cloud deletes images after 12 months, oldest first.
+    // The cloud deletes images and files after 12 months, oldest first.
     index("attachment_created_idx").on(table.createdAt),
     check(
       "attachment_image_or_file",
@@ -1268,7 +1268,7 @@ const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({ dataTyp
 
 /**
  * The workspace's logo, at most 256 pixels a side and encoded as WebP by the server. It lives in
- * Postgres rather than the object store because it is small, and it does not count as image storage.
+ * Postgres rather than the object store because it is small, and it does not count as stored images and files.
  * When it last changed is in `widget_settings`, which the widget reads.
  */
 export const workspaceLogo = pgTable("workspace_logo", {
@@ -1281,7 +1281,7 @@ export const workspaceLogo = pgTable("workspace_logo", {
 
 /**
  * An operator's picture, 128 pixels square and encoded as WebP by the server, as a logo is. It is
- * global, like the operator: one face in every workspace. It does not count as image storage.
+ * global, like the operator: one face in every workspace. It does not count as stored images and files.
  */
 export const operatorPicture = pgTable("operator_picture", {
   operatorId: uuid("operator_id")

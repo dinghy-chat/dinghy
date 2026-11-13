@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { conversation, visitor } from "./db/schema.ts";
+import { CHAT_KINDS, conversation, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -72,8 +72,10 @@ const ContactDetailSchema = ContactSchema.extend({
       status: z.enum(["open", "closed"]),
       createdAt: z.string(),
       updatedAt: z.string(),
-      // The newest message's text, or null for an image.
+      // The newest message's text, or a file's name. Null for an image, and for a removed file.
       lastBody: z.string().nullable(),
+      // The newest message's kind. Null with no message.
+      lastKind: z.enum(CHAT_KINDS).nullable(),
       // Messages people wrote, not counting deleted ones.
       messageCount: z.number().int(),
       assigneeName: z.string().nullable(),
@@ -320,6 +322,7 @@ type ConversationRow = {
   createdAt: string;
   updatedAt: string;
   lastBody: string | null;
+  lastKind: (typeof CHAT_KINDS)[number] | null;
   messageCount: number;
   assigneeName: string | null;
   closedBy: string | null;
@@ -335,13 +338,14 @@ const contactConversations = (tx: Transaction, workspaceId: string, visitorId: s
     SELECT c.id, c.status,
            to_char(c.created_at AT TIME ZONE 'UTC', ${ISO_FORMAT}) AS "createdAt",
            to_char(c.updated_at AT TIME ZONE 'UTC', ${ISO_FORMAT}) AS "updatedAt",
-           newest.body AS "lastBody", stats.message_count AS "messageCount",
+           newest.body AS "lastBody", newest.kind AS "lastKind",
+           stats.message_count AS "messageCount",
            assignee.name AS "assigneeName", closer.name AS "closedBy",
            extract(epoch FROM stats.first_reply_at - c.created_at)::int AS "firstReplySeconds"
     FROM conversation AS c
     LEFT JOIN operator AS assignee ON assignee.id = c.assignee_operator_id
     LEFT JOIN LATERAL (
-      SELECT ${previewBody(sql`m.body`, sql`m.metadata`)} AS body FROM message AS m
+      SELECT ${previewBody(sql`m.body`, sql`m.metadata`)} AS body, m.kind FROM message AS m
       WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
         AND ${isChat(sql`m.kind`)} AND m.deleted_at IS NULL
       ORDER BY m.seq DESC LIMIT 1

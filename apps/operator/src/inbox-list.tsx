@@ -11,7 +11,7 @@ import { EmptyArt } from "./scene.tsx";
 import { Keys, useShortcutsOn } from "./shortcuts.tsx";
 import { t } from "./text.ts";
 import { Avatar, FlagBadge, PageHead } from "./ui.tsx";
-import { avatarLetters, isWaiting, title } from "./visitor.ts";
+import { avatarLetters, isWaiting, messagePreview, title } from "./visitor.ts";
 
 const SEARCH_WAIT_MS = 250;
 const SEARCH_MIN = 3;
@@ -39,9 +39,8 @@ function ConversationRow({
   onSelect(): void;
 }) {
   const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
-  const body = conversation.lastMessage?.body;
-  const preview =
-    body != null ? markdownText(body) : conversation.lastMessage === null ? "" : t("image");
+  const last = conversation.lastMessage;
+  const preview = last === null ? "" : messagePreview(last.body, last.kind);
   const waits = isWaiting(conversation);
   const { snooze } = conversation;
   const closed = showClosed && conversation.status === "closed";

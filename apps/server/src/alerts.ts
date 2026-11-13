@@ -36,7 +36,7 @@ import {
   authorNames,
   conversationHasTestVisitor,
   conversationVisitor,
-  fileName,
+  filename,
   isChat,
   messageAuthors,
   messageColumns,
@@ -78,7 +78,7 @@ const PRUNE_BATCH = 1000;
 // Every string a person reads has a key, so a locale can be added later.
 const text = {
   anImage: "Sent an image.",
-  aFile: (name: string) => `Sent a file: ${name}.`,
+  aFile: (name: string | null) => (name === null ? "Sent a file." : `Sent the file ${name}.`),
   visitor: "A visitor",
   someone: "A teammate",
   testTitle: "Dinghy",
@@ -116,9 +116,19 @@ export const testPayload = (id: string): PushPayload => ({
 const threadPath = (workspaceId: string, conversationId: string) =>
   `/?workspace=${workspaceId}&conversation=${conversationId}`;
 
+/** A reply as an email to the visitor shows it. */
+interface Written {
+  author: string;
+  body: string | null;
+  kind: (typeof message.$inferSelect)["kind"];
+  /** A file's name. Null for any other message, and once the file was removed. */
+  filename: string | null;
+  quote: Quote | null;
+}
+
 /** A message's words in an alert: its text, or what stands in for its image or its file. */
-const messageText = (body: string | null, fileName: string | null) =>
-  body ?? (fileName === null ? text.anImage : text.aFile(fileName));
+const messageText = (said: Pick<Written, "body" | "kind" | "filename">) =>
+  said.kind === "file" ? text.aFile(said.filename) : (said.body ?? text.anImage);
 
 /** Sends to each of the operator's devices. A device that is gone is deleted. */
 export async function sendToOperator(
@@ -577,7 +587,8 @@ export function planDelivery(
     const [written] = await tx
       .select({
         body: message.body,
-        fileName: fileName(),
+        kind: message.kind,
+        filename: filename(),
         deletedAt: message.deletedAt,
         authorOperatorId: message.authorOperatorId,
         authorApiKeyId: message.authorApiKeyId,
@@ -611,8 +622,7 @@ export function planDelivery(
       const by = (author === null ? undefined : names.get(author)) ?? text.someone;
       return operatorPlan(tx, row, from, { mention: written.body ?? "", by }, threadUrl);
     }
-    const said = messageText(written.body, written.fileName);
-    return operatorPlan(tx, row, from, { body: said }, threadUrl);
+    return operatorPlan(tx, row, from, { body: messageText(written) }, threadUrl);
   });
 }
 
@@ -693,7 +703,8 @@ async function replyEmailPlan(
     .select({
       seq: message.seq,
       body: message.body,
-      fileName: fileName(),
+      kind: message.kind,
+      filename: filename(),
       replyTo: messageColumns.replyTo,
       authorVisitorId: message.authorVisitorId,
       authorOperatorId: message.authorOperatorId,
@@ -740,7 +751,8 @@ async function replyEmailPlan(
   const written = replies.map((reply) => ({
     author: visitorAuthorName(reply, authors, place.name),
     body: reply.body,
-    fileName: reply.fileName,
+    kind: reply.kind,
+    filename: reply.filename,
     quote: visitorQuote(reply.replyTo),
   }));
   return {
@@ -771,7 +783,7 @@ const bubbleHtml = (content: string, quote: Quote | null) =>
  * which links to the chat, because an email never carries the file itself.
  */
 const replyHtml = (
-  reply: { author: string; body: string; fileName: string | null; quote: Quote | null },
+  reply: Omit<Written, "body"> & { body: string },
   index: number,
   replies: { author: string }[],
   chatUrl: string,
@@ -780,7 +792,7 @@ const replyHtml = (
     ? ""
     : authorLineHtml(text.replied(reply.author), index === 0 ? 0 : 12)) +
   bubbleHtml(
-    reply.fileName === null
+    reply.kind !== "file"
       ? markdownHtml(reply.body)
       : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(reply.body)}</a></p>`,
     reply.quote,
@@ -793,12 +805,12 @@ const replyHtml = (
  */
 export function replyLetter(
   place: Place,
-  replies: { author: string; body: string | null; fileName: string | null; quote: Quote | null }[],
+  replies: Written[],
   links: { chatUrl: string; stopUrl: string },
 ): { subject: string; text: string; html: string } {
   const written = replies.map((reply) => ({
     ...reply,
-    body: messageText(reply.body, reply.fileName),
+    body: messageText(reply),
   }));
   const plain = written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n");
   return {

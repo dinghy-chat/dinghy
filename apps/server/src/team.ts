@@ -174,6 +174,7 @@ const Settings = z
     usage: z
       .object({
         operators: z.object({ used: z.number(), limit: z.number() }),
+        // Images and files, in bytes.
         imageBytes: z.object({ used: z.number(), limit: z.number() }),
       })
       .nullable(),

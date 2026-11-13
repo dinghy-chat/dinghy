@@ -27,3 +27,9 @@ test("a type with a signature needs it at the start, or at its place", () => {
   expect(allowedFileName("a.mp4", Buffer.from("\x00\x00\x00\x20ftypmp42", "latin1"))).toBe("a.mp4");
   expect(allowedFileName("a.mp4", Buffer.from("ftypmp42"))).toBeNull();
 });
+
+test("a zip may be empty, or one part of a split archive", () => {
+  expect(allowedFileName("a.zip", Buffer.from("PK\x05\x06\x00\x00", "latin1"))).toBe("a.zip");
+  expect(allowedFileName("a.zip", Buffer.from("PK\x07\x08\x00\x00", "latin1"))).toBe("a.zip");
+  expect(allowedFileName("a.zip", Buffer.from("PK\x01\x02\x00\x00", "latin1"))).toBeNull();
+});

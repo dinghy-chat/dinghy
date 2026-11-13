@@ -785,7 +785,7 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
           <FormSection title="widgetHeaderTitle" help="widgetHeaderHelp">
             <HeaderFields settings={draft} members={members} onChange={change} />
           </FormSection>
-          <FormSection title="widgetEmailTitle">
+          <FormSection title="widgetFilesEmailTitle">
             <div className="setting-rows">
               <SettingRow
                 label={t("widgetEmailAsk")}

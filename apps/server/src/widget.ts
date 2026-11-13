@@ -468,7 +468,7 @@ const sendMessageRoute = createRoute({
   },
 });
 
-const sendImageRoute = createRoute({
+const sendUploadRoute = createRoute({
   method: "post",
   path: "/v1/widget/{key}/images",
   security: VISITOR_TOKEN,
@@ -1255,7 +1255,7 @@ export function registerWidgetRoutes(
   });
 
   if (images !== undefined) {
-    app.openapi(sendImageRoute, async (c) => {
+    app.openapi(sendUploadRoute, async (c) => {
       const found = c.get("workspace");
       const identified = await identify(c);
       if (identified === null) return c.json(UNAUTHORIZED, 401);

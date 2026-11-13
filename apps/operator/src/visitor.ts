@@ -1,5 +1,5 @@
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
-import type { ContactDetail, Conversation, VisitorIdentity } from "./api.ts";
+import type { ChatKind, ContactDetail, Conversation, VisitorIdentity } from "./api.ts";
 import { MINUTE_MS } from "./format.ts";
 import { t } from "./text.ts";
 
@@ -157,8 +157,12 @@ export function ago(iso: string, now = Date.now(), style: "long" | "narrow" = "l
   return words.format(Math.round(hours / 24), "day");
 }
 
-/** A conversation's line in a list: its last message as text, an image's word, or none at all. */
+/** A last message in a list: its text or a file's name, or the word for an image or a removed file. */
+export const messagePreview = (body: string | null, kind: ChatKind) =>
+  body !== null ? markdownText(body) : t(kind === "file" ? "file" : "image");
+
+/** A conversation's line in a list: its last message, or none at all. */
 export function conversationPreview(one: ContactDetail["conversations"][number]): string {
-  if (one.messageCount === 0) return t("noMessages");
-  return one.lastBody === null ? t("image") : markdownText(one.lastBody);
+  if (one.lastKind === null) return t("noMessages");
+  return messagePreview(one.lastBody, one.lastKind);
 }

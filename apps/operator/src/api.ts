@@ -115,7 +115,13 @@ export interface Conversation {
   visitor: Visitor;
   /** What the host page sent with setContext(). Nobody signed it, so it is not verified. */
   pageContext: PageContext | null;
-  lastMessage: { body: string | null; fromVisitor: boolean; createdAt: string } | null;
+  lastMessage: {
+    /** The text, or a file's name. Null for an image, and for a file that was removed. */
+    body: string | null;
+    kind: ChatKind;
+    fromVisitor: boolean;
+    createdAt: string;
+  } | null;
   /** A welcome chat on Dinghy Cloud. */
   welcome: boolean;
   /**
@@ -152,6 +158,9 @@ export interface SuggestedReply {
   createdAt: string;
 }
 
+/** The kinds of message that visitors and the team write to each other. */
+export type ChatKind = "text" | "image" | "file";
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -160,7 +169,7 @@ export interface Message {
    * `closed` and `reopened` are status lines that a close or a reopen wrote, with no body. A `note`
    * is text that only the team sees.
    */
-  kind: "text" | "image" | "file" | "closed" | "reopened" | "note";
+  kind: ChatKind | "closed" | "reopened" | "note";
   fromVisitor: boolean;
   /** The operator who sent it, and their current name. Both null for a visitor's message. */
   authorOperatorId: string | null;
@@ -249,6 +258,8 @@ export interface ContactDetail extends Contact {
     createdAt: string;
     updatedAt: string;
     lastBody: string | null;
+    /** Null with no message. */
+    lastKind: ChatKind | null;
     messageCount: number;
     assigneeName: string | null;
     /** The member or key that closed it. Null while open, or when the visitor closed it. */

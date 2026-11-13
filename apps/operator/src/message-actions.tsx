@@ -15,7 +15,8 @@ export const quoteOf = (line: Line, author: string): Quote => ({
   id: line.id,
   authorName: line.fromVisitor ? null : author,
   fromVisitor: line.fromVisitor,
-  text: plainText(line.body),
+  // As the server quotes it: a file by its name.
+  text: line.download === null ? plainText(line.body) : line.download.name,
   hasImage: line.image !== null,
 });
 

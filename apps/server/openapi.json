@@ -791,6 +791,10 @@
               "body": {
                 "type": ["string", "null"]
               },
+              "kind": {
+                "type": "string",
+                "enum": ["text", "image", "file"]
+              },
               "fromVisitor": {
                 "type": "boolean"
               },
@@ -798,7 +802,7 @@
                 "type": "string"
               }
             },
-            "required": ["body", "fromVisitor", "createdAt"]
+            "required": ["body", "kind", "fromVisitor", "createdAt"]
           },
           "snooze": {
             "$ref": "#/components/schemas/Snooze"
@@ -1863,6 +1867,10 @@
                     "lastBody": {
                       "type": ["string", "null"]
                     },
+                    "lastKind": {
+                      "type": ["string", "null"],
+                      "enum": ["text", "image", "file", null]
+                    },
                     "messageCount": {
                       "type": "integer"
                     },
@@ -1882,6 +1890,7 @@
                     "createdAt",
                     "updatedAt",
                     "lastBody",
+                    "lastKind",
                     "messageCount",
                     "assigneeName",
                     "closedBy",
@@ -5311,6 +5320,7 @@
                       },
                       "lastMessage": {
                         "body": "Do you have a yearly plan?",
+                        "kind": "text",
                         "fromVisitor": true,
                         "createdAt": "2026-11-08T09:30:00.000Z"
                       },
