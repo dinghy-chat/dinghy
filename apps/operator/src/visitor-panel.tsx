@@ -88,18 +88,24 @@ const hasPlace = (visitor: Place) =>
   visitor.device !== null ||
   visitor.locale !== null;
 
-/** Copies the visitor's email, and says so. */
-const copyEmail = (email: string) =>
-  navigator.clipboard
-    ?.writeText(email)
-    .then(() => toast("emailCopied"))
-    .catch(() => {});
-
-/** The visitor's email, which copies itself when clicked. */
-function EmailButton({ email, children }: { email: string; children: ReactNode }) {
-  const label = t("copyValue", { name: t("emailLabel") });
+/** The visitor's name or email, which copies itself when clicked, and says so. */
+function CopyButton({
+  value,
+  what,
+  children,
+}: {
+  value: string;
+  what: "name" | "email";
+  children: ReactNode;
+}) {
+  const label = t("copyValue", { name: t(what === "name" ? "nameLabel" : "emailLabel") });
+  const copy = () =>
+    navigator.clipboard
+      ?.writeText(value)
+      .then(() => toast(what === "name" ? "nameCopied" : "emailCopied"))
+      .catch(() => {});
   return (
-    <button type="button" className="copy-email" title={label} onClick={() => copyEmail(email)}>
+    <button type="button" className="copy-text-button" title={label} onClick={copy}>
       {children}
     </button>
   );
@@ -134,14 +140,22 @@ function PanelName({ name }: { name: string }) {
       live = false;
     };
   }, [at]);
-  if (at < 0) return <h3>{name}</h3>;
+  if (at < 0) {
+    return (
+      <h3>
+        <CopyButton value={name} what="name">
+          {name}
+        </CopyButton>
+      </h3>
+    );
+  }
   // Two blocks rather than a <wbr>, which Chrome breaks at even on a line that may not wrap.
   return (
     <h3 ref={ref} className="panel-email">
-      <EmailButton email={name}>
+      <CopyButton value={name} what="email">
         <span className="email-part">{name.slice(0, at + 1)}</span>
         <span className="email-part">{name.slice(at + 1)}</span>
-      </EmailButton>
+      </CopyButton>
     </h3>
   );
 }
@@ -531,7 +545,9 @@ export function VisitorPanel({
             <PanelName key={name} name={name} />
             {visitor.email !== null && visitor.email !== name && (
               <p>
-                <EmailButton email={visitor.email}>{visitor.email}</EmailButton>
+                <CopyButton value={visitor.email} what="email">
+                  {visitor.email}
+                </CopyButton>
               </p>
             )}
             {presence !== null && (

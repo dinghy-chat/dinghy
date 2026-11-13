@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useCallback, useEffect, useState } from "react";
+import { Component, type ReactNode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
@@ -15,6 +15,7 @@ import { readStored, store } from "./stored.ts";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
 import { Toaster } from "./toast.tsx";
+import { Tooltips } from "./tooltip.tsx";
 import { TwoFactorAgain, TwoFactorCheck } from "./two-factor.tsx";
 
 applyTheme(savedTheme());
@@ -209,12 +210,38 @@ function App() {
   );
 }
 
+/**
+ * What the operator sees when a screen fails to draw, in place of a blank page. It happens most
+ * after a release, when a tab still runs the old app against the new server, so a reload fixes it.
+ */
+class Crashed extends Component<{ children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  override render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <AuthPage>
+        <h1>{t("crashedTitle")}</h1>
+        <p>{t("crashedText")}</p>
+        <button type="button" className="btn primary large" onClick={() => location.reload()}>
+          {t("reload")}
+        </button>
+      </AuthPage>
+    );
+  }
+}
+
 const root = document.getElementById("root");
 if (root !== null) {
   createRoot(root).render(
     <Scene>
-      <App />
+      <Crashed>
+        <App />
+      </Crashed>
       <Toaster />
+      <Tooltips />
     </Scene>,
   );
 }
