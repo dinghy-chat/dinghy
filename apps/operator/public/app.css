@@ -4800,6 +4800,25 @@ button.quote:hover {
   overflow-wrap: anywhere;
   color: var(--mute);
 }
+.two-factor-cell {
+  color: var(--mute);
+  white-space: nowrap;
+}
+/* Light on dark too, because a scanner reads only dark squares on a light ground. */
+.qr {
+  width: 176px;
+  height: 176px;
+  border-radius: 8px;
+}
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 6px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
 .end-cell {
   width: 1%;
   text-align: right;
@@ -5629,7 +5648,8 @@ button.quote:hover {
     font-size: 16px;
   }
   .members thead,
-  .members .email-cell {
+  .members .email-cell,
+  .members .two-factor-cell {
     display: none;
   }
   .members td {

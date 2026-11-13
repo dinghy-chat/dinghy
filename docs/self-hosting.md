@@ -181,12 +181,15 @@ To grow, run more `web` instances behind one load balancer, and one or more `wor
 | List the workspaces and their IDs | `docker compose run --rm migrate chat workspaces` |
 | Back up the database | `docker compose run --rm migrate chat backup` |
 | Make a sign-in link for an operator | `docker compose exec app chat sign-in-link <email>` |
+| Turn off an operator's two-step sign-in | `docker compose exec app chat two-factor-reset <email>` |
 | Export a workspace | `docker compose exec app chat export <workspace-id> /tmp/export.tar`, then `docker compose cp -a app:/tmp/export.tar .` |
 | Import a workspace | `docker compose cp -a export.tar app:/tmp/export.tar`, then `docker compose exec app chat import /tmp/export.tar` |
 | Suspend a workspace | `docker compose run --rm migrate chat suspend <workspace-id> [reason]` |
 | Lift a suspension | `docker compose run --rm migrate chat unsuspend <workspace-id>` |
 
 `chat workspaces` prints each workspace's ID, public key, state and name. The state is `active`, `suspended`, `read_only`, `waiting_payment` or `waiting_cloud`, the last three only on Dinghy Cloud. `chat setup` also prints the ID of the workspace it creates.
+
+`chat two-factor-reset` is for an operator who lost their authenticator app and their recovery codes. It turns two-step sign-in off, ends every session of the account and writes a `two_factor.reset` audit line. Whoever can read the operator's email can ask you for it, so check that the request comes from them, such as in person or on a call.
 
 A suspended workspace cannot send messages or images, its widget answers as if it did not exist, and its open chats close at once. Its operators can still sign in, read and export, and a banner tells them it is suspended. The reason is for you, and they do not see it.
 

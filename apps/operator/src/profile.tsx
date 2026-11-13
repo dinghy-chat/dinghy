@@ -12,6 +12,7 @@ import { Icon } from "./icons.tsx";
 import { Confirm } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { savedTheme, setTheme, type Theme } from "./theme.ts";
+import { TwoFactorRow } from "./two-factor.tsx";
 import {
   Choices,
   ErrorNote,
@@ -197,6 +198,13 @@ export function ProfilePage({
       </PageRow>
       <PageRow title={t("theme")} help={t("themeHelp")}>
         <ThemeChoice />
+      </PageRow>
+      <PageRow
+        title={t("twoFactorTitle")}
+        help={t("twoFactorHelp")}
+        docs={[{ path: "operator-guide#two-step-sign-in", text: "twoFactorDocsLink" }]}
+      >
+        <TwoFactorRow me={me} onChanged={onChanged} />
       </PageRow>
       <PageRow
         title={t("deleteAccountTitle")}

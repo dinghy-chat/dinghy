@@ -88,8 +88,49 @@ export const createLinkLimit = (valkey: Redis | null, logger: Logger) =>
     windowSeconds: 60 * 60,
   });
 
+/** Wrong second-step codes an account may send in the window. The last one ends its session. */
+export const TWO_FACTOR_MAX_FAILURES = 5;
+export const TWO_FACTOR_WINDOW_SECONDS = 15 * 60;
+
+/**
+ * Counts second-step checks per account, across instances. Each check counts before it runs, so
+ * parallel guesses cannot pass the limit, and one that passes clears the count, so only failures
+ * stay. The count outlives the session it ends, so a new sign-in link brings no new guesses.
+ * Unlike the link limit, it fails closed: during a Valkey outage `attempt` returns null, because a
+ * check without the limit would allow unlimited guesses at a 6-digit code. Only tests and the build
+ * of the API document run without Valkey, and then it counts nothing.
+ */
+export function createTwoFactorLimit(valkey: Redis | null, logger: Logger) {
+  const keyFor = (operatorId: string) => `dinghy:two-factor:${operatorId}`;
+  return {
+    windowSeconds: TWO_FACTOR_WINDOW_SECONDS,
+    /** Counts one check, and returns how many this account made in the window, or null. */
+    async attempt(operatorId: string): Promise<number | null> {
+      if (valkey === null) return 0;
+      const key = keyFor(operatorId);
+      try {
+        const results = await valkey
+          .multi()
+          .incr(key)
+          .expire(key, TWO_FACTOR_WINDOW_SECONDS, "NX")
+          .exec();
+        const count = results?.[0]?.[1];
+        if (typeof count === "number") return count;
+      } catch (err) {
+        logger.warn({ err }, "two-step sign-in limit unavailable");
+      }
+      return null;
+    },
+    async clear(operatorId: string): Promise<void> {
+      await valkey?.del(keyFor(operatorId)).catch((err: unknown) => {
+        logger.warn({ err }, "two-step sign-in limit unavailable");
+      });
+    },
+  };
+}
+
 /** The answer once attempts are used up. Retry-After is the whole window, the longest wait. */
-export const tooManyAttempts = (c: Context, limit: AccountLimit) => {
+export const tooManyAttempts = (c: Context, limit: { windowSeconds: number }) => {
   c.header("retry-after", String(limit.windowSeconds));
   return c.json(failure("too_many_attempts", "Too many attempts. Try again later."), 429);
 };

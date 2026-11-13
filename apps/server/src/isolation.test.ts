@@ -28,6 +28,7 @@ import {
   message,
   operator,
   operatorPicture,
+  operatorTwoFactor,
   pageView,
   pushSubscription,
   savedReply,
@@ -201,6 +202,22 @@ const widgetSettingsOf = async (workspaceId: string) =>
 
 const pictureOf = async (operatorId: string) =>
   (await owner.select().from(operatorPicture).where(eq(operatorPicture.operatorId, operatorId)))[0];
+
+/**
+ * Bea's two-step setup, started but never confirmed, so her session keeps working for the other
+ * attacks. Made on first use.
+ */
+async function pendingSetupOf(operatorId: string) {
+  await owner
+    .insert(operatorTwoFactor)
+    .values({ operatorId, secret: Buffer.from(`setup of ${operatorId}`) })
+    .onConflictDoNothing();
+  const [row] = await owner
+    .select()
+    .from(operatorTwoFactor)
+    .where(eq(operatorTwoFactor.operatorId, operatorId));
+  return row;
+}
 
 /** A conversation's first message, read past row-level security. */
 const firstMessageOf = async (conversationId: string) => {
@@ -863,6 +880,29 @@ const ATTACKS: Record<string, Attack> = {
       .where(eq(operator.id, bea.id));
     expect(other?.away).toBe(false);
     await as(anna, "PUT", "/v1/operator/me/status", { away: false });
+  },
+  "POST /v1/operator/two-factor/setup": async ({ operator: as, anna, bea }) => {
+    const before = await pendingSetupOf(bea.id);
+    expect((await as(anna, "POST", "/v1/operator/two-factor/setup")).status).toBe(200);
+    // Only the caller's own setup starts.
+    expect(await pendingSetupOf(bea.id)).toEqual(before);
+  },
+  "POST /v1/operator/two-factor/enable": async ({ operator: as, anna, bea }) => {
+    const before = await pendingSetupOf(bea.id);
+    const answer = await as(anna, "POST", "/v1/operator/two-factor/enable", { code: "000000" });
+    expect([400, 409]).toContain(answer.status);
+    expect(await pendingSetupOf(bea.id)).toEqual(before);
+  },
+  "POST /v1/operator/two-factor/check": async ({ operator: as, anna }) => {
+    // A check reads only the caller's own account, where it is off.
+    const answer = await as(anna, "POST", "/v1/operator/two-factor/check", { code: "000000" });
+    expect(answer.status).toBe(409);
+  },
+  "POST /v1/operator/two-factor/disable": async ({ operator: as, anna, bea }) => {
+    const before = await pendingSetupOf(bea.id);
+    const answer = await as(anna, "POST", "/v1/operator/two-factor/disable", { code: "000000" });
+    expect(answer.status).toBe(409);
+    expect(await pendingSetupOf(bea.id)).toEqual(before);
   },
   "DELETE /v1/operator/me/picture": async ({ operator: as, anna, bea }) => {
     await owner

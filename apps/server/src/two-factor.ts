@@ -1,0 +1,465 @@
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  hkdfSync,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
+import { base32 } from "@better-auth/utils/base32";
+import { createOTP } from "@better-auth/utils/otp";
+import { createRoute, z } from "@hono/zod-openapi";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import type { Context } from "hono";
+import type { Redis } from "iovalkey";
+import type { Logger } from "pino";
+import { SESSION } from "./api-security.ts";
+import type { App, AppEnv } from "./app.ts";
+import { audit } from "./audit.ts";
+import { operator, operatorTwoFactor, session } from "./db/schema.ts";
+import { type Database, operatorWorkspaces, type Transaction } from "./db/tenant.ts";
+import {
+  errorAnswer,
+  failure,
+  jsonAnswer,
+  jsonBody,
+  OPERATOR_WRITE_ERRORS,
+  okContent,
+} from "./errors.ts";
+import { type Live, OPERATORS } from "./live.ts";
+import {
+  createTwoFactorLimit,
+  TWO_FACTOR_MAX_FAILURES,
+  TWO_FACTOR_WINDOW_SECONDS,
+  tooManyAttempts,
+} from "./login-limit.ts";
+
+/** RFC 6238's defaults, which every authenticator app reads. */
+const PERIOD_SECONDS = 30;
+const DIGITS = 6;
+/** A code of the step before or after also passes, for a phone whose clock is a little off. */
+const STEP_WINDOW = 1;
+/** RFC 4226 asks for 160 bits. */
+const SECRET_BYTES = 20;
+const ISSUER = "Dinghy";
+const TOTP_CODE = new RegExp(`^\\d{${DIGITS}}$`);
+
+const RECOVERY_CODE_COUNT = 10;
+/** Each character is one of 32, so a code holds 50 random bits. */
+const RECOVERY_CODE_LENGTH = 10;
+/** The longest code the routes accept once spaces are gone, well above a recovery code's 11. */
+const CODE_MAX_LENGTH = 40;
+const RECOVERY_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
+
+const NONCE_BYTES = 12;
+const TAG_BYTES = 16;
+
+/**
+ * `off`: no two-step sign-in. `on`: it is on and this session passed it. `required`: it is on and
+ * this session has not passed it, so only the check, `me` and sign-out work.
+ */
+export type TwoFactorState = "off" | "on" | "required";
+
+/**
+ * A session's second step, as SQL. The session check, each stream drain and an upload's last
+ * check all read this one expression, so they cannot disagree. Null when the session is gone.
+ */
+export const twoFactorState = (sessionId: string) => sql<TwoFactorState | null>`(
+  select case
+           when t.enabled_at is null then 'off'
+           when s.two_factor_at is null then 'required'
+           else 'on'
+         end
+  from ${session} s
+  left join ${operatorTwoFactor} t on t.operator_id = s.user_id
+  where s.id = ${sessionId})`;
+
+/** The session's second step. A session that just ended counts as not passed. */
+export async function readTwoFactorState(db: Database, sessionId: string) {
+  const result = await db.execute<{ state: TwoFactorState | null }>(
+    sql`select ${twoFactorState(sessionId)} as state`,
+  );
+  return result.rows[0]?.state ?? "required";
+}
+
+/** Two keys from AUTH_SECRET, each with its own purpose, so neither can stand in for the other. */
+function deriveKeys(authSecret: string) {
+  const derive = (purpose: string) =>
+    Buffer.from(hkdfSync("sha256", authSecret, "", `dinghy ${purpose}`, 32));
+  return { secret: derive("two-factor secret"), recovery: derive("two-factor recovery codes") };
+}
+type Keys = ReturnType<typeof deriveKeys>;
+
+/**
+ * AES-256-GCM, with the operator's ID as associated data, so a secret copied into another
+ * account's row does not open.
+ */
+function seal(keys: Keys, operatorId: string, secret: Buffer): Buffer {
+  const nonce = randomBytes(NONCE_BYTES);
+  const cipher = createCipheriv("aes-256-gcm", keys.secret, nonce).setAAD(Buffer.from(operatorId));
+  return Buffer.concat([nonce, cipher.update(secret), cipher.final(), cipher.getAuthTag()]);
+}
+
+function unseal(keys: Keys, operatorId: string, sealed: Uint8Array): Buffer {
+  const nonce = sealed.subarray(0, NONCE_BYTES);
+  const decipher = createDecipheriv("aes-256-gcm", keys.secret, nonce)
+    .setAAD(Buffer.from(operatorId))
+    .setAuthTag(sealed.subarray(sealed.length - TAG_BYTES));
+  return Buffer.concat([
+    decipher.update(sealed.subarray(NONCE_BYTES, sealed.length - TAG_BYTES)),
+    decipher.final(),
+  ]);
+}
+
+/** The time step whose code this is, within the window, or null. */
+async function matchingStep(secret: Uint8Array, code: string): Promise<number | null> {
+  // timingSafeEqual throws when the lengths differ, and a code of another shape never matches.
+  if (!TOTP_CODE.test(code)) return null;
+  const otp = createOTP(secret, { digits: DIGITS, period: PERIOD_SECONDS });
+  const current = Math.floor(Date.now() / 1000 / PERIOD_SECONDS);
+  let matched: number | null = null;
+  // It compares every step, so the time taken does not show which one matched.
+  for (let step = current - STEP_WINDOW; step <= current + STEP_WINDOW; step += 1) {
+    if (timingSafeEqual(Buffer.from(await otp.hotp(step)), Buffer.from(code))) matched = step;
+  }
+  return matched;
+}
+
+function newRecoveryCode(): string {
+  // 256 is a multiple of 32, so the modulo picks each letter equally often.
+  const letters = [...randomBytes(RECOVERY_CODE_LENGTH)].map(
+    (byte) => RECOVERY_ALPHABET[byte % RECOVERY_ALPHABET.length],
+  );
+  const half = RECOVERY_CODE_LENGTH / 2;
+  return `${letters.slice(0, half).join("")}-${letters.slice(half).join("")}`;
+}
+
+/** Keyed, so a copy of the database alone cannot test guesses. Case and dashes do not matter. */
+const recoveryHash = (keys: Keys, code: string) =>
+  createHmac("sha256", keys.recovery)
+    .update(code.toLowerCase().replaceAll(/[^a-z0-9]/g, ""))
+    .digest("hex");
+
+/**
+ * Starts a setup with a new secret, which replaces one that was never confirmed. Returns null when
+ * two-step sign-in is already on, or the account is gone. The operator's row is locked first, as an
+ * account's delete locks it, so a secret never outlives its account.
+ */
+async function startSetup(db: Database, keys: Keys, operatorId: string) {
+  const secret = randomBytes(SECRET_BYTES);
+  const sealed = seal(keys, operatorId, secret);
+  return db.transaction(async (tx) => {
+    const [account] = await tx
+      .select({ email: operator.email })
+      .from(operator)
+      .where(and(eq(operator.id, operatorId), isNull(operator.deletedAt)))
+      .for("update");
+    if (account === undefined) return null;
+    const [started] = await tx
+      .insert(operatorTwoFactor)
+      .values({ operatorId, secret: sealed })
+      .onConflictDoUpdate({
+        target: operatorTwoFactor.operatorId,
+        set: { secret: sealed },
+        setWhere: isNull(operatorTwoFactor.enabledAt),
+      })
+      .returning({ operatorId: operatorTwoFactor.operatorId });
+    if (started === undefined) return null;
+    const otp = createOTP(secret, { digits: DIGITS, period: PERIOD_SECONDS });
+    return {
+      secret: base32.encode(secret, { padding: false }),
+      uri: otp.url(ISSUER, account.email),
+    };
+  });
+}
+
+/**
+ * Confirms a setup with its first code: turns two-step sign-in on, counts this session as passed,
+ * and returns the recovery codes, which are never readable again. Every other session of the
+ * account must pass the new secret, also one that passed before it was last turned off.
+ */
+async function finishSetup(
+  db: Database,
+  keys: Keys,
+  operatorId: string,
+  sessionId: string,
+  code: string,
+) {
+  return db.transaction(async (tx) => {
+    const [pending] = await tx
+      .select({ secret: operatorTwoFactor.secret })
+      .from(operatorTwoFactor)
+      .where(and(eq(operatorTwoFactor.operatorId, operatorId), isNull(operatorTwoFactor.enabledAt)))
+      .for("update");
+    if (pending === undefined) return "no_setup" as const;
+    const step = await matchingStep(unseal(keys, operatorId, pending.secret), code);
+    if (step === null) return "wrong_code" as const;
+    const codes = Array.from({ length: RECOVERY_CODE_COUNT }, newRecoveryCode);
+    await tx
+      .update(operatorTwoFactor)
+      .set({
+        enabledAt: new Date(),
+        lastStep: step,
+        recoveryCodes: codes.map((one) => recoveryHash(keys, one)),
+      })
+      .where(eq(operatorTwoFactor.operatorId, operatorId));
+    await tx
+      .update(session)
+      .set({ twoFactorAt: sql`case when ${session.id} = ${sessionId} then now() end` })
+      .where(eq(session.userId, operatorId));
+    return codes;
+  });
+}
+
+/**
+ * Uses a code from the authenticator app or a recovery code. It locks the account's row, so run it
+ * in the transaction that also applies the code's effect: two requests with the same code cannot
+ * both pass, and a code spent while the setup was turned off or replaced has no effect.
+ */
+async function spendCode(tx: Transaction, keys: Keys, operatorId: string, code: string) {
+  const ours = eq(operatorTwoFactor.operatorId, operatorId);
+  const [row] = await tx
+    .select({ secret: operatorTwoFactor.secret, lastStep: operatorTwoFactor.lastStep })
+    .from(operatorTwoFactor)
+    .where(and(ours, isNotNull(operatorTwoFactor.enabledAt)))
+    .for("update");
+  if (row === undefined) return "wrong" as const;
+  const step = await matchingStep(unseal(keys, operatorId, row.secret), code);
+  if (step !== null) {
+    // A step at or before the last one used is a code seen before.
+    if (row.lastStep !== null && step <= row.lastStep) return "wrong" as const;
+    await tx.update(operatorTwoFactor).set({ lastStep: step }).where(ours);
+    return "totp" as const;
+  }
+  const hash = recoveryHash(keys, code);
+  const [used] = await tx
+    .update(operatorTwoFactor)
+    .set({ recoveryCodes: sql`array_remove(${operatorTwoFactor.recoveryCodes}, ${hash})` })
+    .where(and(ours, sql`${hash} = any(${operatorTwoFactor.recoveryCodes})`))
+    .returning({ operatorId: operatorTwoFactor.operatorId });
+  return used === undefined ? ("wrong" as const) : ("recovery" as const);
+}
+
+/**
+ * Turns two-step sign-in off for an account. The sessions that never passed it end too, so turning
+ * it off never lets in someone who stopped at the second step.
+ */
+async function turnOff(tx: Transaction, operatorId: string) {
+  await tx.delete(operatorTwoFactor).where(eq(operatorTwoFactor.operatorId, operatorId));
+  await tx.delete(session).where(and(eq(session.userId, operatorId), isNull(session.twoFactorAt)));
+}
+
+/**
+ * For the server's admin, when an operator lost their app and their recovery codes. Every session
+ * of the account ends, so a session that waited at the second step does not pass without it.
+ * Returns false, changing nothing, when it was off.
+ */
+export async function resetTwoFactor(db: Database, operatorId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const removed = await tx
+      .delete(operatorTwoFactor)
+      .where(
+        and(eq(operatorTwoFactor.operatorId, operatorId), isNotNull(operatorTwoFactor.enabledAt)),
+      )
+      .returning({ operatorId: operatorTwoFactor.operatorId });
+    if (removed.length === 0) return false;
+    await tx.delete(session).where(eq(session.userId, operatorId));
+    return true;
+  });
+}
+
+const CodeBody = z.strictObject({
+  // Spaces go here, once, so every check below sees the code as the app shows it.
+  code: z
+    .string()
+    .transform((typed) => typed.replaceAll(/\s/g, ""))
+    .pipe(z.string().min(1).max(CODE_MAX_LENGTH))
+    .openapi({
+      description: `${DIGITS} digits from the authenticator app, or a recovery code. Spaces do not count, and without them it has 1 to ${CODE_MAX_LENGTH} characters.`,
+    }),
+});
+
+const WRONG_CODE = failure("wrong_code", "That code is not right, or it was already used.");
+const TWO_FACTOR_ON = failure("two_factor_on", "Two-step sign-in is already on.");
+const TWO_FACTOR_OFF = failure("two_factor_off", "Two-step sign-in is off for this account.");
+const NO_SETUP = failure("no_setup", "Start the setup first.");
+const CHECK_UNAVAILABLE = failure(
+  "check_unavailable",
+  "Codes cannot be checked right now. Try again in a minute.",
+);
+
+const WINDOW_MINUTES = TWO_FACTOR_WINDOW_SECONDS / 60;
+const LOCKED_TEXT = `too_many_attempts: ${TWO_FACTOR_MAX_FAILURES} wrong codes in ${WINDOW_MINUTES} minutes. The session ended. Retry after \`retry-after\``;
+const UNAVAILABLE_TEXT =
+  "check_unavailable: the server cannot count attempts right now, so it checks no code. Retry later";
+
+const setupRoute = createRoute({
+  method: "post",
+  path: "/v1/operator/two-factor/setup",
+  security: SESSION,
+  summary:
+    "Start turning on two-step sign-in. Returns a new TOTP secret for an authenticator app, which works once a code confirms it. A new call replaces a secret that was not confirmed",
+  responses: {
+    200: jsonAnswer(
+      "The secret in base32, to type in, and the otpauth URI, for a QR code",
+      z.object({ secret: z.string(), uri: z.string() }),
+    ),
+    ...OPERATOR_WRITE_ERRORS,
+    409: errorAnswer("two_factor_on: two-step sign-in is already on"),
+  },
+});
+
+const enableRoute = createRoute({
+  method: "post",
+  path: "/v1/operator/two-factor/enable",
+  security: SESSION,
+  summary:
+    "Confirm the setup with a code from the authenticator app. Two-step sign-in is then on, this session counts as passed, and every other session must pass the check",
+  request: { body: jsonBody(CodeBody) },
+  responses: {
+    200: jsonAnswer(
+      `${RECOVERY_CODE_COUNT} recovery codes. Each works once in place of a code, and this is the only time they show`,
+      z.object({ recoveryCodes: z.array(z.string()) }),
+    ),
+    ...OPERATOR_WRITE_ERRORS,
+    400: errorAnswer(
+      "invalid_request: the request is not valid. wrong_code: the code is not right",
+    ),
+    409: errorAnswer("no_setup: no setup waits for a code"),
+  },
+});
+
+const checkRoute = createRoute({
+  method: "post",
+  path: "/v1/operator/two-factor/check",
+  security: SESSION,
+  summary:
+    "Pass the second step of sign-in with a code from the authenticator app or a recovery code. A session must do this before any other operator route but `me` and sign-out",
+  request: { body: jsonBody(CodeBody) },
+  responses: {
+    200: { description: "This session passed", content: okContent },
+    ...OPERATOR_WRITE_ERRORS,
+    400: errorAnswer(
+      "invalid_request: the request is not valid. wrong_code: the code is not right, or it was already used",
+    ),
+    409: errorAnswer("two_factor_off: two-step sign-in is off"),
+    429: errorAnswer(LOCKED_TEXT),
+    503: errorAnswer(UNAVAILABLE_TEXT),
+  },
+});
+
+const disableRoute = createRoute({
+  method: "post",
+  path: "/v1/operator/two-factor/disable",
+  security: SESSION,
+  summary:
+    "Turn two-step sign-in off, with a current code or a recovery code. Sessions that never passed the check end",
+  request: { body: jsonBody(CodeBody) },
+  responses: {
+    200: { description: "Two-step sign-in is off", content: okContent },
+    ...OPERATOR_WRITE_ERRORS,
+    400: errorAnswer(
+      "invalid_request: the request is not valid. wrong_code: the code is not right, or it was already used",
+    ),
+    409: errorAnswer("two_factor_off: two-step sign-in is already off"),
+    429: errorAnswer(LOCKED_TEXT),
+    503: errorAnswer(UNAVAILABLE_TEXT),
+  },
+});
+
+interface TwoFactorOptions {
+  db: Database;
+  live: Live;
+  logger: Logger;
+  /** AUTH_SECRET, which the keys derive from. */
+  authSecret: string;
+  valkey: Redis | null;
+}
+
+/** The two-step sign-in routes. Register them after the operator routes' session check. */
+export function registerTwoFactorRoutes(
+  app: App,
+  { db, live, logger, authSecret, valkey }: TwoFactorOptions,
+) {
+  const keys = deriveKeys(authSecret);
+  const limit = createTwoFactorLimit(valkey, logger);
+
+  /**
+   * Uses a code under the limit, with `effect` in the same transaction. The wrong code that reaches
+   * the limit ends the session, and so does any code after it, unchecked: its operator signs in
+   * again, and the count outlives the session. With no count, no code is checked.
+   */
+  const checkCode = async (
+    c: Context<AppEnv>,
+    code: string,
+    effect: (tx: Transaction) => Promise<unknown>,
+  ) => {
+    const operatorId = c.get("operatorId");
+    const ip = c.get("clientIp");
+    const endSession = () => db.delete(session).where(eq(session.id, c.get("sessionId")));
+    const tries = await limit.attempt(operatorId);
+    if (tries === null) return "unavailable" as const;
+    if (tries > TWO_FACTOR_MAX_FAILURES) {
+      await endSession();
+      return "locked" as const;
+    }
+    const used = await db.transaction(async (tx) => {
+      const spent = await spendCode(tx, keys, operatorId, code);
+      if (spent !== "wrong") await effect(tx);
+      return spent;
+    });
+    if (used !== "wrong") {
+      await limit.clear(operatorId);
+      if (used === "recovery") audit(logger, "two_factor.recovery_used", { operatorId, ip });
+      return "passed" as const;
+    }
+    audit(logger, "two_factor.failed", { operatorId, ip }, "warn");
+    if (tries < TWO_FACTOR_MAX_FAILURES) return "wrong" as const;
+    await endSession();
+    return "locked" as const;
+  };
+
+  app.openapi(setupRoute, async (c) => {
+    const started = await startSetup(db, keys, c.get("operatorId"));
+    if (started === null) return c.json(TWO_FACTOR_ON, 409);
+    return c.json(started, 200);
+  });
+
+  app.openapi(enableRoute, async (c) => {
+    const operatorId = c.get("operatorId");
+    const { code } = c.req.valid("json");
+    const finished = await finishSetup(db, keys, operatorId, c.get("sessionId"), code);
+    if (finished === "no_setup") return c.json(NO_SETUP, 409);
+    if (finished === "wrong_code") return c.json(WRONG_CODE, 400);
+    audit(logger, "two_factor.enabled", { operatorId, ip: c.get("clientIp") });
+    // The drains check the session again and end the streams of the operator's other sessions,
+    // which also stops the typing previews they get. If a signal is lost, the next drain does it.
+    for (const { workspaceId } of await operatorWorkspaces(db, operatorId)) {
+      live.wake(workspaceId, OPERATORS);
+    }
+    return c.json({ recoveryCodes: finished }, 200);
+  });
+
+  app.openapi(checkRoute, async (c) => {
+    if (c.get("twoFactor") === "off") return c.json(TWO_FACTOR_OFF, 409);
+    const sessionId = c.get("sessionId");
+    const checked = await checkCode(c, c.req.valid("json").code, (tx) =>
+      tx.update(session).set({ twoFactorAt: new Date() }).where(eq(session.id, sessionId)),
+    );
+    if (checked === "wrong") return c.json(WRONG_CODE, 400);
+    if (checked === "locked") return tooManyAttempts(c, limit);
+    if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(disableRoute, async (c) => {
+    if (c.get("twoFactor") === "off") return c.json(TWO_FACTOR_OFF, 409);
+    const operatorId = c.get("operatorId");
+    const checked = await checkCode(c, c.req.valid("json").code, (tx) => turnOff(tx, operatorId));
+    if (checked === "wrong") return c.json(WRONG_CODE, 400);
+    if (checked === "locked") return tooManyAttempts(c, limit);
+    if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
+    audit(logger, "two_factor.disabled", { operatorId, ip: c.get("clientIp") });
+    return c.json({ ok: true as const }, 200);
+  });
+}

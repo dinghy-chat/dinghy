@@ -8,6 +8,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 - Saved replies: the team writes common answers once in **Settings > Saved replies**, and anyone inserts one by typing **/** in the reply or note box, then changes it before sending. Every member can add, change and delete them, up to 200 per workspace. The API lists them at `GET .../saved-replies`, and MCP has `list_saved_replies`, so a bot can answer in the team's words.
 - Mentions in notes: type **@** in a note to pick a teammate. Each member a note mentions gets an alert with its text, by push and by email as their alert settings say, and the conversation is unread for them. An edit alerts only the members it newly mentions. The API takes `mentions` on a note, and MCP's `add_note` takes them too.
+- Two-step sign-in for operators. **Profile** turns it on with a QR code for an authenticator app and shows 10 single-use recovery codes once. Each new sign-in then asks for a 6-digit code after the email link, and **Settings > Team** shows who has it on. A server's admin turns it off for an operator who lost their phone with `chat two-factor-reset <email>`. The API has `/v1/operator/two-factor/setup`, `enable`, `check` and `disable`, and `twoFactor` in `/v1/operator/me`.
+
+### Security
+
+- With two-step sign-in on, a session that has not passed the check gets 401 `two_factor_required` everywhere but `me`, the check and sign-out, including the event stream at each wake, an upload's end and OAuth consent. 5 wrong codes in 15 minutes end the session, and the check answers 503 `check_unavailable` rather than skip that limit when Valkey does not answer. The TOTP secret is encrypted with a key derived from `AUTH_SECRET`, and the recovery codes are stored as keyed hashes. API keys are not affected.
 
 ## [0.28.0] - 2026-11-13
 

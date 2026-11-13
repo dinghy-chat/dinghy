@@ -8,6 +8,7 @@ const member = (id: string, name: string): Member => ({
   email: `${id}@example.com`,
   role: "member",
   pictureUrl: null,
+  twoFactor: "off",
 });
 
 const anna = member("anna", "Anna");

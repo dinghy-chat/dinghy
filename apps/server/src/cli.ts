@@ -17,6 +17,7 @@ import { generateVAPIDKeys } from "web-push";
 import { z } from "zod";
 import { freeWorkspace, signupsCsv } from "../../../ee/server/index.ts";
 import { BadArchiveError } from "./archive.ts";
+import { audit } from "./audit.ts";
 import { type Auth, createAuth, LINK_MINUTES, signInLink } from "./auth.ts";
 import {
   BackupKeyError,
@@ -45,6 +46,7 @@ import { createSignals } from "./live.ts";
 import { type ObjectStore, storeFromConfig } from "./storage.ts";
 import { setSuspended, signalSuspension } from "./suspension.ts";
 import { exportArchive, ImportError, importArchive } from "./transfer.ts";
+import { resetTwoFactor } from "./two-factor.ts";
 import { createWorkspace, insertWorkspace, workspaceKeys, workspacesTable } from "./workspaces.ts";
 
 // Update this when a release stops supporting a direct upgrade from older data. Zero means any.
@@ -54,6 +56,9 @@ const USAGE = `Usage:
   chat sign-in-link <email>
       Prints a sign-in link for an operator. It works once, for 15 minutes. This works with no
       mail server.
+  chat two-factor-reset <email>
+      Turns off two-step sign-in for an operator who lost their authenticator app and their
+      recovery codes, and ends their sessions. Check first that the request comes from them.
   chat export <workspace-id> <file.tar>
       Writes a workspace's data and images to one file. The signing secret stays out of it.
   chat import <file.tar>
@@ -721,6 +726,25 @@ async function signInLinkCommand(db: Database, auth: Auth, email: string): Promi
   return 0;
 }
 
+/** Turns off an operator's two-step sign-in, with an audit line that names the account. */
+async function twoFactorResetCommand(db: Database, email: string): Promise<number> {
+  const [found] = await db
+    .select({ id: schema.operator.id })
+    .from(schema.operator)
+    .where(eq(schema.operator.email, email.toLowerCase()));
+  if (found === undefined) {
+    console.error(`No operator has the email ${email}.`);
+    return 1;
+  }
+  if (!(await resetTwoFactor(db, found.id))) {
+    console.error(`Two-step sign-in is off for ${email}. Nothing changed.`);
+    return 1;
+  }
+  audit(pino(), "two_factor.reset", { operatorId: found.id, by: "cli" });
+  console.log(`Two-step sign-in is off for ${email}, and their sessions ended.`);
+  return 0;
+}
+
 /** For development: an operator, and optionally a workspace that it owns. */
 async function createOperatorCommand(
   db: Database,
@@ -776,7 +800,14 @@ async function main(): Promise<number> {
   ) {
     return operate(command, args);
   }
-  const known = ["sign-in-link", "create-operator", "export", "import", "setup"];
+  const known = [
+    "sign-in-link",
+    "two-factor-reset",
+    "create-operator",
+    "export",
+    "import",
+    "setup",
+  ];
   if (command === undefined || !known.includes(command)) {
     console.error(USAGE);
     return 2;
@@ -800,6 +831,7 @@ async function main(): Promise<number> {
       return 2;
     }
     if (command === "sign-in-link") return await signInLinkCommand(db, auth, email);
+    if (command === "two-factor-reset") return await twoFactorResetCommand(db, email);
     if (name === undefined) {
       console.error(USAGE);
       return 2;

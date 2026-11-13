@@ -15,6 +15,7 @@ import {
   conversation,
   invite,
   operator,
+  operatorTwoFactor,
   verification,
   workspace,
   workspaceMember,
@@ -157,6 +158,8 @@ const Member = z
     role: roleEnum,
     // The member's picture, which they set on their profile. Null with none.
     pictureUrl: z.string().nullable(),
+    // Whether the member turned on two-step sign-in.
+    twoFactor: z.enum(["off", "on"]),
   })
   .openapi("Member");
 const PendingInvite = z
@@ -687,6 +690,10 @@ interface TeamOptions {
   keepsLastWorkspace: boolean;
 }
 
+/** Whether a member turned on two-step sign-in, from a left join of their row. */
+const TWO_FACTOR_ON_OFF = sql<"off" | "on">`case
+  when ${operatorTwoFactor.enabledAt} is null then 'off' else 'on' end`;
+
 /** The workspace's members, by name. */
 export function listMembers(tx: Transaction, workspaceId: string) {
   return tx
@@ -696,9 +703,11 @@ export function listMembers(tx: Transaction, workspaceId: string) {
       email: operator.email,
       role: workspaceMember.role,
       pictureUpdatedAt: operator.pictureUpdatedAt,
+      twoFactor: TWO_FACTOR_ON_OFF,
     })
     .from(workspaceMember)
     .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
+    .leftJoin(operatorTwoFactor, eq(operatorTwoFactor.operatorId, operator.id))
     .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)))
     .orderBy(asc(operator.name));
 }

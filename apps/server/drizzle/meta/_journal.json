@@ -652,6 +652,20 @@
       "when": 1794583872860,
       "tag": "0092_saved_replies_and_mentions_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1794585166589,
+      "tag": "0093_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1794585167113,
+      "tag": "0094_two_factor_grants",
+      "breakpoints": true
     }
   ]
 }

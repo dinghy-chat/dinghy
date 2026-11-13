@@ -212,6 +212,7 @@ describe("migrations", () => {
       "instance_setting",
       "operator",
       "operator_picture",
+      "operator_two_factor",
       "push_subscription",
       "session",
       "verification",
