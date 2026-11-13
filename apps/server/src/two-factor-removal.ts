@@ -131,11 +131,6 @@ async function managersOf(db: Database | Transaction, operatorId: string) {
   return result.rows;
 }
 
-/**
- * Whether someone besides the mailbox can stop a request: an owner or admin of one of the account's
- * workspaces, or a session of the account that passed the check and has not expired. A push
- * subscription alone does not count, because nothing proves that it still reaches a device.
- */
 /** Whether a current session of the account passed the check: a device that can stop a request. */
 async function hasCheckedSession(db: Database | Transaction, operatorId: string): Promise<boolean> {
   const [found] = await db
@@ -152,6 +147,11 @@ async function hasCheckedSession(db: Database | Transaction, operatorId: string)
   return found !== undefined;
 }
 
+/**
+ * Whether someone besides the mailbox can stop a request: an owner or admin of one of the account's
+ * workspaces, or a session of the account that passed the check and has not expired. A push
+ * subscription alone does not count, because nothing proves that it still reaches a device.
+ */
 async function canBeStopped(tx: Transaction, operatorId: string): Promise<boolean> {
   const result = await tx.execute<{ found: boolean }>(
     sql`select exists (select 1 from operator_managers(${operatorId})) as found`,
@@ -539,7 +539,7 @@ export function removalWorkerStep({
   /**
    * Throws when the account's email fails, or when every owner and admin's email fails. False,
    * sending nothing, when nobody but the mailbox can be warned any more: the last other owner or
-   * admin left, and no session of the account passed the check since the request.
+   * admin left, and no current session of the account passed the check.
    */
   const sendFirstWarning = async (
     row: ClaimedWarning,
@@ -586,13 +586,14 @@ export function removalWorkerStep({
     }
     if (!(await sendFirstWarning(row, account))) {
       // Only the mailbox would know, and the mailbox is what the request doubts: manual review.
+      // The email goes first, so a failed send leaves the request for the retry.
+      await send(account.email, removalUnconfirmedMail());
       const [ended] = await db
         .delete(twoFactorRemoval)
         .where(held(row))
         .returning({ id: twoFactorRemoval.id });
       if (ended === undefined) return;
       audit(logger, "two_factor.removal_unconfirmed", { operatorId: row.operatorId });
-      await send(account.email, removalUnconfirmedMail());
       await signalAccount(db, signals, row.operatorId);
       return;
     }
