@@ -185,6 +185,21 @@ export interface SuggestedReply {
   createdAt: string;
 }
 
+/** A file that only downloads. `size` is in bytes. */
+export type FileAttachment = {
+  type: "file";
+  url: string;
+  name: string;
+  size: number;
+  removed?: never;
+};
+
+/** A message's image or file. One deleted after 12 months, on Dinghy Cloud, keeps only its type. */
+type Attachment =
+  | { type: "image"; url: string; width: number; height: number; removed?: never }
+  | FileAttachment
+  | { type: "image" | "file"; removed: true };
+
 /** The kinds of message that visitors and the team write to each other. */
 export type ChatKind = "text" | "image" | "file";
 
@@ -205,13 +220,8 @@ interface MessageFields {
   authorName: string | null;
   clientId: string;
   body: string | null;
-  image: { url: string; width: number; height: number } | null;
-  /** The image was deleted after 12 months, on Dinghy Cloud. */
-  imageRemoved: boolean;
-  /** A file that only downloads. `size` is in bytes. */
-  file: { name: string; size: number; url: string } | null;
-  /** The file was deleted after 12 months, on Dinghy Cloud. */
-  fileRemoved: boolean;
+  /** An `image` or `file` message's upload. */
+  attachment: Attachment | null;
   /** The message this one quotes. Its `id` is null when that message was deleted. */
   replyTo: Quote | null;
   /** When its author last changed its text. */

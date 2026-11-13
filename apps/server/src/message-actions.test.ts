@@ -79,7 +79,7 @@ interface Line {
   deleted: boolean;
   readAt?: string | null;
   via?: string | null;
-  image: unknown;
+  attachment: unknown;
 }
 
 const widget = (token: string, method: string, path: string, body?: unknown) =>
@@ -528,7 +528,7 @@ describe("deleting a message", () => {
     );
     const again = await widgetLines(token, before.cursor);
     expect(again.messages).toEqual([
-      expect.objectContaining({ id: shot.message.id, deleted: true, body: null, image: null }),
+      expect.objectContaining({ id: shot.message.id, deleted: true, body: null, attachment: null }),
     ]);
   });
 

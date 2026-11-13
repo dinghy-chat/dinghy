@@ -4,7 +4,7 @@
 import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
-import type { ChatMessage } from "./client.ts";
+import type { Upload } from "./client.ts";
 import { acceptedFiles, fileSize, isComposing, isImage, saveWithRefresh } from "./compose.ts";
 import { EMOJIS, insertEmoji, SMILEY_ICON } from "./emoji.ts";
 import { renderMarkdown } from "./markdown.ts";
@@ -187,8 +187,7 @@ export interface Line {
   /** Null until the server confirms it. Confirmed lines sort by this, and pending ones go last. */
   seq: bigint | null;
   body: string;
-  image: ChatMessage["image"];
-  download: ChatMessage["file"];
+  upload: Upload | null;
   /** Held until the server confirms it, so a retry can send it again. */
   file?: File;
   fromVisitor: boolean;
@@ -480,7 +479,7 @@ function FileLink({
   mine,
   onExpired,
 }: {
-  download: NonNullable<Line["download"]>;
+  download: Extract<Upload, { type: "file" }>;
   mine: boolean;
   onExpired(): void;
 }) {
@@ -542,7 +541,7 @@ export function ChatLine({
           {line.author.name}
         </div>
       )}
-      {line.image !== null ? (
+      {line.upload?.type === "image" ? (
         <button
           type="button"
           class={line.fromVisitor ? "shot mine" : "shot"}
@@ -550,16 +549,16 @@ export function ChatLine({
           onClick={onView}
         >
           <img
-            src={line.image.url}
-            width={line.image.width}
-            height={line.image.height}
+            src={line.upload.url}
+            width={line.upload.width}
+            height={line.upload.height}
             alt={t("imageAlt")}
             loading="lazy"
             onError={onUploadError}
           />
         </button>
-      ) : line.download !== null ? (
-        <FileLink download={line.download} mine={line.fromVisitor} onExpired={onUploadError} />
+      ) : line.upload ? (
+        <FileLink download={line.upload} mine={line.fromVisitor} onExpired={onUploadError} />
       ) : line.file !== undefined ? (
         <div class="msg mine">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>
       ) : (

@@ -99,7 +99,7 @@ function messageLine(one: Read["messages"][number]): Line {
     : one.kind === "image"
       ? "[image]"
       : one.kind === "file"
-        ? `[file: ${one.file?.name ?? "removed"}]`
+        ? `[file: ${one.attachment !== null && "name" in one.attachment ? one.attachment.name : "removed"}]`
         : indent(one.body ?? "");
   const text =
     one.kind === "closed"

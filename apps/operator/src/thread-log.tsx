@@ -48,6 +48,12 @@ function useImageFile(url: string | undefined): File | null {
   return file;
 }
 
+/** The address of the line's image, unless it was removed. */
+function viewedUrl(line: Line | undefined): string | undefined {
+  const attachment = line?.attachment;
+  return attachment?.removed ? undefined : attachment?.url;
+}
+
 /** A phone opens its share sheet, which has Save Image for the photos. A computer downloads it. */
 function saveImage(file: File) {
   if (matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) {
@@ -296,7 +302,7 @@ export function ThreadLog({
       </div>
       {viewing !== null && (
         <ImageViewer
-          url={lines.find((line) => line.id === viewing)?.image?.url}
+          url={viewedUrl(lines.find((line) => line.id === viewing))}
           onClose={() => setViewing(null)}
           onError={onUploadError}
         />

@@ -84,10 +84,8 @@ import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs }
 import { allowed } from "./team.ts";
 import { twoFactorState } from "./two-factor.ts";
 import {
-  FileSchema,
-  fileView,
-  ImageSchema,
-  imageView,
+  AttachmentSchema,
+  attachmentView,
   lostConnection,
   refuseUpload,
   type Uploads,
@@ -175,13 +173,8 @@ export const InboxMessage = z
     authorName: z.string().nullable(),
     clientId: z.string(),
     body: z.string().nullable(),
-    image: ImageSchema.nullable(),
-    // The image was deleted after 12 months, on Dinghy Cloud.
-    imageRemoved: z.boolean(),
-    // A `file` message's file, which only downloads.
-    file: FileSchema.nullable(),
-    // The file was deleted after 12 months, on Dinghy Cloud.
-    fileRemoved: z.boolean(),
+    // An `image` or `file` message's upload. A file only downloads.
+    attachment: AttachmentSchema.nullable(),
     // The message this one quotes, or null.
     replyTo: QuoteSchema.nullable(),
     // When its author last changed its text. Only an operator's text reply or note can change.
@@ -210,10 +203,7 @@ export const InboxMessage = z
       authorName: "Sam",
       clientId: "r_81b3d0",
       body: "Yes, it is two months free.",
-      image: null,
-      imageRemoved: false,
-      file: null,
-      fileRemoved: false,
+      attachment: null,
       replyTo: {
         id: "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
         authorName: "Ada",
@@ -812,8 +802,7 @@ export function messageView(
     createdAt,
     editedAt,
     readAt,
-    image,
-    file,
+    attachment,
     replyTo,
     ...message
   }: StoredMessage,
@@ -826,8 +815,7 @@ export function messageView(
     createdAt: createdAt.toISOString(),
     editedAt: editedAt?.toISOString() ?? null,
     readAt: readAt?.toISOString() ?? null,
-    image: imageView(uploads, workspaceId, image),
-    file: fileView(uploads, workspaceId, file),
+    attachment: attachmentView(uploads, workspaceId, attachment),
     replyTo: quoteView(replyTo),
   };
 }

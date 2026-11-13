@@ -567,7 +567,7 @@ describe("deleting a conversation", () => {
       },
       fromSocket(address),
     );
-    const { image } = (await uploaded.json()) as { image: { url: string } };
+    const { attachment: image } = (await uploaded.json()) as { attachment: { url: string } };
     const path = `/conversations/${conversationId}`;
     return { server, cookie, conversationId, path, directory, image, ...flaky, token, address };
   }

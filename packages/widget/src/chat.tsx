@@ -75,7 +75,7 @@ function isTypingNotice(value: unknown): value is TypingNotice {
 }
 
 function merge(lines: Line[], message: ChatMessage): Line[] {
-  const { kind } = message;
+  const { kind, attachment } = message;
   const note = kind === "closed" || kind === "reopened" ? kind : undefined;
   const line: Line = {
     ...(note && { note }),
@@ -84,13 +84,10 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
     // A removed image or file, or a deleted message, reads as a note where it was.
     body: message.deleted
       ? t("messageDeleted")
-      : message.imageRemoved
-        ? t("imageRemoved")
-        : message.fileRemoved
-          ? t("fileRemoved")
-          : (message.body ?? ""),
-    image: message.image,
-    download: message.file,
+      : attachment?.removed
+        ? t(`${attachment.type}Removed`)
+        : (message.body ?? ""),
+    upload: attachment?.removed ? null : attachment,
     quote: message.replyTo,
     gone: message.deleted,
     fromVisitor: message.fromVisitor,
@@ -612,8 +609,7 @@ function Chat({
         id,
         seq: null,
         body,
-        image: null,
-        download: null,
+        upload: null,
         fromVisitor: true,
         author: null,
         status: "sending",
@@ -790,7 +786,7 @@ function Chat({
           onClick={() => viewer.current?.close()}
         >
           <img
-            src={lines.find((line) => line.id === viewing)?.image?.url}
+            src={lines.find((line) => line.id === viewing)?.upload?.url}
             alt={t("imageAlt")}
             onError={refreshUploads}
           />

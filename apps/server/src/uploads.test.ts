@@ -219,7 +219,7 @@ describe.each([
     id: string;
     kind: string;
     body: string | null;
-    image: { url: string; width: number; height: number };
+    attachment: { type: "image"; url: string; width: number; height: number };
   }
 
   const uploadFile = (token: string, body: Uint8Array, filename?: string, key = a.publicKey) =>
@@ -234,7 +234,7 @@ describe.each([
 
   interface SentFile {
     id: string;
-    file: { name: string; size: number; url: string };
+    attachment: { type: "file"; name: string; size: number; url: string };
   }
 
   const fetchFile = (url: string) => app.request(url.replace(PUBLIC_URL, ""));
@@ -256,9 +256,9 @@ describe.each([
     expect(response.status).toBe(201);
     const sent = (await response.json()) as Sent;
     expect(sent).toMatchObject({ kind: "image", body: null });
-    expect(sent.image).toMatchObject({ width: 40, height: 20 });
-    expect(sent.image.url.startsWith(PUBLIC_URL)).toBe(true);
-    const file = await fetchFile(sent.image.url);
+    expect(sent.attachment).toMatchObject({ type: "image", width: 40, height: 20 });
+    expect(sent.attachment.url.startsWith(PUBLIC_URL)).toBe(true);
+    const file = await fetchFile(sent.attachment.url);
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toBe("image/png");
     expect(file.headers.get("x-content-type-options")).toBe("nosniff");
@@ -266,7 +266,7 @@ describe.each([
     // The app reads the file to save it on the device.
     expect(file.headers.get("access-control-allow-origin")).toBe("*");
     // An expired URL's 404 too, so a page on another origin can tell it from a failure.
-    const expired = new URL(sent.image.url);
+    const expired = new URL(sent.attachment.url);
     expired.searchParams.set("expires", "1");
     const gone = await fetchFile(expired.toString());
     expect(gone.status).toBe(404);
@@ -281,14 +281,14 @@ describe.each([
     const second = await upload(token, await png(), "retry-image");
     expect(second.status).toBe(200);
     expect(((await second.json()) as Sent).id).toBe(first.id);
-    const attachmentId = new URL(first.image.url).pathname.split("/").at(-1) ?? "";
+    const attachmentId = new URL(first.attachment.url).pathname.split("/").at(-1) ?? "";
     const rows = await withWorkspace(db, a.id, (tx) =>
       tx.select().from(attachment).where(eq(attachment.id, attachmentId)),
     );
     expect(rows).toHaveLength(1);
     await expect(exists(rows[0]?.storageKey ?? "")).resolves.toBe(true);
     // The retry's own copy was discarded, so the file serves the original.
-    expect((await fetchFile(first.image.url)).status).toBe(200);
+    expect((await fetchFile(first.attachment.url)).status).toBe(200);
   });
 
   test.each([
@@ -326,10 +326,9 @@ describe.each([
         expect(sent).toMatchObject({
           kind: "file",
           body: null,
-          image: null,
-          file: { name: `Notes.${extension}`, size: bytes.length },
+          attachment: { type: "file", name: `Notes.${extension}`, size: bytes.length },
         });
-        const download = await fetchFile(sent.file.url);
+        const download = await fetchFile(sent.attachment.url);
         expect(download.status).toBe(200);
         expect(download.headers.get("content-type")).toBe("application/octet-stream");
         expect(download.headers.get("content-disposition")).toBe(
@@ -364,7 +363,7 @@ describe.each([
       const sent = (await (
         await uploadFile(await newVisitor(), page, "page.txt")
       ).json()) as SentFile;
-      const download = await fetchFile(sent.file.url);
+      const download = await fetchFile(sent.attachment.url);
       expect(download.headers.get("content-type")).toBe("application/octet-stream");
       expect(download.headers.get("content-disposition")).toMatch(/^attachment;/);
       expect(download.headers.get("content-security-policy")).toContain("sandbox");
@@ -373,9 +372,12 @@ describe.each([
     test("an image named as a file is still an image, encoded again", async () => {
       const response = await uploadFile(await newVisitor(), await png(), "report.pdf");
       expect(response.status).toBe(201);
-      const sent = (await response.json()) as Sent & { file: null };
-      expect(sent).toMatchObject({ kind: "image", file: null, image: { width: 40, height: 20 } });
-      const shown = await fetchFile(sent.image.url);
+      const sent = (await response.json()) as Sent;
+      expect(sent).toMatchObject({
+        kind: "image",
+        attachment: { type: "image", width: 40, height: 20 },
+      });
+      const shown = await fetchFile(sent.attachment.url);
       expect(shown.headers.get("content-type")).toBe("image/png");
       expect(shown.headers.get("content-disposition")).toBe("inline");
     });
@@ -384,8 +386,8 @@ describe.each([
       const sent = (await (
         await uploadFile(await newVisitor(), ALLOWED.pdf, "../Résumé (été)\u202e.pdf")
       ).json()) as SentFile;
-      expect(sent.file.name).toBe("_Résumé (été)_.pdf");
-      const download = await fetchFile(sent.file.url);
+      expect(sent.attachment.name).toBe("_Résumé (été)_.pdf");
+      const download = await fetchFile(sent.attachment.url);
       expect(download.headers.get("content-disposition")).toBe(
         `attachment; filename="_R_sum_ (_t_)_.pdf"; filename*=UTF-8''_R%C3%A9sum%C3%A9%20%28%C3%A9t%C3%A9%29_.pdf`,
       );
@@ -523,7 +525,7 @@ describe.each([
     beforeAll(async () => {
       sent = (await (await upload(await newVisitor(), await png())).json()) as Sent;
     });
-    const parts = () => new URL(sent.image.url);
+    const parts = () => new URL(sent.attachment.url);
 
     test("HEAD answers the headers and opens no file", async () => {
       let opened = 0;
@@ -543,7 +545,7 @@ describe.each([
           publicUrl: PUBLIC_URL,
         }),
       });
-      const response = await counting.request(sent.image.url.replace(PUBLIC_URL, ""), {
+      const response = await counting.request(sent.attachment.url.replace(PUBLIC_URL, ""), {
         method: "HEAD",
       });
       expect(response.status).toBe(200);
@@ -562,7 +564,7 @@ describe.each([
           publicUrl: PUBLIC_URL,
         }),
       });
-      const response = await failing.request(sent.image.url.replace(PUBLIC_URL, ""));
+      const response = await failing.request(sent.attachment.url.replace(PUBLIC_URL, ""));
       expect(response.status).toBe(503);
       expect(response.headers.get("access-control-allow-origin")).toBe("*");
     });
@@ -607,7 +609,7 @@ describe.each([
       const other = (await (await upload(await newVisitor(), await png())).json()) as Sent;
       const url = parts();
       const [workspaceId] = url.pathname.split("/").slice(3);
-      const otherId = new URL(other.image.url).pathname.split("/").at(-1);
+      const otherId = new URL(other.attachment.url).pathname.split("/").at(-1);
       url.pathname = `/v1/files/${workspaceId}/${otherId}`;
       expect((await fetchFile(url.toString())).status).toBe(404);
     });
@@ -633,7 +635,7 @@ describe.each([
     const history = await app.request(`/v1/widget/${a.publicKey}/messages`, {
       headers: { origin: ORIGIN, authorization: `Bearer ${other}` },
     });
-    expect(await history.text()).not.toContain(new URL(sent.image.url).pathname);
+    expect(await history.text()).not.toContain(new URL(sent.attachment.url).pathname);
   });
 });
 

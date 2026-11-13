@@ -619,9 +619,9 @@ describe("a round trip onto a fresh install", () => {
       headers: { origin: SITE, authorization: `Bearer ${source.token}` },
     });
     const { messages } = (await read.json()) as {
-      messages: { image: { url: string; width: number } | null }[];
+      messages: { attachment: { type: string; url: string; width: number } | null }[];
     };
-    const images = messages.flatMap((one) => one.image ?? []);
+    const images = messages.flatMap((one) => one.attachment ?? []);
     expect(images).toHaveLength(2);
     expect(images[0]?.width).toBe(4);
     const url = new URL(images[0]?.url ?? "");
@@ -818,10 +818,10 @@ describe("files in the chat", () => {
       headers: { origin: SITE, authorization: `Bearer ${token}` },
     });
     const { messages } = (await read.json()) as {
-      messages: { kind: string; file: { name: string; size: number; url: string } | null }[];
+      messages: { kind: string; attachment: { name: string; size: number; url: string } | null }[];
     };
-    const file = messages.find((one) => one.kind === "file")?.file;
-    expect(file).toMatchObject({ name: "Order 1042.pdf", size: pdf.length });
+    const file = messages.find((one) => one.kind === "file")?.attachment;
+    expect(file).toMatchObject({ type: "file", name: "Order 1042.pdf", size: pdf.length });
     const url = new URL(file?.url ?? "");
     const served = await target.app.request(`${url.pathname}${url.search}`);
     expect(served.headers.get("content-disposition")).toMatch(/^attachment;/);

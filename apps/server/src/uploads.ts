@@ -16,7 +16,7 @@ import {
   startsWith,
 } from "./files.ts";
 import { StorageFullError } from "./limits.ts";
-import type { NewAttachment, StoredMessage } from "./messages.ts";
+import type { NewAttachment, StoredAttachment } from "./messages.ts";
 import type { ObjectStore } from "./storage.ts";
 import { MINUTE_MS } from "./time.ts";
 
@@ -419,41 +419,42 @@ const FILES_HOST_PATH = /^\/v1\/(files\/[^/]+\/[^/]+|widget\/[^/]+\/logo|picture
 /** The only types the route shows in place. An HTML or SVG body never goes out, whatever is stored. */
 const SERVED_TYPES = new Set<string>(Object.values(OUTPUT));
 
-export const ImageSchema = z
-  .object({ url: z.string(), width: z.number(), height: z.number() })
-  .openapi("Image");
+const ImageAttachmentSchema = z
+  .object({ type: z.literal("image"), url: z.string(), width: z.number(), height: z.number() })
+  .openapi("ImageAttachment");
 
-export function imageView(
-  uploads: Uploads | undefined,
-  workspaceId: string,
-  image: StoredMessage["image"],
-) {
-  if (image === null || uploads === undefined) return null;
-  return {
-    url: uploads.url(workspaceId, image.attachmentId),
-    width: image.width,
-    height: image.height,
-  };
-}
-
-export const FileSchema = z
+const FileAttachmentSchema = z
   .object({
+    type: z.literal("file"),
+    // A download, never shown in place.
+    url: z.string(),
     // Cleaned to letters, digits and a few marks, up to 100 characters.
     name: z.string(),
     // In bytes.
     size: z.number(),
-    // A download, never shown in place.
-    url: z.string(),
   })
-  .openapi("File");
+  .openapi("FileAttachment");
 
-export function fileView(
+// Deleted after 12 months, on Dinghy Cloud.
+const RemovedAttachmentSchema = z
+  .object({ type: z.enum(["image", "file"]), removed: z.literal(true) })
+  .openapi("RemovedAttachment");
+
+/** A message's image or file, or what is left of one that was removed. */
+export const AttachmentSchema = z
+  .union([ImageAttachmentSchema, FileAttachmentSchema, RemovedAttachmentSchema])
+  .openapi("Attachment");
+
+/** The attachment as the API shows it, with a signed URL in place of its stored ID. */
+export function attachmentView(
   uploads: Uploads | undefined,
   workspaceId: string,
-  file: StoredMessage["file"],
+  attachment: StoredAttachment | null,
 ) {
-  if (file === null || uploads === undefined) return null;
-  return { name: file.name, size: file.size, url: uploads.url(workspaceId, file.attachmentId) };
+  if (attachment === null || "removed" in attachment) return attachment;
+  if (uploads === undefined) return null;
+  const { attachmentId, ...shown } = attachment;
+  return { ...shown, url: uploads.url(workspaceId, attachmentId) };
 }
 
 const STORE_FAILED = failure("busy", "The file could not be read. Try again.");

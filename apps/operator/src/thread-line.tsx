@@ -2,6 +2,7 @@
 import { createElement, type ReactNode, useEffect, useRef } from "react";
 import { fileSize, isImage, saveWithRefresh } from "../../../packages/widget/src/compose.ts";
 import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
+import type { FileAttachment } from "./api.ts";
 import { clockTime, isToday } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { type Receipt, ReceiptLine } from "./receipts.tsx";
@@ -30,13 +31,7 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
  * A file's link, which saves the file and never leaves the page. After an expired URL, the line's
  * next one comes with the new URLs that onExpired asks for.
  */
-function FileLink({
-  download,
-  onExpired,
-}: {
-  download: NonNullable<Line["download"]>;
-  onExpired(): void;
-}) {
+function FileLink({ download, onExpired }: { download: FileAttachment; onExpired(): void }) {
   // Waits for the line's next URL, after an expired one.
   const nextUrl = useRef<((url: string) => void) | null>(null);
   useEffect(() => {
@@ -82,7 +77,12 @@ function Bubble({
 }) {
   const side = line.fromVisitor ? " visitor" : line.kind === "note" ? " note" : "";
   if (line.deleted) return <div className={`msg${side} removed`}>{t("messageDeleted")}</div>;
-  if (line.image !== null) {
+  const { attachment } = line;
+  if (attachment?.removed) {
+    const removed = attachment.type === "image" ? "imageRemoved" : "fileRemoved";
+    return <div className={`msg${side} removed`}>{t(removed)}</div>;
+  }
+  if (attachment?.type === "image") {
     return (
       <div className="shot-stack">
         {quote !== null && <div className={`msg${side} quote-only`}>{quote}</div>}
@@ -93,9 +93,9 @@ function Bubble({
           onClick={onView}
         >
           <img
-            src={line.image.url}
-            width={line.image.width}
-            height={line.image.height}
+            src={attachment.url}
+            width={attachment.width}
+            height={attachment.height}
             alt={t("imageAlt")}
             loading="lazy"
             onError={onUploadError}
@@ -104,16 +104,14 @@ function Bubble({
       </div>
     );
   }
-  if (line.download !== null) {
+  if (attachment !== null) {
     return (
       <div className={`msg${side}`}>
         {quote}
-        <FileLink download={line.download} onExpired={onUploadError} />
+        <FileLink download={attachment} onExpired={onUploadError} />
       </div>
     );
   }
-  if (line.imageRemoved) return <div className={`msg${side} removed`}>{t("imageRemoved")}</div>;
-  if (line.fileRemoved) return <div className={`msg${side} removed`}>{t("fileRemoved")}</div>;
   if (line.file !== undefined) {
     return <div className="msg">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>;
   }

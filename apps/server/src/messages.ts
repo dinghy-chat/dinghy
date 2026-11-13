@@ -176,6 +176,16 @@ export type MessageSource =
 /** How a key's write came, when not through the REST API. */
 export type KeySource = Extract<MessageSource, { via: "mcp" }>;
 
+type StoredImage = { attachmentId: string; width: number; height: number };
+/** A file that is not an image. `size` is in bytes. */
+type StoredFile = { attachmentId: string; name: string; size: number };
+
+/** A message's image or file. One deleted after 12 months, on Dinghy Cloud, keeps only its type. */
+export type StoredAttachment =
+  | ({ type: "image" } & StoredImage)
+  | ({ type: "file" } & StoredFile)
+  | { type: "image" | "file"; removed: true };
+
 interface StoredFields {
   id: string;
   conversationId: string;
@@ -189,13 +199,7 @@ interface StoredFields {
   /** The sender's own ID, so a client can match a stream copy to its pending line. */
   clientId: string;
   body: string | null;
-  image: { attachmentId: string; width: number; height: number } | null;
-  /** The image's file was deleted after 12 months, on Dinghy Cloud. */
-  imageRemoved: boolean;
-  /** A file that is not an image. `size` is in bytes. */
-  file: { attachmentId: string; name: string; size: number } | null;
-  /** The file was deleted after 12 months, on Dinghy Cloud. */
-  fileRemoved: boolean;
+  attachment: StoredAttachment | null;
   replyTo: QuoteRow | null;
   editedAt: Date | null;
   /** Deleted by an operator: its body and image or file are gone, and it shows as a placeholder. */
@@ -270,9 +274,9 @@ interface MessageRow {
 }
 
 interface MessageMetadata {
-  image?: StoredMessage["image"];
+  image?: StoredImage;
   imageRemoved?: boolean;
-  file?: StoredMessage["file"];
+  file?: StoredFile;
   fileRemoved?: boolean;
   /** Set on a key's reply that came through MCP, an operator's that sent a draft, and an email. */
   via?: Exclude<Channel, "api">;
@@ -292,6 +296,15 @@ function viaOf(meta: MessageMetadata | null, authorApiKeyId: string | null): Mes
   return { via: authorApiKeyId === null ? null : (meta?.via ?? "api") };
 }
 
+/** The attachment from the metadata, which keeps the shape that messages have always stored. */
+function attachmentOf(meta: MessageMetadata | null): StoredAttachment | null {
+  if (meta?.image !== undefined) return { type: "image", ...meta.image };
+  if (meta?.file !== undefined) return { type: "file", ...meta.file };
+  if (meta?.imageRemoved === true) return { type: "image", removed: true };
+  if (meta?.fileRemoved === true) return { type: "file", removed: true };
+  return null;
+}
+
 export function stored({
   authorVisitorId,
   metadata,
@@ -302,10 +315,7 @@ export function stored({
   const meta = metadata as MessageMetadata | null;
   return {
     ...row,
-    image: meta?.image ?? null,
-    imageRemoved: meta?.imageRemoved === true,
-    file: meta?.file ?? null,
-    fileRemoved: meta?.fileRemoved === true,
+    attachment: attachmentOf(meta),
     fromVisitor: authorVisitorId !== null,
     deleted: deletedAt !== null,
     ...viaOf(meta, row.authorApiKeyId),

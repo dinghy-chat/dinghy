@@ -486,10 +486,10 @@ describe("uploads older than 12 months", () => {
       await cloud.request(`/v1/widget/${space.publicKey}/messages`, {
         headers: { origin: SITE, authorization: `Bearer ${bearer}` },
       })
-    ).json()) as { messages: { id: string; image: unknown; imageRemoved: boolean }[] };
+    ).json()) as { messages: { id: string; attachment: { removed?: true } | null }[] };
     const removed = page.messages.find((one) => one.id === old.id);
-    expect(removed).toMatchObject({ image: null, imageRemoved: true });
-    expect(page.messages.filter((one) => one.imageRemoved)).toHaveLength(1);
+    expect(removed).toMatchObject({ attachment: { type: "image", removed: true } });
+    expect(page.messages.filter((one) => one.attachment?.removed)).toHaveLength(1);
     const [row] = await owner.select().from(message).where(eq(message.id, old.id));
     expect(row?.metadata).toEqual({ imageRemoved: true });
     // A second pass finds nothing more to do.
@@ -510,12 +510,10 @@ describe("uploads older than 12 months", () => {
       await cloud.request(`/v1/widget/${space.publicKey}/messages`, {
         headers: { origin: SITE, authorization: `Bearer ${bearer}` },
       })
-    ).json()) as { messages: { id: string; kind: string; file: unknown; fileRemoved: boolean }[] };
-    expect(page.messages.find((one) => one.id === sent.id)).toMatchObject({
-      kind: "file",
-      file: null,
-      fileRemoved: true,
-    });
+    ).json()) as { messages: { id: string; kind: string; attachment: unknown }[] };
+    expect(page.messages.find((one) => one.id === sent.id)).toEqual(
+      expect.objectContaining({ kind: "file", attachment: { type: "file", removed: true } }),
+    );
     const [row] = await owner.select().from(message).where(eq(message.id, sent.id));
     expect(row?.metadata).toEqual({ fileRemoved: true });
     // With its name gone, the inbox tells it from an image by its kind.

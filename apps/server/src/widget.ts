@@ -68,14 +68,7 @@ import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
 import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { isTimeZone } from "./time.ts";
-import {
-  FileSchema,
-  fileView,
-  ImageSchema,
-  imageView,
-  refuseUpload,
-  type Uploads,
-} from "./uploads.ts";
+import { AttachmentSchema, attachmentView, refuseUpload, type Uploads } from "./uploads.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
@@ -371,13 +364,8 @@ const MessageSchema = z
     fromVisitor: z.boolean(),
     clientId: z.string().nullable(),
     body: z.string().nullable(),
-    image: ImageSchema.nullable(),
-    // The image was deleted after 12 months, on Dinghy Cloud.
-    imageRemoved: z.boolean(),
-    // A `file` message's file, which only downloads.
-    file: FileSchema.nullable(),
-    // The file was deleted after 12 months, on Dinghy Cloud.
-    fileRemoved: z.boolean(),
+    // An `image` or `file` message's upload. A file only downloads.
+    attachment: AttachmentSchema.nullable(),
     // The message this one quotes, or null. Its author is a first name, as on replies.
     replyTo: QuoteSchema.nullable(),
     // An operator deleted it, so it shows as a placeholder with no body.
@@ -402,10 +390,7 @@ const MessageSchema = z
       fromVisitor: true,
       clientId: "m_4f9a2c",
       body: "Do you have a yearly plan?",
-      image: null,
-      imageRemoved: false,
-      file: null,
-      fileRemoved: false,
+      attachment: null,
       replyTo: null,
       deleted: false,
       fromBot: false,
@@ -581,8 +566,7 @@ function messageView(
     seq,
     createdAt,
     clientId,
-    image,
-    file,
+    attachment,
     authorOperatorId,
     authorApiKeyId,
     replyTo,
@@ -612,8 +596,7 @@ function messageView(
         : urls.picture(authorOperatorId, author?.pictureUpdatedAt ?? null),
     authorId: authorId === null || author === undefined ? null : visitorAuthorId(authorId),
     createdAt: createdAt.toISOString(),
-    image: imageView(uploads, workspaceId, image),
-    file: fileView(uploads, workspaceId, file),
+    attachment: attachmentView(uploads, workspaceId, attachment),
   };
 }
 

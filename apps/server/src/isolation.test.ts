@@ -95,7 +95,7 @@ interface VisitorWorld {
   id: string;
   token: string;
   conversationId: string;
-  image: { url: string };
+  attachment: { url: string };
 }
 
 /** A body that invites a new email as a member. */
@@ -418,13 +418,13 @@ const ATTACKS: Record<string, Attack> = {
       const parsed = new URL(url);
       return `${parsed.pathname}${parsed.search}`;
     };
-    expect((await server.request(local(one.image.url))).status).toBe(200);
+    expect((await server.request(local(one.attachment.url))).status).toBe(200);
     // The other workspace's ID with this signature, and this ID with the other's file.
-    const moved = local(one.image.url).replace(a.id, b.id);
+    const moved = local(one.attachment.url).replace(a.id, b.id);
     expect((await server.request(moved)).status).toBe(404);
-    const attachmentB = new URL(other.image.url).pathname.split("/").at(-1) ?? "";
-    const swapped = local(one.image.url).replace(
-      new URL(one.image.url).pathname.split("/").at(-1) ?? "",
+    const attachmentB = new URL(other.attachment.url).pathname.split("/").at(-1) ?? "";
+    const swapped = local(one.attachment.url).replace(
+      new URL(one.attachment.url).pathname.split("/").at(-1) ?? "",
       attachmentB,
     );
     expect((await server.request(swapped)).status).toBe(404);
@@ -1289,7 +1289,7 @@ const ATTACKS: Record<string, Attack> = {
     expect(text).toContain(secrets.two);
     expect(text).not.toContain(other.id);
     expect(text).not.toContain(other.conversationId);
-    expect(text).not.toContain(new URL(other.image.url).pathname.split("/").at(-1));
+    expect(text).not.toContain(new URL(other.attachment.url).pathname.split("/").at(-1));
     expect(text).not.toContain(bea.id);
     expect(text).not.toContain(`stop-of-${b.id}`);
     // The first row in the table, which a query with no filter would take.
@@ -2222,13 +2222,13 @@ async function buildWorld(db: Database): Promise<World> {
         body: await png(),
       },
     );
-    const { image } = (await uploaded.json()) as { image: { url: string } };
+    const { attachment } = (await uploaded.json()) as { attachment: { url: string } };
     // A page in the visitor's journey, whose title holds their secret.
     await widget(space.publicKey, "POST", "page", token, site, {
       page: `${site}/journey`,
       title: `${text}, the page`,
     });
-    return { id: visitorId, token, conversationId, image };
+    return { id: visitorId, token, conversationId, attachment };
   };
 
   const anna = await person(a.id, "Anna");

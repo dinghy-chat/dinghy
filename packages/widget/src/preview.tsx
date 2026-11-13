@@ -44,7 +44,7 @@ const ignore = () => {};
 const preventSubmit = (event: Event) => event.preventDefault();
 
 function sampleLines({ question, answer, author }: PreviewSample): Line[] {
-  const line = { seq: null, image: null, download: null, status: "sent" } as const;
+  const line = { seq: null, upload: null, status: "sent" } as const;
   return [
     { ...line, id: "question", body: question, fromVisitor: true, author: null },
     { ...line, id: "answer", body: answer, fromVisitor: false, author: { ...author, bot: false } },
