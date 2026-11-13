@@ -62,7 +62,9 @@ export function knownHours(hours: BusinessHours | null): BusinessHours | null {
 
 /**
  * Whether the team is open at `now`, and when it opens next if not. The ranges of each day are in
- * order and apart, as the server saves them.
+ * order and apart, as the server saves them. The next opening is found on the clock's readings, so
+ * a range that lies wholly inside the hour a daylight saving change skips or repeats can be
+ * announced a week off. Open or closed is always right; a fix would weigh more than it is worth.
  */
 export function hoursState({ timeZone, week }: BusinessHours, now: number): HoursState {
   const { wall, day } = wallClock(now, timeZone);
