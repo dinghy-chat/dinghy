@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- 0.30.0 has no image, because the release's upgrade check still sent images to the route that 0.29.0 renamed. This release holds the same changes as 0.30.0.
+
 ## [0.30.0] - 2026-11-13
 
 ### Changed
