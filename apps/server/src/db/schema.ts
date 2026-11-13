@@ -39,6 +39,11 @@ const workspaceId = () =>
   uuid("workspace_id")
     .notNull()
     .references(() => workspace.id);
+/** A workspace's row that goes with it, so the purge needs no line for its table. */
+const ownedByWorkspace = () =>
+  uuid("workspace_id")
+    .notNull()
+    .references(() => workspace.id, { onDelete: "cascade" });
 
 export const memberRole = pgEnum("member_role", ["owner", "admin", "member"]);
 export const conversationStatus = pgEnum("conversation_status", ["open", "closed"]);
@@ -737,9 +742,7 @@ export const replyAddress = pgTable(
 export const pageView = pgTable(
   "page_view",
   {
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
+    workspaceId: ownedByWorkspace(),
     id: id(),
     visitorId: uuid("visitor_id").notNull(),
     // The page's origin and path. Never a query string or hash.
@@ -1488,7 +1491,7 @@ export const welcomeLink = pgTable(
 export const savedReply = pgTable(
   "saved_reply",
   {
-    workspaceId: workspaceId(),
+    workspaceId: ownedByWorkspace(),
     id: id(),
     // What follows `/` in the composer, such as `refund-policy`.
     shortcut: text("shortcut").notNull(),
@@ -1553,7 +1556,7 @@ export const labelColor = pgEnum("label_color", LABEL_COLORS);
 export const label = pgTable(
   "label",
   {
-    workspaceId: workspaceId(),
+    workspaceId: ownedByWorkspace(),
     id: id(),
     name: text("name").notNull(),
     color: labelColor("color").notNull().default("gray"),
@@ -1573,7 +1576,7 @@ export const label = pgTable(
 export const conversationLabel = pgTable(
   "conversation_label",
   {
-    workspaceId: workspaceId(),
+    workspaceId: ownedByWorkspace(),
     conversationId: uuid("conversation_id").notNull(),
     labelId: uuid("label_id").notNull(),
     createdAt: createdAt(),

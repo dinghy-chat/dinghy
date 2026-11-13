@@ -237,6 +237,7 @@ describe("the owner's delete", () => {
     await owner
       .insert(widgetSiteSeen)
       .values({ workspaceId: created.id, origin: "https://home.example" });
+    // A saved reply and a label on the conversation, which go with the workspace row by cascade.
     await owner
       .insert(savedReply)
       .values({ workspaceId: created.id, shortcut: "hello", body: "Hello" });
