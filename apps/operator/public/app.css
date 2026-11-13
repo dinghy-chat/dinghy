@@ -2816,13 +2816,15 @@ img.ws-tile {
 .receipt.emailFailed {
   color: var(--bad);
 }
-/* An earlier reply's line shows beside its bubble, past the "…", with the pointer on it. It sits
-   over the empty side of the thread, so nothing moves, and screen readers always read it. */
+/* An earlier reply's line shows beside its bubble, past the "…" and centered on it, with the
+   pointer on it. It sits over the empty side of the thread, so nothing moves, and screen readers
+   always read it. */
 .receipt.later {
   position: absolute;
+  top: 50%;
   right: 100%;
-  bottom: 6px;
   margin: 0 4px 0 0;
+  transform: translateY(-50%);
   white-space: nowrap;
   opacity: 0;
   transition: opacity 0.12s;
