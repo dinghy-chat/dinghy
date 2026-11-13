@@ -38,7 +38,7 @@ import { WORKSPACE_PREFIX } from "./member.ts";
 import { countWaiting } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
-import { readTwoFactorState, type TwoFactorState } from "./two-factor.ts";
+import { type TwoFactorState, twoFactorStateOf } from "./two-factor.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
 const AccountName = z.strictObject({
@@ -287,7 +287,7 @@ export function registerOperatorRoutes(
     if (found === null || found.user.deletedAt != null) return c.json(UNAUTHORIZED, 401);
     // Every operator route passes here, so this is the one place the second step is enforced.
     // A stream's drains and an upload's end read the same rule again, in `mayStillRead`.
-    const twoFactor = await readTwoFactorState(db, found.session.id);
+    const twoFactor = twoFactorStateOf(found.user.twoFactorOn, found.session.twoFactorAt);
     if (twoFactor === "required" && !BEFORE_SECOND_STEP.has(`${c.req.method} ${c.req.path}`)) {
       return c.json(TWO_FACTOR_REQUIRED, 401);
     }
@@ -361,7 +361,7 @@ export function registerOperatorRoutes(
     }
     const found = await auth.api.getSession({ headers: c.req.raw.headers });
     if (found === null) return c.json(UNAUTHORIZED, 401);
-    if ((await readTwoFactorState(db, found.session.id)) === "required") {
+    if (twoFactorStateOf(found.user.twoFactorOn, found.session.twoFactorAt) === "required") {
       return c.json(TWO_FACTOR_REQUIRED, 401);
     }
     const [changed] = await db

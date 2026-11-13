@@ -15,7 +15,6 @@ import {
   conversation,
   invite,
   operator,
-  operatorTwoFactor,
   verification,
   workspace,
   workspaceMember,
@@ -706,9 +705,10 @@ interface TeamOptions {
   keepsLastWorkspace: boolean;
 }
 
-/** Whether a member turned on two-step sign-in, from a left join of their row. */
-const TWO_FACTOR_ON_OFF = sql<"off" | "on">`case
-  when ${operatorTwoFactor.enabledAt} is null then 'off' else 'on' end`;
+/** Whether a member turned on two-step sign-in. */
+const TWO_FACTOR_ON_OFF = sql<
+  "off" | "on"
+>`case when ${operator.twoFactorOn} then 'on' else 'off' end`;
 
 /** The workspace's members, by name. */
 export function listMembers(tx: Transaction, workspaceId: string) {
@@ -723,7 +723,6 @@ export function listMembers(tx: Transaction, workspaceId: string) {
     })
     .from(workspaceMember)
     .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-    .leftJoin(operatorTwoFactor, eq(operatorTwoFactor.operatorId, operator.id))
     .where(and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)))
     .orderBy(asc(operator.name));
 }

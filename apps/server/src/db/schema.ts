@@ -167,6 +167,9 @@ export const operator = pgTable("operator", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   // The operator's own status, in every workspace. While away, the widget does not count them online.
   away: boolean("away").notNull().default(false),
+  // True while two-step sign-in is on, as `operator_two_factor.enabled_at` says. Here, so the
+  // session check reads it with the session and needs no query of its own.
+  twoFactorOn: boolean("two_factor_on").notNull().default(false),
   // Cloud only. When the cloud's welcome email went out, so an account gets it once, whatever it does after.
   welcomedAt: timestamp("welcomed_at", { withTimezone: true }),
   createdAt: createdAt(),

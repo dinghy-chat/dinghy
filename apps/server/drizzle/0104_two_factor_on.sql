@@ -1,0 +1,1 @@
+ALTER TABLE "operator" ADD COLUMN "two_factor_on" boolean DEFAULT false NOT NULL;

@@ -61,26 +61,35 @@ const TAG_BYTES = 16;
 export type TwoFactorState = "off" | "on" | "required";
 
 /**
- * A session's second step, as SQL. The session check, each stream drain and an upload's last
- * check all read this one expression, so they cannot disagree. Null when the session is gone.
+ * A session's second step, from the account's flag and the session's pass. The session check
+ * reads both with the session, and each stream drain and an upload's last check read the same two
+ * columns in `twoFactorState`, so they cannot disagree.
  */
+export const twoFactorStateOf = (
+  twoFactorOn: boolean | null | undefined,
+  twoFactorAt: Date | null | undefined,
+): TwoFactorState => (twoFactorOn !== true ? "off" : twoFactorAt == null ? "required" : "on");
+
+/** A session's second step, as SQL, by the rule of `twoFactorStateOf`. Null when the session is gone. */
 export const twoFactorState = (sessionId: string) => sql<TwoFactorState | null>`(
   select case
-           when t.enabled_at is null then 'off'
+           when not o.two_factor_on then 'off'
            when s.two_factor_at is null then 'required'
            else 'on'
          end
   from ${session} s
-  left join ${operatorTwoFactor} t on t.operator_id = s.user_id
+  join ${operator} o on o.id = s.user_id
   where s.id = ${sessionId})`;
 
-/** The session's second step. A session that just ended counts as not passed. */
-export async function readTwoFactorState(db: Database, sessionId: string) {
-  const result = await db.execute<{ state: TwoFactorState | null }>(
-    sql`select ${twoFactorState(sessionId)} as state`,
-  );
-  return result.rows[0]?.state ?? "required";
-}
+/**
+ * Locks the account's row, first, as an account's delete and a setup's start do, so the
+ * transactions that change two-step sign-in and the delete take turns without a deadlock.
+ */
+const lockAccount = (tx: Transaction, operatorId: string) =>
+  tx.select({ id: operator.id }).from(operator).where(eq(operator.id, operatorId)).for("update");
+
+const setTwoFactorOn = (tx: Transaction, operatorId: string, twoFactorOn: boolean) =>
+  tx.update(operator).set({ twoFactorOn }).where(eq(operator.id, operatorId));
 
 /** Two keys from AUTH_SECRET, each with its own purpose, so neither can stand in for the other. */
 function deriveKeys(authSecret: string) {
@@ -186,6 +195,7 @@ async function finishSetup(
   code: string,
 ) {
   return db.transaction(async (tx) => {
+    await lockAccount(tx, operatorId);
     const [pending] = await tx
       .select({ secret: operatorTwoFactor.secret })
       .from(operatorTwoFactor)
@@ -203,6 +213,7 @@ async function finishSetup(
         recoveryCodes: codes.map((one) => recoveryHash(keys, one)),
       })
       .where(eq(operatorTwoFactor.operatorId, operatorId));
+    await setTwoFactorOn(tx, operatorId, true);
     await tx
       .update(session)
       .set({ twoFactorAt: sql`case when ${session.id} = ${sessionId} then now() end` })
@@ -218,6 +229,7 @@ async function finishSetup(
  */
 async function spendCode(tx: Transaction, keys: Keys, operatorId: string, code: string) {
   const ours = eq(operatorTwoFactor.operatorId, operatorId);
+  await lockAccount(tx, operatorId);
   const [row] = await tx
     .select({ secret: operatorTwoFactor.secret, lastStep: operatorTwoFactor.lastStep })
     .from(operatorTwoFactor)
@@ -246,6 +258,7 @@ async function spendCode(tx: Transaction, keys: Keys, operatorId: string, code: 
  */
 async function turnOff(tx: Transaction, operatorId: string) {
   await tx.delete(operatorTwoFactor).where(eq(operatorTwoFactor.operatorId, operatorId));
+  await setTwoFactorOn(tx, operatorId, false);
   await tx.delete(session).where(and(eq(session.userId, operatorId), isNull(session.twoFactorAt)));
 }
 
@@ -256,6 +269,7 @@ async function turnOff(tx: Transaction, operatorId: string) {
  */
 export async function resetTwoFactor(db: Database, operatorId: string): Promise<boolean> {
   return db.transaction(async (tx) => {
+    await lockAccount(tx, operatorId);
     const removed = await tx
       .delete(operatorTwoFactor)
       .where(
@@ -263,6 +277,7 @@ export async function resetTwoFactor(db: Database, operatorId: string): Promise<
       )
       .returning({ operatorId: operatorTwoFactor.operatorId });
     if (removed.length === 0) return false;
+    await setTwoFactorOn(tx, operatorId, false);
     await tx.delete(session).where(eq(session.userId, operatorId));
     return true;
   });

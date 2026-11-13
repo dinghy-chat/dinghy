@@ -16,7 +16,7 @@ import { readStream } from "../test/sse.ts";
 import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { operatorTwoFactor, session } from "./db/schema.ts";
+import { operator, operatorTwoFactor, session } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createImages } from "./images.ts";
 import { type Live, OPERATORS } from "./live.ts";
@@ -126,6 +126,14 @@ const twoFactorOf = async (cookie: string) => {
   const me = await call(cookie, "GET", "/v1/operator/me");
   return ((await me.json()) as { twoFactor: string }).twoFactor;
 };
+/** The account's flag, which the session check reads with the session. */
+const flagOf = async (operatorId: string) => {
+  const [row] = await owner
+    .select({ twoFactorOn: operator.twoFactorOn })
+    .from(operator)
+    .where(eq(operator.id, operatorId));
+  return row?.twoFactorOn;
+};
 const check = (cookie: string, code: string) =>
   call(cookie, "POST", "/v1/operator/two-factor/check", { code });
 
@@ -159,6 +167,7 @@ describe("turning it on", () => {
     expect(enabled.status).toBe(200);
     const { recoveryCodes } = (await enabled.json()) as { recoveryCodes: string[] };
     expect(new Set(recoveryCodes).size).toBe(10);
+    expect(await flagOf(person.id)).toBe(true);
     // The session that turned it on passed it, and keeps working.
     expect(await twoFactorOf(person.cookie)).toBe("on");
     expect((await call(person.cookie, "GET", inSpace())).status).toBe(200);
@@ -314,6 +323,7 @@ describe("turning it off", () => {
     });
     expect(off.status).toBe(200);
     expect(await twoFactorOf(person.cookie)).toBe("off");
+    expect(await flagOf(person.id)).toBe(false);
     expect(await codeOf(await call(waiting, "GET", "/v1/operator/me"))).toBe("unauthorized");
     expect(audits("two_factor.disabled", person.id)).toHaveLength(1);
   });
@@ -474,6 +484,7 @@ describe("the account", () => {
     expect(result.out).toContain(person.id);
     const rows = await owner.select().from(session).where(eq(session.userId, person.id));
     expect(rows).toEqual([]);
+    expect(await flagOf(person.id)).toBe(false);
     expect(await twoFactorOf(await signIn(app, auth, person.email))).toBe("off");
   });
 
