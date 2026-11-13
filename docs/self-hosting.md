@@ -177,18 +177,22 @@ To test it, answer a reply email from Dinghy. The answer shows in the conversati
 1. In [Shipmail](https://shipmail.to), add a subdomain for the reply addresses, such as `reply.example.com`, and set the DNS records Shipmail lists, so that its mail comes to Shipmail. Use a subdomain that nothing else uses.
 2. Create the mailbox `reply@reply.example.com`. Mail to every `reply+…` address of the subdomain lands in it. Its ID, which starts with `mbx_`, is `SHIPMAIL_MAILBOX_ID`.
 3. Create an API key for that mailbox only, with the scopes `messages:read`, to download each email, and `messages:write`, to delete it. If the mailbox holds flagged mail for review, add `messages:review`, or Dinghy cannot download a held email. The key is `SHIPMAIL_API_KEY`.
-4. Create a webhook for `message.received`, with `mailbox_ids` set to that mailbox only and no `domain_ids`, so that no other mail reaches Dinghy. Its URL is your `PUBLIC_URL` and `/v1/inbound-email/shipmail`. Create it with another key that has `webhooks:write`, such as below, because Dinghy's key needs no access to webhooks. The answer holds the signing `secret`, shown only this once. It is `SHIPMAIL_WEBHOOK_SECRET`.
+4. Create a second API key with the scope `webhooks:write`, to create the webhook. Dinghy's key needs no access to webhooks, so keep this one out of `.env`, and delete it once the webhook exists. Then create a webhook for `message.received`, with `mailbox_ids` set to that mailbox only and no `domain_ids`, so that no other mail reaches Dinghy. In the command below, `SETUP_KEY` is that second key, `MAILBOX_ID` is `SHIPMAIL_MAILBOX_ID` and `PUBLIC_URL` is the address of your Dinghy server, as in `.env`:
 
 ```sh
+SETUP_KEY=sm_live_...
+MAILBOX_ID=mbx_...
+PUBLIC_URL=https://chat.example.com
 curl -X POST https://shipmail.to/api/v1/webhooks \
-  -H "Authorization: Bearer $SHIPMAIL_SETUP_KEY" \
+  -H "Authorization: Bearer $SETUP_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://chat.example.com/v1/inbound-email/shipmail","events":["message.received"],"mailbox_ids":["mbx_..."]}'
+  -d "{\"url\":\"$PUBLIC_URL/v1/inbound-email/shipmail\",\"events\":[\"message.received\"],\"mailbox_ids\":[\"$MAILBOX_ID\"]}"
 ```
 
-5. In `.env`, set `INBOUND_EMAIL_DOMAIN=reply.example.com` and the three `SHIPMAIL_` settings, then run `docker compose up -d --wait`.
+5. Copy the `secret` from the answer into `SHIPMAIL_WEBHOOK_SECRET`. Shipmail shows it only this once.
+6. In `.env`, set `INBOUND_EMAIL_DOMAIN=reply.example.com` and the three `SHIPMAIL_` settings, then run `docker compose up -d --wait`.
 
-Dinghy deletes each email from the mailbox once it took it, dropped it as an automatic answer, or refused it for good, such as for an address that is not a current one or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox, so nothing is lost while the workspace is closed, and it does not come in by itself when the workspace opens again. When the server is busy or Shipmail cannot be reached, Dinghy answers with an error, the email stays, and Shipmail retries. A retry never adds the email twice. Shipmail's webhook deliveries show what Dinghy answered: 401 means the webhook secret differs or the server's clock is more than 5 minutes off, and 500 means Dinghy could not download or delete the email, so check the API key and its scopes.
+Dinghy deletes each email from the mailbox once it took it, dropped it as an automatic answer, or refused it for good, such as for an address that is not a current one or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox, so nothing is lost while the workspace is closed. It does not come in when the workspace opens again: Dinghy answered its delivery with 200, and Shipmail replays only a failed delivery. Once the workspace is open again, read those emails in the mailbox in Shipmail and answer the visitors from the conversation. When the server is busy or Shipmail cannot be reached, Dinghy answers with an error, the email stays, and Shipmail retries. A retry never adds the email twice. Shipmail's webhook deliveries show what Dinghy answered: 401 means the webhook secret differs or the server's clock is more than 5 minutes off, and 500 means Dinghy could not download or delete the email, so check the API key and its scopes.
 
 #### What Dinghy keeps
 
