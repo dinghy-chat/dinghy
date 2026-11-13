@@ -165,7 +165,7 @@ export function inboundEmailFromConfig(config: Config): InboundEmail | undefined
   if (domain === undefined && secret === undefined && shipmail === undefined) return undefined;
   if (domain === undefined || (secret === undefined && shipmail === undefined)) {
     throw new Error(
-      "Set INBOUND_EMAIL_DOMAIN with INBOUND_EMAIL_SECRET, or with SHIPMAIL_API_KEY, SHIPMAIL_WEBHOOK_SECRET and SHIPMAIL_MAILBOX_ID, or with all four.",
+      "Set INBOUND_EMAIL_DOMAIN with INBOUND_EMAIL_SECRET, with the three SHIPMAIL_ settings, or with both.",
     );
   }
   return { domain: domain.toLowerCase(), secret, shipmail };

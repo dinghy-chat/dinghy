@@ -8,9 +8,13 @@ import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
 import { inboundEmailFromConfig, loadConfig } from "./config.ts";
-import { conversation, message, visitor, workspace } from "./db/schema.ts";
+import { conversation, message, subscription, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { createReplyAddress } from "./inbound-email.ts";
+import {
+  createReplyAddress,
+  EMAIL_MAX_BYTES,
+  MESSAGES_PER_ADDRESS_PER_HOUR,
+} from "./inbound-email.ts";
 import type { ShipmailInbound } from "./shipmail-inbound.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -24,13 +28,17 @@ const ok = async () => {};
 
 /**
  * Shipmail's inbox API for one mailbox, as the receiver uses it: a download, a move to Trash and a
- * delete that works only in Trash. `failing` makes every call with that method answer 500.
+ * delete that works only in Trash. `failing` makes every call with that method answer 500,
+ * `rawStatus` makes a message's download answer that status, and `downloads` holds every download
+ * until it resolves.
  */
 async function fakeShipmail() {
   const messages = new Map<string, string>();
   const trashed = new Set<string>();
   const calls: string[] = [];
   const failing = new Set<string>();
+  const rawStatus = new Map<string, number>();
+  const fake = { downloads: Promise.resolve() };
   const server = createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
@@ -47,7 +55,9 @@ async function fakeShipmail() {
     } else if (!messages.has(id)) {
       response.writeHead(404).end();
     } else if (method === "GET" && action === "/raw") {
-      response.writeHead(200, { "content-type": "message/rfc822" }).end(messages.get(id));
+      await fake.downloads;
+      const status = rawStatus.get(id) ?? 200;
+      response.writeHead(status, { "content-type": "message/rfc822" }).end(messages.get(id));
     } else if (
       method === "POST" &&
       action === "/move" &&
@@ -65,13 +75,14 @@ async function fakeShipmail() {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   const port = typeof address === "object" && address !== null ? address.port : 0;
-  return {
+  return Object.assign(fake, {
     apiBase: `http://127.0.0.1:${port}/api/v1`,
     messages,
     calls,
     failing,
+    rawStatus,
     close: () => server.close(),
-  };
+  });
 }
 
 let database: TestDatabase;
@@ -110,6 +121,8 @@ beforeAll(async () => {
 beforeEach(() => {
   shipmail.calls.length = 0;
   shipmail.failing.clear();
+  shipmail.rawStatus.clear();
+  shipmail.downloads = Promise.resolve();
 });
 
 afterAll(async () => {
@@ -119,22 +132,28 @@ afterAll(async () => {
 });
 
 /** A visitor's conversation and the reply address of an email about it. */
-async function newChat() {
+async function newChat(inSpace = space) {
   const [row] = await owner
     .insert(visitor)
-    .values({ workspaceId: space.id, tokenHash: randomUUID(), email: "ada@example.com" })
+    .values({ workspaceId: inSpace.id, tokenHash: randomUUID(), email: "ada@example.com" })
     .returning({ id: visitor.id });
   const visitorId = row?.id ?? "";
   const [started] = await owner
     .insert(conversation)
-    .values({ workspaceId: space.id, visitorId })
+    .values({ workspaceId: inSpace.id, visitorId })
     .returning({ id: conversation.id });
   const conversationId = started?.id ?? "";
   // The worker makes reply addresses, as it sends the emails that carry them.
-  const address = await withWorkspace(workerDb, space.id, (tx) =>
-    createReplyAddress(tx, space.id, visitorId, conversationId, DOMAIN),
+  const address = await withWorkspace(workerDb, inSpace.id, (tx) =>
+    createReplyAddress(tx, inSpace.id, visitorId, conversationId, DOMAIN),
   );
-  return { conversationId, address };
+  return { visitorId, conversationId, address };
+}
+
+/** A chat in a new workspace of its own, for a test that changes the workspace. */
+async function chatInNewWorkspace() {
+  const own = await createWorkspace(db, "Own", ["https://own.example.com"]);
+  return { workspaceId: own.id, ...(await newChat(own)) };
 }
 
 /** An email in the Shipmail mailbox, as it arrived. Returns its ID there. */
@@ -280,15 +299,107 @@ describe("Shipmail's webhook", () => {
     expect(await bodiesOf(chat.conversationId)).toEqual([]);
   });
 
-  test("an automatic answer and an unknown address are dropped and deleted", async () => {
+  test("an unpaid or read-only workspace's email stays in the mailbox", async () => {
+    const unpaid = await chatInNewWorkspace();
+    await owner
+      .update(workspace)
+      .set({ active: false })
+      .where(eq(workspace.id, unpaid.workspaceId));
+    const readOnly = await chatInNewWorkspace();
+    await owner.insert(subscription).values({
+      workspaceId: readOnly.workspaceId,
+      stripeCustomerId: "cus_test",
+      readOnlyAt: new Date(),
+    });
+    for (const chat of [unpaid, readOnly]) {
+      const emailId = arrives(chat.address, "Still open?");
+      expect((await deliver(receivedEvent(emailId))).status).toBe(200);
+      expect(shipmail.messages.has(emailId)).toBe(true);
+      expect(await bodiesOf(chat.conversationId)).toEqual([]);
+    }
+  });
+
+  test("a deleted workspace's email is refused for good and deleted", async () => {
+    const chat = await chatInNewWorkspace();
+    await owner
+      .update(workspace)
+      .set({ deletedAt: new Date() })
+      .where(eq(workspace.id, chat.workspaceId));
+    const emailId = arrives(chat.address, "Hello?");
+    expect((await deliver(receivedEvent(emailId))).status).toBe(200);
+    expect(shipmail.messages.has(emailId)).toBe(false);
+    expect(await bodiesOf(chat.conversationId)).toEqual([]);
+  });
+
+  test("an automatic answer, an unknown address and a blocked visitor are dropped and deleted", async () => {
     const chat = await newChat();
+    const blocked = await newChat();
+    await owner
+      .update(visitor)
+      .set({ blockedAt: new Date() })
+      .where(eq(visitor.id, blocked.visitorId));
     const autoReply = arrives(chat.address, "I am away.", ["Auto-Submitted: auto-replied"]);
     const unknown = arrives(`reply+${"0".repeat(32)}.${"a".repeat(25)}@${DOMAIN}`, "Hello?");
-    for (const emailId of [autoReply, unknown]) {
+    const fromBlocked = arrives(blocked.address, "Let me in");
+    for (const emailId of [autoReply, unknown, fromBlocked]) {
       expect((await deliver(receivedEvent(emailId))).status).toBe(200);
       expect(shipmail.messages.has(emailId)).toBe(false);
     }
     expect(await bodiesOf(chat.conversationId)).toEqual([]);
+    expect(await bodiesOf(blocked.conversationId)).toEqual([]);
+  });
+
+  test("an email over the limit is deleted, whether Shipmail or the download finds it", async () => {
+    const chat = await newChat();
+    const refusedByShipmail = arrives(chat.address, "Huge");
+    shipmail.rawStatus.set(refusedByShipmail, 413);
+    const overLimit = arrives(chat.address, "x".repeat(EMAIL_MAX_BYTES));
+    for (const emailId of [refusedByShipmail, overLimit]) {
+      expect((await deliver(receivedEvent(emailId))).status).toBe(200);
+      expect(shipmail.messages.has(emailId)).toBe(false);
+    }
+    expect(await bodiesOf(chat.conversationId)).toEqual([]);
+  });
+
+  test("past the hourly limit, the answer is 429 with Retry-After, and the email stays", async () => {
+    const chat = await newChat();
+    for (let sent = 0; sent < MESSAGES_PER_ADDRESS_PER_HOUR; sent += 1) {
+      const emailId = arrives(chat.address, `Message ${sent + 1}`);
+      expect((await deliver(receivedEvent(emailId))).status).toBe(200);
+    }
+    const emailId = arrives(chat.address, "One too many");
+    const answer = await deliver(receivedEvent(emailId));
+    expect(answer.status).toBe(429);
+    expect(Number(answer.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(await answer.json()).toMatchObject({ error: { code: "too_many_requests" } });
+    expect(shipmail.messages.has(emailId)).toBe(true);
+  });
+
+  test("while 4 emails are held, the answer is 503 with Retry-After, and the email stays", async () => {
+    const chat = await newChat();
+    let release = () => {};
+    shipmail.downloads = new Promise((resolve) => {
+      release = resolve;
+    });
+    const held = Array.from({ length: 4 }, (_, index) =>
+      deliver(receivedEvent(arrives(chat.address, `Held ${index + 1}`))),
+    );
+    // The held deliveries reach the download, which waits, before the fifth comes.
+    await expect.poll(() => shipmail.calls.length).toBe(4);
+    const emailId = arrives(chat.address, "A fifth");
+    const answer = await deliver(receivedEvent(emailId));
+    release();
+    expect(answer.status).toBe(503);
+    expect(answer.headers.get("retry-after")).toBe("1");
+    expect(await answer.json()).toMatchObject({ error: { code: "busy" } });
+    expect(shipmail.messages.has(emailId)).toBe(true);
+    expect((await Promise.all(held)).map((one) => one.status)).toEqual([200, 200, 200, 200]);
+  });
+
+  test("an event over 256 KB is refused as too_large", async () => {
+    const answer = await deliver({ ...receivedEvent("eml_x"), padding: "x".repeat(256 * 1024) });
+    expect(answer.status).toBe(413);
+    expect(await answer.json()).toMatchObject({ error: { code: "too_large" } });
   });
 });
 
@@ -318,7 +429,7 @@ describe("the settings", () => {
       /SHIPMAIL_MAILBOX_ID together/,
     );
     expect(() => inbound(trio)).toThrow(/INBOUND_EMAIL_DOMAIN/);
-    expect(() => inbound({ INBOUND_EMAIL_DOMAIN: DOMAIN })).toThrow(/SHIPMAIL_API_KEY/);
+    expect(() => inbound({ INBOUND_EMAIL_DOMAIN: DOMAIN })).toThrow(/three SHIPMAIL_ settings/);
   });
 
   test("with Shipmail alone, the raw route is off", async () => {

@@ -2,17 +2,17 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
 import type { App } from "./app.ts";
-import { errorAnswer } from "./errors.ts";
+import { errorAnswer, failure } from "./errors.ts";
 import {
   BAD_SIGNATURE,
   EMAIL_MAX_BYTES,
   EMAIL_MAX_MB,
   type EmailIntake,
+  MESSAGES_PER_ADDRESS_PER_HOUR,
   OK,
-  type Received,
-  SIGNATURE_TOLERANCE_MINUTES,
+  receivedAnswer,
 } from "./inbound-email.ts";
-import { SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
+import { SIGNATURE_TOLERANCE_MINUTES, SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
 
 /** Shipmail's webhook for the mailbox that gets the replies, and the API key that reads it. */
 export interface ShipmailInbound {
@@ -28,6 +28,7 @@ const PATH = "/v1/inbound-email/shipmail";
 const EVENT_MAX_BYTES = 256 * 1024;
 /** Each call to Shipmail. A 25 MB download takes a few seconds on a working link. */
 const SHIPMAIL_TIMEOUT_MS = 30_000;
+const EVENT_TOO_LARGE = failure("too_large", `An event can be up to ${EVENT_MAX_BYTES / 1024} KB.`);
 
 // Only what the receiver reads. Shipmail adds fields to events, and they pass.
 const receivedEvent = z.object({
@@ -42,10 +43,7 @@ const receivedEvent = z.object({
 function isSigned(secret: string, time: string, signature: string, body: Uint8Array): boolean {
   if (!/^\d{1,12}$/.test(time) || !/^[0-9a-f]{64}$/.test(signature)) return false;
   if (Math.abs(Date.now() / 1000 - Number(time)) > SIGNATURE_TOLERANCE_SECONDS) return false;
-  const digest = createHmac("sha256", secret)
-    .update(`v1=${Number(time)}\n`)
-    .update(body)
-    .digest();
+  const digest = createHmac("sha256", secret).update(`v1=${time}\n`).update(body).digest();
   // The pattern fixes the signature at 32 bytes, so timingSafeEqual never throws on length.
   return timingSafeEqual(digest, Buffer.from(signature, "hex"));
 }
@@ -87,7 +85,12 @@ async function readUpTo(response: Response, maxBytes: number): Promise<Buffer | 
 
 /** The inbox calls the receiver makes, on the one mailbox in the settings. */
 function shipmailInbox({ apiBase, apiKey, mailboxId }: ShipmailInbound) {
-  const call = async (method: string, emailId: string, action = "", body?: unknown) => {
+  const call = async (
+    method: string,
+    emailId: string,
+    action: string,
+    { body, allowedStatuses = [] }: { body?: unknown; allowedStatuses?: number[] } = {},
+  ) => {
     const path = `/mailboxes/${encodeURIComponent(mailboxId)}/inbox/messages/${encodeURIComponent(emailId)}${action}`;
     const response = await fetch(`${apiBase}${path}`, {
       method,
@@ -98,9 +101,7 @@ function shipmailInbox({ apiBase, apiKey, mailboxId }: ShipmailInbound) {
       body: body === undefined ? null : JSON.stringify(body),
       signal: AbortSignal.timeout(SHIPMAIL_TIMEOUT_MS),
     });
-    // 404 is a message that an earlier delivery of the same event took and deleted, and 413 is a
-    // download over Shipmail's own limit.
-    if (!response.ok && response.status !== 404 && response.status !== 413) {
+    if (!response.ok && !allowedStatuses.includes(response.status)) {
       await drain(response);
       throw new Error(`Shipmail answered ${response.status} to ${method} ${action || "message"}`);
     }
@@ -109,7 +110,9 @@ function shipmailInbox({ apiBase, apiKey, mailboxId }: ShipmailInbound) {
   return {
     /** The email as it arrived, "gone" once deleted, or "too_large" past the intake's limit. */
     async raw(emailId: string): Promise<Buffer | "gone" | "too_large"> {
-      const response = await call("GET", emailId, "/raw");
+      // 404 is a message that an earlier delivery of the same event took and deleted, and 413 is a
+      // download over Shipmail's own limit.
+      const response = await call("GET", emailId, "/raw", { allowedStatuses: [404, 413] });
       if (response.status === 404 || response.status === 413) {
         await drain(response);
         return response.status === 404 ? "gone" : "too_large";
@@ -118,18 +121,13 @@ function shipmailInbox({ apiBase, apiKey, mailboxId }: ShipmailInbound) {
     },
     /** Shipmail deletes only a message in Trash, so it goes there first. */
     async remove(emailId: string): Promise<void> {
-      await drain(await call("POST", emailId, "/move", { target_role: "trash" }));
-      await drain(await call("DELETE", emailId));
+      await drain(await call("POST", emailId, "/move", { body: { target_role: "trash" } }));
+      await drain(await call("DELETE", emailId, ""));
     },
   };
 }
 
 type Inbox = ReturnType<typeof shipmailInbox>;
-type Later = Extract<Received, { status: 429 | 503 }>;
-
-/** The workspace is unpaid or suspended, which can end, so its visitors' replies must not be lost. */
-const isClosedWorkspace = (received: Received) =>
-  received.status === 402 || (received.status === 403 && received.body.error.code === "suspended");
 
 /**
  * Takes the email into the conversation, then deletes it from the mailbox, so the mailbox keeps
@@ -140,14 +138,15 @@ const isClosedWorkspace = (received: Received) =>
  */
 async function take(intake: EmailIntake, inbox: Inbox, emailId: string) {
   const raw = await inbox.raw(emailId);
-  if (raw === "gone") return null;
+  const done = { status: 200 as const };
+  if (raw === "gone") return done;
   if (raw !== "too_large") {
     const received = await intake.receive(raw);
     if (received.status === 429 || received.status === 503) return received;
-    if (isClosedWorkspace(received)) return null;
+    if ("isWorkspaceClosed" in received) return done;
   }
   await inbox.remove(emailId);
-  return null;
+  return done;
 }
 
 const shipmailRoute = createRoute({
@@ -165,7 +164,7 @@ const shipmailRoute = createRoute({
     ),
     413: errorAnswer(`too_large: the event is over ${EVENT_MAX_BYTES / 1024} KB`),
     429: errorAnswer(
-      "too_many_requests: too many emails to this address in an hour. The message stays",
+      `too_many_requests: over ${MESSAGES_PER_ADDRESS_PER_HOUR} emails to this address in an hour. The message stays`,
     ),
     503: errorAnswer(
       "busy: too many emails are being received, or the image queue is full. The message stays",
@@ -180,7 +179,10 @@ export function registerShipmailInbound(
   settings: ShipmailInbound,
 ): void {
   const inbox = shipmailInbox(settings);
-  app.use(PATH, bodyLimit({ maxSize: EVENT_MAX_BYTES }));
+  app.use(
+    PATH,
+    bodyLimit({ maxSize: EVENT_MAX_BYTES, onError: (c) => c.json(EVENT_TOO_LARGE, 413) }),
+  );
   app.openapi(shipmailRoute, async (c) => {
     const body = new Uint8Array(await c.req.arrayBuffer());
     const time = c.req.header("x-shipmail-timestamp") ?? "";
@@ -190,9 +192,6 @@ export function registerShipmailInbound(
     }
     const emailId = receivedEmailId(body, settings.mailboxId);
     if (emailId === null) return c.json(OK, 200);
-    const later: Later | null = await intake.hold(() => take(intake, inbox, emailId));
-    if (later === null) return c.json(OK, 200);
-    c.header("retry-after", String(later.retryAfterSeconds));
-    return c.json(later.body, later.status);
+    return receivedAnswer(c, await intake.hold(() => take(intake, inbox, emailId)));
   });
 }

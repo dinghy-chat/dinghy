@@ -21,9 +21,9 @@ import {
   WorkspaceClosedError,
 } from "./messages.ts";
 import { type RateLimit, TOO_MANY_REQUESTS } from "./rate-limit.ts";
-import { SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
+import { SIGNATURE_TOLERANCE_MINUTES, SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
 import type { ShipmailInbound } from "./shipmail-inbound.ts";
-import { HOUR_SECONDS, MINUTE_SECONDS } from "./time.ts";
+import { HOUR_SECONDS } from "./time.ts";
 import type { Uploads } from "./uploads.ts";
 import { REPLY_MARKERS, visitorWords } from "./visitor-words.ts";
 import { signatureDigest } from "./webhooks.ts";
@@ -49,7 +49,7 @@ const INLINE_IMAGE_MIN_BYTES = 16 * 1024;
 const TEXT_PARTS_MAX = 10;
 /** How far back from a part's end a paragraph or line break may be to end the part there. */
 const BREAK_SEARCH_CHARS = 1000;
-const MESSAGES_PER_ADDRESS_PER_HOUR = 20;
+export const MESSAGES_PER_ADDRESS_PER_HOUR = 20;
 /** Emails this process holds at once, each up to EMAIL_MAX_BYTES, so many cannot fill its memory. */
 const EMAILS_AT_ONCE = 4;
 const SIGNATURE_HEADER = "dinghy-inbound-signature";
@@ -317,7 +317,6 @@ export const OK = { ok: true as const };
 export const BAD_SIGNATURE = failure("bad_signature", "The signature is missing, stale or wrong.");
 const LENGTH_REQUIRED = failure("length_required", "Send the email with a Content-Length.");
 const TEXT_MAX = (TEXT_PARTS_MAX * MESSAGE_MAX).toLocaleString("en-US");
-export const SIGNATURE_TOLERANCE_MINUTES = SIGNATURE_TOLERANCE_SECONDS / MINUTE_SECONDS;
 const TOO_LARGE = failure(
   "too_large",
   `An email can be up to ${EMAIL_MAX_MB} MB, with up to ${TEXT_MAX} characters of text.`,
@@ -374,12 +373,14 @@ interface IntakeOptions {
 type Failure = ReturnType<typeof failure>;
 
 /**
- * What became of an email. 200 took it, had taken it, or dropped it as an automatic answer. 429
- * and 503 ask the sender to retry later. The rest refuse it for good.
+ * What became of an email. 200 took it, had taken it, or dropped it as an automatic answer. A
+ * closed workspace, unpaid or suspended, refuses it until it opens again. 429 and 503 ask the
+ * sender to retry later. The rest refuse it for good.
  */
 export type Received =
   | { status: 200 }
-  | { status: 402 | 403 | 404 | 413; body: Failure }
+  | { status: 402 | 403; body: Failure; isWorkspaceClosed: true }
+  | { status: 403 | 404 | 413; body: Failure }
   | { status: 429 | 503; body: Failure; retryAfterSeconds: number };
 
 const BUSY_RETRY_SECONDS = 1;
@@ -409,13 +410,15 @@ export function createEmailIntake(options: IntakeOptions) {
 
 export type EmailIntake = ReturnType<typeof createEmailIntake>;
 
-/** The answer to a sender that posted an email. */
-function receivedAnswer(c: Context, received: Received) {
-  if (received.status === 200) return c.json(OK, 200);
-  if ("retryAfterSeconds" in received) {
-    c.header("retry-after", String(received.retryAfterSeconds));
-  }
-  return c.json(received.body, received.status);
+/** The answer to a sender that posted an email, for the outcomes its route can give. */
+export function receivedAnswer<Status extends Exclude<Received["status"], 200>>(
+  c: Context,
+  received: { status: 200 } | { status: Status; body: Failure; retryAfterSeconds?: number },
+) {
+  if (!("body" in received)) return c.json(OK, 200);
+  const { body, status, retryAfterSeconds } = received;
+  if (retryAfterSeconds !== undefined) c.header("retry-after", String(retryAfterSeconds));
+  return c.json(body, status);
 }
 
 /**
@@ -457,7 +460,11 @@ async function receive(options: IntakeOptions, body: Buffer): Promise<Received> 
   );
   if (wait !== null) return { status: 429, body: TOO_MANY_REQUESTS, retryAfterSeconds: wait };
   const outcome = await catchClosed(addMessages(options, workspaceId, address, email, body));
-  if (outcome instanceof WorkspaceClosedError) return closedFailure(outcome.access);
+  if (outcome instanceof WorkspaceClosedError) {
+    // A deleted workspace never opens again, so its address is as gone as an unknown one.
+    if (outcome.access === "deleted") return { status: 404, body: NOT_FOUND };
+    return { ...closedFailure(outcome.access), isWorkspaceClosed: true };
+  }
   if (outcome === "too_long") return { status: 413, body: TOO_LARGE };
   if (outcome === "busy") return BUSY_NOW;
   if (outcome.created) wakeConversation(live, workspaceId, address.visitorId);
@@ -560,7 +567,7 @@ const isSmallInlineImage = ({ related, mimeType, content }: Attachment) =>
  * Adds the first 5 attachments through the uploads' checks and image queue, and counts the ones
  * left out. Small inline images are skipped without a count. The body limit bounds their decoded
  * size too, since decoding never makes one larger. A busy image queue stops here, so the
- * forwarder's retry brings the rest.
+ * sender's retry brings the rest.
  */
 async function addAttachments(
   uploads: Uploads | undefined,

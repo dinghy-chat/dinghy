@@ -443,6 +443,17 @@ describe("a reply", () => {
     expect(await answer.json()).toMatchObject({ error: { code: "suspended" } });
     expect(await messagesOf(chat.conversationId)).toEqual([]);
   });
+
+  test("to a deleted workspace is refused as an unknown address", async () => {
+    const space = await createWorkspace(db, "Gone", ["https://g.example.com"]);
+    const chat = await newChat(space);
+    const to = await addressFor(space, chat);
+    await owner.update(workspace).set({ deletedAt: new Date() }).where(eq(workspace.id, space.id));
+    const answer = await post(mime({ to, text: "Hello?" }));
+    expect(answer.status).toBe(404);
+    expect(await answer.json()).toMatchObject({ error: { code: "not_found" } });
+    expect(await messagesOf(chat.conversationId)).toEqual([]);
+  });
 });
 
 describe("attachments", () => {

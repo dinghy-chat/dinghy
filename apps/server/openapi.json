@@ -4647,7 +4647,7 @@
             }
           },
           "429": {
-            "description": "too_many_requests: too many emails to this address in an hour. The message stays",
+            "description": "too_many_requests: over 20 emails to this address in an hour. The message stays",
             "content": {
               "application/json": {
                 "schema": {

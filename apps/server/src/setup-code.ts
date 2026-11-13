@@ -1,6 +1,8 @@
 // Code that a coding agent copies into a customer's app: the widget's install snippet, the identity
 // token signer and the webhook signature check. Pure templates, so a test can run or read each one.
 
+import { MINUTE_SECONDS } from "./time.ts";
+
 export const FRAMEWORKS = [
   "html",
   "nextjs",
@@ -290,6 +292,7 @@ export function identitySetup(language: IdentityLanguage, publicKey: string) {
 
 /** The oldest `t` a receiver of a Dinghy signature accepts: the samples, and inbound emails. */
 export const SIGNATURE_TOLERANCE_SECONDS = 300;
+export const SIGNATURE_TOLERANCE_MINUTES = SIGNATURE_TOLERANCE_SECONDS / MINUTE_SECONDS;
 
 const VERIFIERS: Record<WebhookLanguage, string> = {
   typescript: String.raw`import { createHmac, timingSafeEqual } from "node:crypto";
