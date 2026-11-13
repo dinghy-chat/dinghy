@@ -420,56 +420,54 @@ export function Composer({
           </div>
         )}
         <div className="compose-tools">
-          <div className="more-tools">
-            {onFiles !== undefined && (
-              <>
-                <input
-                  ref={fileInput}
-                  className="file"
-                  type="file"
-                  multiple
-                  accept={acceptedFiles(true)}
-                  aria-label={t("attach")}
-                  tabIndex={-1}
-                  onChange={(event) => {
-                    onFiles(event.target.files ?? []);
-                    event.target.value = "";
-                  }}
-                />
+          {onFiles !== undefined && (
+            <>
+              <input
+                ref={fileInput}
+                className="file"
+                type="file"
+                multiple
+                accept={acceptedFiles(true)}
+                aria-label={t("attach")}
+                tabIndex={-1}
+                onChange={(event) => {
+                  onFiles(event.target.files ?? []);
+                  event.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t("attach")}
+                title={t("attach")}
+                onClick={() => fileInput.current?.click()}
+              >
+                <Icon name="clip" size={18} />
+              </button>
+            </>
+          )}
+          <EmojiButton onPick={(emoji) => run(editor, (chain) => chain.insertContent(emoji))} />
+          <span className="tools-divider" aria-hidden="true" />
+          <fieldset className="format-tools" aria-label={t("formatTools")}>
+            {FORMATS.map((one, index) => {
+              const label = shortcutLabel(one.name, one.key);
+              return (
                 <button
+                  key={one.name}
                   type="button"
                   className="icon-button"
-                  aria-label={t("attach")}
-                  title={t("attach")}
-                  onClick={() => fileInput.current?.click()}
+                  aria-label={label}
+                  title={label}
+                  aria-pressed={active[index]}
+                  // The editor keeps its selection while the button is pressed.
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => one.apply(editor, latest.current)}
                 >
-                  <Icon name="clip" size={18} />
+                  <Icon name={one.icon} size={18} />
                 </button>
-              </>
-            )}
-            <EmojiButton onPick={(emoji) => run(editor, (chain) => chain.insertContent(emoji))} />
-            <span className="tools-divider" aria-hidden="true" />
-            <fieldset className="format-tools" aria-label={t("formatTools")}>
-              {FORMATS.map((one, index) => {
-                const label = shortcutLabel(one.name, one.key);
-                return (
-                  <button
-                    key={one.name}
-                    type="button"
-                    className="icon-button"
-                    aria-label={label}
-                    title={label}
-                    aria-pressed={active[index]}
-                    // The editor keeps its selection while the button is pressed.
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => one.apply(editor, latest.current)}
-                  >
-                    <Icon name={one.icon} size={18} />
-                  </button>
-                );
-              })}
-            </fieldset>
-          </div>
+              );
+            })}
+          </fieldset>
           {editing ? (
             <span className="edit-actions">
               <button type="button" className="pill" onClick={onEscape}>

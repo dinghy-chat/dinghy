@@ -3248,12 +3248,6 @@ button.quote:hover {
   gap: 2px;
   min-width: 0;
 }
-.more-tools {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-}
 .format-tools {
   display: flex;
   flex-wrap: wrap;
@@ -5703,17 +5697,14 @@ button.quote:hover {
     min-height: 40px;
     max-height: 160px;
   }
-  .compose.linking .more-tools {
+  /* A phone has no format buttons. Typed Markdown, such as **bold** or "- ", still formats. */
+  .compose .format-tools,
+  .compose .tools-divider {
     display: none;
   }
-  .more-tools .format-tools {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  /* The field and send share a row, so the text starts at the left. The tools sit above them. */
+  /* One row, as in a messaging app: attach, the field, emoji and send. */
   .compose:not(.editing) .box {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: end;
     gap: 0;
   }
@@ -5728,26 +5719,17 @@ button.quote:hover {
   }
   .compose:not(.editing) .compose-text {
     grid-row: 3;
-    grid-column: 1;
-  }
-  .compose:not(.editing) :is(.send, .send-note) {
     grid-column: 2;
   }
-  .compose:not(.editing) .more-tools {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    border-bottom: 1px solid var(--line);
+  .compose:not(.editing) .emoji-picker {
+    grid-column: 3;
   }
-  /* The link's address takes the tools' row while it is open. */
+  .compose:not(.editing) :is(.send, .send-note) {
+    grid-column: 4;
+  }
+  /* The link's address, from Cmd+K on a keyboard, opens above the field. */
   .compose:not(.editing) .link-field {
     grid-row: 2;
-  }
-  .compose.editing .compose-tools {
-    flex-wrap: wrap;
-  }
-  .compose.editing .more-tools {
-    flex-basis: 100%;
-    order: -1;
   }
   .closed,
   .thread > .bad {
