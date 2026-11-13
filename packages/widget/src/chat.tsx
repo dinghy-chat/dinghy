@@ -11,7 +11,7 @@ import {
 } from "./compose.ts";
 import { cleanContext } from "./context.ts";
 import "./globals.ts";
-import { hoursState, knownHours } from "./hours.ts";
+import { type HoursState, hoursState, knownHours } from "./hours.ts";
 import { loadTexts, pickLocale } from "./locale.ts";
 import { emit, reportConversation } from "./page-events.ts";
 import { useDraftPreview, usePageReports } from "./page-reports.ts";
@@ -317,6 +317,23 @@ function Chat({
     const timer = setTimeout(() => setBotTyping(null), BOT_TYPING_MS);
     return () => clearTimeout(timer);
   }, [botTyping]);
+
+  // Not read in render, which every keystroke brings: once for the hours, then again at each
+  // opening or closing, which a timer waits for.
+  const [hours, setHours] = useState<HoursState | null>(null);
+  const savedHours = saved?.hours ?? null;
+  useEffect(() => {
+    if (savedHours === null) return setHours(null);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      const state = hoursState(savedHours, Date.now());
+      setHours(state);
+      const change = state.open ? state.closesAt : state.reopensAt;
+      if (change !== null) timer = setTimeout(update, change.getTime() - Date.now());
+    };
+    update();
+    return () => clearTimeout(timer);
+  }, [savedHours]);
 
   const { online, members, emailReplies, replySeconds } = usePresence(
     client,
@@ -655,8 +672,6 @@ function Chat({
   };
 
   if (!shown) return null;
-  // Read on each render, which the presence answer brings every 30 seconds while the chat is open.
-  const hours = saved.hours && hoursState(saved.hours, Date.now());
   const everChatted = chatted || lines.length > 0;
   const closed = hours?.open === false;
   // In this order, because a lost connection matters most and an empty chat matters least.
