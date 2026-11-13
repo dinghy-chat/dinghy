@@ -5,7 +5,14 @@ import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
 import type { Upload } from "./client.ts";
-import { acceptedFiles, fileSize, isComposing, isImage, saveWithRefresh } from "./compose.ts";
+import {
+  acceptedFiles,
+  fileSize,
+  isComposing,
+  isImage,
+  saveWithRefresh,
+  urlWaiter,
+} from "./compose.ts";
 import { EMOJIS, insertEmoji, SMILEY_ICON } from "./emoji.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { type Quote, quoteStandIn } from "./quote.ts";
@@ -483,26 +490,16 @@ function FileLink({
   mine: boolean;
   onExpired(): void;
 }) {
-  // Waits for the line's next URL, after an expired one.
-  const nextUrl = useRef<((url: string) => void) | null>(null);
-  useEffect(() => {
-    nextUrl.current?.(download.url);
-    nextUrl.current = null;
-  }, [download.url]);
+  const [urls] = useState(urlWaiter);
+  useEffect(() => urls.offer(download.url), [urls, download.url]);
   return (
     <a
       class={mine ? "msg mine doc" : "msg doc"}
       href={download.url}
       onClick={(event) => {
         event.preventDefault();
-        nextUrl.current = null;
-        void saveWithRefresh(download.url, download.name, () => {
-          const next = new Promise<string>((resolve) => {
-            nextUrl.current = resolve;
-          });
-          onExpired();
-          return next;
-        });
+        // This render's props, so a later render's new URL does not change what expired.
+        void saveWithRefresh(download.url, download.name, () => urls.wait(download.url, onExpired));
       }}
     >
       <Icon paths={DOWNLOAD_ICON} />

@@ -1,6 +1,11 @@
 /** @jsxImportSource react */
-import { createElement, type ReactNode, useEffect, useRef } from "react";
-import { fileSize, isImage, saveWithRefresh } from "../../../packages/widget/src/compose.ts";
+import { createElement, type ReactNode, useEffect, useState } from "react";
+import {
+  fileSize,
+  isImage,
+  saveWithRefresh,
+  urlWaiter,
+} from "../../../packages/widget/src/compose.ts";
 import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import type { FileAttachment } from "./api.ts";
 import { clockTime, isToday } from "./format.ts";
@@ -32,26 +37,16 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
  * next one comes with the new URLs that onExpired asks for.
  */
 function FileLink({ download, onExpired }: { download: FileAttachment; onExpired(): void }) {
-  // Waits for the line's next URL, after an expired one.
-  const nextUrl = useRef<((url: string) => void) | null>(null);
-  useEffect(() => {
-    nextUrl.current?.(download.url);
-    nextUrl.current = null;
-  }, [download.url]);
+  const [urls] = useState(urlWaiter);
+  useEffect(() => urls.offer(download.url), [urls, download.url]);
   return (
     <a
       className="file-link"
       href={download.url}
       onClick={(event) => {
         event.preventDefault();
-        nextUrl.current = null;
-        void saveWithRefresh(download.url, download.name, () => {
-          const next = new Promise<string>((resolve) => {
-            nextUrl.current = resolve;
-          });
-          onExpired();
-          return next;
-        });
+        // This render's props, so a later render's new URL does not change what expired.
+        void saveWithRefresh(download.url, download.name, () => urls.wait(download.url, onExpired));
       }}
     >
       <Icon name="download" size={20} />

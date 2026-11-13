@@ -129,6 +129,30 @@ export async function saveWithRefresh(
 }
 
 /**
+ * A file link's URLs. offer() takes each URL the line shows. wait() answers the URL after the one
+ * that expired: the current one when it changed already, since another file's refresh can come
+ * before this file's 404, or else the next one offered, after asking for it.
+ */
+export function urlWaiter() {
+  let current = "";
+  // A second click's wait replaces the first one's, which then never saves.
+  let resolveNext = (_url: string) => {};
+  return {
+    offer(url: string) {
+      current = url;
+      resolveNext(url);
+    },
+    wait(expired: string, askForUrls: () => void): Promise<string> {
+      return new Promise((resolve) => {
+        if (current !== expired) return resolve(current);
+        resolveNext = resolve;
+        askForUrls();
+      });
+    },
+  };
+}
+
+/**
  * Adds a confirmed line in commit order. Pending lines have no seq yet, and stay last. Lines nearly
  * always arrive in order, so it looks for the place from the end, and a replay sorts nothing.
  */
