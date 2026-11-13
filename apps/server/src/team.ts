@@ -15,6 +15,7 @@ import {
   conversation,
   invite,
   operator,
+  savedReply,
   verification,
   workspace,
   workspaceMember,
@@ -615,6 +616,13 @@ async function changeMember(
           isNull(invite.revokedAt),
         ),
       );
+  }
+  // The team keeps their saved replies, which stop naming someone who left.
+  if (change.kind === "remove") {
+    await tx
+      .update(savedReply)
+      .set({ createdBy: null })
+      .where(and(eq(savedReply.workspaceId, workspaceId), eq(savedReply.createdBy, targetId)));
   }
   // An app they connected acts with their approval, which ends when they can no longer give it.
   if (change.kind === "remove" || !allowed.settings(change.role)) {

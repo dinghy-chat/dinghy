@@ -16,6 +16,7 @@ import type { Transaction } from "./db/tenant.ts";
 import {
   conversationVisitor,
   isWritten,
+  mentionable,
   messageColumns,
   nextSeq,
   type StoredMessage,
@@ -104,13 +105,17 @@ export async function replyReceipts(
   };
 }
 
-/** The event of an edit or a delete, as a new message's, so the webhook fan-out reads it alike. */
+/**
+ * The event of an edit or a delete, as a new message's, so the webhook fan-out reads it alike. An
+ * edit that mentions new members alerts them.
+ */
 async function recordMessageChange(
   tx: Transaction,
   workspaceId: string,
   seq: bigint,
   kind: "message.updated" | "message.deleted",
   row: { id: string; conversationId: string; authorVisitorId: string | null },
+  newlyMentioned: string[],
 ): Promise<void> {
   await tx.insert(event).values({
     workspaceId,
@@ -120,7 +125,9 @@ async function recordMessageChange(
       messageId: row.id,
       conversationId: row.conversationId,
       fromVisitor: row.authorVisitorId !== null,
+      ...(newlyMentioned.length > 0 && { mentions: newlyMentioned }),
     } satisfies MessagePayload,
+    needsAlert: newlyMentioned.length > 0,
     needsWebhook: wantsWebhook(workspaceId),
   });
 }
@@ -159,6 +166,7 @@ async function lockChatLine(
       kind: message.kind,
       authorOperatorId: message.authorOperatorId,
       authorVisitorId: message.authorVisitorId,
+      metadata: message.metadata,
       deletedAt: message.deletedAt,
       createdAt: message.createdAt,
     })
@@ -202,9 +210,28 @@ type EditOutcome =
   | { kind: "seen" };
 
 /**
+ * A note's metadata with the members it now mentions, and those of them it did not mention before.
+ * Removing a mention alerts nobody.
+ */
+async function changedMentions(
+  tx: Transaction,
+  workspaceId: string,
+  operatorId: string,
+  metadata: unknown,
+  named: string[],
+) {
+  const { mentions: before = [], ...rest } = metadata as { mentions?: string[] };
+  const mentions = await mentionable(tx, workspaceId, named, operatorId);
+  return {
+    metadata: mentions.length > 0 ? { ...rest, mentions } : rest,
+    added: mentions.filter((id) => !before.includes(id)),
+  };
+}
+
+/**
  * Changes the text of an operator's own reply while the visitor cannot have seen it, or of their own
- * note at any time, as the visitor never sees one. Its event tells the widget, the other operators
- * and the webhooks, in the same transaction.
+ * note at any time, as the visitor never sees one. A note's mentions change with it, and a reply has
+ * none. Its event tells the widget, the other operators and the webhooks, in the same transaction.
  */
 export async function editMessage(
   tx: Transaction,
@@ -212,7 +239,7 @@ export async function editMessage(
   conversationId: string,
   messageId: string,
   operatorId: string,
-  body: string,
+  change: { body: string; mentions: string[] },
 ): Promise<EditOutcome> {
   const seq = await nextSeq(tx, workspaceId);
   const reader = await conversationVisitor(tx, workspaceId, conversationId, "no key update");
@@ -226,13 +253,21 @@ export async function editMessage(
   if (!isNote && (await visitorMaySee(tx, workspaceId, conversationId, reader, line))) {
     return { kind: "seen" };
   }
+  const mentions = isNote
+    ? await changedMentions(tx, workspaceId, operatorId, line.metadata, change.mentions)
+    : null;
   const [row] = await tx
     .update(message)
-    .set({ body, editedAt: sql`now()`, changedSeq: seq })
+    .set({
+      body: change.body,
+      editedAt: sql`now()`,
+      changedSeq: seq,
+      ...(mentions !== null && { metadata: mentions.metadata }),
+    })
     .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)))
     .returning(messageColumns);
   if (row === undefined) throw new Error("The message update returned no row");
-  await recordMessageChange(tx, workspaceId, seq, "message.updated", line);
+  await recordMessageChange(tx, workspaceId, seq, "message.updated", line, mentions?.added ?? []);
   await resendQuotes(tx, workspaceId, messageId);
   return { kind: "edited", message: stored(row), visitorId: reader.id };
 }
@@ -280,7 +315,7 @@ export async function deleteMessage(
       .insert(storageDeletion)
       .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
   }
-  await recordMessageChange(tx, workspaceId, seq, "message.deleted", line);
+  await recordMessageChange(tx, workspaceId, seq, "message.deleted", line, []);
   await resendQuotes(tx, workspaceId, messageId);
   return deleted;
 }

@@ -26,6 +26,7 @@ import {
   message,
   operator,
   pageView,
+  savedReply,
   visitor,
   widgetSettings,
   workspace,
@@ -212,6 +213,14 @@ async function makeSource(): Promise<Source> {
       note: true,
     }),
   });
+  // A note that mentions a member, and a saved reply, which both name operators.
+  await write("POST", `/conversations/${conversationId}/messages`, {
+    clientId: "note-from-owner",
+    body: "@Agent please follow up",
+    note: true,
+    mentions: [agent.id],
+  });
+  await write("POST", "/saved-replies", { shortcut: "hello", body: "Hi there!" });
   // Assigned after the bot's turn, as giving it back clears the assignee.
   await write("PUT", `/conversations/${conversationId}/assignee`, { operatorId: agent.id });
   await app.request(`/v1/widget/${space.publicKey}/context`, {
@@ -374,7 +383,7 @@ describe("a round trip onto a fresh install", () => {
     target = await freshInstall();
     const result = await importArchive(target.db, target.store, once(archive));
     expect(result.conversations).toBe(1);
-    expect(result.messages).toBe(6);
+    expect(result.messages).toBe(7);
     expect(result.images).toBe(2);
     expect(result.newOperators).toHaveLength(3);
     keptInstalls = installs.length;
@@ -426,7 +435,7 @@ describe("a round trip onto a fresh install", () => {
       original.map((one) => [one.seq, one.clientId, one.body, one.kind]).sort(),
     );
     expect(messages.filter((one) => one.authorVisitorId === source.visitorId)).toHaveLength(2);
-    expect(messages.filter((one) => one.authorOperatorId !== null)).toHaveLength(2);
+    expect(messages.filter((one) => one.authorOperatorId !== null)).toHaveLength(3);
     expect(messages.filter((one) => one.authorApiKeyId === source.key.id)).toHaveLength(2);
     expect(messages[0]?.createdAt.getTime()).toBe(
       original.find((one) => one.id === messages[0]?.id)?.createdAt.getTime(),
@@ -441,10 +450,29 @@ describe("a round trip onto a fresh install", () => {
         .where(and(eq(message.conversationId, source.conversationId), eq(message.kind, "note")));
     const rows = await notesIn(target.owner);
     const original = await notesIn(source.install.owner);
-    expect(original).toHaveLength(1);
+    expect(original).toHaveLength(2);
     expect(rows.map((one) => [one.seq, one.body, one.authorApiKeyId])).toEqual(
       original.map((one) => [one.seq, one.body, one.authorApiKeyId]),
     );
+  });
+
+  test("names this install's operators in a note's mentions and a saved reply's author", async () => {
+    const idOf = async (email: string) =>
+      (await target.owner.select().from(operator).where(eq(operator.email, email)))[0]?.id;
+    const [note] = await target.owner
+      .select()
+      .from(message)
+      .where(eq(message.clientId, "note-from-owner"));
+    const agentHere = await idOf(source.agentEmail);
+    expect(agentHere).not.toBe(source.agentId);
+    expect(note?.metadata).toEqual({ mentions: [agentHere] });
+    const replies = await target.owner
+      .select()
+      .from(savedReply)
+      .where(eq(savedReply.workspaceId, source.space.id));
+    expect(replies).toMatchObject([
+      { shortcut: "hello", body: "Hi there!", createdBy: await idOf(source.ownerEmail) },
+    ]);
   });
 
   test("keeps the members, with a removed one still removed", async () => {
@@ -836,6 +864,17 @@ describe("a bad file changes nothing", () => {
     );
   });
 
+  test("a note that mentions an unknown operator", async () => {
+    await refuses(
+      await edited((data) => {
+        const rows = data.messages as { metadata: { mentions?: string[] } }[];
+        const mentioning = rows.find((row) => row.metadata.mentions !== undefined);
+        if (mentioning !== undefined) mentioning.metadata.mentions = [randomUUID()];
+      }),
+      "unknown operator",
+    );
+  });
+
   test("an entry with a path of its own", async () => {
     const parts = [...tarEntry("export.json", Buffer.alloc(0))];
     await refuses(Buffer.concat([...parts, tarEnd()]));
@@ -896,7 +935,7 @@ describe("a bad file changes nothing", () => {
       importArchive(target.db, target.store, once(archive.subarray(0, 700))),
     ).rejects.toBeInstanceOf(ImportError);
     const result = await importArchive(target.db, target.store, once(archive));
-    expect(result.messages).toBe(6);
+    expect(result.messages).toBe(7);
   });
 });
 
@@ -923,7 +962,7 @@ test("an export skips an image deleted since it started, and still imports", asy
   const result = await importArchive(target.db, target.store, once(partial));
   expect(result.images).toBe(1);
   expect(result.missingImages).toBe(1);
-  expect(result.messages).toBe(6);
+  expect(result.messages).toBe(7);
 });
 
 test("an export fails if a file is missing while its row is still there", async () => {
@@ -1009,7 +1048,7 @@ test("the commands write and read a real file, and a failure leaves no whole-loo
 
   const imported = run(target.database, target.directory, "import", file);
   expect(imported.status).toBe(0);
-  expect(imported.stdout).toContain("6 messages, 2 images");
+  expect(imported.stdout).toContain("7 messages, 2 images");
   expect(imported.stdout).toContain("chat sign-in-link");
 
   const again = run(target.database, target.directory, "import", file);

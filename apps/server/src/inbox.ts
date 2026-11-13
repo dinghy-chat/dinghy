@@ -30,7 +30,7 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { ImageSchema, type Images, imageView, lostConnection, refuseImage } from "./images.ts";
-import { Body, ClientId } from "./inputs.ts";
+import { Body, ClientId, Mentions } from "./inputs.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
@@ -127,6 +127,11 @@ const workspaceParams = z.object({ workspaceId: z.uuid() });
 const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const messageParams = conversationParams.extend({ messageId: z.uuid() });
 
+const NOTE_MENTIONS = Mentions.default([]).openapi({
+  description:
+    "Only on a note: the members it mentions, by their operator IDs from the members list, at most 10. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped.",
+});
+
 const REPLY_TO = z.uuid().optional().openapi({
   description:
     "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message. A reply cannot quote a note, and a note can quote any of them.",
@@ -166,6 +171,8 @@ export const InboxMessage = z
     // A bot's handoff note: the member it handed the conversation to, or null for the whole team.
     // Null for any other message.
     handoff: z.object({ operatorId: z.string().nullable() }).nullable(),
+    // The members a note mentions, by operator ID. Empty for any other message.
+    mentions: z.array(z.string()),
     createdAt: z.string(),
   })
   .openapi("InboxMessage", {
@@ -194,6 +201,7 @@ export const InboxMessage = z
       readAt: null,
       via: null,
       handoff: null,
+      mentions: [],
       createdAt: "2026-11-08T09:31:00.000Z",
     },
   });
@@ -497,7 +505,7 @@ const replyRoute = createRoute({
   security: SESSION_OR_KEY,
   summary: "Reply, or add a note. A retry with the same clientId returns the original",
   description:
-    "With `note: true` the message is a note that only the team sees. It never reaches the visitor, an alert or an email. A note goes in a closed conversation too, and never assigns the conversation.",
+    "With `note: true` the message is a note that only the team sees. It never reaches the visitor. It reaches an alert or an email only for the members it mentions. A note goes in a closed conversation too, and never assigns the conversation.",
   request: {
     params: conversationParams,
     body: {
@@ -511,6 +519,7 @@ const replyRoute = createRoute({
             note: z.boolean().default(false).openapi({
               description: "True for a note that only the team sees. A note is text only.",
             }),
+            mentions: NOTE_MENTIONS,
           }),
           example: { clientId: "r_81b3d0", body: "Yes, it is two months free." },
         },
@@ -544,12 +553,14 @@ const editRoute = createRoute({
   security: SESSION,
   summary: "Change the text of your own reply, before the visitor has seen it, or of your own note",
   description:
-    "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. A note's author can change it at any time. API keys cannot edit.",
+    "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. A note's author can change it at any time, with the members it mentions now: those it did not mention before get an alert. API keys cannot edit.",
   request: {
     params: messageParams,
     body: {
       required: true,
-      content: { "application/json": { schema: z.object({ body: Body }) } },
+      content: {
+        "application/json": { schema: z.object({ body: Body, mentions: NOTE_MENTIONS }) },
+      },
     },
   },
   responses: {
@@ -1188,12 +1199,14 @@ export function createInbox({
         replyToMessageId?: string | undefined;
         source?: KeySource;
         note: boolean;
+        /** Only a note's. */
+        mentions?: string[] | undefined;
       },
     ) {
-      const { note, ...text } = input;
+      const { note, mentions, ...text } = input;
       const content = { image: undefined, isNote: note };
       return reply(workspaceId, actor, conversationId, content, text, (tx, author) =>
-        appendMessage(tx, workspaceId, author, note ? { ...text, note } : text),
+        appendMessage(tx, workspaceId, author, note ? { ...text, note, mentions } : text),
       );
     },
 
@@ -1399,7 +1412,6 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   app.openapi(editRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId, messageId } = c.req.valid("param");
-    const { body } = c.req.valid("json");
     const outcome = await withWorkspace(db, id, async (tx) => {
       const edited = await editMessage(
         tx,
@@ -1407,7 +1419,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
         conversationId,
         messageId,
         c.get("operatorId"),
-        body,
+        c.req.valid("json"),
       );
       if (edited.kind !== "edited") return edited;
       const names = await authorNames(tx, id, [edited.message]);

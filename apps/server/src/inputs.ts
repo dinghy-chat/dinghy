@@ -8,7 +8,7 @@ import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 export const ClientId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 
 /** Text of one line or a few, with no NUL byte, which Postgres text cannot hold. */
-const boundedText = (max: number) =>
+export const boundedText = (max: number) =>
   z
     .string()
     .trim()
@@ -18,6 +18,9 @@ const boundedText = (max: number) =>
 
 /** A message or note's text, as a send and an edit take it. */
 export const Body = boundedText(MESSAGE_MAX);
+
+/** The members a note mentions, by their IDs. Each gets an alert with the note's text. */
+export const Mentions = z.array(z.uuid()).max(10);
 
 /** Why a bot hands a conversation to people, and what it found, as the handoff's note holds them. */
 export const HandoffReason = boundedText(500);
