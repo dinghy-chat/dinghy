@@ -95,20 +95,20 @@ export function fileSize(bytes: number, locale: Intl.LocalesArgument): string {
 }
 
 /**
- * Saves a file through a blob URL. A link cannot do it: a browser ignores `download` on a link to
- * another origin and opens the address instead, and an old address is gone. False when the URL
- * expired, as a new one from a fresh load can still save it.
+ * Saves a file through a blob URL, and answers the server's status. A link cannot do it: a browser
+ * ignores `download` on a link to another origin and opens the address instead, and an old address
+ * is gone.
  */
-async function saveFile(url: string, name: string): Promise<boolean> {
+async function saveFile(url: string, name: string): Promise<number> {
   const response = await fetch(url);
-  if (response.status === 404) return false;
-  if (!response.ok) throw new Error(`The file answered ${response.status}`);
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(await response.blob());
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href));
-  return true;
+  if (response.ok) {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href));
+  }
+  return response.status;
 }
 
 /**
@@ -122,9 +122,9 @@ export async function saveWithRefresh(
   newUrl: () => Promise<string>,
 ): Promise<void> {
   try {
-    if (!(await saveFile(url, name))) await saveFile(await newUrl(), name);
+    if ((await saveFile(url, name)) === 404) await saveFile(await newUrl(), name);
   } catch {
-    // Nothing to tell: the link stays, and another click tries again.
+    // The network failed. Nothing to tell: the link stays, and another click tries again.
   }
 }
 

@@ -164,8 +164,8 @@ const DOWNLOAD_ICON: Paths = [
 ];
 
 const ATTACH_ICON: Paths = [
-  "M180.75,104.75,204,128l-82.06,81.94a48,48,0,0,1-67.88-67.88L153.37,41.37a32,32,0,0,1,45.26,45.26Z",
-  "M209.66,122.34a8,8,0,0,1,0,11.32l-82.05,82a56,56,0,0,1-79.2-79.21L147.67,35.73a40,40,0,1,1,56.61,56.55L105,193A24,24,0,1,1,71,159L154.3,74.38A8,8,0,1,1,165.7,85.6L82.39,170.31a8,8,0,1,0,11.27,11.36L192.93,81A24,24,0,1,0,159,47L59.76,147.68a40,40,0,1,0,56.53,56.62l82.06-82A8,8,0,0,1,209.66,122.34Z",
+  "M181,105,204,128l-82,82a48,48,0,0,1-68-68L153,41a32,32,0,0,1,45,45Z",
+  "M210,122a8,8,0,0,1,0,11l-82,82a56,56,0,0,1-79-79L148,36a40,40,0,1,1,57,57L105,193A24,24,0,1,1,71,159L154,74A8,8,0,1,1,166,86L82,170a8,8,0,1,0,11,11L193,81A24,24,0,1,0,159,47L60,148a40,40,0,1,0,57,57l82-82A8,8,0,0,1,210,122Z",
 ];
 /** A robot, for a reply from an API key. Drawn for this widget. */
 const BOT_ICON =
@@ -173,8 +173,8 @@ const BOT_ICON =
 /** A curved arrow back, for Reply. Drawn for this widget. */
 const REPLY_ICON: Paths = ["", "M112 56 24 128l88 72v-48c56 0 96 16 120 56-8-72-48-120-120-128z"];
 const SEND_ICON: Paths = [
-  "M227.91,134.86,59.93,231a8,8,0,0,1-11.44-9.67L80,128,48.49,34.72a8,8,0,0,1,11.44-9.67l168,95.85A8,8,0,0,1,227.91,134.86Z",
-  "M231.87,114l-168-95.89A16,16,0,0,0,40.92,37.34L71.55,128,40.92,218.67A16,16,0,0,0,56,240a16.15,16.15,0,0,0,7.93-2.1l167.92-96.05a16,16,0,0,0,.05-27.89ZM56,224a.56.56,0,0,0,0-.12L85.74,136H144a8,8,0,0,0,0-16H85.74L56.06,32.16A.46.46,0,0,0,56,32l168,95.83Z",
+  "M228,135,60,231a8,8,0,0,1-11-10L80,128,48,35a8,8,0,0,1,11-10l168,96A8,8,0,0,1,228,135Z",
+  "M232,114l-168-96A16,16,0,0,0,41,37L72,128,41,219A16,16,0,0,0,56,240a16,16,0,0,0,8-2l168-96a16,16,0,0,0,0-28ZM56,224a1,1,0,0,0,0,0L86,136H144a8,8,0,0,0,0-16H86L56,32A0,0,0,0,0,56,32l168,96Z",
 ];
 
 /** Who sent a reply, as the widget shows it. Its ID is the server's hash of the author's. */
@@ -349,9 +349,11 @@ function replyTime(seconds: number): string {
     : t("replyHours").replace("{n}", `${Math.round(minutes / 60)}`);
 }
 
-const DAY_MS = 86_400_000;
-/** Beyond this many days, a weekday alone could mean two dates, so the line adds the date. */
-const WEEKDAY_ONLY_DAYS = 6;
+/**
+ * Beyond this, a weekday alone could mean two dates, so the line adds the date. A reopening on
+ * today's weekday but not today is always further.
+ */
+const WEEKDAY_ONLY_MS = 6 * 86_400_000;
 
 /**
  * "We're back Monday at 9:00 AM", or "Monday, November 23" further ahead, on the visitor's own
@@ -360,15 +362,10 @@ const WEEKDAY_ONLY_DAYS = 6;
 export function backLine(at: Date, now: Date): string {
   const time = at.toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" });
   if (at.toDateString() === now.toDateString()) return t("backToday").replace("{time}", time);
-  const midnight = (moment: Date) => new Date(moment).setHours(0, 0, 0, 0);
-  // Rounded, as a day with a clock change is an hour short or long.
-  const days = Math.round((midnight(at) - midnight(now)) / DAY_MS);
-  const day = at.toLocaleDateString(
-    language(),
-    days > WEEKDAY_ONLY_DAYS
-      ? { weekday: "long", month: "long", day: "numeric" }
-      : { weekday: "long" },
-  );
+  const day = at.toLocaleDateString(language(), {
+    weekday: "long",
+    ...(+at - +now > WEEKDAY_ONLY_MS && { month: "long", day: "numeric" }),
+  });
   return t("backAt").replace("{day}", day).replace("{time}", time);
 }
 
