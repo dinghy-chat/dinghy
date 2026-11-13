@@ -8,10 +8,10 @@ import {
 } from "../../../packages/widget/src/shared.ts";
 import type { SavedReply, WorkspaceApi } from "./api.ts";
 import { Icon } from "./icons.tsx";
-import { useLoad } from "./load.ts";
+import { useAction, useLoad } from "./load.ts";
 import { Confirm } from "./popup.tsx";
-import { type TextId, t } from "./text.ts";
-import { AddForm, ErrorNote, Field, failureText, Loading, Page, StatusNote } from "./ui.tsx";
+import { t } from "./text.ts";
+import { AddForm, EditForm, ErrorNote, Field, Loading, Page, StatusNote } from "./ui.tsx";
 
 // The longest shortcut SAVED_REPLY_SHORTCUT takes, so the field stops there.
 const SHORTCUT_MAX = 32;
@@ -64,23 +64,7 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
   const [adding, setAdding] = useState<Typed | null>(null);
   const [editing, setEditing] = useState<{ id: string; typed: Typed } | null>(null);
   const [deleting, setDeleting] = useState<SavedReply | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const act = async (work: () => Promise<unknown>) => {
-    setFailure(null);
-    setBusy(true);
-    try {
-      await work();
-      replies.reload();
-      return true;
-    } catch (error) {
-      setFailure(failureText(error, {}));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, failure, run: act } = useAction(replies.reload);
   const add = async (typed: Typed) => {
     if (await act(() => api.addSavedReply(typed))) setAdding(null);
   };
@@ -103,32 +87,18 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
         <ul className="items">
           {list.map((reply) =>
             editing?.id === reply.id ? (
-              <li key={reply.id} className="item-row saved-reply-edit">
-                <form
-                  className="stack"
-                  aria-label={t("savedReplyEditLabel", { shortcut: reply.shortcut })}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void save(reply.id, editing.typed);
-                  }}
+              <li key={reply.id} className="item-row">
+                <EditForm
+                  label={t("savedReplyEditLabel", { shortcut: reply.shortcut })}
+                  canSubmit={!busy && isComplete(editing.typed)}
+                  onCancel={() => setEditing(null)}
+                  onSubmit={() => void save(reply.id, editing.typed)}
                 >
                   <ReplyFields
                     value={editing.typed}
                     onChange={(typed) => setEditing({ id: reply.id, typed })}
                   />
-                  <div className="actions">
-                    <button
-                      type="submit"
-                      className="pill dark"
-                      disabled={busy || !isComplete(editing.typed)}
-                    >
-                      {t("save")}
-                    </button>
-                    <button type="button" className="pill" onClick={() => setEditing(null)}>
-                      {t("cancel")}
-                    </button>
-                  </div>
-                </form>
+                </EditForm>
               </li>
             ) : (
               <li key={reply.id} className="item-row">

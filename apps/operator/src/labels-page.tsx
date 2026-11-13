@@ -3,10 +3,10 @@ import { useState } from "react";
 import { LABEL_LIMIT, LABEL_NAME_MAX } from "../../../packages/widget/src/shared.ts";
 import type { Label, LabelColor, WorkspaceApi } from "./api.ts";
 import { COLOR_TEXT, LabelDot } from "./labels.tsx";
-import { useLoad } from "./load.ts";
+import { useAction, useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
-import { type TextId, t } from "./text.ts";
-import { AddForm, ErrorNote, Field, failureText, Loading, Page, StatusNote } from "./ui.tsx";
+import { t } from "./text.ts";
+import { AddForm, EditForm, ErrorNote, Field, Loading, Page, StatusNote } from "./ui.tsx";
 
 type Typed = { name: string; color: LabelColor };
 const EMPTY: Typed = { name: "", color: "gray" };
@@ -48,23 +48,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
   const [adding, setAdding] = useState<Typed | null>(null);
   const [editing, setEditing] = useState<{ id: string; typed: Typed } | null>(null);
   const [deleting, setDeleting] = useState<Label | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const act = async (work: () => Promise<unknown>) => {
-    setFailure(null);
-    setBusy(true);
-    try {
-      await work();
-      labels.reload();
-      return true;
-    } catch (error) {
-      setFailure(failureText(error, {}));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, failure, run: act } = useAction(labels.reload);
   const add = async (typed: Typed) => {
     if (await act(() => api.addLabel(typed))) setAdding(null);
   };
@@ -88,31 +72,17 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
           {list.map((label) =>
             editing?.id === label.id ? (
               <li key={label.id} className="item-row">
-                <form
-                  className="stack label-edit"
-                  aria-label={t("labelEditLabel", { name: label.name })}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void save(label.id, editing.typed);
-                  }}
+                <EditForm
+                  label={t("labelEditLabel", { name: label.name })}
+                  canSubmit={!busy && editing.typed.name.trim() !== ""}
+                  onCancel={() => setEditing(null)}
+                  onSubmit={() => void save(label.id, editing.typed)}
                 >
                   <LabelFields
                     value={editing.typed}
                     onChange={(typed) => setEditing({ id: label.id, typed })}
                   />
-                  <div className="actions">
-                    <button
-                      type="submit"
-                      className="pill dark"
-                      disabled={busy || editing.typed.name.trim() === ""}
-                    >
-                      {t("save")}
-                    </button>
-                    <button type="button" className="pill" onClick={() => setEditing(null)}>
-                      {t("cancel")}
-                    </button>
-                  </div>
-                </form>
+                </EditForm>
               </li>
             ) : (
               <li key={label.id} className="item-row">

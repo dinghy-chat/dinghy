@@ -6937,7 +6937,8 @@ button.quote:hover {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
-.saved-reply-edit > form {
+/* A row's edit form takes the row's full width. */
+.item-row > form {
   grid-column: 1 / -1;
 }
 .hook-edit {

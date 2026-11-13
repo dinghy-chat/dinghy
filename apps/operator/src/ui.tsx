@@ -429,6 +429,42 @@ export function AddForm({
   );
 }
 
+/** A list row's form that changes the row in place, with Save and Cancel. */
+export function EditForm({
+  label,
+  canSubmit,
+  onCancel,
+  onSubmit,
+  children,
+}: {
+  label: string;
+  canSubmit: boolean;
+  onCancel(): void;
+  onSubmit(): void;
+  children: ReactNode;
+}) {
+  return (
+    <form
+      className="stack"
+      aria-label={label}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      {children}
+      <div className="actions">
+        <button type="submit" className="pill dark" disabled={!canSubmit}>
+          {t("save")}
+        </button>
+        <button type="button" className="pill" onClick={onCancel}>
+          {t("cancel")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** Where the docs live. Each link names a page and, often, a section on it. */
 export const DOCS_URL = "https://dinghy.chat/docs/";
 

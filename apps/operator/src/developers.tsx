@@ -15,7 +15,7 @@ import { LEVEL_LABEL, LevelChoice, REPLY_MODES, ReplyModeChoice } from "./bots.t
 import { originLine } from "./consent.tsx";
 import { MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
-import { type Loaded, useLoad } from "./load.ts";
+import { type Loaded, useAction, useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
@@ -219,24 +219,11 @@ function KeysSection({
   const [replyMode, setReplyMode] = useState<ReplyMode>("draft");
   // The new key's token, shown once in the key's own row.
   const [made, setMade] = useState<{ id: string; name: string; token: string } | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, failure, setFailure, run: act } = useAction(keys.reload);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
   // The new key's form shows only once the owner asks for it.
   const [adding, setAdding] = useState(false);
 
-  const act = async (work: () => Promise<void>) => {
-    setFailure(null);
-    setBusy(true);
-    try {
-      await work();
-      keys.reload();
-    } catch (error) {
-      setFailure(failureText(error, {}));
-    } finally {
-      setBusy(false);
-    }
-  };
   const resetForm = () => {
     setAdding(false);
     setName("");
@@ -654,25 +641,19 @@ function WebhooksSection({ api }: { api: WorkspaceApi }) {
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<WebhookEvent[]>([...WEBHOOK_EVENTS]);
   const [secret, setSecret] = useState<{ url: string; secret: string } | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
+  const {
+    busy,
+    failure,
+    setFailure,
+    run: act,
+  } = useAction(loaded.reload, {
+    400: "webhookBadUrl",
+    409: "webhookLimit",
+  });
   const [asking, setAsking] = useState<Asking>(null);
   // The new webhook's form shows only once the owner asks for it.
   const [adding, setAdding] = useState(false);
   const hooks = loaded.data?.webhooks ?? [];
-
-  const act = async (work: () => Promise<void>) => {
-    setFailure(null);
-    setBusy(true);
-    try {
-      await work();
-      loaded.reload();
-    } catch (error) {
-      setFailure(failureText(error, { 400: "webhookBadUrl", 409: "webhookLimit" }));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const closeForm = () => {
     setAdding(false);
