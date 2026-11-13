@@ -4,6 +4,18 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- On a phone, the reply box spans the full width: attach, emoji and the formats sit in a row above it.
+- In the Inbox, a row's box for bulk actions is a round check the size of the avatar, and the box that picks every row matches it.
+- Every icon button shows its name in a tooltip, on hover and on keyboard focus.
+- In the visitor panel, a click on the name copies it, as a click on the email does.
+
+### Fixed
+
+- The bulk bar's assign and label menus no longer stretch across the whole window.
+- A screen that fails to load shows a card with **Reload** instead of a blank page.
+
 ## [0.29.0] - 2026-11-13
 
 ### Upgrading
