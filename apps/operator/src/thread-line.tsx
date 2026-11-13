@@ -37,7 +37,7 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
  * next one comes with the new URLs that onExpired asks for.
  */
 function FileLink({ download, onExpired }: { download: FileAttachment; onExpired(): void }) {
-  const [urls] = useState(urlWaiter);
+  const [urls] = useState(() => urlWaiter(download.url));
   useEffect(() => urls.offer(download.url), [urls, download.url]);
   return (
     <a

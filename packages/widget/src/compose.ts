@@ -129,22 +129,25 @@ export async function saveWithRefresh(
 }
 
 /**
- * A file link's URLs. offer() takes each URL the line shows. wait() answers the URL after the one
- * that expired: the current one when it changed already, since another file's refresh can come
- * before this file's 404, or else the next one offered, after asking for it.
+ * A file link's URLs, starting from the one the link shows. offer() takes each new one. wait()
+ * answers the URL after the one that expired: the current one when it changed already, since
+ * another file's refresh can come before this file's 404, or else the next one offered, after
+ * asking for it. It never answers the expired URL or an empty one.
  */
-export function urlWaiter() {
-  let current = "";
+export function urlWaiter(shown: string) {
+  let current = shown;
+  let expired = "";
   // A second click's wait replaces the first one's, which then never saves.
   let resolveNext = (_url: string) => {};
   return {
     offer(url: string) {
       current = url;
-      resolveNext(url);
+      if (url && url !== expired) resolveNext(url);
     },
-    wait(expired: string, askForUrls: () => void): Promise<string> {
+    wait(stale: string, askForUrls: () => void): Promise<string> {
+      expired = stale;
       return new Promise((resolve) => {
-        if (current !== expired) return resolve(current);
+        if (current && current !== stale) return resolve(current);
         resolveNext = resolve;
         askForUrls();
       });

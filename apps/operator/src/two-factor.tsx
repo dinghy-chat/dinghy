@@ -20,14 +20,13 @@ const QR_QUIET_MODULES = 4;
 const RECOVERY_FILE = "dinghy-recovery-codes.txt";
 
 /**
- * A refused code: wrong, the session ended after too many, the server cannot read the secret, or
- * it cannot count tries.
+ * A refused code: wrong, the session ended after too many, or the server cannot count tries. A
+ * secret the server cannot read has its own error code, so another failure never asks for a reset.
  */
 const codeFailure = (failure: unknown): TextId =>
   failureText(failure, {
     400: "twoFactorWrongCode",
     429: "twoFactorLocked",
-    500: "twoFactorUnreadable",
     503: "twoFactorUnavailable",
   });
 

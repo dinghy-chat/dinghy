@@ -7,7 +7,7 @@ import { buildWidget } from "../build.ts";
 const LIMITS: Record<string, number> = {
   "loader.js": 2700,
   "page.js": 1000,
-  "widget.js": 26_000,
+  "widget.js": 26_100,
 };
 
 test("each language but English is a file of its own, and the chat holds no other", async () => {

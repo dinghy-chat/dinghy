@@ -150,8 +150,7 @@ test("any other failure ends the click without a new URL", async () => {
 });
 
 test("a waiter answers the next URL offered, after asking for it", async () => {
-  const urls = urlWaiter();
-  urls.offer("/old");
+  const urls = urlWaiter("/old");
   const askForUrls = vi.fn();
   const next = urls.wait("/old", askForUrls);
   expect(askForUrls).toHaveBeenCalledOnce();
@@ -159,9 +158,19 @@ test("a waiter answers the next URL offered, after asking for it", async () => {
   expect(await next).toBe("/new");
 });
 
-test("a URL that changed during the failed fetch saves without waiting for another", async () => {
-  const urls = urlWaiter();
+test("a waiter never answers the expired URL or an empty one", async () => {
+  const urls = urlWaiter("/old");
+  const askForUrls = vi.fn();
+  const next = urls.wait("/old", askForUrls);
+  expect(askForUrls).toHaveBeenCalledOnce();
+  urls.offer("");
   urls.offer("/old");
+  urls.offer("/new");
+  expect(await next).toBe("/new");
+});
+
+test("a URL that changed during the failed fetch saves without waiting for another", async () => {
+  const urls = urlWaiter("/old");
   // Another file's refresh brings new URLs before this file's 404 arrives.
   const files = fakeFiles({ "/old": 404, "/new": 200 }, (url) => {
     if (url === "/old") urls.offer("/new");

@@ -43,6 +43,7 @@ const BY_CODE: Record<string, TextId> = {
   grant_limit: "grantLimit",
   saved_reply_limit: "savedReplyLimit",
   saved_reply_shortcut_taken: "savedReplyShortcutTaken",
+  two_factor_unreadable: "twoFactorUnreadable",
   label_limit: "labelLimit",
   label_name_taken: "labelNameTaken",
 };

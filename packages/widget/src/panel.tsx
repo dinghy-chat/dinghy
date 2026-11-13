@@ -490,7 +490,7 @@ function FileLink({
   mine: boolean;
   onExpired(): void;
 }) {
-  const [urls] = useState(urlWaiter);
+  const [urls] = useState(() => urlWaiter(download.url));
   useEffect(() => urls.offer(download.url), [urls, download.url]);
   return (
     <a
