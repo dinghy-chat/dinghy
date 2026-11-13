@@ -55,6 +55,20 @@ A wrong code, or one used before, answers 400 `wrong_code`. A code from the app 
 
 With a mail server, the account gets an email when two-step sign-in is turned on, turned off, by the operator or by `chat two-factor-reset`, when a recovery code is used, and when the 5th wrong code ends a session.
 
+### Recovery
+
+An operator who lost their app and their recovery codes can ask to remove two-step sign-in after 72 hours. The [operator guide](operator-guide.md#if-you-lose-your-phone) explains who is warned and how it stops.
+
+- `POST /v1/operator/two-factor/recovery` starts the request from a session that has not passed the check, and that an email link made in the last 15 minutes. It answers `completesAt`. While a request waits, it answers the same and changes nothing. It answers 409 `recovery_not_needed` for a session that passed or with two-step sign-in off, `sign_in_again` for an older session, `recovery_blocked` for 7 days after a cancel, and `manual_review` when nobody else can be warned: no other owner or admin in the account's workspaces, no push subscription and no session that passed, or a server with no mail server.
+- `POST /v1/operator/two-factor/recovery/cancel` cancels it from a session that passed the check, or answers 409 `no_recovery`.
+- `POST /v1/two-factor-recovery/cancel` with `{ "token" }` cancels it with the token from the email's link, with no session. The link opens a page of the app, and only its button sends this, so opening the link does nothing. It answers 400 `link_invalid` once the request has ended.
+- A correct code from the app or a recovery code, on any route that takes one, also cancels it.
+- `POST /v1/operator/two-factor/skip-prompt` stops the prompt to turn it on again.
+
+A cancel ends every session of the account that never passed the check and refuses new requests for 7 days. After 72 hours, the worker removes the secret and the recovery codes and ends every session. `me` answers `recoveryCompletesAt`, the end of a waiting request or null, and `asksTwoFactorAgain`, true after a recovery or a reset removed it until the operator turns it on again or skips. The members list answers `twoFactor` as `recovery` while a request waits, and `canResetTwoFactor`.
+
+`POST /v1/operator/workspaces/{workspaceId}/members/{operatorId}/two-factor-reset` removes a teammate's two-step sign-in at once and ends their sessions. Owners reset admins and members, and admins reset members, only for a teammate in no other workspace. Every other case answers the same 403 `forbidden`, and 409 `two_factor_off` when it is off.
+
 ## Sending without duplicates
 
 A message, an image or a file carries a `clientId` that the client makes, such as `m_4f9a2c`. A retry with the same `clientId` returns the first message and creates nothing, so a client can retry a send after any network error.

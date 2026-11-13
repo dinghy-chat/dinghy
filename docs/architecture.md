@@ -27,7 +27,7 @@ Compose adds two one-shot services from the same image: `init` writes the secret
 
 ## Tenant isolation
 
-A workspace is a tenant. `operator`, its picture, its two-step sign-in and its session tables are global and hold no workspace data. An export leaves the two-step sign-in out, because it belongs to the account. Its TOTP secret is encrypted with AES-256-GCM, with a key derived from `AUTH_SECRET` by HKDF, and its recovery codes are stored as keyed hashes. The operator's `two_factor_on` column says whether it is on, so BetterAuth's one session query also gives the second step's state. Every other table has a `workspace_id`.
+A workspace is a tenant. `operator`, its picture, its two-step sign-in and its session tables are global and hold no workspace data. An export leaves the two-step sign-in out, because it belongs to the account. Its TOTP secret is encrypted with AES-256-GCM, with a key derived from `AUTH_SECRET` by HKDF, and its recovery codes are stored as keyed hashes. The operator's `two_factor_on` column says whether it is on, so BetterAuth's one session query also gives the second step's state. A recovery request is global as well: one table, one waiting request per account, which the worker completes after 72 hours. Every other table has a `workspace_id`.
 
 Two layers keep workspaces apart:
 
