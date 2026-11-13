@@ -96,12 +96,15 @@ async function readUpTo(response: Response, maxBytes: number): Promise<Buffer | 
   return Buffer.concat(chunks);
 }
 
+const recipients = z.array(z.object({ email: z.string().nullable() })).nullable();
+
 /** One page of the mailbox's messages, with only the fields the sweep reads. */
 const inboxPage = z.object({
   data: z.array(
     z.object({
       id: z.string().min(1),
-      to: z.array(z.object({ email: z.string().nullable() })).nullable(),
+      to: recipients,
+      cc: recipients,
       received_at: z.coerce.date(),
     }),
   ),
@@ -225,8 +228,9 @@ interface SweepOptions {
  */
 export function mailboxSweep({ db, intake, domain, settings, logger }: SweepOptions) {
   const inbox = shipmailInbox(settings);
-  const workspaceOf = (to: { email: string | null }[] | null) =>
-    (to ?? [])
+  // A visitor can put the reply address in Cc, as a mail app's "Reply all" can.
+  const workspaceOf = ({ to, cc }: InboxPage["data"][number]) =>
+    [...(to ?? []), ...(cc ?? [])]
       .map(({ email }) => parseReplyAddress(email ?? "", domain))
       .find((target) => target !== null)?.workspaceId;
 
@@ -235,13 +239,13 @@ export function mailboxSweep({ db, intake, domain, settings, logger }: SweepOpti
       await inbox.remove(message.id);
       return;
     }
-    const workspaceId = workspaceOf(message.to);
+    const workspaceId = workspaceOf(message);
     if (workspaceId !== undefined && closed.has(workspaceId)) return;
     await intake.hold(() => take(intake, inbox, message.id));
   };
 
   const sweepPage = async ({ data }: InboxPage) => {
-    const workspaceIds = data.map((message) => workspaceOf(message.to));
+    const workspaceIds = data.map(workspaceOf);
     const closed = await closedWorkspaces(
       db,
       workspaceIds.filter((id) => id !== undefined),

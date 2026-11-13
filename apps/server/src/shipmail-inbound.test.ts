@@ -106,7 +106,8 @@ async function fakeShipmail() {
       data: pageIds.map((emailId) => ({
         object: "inbox_message",
         id: emailId,
-        to: [{ name: null, email: /^To: (.*)$/m.exec(messages.get(emailId) ?? "")?.[1] ?? null }],
+        to: header(emailId, "To"),
+        cc: header(emailId, "Cc"),
         received_at: arrivedAt(emailId).toISOString(),
       })),
       junk_total: null,
@@ -215,6 +216,12 @@ async function chatInNewWorkspace() {
 }
 
 /** An email in the Shipmail mailbox, as it arrived. Returns its ID there. */
+/** A header of a stored message as the list endpoint gives it: one recipient, or none. */
+const header = (emailId: string, name: string) => {
+  const email = new RegExp(`^${name}: (.*)$`, "m").exec(shipmail.messages.get(emailId) ?? "")?.[1];
+  return email === undefined ? [] : [{ name: null, email }];
+};
+
 function arrives(to: string, text: string, headers: string[] = []): string {
   const emailId = `eml_${randomUUID().replaceAll("-", "")}`;
   const raw = [
@@ -541,6 +548,21 @@ describe("the mailbox sweep", () => {
     await sweep();
     expect(await bodiesOf(kept.conversationId)).toEqual(["Are you back?"]);
     expect(shipmail.messages.has(kept.emailId)).toBe(false);
+  });
+
+  test("finds a kept email's workspace by a reply address in Cc too", async () => {
+    const kept = await keptEmail("Reply all");
+    const raw = shipmail.messages.get(kept.emailId) ?? "";
+    // "Reply all" can put the team's address in To and the reply address in Cc.
+    shipmail.messages.set(
+      kept.emailId,
+      raw.replace(/^To: (.*)$/m, "To: team@example.com\r\nCc: $1"),
+    );
+    await sweep();
+    expect(downloadsOf(kept.emailId)).toBe(1);
+    await setSuspended(kept.workspaceId, null);
+    await sweep();
+    expect(await bodiesOf(kept.conversationId)).toEqual(["Reply all"]);
   });
 
   test("deletes an email older than the reply address's lifetime", async () => {
