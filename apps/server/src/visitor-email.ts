@@ -107,17 +107,25 @@ export function visitorAuthorName(
   return author.isDeleted ? author.name : firstName(author.name);
 }
 
+/** The links of an email to a visitor, and whether a reply to it reaches the conversation. */
+export interface VisitorLinks {
+  chatUrl: string;
+  stopUrl: string;
+  canReply: boolean;
+}
+
 /**
- * The text of an email to a visitor: a greeting with no name, the paragraphs, why they got it with
- * the stop link, and the workspace's sign-off.
+ * The text of an email to a visitor: the reply marker when it takes replies, a greeting with no
+ * name, the paragraphs, why they got it with the stop link, and the workspace's sign-off.
  */
 export function visitorLetterText(
   placeName: string,
   paragraphs: string[],
-  stopUrl: string,
+  { stopUrl, canReply }: VisitorLinks,
   words: VisitorWords,
 ): string {
   return [
+    ...(canReply ? [words.replyAbove] : []),
     words.hi,
     ...paragraphs,
     words.linkWarning,
@@ -130,11 +138,12 @@ export function visitorLetterText(
 export function visitorLetterHtml(
   placeName: string,
   html: string,
-  links: { chatUrl: string; stopUrl: string; logoUrl: string | null; chatLabel: string },
+  links: VisitorLinks & { logoUrl: string | null; chatLabel: string },
   words: VisitorWords,
 ): string {
   const stop = `<a href="${escapeHtml(links.stopUrl)}" style="color:${EMAIL_COLORS.muted};text-decoration:underline">${escapeHtml(words.stopThem)}</a>`;
   return letterHtml({
+    ...(links.canReply && { above: escapeHtml(words.replyAbove) }),
     team: placeName,
     logoUrl: links.logoUrl,
     html,

@@ -8,7 +8,7 @@ import { cloudFromConfig, cloudProblem } from "../../../ee/server/index.ts";
 import serverPackage from "../package.json" with { type: "json" };
 import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
-import { loadConfig, pushKeysFromConfig } from "./config.ts";
+import { inboundEmailFromConfig, loadConfig, pushKeysFromConfig } from "./config.ts";
 import * as schema from "./db/schema.ts";
 import { startErrorReports } from "./error-reports.ts";
 import { loadCountries } from "./geo.ts";
@@ -55,6 +55,7 @@ const pushKeys = pushKeysFromConfig(config);
 const cloud = cloudFromConfig(config);
 const push = pushKeys === undefined ? undefined : createPush(pushKeys);
 const webhooks = { allowPrivate: config.WEBHOOK_ALLOW_PRIVATE };
+const inboundEmail = inboundEmailFromConfig(config);
 const imagesFor = () =>
   createImages({
     store: storeFromConfig(config),
@@ -102,6 +103,7 @@ if (role === "web" || role === "all") {
     auth: createAuth({ db, secret: config.AUTH_SECRET, baseURL: config.PUBLIC_URL }),
     db,
     images: imagesFor(),
+    inboundEmail,
     webhooks,
     live,
     valkey,
@@ -164,6 +166,7 @@ if (role === "worker" || role === "all") {
     secret: config.AUTH_SECRET,
     store: storeFromConfig(config),
     images: imagesFor(),
+    inboundDomain: inboundEmail?.domain,
     webhooks,
   });
   stops.push(

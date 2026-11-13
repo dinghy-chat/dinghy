@@ -163,10 +163,14 @@ async function checkEndpoint(url: string, policy: WebhookPolicy): Promise<string
   return resolved.some((one) => isPrivateAddress(one.address)) ? REFUSED_ADDRESS : null;
 }
 
-/** `Dinghy-Signature`: the time, and the HMAC-SHA256 of "time.body" with the webhook's secret. */
-export function signature(secret: string, timestamp: number, body: string): string {
-  const digest = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
-  return `t=${timestamp},v1=${digest}`;
+/** The HMAC-SHA256 of "time.body" with the secret. */
+export function signatureDigest(secret: string, timestamp: number, body: string | Uint8Array) {
+  return createHmac("sha256", secret).update(`${timestamp}.`).update(body).digest();
+}
+
+/** `Dinghy-Signature`: the time, and the hex digest of "time.body" with the webhook's secret. */
+export function signature(secret: string, timestamp: number, body: string | Uint8Array): string {
+  return `t=${timestamp},v1=${signatureDigest(secret, timestamp, body).toString("hex")}`;
 }
 
 interface SendResult {

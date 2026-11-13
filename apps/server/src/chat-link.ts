@@ -44,7 +44,7 @@ const CHAT_PAGE_TEXT: Record<Locale, typeof en> = {
 
 export const isChatLinkToken = (token: string) => token.startsWith(PREFIX);
 
-const asUuid = (hex: string) =>
+export const asUuid = (hex: string) =>
   `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 
 /** The workspace a well-formed token names, or null. */

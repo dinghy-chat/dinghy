@@ -48,6 +48,8 @@ A cursor is `generation.seq`. A restore or an import gives the workspace a new r
 
 Each send carries an ID that the client made. A retry with the same ID returns the first message, so it cannot create a duplicate.
 
+A visitor's reply by email comes the same way. A mail forwarder posts the raw email to the web side, signed, and `apps/server/src/inbound-email.ts` writes it as the visitor's messages with `appendMessage`, under the same lock. The reply address names its workspace, as a chat link's token does, so the lookup runs in that workspace's transaction, and its stored conversation is the only one the message can go to. The email's `Message-ID` gives the client ID, so a forwarder's retry finds the first messages. No queue holds the email: the forwarder keeps it until Dinghy answers.
+
 ## The widget's settings
 
 How a workspace's widget looks and behaves lives in `widget_settings`, one row per workspace, made in the same transaction as the workspace. Typed columns let the database check each value and hold the defaults. The row is apart from `workspace`, because every message takes the workspace row's lock for its sequence, and a save must not wait for that lock or hold it.
@@ -70,7 +72,7 @@ Background work lives in Postgres tables, and the worker claims rows with `FOR U
 2. Fan out webhooks: turn each event that a workspace's webhooks asked for into one delivery per webhook. An event is flagged for this only when its workspace had an enabled webhook when it committed.
 3. Send the claimed deliveries: web push, email and webhooks. Webhooks have their own slots, so a slow receiver never holds an alert back.
 4. Delete stored images and files that are queued for deletion.
-5. Prune old events and finished rows. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
+5. Prune old events and finished rows, expired chat links and reply addresses unused for 90 days. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
 6. Purge workspaces that an owner deleted.
 
 Each step runs on its own, so a step that fails is logged and the others still run. Every 30 seconds at most, a worker records that its loop still finishes, and `/readyz` reports `"worker":"stale"` when no worker did for 5 minutes. On Dinghy Cloud, the subscription lifecycle runs in the same loop with its own 10-minute claim, because one step can wait on Stripe and on email.

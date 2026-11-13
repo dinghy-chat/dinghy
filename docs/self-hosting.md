@@ -86,6 +86,7 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Keeps images and files in a bucket, not on this disk |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | An encrypted copy of each backup in another place |
 | `BACKUP_HEARTBEAT_URL` | An address that `chat backup` pings after each backup that worked, such as a [healthchecks.io](https://healthchecks.io) check, so a monitor tells you when a night has none. Optional |
+| `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_SECRET` | Let visitors answer reply emails and transcripts by email. Optional, and set both or neither. See below |
 | `IMAGES_ORIGIN` | A separate origin for images and files that visitors and operators send, such as `https://files.example.com`. Optional. See below |
 | `TRUSTED_PROXY_HOPS` | See below |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent` |
@@ -107,6 +108,64 @@ Images and files come from visitors you do not know. Dinghy re-encodes each imag
 
 Image and file links then use that origin, with the same short-lived signed URLs. It answers only the image route, and the app's own origin stops serving images and files. Every image goes out with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: inline`, and only as PNG, JPEG or WebP, never as HTML or SVG. Every other file goes out with the same two headers, `Content-Disposition: attachment` and `Content-Type: application/octet-stream`, so a browser saves it and never shows it. A host site with a Content Security Policy must allow the new origin in `img-src` for the widget's images, and in `connect-src`, as the widget fetches a file to save it.
 
+### Replies by email
+
+A visitor who left your site gets your team's replies and the transcript by email. With replies by email on, they can answer that email, and their answer lands in the conversation as if they had written in the chat. It is off until you set both settings, and it needs a mail server for the emails that go out (`SMTP_URL`).
+
+Each email to a visitor then has its own reply address, `reply+<workspace>.<token>@<INBOUND_EMAIL_DOMAIN>`, which leads to that one conversation. The address works until 90 days after its last use. Mail to it must reach Dinghy as the raw email, posted to `/v1/inbound-email` and signed with `INBOUND_EMAIL_SECRET` (see [the API](api.md#replies-by-email)). Dinghy documents one forwarder, a Cloudflare Email Worker, which needs a domain on Cloudflare and no paid plan. Other mail providers post their own formats, so they need an adapter that turns their post into this one.
+
+1. Pick a subdomain for the reply addresses, such as `reply.example.com`, on a domain that Cloudflare runs. It takes no other mail, so use a subdomain that nothing else uses.
+2. In Cloudflare, open **Email > Email Routing** for the domain, and add the subdomain. Cloudflare adds its MX and TXT records.
+3. Make a secret of at least 32 characters, such as with `openssl rand -hex 32`.
+4. Create a Worker with the code below. In its settings, add the variable `DINGHY_URL` with your `PUBLIC_URL` as its value, and the secret `INBOUND_EMAIL_SECRET` with the value from step 3.
+5. In **Email Routing > Routing rules** for the subdomain, set the catch-all address to **Send to a Worker**, and pick this Worker.
+6. In `.env`, set `INBOUND_EMAIL_DOMAIN=reply.example.com` and `INBOUND_EMAIL_SECRET` to the same secret, then run `docker compose up -d --wait`.
+
+```js
+// Posts each email to Dinghy as it arrived, signed with the secret that Dinghy shares.
+export default {
+  async email(message, env) {
+    const body = new Uint8Array(await new Response(message.raw).arrayBuffer());
+    const time = Math.floor(Date.now() / 1000);
+    const signed = await new Blob([`${time}.`, body]).arrayBuffer();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(env.INBOUND_EMAIL_SECRET),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const digest = new Uint8Array(await crypto.subtle.sign("HMAC", key, signed));
+    const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const answer = await fetch(new URL("/v1/inbound-email", env.DINGHY_URL), {
+      method: "POST",
+      headers: {
+        "content-type": "message/rfc822",
+        "dinghy-inbound-signature": `t=${time},v1=${hex}`,
+      },
+      body,
+    });
+    if (answer.ok) return;
+    // A retry cannot fix these two, so the sender gets a permanent refusal.
+    if (answer.status === 404) {
+      message.setReject("This address takes no replies. Open the chat on the website to write.");
+      return;
+    }
+    if (answer.status === 413) {
+      message.setReject("This email is too large. Open the chat on the website to write.");
+      return;
+    }
+    // Anything else, such as 401 from secrets that differ, or a busy or down server, throws instead
+    // of rejecting the email for good, and shows in the Worker's logs.
+    throw new Error(`Dinghy answered ${answer.status}`);
+  },
+};
+```
+
+To test it, answer a reply email from Dinghy. The answer shows in the conversation within seconds. If it does not, the Worker's logs in Cloudflare show what Dinghy answered: 401 means the two secrets differ or the server's clock is more than 5 minutes off, and 404 means the address is not a current one.
+
+Dinghy takes the plain text of the answer, or its HTML made into text. Each email from Dinghy starts with "Write your reply above this line", and Dinghy keeps only what is above the quote of that line. Without the line, it keeps the whole text, and it never cuts a signature. Up to 5 attachments go in the conversation, with the same types and size limits as the chat. An email is at most 25 MB, so a proxy of your own must accept 26 MB on `/v1/inbound-email` (see [below](#behind-your-own-reverse-proxy)). The server holds at most 4 emails at a time, so a fifth waits for the forwarder's retry. Out-of-office answers and other automatic emails are dropped, and one address takes at most 20 emails an hour.
+
 ## Behind your own reverse proxy
 
 Use this when nginx, Traefik, Caddy or a platform such as Coolify already owns ports 80 and 443. The installer stops when those ports are taken, so install by hand.
@@ -119,7 +178,7 @@ Your proxy must:
 
 - Serve HTTPS for the domain. `CHAT_DOMAIN` makes the app expect `https://` and that domain, and sign-in refuses a request from any other origin. For another address, such as a port, set `PUBLIC_URL` instead.
 - Pass the `Host` and `Origin` headers through unchanged, and add the client's address to `X-Forwarded-For`.
-- Accept request bodies of at least 11 MB, because a file in the chat can be 10 MB. nginx allows 1 MB unless you set `client_max_body_size`.
+- Accept request bodies of at least 11 MB, because a file in the chat can be 10 MB. With [replies by email](#replies-by-email) on, accept 26 MB on `/v1/inbound-email`, or everywhere, because an email can be 25 MB. A proxy's 413 makes the Worker reject the email for good. nginx allows 1 MB unless you set `client_max_body_size`.
 - Pass `Strict-Transport-Security` through, or set your own. The app sends `max-age=31536000` when `PUBLIC_URL` starts with `https://`, and so does the bundled Caddy. It tells browsers to use HTTPS for a year, so serve the domain over HTTPS first.
 - Not buffer the live streams. The app sends `X-Accel-Buffering: no` on them, which nginx follows. Another proxy may need streaming or flushing turned on for `text/event-stream`. A stream sends a heartbeat every 25 seconds, so an idle timeout of 60 seconds or more is enough.
 
@@ -133,6 +192,15 @@ location / {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_read_timeout 120s;
     client_max_body_size 11m;
+}
+
+# Only with replies by email on.
+location = /v1/inbound-email {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    client_max_body_size 26m;
 }
 ```
 

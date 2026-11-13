@@ -188,7 +188,7 @@ export interface SuggestedReply {
 /** The kinds of message that visitors and the team write to each other. */
 export type ChatKind = "text" | "image" | "file";
 
-export interface Message {
+interface MessageFields {
   id: string;
   conversationId: string;
   seq: string;
@@ -218,14 +218,29 @@ export interface Message {
   editedAt: string | null;
   /** Deleted: no body and no image or file, and the line says so. */
   deleted: boolean;
-  /** A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft. */
-  via: "api" | "mcp" | "draft" | null;
   /** A bot's handoff note: the member it handed the conversation to, or null for the team. */
   handoff: { operatorId: string | null } | null;
   /** The members a note mentions. Empty for any other message. */
   mentions: string[];
   createdAt: string;
 }
+
+/**
+ * A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft.
+ * `email`: the visitor replied to an email, from an address other than theirs with
+ * `fromOtherAddress`.
+ */
+export type MessageVia =
+  | { via: "api" | "mcp" | "draft" | null }
+  | { via: "email"; fromOtherAddress: boolean };
+
+/** Only the `via` fields of a message, to copy them onto a line. */
+export const viaOf = (message: MessageVia): MessageVia =>
+  message.via === "email"
+    ? { via: "email", fromOtherAddress: message.fromOtherAddress }
+    : { via: message.via };
+
+export type Message = MessageFields & MessageVia;
 
 /** Which first steps are done, for the signed-in member. */
 export interface GetStarted {

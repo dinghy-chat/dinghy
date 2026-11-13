@@ -192,6 +192,13 @@ export interface Images {
     clientAddress: string,
     filename: string | null,
   ): Promise<{ result: T } | { refused: Refusal }>;
+  /** As `receive`, for bytes already in memory, such as an email's attachment. */
+  receiveBytes<T extends { created: boolean }>(
+    bytes: Uint8Array,
+    workspaceId: string,
+    commit: (upload: NewAttachment) => Promise<T>,
+    filename: string | null,
+  ): Promise<{ result: T } | { refused: Refusal }>;
   url(workspaceId: string, attachmentId: string): string;
   verify(workspaceId: string, attachmentId: string, expires: string, signature: string): boolean;
   store: ObjectStore;
@@ -253,9 +260,47 @@ export function createImages({
     return typeof processed === "string" ? processed : { kind: "image", ...processed };
   };
 
+  /** Checks and stores the bytes, then hands them to `commit`, as `receive` says. */
+  const keep = async <T extends { created: boolean }>(
+    bytes: Uint8Array,
+    workspaceId: string,
+    commit: (upload: NewAttachment) => Promise<T>,
+    filename: string | null,
+  ): Promise<{ result: T } | { refused: Refusal }> => {
+    const checked = await check(bytes, filename);
+    if (typeof checked === "string") return { refused: checked };
+
+    const { data, ...upload } = checked;
+    const attachmentId = randomUUID();
+    const storageKey = `${workspaceId}/${attachmentId}`;
+    await store.put(storageKey, data, upload.contentType);
+    const discard = () => store.delete(storageKey).catch(() => undefined);
+    const result = await commit({
+      ...upload,
+      attachmentId,
+      storageKey,
+      byteSize: data.byteLength,
+    }).catch(async (error: unknown) => {
+      // A failed commit frees the object, or one stored as its workspace was purged would stay
+      // in the store for good. A lost connection is the exception: the commit may have
+      // landed, and a retry then returns that message, so its object must stay.
+      if (!lostConnection(error)) await discard();
+      // Over the plan's storage, found under the workspace lock: a refusal like the others.
+      if (error instanceof StorageFullError) return null;
+      throw error;
+    });
+    if (result === null) return { refused: "storage_full" };
+    if (!result.created) await discard();
+    return { result };
+  };
+
   return {
     store,
     origin: filesOrigin,
+    receiveBytes(bytes, workspaceId, commit, filename) {
+      if (bytes.byteLength > MAX_FILE_BYTES) return Promise.resolve({ refused: "too_large" });
+      return keep(bytes, workspaceId, commit, filename);
+    },
     async receive(request, workspaceId, commit, clientAddress, filename) {
       // Per address, because a few slow uploads could otherwise fill the budget that every
       // workspace on this server shares.
@@ -275,31 +320,7 @@ export function createImages({
       try {
         const bytes = await readBody(request, budget, readIdleMs);
         if (typeof bytes === "string") return { refused: bytes };
-        const checked = await check(bytes, filename);
-        if (typeof checked === "string") return { refused: checked };
-
-        const { data, ...upload } = checked;
-        const attachmentId = randomUUID();
-        const storageKey = `${workspaceId}/${attachmentId}`;
-        await store.put(storageKey, data, upload.contentType);
-        const discard = () => store.delete(storageKey).catch(() => undefined);
-        const result = await commit({
-          ...upload,
-          attachmentId,
-          storageKey,
-          byteSize: data.byteLength,
-        }).catch(async (error: unknown) => {
-          // A failed commit frees the object, or one stored as its workspace was purged would stay
-          // in the store for good. A lost connection is the exception: the commit may have
-          // landed, and a retry then returns that message, so its object must stay.
-          if (!lostConnection(error)) await discard();
-          // Over the plan's storage, found under the workspace lock: a refusal like the others.
-          if (error instanceof StorageFullError) return null;
-          throw error;
-        });
-        if (result === null) return { refused: "storage_full" };
-        if (!result.created) await discard();
-        return { result };
+        return await keep(bytes, workspaceId, commit, filename);
       } finally {
         const uploads = (uploadsByAddress.get(clientAddress) ?? 1) - 1;
         if (uploads > 0) uploadsByAddress.set(clientAddress, uploads);

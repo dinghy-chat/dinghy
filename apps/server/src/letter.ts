@@ -109,9 +109,11 @@ const actionHtml = ({ label, url }: { label: string; url: string }) =>
 
 /**
  * The HTML version of an email that a workspace sends: its logo and name, the content, a button,
- * and small print under a line. `html` and `footer` are HTML that their maker escaped.
+ * and small print under a line. `above`, `html` and `footer` are HTML that their maker escaped.
  */
 export function letterHtml(page: {
+  /** A quiet first line, above the logo, so a reply quotes it before anything else. */
+  above?: string;
   team: string;
   logoUrl: string | null;
   html: string;
@@ -126,6 +128,11 @@ export function letterHtml(page: {
     .map((paragraph) => `<p style="margin:0 0 8px">${paragraph}</p>`)
     .join("");
   const rows = [
+    ...(page.above === undefined
+      ? []
+      : [
+          `<td style="padding-bottom:16px;font-size:12px;color:${EMAIL_COLORS.muted}">${page.above}</td>`,
+        ]),
     `<td style="padding-bottom:24px">${header}</td>`,
     `<td>${page.html}</td>`,
     `<td style="padding:24px 0 28px">${actionHtml(page.action)}</td>`,

@@ -179,6 +179,11 @@ export function ThreadLine({
         </div>
       )}
       {receipt !== null && <ReceiptLine receipt={receipt} />}
+      {line.via === "email" && (
+        <div className="meta visitor">
+          {t(line.fromOtherAddress ? "repliedByEmailOtherAddress" : "repliedByEmail")}
+        </div>
+      )}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}
       {line.status === "failed" && (
         <button type="button" className="retry" onClick={onRetry}>

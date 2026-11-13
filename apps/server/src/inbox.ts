@@ -150,6 +150,14 @@ const REPLY_TO = z.uuid().optional().openapi({
     "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message. A reply cannot quote a note, and a note can quote any of them.",
 });
 
+// A key's reply: sent through the REST API or through MCP. `draft`: an operator sent a key's draft,
+// and is its author. Null for anyone else's. `email`: the visitor replied to an email, from their
+// own address or, with `fromOtherAddress`, another one, such as a forwarding one.
+const MessageVia = z.discriminatedUnion("via", [
+  z.object({ via: z.enum(CHANNELS).exclude(["email"]).nullable() }),
+  z.object({ via: z.literal("email"), fromOtherAddress: z.boolean() }),
+]);
+
 export const InboxMessage = z
   .object({
     id: z.string(),
@@ -182,9 +190,6 @@ export const InboxMessage = z
     deleted: z.boolean(),
     // When the visitor first read this reply in the chat, when known.
     readAt: z.string().nullable(),
-    // A key's reply: sent through the REST API or through MCP. `draft`: an operator sent a key's
-    // draft, and is its author. Null for anyone else's.
-    via: z.enum(CHANNELS).nullable(),
     // A bot's handoff note: the member it handed the conversation to, or null for the whole team.
     // Null for any other message.
     handoff: z.object({ operatorId: z.string().nullable() }).nullable(),
@@ -192,6 +197,7 @@ export const InboxMessage = z
     mentions: z.array(z.string()),
     createdAt: z.string(),
   })
+  .and(MessageVia)
   .openapi("InboxMessage", {
     example: {
       id: "1e4b9c7d-3a52-4f80-8b6e-0c2d9f1a7e35",

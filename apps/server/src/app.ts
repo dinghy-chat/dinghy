@@ -30,6 +30,7 @@ import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { registerGetStartedRoutes } from "./get-started.ts";
 import { registerHandlingRoutes } from "./handling.ts";
 import { type Images, registerImageFiles } from "./images.ts";
+import { type InboundEmail, registerInboundEmail } from "./inbound-email.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { registerKeyEvents } from "./key-events.ts";
 import { registerLabelRoutes } from "./labels.ts";
@@ -98,6 +99,8 @@ export interface AppOptions {
   logger: Logger;
   metricsToken?: string | undefined;
   images?: Images | undefined;
+  /** Visitors' replies by email. Without it, the route is off. */
+  inboundEmail?: InboundEmail | undefined;
   stream?: StreamOptions;
   valkey?: Redis | null;
   /** How many proxies in front of the server may add to X-Forwarded-For. */
@@ -224,6 +227,7 @@ export function createApp({
   mailer,
   db,
   images,
+  inboundEmail,
   live = noLive,
   logger,
   metricsToken,
@@ -403,6 +407,9 @@ export function createApp({
   registerWidgetPresence(app, db, presence, alerts?.emailAvailable ?? false);
   if (ownOrigin !== undefined) {
     registerChatPage(app, { db, rateLimit, imagesOrigin: images?.origin });
+  }
+  if (inboundEmail !== undefined) {
+    registerInboundEmail(app, { db, inbound: inboundEmail, images, limits, live, rateLimit });
   }
   if (auth !== undefined) {
     registerOperatorRoutes(app, {
@@ -660,6 +667,7 @@ export async function openApiDocument(): Promise<unknown> {
     }),
     checks: { postgres: unused, valkey: unused },
     db,
+    inboundEmail: { domain: "reply.example.com", secret: "unused-while-building-the-document" },
     logger: pino({ level: "silent" }),
   });
   const response = await app.request("/v1/openapi.json");

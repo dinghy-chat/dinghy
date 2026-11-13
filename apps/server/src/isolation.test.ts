@@ -47,10 +47,12 @@ import {
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { visitorAuthorId } from "./identity.ts";
 import { createImages } from "./images.ts";
+import { createReplyAddress } from "./inbound-email.ts";
 import { appendMessage } from "./messages.ts";
 import { createPush } from "./push.ts";
 import { localStore } from "./storage.ts";
 import { emailStopUrl } from "./visitor-email.ts";
+import { signature } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -59,6 +61,10 @@ const SITE_B = "https://b.example.com";
 const GOOD_P256DH =
   "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8";
 const GOOD_AUTH = "tBHItJI5svbpez7KI4CCXg";
+const INBOUND = {
+  domain: "reply.example.com",
+  secret: "an-inbound-secret-of-at-least-32-characters",
+};
 const logger = pino({ level: "silent" });
 const pushKeys = { ...generateVAPIDKeys(), subject: "mailto:hello@dinghy.chat" };
 
@@ -424,6 +430,25 @@ const ATTACKS: Record<string, Attack> = {
     expect(
       (await owner.select().from(emailStop).where(eq(emailStop.workspaceId, b.id))).length,
     ).toBe(0);
+  },
+
+  "POST /v1/inbound-email": async ({ server, a, b, other }) => {
+    // The other workspace's reply address under this workspace's ID finds nothing.
+    const address = await owner.transaction((tx) =>
+      createReplyAddress(tx, b.id, other.id, other.conversationId, INBOUND.domain),
+    );
+    const moved = address.replace(b.id.replaceAll("-", ""), a.id.replaceAll("-", ""));
+    const raw = `From: x@example.com\r\nTo: ${moved}\r\nSubject: Re\r\n\r\nCrossed over`;
+    const answer = await server.request("/v1/inbound-email", {
+      method: "POST",
+      headers: {
+        "content-length": String(Buffer.byteLength(raw)),
+        "dinghy-inbound-signature": signature(INBOUND.secret, Math.floor(Date.now() / 1000), raw),
+      },
+      body: raw,
+    });
+    expect(answer.status).toBe(404);
+    expect(await owner.select().from(message).where(eq(message.body, "Crossed over"))).toEqual([]);
   },
 
   // ---- An operator of workspace A against workspace B.
@@ -2137,6 +2162,7 @@ async function buildWorld(db: Database): Promise<World> {
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
     }),
+    inboundEmail: INBOUND,
     logger,
     valkey,
     checks: { postgres: async () => {}, valkey: async () => {} },
@@ -2501,6 +2527,7 @@ describe("the list of routes", () => {
         secret: AUTH_SECRET,
         publicUrl: PUBLIC_URL,
       }),
+      inboundEmail: INBOUND,
       logger,
       checks: { postgres: async () => {}, valkey: async () => {} },
     });

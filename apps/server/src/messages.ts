@@ -69,7 +69,8 @@ export type StatusActor =
   | { kind: "visitor"; visitorId: string };
 
 export type Author =
-  | { kind: "visitor"; visitorId: string }
+  /** A visitor's message goes to `conversationId` when set, as a reply by email does. */
+  | { kind: "visitor"; visitorId: string; conversationId?: string }
   | { kind: "operator"; operatorId: string; conversationId: string }
   | { kind: "key"; apiKeyId: string; conversationId: string };
 
@@ -154,19 +155,25 @@ export const visitorQuote = (row: QuoteRow | null) =>
   );
 
 /**
- * How a reply came: a key's through the REST API or the MCP server, or an operator's that sent a
- * key's draft.
+ * How a message came: a key's through the REST API or the MCP server, an operator's that sent a
+ * key's draft, or a visitor's reply by email.
  */
-export const CHANNELS = ["api", "mcp", "draft"] as const;
+export const CHANNELS = ["api", "mcp", "draft", "email"] as const;
 type Channel = (typeof CHANNELS)[number];
 
-/** A write that did not come the default way: a key's through MCP, or an operator's that sent a draft. */
-export type MessageSource = { via: "mcp" } | { via: "draft"; draftId: string };
+/**
+ * A write that did not come the default way: a key's through MCP, an operator's that sent a draft,
+ * or a visitor's reply by email, which may come from an address other than the visitor's email.
+ */
+export type MessageSource =
+  | { via: "mcp" }
+  | { via: "draft"; draftId: string }
+  | { via: "email"; fromOtherAddress: boolean };
 
 /** How a key's write came, when not through the REST API. */
 export type KeySource = Extract<MessageSource, { via: "mcp" }>;
 
-export interface StoredMessage {
+interface StoredFields {
   id: string;
   conversationId: string;
   seq: bigint;
@@ -192,11 +199,6 @@ export interface StoredMessage {
   deleted: boolean;
   /** When the visitor's read position first passed this reply, when known. */
   readAt: Date | null;
-  /**
-   * A key's reply: through the API or MCP. `draft`: an operator sent a key's draft. Null for anyone
-   * else's message.
-   */
-  via: Channel | null;
   /** A bot's handoff note: who it handed the conversation to, with null for the team. */
   handoff: { operatorId: string | null } | null;
   /** The members a note mentions. Empty for any other message. */
@@ -205,6 +207,17 @@ export interface StoredMessage {
   changeSeq: bigint;
   createdAt: Date;
 }
+
+/**
+ * A key's reply: through the API or MCP. `draft`: an operator sent a key's draft. Null for anyone
+ * else's message. `email`: a visitor's reply by email, which may come from an address other than
+ * the visitor's email.
+ */
+type MessageVia =
+  | { via: Exclude<Channel, "email"> | null; fromOtherAddress?: never }
+  | { via: "email"; fromOtherAddress: boolean };
+
+export type StoredMessage = StoredFields & MessageVia;
 
 /** A message the visitor may get: any kind but a note. */
 export type VisitorMessage = StoredMessage & { kind: (typeof VISITOR_KINDS)[number] };
@@ -258,12 +271,22 @@ interface MessageMetadata {
   imageRemoved?: boolean;
   file?: StoredMessage["file"];
   fileRemoved?: boolean;
-  /** Set on a key's reply that came through MCP, and on an operator's that sent a draft. */
-  via?: "mcp" | "draft";
+  /** Set on a key's reply that came through MCP, an operator's that sent a draft, and an email. */
+  via?: Exclude<Channel, "api">;
+  /** Set on a reply by email from an address other than the visitor's email. */
+  fromOtherAddress?: true;
   /** Set on a bot's handoff note: who it handed the conversation to, or null for the team. */
   handoff?: { operatorId: string | null };
   /** Set on a note that mentions members. */
   mentions?: string[];
+}
+
+/** A key's message without a `via` came through the REST API, which writes none. */
+function viaOf(meta: MessageMetadata | null, authorApiKeyId: string | null): MessageVia {
+  if (meta?.via === "email")
+    return { via: "email", fromOtherAddress: meta.fromOtherAddress === true };
+  if (meta?.via === "draft") return { via: "draft" };
+  return { via: authorApiKeyId === null ? null : (meta?.via ?? "api") };
 }
 
 export function stored({
@@ -282,8 +305,7 @@ export function stored({
     fileRemoved: meta?.fileRemoved === true,
     fromVisitor: authorVisitorId !== null,
     deleted: deletedAt !== null,
-    via:
-      meta?.via === "draft" ? "draft" : row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
+    ...viaOf(meta, row.authorApiKeyId),
     handoff: meta?.handoff ?? null,
     mentions: meta?.mentions ?? [],
     changeSeq: changedSeq ?? row.seq,
@@ -320,18 +342,25 @@ async function dropDepartedAssignee(tx: Transaction, workspaceId: string, conver
 /**
  * The conversation a visitor's message goes to: their open one, else their newest closed one,
  * reopened with its assignee, else a new one. No time limit applies, so a visitor keeps one thread.
- * The workspace lock makes this safe to race.
+ * A message for one conversation goes there, reopened if closed, and never to another. The
+ * workspace lock makes this safe to race.
  */
 async function visitorConversation(
   tx: Transaction,
   workspaceId: string,
-  visitorId: string,
+  { visitorId, conversationId }: Extract<Author, { kind: "visitor" }>,
   startedPage: string | null,
 ): Promise<{ id: string; started: "created" | "reopened" | null }> {
   const [newest] = await tx
     .select({ id: conversation.id, status: conversation.status })
     .from(conversation)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, visitorId)))
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        eq(conversation.visitorId, visitorId),
+        conversationId === undefined ? undefined : eq(conversation.id, conversationId),
+      ),
+    )
     .orderBy(sql`${conversation.status} = 'open' desc`, desc(conversation.createdAt))
     .limit(1);
   if (newest?.status === "open") return { id: newest.id, started: null };
@@ -340,6 +369,7 @@ async function visitorConversation(
     await dropDepartedAssignee(tx, workspaceId, newest.id);
     return { id: newest.id, started: "reopened" };
   }
+  if (conversationId !== undefined) throw new Error("The visitor's conversation is gone");
   const [created] = await tx
     .insert(conversation)
     .values({ workspaceId, visitorId, startedPage })
@@ -581,7 +611,7 @@ export async function appendMessage(
 
   const target =
     author.kind === "visitor"
-      ? await visitorConversation(tx, workspaceId, author.visitorId, input.page ?? null)
+      ? await visitorConversation(tx, workspaceId, author, input.page ?? null)
       : { id: author.conversationId, started: null };
   const conversationId = target.id;
   const created = target.started === "created";
@@ -601,6 +631,8 @@ export async function appendMessage(
   const metadata: MessageMetadata = {
     ...(upload !== undefined && attachmentMetadata(upload)),
     ...(input.source !== undefined && { via: input.source.via }),
+    ...(input.source?.via === "email" &&
+      input.source.fromOtherAddress && { fromOtherAddress: true }),
     ...(input.handoffTo !== undefined && { handoff: { operatorId: input.handoffTo } }),
     ...(mentions.length > 0 && { mentions }),
   };

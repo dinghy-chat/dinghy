@@ -71,6 +71,7 @@
                   "label_name_taken",
                   "last_owner",
                   "last_workspace",
+                  "length_required",
                   "link_invalid",
                   "mail_failed",
                   "message_seen",
@@ -1050,109 +1051,135 @@
         "required": ["until"]
       },
       "InboxMessage": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "conversationId": {
-            "type": "string"
-          },
-          "seq": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "enum": ["text", "image", "closed", "reopened", "file", "note"]
-          },
-          "fromVisitor": {
-            "type": "boolean"
-          },
-          "authorOperatorId": {
-            "type": ["string", "null"]
-          },
-          "authorApiKeyId": {
-            "type": ["string", "null"]
-          },
-          "authorName": {
-            "type": ["string", "null"]
-          },
-          "clientId": {
-            "type": "string"
-          },
-          "body": {
-            "type": ["string", "null"]
-          },
-          "image": {
-            "$ref": "#/components/schemas/Image"
-          },
-          "imageRemoved": {
-            "type": "boolean"
-          },
-          "file": {
-            "$ref": "#/components/schemas/File"
-          },
-          "fileRemoved": {
-            "type": "boolean"
-          },
-          "replyTo": {
-            "$ref": "#/components/schemas/Quote"
-          },
-          "editedAt": {
-            "type": ["string", "null"]
-          },
-          "deleted": {
-            "type": "boolean"
-          },
-          "readAt": {
-            "type": ["string", "null"]
-          },
-          "via": {
-            "type": ["string", "null"],
-            "enum": ["api", "mcp", "draft", null]
-          },
-          "handoff": {
-            "type": ["object", "null"],
+        "allOf": [
+          {
+            "type": "object",
             "properties": {
-              "operatorId": {
+              "id": {
+                "type": "string"
+              },
+              "conversationId": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["text", "image", "closed", "reopened", "file", "note"]
+              },
+              "fromVisitor": {
+                "type": "boolean"
+              },
+              "authorOperatorId": {
                 "type": ["string", "null"]
+              },
+              "authorApiKeyId": {
+                "type": ["string", "null"]
+              },
+              "authorName": {
+                "type": ["string", "null"]
+              },
+              "clientId": {
+                "type": "string"
+              },
+              "body": {
+                "type": ["string", "null"]
+              },
+              "image": {
+                "$ref": "#/components/schemas/Image"
+              },
+              "imageRemoved": {
+                "type": "boolean"
+              },
+              "file": {
+                "$ref": "#/components/schemas/File"
+              },
+              "fileRemoved": {
+                "type": "boolean"
+              },
+              "replyTo": {
+                "$ref": "#/components/schemas/Quote"
+              },
+              "editedAt": {
+                "type": ["string", "null"]
+              },
+              "deleted": {
+                "type": "boolean"
+              },
+              "readAt": {
+                "type": ["string", "null"]
+              },
+              "handoff": {
+                "type": ["object", "null"],
+                "properties": {
+                  "operatorId": {
+                    "type": ["string", "null"]
+                  }
+                },
+                "required": ["operatorId"]
+              },
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "createdAt": {
+                "type": "string"
               }
             },
-            "required": ["operatorId"]
+            "required": [
+              "id",
+              "conversationId",
+              "seq",
+              "kind",
+              "fromVisitor",
+              "authorOperatorId",
+              "authorApiKeyId",
+              "authorName",
+              "clientId",
+              "body",
+              "image",
+              "imageRemoved",
+              "file",
+              "fileRemoved",
+              "replyTo",
+              "editedAt",
+              "deleted",
+              "readAt",
+              "handoff",
+              "mentions",
+              "createdAt"
+            ]
           },
-          "mentions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "createdAt": {
-            "type": "string"
+          {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "via": {
+                    "type": ["string", "null"],
+                    "enum": ["api", "mcp", "draft", null]
+                  }
+                },
+                "required": ["via"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "via": {
+                    "type": "string",
+                    "enum": ["email"]
+                  },
+                  "fromOtherAddress": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["via", "fromOtherAddress"]
+              }
+            ]
           }
-        },
-        "required": [
-          "id",
-          "conversationId",
-          "seq",
-          "kind",
-          "fromVisitor",
-          "authorOperatorId",
-          "authorApiKeyId",
-          "authorName",
-          "clientId",
-          "body",
-          "image",
-          "imageRemoved",
-          "file",
-          "fileRemoved",
-          "replyTo",
-          "editedAt",
-          "deleted",
-          "readAt",
-          "via",
-          "handoff",
-          "mentions",
-          "createdAt"
         ],
         "example": {
           "id": "1e4b9c7d-3a52-4f80-8b6e-0c2d9f1a7e35",
@@ -4434,6 +4461,121 @@
           },
           "429": {
             "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/inbound-email": {
+      "post": {
+        "summary": "Receive a visitor's reply by email, as raw MIME",
+        "description": "For the mail forwarder, and only on a server with `INBOUND_EMAIL_DOMAIN` and `INBOUND_EMAIL_SECRET` set. The body is the email as it arrived, up to 25 MB, with a `Content-Length`. `Dinghy-Inbound-Signature` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<body>\" under INBOUND_EMAIL_SECRET>`, and the time must be within 5 minutes. The email goes to the conversation of its `reply+…` recipient as the visitor's messages, with `via: \"email\"`. Sending it again adds nothing. Answers from robots, such as out-of-office replies, are dropped with a 200.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "message/rfc822": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Taken, or dropped as an automatic answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "bad_signature: the signature is missing, more than 5 minutes old, or wrong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: no current reply address among the recipients",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "411": {
+            "description": "length_required: the request has no Content-Length",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the email is over 25 MB, or its text is over 100,000 characters (10 messages)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over 20 emails to this address in an hour",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: 4 emails are being received, or the image queue is full",
             "content": {
               "application/json": {
                 "schema": {

@@ -22,6 +22,7 @@ import {
   label,
   message,
   pageView,
+  replyAddress,
   savedReply,
   subscription,
   visitor,
@@ -239,6 +240,13 @@ describe("the owner's delete", () => {
     await owner
       .insert(savedReply)
       .values({ workspaceId: created.id, shortcut: "hello", body: "Hello" });
+    // A reply address, which goes with its conversation by its foreign key.
+    await owner.insert(replyAddress).values({
+      workspaceId: created.id,
+      tokenHash: "home-reply",
+      visitorId: seen?.id ?? "",
+      conversationId: talk?.id ?? "",
+    });
     await owner.insert(businessHours).values({
       workspaceId: created.id,
       enabled: true,
