@@ -41,6 +41,8 @@ const BY_CODE: Record<string, TextId> = {
   invalid_client: "consentInvalidClient",
   invalid_redirect_uri: "consentInvalidRedirect",
   grant_limit: "grantLimit",
+  shortcut_taken: "shortcutTaken",
+  saved_reply_limit: "savedReplyLimit",
 };
 
 /**

@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
+import { MENTIONS_MAX, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 
 // The input schemas and words that routes and MCP tools share. This module imports no route or tool
 // module, so each of them can use these values when it loads.
@@ -20,7 +20,7 @@ export const boundedText = (max: number) =>
 export const Body = boundedText(MESSAGE_MAX);
 
 /** The members a note mentions, by their IDs. Each gets an alert with the note's text. */
-export const Mentions = z.array(z.uuid()).max(10);
+export const Mentions = z.array(z.uuid()).max(MENTIONS_MAX);
 
 /** Why a bot hands a conversation to people, and what it found, as the handoff's note holds them. */
 export const HandoffReason = boundedText(500);

@@ -123,13 +123,17 @@ export function useMessageActions({
   const [info, setInfo] = useState<Line | null>(null);
   const [deleting, setDeleting] = useState<Line | null>(null);
 
-  /** Saves an edit. The editor and its text stay until it is saved, and a failure shows in it. */
-  const saveEdit = async (id: string, body: string) => {
+  /**
+   * Saves an edit, with the members a note mentions now. The editor and its text stay until it is
+   * saved, and a failure shows in it.
+   */
+  const saveEdit = async (id: string, body: string, mentions: string[]) => {
     const report = (problem: TextId) =>
       setEditing((current) => (current?.id === id ? { ...current, problem } : current));
-    const saved = await act(async () => keep(await api.editMessage(conversationId, id, body)), {
-      report,
-    });
+    const saved = await act(
+      async () => keep(await api.editMessage(conversationId, id, body, mentions)),
+      { report },
+    );
     if (saved) setEditing((current) => editorAfterSave(current, id, body));
   };
 

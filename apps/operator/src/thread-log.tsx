@@ -1,11 +1,12 @@
 /** @jsxImportSource react */
 import { Fragment, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
-import type { Conversation, Member, ReplyReceipts } from "./api.ts";
+import type { Conversation, Member, ReplyReceipts, SavedReply } from "./api.ts";
 import { Composer } from "./composer.tsx";
 import { HandoffNote } from "./handoff-note.tsx";
 import { Icon } from "./icons.tsx";
 import { MessageMenu, QuoteBlock } from "./message.tsx";
 import { lineMenu, type MessageActions, type Rights } from "./message-actions.tsx";
+import { composerPicks, mentionsIn } from "./picker.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { t } from "./text.ts";
 import {
@@ -156,6 +157,7 @@ function useLogScroll(lines: Line[], bottom: (string | number | boolean)[]) {
 export function ThreadLog({
   conversation,
   members,
+  savedReplies,
   lines,
   receipts,
   who,
@@ -169,8 +171,10 @@ export function ThreadLog({
   onRetry,
 }: {
   conversation: Conversation;
-  /** The team, to name whom a bot handed the conversation to. */
+  /** The team, to name whom a bot handed the conversation to, and to mention in a note's edit. */
   members: Member[];
+  /** What `/` inserts in an edit. */
+  savedReplies: SavedReply[];
   lines: Line[];
   receipts: ReplyReceipts | null;
   who: Rights;
@@ -242,8 +246,15 @@ export function ThreadLog({
                 editing
                 draft={editing.draft}
                 setDraft={(draft) => setEditing({ ...editing, draft })}
-                onSend={(body) => void actions.saveEdit(line.id, body)}
+                onSend={(body) =>
+                  void actions.saveEdit(
+                    line.id,
+                    body,
+                    line.kind === "note" ? mentionsIn(body, members) : [],
+                  )
+                }
                 onFiles={undefined}
+                picks={composerPicks(savedReplies, members, who.meId, line.kind === "note")}
                 onEscape={() => setEditing(null)}
                 above={<ErrorNote text={editing.problem} />}
               />

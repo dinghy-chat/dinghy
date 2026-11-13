@@ -6721,6 +6721,16 @@ button.quote:hover {
   min-height: 34px;
   font-size: 13.5px;
 }
+/* A saved reply's text in its row: two lines at most. */
+.saved-reply-line {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.saved-reply-edit > form {
+  grid-column: 1 / -1;
+}
 .hook-edit {
   display: grid;
   gap: 12px;
@@ -7062,6 +7072,20 @@ button.quote:hover {
 }
 .box {
   position: relative;
+}
+/* The saved replies or teammates that "/" or "@" offer, above the composer's text. */
+.picker {
+  width: min(360px, 100%);
+  max-width: none;
+}
+.picker .item-label small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.picker-none {
+  margin: 6px 10px;
+  color: var(--mute);
+  font-size: 13.5px;
 }
 .box > .keys {
   position: absolute;

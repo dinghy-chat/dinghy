@@ -182,6 +182,8 @@ export interface Message {
   via: "api" | "mcp" | "draft" | null;
   /** A bot's handoff note: the member it handed the conversation to, or null for the team. */
   handoff: { operatorId: string | null } | null;
+  /** The members a note mentions. Empty for any other message. */
+  mentions: string[];
   createdAt: string;
 }
 
@@ -307,6 +309,17 @@ export interface AppearanceSettings extends WidgetSettings {
 
 /** The saved appearance, as the operator app reads it. */
 export type OperatorAppearance = SavedAppearance & AppearanceSettings;
+
+export interface SavedReply {
+  id: string;
+  /** What follows `/` in the composer. */
+  shortcut: string;
+  /** Markdown, as a message's. */
+  body: string;
+  /** The member who added it, or null once they left. */
+  createdBy: string | null;
+  updatedAt: string;
+}
 
 export interface Member {
   id: string;
@@ -722,6 +735,16 @@ export function workspaceApi(workspaceId: string) {
         keepalive: true,
         body: JSON.stringify({ conversationId, signingOut }),
       }),
+    savedReplies: () => call<{ savedReplies: SavedReply[] }>(`${base}/saved-replies`),
+    addSavedReply: (reply: { shortcut: string; body: string }) =>
+      post<SavedReply>(`${base}/saved-replies`, reply),
+    changeSavedReply: (id: string, change: { shortcut: string; body: string }) =>
+      call<SavedReply>(`${base}/saved-replies/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(change),
+      }),
+    deleteSavedReply: (id: string) =>
+      call<{ ok: true }>(`${base}/saved-replies/${id}`, { method: "DELETE" }),
     alerts: () => call<AlertSettings>(`${base}/alerts`),
     setAlerts: (change: { email: boolean }) =>
       call<AlertSettings>(`${base}/alerts`, { method: "PATCH", body: JSON.stringify(change) }),
@@ -782,14 +805,22 @@ export function workspaceApi(workspaceId: string) {
         `${base}/conversations/search?q=${encodeURIComponent(query)}`,
         { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) },
       ),
-    /** A reply, or with `note` a note that only the team sees. */
+    /** A reply, or with `note` a note that only the team sees, which alerts the members it mentions. */
     reply: (
       id: string,
       clientId: string,
       body: string,
       replyToMessageId: string | undefined,
       note: boolean,
-    ) => post<Message>(`${conversation(id)}/messages`, { clientId, body, replyToMessageId, note }),
+      mentions: string[],
+    ) =>
+      post<Message>(`${conversation(id)}/messages`, {
+        clientId,
+        body,
+        replyToMessageId,
+        note,
+        mentions,
+      }),
     replyImage: async (id: string, clientId: string, file: File, replyToMessageId?: string) => {
       const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
       const response = await fetch(`${conversation(id)}/images?clientId=${clientId}${quote}`, {
@@ -802,10 +833,11 @@ export function workspaceApi(workspaceId: string) {
       if (!response.ok) return failed(response);
       return (await response.json()) as Message;
     },
-    editMessage: (id: string, messageId: string, body: string) =>
+    /** A note's mentions change with its text. A reply has none. */
+    editMessage: (id: string, messageId: string, body: string, mentions: string[]) =>
       call<Message>(`${conversation(id)}/messages/${messageId}`, {
         method: "PATCH",
-        body: JSON.stringify({ body }),
+        body: JSON.stringify({ body, mentions }),
       }),
     deleteMessage: (id: string, messageId: string) =>
       call<{ ok: true }>(`${conversation(id)}/messages/${messageId}`, { method: "DELETE" }),

@@ -12,11 +12,12 @@ const PAGES = [
   { name: "Notifications", path: "notifications", heading: "Notifications" },
   { name: "Workspace", path: "workspace", heading: "Workspace" },
   { name: "Team", path: "team", heading: "Team" },
+  { name: "Saved replies", path: "saved-replies", heading: "Saved replies" },
   { name: "Appearance", path: "appearance", heading: "Appearance" },
   { name: "Install", path: "install", heading: "Install" },
   { name: "API & webhooks", path: "developers", heading: "API & webhooks" },
 ];
-const MEMBER_PAGES = ["Profile", "Notifications", "Team", "Appearance"];
+const MEMBER_PAGES = ["Profile", "Notifications", "Team", "Saved replies", "Appearance"];
 
 test.beforeAll(async () => {
   server = await startE2EServer({});
