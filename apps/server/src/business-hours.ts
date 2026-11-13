@@ -133,13 +133,6 @@ export async function saveBusinessHours(
  * appearance's cache ends. A save records `workspace.changed`, so open operator apps read them again.
  */
 export function registerBusinessHoursRoutes(app: App, db: Database, live: Live): void {
-  app.use(putRoute.getRoutingPath(), async (c, next) => {
-    if (c.req.method === "PUT" && !maySetUp(c.get("actor"), c.get("memberRole"))) {
-      return c.json(FORBIDDEN, 403);
-    }
-    await next();
-  });
-
   app.openapi(getRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const saved = await withWorkspace(db, id, (tx) => readBusinessHours(tx, id));
@@ -147,6 +140,7 @@ export function registerBusinessHoursRoutes(app: App, db: Database, live: Live):
   });
 
   app.openapi(putRoute, async (c) => {
+    if (!maySetUp(c.get("actor"), c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const hours = c.req.valid("json");
     await changeWorkspace(db, live, id, async (tx) => {
