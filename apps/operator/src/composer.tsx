@@ -10,7 +10,7 @@ import {
   useEditorState,
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { acceptedFiles } from "../../../packages/widget/src/compose.ts";
 import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
@@ -290,9 +290,6 @@ export function Composer({
   picks: PickerSources;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
-  // A phone keeps attach, emoji and the formats behind one toggle, so the field gets the row.
-  const [showsTools, setShowsTools] = useState(false);
-  const toolsId = useId();
   // The address being typed for a link, or null while the link field is closed.
   const [typedLink, setTypedLink] = useState<string | null>(null);
   const isNote = mode?.value === "note";
@@ -362,7 +359,6 @@ export function Composer({
         "compose",
         editing && "editing",
         isNote && "note",
-        showsTools && "tools-open",
         typedLink !== null && "linking",
       ]
         .filter(Boolean)
@@ -424,18 +420,7 @@ export function Composer({
           </div>
         )}
         <div className="compose-tools">
-          <button
-            type="button"
-            className="icon-button tools-toggle"
-            aria-label={t("moreTools")}
-            title={t("moreTools")}
-            aria-pressed={showsTools}
-            aria-controls={toolsId}
-            onClick={() => setShowsTools((shows) => !shows)}
-          >
-            <Icon name="plus" size={18} />
-          </button>
-          <div id={toolsId} className="more-tools">
+          <div className="more-tools">
             {onFiles !== undefined && (
               <>
                 <input

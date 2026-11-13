@@ -3215,8 +3215,7 @@ button.quote:hover {
   color: var(--mute);
   pointer-events: none;
 }
-.format-tools .icon-button[aria-pressed="true"],
-.box .tools-toggle[aria-pressed="true"] {
+.format-tools .icon-button[aria-pressed="true"] {
   background: var(--soft);
   color: var(--navy);
 }
@@ -3248,10 +3247,6 @@ button.quote:hover {
   align-items: center;
   gap: 2px;
   min-width: 0;
-}
-/* The + toggle shows only on a phone, where attach, emoji and the formats wait behind it. */
-.tools-toggle {
-  display: none;
 }
 .more-tools {
   display: flex;
@@ -5708,10 +5703,6 @@ button.quote:hover {
     min-height: 40px;
     max-height: 160px;
   }
-  .tools-toggle {
-    display: grid;
-  }
-  .compose:not(.tools-open) .more-tools,
   .compose.linking .more-tools {
     display: none;
   }
@@ -5720,9 +5711,9 @@ button.quote:hover {
     overflow-x: auto;
     scrollbar-width: none;
   }
-  /* One row: +, the field and send. Attach, emoji and the formats show above the field. */
+  /* The field and send share a row, so the text starts at the left. The tools sit above them. */
   .compose:not(.editing) .box {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: end;
     gap: 0;
   }
@@ -5735,15 +5726,12 @@ button.quote:hover {
   .compose:not(.editing) .compose-tools > * {
     grid-row: 3;
   }
-  .compose:not(.editing) .tools-toggle {
-    grid-column: 1;
-  }
   .compose:not(.editing) .compose-text {
     grid-row: 3;
-    grid-column: 2;
+    grid-column: 1;
   }
   .compose:not(.editing) :is(.send, .send-note) {
-    grid-column: 3;
+    grid-column: 2;
   }
   .compose:not(.editing) .more-tools {
     grid-row: 2;
