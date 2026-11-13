@@ -24,6 +24,7 @@ import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import {
   alertDelivery,
+  chatLink,
   conversation,
   emailStop,
   event,
@@ -918,7 +919,7 @@ describe("email", () => {
     expect(address?.conversationId).toBe(written.message.conversationId);
   });
 
-  test("a reply email that carries two conversations takes replies for the newest reply's", async () => {
+  test("a reply email that carries two conversations links and takes replies for the newest reply's", async () => {
     const anna = await addOperator(`anna-${randomUUID()}@example.com`);
     const from = await addVisitor("v@example.com");
     const written = await visitorWrites(from, "Help");
@@ -939,6 +940,11 @@ describe("email", () => {
       .from(replyAddress)
       .where(eq(replyAddress.visitorId, from));
     expect(addresses).toEqual([{ conversationId: second?.id }]);
+    const links = await owner
+      .select({ conversationId: chatLink.conversationId })
+      .from(chatLink)
+      .where(eq(chatLink.visitorId, from));
+    expect(links).toEqual([{ conversationId: second?.id }]);
   });
 
   test("a visitor whose chat spoke Spanish gets the reply email in Spanish", async () => {

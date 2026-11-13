@@ -742,14 +742,11 @@ async function replyEmailPlan(
   if (earliest > Date.now()) return { channel: "later", until: new Date(earliest) };
   replies.reverse();
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, target.email);
-  // A new link for each email. Older ones keep working until they expire.
-  const chatUrl = chatLinkUrl(
-    publicUrl,
-    await createChatLink(tx, workspaceId, visitorId, conversationId),
-  );
-  // The email can carry replies from several of the visitor's conversations, and its one reply
-  // address goes to the conversation of the newest.
+  // The email can carry replies from several of the visitor's conversations, and its one link and
+  // one reply address both go to the conversation of the newest.
   const newest = replies.at(-1)?.conversationId ?? conversationId;
+  // A new link for each email. Older ones keep working until they expire.
+  const chatUrl = chatLinkUrl(publicUrl, await createChatLink(tx, workspaceId, visitorId, newest));
   const replyTo =
     inboundDomain === undefined
       ? undefined

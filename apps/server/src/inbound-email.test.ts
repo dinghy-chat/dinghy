@@ -491,7 +491,7 @@ describe("attachments", () => {
     );
   });
 
-  test("a small inline image, such as a signature logo, is skipped, and a large one kept", async () => {
+  test("a small inline image, such as a signature logo, is skipped, and a large one or a file kept", async () => {
     const chat = await newChat();
     // Random pixels do not compress, so this PNG is well over 16 KB.
     const noise = Buffer.from(Array.from({ length: 96 * 96 * 3 }, () => randomInt(256)));
@@ -505,14 +505,18 @@ describe("attachments", () => {
       attachments: [
         { filename: "logo.png", type: "image/png", content: await png(), contentId: "logo" },
         { filename: "shot.png", type: "image/png", content: screenshot, contentId: "shot" },
+        // A small file in the same part is no logo, so it stays.
+        {
+          filename: "terms.pdf",
+          type: "application/pdf",
+          content: Buffer.from("%PDF-1.4"),
+          contentId: "terms",
+        },
       ],
     });
     expect((await post(raw)).status).toBe(200);
     const lines = await messagesOf(chat.conversationId);
-    expect(lines.map((line) => [line.kind, line.body])).toEqual([
-      ["image", null],
-      ["text", "See the screenshot"],
-    ]);
+    expect(lines.map((line) => line.kind)).toEqual(["image", "file", "text"]);
   });
 
   test("with no text, the note stands alone", async () => {
@@ -638,6 +642,15 @@ describe("the text", () => {
       "> Hi,",
     ].join("\n");
     expect(replyText(text)).toBe("Thanks!");
+  });
+
+  test("keeps the visitor's lines right above a quote's name, with no blank line between", () => {
+    // HTML mail has no blank line between paragraphs once it becomes text.
+    const said = "Yes, please.\nOn Monday, Acme wrote:\n> Write your reply above this line";
+    expect(replyText(said)).toBe("Yes, please.");
+    const outlook =
+      "It works.\nFrom: Acme\nSent: Monday\nSubject: Re\nWrite your reply above this line";
+    expect(replyText(outlook)).toBe("It works.");
   });
 
   test("keeps the visitor's text right above the quote when nothing names it", () => {

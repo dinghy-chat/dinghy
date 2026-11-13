@@ -93,19 +93,36 @@ const unquoted = (line: string) => line.replace(/^[>\s]+/, "").trimEnd();
 const HEADER_LINE = /^(from|sent|date|to|cc|subject|de|envoyé|à|objet|enviado|para|asunto)\s?: /iu;
 const FROM_LINE = /^(from|de)\s?: /i;
 const RULE_LINE = /^(_{5,}|-{3,}.*-{3,})$/;
-// The end of a line such as "On Monday, Acme wrote:", which may wrap onto two lines.
+// A line such as "On Monday, Acme wrote:", which may wrap onto a second line.
 const WROTE_LINE = /\b(wrote|a écrit|escribió)\s?:$/iu;
+const WROTE_START = /^(on|le|el)\b/i;
+// How many lines a wrapped "wrote:" line may take.
+const WROTE_LINES_MAX = 3;
 
-/** The block above a quote names it: a "wrote:" line, or Outlook's headers from From: on. */
-const isAttribution = (block: string[]) =>
-  WROTE_LINE.test(block.at(-1) ?? "") ||
-  (block.some((line) => FROM_LINE.test(line)) &&
-    block.every((line) => HEADER_LINE.test(line) || RULE_LINE.test(line)));
+/**
+ * Where the lines that name the quote start, just above it: a "wrote:" line, or Outlook's headers
+ * from From: on, with the rule above them. Null when the lines above are the visitor's own. HTML
+ * mail often has no blank line between the visitor's text and these lines, so only they go.
+ */
+function attributionStart(lines: string[], end: number): number | null {
+  if (WROTE_LINE.test(lines[end - 1] ?? "")) {
+    for (let at = end - 1; at >= Math.max(0, end - WROTE_LINES_MAX); at -= 1) {
+      if (WROTE_START.test(lines[at] ?? "")) return at;
+    }
+    return end - 1;
+  }
+  let from = end - 1;
+  while (from >= 0 && HEADER_LINE.test(lines[from] ?? "") && !FROM_LINE.test(lines[from] ?? "")) {
+    from -= 1;
+  }
+  if (from < 0 || !FROM_LINE.test(lines[from] ?? "")) return null;
+  return RULE_LINE.test(lines[from - 1] ?? "") ? from - 1 : from;
+}
 
 /**
  * What the visitor wrote: the text above the quote of Dinghy's email. The quote starts at the
- * marker, as a whole line once quote marks go, and the block of lines just above it goes too when
- * it names the quote. Without the marker the whole text stays. Signatures stay too, because no
+ * marker, as a whole line once quote marks go, and the lines just above it go too when they name
+ * the quote. Without the marker the whole text stays. Signatures stay too, because no
  * rule finds them without sometimes cutting what people wrote.
  */
 export function replyText(text: string): string {
@@ -115,10 +132,10 @@ export function replyText(text: string): string {
   if (marker === -1) return text.trim();
   let cut = marker;
   while (cut > 0 && lines[cut - 1]?.trim() === "") cut -= 1;
-  let block = cut;
-  while (block > 0 && lines[block - 1]?.trim() !== "") block -= 1;
-  if (block < cut && isAttribution(lines.slice(block, cut))) cut = block;
-  return original.slice(0, cut).join("\n").trim();
+  return original
+    .slice(0, attributionStart(lines, cut) ?? cut)
+    .join("\n")
+    .trim();
 }
 
 // Tags whose contents are no text, and the tags that end a line: a break and a block's end.
@@ -497,8 +514,9 @@ async function addMessages(
  * Whether an attachment is a small image inside the HTML, such as a signature logo, which
  * would otherwise come with every answer. A larger one, such as a pasted screenshot, stays.
  */
-const isSmallInlineImage = ({ related, content }: Attachment) =>
+const isSmallInlineImage = ({ related, mimeType, content }: Attachment) =>
   related === true &&
+  mimeType.startsWith("image/") &&
   (typeof content === "string" ? content.length : content.byteLength) < INLINE_IMAGE_MIN_BYTES;
 
 /**
