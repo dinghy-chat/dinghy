@@ -22,7 +22,7 @@ export function bulkToast(
   const count = (...kinds: BulkResult[]) => results.filter((one) => kinds.includes(one)).length;
   const done = count("ok");
   const unchanged = count("unchanged");
-  const skipped = count("not_found", "not_allowed");
+  const skipped = count("not_found");
   const [doneOne, doneMany] = DONE_TEXT[action];
   const sentences: TextId[] = [];
   if (done > 0) sentences.push(done === 1 ? doneOne : doneMany);
