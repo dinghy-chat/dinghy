@@ -21,7 +21,7 @@ const dinghy = init({ url: "https://chat.example.com", key: "YOUR_PUBLIC_KEY" })
 dinghy.on("unread", (count) => console.log(count));
 ```
 
-`init` adds the tag once and returns the typed `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key`, and `primary`, `accent`, `mascot`, `branding`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`.
+`init` adds the tag once and returns the typed `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key`, and `primary`, `accent`, `mascot`, `branding`, `launcher`, `position`, `offsetX`, `offsetY`, `zIndex` and `locale`.
 
 ## Attributes
 
@@ -34,6 +34,7 @@ dinghy.on("unread", (count) => console.log(count));
 | `data-position="left"`   | Puts the launcher and the chat on the left. The default is `right`.                         |
 | `data-offset-x="24"`     | Pixels from the side of the window. The default is `16`.                                    |
 | `data-offset-y="80"`     | Pixels from the bottom of the window. The default is `16`.                                  |
+| `data-locale="fr"`       | The widget's language: `en`, `fr` or `es`, over the workspace's Language setting.           |
 
 The widget ignores a value in any other format. The boat stops moving for a visitor who asks for reduced motion.
 
@@ -41,17 +42,17 @@ Set `--dinghy-font`, `--dinghy-radius` and `--dinghy-launcher-radius` on the `di
 
 ## Host page API
 
-| Call                                | What it does                                                                                                    |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `Dinghy.open({ message })`          | Opens the chat. `message` is optional and fills the message box without sending it                              |
-| `Dinghy.close()`, `Dinghy.toggle()` | Closes the chat, or opens it if it is closed                                                                    |
-| `Dinghy.show()`, `Dinghy.hide()`    | Shows or hides the launcher                                                                                     |
-| `Dinghy.identify(token)`            | Signs in a user. `token` is a string, or a function that returns a promise of one, so a tab can renew a token   |
-| `Dinghy.reset()`                    | Ends the session in all tabs. Call this at sign-out                                                             |
-| `Dinghy.setContext(data)`           | Unsigned facts for operators, such as a plan. Up to 20 keys, each a short string, a number, a boolean or `null` |
-| `Dinghy.configure(options)`         | Changes `primary`, `accent`, `position`, `offsetX`, `offsetY` and `zIndex` now                                  |
-| `Dinghy.on(event, callback)`        | Calls `callback` on each event, and returns a function that removes it                                          |
-| `Dinghy.state`                      | `{ ready, open, unread }`                                                                                       |
+| Call                                | What it does                                                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Dinghy.open({ message })`          | Opens the chat. `message` is optional and fills the message box without sending it                                 |
+| `Dinghy.close()`, `Dinghy.toggle()` | Closes the chat, or opens it if it is closed                                                                       |
+| `Dinghy.show()`, `Dinghy.hide()`    | Shows or hides the launcher                                                                                        |
+| `Dinghy.identify(token)`            | Signs in a user. `token` is a string, or a function that returns a promise of one, so a tab can renew a token      |
+| `Dinghy.reset()`                    | Ends the session in all tabs. Call this at sign-out                                                                |
+| `Dinghy.setContext(data)`           | Unsigned facts for operators, such as a plan. Up to 20 keys, each a short string, a number, a boolean or `null`    |
+| `Dinghy.configure(options)`         | Changes `primary`, `accent`, `position`, `offsetX`, `offsetY` and `zIndex` now, and `locale` before the chat opens |
+| `Dinghy.on(event, callback)`        | Calls `callback` on each event, and returns a function that removes it                                             |
+| `Dinghy.state`                      | `{ ready, open, unread }`                                                                                          |
 
 The events are `ready`, `open`, `close`, `unread` (the count, at once and on each change), `message:sent` and `message:received` (`{ body }`) and `conversation:started`.
 

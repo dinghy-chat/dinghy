@@ -15,6 +15,7 @@ import {
   apiKey,
   apiKeyCredential,
   attachment,
+  businessHours,
   conversation,
   draftReply,
   message,
@@ -236,6 +237,12 @@ describe("the owner's delete", () => {
     await owner
       .insert(savedReply)
       .values({ workspaceId: created.id, shortcut: "hello", body: "Hello" });
+    await owner.insert(businessHours).values({
+      workspaceId: created.id,
+      enabled: true,
+      timeZone: "Europe/Paris",
+      week: { mon: [["09:00", "18:00"]], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    });
     // A logo, which goes with the workspace row by its foreign key.
     await owner
       .insert(workspaceLogo)

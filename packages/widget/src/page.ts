@@ -35,8 +35,8 @@ if (script !== null && publicKey !== null && publicKey !== undefined) {
     base,
     shadow,
     appearance,
-    // This page has no tag of the host site's, so only the saved settings count.
-    attribute: () => undefined,
+    // The server writes the visitor's language on this page's tag. The host site's tag is not here.
+    attribute: (name) => script.dataset[name],
     page: true,
     identity: token,
     hostToken: null,

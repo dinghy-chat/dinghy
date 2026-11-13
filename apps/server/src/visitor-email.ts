@@ -7,34 +7,18 @@ import { escapeHtml } from "../../../packages/widget/src/markdown.ts";
 import { quoteStandIn } from "../../../packages/widget/src/quote.ts";
 import { firstName } from "../../../packages/widget/src/shared.ts";
 import type { ClaimedDelivery } from "./alerts.ts";
-import { CHAT_LINK_DAYS } from "./chat-link.ts";
 import { alertDelivery, emailStop } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
-import { EMAIL_COLORS, letterHtml } from "./letter.ts";
+import { EMAIL_COLORS, letterHtml, oneLine } from "./letter.ts";
 import type { MessageAuthor, Quote } from "./messages.ts";
 import { DAY_MS } from "./time.ts";
+import type { VisitorWords } from "./visitor-words.ts";
 
 // The emails a visitor gets in a day, reply emails and transcripts together, because anyone can
 // type someone else's address into the widget.
 export const VISITOR_EMAILS_PER_DAY = 5;
 const VISITOR_EMAILS: ClaimedDelivery["channel"][] = ["email", "transcript"];
-
-// Every string a person reads has a key, so a locale can be added later.
-export const visitorEmailText = {
-  you: "You",
-  // A team reply whose author's account or key is gone.
-  team: (name: string) => `The ${name} team`,
-  quoteDeleted: "Original message deleted",
-  quoteImage: "An image",
-  linkWarning: `The link works for ${CHAT_LINK_DAYS} days. Anyone who has it can read and reply, so don't forward this email.`,
-  gotThisBecause: (name: string) =>
-    `You got this because this address was entered in a chat with ${name}.`,
-  whyYouGotThis: (name: string, stop: string) =>
-    `${visitorEmailText.gotThisBecause(name)} If that wasn't you, ` +
-    `or you'd rather not get these emails, stop them here: ${stop}`,
-  stopThem: "Stop these emails",
-};
 
 /** The emails sent to this visitor in the last day, newest first. */
 export async function sentToday(tx: Transaction, workspaceId: string, visitorId: string) {
@@ -113,13 +97,33 @@ export function visitorAuthorName(
   },
   authors: Map<string, MessageAuthor>,
   placeName: string,
+  words: VisitorWords,
 ): string {
-  if (line.authorVisitorId !== null) return visitorEmailText.you;
+  if (line.authorVisitorId !== null) return words.you;
   // A bot's key has a name for the team, such as "Support bot". A visitor reads the workspace.
   if (line.authorApiKeyId !== null) return placeName;
   const author = authors.get(line.authorOperatorId ?? "");
-  if (author === undefined) return visitorEmailText.team(placeName);
+  if (author === undefined) return words.team(placeName);
   return author.isDeleted ? author.name : firstName(author.name);
+}
+
+/**
+ * The text of an email to a visitor: a greeting with no name, the paragraphs, why they got it with
+ * the stop link, and the workspace's sign-off.
+ */
+export function visitorLetterText(
+  placeName: string,
+  paragraphs: string[],
+  stopUrl: string,
+  words: VisitorWords,
+): string {
+  return [
+    words.hi,
+    ...paragraphs,
+    words.linkWarning,
+    `${words.gotThisBecause(placeName)} ${words.stopHere(stopUrl)}`,
+    words.signOff(oneLine(placeName) || "Dinghy"),
+  ].join("\n\n");
 }
 
 /** The layout of an email to a visitor: the workspace's header, a button to the chat, the stop link. */
@@ -127,40 +131,38 @@ export function visitorLetterHtml(
   placeName: string,
   html: string,
   links: { chatUrl: string; stopUrl: string; logoUrl: string | null; chatLabel: string },
+  words: VisitorWords,
 ): string {
-  const stop = `<a href="${escapeHtml(links.stopUrl)}" style="color:${EMAIL_COLORS.muted};text-decoration:underline">${escapeHtml(visitorEmailText.stopThem)}</a>`;
+  const stop = `<a href="${escapeHtml(links.stopUrl)}" style="color:${EMAIL_COLORS.muted};text-decoration:underline">${escapeHtml(words.stopThem)}</a>`;
   return letterHtml({
     team: placeName,
     logoUrl: links.logoUrl,
     html,
     action: { label: links.chatLabel, url: links.chatUrl },
     footer: [
-      escapeHtml(visitorEmailText.linkWarning),
-      `${escapeHtml(visitorEmailText.gotThisBecause(placeName))} ${stop}`,
+      escapeHtml(words.linkWarning),
+      `${escapeHtml(words.gotThisBecause(placeName))} ${stop}`,
     ],
   });
 }
 
 /** A quoted message's lines above a reply: who wrote it, and its text. */
-function quoteParts(quote: Quote): [string, string] {
+function quoteParts(quote: Quote, words: VisitorWords): [string, string] {
   const standIn = quoteStandIn(quote);
-  return [
-    quote.authorName ?? visitorEmailText.you,
-    standIn === null ? quote.text : visitorEmailText[standIn],
-  ];
+  return [quote.authorName ?? words.you, standIn === null ? quote.text : words[standIn]];
 }
 
 /** A reply in an email's plain text: its quote as `> ` lines, then the text. */
-export function quotedText(quote: Quote | null, body: string): string {
+export function quotedText(quote: Quote | null, body: string, words: VisitorWords): string {
   if (quote === null) return body;
-  const [who, text] = quoteParts(quote);
-  return `> ${who}:\n${text.replace(/^/gm, "> ")}\n\n${body}`;
+  const [who, text] = quoteParts(quote, words);
+  return `> ${words.lead(who)}\n${text.replace(/^/gm, "> ")}\n\n${body}`;
 }
 
 /** A reply in an email's HTML: its quote as a short block with the author's name. */
-export function quotedHtml(quote: Quote | null, html: string): string {
+export function quotedHtml(quote: Quote | null, html: string, words: VisitorWords): string {
   if (quote === null) return html;
-  const [who, text] = quoteParts(quote);
+  const [who, text] = quoteParts(quote, words);
   return (
     `<div style="margin:0 0 8px;padding:8px 12px;background:${EMAIL_COLORS.quote};border-radius:8px;color:${EMAIL_COLORS.muted};font-size:13px">` +
     `<strong>${escapeHtml(who)}</strong><br>${escapeHtml(text).replace(/\n/g, "<br>")}</div>${html}`

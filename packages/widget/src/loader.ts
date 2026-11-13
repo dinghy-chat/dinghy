@@ -96,7 +96,8 @@ if (script && publicKey) {
     base,
     shadow,
     appearance,
-    attribute,
+    // configure() writes to `own` too, so its locale reaches the chat.
+    attribute: (name) => (own as Record<string, string | undefined>)[name],
     identity: null,
     hostToken: null,
     pageContext: null,

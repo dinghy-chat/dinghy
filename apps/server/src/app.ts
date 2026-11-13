@@ -14,6 +14,7 @@ import { registerAnalyticsRoute } from "./analytics.ts";
 import { type Actor, registerApiKeyRoutes } from "./api-keys.ts";
 import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
+import { registerBusinessHoursRoutes } from "./business-hours.ts";
 import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
 import { registerContactRoutes } from "./contacts.ts";
@@ -524,6 +525,7 @@ export function createApp({
       keepsLastWorkspace: cloud === undefined,
     });
     registerWidgetSettingsRoutes(app, db, urls, live);
+    registerBusinessHoursRoutes(app, db);
     if (alerts !== undefined) {
       registerAlertRoutes(app, {
         db,

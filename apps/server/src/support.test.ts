@@ -702,6 +702,20 @@ describe("chat links", () => {
     }
   });
 
+  test("the page speaks the language of the visitor's chat, and tells the widget", async () => {
+    const { link, visitorId } = await linked();
+    // From before languages, or before a report: the widget picks from its setting.
+    const unknown = await (await open(link)).text();
+    // Its language is not known here, so the page names none.
+    expect(unknown).toContain("<html>");
+    expect(unknown).not.toContain("data-locale");
+    await owner.update(visitor).set({ locale: "fr" }).where(eq(visitor.id, visitorId));
+    const page = await (await open(link)).text();
+    expect(page).toContain('<html lang="fr">');
+    expect(page).toContain('data-locale="fr"');
+    expect(page).toContain("Ce chat a besoin de JavaScript.");
+  });
+
   test("a deleted conversation takes its links with it", async () => {
     const { link, conversationId } = await linked();
     await asOperator(inA(`/conversations/${conversationId}`), ownerCookie, { method: "DELETE" });

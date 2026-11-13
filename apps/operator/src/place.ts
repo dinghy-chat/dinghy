@@ -1,4 +1,5 @@
-// Where a visitor is, in the browser's own words: a country's flag and name, and their local time.
+// Where a visitor is, in the browser's own words: a country's flag and name, their local time, and
+// the language their chat speaks.
 
 import { clockTime } from "./format.ts";
 
@@ -19,6 +20,10 @@ export function countryName(country: string): string {
     return country;
   }
 }
+
+/** "French" for fr, in the operator's language. */
+export const languageName = (locale: string): string =>
+  new Intl.DisplayNames([], { type: "language" }).of(locale) ?? locale;
 
 /**
  * The time where the visitor is, and its offset from UTC: "7:52 PM" and "UTC+1". Null for a time

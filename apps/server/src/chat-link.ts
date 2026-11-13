@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { html, raw } from "hono/html";
+import type { Locale } from "../../../packages/widget/src/shared.ts";
 import type { App } from "./app.ts";
 import { chatLink, visitor, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace, workspaceAccess } from "./db/tenant.ts";
@@ -14,14 +15,31 @@ const PREFIX = "dcl_";
 const TOKEN = /^dcl_([0-9a-f]{32})[A-Za-z0-9_-]{43}$/;
 export const CHAT_LINK_DAYS = 30;
 
-// Every string a person reads has a key, so a locale can be added later.
-const CHAT_PAGE_TEXT = {
-  title: "Chat",
+// A link that has expired names no visitor, so its page is in English. The others follow the
+// widget's language from the visitor's last visit.
+const EXPIRED_TEXT = {
   expired: "This link has expired, or its conversation was deleted.",
   expiredHelp: "Go back to the site and open the chat to write again.",
+};
+// The same word in each language the widget speaks.
+const PAGE_TITLE = "Chat";
+const en = {
   unavailable: "This chat is not available right now.",
   blocked: "You cannot send messages in this chat.",
   noScript: "This chat needs JavaScript.",
+};
+const CHAT_PAGE_TEXT: Record<Locale, typeof en> = {
+  en,
+  fr: {
+    unavailable: "Ce chat n'est pas disponible pour le moment.",
+    blocked: "Vous ne pouvez pas envoyer de messages dans ce chat.",
+    noScript: "Ce chat a besoin de JavaScript.",
+  },
+  es: {
+    unavailable: "Este chat no está disponible en este momento.",
+    blocked: "No puedes enviar mensajes en este chat.",
+    noScript: "Este chat necesita JavaScript.",
+  },
 };
 
 export const isChatLinkToken = (token: string) => token.startsWith(PREFIX);
@@ -62,9 +80,9 @@ export async function chatLinkVisitor(
   tx: Transaction,
   workspaceId: string,
   token: string,
-): Promise<{ visitorId: string; blocked: boolean } | null> {
+): Promise<{ visitorId: string; blocked: boolean; locale: Locale | null } | null> {
   const [row] = await tx
-    .select({ visitorId: chatLink.visitorId, blockedAt: visitor.blockedAt })
+    .select({ visitorId: chatLink.visitorId, blockedAt: visitor.blockedAt, locale: visitor.locale })
     .from(chatLink)
     .innerJoin(
       visitor,
@@ -77,7 +95,8 @@ export async function chatLinkVisitor(
         gt(chatLink.expiresAt, sql`now()`),
       ),
     );
-  return row === undefined ? null : { visitorId: row.visitorId, blocked: row.blockedAt !== null };
+  if (row === undefined) return null;
+  return { visitorId: row.visitorId, blocked: row.blockedAt !== null, locale: row.locale };
 }
 
 /** Deletes expired links across workspaces, for the worker. Returns how many went. */
@@ -106,8 +125,8 @@ const LOGO =
  * A plain page that says why the chat cannot open, in the style of the email stop page, with the
  * logo and the reason as its heading. The logo holds still: the page has nothing to wait for.
  */
-const notice = (title: string, help?: string) =>
-  html`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="robots" content="noindex"><title>${CHAT_PAGE_TEXT.title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:#0b2239;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:440px;padding:28px;border-radius:14px;background:#fff;color:#0b2239}h1{margin:14px 0 0;font-size:20px;line-height:1.3;font-weight:650;text-wrap:balance}p{margin:8px 0 0;color:#5f6e80}svg{display:block}</style><main>${raw(LOGO)}<h1>${title}</h1>${help === undefined ? "" : html`<p>${help}</p>`}</main></html>`;
+const notice = (locale: Locale, title: string, help?: string) =>
+  html`<!doctype html><html lang="${locale}"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="robots" content="noindex"><title>${PAGE_TITLE}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:#0b2239;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:440px;padding:28px;border-radius:14px;background:#fff;color:#0b2239}h1{margin:14px 0 0;font-size:20px;line-height:1.3;font-weight:650;text-wrap:balance}p{margin:8px 0 0;color:#5f6e80}svg{display:block}</style><main>${raw(LOGO)}<h1>${title}</h1>${help === undefined ? "" : html`<p>${help}</p>`}</main></html>`;
 
 interface ChatPageOptions {
   db: Database;
@@ -128,10 +147,13 @@ export function registerChatPage(app: App, { db, rateLimit, imagesOrigin }: Chat
   app.get("/chat/:token", async (c) => {
     const token = c.req.param("token");
     const workspaceId = chatLinkWorkspace(token);
-    const refuse = (status: 403 | 404, title: string, help?: string) =>
-      c.html(notice(title, help), status, { ...SECURITY, "content-security-policy": NOTICE_CSP });
-    if (workspaceId === null)
-      return refuse(404, CHAT_PAGE_TEXT.expired, CHAT_PAGE_TEXT.expiredHelp);
+    const refuse = (status: 403 | 404, locale: Locale, title: string, help?: string) =>
+      c.html(notice(locale, title, help), status, {
+        ...SECURITY,
+        "content-security-policy": NOTICE_CSP,
+      });
+    const expired = () => refuse(404, "en", EXPIRED_TEXT.expired, EXPIRED_TEXT.expiredHelp);
+    if (workspaceId === null) return expired();
     const found = await withWorkspace(db, workspaceId, async (tx) => {
       const link = await chatLinkVisitor(tx, workspaceId, token);
       if (link === null) return null;
@@ -143,11 +165,17 @@ export function registerChatPage(app: App, { db, rateLimit, imagesOrigin }: Chat
         .where(eq(workspace.id, workspaceId));
       return space === undefined ? null : { ...link, ...space, access };
     });
-    if (found === null) return refuse(404, CHAT_PAGE_TEXT.expired, CHAT_PAGE_TEXT.expiredHelp);
-    if (found.access !== "active") return refuse(403, CHAT_PAGE_TEXT.unavailable);
-    if (found.blocked) return refuse(403, CHAT_PAGE_TEXT.blocked);
+    if (found === null) return expired();
+    // A visitor from before languages has none, and the page follows the widget's setting then.
+    const locale = found.locale ?? "en";
+    const words = CHAT_PAGE_TEXT[locale];
+    if (found.access !== "active") return refuse(403, locale, words.unavailable);
+    if (found.blocked) return refuse(403, locale, words.blocked);
+    // The page's language is the visitor's, or else the widget's setting, which only the widget knows.
+    const lang = found.locale === null ? "" : html` lang="${found.locale}"`;
+    const tagLocale = found.locale === null ? "" : html` data-locale="${found.locale}"`;
     return c.html(
-      html`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${found.title ?? CHAT_PAGE_TEXT.title}</title><script src="/widget/page.js" data-key="${found.publicKey}" defer></script><script src="/widget/widget.js" defer></script><noscript>${CHAT_PAGE_TEXT.noScript}</noscript></html>`,
+      html`<!doctype html><html${lang}><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${found.title ?? PAGE_TITLE}</title><script src="/widget/page.js" data-key="${found.publicKey}"${tagLocale} defer></script><script src="/widget/widget.js" defer></script><noscript>${words.noScript}</noscript></html>`,
       200,
       { ...SECURITY, "content-security-policy": chatCsp },
     );

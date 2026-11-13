@@ -114,6 +114,7 @@ export function init(options: InitOptions): DinghyApi {
     ["mascot", options.mascot === undefined ? undefined : String(options.mascot)],
     ["branding", options.branding === undefined ? undefined : String(options.branding)],
     ["launcher", options.launcher === false ? "hidden" : undefined],
+    ["locale", options.locale],
   ];
   for (const [name, value] of attributes) {
     if (value !== undefined) script.setAttribute(`data-${name}`, String(value));

@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import type { Locale } from "../../../packages/widget/src/shared.ts";
 import { conversation, pageView, visitor } from "./db/schema.ts";
 import type { Database, Transaction } from "./db/tenant.ts";
 
@@ -94,18 +95,25 @@ export async function recordPage(
 }
 
 /**
- * Replaces what the host page sent with setContext(). Like a page, it is kept only for a visitor who
- * has chatted, so a page that calls it for every visitor stores nothing. Returns false then.
+ * Replaces what the host page sent with setContext(), or the widget's language, or both. Like a
+ * page, it is kept only for a visitor who has chatted, so a page that calls it for every visitor
+ * stores nothing. Returns false then.
  */
-export async function recordPageContext(
+export async function recordVisitorContext(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
-  context: PageContext,
+  report: { context?: PageContext | undefined; locale?: Locale | undefined },
 ): Promise<boolean> {
+  const { context, locale } = report;
   const updated = await tx
     .update(visitor)
-    .set({ pageContext: Object.keys(context).length === 0 ? null : context })
+    .set({
+      ...(context !== undefined && {
+        pageContext: Object.keys(context).length === 0 ? null : context,
+      }),
+      ...(locale !== undefined && { locale }),
+    })
     .where(
       and(
         eq(visitor.workspaceId, workspaceId),

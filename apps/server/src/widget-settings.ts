@@ -13,12 +13,14 @@ import {
 import { medianFirstReplySeconds } from "./analytics.ts";
 import { SESSION, SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
+import { readBusinessHours, WidgetHoursSchema } from "./business-hours.ts";
 import {
   message,
   operator,
   widgetEmailAsk,
   widgetHeaderFaces,
   widgetHeaderStatus,
+  widgetLanguage,
   widgetLauncher,
   widgetPosition,
   widgetSettings,
@@ -92,6 +94,7 @@ export const WidgetSettingsSchema = z
     headerFaceCount: z.number().int().min(1).max(HEADER_FACES_MAX),
     headerDot: z.boolean(),
     headerStatus: z.enum(widgetHeaderStatus.enumValues),
+    language: z.enum(widgetLanguage.enumValues),
     // The operators `chosen` shows, in order. The widget gets their faces, never these IDs.
     headerMembers: z
       .array(z.uuid())
@@ -118,6 +121,8 @@ const SavedAppearanceSchema = WidgetSettingsSchema.extend({
   // repliers for `repliers`, the chosen members in order for `chosen`, none for `none`. The widget's
   // presence answer says which are online now.
   faces: z.array(TeamFaceSchema),
+  // When the team answers. Null while business hours are off.
+  hours: WidgetHoursSchema.nullable(),
 }).openapi("WidgetAppearance") satisfies z.ZodType<SavedAppearance>;
 
 /** What any site reads: the operators' IDs stay in the operator app. */
@@ -270,12 +275,14 @@ async function readAppearance(
   const team = members.filter((member) => member.lastReply !== null).slice(0, HEADER_FACES_MAX);
   const chosen = pickInOrder(headerMembers, members);
   const faces = { online: members, repliers: team, chosen, none: [] }[settings.headerFaces];
+  const hours = await readBusinessHours(tx, workspaceId);
   return {
     ...settings,
     headerMembers: chosen.map((member) => member.id),
     logoUrl: urls.logo(row.publicKey, logoUpdatedAt),
     team: team.map(toFace),
     faces: faces.map(toFace),
+    hours: hours?.enabled ? { timeZone: hours.timeZone, week: hours.week } : null,
   };
 }
 

@@ -547,6 +547,30 @@ describe("what the page sends with setContext", () => {
     expect(await contextOf(visitorId)).toBeNull();
   });
 
+  test("the widget's language is kept with it, or alone, and a report with neither is refused", async () => {
+    const { visitorId, token } = (await (await newVisitor()).json()) as {
+      visitorId: string;
+      token: string;
+    };
+    const visitorRow = async () =>
+      (
+        await withWorkspace(db, a.id, (tx) =>
+          tx.select().from(visitor).where(eq(visitor.id, visitorId)),
+        )
+      )[0];
+    await post(token, "messages", { clientId: "locale-1", body: "hola" });
+    expect((await post(token, "context", { locale: "es", context: { plan: "pro" } })).status).toBe(
+      200,
+    );
+    expect(await visitorRow()).toMatchObject({ locale: "es", pageContext: { plan: "pro" } });
+    // The language alone leaves what the page sent as it was.
+    expect((await post(token, "context", { locale: "fr" })).status).toBe(200);
+    expect(await visitorRow()).toMatchObject({ locale: "fr", pageContext: { plan: "pro" } });
+    expect((await post(token, "context", { locale: "de" })).status).toBe(400);
+    expect((await post(token, "context", {})).status).toBe(400);
+    expect((await visitorRow())?.locale).toBe("fr");
+  });
+
   test("refuses more than 20 keys, a long key or string, and anything but a flat value", async () => {
     const { token } = (await (await newVisitor()).json()) as { token: string };
     const many = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`k${index}`, index]));
@@ -579,6 +603,8 @@ describe("the widget files", () => {
   test("only the listed files are served, and a path cannot leave the directory", async () => {
     const directory = await mkdtemp(join(tmpdir(), "dinghy-files-"));
     await writeFile(join(directory, "loader.js"), "// loader");
+    await writeFile(join(directory, "fr.json"), '{"send":"Envoyer"}');
+    await writeFile(join(directory, "en.json"), "{}");
     await writeFile(join(directory, "secret.txt"), "secret");
     const served = createApp({
       db,
@@ -590,7 +616,14 @@ describe("the widget files", () => {
     expect(loader.status).toBe(200);
     expect(loader.headers.get("content-type")).toContain("javascript");
     expect(loader.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
-    for (const path of ["secret.txt", "..%2Fpackage.json", "widget.js"]) {
+    // The chat fetches a language's texts from the host page, so they answer any origin.
+    const french = await served.request("/widget/fr.json");
+    expect(french.headers.get("content-type")).toContain("application/json");
+    expect(french.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await french.json()).toEqual({ send: "Envoyer" });
+    expect(loader.headers.get("access-control-allow-origin")).toBeNull();
+    // English is in the chat bundle, so it has no file.
+    for (const path of ["secret.txt", "..%2Fpackage.json", "widget.js", "en.json"]) {
       expect((await served.request(`/widget/${path}`)).status).toBe(404);
     }
     await rm(directory, { recursive: true, force: true });

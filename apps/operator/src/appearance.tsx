@@ -1,10 +1,12 @@
 /** @jsxImportSource react */
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { loadTexts, pickLocale } from "../../../packages/widget/src/locale.ts";
 import { clearPreview, renderPreview } from "../../../packages/widget/src/preview.tsx";
 import {
   DEFAULT_COLORS,
   firstName,
   HEADER_FACES_MAX,
+  type Locale,
   RADIUS_MAX_PX,
   type SavedAppearance,
   TEXT_MAX,
@@ -12,7 +14,7 @@ import {
   TITLE_MAX,
   type WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
-import { t as widgetText } from "../../../packages/widget/src/text.ts";
+import { setLanguage, type Texts, t as widgetText } from "../../../packages/widget/src/text.ts";
 import type { AppearanceSettings, Me, Member, OperatorAppearance, WorkspaceApi } from "./api.ts";
 import { hexColor } from "./hex-color.ts";
 import { Icon } from "./icons.tsx";
@@ -67,6 +69,13 @@ const EMAIL_ASKS: Option<WidgetSettings["emailAsk"]>[] = [
   { value: "before_first", label: "widgetEmailBefore" },
 ];
 
+const LANGUAGES: Option<WidgetSettings["language"]>[] = [
+  { value: "visitor", label: "widgetLanguageVisitor" },
+  { value: "en", label: "widgetLanguageEnglish" },
+  { value: "fr", label: "widgetLanguageFrench" },
+  { value: "es", label: "widgetLanguageSpanish" },
+];
+
 type FacesMode = WidgetSettings["headerFaces"];
 /** Each choice of faces, in the menu's order, with the words under it. */
 const HEADER_FACES: Record<FacesMode, { label: TextId; help: TextId }> = {
@@ -85,6 +94,7 @@ function editable({
   logoUrl: _logo,
   team: _team,
   faces: _faces,
+  hours: _hours,
   ...settings
 }: OperatorAppearance): AppearanceSettings {
   return settings;
@@ -220,7 +230,7 @@ function ColorField({
  * One line of the "Colors and layout" and "Email and branding" sections: the label and its hint on
  * the left, the control on the right.
  */
-function SettingRow({
+export function SettingRow({
   label,
   hint,
   doc,
@@ -254,7 +264,7 @@ function SettingRow({
 }
 
 /** An on or off setting, as a switch, with a hint under its label. */
-function Switch({
+export function Switch({
   label,
   hint,
   checked,
@@ -327,6 +337,31 @@ function TextFields({
         {...field("away")}
       />
     </>
+  );
+}
+
+/** The widget's own words in one language, or in the visitor's. */
+function LanguageField({
+  language,
+  onChange,
+}: {
+  language: WidgetSettings["language"];
+  onChange(language: WidgetSettings["language"]): void;
+}) {
+  return (
+    <div className="setting-rows">
+      <SettingRow label={t("widgetLanguage")} hint={t("widgetLanguageHelp")}>
+        {() => (
+          <Select
+            label={t("widgetLanguage")}
+            side="end"
+            value={language}
+            choices={LANGUAGES.map(({ value, label }) => ({ value, label: t(label) }))}
+            onChange={onChange}
+          />
+        )}
+      </SettingRow>
+    </div>
   );
 }
 
@@ -628,6 +663,18 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
   const theme = appearance.theme === "auto" ? device : appearance.theme;
   // On a phone the preview sits above the form, and folds away.
   const [folded, setFolded] = useState(false);
+  // The language this browser would get, with its texts once they load.
+  const locale = pickLocale(undefined, appearance.language, navigator.languages);
+  const [texts, setTexts] = useState<{ locale: Locale; texts: Partial<Texts> } | null>(null);
+  useEffect(() => {
+    let current = true;
+    void loadTexts("/widget/", locale).then((loaded) => {
+      if (current) setTexts({ locale, texts: loaded });
+    });
+    return () => {
+      current = false;
+    };
+  }, [locale]);
   // A member who replied lately, or the operator who looks, answers the sample question. Visitors
   // see the first word of a name, as the server sends it.
   const author: TeamFace = appearance.team[0] ?? {
@@ -640,6 +687,7 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
     const element = host.current;
     if (element === null) return;
     const shadow = element.shadowRoot ?? element.attachShadow({ mode: "open" });
+    if (texts?.locale === locale) setLanguage(locale, texts.texts);
     renderPreview(shadow, {
       appearance,
       theme,
@@ -778,6 +826,10 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
           )}
           <FormSection title="widgetTextsTitle" help="widgetTextsHelp">
             <TextFields settings={draft} onChange={change} />
+            <LanguageField
+              language={draft.language}
+              onChange={(language) => change({ language })}
+            />
           </FormSection>
           <FormSection title="widgetLayoutTitle">
             <LayoutFields settings={draft} onChange={change} />

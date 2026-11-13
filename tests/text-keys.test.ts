@@ -14,6 +14,7 @@ import { afterAll, expect, test } from "vitest";
 const ROOT = resolve(import.meta.dirname, "..");
 const TEXTS = ["apps/operator/src/text.ts", "packages/widget/src/text.ts"];
 const RENAMED = "__renamed";
+const TRANSLATIONS = "packages/widget/src/texts/";
 const KEY = /^ {2}([A-Za-z0-9_]+):/gm;
 
 const copy = mkdtempSync(join(tmpdir(), "dinghy-text-keys-"));
@@ -42,7 +43,12 @@ function namedInErrors(file: string, source: string, wanted: Set<string>): Set<s
     ["--noEmit", "--pretty", "false", "-p", join(copy, "tsconfig.web.json")],
     { encoding: "utf8" },
   );
-  const named = [...check.stdout.matchAll(/"([A-Za-z0-9_]+)"/g)].map((match) => match[1] ?? "");
+  // A translation names every key, so its errors say nothing about where a key shows.
+  const errors = check.stdout
+    .split("\n")
+    .filter((line) => !line.startsWith(TRANSLATIONS))
+    .join("\n");
+  const named = [...errors.matchAll(/"([A-Za-z0-9_]+)"/g)].map((match) => match[1] ?? "");
   return new Set(named.filter((key) => wanted.has(key)));
 }
 

@@ -11,10 +11,13 @@ import {
 } from "./compose.ts";
 import { cleanContext } from "./context.ts";
 import "./globals.ts";
+import { hoursState, knownHours } from "./hours.ts";
+import { loadTexts, pickLocale } from "./locale.ts";
 import { emit, reportConversation } from "./page-events.ts";
 import { useDraftPreview, usePageReports } from "./page-reports.ts";
 import {
   Branding,
+  backLine,
   ChatHead,
   ChatLine,
   Composer,
@@ -44,7 +47,7 @@ import {
   writeToken,
 } from "./shared.ts";
 import { chime, prepareSound } from "./sound.ts";
-import { t } from "./text.ts";
+import { language, setLanguage, t } from "./text.ts";
 import { larger, useUnread } from "./use-unread.ts";
 
 const NEW_REPLY_SHOWN_MS = 5000;
@@ -292,6 +295,8 @@ function Chat({
 
   // The panel waits for the saved look, so its words never change after it shows.
   const shown = open && saved !== undefined;
+  // The chat's language is set before the saved look arrives.
+  const hasLanguage = saved !== undefined;
 
   useEffect(() => {
     if (!shown || quiet) return;
@@ -322,17 +327,16 @@ function Chat({
   // Only into an open conversation, and only when the workspace shows drafts.
   useDraftPreview(client, token, openConversation && saved?.typingPreview === true, draft);
 
-  // Like the pages, the page's context goes only for a visitor who has chatted: after the first
-  // message, on each load after that, and on each setContext().
+  // Like the pages, the chat's language and the page's context go only for a visitor who has
+  // chatted: after the first message, on each load after that, and on each setContext(). They wait
+  // for the chat's language, which comes with the saved look.
   // biome-ignore lint/correctness/useExhaustiveDependencies: contextVersion asks for a report.
   useEffect(() => {
-    if (token === null || !chatted || fullPage) return;
-    const data = cleanContext(context.pageContext);
-    if (data === null) return;
-    client.reportContext(token, data).catch(() => {
+    if (token === null || !chatted || fullPage || !hasLanguage) return;
+    client.reportContext(token, language(), cleanContext(context.pageContext)).catch(() => {
       // Only a detail for operators. The next setContext() or page load tries again.
     });
-  }, [chatted, client, context, contextVersion, fullPage, token]);
+  }, [chatted, client, context, contextVersion, fullPage, hasLanguage, token]);
 
   const serverSaid = useUnread(
     context,
@@ -394,7 +398,8 @@ function Chat({
 
   // Only the visible tab holds a stream, because browsers allow about six HTTP/1.1 connections per
   // origin across all tabs. A tab catches up from its cursor when it becomes visible again.
-  const wantsStream = token !== null && visible && (open || openConversation);
+  // It also waits for the chat's language, which a deleted message's placeholder is in.
+  const wantsStream = token !== null && visible && (open || openConversation) && hasLanguage;
   // biome-ignore lint/correctness/useExhaustiveDependencies: tokenEpoch asks for a new stream.
   useEffect(() => {
     if (!wantsStream || token === null) return;
@@ -650,6 +655,10 @@ function Chat({
   };
 
   if (!shown) return null;
+  // Read on each render, which the presence answer brings every 30 seconds while the chat is open.
+  const hours = saved.hours && hoursState(saved.hours, Date.now());
+  const everChatted = chatted || lines.length > 0;
+  const closed = hours?.open === false;
   // In this order, because a lost connection matters most and an empty chat matters least.
   const sceneState: SceneState = lost
     ? "lost"
@@ -657,7 +666,7 @@ function Chat({
       ? "sending"
       : newReply
         ? "reply"
-        : online === false
+        : online === false || closed
           ? "away"
           : lines.length === 0 && online === null
             ? "empty"
@@ -667,11 +676,16 @@ function Chat({
   // Only a visitor the host site did not sign in, only when this server sends email, and never
   // again once the server holds an email. A failed save keeps the form and its error, even when
   // it made the visitor, so its result is known without the server.
-  const email = emailLayout(saved.emailAsk, {
-    mayAsk: emailReplies && identity === null && emailState !== "saved" && hasEmail !== true,
-    chatted: chatted || lines.length > 0,
-    known: token === null || hasEmail !== undefined || emailState !== "idle",
-  });
+  const email = emailLayout(
+    // Outside business hours the reply comes later, so the chat asks for an email: before the
+    // first message, or after it for a visitor who has chatted.
+    closed ? (everChatted ? "after_first" : "before_first") : saved.emailAsk,
+    {
+      mayAsk: emailReplies && identity === null && emailState !== "saved" && hasEmail !== true,
+      chatted: everChatted,
+      known: token === null || hasEmail !== undefined || emailState !== "idle",
+    },
+  );
   const emailCard = (
     <EmailCard
       face={saved.team[0] ?? null}
@@ -723,6 +737,7 @@ function Chat({
         mascot={mascot}
         saved={saved}
         say={say}
+        back={closed && hours.reopensAt ? backLine(hours.reopensAt, new Date()) : undefined}
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />
       <div class="log" role="log" aria-live="polite" ref={log}>
@@ -824,10 +839,16 @@ function Root({ context }: { context: WidgetContext }) {
   // With no answer the defaults apply, as on the launcher. A workspace that serves no widget has
   // no launcher, but its chat link's page still needs words.
   useEffect(() => {
-    context.appearance.then((answer) => {
+    context.appearance.then(async (answer) => {
       const found = withDefaults(answer);
+      const locale = pickLocale(context.attribute("locale"), found.language, navigator.languages);
+      setLanguage(locale, await loadTexts(context.base, locale));
+      // The loader has only English, so the chat puts the label launcher's default title in the
+      // chat's language once it runs.
+      const label = context.shadow.querySelector(".launcher b");
+      if (label !== null && found.title === null) label.textContent = t("title");
       context.shadow.host.setAttribute("data-theme", found.theme);
-      setSaved(found);
+      setSaved({ ...found, hours: knownHours(found.hours) });
     });
   }, [context]);
   // A layout effect, so identify() or reset() right after the first render still reaches this.

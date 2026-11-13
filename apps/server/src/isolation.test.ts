@@ -19,6 +19,7 @@ import { createAuth } from "./auth.ts";
 import {
   apiKey,
   attachment,
+  businessHours,
   conversation,
   conversationRead,
   draftReply,
@@ -833,6 +834,31 @@ const ATTACKS: Record<string, Attack> = {
     // A real change here must not reach the other workspace.
     expect((await as(anna, "PUT", inWorkspace(a.id, "/widget"), body)).status).toBe(200);
     expect(await widgetSettingsOf(b.id)).toEqual(before);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/business-hours": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/business-hours"))).status).toBe(404);
+    const keyed = await withKey(setupA.token, "GET", inWorkspace(b.id, "/business-hours"));
+    expect(keyed.status).toBe(404);
+    expect((await as(anna, "GET", inWorkspace(a.id, "/business-hours"))).status).toBe(200);
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/business-hours": async (world) => {
+    const { operator: as, withKey, anna, a, b, setupA } = world;
+    const hours = {
+      enabled: true,
+      timeZone: "UTC",
+      week: { mon: [["09:00", "17:00"]], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    };
+    const path = inWorkspace(b.id, "/business-hours");
+    expect((await as(anna, "PUT", path, hours)).status).toBe(404);
+    expect((await withKey(setupA.token, "PUT", path, hours)).status).toBe(404);
+    // A real save here must not reach the other workspace.
+    expect((await as(anna, "PUT", inWorkspace(a.id, "/business-hours"), hours)).status).toBe(200);
+    const rows = await owner
+      .select()
+      .from(businessHours)
+      .where(eq(businessHours.workspaceId, b.id));
+    expect(rows).toEqual([]);
   },
   "PUT /v1/operator/workspaces/:workspaceId/widget/logo": async ({ server, anna, a, b }) => {
     const upload = async (workspaceId: string) =>

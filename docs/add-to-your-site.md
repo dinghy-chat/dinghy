@@ -34,6 +34,7 @@ You can also set the look in the tag. These attributes win over the saved settin
 | `data-offset-x` | Pixels, such as `24` | The distance from the side of the window. The default is `16` |
 | `data-offset-y` | Pixels, such as `80` | The distance from the bottom of the window. The default is `16` |
 | `data-branding` | `false` or `true` | Hides or shows the "Powered by Dinghy" line |
+| `data-locale` | `en`, `fr` or `es`, or a tag such as `fr-CA` | The language of the widget's own words, over the **Language** setting |
 
 A color in any other form, such as `red` or `#123`, is ignored. So is an offset that is not a whole number of 0 or more.
 
@@ -147,7 +148,7 @@ The widget sends it only for a visitor who has chatted: after their first messag
 Dinghy.configure({ accent: "#e5352b", position: "left", offsetX: 24, offsetY: 80, zIndex: 1000 });
 ```
 
-It takes the same values as the tag's attributes, and ignores one that is not valid. `zIndex` is a whole number of 0 or more, and it is `2147483000` by default.
+It takes the same values as the tag's attributes, and ignores one that is not valid. `zIndex` is a whole number of 0 or more, and it is `2147483000` by default. `locale` picks the chat's language, as `data-locale` does: call `Dinghy.configure({ locale: "fr" })` before the chat opens, such as from your own language switch, and the next page load picks up a later change.
 
 ### Call it before it loads
 
@@ -188,7 +189,7 @@ dinghy.on("unread", (count) => setBadge(count));
 dinghy.open({ message: "I need help with my order" });
 ```
 
-`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `branding`, `launcher`, `position`, `offsetX`, `offsetY` and `zIndex`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
+`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `branding`, `launcher`, `position`, `offsetX`, `offsetY`, `zIndex` and `locale`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
 
 ### Ask a coding agent to install it
 
@@ -294,6 +295,7 @@ If your Dinghy serves images and files from a separate origin (`IMAGES_ORIGIN`),
 - Read the chat again after a refresh.
 - See an unread count on the button.
 - Leave an email, if they are not signed in and your Dinghy install has a mail server. They then get your reply by email if they left the page. With no mail server, the widget does not ask.
+- Write outside your [business hours](operator-guide.md#business-hours). The chat then says when your team is back, on the visitor's own clock, and asks for their email before the first message.
 - Continue from the reply email. Its link opens the conversation on a page of your Dinghy server, at `https://chat.example.com/chat/...`, where they can read and reply. The link works for 30 days, and each email has a new one. The email still has the link that stops these emails.
 
 ## What operators see about a visitor
@@ -309,5 +311,9 @@ The widget stores its own token in `localStorage` only once the visitor sends a 
 ## Change the chat's words
 
 An owner or admin can change the chat's title, its greeting in an empty chat, and the line it shows when nobody is online, in **Settings > Appearance**. An empty field keeps Dinghy's own text.
+
+The widget's own words, such as its buttons, come in English, French and Spanish. **Language** in **Settings > Appearance** picks one, or **Visitor's language**, which takes the first of the browser's languages that the widget speaks, and English when it speaks none of them. A new workspace starts with **Visitor's language**, and a workspace made before the setting keeps English. The tag's `data-locale` and `Dinghy.configure({ locale })` win over the setting, for a site that has its own language switch. The texts your team writes stay as written, in one language. English is in the chat's script, and the chat loads another language's words from your Dinghy server with the saved look, as a small file the browser keeps for 5 minutes.
+
+The widget tells your Dinghy server its language once the visitor has chatted, so the reply emails, the transcript and the page that continues the chat use it too, with dates in that language. Operators see it in the visitor panel.
 
 The widget lives in its own Shadow DOM, so your site's styles do not change it, and its styles do not change your site.

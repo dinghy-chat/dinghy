@@ -4316,6 +4316,20 @@ button.quote:hover {
 .setting-stacked > .choices {
   justify-self: start;
 }
+/* Business hours: each day's ranges on the right of its name, one under another. */
+.day-hours {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+.day-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.day-range input {
+  width: auto;
+}
 .color-field,
 .range-field {
   display: flex;

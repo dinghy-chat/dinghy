@@ -12,13 +12,15 @@ import { pino } from "pino";
 import { generateVAPIDKeys } from "web-push";
 import type { CloudSettings } from "../../../ee/server/index.ts";
 import { buildWidget } from "../../../packages/widget/build.ts";
-import type { WidgetSettings } from "../../../packages/widget/src/shared.ts";
+import type { BusinessHours, WidgetSettings } from "../../../packages/widget/src/shared.ts";
 import { buildOperator } from "../../operator/build.ts";
 import { createApp } from "../src/app.ts";
 import { createAuth, signInLink } from "../src/auth.ts";
+import { saveBusinessHours } from "../src/business-hours.ts";
 import { chatLinkUrl, createChatLink } from "../src/chat-link.ts";
 import { ensureRoles } from "../src/db/roles.ts";
 import {
+  businessHours,
   conversation,
   operator,
   session,
@@ -378,6 +380,13 @@ export async function startE2EServer(
         .update(widgetSettings)
         .set(change)
         .where(eq(widgetSettings.workspaceId, workspace.id));
+    },
+    /** Turns business hours on with these hours, as an owner does in Settings, or off with null. */
+    async setBusinessHours(hours: BusinessHours | null) {
+      await withWorkspace(owner, workspace.id, async (tx) => {
+        if (hours !== null) return saveBusinessHours(tx, workspace.id, { enabled: true, ...hours });
+        await tx.delete(businessHours).where(eq(businessHours.workspaceId, workspace.id));
+      });
     },
     async closeConversations() {
       await withWorkspace(db, workspace.id, (tx) =>

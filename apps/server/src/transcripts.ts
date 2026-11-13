@@ -20,7 +20,7 @@ import {
   widgetSettings,
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { EMAIL_COLORS, letter } from "./letter.ts";
+import { EMAIL_COLORS } from "./letter.ts";
 import {
   conversationVisitor,
   filename,
@@ -43,32 +43,15 @@ import {
   sentToday,
   VISITOR_EMAILS_PER_DAY,
   visitorAuthorName,
-  visitorEmailText,
   visitorLetterHtml,
+  visitorLetterText,
 } from "./visitor-email.ts";
+import { type VisitorWords, visitorWords } from "./visitor-words.ts";
 
 // The transcript waits, so a quick reopen cancels it.
 export const TRANSCRIPT_DELAY_MS = 5 * MINUTE_MS;
 // The most messages a transcript holds, the newest ones. The chat link has the rest.
 const TRANSCRIPT_MESSAGES = 500;
-
-// Every string a person reads has a key, so a locale can be added later.
-const text = {
-  subject: (name: string) => `Your conversation with ${name}`,
-  intro: (name: string) => `Here is your conversation with ${name}, for your records.`,
-  image: "Sent an image. Open the chat to see it.",
-  file: (name: string | null) =>
-    `Sent ${name === null ? "a file" : `the file ${name}`}. Open the chat to download it.`,
-  line: (who: string, when: string) => `${who}, ${when}`,
-  continueChat: "Continue the chat",
-  body: (name: string, messages: string, chat: string, stop: string) => [
-    text.intro(name),
-    messages,
-    `${text.continueChat}: ${chat}`,
-    visitorEmailText.linkWarning,
-    visitorEmailText.whyYouGotThis(name, stop),
-  ],
-};
 
 /**
  * A close: one transcript to the visitor after a delay, when the visitor has an email, the workspace
@@ -161,9 +144,6 @@ export async function requestedTranscriptRows(
   return [{ ...base, visitorId: target.id, channel: "transcript" }];
 }
 
-/** "2026-11-11 20:20 UTC": the date and time, so the transcript reads the same anywhere. */
-const utcTime = (at: Date) => `${at.toISOString().slice(0, 16).replace("T", " ")} UTC`;
-
 /**
  * The whole conversation by email. A close's transcript sends nothing when the conversation was
  * reopened, or when a later close made another. A reply email waits for it, and leaves out the
@@ -181,6 +161,7 @@ export async function transcriptPlan(
     .select({
       status: conversation.status,
       email: visitor.email,
+      locale: visitor.locale,
       fromClose: sql<boolean>`exists (select 1 from ${message} where ${message.workspaceId} = ${workspaceId} and ${message.id} = ${messageId} and ${message.kind} = 'closed')`,
       later: sql<boolean>`exists (select 1 from ${alertDelivery} where ${alertDelivery.workspaceId} = ${workspaceId} and ${alertDelivery.conversationId} = ${conversationId} and ${alertDelivery.channel} = 'transcript' and ${alertDelivery.eventSeq} > ${eventSeq}::bigint)`,
     })
@@ -229,7 +210,7 @@ export async function transcriptPlan(
   return {
     channel: "email",
     to: state.email,
-    ...transcriptLetter(place, lines, authors, { chatUrl, stopUrl }),
+    ...transcriptLetter(place, lines, authors, { chatUrl, stopUrl }, visitorWords(state.locale)),
     stopUrl,
     carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
   };
@@ -252,8 +233,12 @@ interface TranscriptLine {
  * What a transcript says in place of an image or a file, which the email never carries: the chat
  * has them. Null for text.
  */
-const standIn = (line: TranscriptLine) =>
-  line.kind === "image" ? text.image : line.kind === "file" ? text.file(line.filename) : null;
+const standIn = (line: TranscriptLine, words: VisitorWords) =>
+  line.kind === "image"
+    ? words.transcriptImage
+    : line.kind === "file"
+      ? words.transcriptFile(line.filename)
+      : null;
 
 /** The transcript's words: each message under its author and time, as text and as HTML. */
 export function transcriptLetter(
@@ -261,21 +246,23 @@ export function transcriptLetter(
   lines: TranscriptLine[],
   authors: Map<string, MessageAuthor>,
   links: { chatUrl: string; stopUrl: string },
+  words: VisitorWords,
 ): { subject: string; text: string; html: string } {
   const { chatUrl, stopUrl } = links;
-  const heads = lines.map((line) =>
-    text.line(visitorAuthorName(line, authors, place.name), utcTime(line.createdAt)),
+  const heads = lines.map(
+    (line) =>
+      `${visitorAuthorName(line, authors, place.name, words)}, ${words.time(line.createdAt)}`,
   );
   const plain = lines
     .map(
       (line, index) =>
-        `${heads[index]}:\n${quotedText(visitorQuote(line.replyTo), standIn(line) ?? line.body ?? "")}`,
+        `${words.lead(heads[index] ?? "")}\n${quotedText(visitorQuote(line.replyTo), standIn(line, words) ?? line.body ?? "", words)}`,
     )
     .join("\n\n");
   const html = [
-    `<p style="margin:0">${escapeHtml(text.intro(place.name))}</p>`,
+    `<p style="margin:0">${escapeHtml(words.transcriptIntro(place.name))}</p>`,
     ...lines.map((line, index) => {
-      const shown = standIn(line);
+      const shown = standIn(line, words);
       return (
         `<p style="margin:18px 0 2px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
         quotedHtml(
@@ -283,18 +270,25 @@ export function transcriptLetter(
           shown === null
             ? markdownHtml(line.body ?? "")
             : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(shown)}</a></p>`,
+          words,
         )
       );
     }),
   ].join("");
+  const paragraphs = [
+    words.transcriptIntro(place.name),
+    plain,
+    `${words.lead(words.continueChat)} ${chatUrl}`,
+  ];
   return {
-    subject: text.subject(place.name),
-    text: letter(text.body(place.name, plain, chatUrl, stopUrl), undefined, place.name),
-    html: visitorLetterHtml(place.name, html, {
-      ...links,
-      logoUrl: place.logoUrl,
-      chatLabel: text.continueChat,
-    }),
+    subject: words.transcriptSubject(place.name),
+    text: visitorLetterText(place.name, paragraphs, stopUrl, words),
+    html: visitorLetterHtml(
+      place.name,
+      html,
+      { ...links, logoUrl: place.logoUrl, chatLabel: words.continueChat },
+      words,
+    ),
   };
 }
 

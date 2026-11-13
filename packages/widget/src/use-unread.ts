@@ -3,7 +3,7 @@ import type { Client } from "./client.ts";
 import { reportUnread } from "./page-events.ts";
 import type { Line } from "./panel.tsx";
 import type { SavedAppearance, WidgetContext } from "./shared.ts";
-import { LAUNCHER_LABEL } from "./text.ts";
+import { t } from "./text.ts";
 
 /** The launcher's count, in its badge and its label. The full-page chat has no launcher. */
 function drawBadge(shadow: ShadowRoot, count: number) {
@@ -17,7 +17,7 @@ function drawBadge(shadow: ShadowRoot, count: number) {
   }
   badge.hidden = count === 0;
   badge.textContent = count > 99 ? "99+" : String(count);
-  launcher.setAttribute("aria-label", count ? `${LAUNCHER_LABEL} (${count})` : LAUNCHER_LABEL);
+  launcher.setAttribute("aria-label", count ? `${t("launcher")} (${count})` : t("launcher"));
 }
 
 /** Math.max does not accept a bigint. */
