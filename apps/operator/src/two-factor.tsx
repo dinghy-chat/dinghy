@@ -42,6 +42,25 @@ function QrCode({ text }: { text: string }) {
   );
 }
 
+/** A code field's state: the code, its error, and the send that clears and sets them. */
+function useCode(onSubmit: (code: string) => Promise<void>) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<TextId | null>(null);
+  const [busy, setBusy] = useState(false);
+  const send = async (event: FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await onSubmit(code.trim());
+    } catch (failure) {
+      setError(codeFailure(failure));
+      setBusy(false);
+    }
+  };
+  return { code, setCode, error, busy, send };
+}
+
 /** A form with one code field, its error and its buttons. */
 function CodeForm({
   label,
@@ -57,20 +76,7 @@ function CodeForm({
   onSubmit(code: string): Promise<void>;
   onCancel?(): void;
 }) {
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
-  const send = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      await onSubmit(code.trim());
-    } catch (failure) {
-      setError(codeFailure(failure));
-      setBusy(false);
-    }
-  };
+  const { code, setCode, error, busy, send } = useCode(onSubmit);
   return (
     <form className="stack" onSubmit={send}>
       <Field
@@ -166,6 +172,20 @@ function Setup({
 }
 
 function TurnOff({ onDone, onCancel }: { onDone(): void; onCancel(): void }) {
+  const [isLocked, setIsLocked] = useState(false);
+  // Too many wrong codes ended the session, so the button leads back to sign-in.
+  if (isLocked) {
+    return (
+      <div className="stack">
+        <ErrorNote text="twoFactorLocked" />
+        <div className="actions">
+          <button type="button" className="pill dark" onClick={onDone}>
+            {t("twoFactorSignInAgain")}
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="stack">
       <p className="hint">{t("twoFactorOffHelp")}</p>
@@ -177,8 +197,9 @@ function TurnOff({ onDone, onCancel }: { onDone(): void; onCancel(): void }) {
           try {
             await disableTwoFactor(code);
           } catch (failure) {
-            // Too many wrong codes ended the session, so the app signs in again.
             if (!(failure instanceof ApiError && failure.status === 429)) throw failure;
+            setIsLocked(true);
+            return;
           }
           onDone();
         }}
@@ -249,21 +270,10 @@ export function TwoFactorCheck({
   onPassed(): void;
   onSignedOut(): void;
 }) {
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<TextId | null>(null);
-  const [busy, setBusy] = useState(false);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      await checkTwoFactor(code.trim());
-      onPassed();
-    } catch (failure) {
-      setError(codeFailure(failure));
-      setBusy(false);
-    }
-  };
+  const { code, setCode, error, busy, send } = useCode(async (typed) => {
+    await checkTwoFactor(typed);
+    onPassed();
+  });
   // Too many wrong codes ended the session.
   if (error === "twoFactorLocked") {
     return (
@@ -276,7 +286,7 @@ export function TwoFactorCheck({
     );
   }
   return (
-    <AuthPage time="noon" onSubmit={submit}>
+    <AuthPage time="noon" onSubmit={send}>
       <h1>{t("twoFactorCheckTitle")}</h1>
       <p className="note">{t("twoFactorCheckHelp")}</p>
       <Field
