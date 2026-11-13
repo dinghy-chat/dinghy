@@ -405,6 +405,25 @@ describe("the warnings", () => {
     failing.delete(coOwner.email);
   });
 
+  test("a request that only the mailbox could hear of stops, and the account goes to manual review", async () => {
+    const space = await newWorkspace();
+    const lost = await lostApp(space.id, { keepsPassedSession: false });
+    const coOwner = await member(space.id, "owner");
+    expect((await askRemoval(lost.waiting)).status).toBe(200);
+    // The only other owner leaves before the first warning goes out.
+    await owner
+      .update(workspaceMember)
+      .set({ removedAt: new Date() })
+      .where(eq(workspaceMember.operatorId, coOwner.id));
+    await workerStep();
+    expect(await requestOf(lost.id)).toEqual([]);
+    expect(subjectsTo(lost.email)).toContain(
+      "The request to remove two-step sign-in from your Dinghy account stopped",
+    );
+    expect(audits("two_factor.removal_unconfirmed", lost.id)).toHaveLength(1);
+    expect((await me(lost.waiting)).twoFactor).toBe("required");
+  });
+
   test("the worker reminds once, a day before the end, with the same cancel link", async () => {
     const { lost } = await team();
     await askRemoval(lost.waiting);

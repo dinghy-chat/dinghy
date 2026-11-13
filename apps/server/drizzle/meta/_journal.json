@@ -778,6 +778,13 @@
       "when": 1794604300431,
       "tag": "0110_two_factor_removal_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1794605292786,
+      "tag": "0111_two_factor_removal_worker_delete",
+      "breakpoints": true
     }
   ]
 }

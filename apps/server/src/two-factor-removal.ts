@@ -39,6 +39,7 @@ import {
   removalCancelledMail,
   removalReminderMail,
   removalRequestedMail,
+  removalUnconfirmedMail,
   teamRemovalDoneMail,
   teamRemovalMail,
   twoFactorOffMail,
@@ -135,12 +136,27 @@ async function managersOf(db: Database | Transaction, operatorId: string) {
  * workspaces, or a session of the account that passed the check and has not expired. A push
  * subscription alone does not count, because nothing proves that it still reaches a device.
  */
+/** Whether a current session of the account passed the check: a device that can stop a request. */
+async function hasCheckedSession(db: Database | Transaction, operatorId: string): Promise<boolean> {
+  const [found] = await db
+    .select({ id: session.id })
+    .from(session)
+    .where(
+      and(
+        eq(session.userId, operatorId),
+        isNotNull(session.twoFactorAt),
+        gt(session.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  return found !== undefined;
+}
+
 async function canBeStopped(tx: Transaction, operatorId: string): Promise<boolean> {
-  const result = await tx.execute<{ found: boolean }>(sql`select
-    exists (select 1 from operator_managers(${operatorId}))
-    or exists (select 1 from ${session} where ${session.userId} = ${operatorId}
-               and ${session.twoFactorAt} is not null and ${session.expiresAt} > now()) as found`);
-  return result.rows[0]?.found === true;
+  const result = await tx.execute<{ found: boolean }>(
+    sql`select exists (select 1 from operator_managers(${operatorId})) as found`,
+  );
+  return result.rows[0]?.found === true || (await hasCheckedSession(tx, operatorId));
 }
 
 /**
@@ -310,7 +326,7 @@ const requestRoute = createRoute({
     200: jsonAnswer("The request that waits", RemovalAnswer),
     ...OPERATOR_POST_ERRORS,
     409: errorAnswer(
-      `removal_not_needed: this session passed the check, or two-step sign-in is off. sign_in_again: the session is older than ${FRESH_MINUTES} minutes. removal_blocked: a request was cancelled in the last ${BLOCK_DAYS} days. manual_review: no other owner or admin and no other signed-in session can stop it, or the server sends no email, so the server's admin must remove it`,
+      `removal_not_needed: this session passed the check, or two-step sign-in is off. sign_in_again: the session is older than ${FRESH_MINUTES} minutes. removal_blocked: a request was cancelled in the last ${BLOCK_DAYS} days. manual_review: no other owner or admin, and no session of theirs that passed the check, can stop it, or the server sends no email, so the server's admin must remove it`,
     ),
   },
 });
@@ -520,11 +536,17 @@ export function removalWorkerStep({
     await mailer.send(to, mail.subject, mail.body);
   };
 
-  /** Throws when the account's email fails, or when every owner and admin's email fails. */
+  /**
+   * Throws when the account's email fails, or when every owner and admin's email fails. False,
+   * sending nothing, when nobody but the mailbox can be warned any more: the last other owner or
+   * admin left, and no session of the account passed the check since the request.
+   */
   const sendFirstWarning = async (
     row: ClaimedWarning,
     account: { name: string; email: string },
-  ) => {
+  ): Promise<boolean> => {
+    const managers = await managersOf(db, row.operatorId);
+    if (managers.length === 0 && !(await hasCheckedSession(db, row.operatorId))) return false;
     if (push !== undefined) {
       const payload = { title: text.pushTitle, body: text.pushBody, tag: "two-factor-removal" };
       // An extra channel: its failure does not hold the warning back.
@@ -533,7 +555,6 @@ export function removalWorkerStep({
       );
     }
     const url = confirmUrl(publicUrl, "cancel-removal", cancelToken(key, row.id));
-    const managers = await managersOf(db, row.operatorId);
     const [own, ...team] = await Promise.allSettled([
       send(account.email, removalRequestedMail(url, WAIT_HOURS)),
       ...managers.map((manager) => send(manager.email, teamRemovalMail(account, WAIT_HOURS))),
@@ -544,6 +565,7 @@ export function removalWorkerStep({
     for (const result of failed) {
       logger.warn(safeErrorFields(result.reason), "a removal warning did not reach one manager");
     }
+    return true;
   };
 
   const warnOne = async (row: ClaimedWarning) => {
@@ -562,7 +584,18 @@ export function removalWorkerStep({
         .where(held(row));
       return;
     }
-    await sendFirstWarning(row, account);
+    if (!(await sendFirstWarning(row, account))) {
+      // Only the mailbox would know, and the mailbox is what the request doubts: manual review.
+      const [ended] = await db
+        .delete(twoFactorRemoval)
+        .where(held(row))
+        .returning({ id: twoFactorRemoval.id });
+      if (ended === undefined) return;
+      audit(logger, "two_factor.removal_unconfirmed", { operatorId: row.operatorId });
+      await send(account.email, removalUnconfirmedMail());
+      await signalAccount(db, signals, row.operatorId);
+      return;
+    }
     const warnedAt = Date.now();
     const [marked] = await db
       .update(twoFactorRemoval)

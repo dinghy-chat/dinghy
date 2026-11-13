@@ -104,6 +104,12 @@ const text = {
     text.removalFoundApp,
     ...text.removalCancelLink(url),
   ],
+  removalUnconfirmedSubject:
+    "The request to remove two-step sign-in from your Dinghy account stopped",
+  removalUnconfirmedBody: [
+    "The request to remove two-step sign-in from your Dinghy account stopped before its wait began, because nobody but you could be warned: your workspaces have no other owner or admin, and none of your devices has passed two-step sign-in. Nothing changed.",
+    'Sign in with your authenticator app or a recovery code if you find one. If not, open Dinghy and choose "Lost your authenticator app" again: it says who can remove it for you.',
+  ],
   removalCancelledSubject:
     "The request to remove two-step sign-in from your Dinghy account was cancelled",
   removalCancelledBody: (blockDays: number) => [
@@ -309,6 +315,12 @@ export const removalRequestedMail = (url: string, waitHours: number) => ({
 export const removalReminderMail = (url: string, hours: number) => ({
   subject: text.removalReminderSubject(hours),
   body: letter(text.removalReminderBody(url, hours)),
+});
+
+/** A removal request stopped before its wait, because only the account's own mailbox could be warned. */
+export const removalUnconfirmedMail = () => ({
+  subject: text.removalUnconfirmedSubject,
+  body: letter(text.removalUnconfirmedBody),
 });
 
 /** A removal request was cancelled, which most often means someone else asked for it. */

@@ -5615,7 +5615,7 @@
             }
           },
           "409": {
-            "description": "removal_not_needed: this session passed the check, or two-step sign-in is off. sign_in_again: the session is older than 15 minutes. removal_blocked: a request was cancelled in the last 7 days. manual_review: no other owner or admin and no other signed-in session can stop it, or the server sends no email, so the server's admin must remove it",
+            "description": "removal_not_needed: this session passed the check, or two-step sign-in is off. sign_in_again: the session is older than 15 minutes. removal_blocked: a request was cancelled in the last 7 days. manual_review: no other owner or admin, and no session of theirs that passed the check, can stop it, or the server sends no email, so the server's admin must remove it",
             "content": {
               "application/json": {
                 "schema": {
