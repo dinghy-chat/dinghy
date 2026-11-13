@@ -1,5 +1,5 @@
 import type { BulkAction, BulkResult } from "./api.ts";
-import type { TextId } from "./text.ts";
+import { oneOrMany, type TextId } from "./text.ts";
 
 /** What a toast says once each action is done, for one conversation and for more. */
 const DONE_TEXT: Record<BulkAction["action"], [TextId, TextId]> = {
@@ -12,7 +12,8 @@ const DONE_TEXT: Record<BulkAction["action"], [TextId, TextId]> = {
 
 /**
  * What the toast says after an action: how many changed, how many were as asked already, how many
- * were skipped, and the failure that stopped it partway, if one did.
+ * were skipped, and the failure that stopped it partway, if one did. After a failure, the rest may
+ * have changed too: the answer may have been lost, or the server may have failed between batches.
  */
 export function bulkToast(
   results: BulkResult[],
@@ -25,10 +26,10 @@ export function bulkToast(
   const skipped = count("not_found");
   const [doneOne, doneMany] = DONE_TEXT[action];
   const sentences: TextId[] = [];
-  if (done > 0) sentences.push(done === 1 ? doneOne : doneMany);
-  if (unchanged > 0) sentences.push(unchanged === 1 ? "bulkUnchangedOne" : "bulkUnchangedMany");
-  if (skipped > 0) sentences.push(skipped === 1 ? "bulkSkippedOne" : "bulkSkippedMany");
-  if (failure !== null && results.length > 0) sentences.push("bulkRestFailed");
+  if (done > 0) sentences.push(oneOrMany(done, doneOne, doneMany));
+  if (unchanged > 0) sentences.push(oneOrMany(unchanged, "bulkUnchangedOne", "bulkUnchangedMany"));
+  if (skipped > 0) sentences.push(oneOrMany(skipped, "bulkSkippedOne", "bulkSkippedMany"));
   if (failure !== null) sentences.push(failure);
+  if (failure !== null && results.length > 0) sentences.push("bulkRestUnknown");
   return { sentences, ok: skipped === 0 && failure === null, values: { done, unchanged, skipped } };
 }

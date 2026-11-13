@@ -15,10 +15,10 @@ test("rows that all were as asked already say only that", () => {
   expect(said(bulkToast(["unchanged"], "close", null))).toBe("1 needed no change.");
 });
 
-test("a failure after a turn went through says what was done before it", () => {
+test("a failure after a turn went through says what was done before it, and that the rest may not have changed", () => {
   const toast = bulkToast(["ok", "ok", "not_found"], "label", "actionFailed");
   expect(said(toast)).toBe(
-    "Labeled 2 conversations. Skipped 1: it was deleted already, or your role does not allow it. The rest did not change. That did not work. Check the connection and try again.",
+    "Labeled 2 conversations. Skipped 1: it was deleted already, or your role does not allow it. That did not work. Check the connection and try again. The rest may not have changed. Reload the page to see which did.",
   );
   expect(toast.ok).toBe(false);
 });

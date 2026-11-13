@@ -169,7 +169,7 @@ const en = {
   bulkDeletedMany: "Deleted {done} conversations.",
   bulkUnchangedOne: "1 needed no change.",
   bulkUnchangedMany: "{unchanged} needed no change.",
-  bulkRestFailed: "The rest did not change.",
+  bulkRestUnknown: "The rest may not have changed. Reload the page to see which did.",
   bulkSkippedOne: "Skipped 1: it was deleted already, or your role does not allow it.",
   bulkSkippedMany: "Skipped {skipped}: they were deleted already, or your role does not allow it.",
   filterMine: "Mine",
@@ -1219,9 +1219,13 @@ export type TextId = keyof typeof en;
 
 type Values = Record<string, string | number>;
 
+/** The text key for `count` things: `one` for 1, else `many`. */
+export const oneOrMany = (count: number, one: TextId, many: TextId): TextId =>
+  count === 1 ? one : many;
+
 /** The text for `count` things: `one` for 1, else `many`, with `{count}` and `values` filled in. */
 export function plural(count: number, one: TextId, many: TextId, values: Values = {}): string {
-  return t(count === 1 ? one : many, { ...values, count });
+  return t(oneOrMany(count, one, many), { ...values, count });
 }
 
 /**

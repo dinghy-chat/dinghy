@@ -16,7 +16,7 @@ import { useLatestLoad, useLoad } from "./load.ts";
 import { chime, prepareSound } from "./sound.ts";
 import { readStored, store } from "./stored.ts";
 import { useWaitingBadge } from "./tab-badge.ts";
-import { t } from "./text.ts";
+import { oneOrMany, t } from "./text.ts";
 
 const PAGE_SIZE = 50;
 /** The longest delay setTimeout keeps: a longer one fires at once. */
@@ -70,7 +70,7 @@ function useTeam(
       .filter((id) => id !== meId)
       .flatMap((id) => members.find((member) => member.id === id)?.name ?? []);
     if (names.length === 0) return null;
-    return t(names.length === 1 ? "isReplying" : "areReplying", { names: names.join(", ") });
+    return t(oneOrMany(names.length, "isReplying", "areReplying"), { names: names.join(", ") });
   };
   return { members, loadMembers, replying, leavePresence: leave };
 }
