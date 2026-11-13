@@ -94,7 +94,7 @@ test("Help opens the shortcuts, which the operator can turn off", async ({ brows
   const sheet = operator.getByRole("dialog", { name: "Keyboard shortcuts" });
   await expect(sheet).toBeVisible();
   await sheet.getByRole("checkbox", { name: /Single-key shortcuts/ }).uncheck();
-  await sheet.getByRole("button", { name: "Done" }).click();
+  await sheet.getByRole("button", { name: "Close" }).click();
   await expect(sheet).toHaveCount(0);
 
   // Off, J does nothing, and the choice outlives a reload.
