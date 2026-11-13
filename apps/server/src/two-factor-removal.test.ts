@@ -295,8 +295,13 @@ describe("asking for a removal", () => {
       await released;
     });
     const asked = askRemoval(lost.waiting);
-    await untilWaiting(owner);
-    release();
+    // A busy CI runner can take a few seconds to reach the lock, and the reset must end either way,
+    // or its lock would hold the hooks after this test.
+    try {
+      await untilWaiting(owner, 1, 15_000);
+    } finally {
+      release();
+    }
     await reset;
     expect((await asked).status).toBe(401);
     expect(await requestOf(lost.id)).toEqual([]);
