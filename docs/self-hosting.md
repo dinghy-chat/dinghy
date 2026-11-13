@@ -7,7 +7,7 @@ Dinghy runs on one small server with Docker. It needs no third-party account and
 On a new Linux server, run:
 
 ```sh
-git clone -b v0.30.0 https://github.com/dinghy-chat/dinghy.git
+git clone -b v0.30.1 https://github.com/dinghy-chat/dinghy.git
 cd dinghy
 sudo ./install.sh
 ```
@@ -31,7 +31,7 @@ If you ran it with `sudo`, and your user is not in the `docker` group, use `sudo
 This one line does the same on a new server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dinghy-chat/dinghy/v0.30.0/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/dinghy-chat/dinghy/v0.30.1/install.sh | sudo bash
 ```
 
 ## What you need
@@ -339,7 +339,7 @@ Read [the changelog](../CHANGELOG.md) first. Then get the new release, and start
 
 ```sh
 git fetch --tags
-git switch --detach v0.30.0   # the release you want
+git switch --detach v0.30.1   # the release you want
 docker compose up -d --wait
 ```
 
@@ -374,7 +374,7 @@ Messages, conversations and settings changed since that backup are lost, so do i
 Most releases do not change the Postgres major version. If one does, the release notes say so, and Postgres refuses to start on the old data until you run this, so the app cannot come up on an empty database.
 
 ```sh
-git switch --detach v0.30.0   # the release that moved Postgres
+git switch --detach v0.30.1   # the release that moved Postgres
 scripts/upgrade-postgres.sh
 ```
 
