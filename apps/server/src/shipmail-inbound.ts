@@ -110,8 +110,10 @@ function shipmailInbox({ apiBase, apiKey, mailboxId }: ShipmailInbound) {
     /** The email as it arrived, "gone" once deleted, or "too_large" past the intake's limit. */
     async raw(emailId: string): Promise<Buffer | "gone" | "too_large"> {
       const response = await call("GET", emailId, "/raw");
-      if (response.status === 404) return "gone";
-      if (response.status === 413) return "too_large";
+      if (response.status === 404 || response.status === 413) {
+        await drain(response);
+        return response.status === 404 ? "gone" : "too_large";
+      }
       return (await readUpTo(response, EMAIL_MAX_BYTES)) ?? "too_large";
     },
     /** Shipmail deletes only a message in Trash, so it goes there first. */
