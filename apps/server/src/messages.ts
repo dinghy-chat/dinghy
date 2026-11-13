@@ -186,6 +186,8 @@ export interface StoredMessage {
   via: Channel | null;
   /** A bot's handoff note: who it handed the conversation to, with null for the team. */
   handoff: { operatorId: string | null } | null;
+  /** The members a note mentions. Empty for any other message. */
+  mentions: string[];
   /** Its own position, or its last edit's or delete's, for a stream that sends changes again. */
   changeSeq: bigint;
   createdAt: Date;
@@ -245,6 +247,8 @@ interface MessageMetadata {
   via?: "mcp" | "draft";
   /** Set on a bot's handoff note: who it handed the conversation to, or null for the team. */
   handoff?: { operatorId: string | null };
+  /** Set on a note that mentions members. */
+  mentions?: string[];
 }
 
 export function stored({
@@ -264,6 +268,7 @@ export function stored({
     via:
       meta?.via === "draft" ? "draft" : row.authorApiKeyId === null ? null : (meta?.via ?? "api"),
     handoff: meta?.handoff ?? null,
+    mentions: meta?.mentions ?? [],
     changeSeq: changedSeq ?? row.seq,
   };
 }
@@ -486,7 +491,10 @@ export async function appendMessage(
     source?: MessageSource | undefined;
     /** A bot's handoff note: who takes the conversation, with null for the team. */
     handoffTo?: string | null | undefined;
-  } & ({ image?: NewImage; note?: false } | { image?: undefined; note: true }),
+  } & (
+    | { image?: NewImage; note?: false }
+    | { image?: undefined; note: true; mentions?: string[] | undefined }
+  ),
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
   const seq = await nextSeq(tx, workspaceId);
@@ -561,6 +569,14 @@ export async function appendMessage(
   if (input.replyToMessageId !== undefined) {
     await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId, isNote);
   }
+  const mentions = isNote
+    ? await mentionable(
+        tx,
+        workspaceId,
+        input.mentions ?? [],
+        author.kind === "operator" ? author.operatorId : null,
+      )
+    : [];
   const metadata: MessageMetadata = {
     ...(input.image !== undefined && {
       image: {
@@ -571,6 +587,7 @@ export async function appendMessage(
     }),
     ...(input.source !== undefined && { via: input.source.via }),
     ...(input.handoffTo !== undefined && { handoff: { operatorId: input.handoffTo } }),
+    ...(mentions.length > 0 && { mentions }),
   };
   const [row] = await tx
     .insert(message)
@@ -614,9 +631,10 @@ export async function appendMessage(
       conversationId,
       fromVisitor: author.kind === "visitor",
       ...(created ? { conversationCreated: true } : {}),
+      ...(mentions.length > 0 && { mentions }),
     } satisfies MessagePayload,
-    // A note alerts nobody, and its visitor never hears of it.
-    needsAlert: !isNote && (input.alert ?? true),
+    // A note alerts only the members it mentions, and its visitor never hears of it.
+    needsAlert: isNote ? mentions.length > 0 : (input.alert ?? true),
     needsWebhook: wantsWebhook(workspaceId),
   });
   // A note is not activity in the chat, so the inbox keeps the conversation in its place. The
@@ -641,6 +659,31 @@ export async function appendMessage(
     await markDraftsStale(tx, workspaceId, conversationId, sentDraftId);
   }
   return { message: stored(row), created: true, conversationStarted: created };
+}
+
+/**
+ * The members a note may mention, of those it names: the current members, without its author, who
+ * needs no alert of their own note.
+ */
+export async function mentionable(
+  tx: Transaction,
+  workspaceId: string,
+  named: string[],
+  authorOperatorId: string | null,
+): Promise<string[]> {
+  const wanted = [...new Set(named)].filter((id) => id !== authorOperatorId);
+  if (wanted.length === 0) return [];
+  const members = await tx
+    .select({ id: workspaceMember.operatorId })
+    .from(workspaceMember)
+    .where(
+      and(
+        eq(workspaceMember.workspaceId, workspaceId),
+        inArray(workspaceMember.operatorId, wanted),
+        isNull(workspaceMember.removedAt),
+      ),
+    );
+  return wanted.filter((id) => members.some((member) => member.id === id));
 }
 
 /**
@@ -1022,10 +1065,10 @@ export const conversationHasTestVisitor = (alias: SQL) => sql<boolean>`exists (
 )`;
 
 /**
- * Whether the conversation in the query has a visitor message past this operator's read position.
- * An API key, null here, has no position, so nothing is unread for it. A bot's test visitor is
- * never unread, as it alerts nobody. Notes are not messages, so they are never unread. The probe
- * walks message_conversation_idx from the position up.
+ * Whether the conversation in the query has a visitor message, or a note that mentions this
+ * operator, past their read position. An API key, null here, has no position, so nothing is unread
+ * for it. A bot's test visitor is never unread, as it alerts nobody. Any other note is not a
+ * message, so it is never unread. The probe walks message_conversation_idx from the position up.
  */
 function unreadBy(operatorId: string | null) {
   if (operatorId === null) return sql<boolean>`false`;
@@ -1033,7 +1076,8 @@ function unreadBy(operatorId: string | null) {
   return sql<boolean>`not ${conversationHasTestVisitor(sql`${conversation}`)} and exists (
     select 1 from ${message} as m
     where m.workspace_id = ${conversation}.workspace_id and m.conversation_id = ${conversation}.id
-      and m.author_visitor_id is not null and m.deleted_at is null
+      and (m.author_visitor_id is not null or m.kind = 'note' and m.metadata->'mentions' ? ${operatorId})
+      and m.deleted_at is null
       and m.seq > coalesce((
         select r.read_seq from ${conversationRead} as r
         where r.workspace_id = ${conversation}.workspace_id and r.conversation_id = ${conversation}.id
@@ -1565,7 +1609,9 @@ export async function recordBillingChange(tx: Transaction, workspaceId: string):
   await tx.insert(event).values({ workspaceId, seq, kind: "billing.changed" });
 }
 
-/** Tells every open operator app to read `me` again, for a new name or logo. */
+/**
+ * Tells every open operator app to read `me` again, for a new name or logo, and the saved replies.
+ */
 export async function recordWorkspaceChange(tx: Transaction, workspaceId: string): Promise<void> {
   const seq = await nextSeq(tx, workspaceId);
   await tx.insert(event).values({ workspaceId, seq, kind: "workspace.changed" });

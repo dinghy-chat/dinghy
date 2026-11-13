@@ -15,6 +15,7 @@ import { IMAGE_TYPES } from "../../../packages/widget/src/compose.ts";
 import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
+import { type PickerKey, type PickerSources, usePicker } from "./picker.tsx";
 import { hasFormatting, linkHref, toMarkdown } from "./rich-text.ts";
 import { Keys } from "./shortcuts.tsx";
 import { type TextId, t } from "./text.ts";
@@ -37,6 +38,10 @@ interface Latest {
   onEscape: (() => void) | undefined;
   onFiles: ((files: Iterable<File>) => void) | undefined;
   openLink(): void;
+  /** Gives a key to the picker of saved replies and teammates. False when it is closed. */
+  pick(key: PickerKey): boolean;
+  /** The picker's list and its chosen item, for screen readers. Set once the picker has drawn. */
+  picking: { listId?: string | undefined; activeId?: string | undefined };
 }
 
 /** Runs commands on the editor, which keeps the focus. */
@@ -115,8 +120,9 @@ const shortcutLabel = (name: TextId, key: string | undefined) =>
 
 /**
  * The composer's keys: Enter sends, Shift+Enter starts a line or a list item, Escape cancels, and
- * each format's key does what its button does. It also keeps the Markdown within a message's
- * length, so a reply cannot fail on the server for its size.
+ * each format's key does what its button does. While the picker is open, it takes the arrows,
+ * Enter, Tab and Escape first. It also keeps the Markdown within a message's length, so a reply
+ * cannot fail on the server for its size.
  */
 const composerExtension = (latest: RefObject<Latest>) =>
   Extension.create({
@@ -134,8 +140,17 @@ const composerExtension = (latest: RefObject<Latest>) =>
         ]),
       ),
       Enter() {
-        latest.current.send();
+        if (!latest.current.pick("Enter")) latest.current.send();
         return true;
+      },
+      Tab() {
+        return latest.current.pick("Tab");
+      },
+      ArrowUp() {
+        return latest.current.pick("ArrowUp");
+      },
+      ArrowDown() {
+        return latest.current.pick("ArrowDown");
       },
       "Shift-Enter": ({ editor }) =>
         editor.commands.first(({ commands }) => [
@@ -146,6 +161,7 @@ const composerExtension = (latest: RefObject<Latest>) =>
       // With nothing to cancel, Escape leaves the box, so the app's single keys work again.
       Escape({ editor }) {
         const { onEscape } = latest.current;
+        if (latest.current.pick("Escape")) return true;
         if (onEscape === undefined) editor.commands.blur();
         else onEscape();
         return true;
@@ -191,12 +207,18 @@ function useComposerEditor(draft: string, latest: RefObject<Latest>, autofocus: 
     content: markdownHtml(draft),
     autofocus: autofocus && "end",
     editorProps: {
-      attributes: () => ({
-        role: "textbox",
-        "aria-multiline": "true",
-        "aria-label": latest.current.label,
-        class: "compose-field",
-      }),
+      attributes: (): Record<string, string> => {
+        const { listId, activeId } = latest.current.picking;
+        return {
+          role: "textbox",
+          "aria-multiline": "true",
+          "aria-label": latest.current.label,
+          "aria-autocomplete": "list",
+          class: "compose-field",
+          ...(listId !== undefined && { "aria-controls": listId }),
+          ...(activeId !== undefined && { "aria-activedescendant": activeId }),
+        };
+      },
       handlePaste: (view, event) => {
         const data = event.clipboardData;
         const text = data?.getData("text/plain") ?? "";
@@ -248,6 +270,7 @@ export function Composer({
   above,
   mode,
   editing = false,
+  picks,
 }: {
   draft: string;
   setDraft(draft: string): void;
@@ -262,8 +285,10 @@ export function Composer({
   mode?: { value: ComposeMode; onChange?(mode: ComposeMode): void } | undefined;
   /** It edits a sent reply, in place of its bubble. */
   editing?: boolean;
+  /** What `/` and `@` offer here: saved replies, and teammates in a note. */
+  picks: PickerSources;
 }) {
-  const picker = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   // A phone keeps the formatting buttons behind one toggle, so the field gets the row.
   const [showsFormats, setShowsFormats] = useState(false);
   const formatsId = useId();
@@ -287,18 +312,22 @@ export function Composer({
     onEscape,
     onFiles,
     openLink: () => setTypedLink(editor.getAttributes("link").href ?? ""),
+    pick: (key) => picker.press(key),
+    picking: {},
   };
   const latest = useRef(now);
   latest.current = now;
   const editor = useComposerEditor(draft, latest, editing);
+  const picker = usePicker(editor, picks);
+  now.picking = { listId: picker.listId, activeId: picker.activeId };
   const active = useEditorState({
     editor,
     selector: ({ editor: current }) =>
       FORMATS.map((one) => one.active.some((name) => current.isActive(name))),
   });
-  // The label and placeholder follow Reply and Note once the editor draws again.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: isNote is what changes them.
-  useEffect(() => editor.view.dispatch(editor.state.tr), [editor, isNote]);
+  // The label, the placeholder and the picker's chosen item show once the editor draws again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isNote and the chosen item change them.
+  useEffect(() => editor.view.dispatch(editor.state.tr), [editor, isNote, picker.activeId]);
 
   const href = typedLink === null ? undefined : linkHref(typedLink);
   const closeLink = () => {
@@ -353,6 +382,7 @@ export function Composer({
         {above}
         {/* The key that comes back here, while the box is empty and has no focus. */}
         {!editing && draft === "" && <Keys keys={isNote ? "n" : "r"} />}
+        {picker.list}
         <EditorContent editor={editor} className="compose-text" />
         {typedLink !== null && (
           <div className="link-field">
@@ -395,7 +425,7 @@ export function Composer({
           {onFiles !== undefined && (
             <>
               <input
-                ref={picker}
+                ref={fileInput}
                 className="file"
                 type="file"
                 multiple
@@ -412,7 +442,7 @@ export function Composer({
                 className="icon-button"
                 aria-label={t("attach")}
                 title={t("attach")}
-                onClick={() => picker.current?.click()}
+                onClick={() => fileInput.current?.click()}
               >
                 <Icon name="clip" size={18} />
               </button>

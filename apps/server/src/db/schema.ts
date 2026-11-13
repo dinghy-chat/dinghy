@@ -24,6 +24,7 @@ import {
   HEADER_FACES_MAX,
   MESSAGE_MAX,
   RADIUS_MAX_PX,
+  SAVED_REPLY_SHORTCUT,
   WIDGET_DEFAULTS,
 } from "../../../../packages/widget/src/shared.ts";
 
@@ -44,7 +45,8 @@ export const conversationStatus = pgEnum("conversation_status", ["open", "closed
 export const VISITOR_KINDS = ["text", "image", "closed", "reopened"] as const;
 /**
  * A message's kind. A `note` is text that only the workspace's team sees. It never reaches the
- * visitor, an alert or an email, and it is not chat either.
+ * visitor, and it is not chat either. It reaches an alert or an email only when it mentions a
+ * member: then that member, and no one else, gets its text.
  */
 export const MESSAGE_KINDS = [...VISITOR_KINDS, "note"] as const;
 export const messageKind = pgEnum("message_kind", MESSAGE_KINDS);
@@ -53,7 +55,15 @@ export const CHAT_KINDS = ["text", "image"] as const;
 /** What people wrote: the chat, and the notes only the team sees. */
 export const WRITTEN_KINDS = [...CHAT_KINDS, "note"] as const;
 // `transcript` is the email of a whole conversation to its visitor, after a close or on request.
-export const alertChannel = pgEnum("alert_channel", ["push", "email", "transcript"]);
+// `mention_push` and `mention_email` tell a member that a note mentions them. They are channels of
+// their own, so a note's alerts never take the unique key of a visitor message's.
+export const alertChannel = pgEnum("alert_channel", [
+  "push",
+  "email",
+  "transcript",
+  "mention_push",
+  "mention_email",
+]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);
 export const widgetPosition = pgEnum("widget_position", ["left", "right"]);
 export const widgetTheme = pgEnum("widget_theme", ["light", "dark", "auto"]);
@@ -538,6 +548,8 @@ export interface MessagePayload {
   fromVisitor: boolean;
   /** This message started its conversation, so a webhook also gets `conversation.created`. */
   conversationCreated?: boolean;
+  /** The members a note's alert goes to: all it mentions when written, the new ones on an edit. */
+  mentions?: string[];
 }
 
 export const event = pgTable(
@@ -1359,6 +1371,33 @@ export const welcomeLink = pgTable(
       columns: [table.founderWorkspaceId, table.founderConversationId],
       foreignColumns: [conversation.workspaceId, conversation.id],
     }).onDelete("cascade"),
+  ],
+);
+
+export const SAVED_REPLY_BODY_MAX = 5000;
+
+/** A reply the team writes once, and an operator inserts in the composer by typing `/`. */
+export const savedReply = pgTable(
+  "saved_reply",
+  {
+    workspaceId: workspaceId(),
+    id: id(),
+    // What follows `/` in the composer, such as `refund-policy`.
+    shortcut: text("shortcut").notNull(),
+    body: text("body").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    unique("saved_reply_shortcut_key").on(table.workspaceId, table.shortcut),
+    check(
+      "saved_reply_shortcut",
+      sql`${table.shortcut} ~ ${sql.raw(`'${SAVED_REPLY_SHORTCUT.source}'`)}`,
+    ),
+    check(
+      "saved_reply_body_length",
+      sql`char_length(${table.body}) between 1 and ${sql.raw(String(SAVED_REPLY_BODY_MAX))}`,
+    ),
   ],
 );
 

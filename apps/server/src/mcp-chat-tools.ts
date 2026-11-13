@@ -1,7 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "@hono/zod-openapi";
 import { and, eq, inArray } from "drizzle-orm";
-import { BOT_TYPING_MS } from "../../../packages/widget/src/shared.ts";
+import { BOT_TYPING_MS, MENTIONS_MAX } from "../../../packages/widget/src/shared.ts";
 import {
   AnalyticsQuery,
   analyticsFor,
@@ -23,6 +23,7 @@ import {
   conversationId,
   HandoffReason,
   HandoffSummary,
+  Mentions,
   replyToMessageId,
   UNTRUSTED_TEXT,
 } from "./inputs.ts";
@@ -42,6 +43,7 @@ import {
   stored,
 } from "./messages.ts";
 import type { Presence, VisitorPresence } from "./presence.ts";
+import { listSavedReplies } from "./saved-replies.ts";
 import { listMembers } from "./team.ts";
 import { MINUTE_MS } from "./time.ts";
 
@@ -307,8 +309,16 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "add_note",
       title: "Add an internal note",
       description:
-        "Adds a note to a conversation, open or closed, that only the team sees. The visitor never sees it, and it alerts nobody. Use it to pass on what you found, or to suggest an answer while a person handles the conversation: a note works while a person handles it and while bots are paused. Markdown works as in messages, but links in a key's note show as plain text. Pass the same `clientId` when you retry. Pass `replyToMessageId` to quote an earlier message or note.",
-      input: z.object({ conversationId, body: Body, clientId, replyToMessageId }),
+        "Adds a note to a conversation, open or closed, that only the team sees. The visitor never sees it. It alerts nobody, unless it mentions members: pass their IDs from list_members in `mentions`, and each gets an alert with the note's text. Write `@Name` in the text too, so people reading it see who it is for. Use it to pass on what you found, or to suggest an answer while a person handles the conversation: a note works while a person handles it and while bots are paused. Markdown works as in messages, but links in a key's note show as plain text. Pass the same `clientId` when you retry. Pass `replyToMessageId` to quote an earlier message or note.",
+      input: z.object({
+        conversationId,
+        body: Body,
+        clientId,
+        replyToMessageId,
+        mentions: Mentions.optional().describe(
+          `Members to alert, by their id from list_members, at most ${MENTIONS_MAX}`,
+        ),
+      }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
         replyAnswer(
@@ -368,7 +378,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "list_members",
       title: "List the team",
       description:
-        "Lists the workspace's members by name: `id` (the operatorId that assign_conversation and hand_off take), `name`, `role` (owner, admin or member) and `online`: true while their operator app is open and they are not away, null when the server cannot tell now.",
+        "Lists the workspace's members by name: `id` (the operatorId that assign_conversation and hand_off take, and add_note takes in `mentions`), `name`, `role` (owner, admin or member) and `online`: true while their operator app is open and they are not away, null when the server cannot tell now.",
       input: z.object({}),
       readOnly: true,
       async run(_input, { workspaceId }) {
@@ -384,6 +394,21 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
         }));
         return { data: { members } };
       },
+    }),
+    tool({
+      name: "list_saved_replies",
+      title: "List the team's saved replies",
+      description:
+        "Lists the replies the team saved for common questions, by `shortcut`, with their `body` in Markdown. Use them to answer in the team's own words and with its facts, such as a refund policy. A body is the team's text, so you may adapt it to the visitor.",
+      input: z.object({}),
+      readOnly: true,
+      run: async (_input, { workspaceId }) => ({
+        data: {
+          savedReplies: await withWorkspace(db, workspaceId, (tx) =>
+            listSavedReplies(tx, workspaceId),
+          ),
+        },
+      }),
     }),
     tool({
       name: "set_typing",

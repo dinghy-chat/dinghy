@@ -48,6 +48,8 @@ export interface Line {
   via: Message["via"];
   /** A bot's handoff note: whom it handed the conversation to, with null for the team. */
   handoff: Message["handoff"];
+  /** The members a note mentions. */
+  mentions: string[];
 }
 
 /** Adds a confirmed message in commit order, and replaces its pending line if it has one. */
@@ -70,6 +72,7 @@ function merge(lines: Line[], message: Message): Line[] {
     deleted: message.deleted,
     via: message.via,
     handoff: message.handoff,
+    mentions: message.mentions,
   };
   const others = lines.filter(
     (other) => other.id !== message.id && !(other.seq === null && other.id === message.clientId),
@@ -163,7 +166,7 @@ export function useThreadLines({
     reloadAll();
   };
 
-  const deliver = async ({ id, body, file, replyTo, kind }: Line) => {
+  const deliver = async ({ id, body, file, replyTo, kind, mentions }: Line) => {
     setLines((current) =>
       current.map((line) => (line.id === id ? { ...line, status: "sending" } : line)),
     );
@@ -171,7 +174,7 @@ export function useThreadLines({
     try {
       const sent =
         file === undefined
-          ? await api.reply(conversationId, id, body, replyToId, kind === "note")
+          ? await api.reply(conversationId, id, body, replyToId, kind === "note", mentions)
           : await api.replyImage(conversationId, id, file, replyToId);
       setLines((current) => merge(current, sent));
       onChanged();
@@ -190,7 +193,12 @@ export function useThreadLines({
   };
 
   /** A line this operator is sending, before the server confirms it. */
-  const pending = (body: string, replyTo: Quote | null, kind: "text" | "image" | "note"): Line => ({
+  const pending = (
+    body: string,
+    replyTo: Quote | null,
+    kind: "text" | "image" | "note",
+    mentions: string[] = [],
+  ): Line => ({
     id: newClientId(),
     seq: null,
     body,
@@ -207,11 +215,12 @@ export function useThreadLines({
     deleted: false,
     via: null,
     handoff: null,
+    mentions,
   });
 
-  /** Sends a reply, or a note that only the team sees. */
-  const sendText = (body: string, quote: Quote | null, isNote: boolean) => {
-    const line = pending(body, quote, isNote ? "note" : "text");
+  /** Sends a reply, or a note that only the team sees, which alerts the members it mentions. */
+  const sendText = (body: string, quote: Quote | null, isNote: boolean, mentions: string[]) => {
+    const line = pending(body, quote, isNote ? "note" : "text", mentions);
     setLines((current) => [...current, line]);
     void deliver(line);
   };

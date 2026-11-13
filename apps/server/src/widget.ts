@@ -570,6 +570,7 @@ function messageView(
     readAt: _read,
     via: _via,
     handoff: _handoff,
+    mentions: _mentions,
     ...message
   }: VisitorMessage,
 ) {

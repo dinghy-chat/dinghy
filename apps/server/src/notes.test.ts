@@ -229,6 +229,43 @@ describe("writing a note", () => {
     expect((await widgetLines(token)).messages.map((one) => one.body)).toEqual(["Hello"]);
   });
 
+  test("a note's mentions keep current members only, and show in the message view, never to the visitor", async () => {
+    const { conversationId, token } = await visitorStarts(app, space.publicKey, "Hello");
+    const stranger = randomUUID();
+    const response = await asOperator(app, ana.cookie, "POST", thread(conversationId), {
+      clientId: randomUUID(),
+      body: "@Ben can you take this?",
+      note: true,
+      mentions: [ben.id, ana.id, stranger],
+    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ kind: "note", mentions: [ben.id] });
+    const reply = await write(ana.cookie, conversationId, "Hi");
+    expect(reply).toMatchObject({ mentions: [] });
+    expect(await operatorLines(conversationId)).toContainEqual(
+      expect.objectContaining({ kind: "note", mentions: [ben.id] }),
+    );
+    expect(JSON.stringify(await widgetLines(token))).not.toContain(ben.id);
+    const tooMany = await asOperator(app, ana.cookie, "POST", thread(conversationId), {
+      clientId: randomUUID(),
+      body: "Everyone",
+      note: true,
+      mentions: Array.from({ length: 11 }, () => randomUUID()),
+    });
+    expect(tooMany.status).toBe(400);
+  });
+
+  test("an API key mentions members in a note through MCP's add_note", async () => {
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
+    const noted = await callTool(app, keyToken, "add_note", {
+      conversationId,
+      body: "@Ana the visitor asks for a refund",
+      clientId: "mcp-mention",
+      mentions: [ana.id],
+    });
+    expect(noted.structuredContent.message).toMatchObject({ kind: "note", mentions: [ana.id] });
+  });
+
   test("a note with an image is refused", async () => {
     const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const response = await app.request(
@@ -446,9 +483,16 @@ describe("changing a note", () => {
     expect((await asOperator(app, ben.cookie, "PATCH", path, { body: "Mine now" })).status).toBe(
       403,
     );
-    const edited = await asOperator(app, ana.cookie, "PATCH", path, { body: "Final note" });
+    const edited = await asOperator(app, ana.cookie, "PATCH", path, {
+      body: "Final note @Ben",
+      mentions: [ben.id],
+    });
     expect(edited.status).toBe(200);
-    expect(await edited.json()).toMatchObject({ kind: "note", body: "Final note" });
+    expect(await edited.json()).toMatchObject({
+      kind: "note",
+      body: "Final note @Ben",
+      mentions: [ben.id],
+    });
   });
 
   test("a member deletes only their own note, and the visitor's stream is not woken", async () => {

@@ -336,8 +336,14 @@ describe("chat migrate", () => {
     const line = { conversationId: conversation, seq: 2n };
     const after = await withWorkspace(app, workspace, async (tx) => ({
       sentAt: await emailedAt(tx, workspace, visitor, line),
-      edit: await editMessage(tx, workspace, conversation, reply, anna, "Changed"),
-      laterEdit: await editMessage(tx, workspace, conversation, later, anna, "Changed"),
+      edit: await editMessage(tx, workspace, conversation, reply, anna, {
+        body: "Changed",
+        mentions: [],
+      }),
+      laterEdit: await editMessage(tx, workspace, conversation, later, anna, {
+        body: "Changed",
+        mentions: [],
+      }),
     }));
     expect(after.sentAt).toBeInstanceOf(Date);
     expect(after.edit.kind).toBe("seen");

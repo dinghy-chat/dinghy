@@ -103,6 +103,8 @@ export const ERROR_CODES = [
   "payment_required",
   "push_unavailable",
   "read_only",
+  "saved_reply_limit",
+  "saved_reply_shortcut_taken",
   "signed_in",
   "site_limit",
   "storage_full",

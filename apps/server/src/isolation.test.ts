@@ -30,6 +30,7 @@ import {
   operatorPicture,
   pageView,
   pushSubscription,
+  savedReply,
   verification,
   visitor,
   webhook,
@@ -114,6 +115,8 @@ interface World {
   grantA: Grant;
   grantB: Grant;
   hookB: { id: string; secret: string; url: string };
+  /** A saved reply in the other workspace. */
+  replyB: { id: string; body: string };
   /** Strings that belong to someone else, for each kind of caller. */
   secrets: { two: string; b: string };
   widget(
@@ -509,8 +512,10 @@ const ATTACKS: Record<string, Attack> = {
   "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages": async ({
     operator: as,
     anna,
+    bea,
     a,
     b,
+    one,
     other,
   }) => {
     const body = { clientId: randomUUID(), body: "an operator crossing over" };
@@ -523,6 +528,15 @@ const ATTACKS: Record<string, Attack> = {
       .from(message)
       .where(eq(message.body, "an operator crossing over"));
     expect(rows).toEqual([]);
+    // A note mentions only members of its own workspace.
+    const noted = await as(
+      anna,
+      "POST",
+      inWorkspace(a.id, `/conversations/${one.conversationId}/messages`),
+      { clientId: randomUUID(), body: "@Bea across", note: true, mentions: [bea.id] },
+    );
+    expect(noted.status).toBe(201);
+    expect(await noted.json()).toMatchObject({ mentions: [] });
   },
   "PATCH /v1/operator/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId":
     async ({ operator: as, anna, a, b, one, other }) => {
@@ -1345,6 +1359,43 @@ const ATTACKS: Record<string, Attack> = {
       200,
     );
   },
+  "GET /v1/operator/workspaces/:workspaceId/saved-replies": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, replyB } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/saved-replies"))).status).toBe(404);
+    expect((await withKey(keyA.token, "GET", inWorkspace(b.id, "/saved-replies"))).status).toBe(
+      404,
+    );
+    const own = await as(anna, "GET", inWorkspace(a.id, "/saved-replies"));
+    expect(own.status).toBe(200);
+    expect(await own.text()).not.toContain(replyB.body);
+    const keyed = await withKey(keyA.token, "GET", inWorkspace(a.id, "/saved-replies"));
+    expect(await keyed.text()).not.toContain(replyB.body);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/saved-replies": async ({ operator: as, anna, b }) => {
+    const body = { shortcut: "crossing", body: "planted across" };
+    expect((await as(anna, "POST", inWorkspace(b.id, "/saved-replies"), body)).status).toBe(404);
+    const rows = await owner.select().from(savedReply).where(eq(savedReply.workspaceId, b.id));
+    expect(rows.map((row) => row.shortcut)).not.toContain("crossing");
+  },
+  "PATCH /v1/operator/workspaces/:workspaceId/saved-replies/:savedReplyId": async (world) => {
+    const { operator: as, anna, a, b, replyB } = world;
+    for (const space of [a.id, b.id]) {
+      const path = inWorkspace(space, `/saved-replies/${replyB.id}`);
+      expect((await as(anna, "PATCH", path, { body: "changed across" })).status).toBe(404);
+    }
+    const [row] = await owner.select().from(savedReply).where(eq(savedReply.id, replyB.id));
+    expect(row?.body).toBe(replyB.body);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/saved-replies/:savedReplyId": async (world) => {
+    const { operator: as, anna, a, b, replyB } = world;
+    for (const space of [a.id, b.id]) {
+      const path = inWorkspace(space, `/saved-replies/${replyB.id}`);
+      expect((await as(anna, "DELETE", path)).status).toBe(404);
+    }
+    expect(await owner.select().from(savedReply).where(eq(savedReply.id, replyB.id))).toHaveLength(
+      1,
+    );
+  },
   "GET /v1/operator/workspaces/:workspaceId/webhooks": async (world) => {
     const { operator: as, withKey, anna, a, b, keyA, hookB } = world;
     expect((await as(anna, "GET", inWorkspace(b.id, "/webhooks"))).status).toBe(404);
@@ -2043,6 +2094,10 @@ async function buildWorld(db: Database): Promise<World> {
     const tokens = (await answer.json()) as { access_token: string; refresh_token: string };
     return { clientId, access: tokens.access_token, refresh: tokens.refresh_token };
   };
+  const madeReply = await operatorCall(bea, "POST", inWorkspace(b.id, "/saved-replies"), {
+    shortcut: "secret-offer",
+    body: "The other workspace's secret offer",
+  });
   const madeHook = await operatorCall(bea, "POST", inWorkspace(b.id, "/webhooks"), {
     url: "https://93.184.215.14/b-hook",
     events: ["message.created"],
@@ -2066,6 +2121,7 @@ async function buildWorld(db: Database): Promise<World> {
     grantA: await madeGrant(anna, a),
     grantB: await madeGrant(bea, b),
     hookB: (await madeHook.json()) as { id: string; secret: string; url: string },
+    replyB: (await madeReply.json()) as { id: string; body: string },
     secrets: { two: "written by two", b: "written in the other workspace" },
     widget,
     operator: operatorCall,

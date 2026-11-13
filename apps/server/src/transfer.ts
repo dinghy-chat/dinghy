@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
@@ -15,6 +16,8 @@ import {
   message,
   operator,
   pageView,
+  SAVED_REPLY_BODY_MAX,
+  savedReply,
   visitor,
   widgetSettings,
   workspace,
@@ -156,6 +159,17 @@ const ExportFile = z.strictObject({
   ),
   attachments: z.array(z.strictObject({ id, messageId: id, createdAt: date })),
   emailStops: z.array(z.strictObject({ addressHash: z.string().max(128), createdAt: date })),
+  // A file from before saved replies has none.
+  savedReplies: z
+    .array(
+      z.strictObject({
+        id,
+        shortcut: z.string().regex(SAVED_REPLY_SHORTCUT),
+        body: z.string().max(SAVED_REPLY_BODY_MAX),
+        updatedAt: date,
+      }),
+    )
+    .default([]),
   pageViews: z.array(
     z.strictObject({
       visitorId: id,
@@ -172,6 +186,13 @@ const isoOrNull = (value: Date | null) => (value === null ? null : value.toISOSt
 const dateOrNull = (value: string | null | undefined) => (value == null ? null : new Date(value));
 
 type MessageRow = typeof message.$inferSelect;
+
+/** A note's metadata with the members it mentions named by their IDs on this server. */
+function withMappedMentions(metadata: unknown, mapOperator: (exported: string) => string | null) {
+  const { mentions, ...rest } = metadata as { mentions?: unknown };
+  if (!Array.isArray(mentions)) return metadata;
+  return { ...rest, mentions: mentions.map((one) => mapOperator(String(one))) };
+}
 
 const messageJson = (row: MessageRow): ExportData["messages"][number] => ({
   id: row.id,
@@ -294,8 +315,15 @@ async function readWorkspace(
         .from(attachment)
         .where(eq(attachment.workspaceId, workspaceId));
       const stops = await tx.select().from(emailStop).where(eq(emailStop.workspaceId, workspaceId));
+      const replies = await tx
+        .select()
+        .from(savedReply)
+        .where(eq(savedReply.workspaceId, workspaceId));
       // The same bytes as one JSON.stringify of the whole file, in the schema's key order.
-      const head: Omit<ExportData, "messages" | "attachments" | "emailStops" | "pageViews"> = {
+      const head: Omit<
+        ExportData,
+        "messages" | "attachments" | "emailStops" | "savedReplies" | "pageViews"
+      > = {
         version: VERSION,
         // The signing secret stays out. An export travels, and that secret signs in any user.
         workspace: {
@@ -356,7 +384,7 @@ async function readWorkspace(
           updatedAt: iso(row.updatedAt),
         })),
       };
-      const tail: Pick<ExportData, "attachments" | "emailStops"> = {
+      const tail: Pick<ExportData, "attachments" | "emailStops" | "savedReplies"> = {
         attachments: attachments.map((row) => ({
           id: row.id,
           messageId: row.messageId,
@@ -365,6 +393,12 @@ async function readWorkspace(
         emailStops: stops.map((row) => ({
           addressHash: row.addressHash,
           createdAt: iso(row.createdAt),
+        })),
+        savedReplies: replies.map((row) => ({
+          id: row.id,
+          shortcut: row.shortcut,
+          body: row.body,
+          updatedAt: iso(row.updatedAt),
         })),
       };
       const json = [
@@ -668,7 +702,7 @@ async function insertWorkspace(
         authorApiKeyId: row.authorApiKeyId,
         clientId: row.clientId,
         body: row.body,
-        metadata: row.metadata ?? {},
+        metadata: withMappedMentions(row.metadata ?? {}, mapOperator),
         // Messages go in commit order, so a quoted one is always in already.
         replyToMessageId: row.replyToMessageId ?? null,
         editedAt: dateOrNull(row.editedAt),
@@ -687,6 +721,17 @@ async function insertWorkspace(
         path: row.path,
         title: row.title,
         viewedAt: new Date(row.viewedAt),
+      })),
+    );
+  }
+  for (const rows of batches(data.savedReplies)) {
+    await tx.insert(savedReply).values(
+      rows.map((row) => ({
+        workspaceId,
+        id: row.id,
+        shortcut: row.shortcut,
+        body: row.body,
+        updatedAt: new Date(row.updatedAt),
       })),
     );
   }

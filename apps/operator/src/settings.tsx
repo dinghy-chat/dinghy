@@ -7,6 +7,7 @@ import { InstallPage } from "./install.tsx";
 import { useLoad } from "./load.ts";
 import { NotificationsPage } from "./notifications.tsx";
 import { ProfilePage } from "./profile.tsx";
+import { SavedRepliesPage } from "./saved-replies.tsx";
 import { TeamPage, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
 import { AppLink, Loading, Page } from "./ui.tsx";
@@ -17,6 +18,7 @@ const PAGES = [
   "notifications",
   "workspace",
   "team",
+  "saved-replies",
   "appearance",
   "install",
   "developers",
@@ -27,7 +29,7 @@ export type SettingsPage = (typeof PAGES)[number];
 /** The list on the left of Settings, in groups, in this order. */
 const GROUPS: { label: TextId; pages: SettingsPage[] }[] = [
   { label: "settingsGroupYou", pages: ["profile", "notifications"] },
-  { label: "settingsGroupWorkspace", pages: ["workspace", "team"] },
+  { label: "settingsGroupWorkspace", pages: ["workspace", "team", "saved-replies"] },
   { label: "settingsGroupWidget", pages: ["appearance", "install"] },
   { label: "settingsGroupDevelopers", pages: ["developers"] },
 ];
@@ -37,6 +39,7 @@ const PAGE_TEXT: Record<SettingsPage, TextId> = {
   notifications: "pageNotifications",
   workspace: "pageWorkspace",
   team: "pageTeam",
+  "saved-replies": "pageSavedReplies",
   appearance: "pageAppearance",
   install: "pageInstall",
   developers: "pageDevelopers",
@@ -45,8 +48,14 @@ const PAGE_TEXT: Record<SettingsPage, TextId> = {
 /** The pages that read the workspace's settings: its usage, its delete's counts or its code. */
 const SETTINGS_READERS: readonly SettingsPage[] = ["workspace", "team", "install"];
 
-/** A member reads the team and the widget, and changes only their own settings. */
-const MEMBER_PAGES: readonly SettingsPage[] = ["profile", "notifications", "team", "appearance"];
+/** A member reads the team and the widget, changes their own settings, and the saved replies. */
+const MEMBER_PAGES: readonly SettingsPage[] = [
+  "profile",
+  "notifications",
+  "team",
+  "saved-replies",
+  "appearance",
+];
 
 const isSettingsPage = (value: string): value is SettingsPage =>
   PAGES.some((page) => page === value);
@@ -224,6 +233,8 @@ export function Settings({
             onLeft={onLeft}
           />
         );
+      case "saved-replies":
+        return <SavedRepliesPage api={api} />;
       case "appearance":
         return (
           <AppearancePage

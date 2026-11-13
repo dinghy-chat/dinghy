@@ -1,6 +1,7 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { signedIn } from "./links.ts";
+import { openSettings } from "./settings.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
@@ -252,4 +253,70 @@ test("an operator adds a note that the visitor never sees, and a note draft keep
   await expect(other.getByText("Ask Ben")).toHaveCount(0);
 
   for (const page of [customer, other, alice]) await page.context().close();
+});
+
+test("a member saves a reply in Settings, and / inserts it; @ mentions a teammate in a note", async ({
+  browser,
+}) => {
+  await server.createOperator("ben@example.com", { role: "member" });
+  const customer = await visitor(browser, "How do refunds work?");
+  const alice = await signedIn(browser, server, "alice@example.com");
+
+  await openSettings(alice, "Saved replies");
+  await alice.getByRole("button", { name: "New saved reply" }).click();
+  await alice.getByRole("textbox", { name: "Shortcut" }).fill("refund");
+  await alice
+    .getByRole("textbox", { name: "Text" })
+    .fill("You get a **full refund** within 30 days.");
+  await alice.getByRole("button", { name: "Add saved reply" }).click();
+  await expect(alice.locator(".item-row", { hasText: "/refund" })).toBeVisible();
+  await alice.getByRole("button", { name: "Inbox", exact: true }).click();
+  await alice.locator(".row", { hasText: "How do refunds work?" }).click();
+
+  // "/" at the start of a word opens the picker, which finds the reply by its shortcut only.
+  const reply = alice.getByRole("textbox", { name: "Your reply" });
+  await reply.pressSequentially("Hi! /30");
+  const replies = alice.getByRole("listbox", { name: "Saved replies" });
+  await expect(replies.getByRole("option")).toHaveCount(0);
+  await reply.fill("");
+  await reply.pressSequentially("Hi! /fund");
+  await expect(replies.getByRole("option")).toHaveText([
+    "/refundYou get a full refund within 30 days.",
+  ]);
+  await reply.press("Escape");
+  await expect(replies).toHaveCount(0);
+  await reply.fill("");
+  await reply.pressSequentially("Hi! /ref");
+  await reply.press("Enter");
+  await expect(replies).toHaveCount(0);
+  // The operator can change the text before it goes.
+  await reply.press("End");
+  await reply.pressSequentially(" Anything else?");
+  await reply.press("Enter");
+  await expect(
+    customer.locator(".msg", { hasText: "full refund within 30 days. Anything else?" }),
+  ).toBeVisible();
+
+  // "@" offers the other teammates in a note, and not in a reply.
+  await reply.pressSequentially("@be");
+  await expect(alice.getByRole("listbox")).toHaveCount(0);
+  await reply.fill("");
+  await alice.getByRole("radio", { name: "Note" }).check();
+  const note = alice.getByRole("textbox", { name: "Your note" });
+  await note.pressSequentially("Can you check this, @be");
+  const teammates = alice.getByRole("listbox", { name: "Mention a teammate" });
+  await expect(teammates.getByRole("option")).toHaveText(["ben@example.com"]);
+  await note.press("Tab");
+  await note.pressSequentially("please?");
+  const sent = alice.waitForRequest(
+    (request) => request.method() === "POST" && request.url().endsWith("/messages"),
+  );
+  await note.press("Enter");
+  await expect(
+    alice.locator(".msg.note", { hasText: "Can you check this, @ben@example.com please?" }),
+  ).toBeVisible();
+  expect((await sent).postDataJSON()).toMatchObject({ note: true, mentions: [expect.any(String)] });
+  await expect(customer.getByText("Can you check this")).toHaveCount(0);
+
+  for (const page of [customer, alice]) await page.context().close();
 });

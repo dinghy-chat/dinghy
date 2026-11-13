@@ -83,6 +83,8 @@
                   "payment_required",
                   "push_unavailable",
                   "read_only",
+                  "saved_reply_limit",
+                  "saved_reply_shortcut_taken",
                   "signed_in",
                   "site_limit",
                   "storage_full",
@@ -910,6 +912,12 @@
             },
             "required": ["operatorId"]
           },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "createdAt": {
             "type": "string"
           }
@@ -933,6 +941,7 @@
           "readAt",
           "via",
           "handoff",
+          "mentions",
           "createdAt"
         ],
         "example": {
@@ -960,6 +969,7 @@
           "readAt": null,
           "via": null,
           "handoff": null,
+          "mentions": [],
           "createdAt": "2026-11-08T09:31:00.000Z"
         }
       },
@@ -1938,6 +1948,30 @@
           }
         },
         "required": ["install", "logo", "widget", "team", "notifications", "chat", "dismissed"]
+      },
+      "SavedReply": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "shortcut": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "shortcut", "body", "updatedAt"],
+        "example": {
+          "id": "3f6b2c1e-8d4a-4e7f-9b05-1a2c3d4e5f60",
+          "shortcut": "refund-policy",
+          "body": "You can get a full refund within 30 days. Reply here and we will start it.",
+          "updatedAt": "2026-11-13T10:00:00.000Z"
+        }
       },
       "Member": {
         "type": "object",
@@ -5055,7 +5089,7 @@
           }
         ],
         "summary": "Reply, or add a note. A retry with the same clientId returns the original",
-        "description": "With `note: true` the message is a note that only the team sees. It never reaches the visitor, an alert or an email. A note goes in a closed conversation too, and never assigns the conversation.",
+        "description": "With `note: true` the message is a note that only the team sees. It never reaches the visitor. It reaches an alert or an email only for the members it mentions. A note goes in a closed conversation too, and never assigns the conversation.",
         "parameters": [
           {
             "schema": {
@@ -5106,6 +5140,16 @@
                     "type": "boolean",
                     "default": false,
                     "description": "True for a note that only the team sees. A note is text only."
+                  },
+                  "mentions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10,
+                    "default": [],
+                    "description": "Only on a note: the members it mentions, by their operator IDs from the members list, at most 10. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped."
                   }
                 },
                 "required": ["clientId", "body"]
@@ -5542,7 +5586,7 @@
           }
         ],
         "summary": "Change the text of your own reply, before the visitor has seen it, or of your own note",
-        "description": "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. A note's author can change it at any time. API keys cannot edit.",
+        "description": "Only the operator who wrote a text reply can change it, and only while the visitor has not read it and no reply email or transcript carried it. A note's author can change it at any time, with the members it mentions now: those it did not mention before get an alert. API keys cannot edit.",
         "parameters": [
           {
             "schema": {
@@ -5584,6 +5628,15 @@
                     "minLength": 1,
                     "maxLength": 10000,
                     "pattern": "^[^\\0]*$"
+                  },
+                  "mentions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10,
+                    "description": "Only on a note: the members it mentions, by their operator IDs from the members list, at most 10. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped. They replace the note's list, and leaving them out keeps it."
                   }
                 },
                 "required": ["body"]
@@ -10662,7 +10715,7 @@
           }
         ],
         "summary": "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
-        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `list_saved_replies`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12544,6 +12597,492 @@
         "responses": {
           "200": {
             "description": "Hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/saved-replies": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "List the team's saved replies, by shortcut",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The saved replies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "savedReplies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SavedReply"
+                      }
+                    }
+                  },
+                  "required": ["savedReplies"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Add a saved reply. Any member can, up to 200 per workspace",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shortcut": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+                    "description": "What an operator types after `/` to find it: up to 32 lowercase letters, digits and dashes, starting with a letter or digit. Unique in the workspace.",
+                    "example": "refund-policy"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "pattern": "^[^\\0]*$",
+                    "description": "The text the composer inserts, in the same Markdown as a message"
+                  }
+                },
+                "required": ["shortcut", "body"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The saved reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "saved_reply_shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has 200 already",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/saved-replies/{savedReplyId}": {
+      "patch": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Change a saved reply's shortcut or text. Any member can",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "savedReplyId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shortcut": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+                    "description": "What an operator types after `/` to find it: up to 32 lowercase letters, digits and dashes, starting with a letter or digit. Unique in the workspace.",
+                    "example": "refund-policy"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "pattern": "^[^\\0]*$",
+                    "description": "The text the composer inserts, in the same Markdown as a message"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "saved_reply_shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has 200 already",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Delete a saved reply. Any member can",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "savedReplyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
             "content": {
               "application/json": {
                 "schema": {

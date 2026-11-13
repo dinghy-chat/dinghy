@@ -38,7 +38,14 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
 import type { Mailer } from "./mailer.ts";
 import { deleteMessage, editMessage, emailedAt, replyReceipts } from "./message-changes.ts";
-import { appendMessage, listWorkspaceEvents, markRead, setConversationStatus } from "./messages.ts";
+import {
+  appendMessage,
+  isUnread,
+  listWorkspaceEvents,
+  markConversationRead,
+  markRead,
+  setConversationStatus,
+} from "./messages.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 import { queueTranscript, TRANSCRIPT_DELAY_MS } from "./transcripts.ts";
@@ -907,7 +914,10 @@ describe("email", () => {
     );
     await fanOutAll();
     const edited = await withWorkspace(app, space.id, (tx) =>
-      editMessage(tx, space.id, conversationId, reply.message.id, anna, "Yes, two months free."),
+      editMessage(tx, space.id, conversationId, reply.message.id, anna, {
+        body: "Yes, two months free.",
+        mentions: [],
+      }),
     );
     expect(edited.kind).toBe("edited");
     runWorker({ mail: true });
@@ -1276,7 +1286,7 @@ describe("email", () => {
     expect(seen.during).toBeNull();
     const edit = (id: string, body: string) =>
       withWorkspace(app, space.id, (tx) =>
-        editMessage(tx, space.id, conversationId, id, anna, body),
+        editMessage(tx, space.id, conversationId, id, anna, { body, mentions: [] }),
       );
     expect((await edit(first.id, "Answer one")).kind).toBe("edited");
     expect((await edit(during.id, "Answer seven")).kind).toBe("edited");
@@ -1294,14 +1304,10 @@ describe("email", () => {
     const edited = Promise.withResolvers<void>();
     const commit = Promise.withResolvers<void>();
     const editing = withWorkspace(app, space.id, async (tx) => {
-      const outcome = await editMessage(
-        tx,
-        space.id,
-        conversationId,
-        reply.message.id,
-        anna,
-        "The answer",
-      );
+      const outcome = await editMessage(tx, space.id, conversationId, reply.message.id, anna, {
+        body: "The answer",
+        mentions: [],
+      });
       edited.resolve();
       await commit.promise;
       return outcome;
@@ -1351,7 +1357,10 @@ describe("a plan and a change to its messages at once", () => {
     const change = (tx: Transaction, kind: Change): Promise<unknown> => {
       if (kind === "read") return markRead(tx, space.id, from, reply.seq);
       if (kind === "edit") {
-        return editMessage(tx, space.id, conversationId, reply.id, anna, "The answer");
+        return editMessage(tx, space.id, conversationId, reply.id, anna, {
+          body: "The answer",
+          mentions: [],
+        });
       }
       return deleteMessage(tx, space.id, conversationId, reply.id, {
         operatorId: anna,
@@ -1970,15 +1979,39 @@ describe("transcripts", () => {
 });
 
 describe("notes", () => {
-  const noteWrites = (operatorId: string, conversationId: string, body: string) =>
+  const noteWrites = (
+    operatorId: string,
+    conversationId: string,
+    body: string,
+    mentions: string[] = [],
+  ) =>
     withWorkspace(app, space.id, (tx) =>
       appendMessage(
         tx,
         space.id,
         { kind: "operator", operatorId, conversationId },
-        { clientId: randomUUID(), body, note: true },
+        { clientId: randomUUID(), body, note: true, mentions },
       ),
     );
+  const noteEdits = (
+    operatorId: string,
+    conversationId: string,
+    noteId: string,
+    mentions: string[] | undefined,
+  ) =>
+    withWorkspace(app, space.id, (tx) =>
+      editMessage(tx, space.id, conversationId, noteId, operatorId, { body: "Look", mentions }),
+    );
+  /** Each row's recipient and channel, in a stable order. */
+  const recipients = async () =>
+    (await deliveries()).map((row) => `${row.operatorId} ${row.channel}`).sort();
+  /** A conversation whose visitor message's alerts are out of the way. */
+  async function quietConversation() {
+    const written = await visitorWrites(await addVisitor(), "Hello");
+    await fanOutAll();
+    await owner.delete(alertDelivery);
+    return written.message;
+  }
 
   test("a note alerts nobody: no push, no email to the team, no reply email to the visitor", async () => {
     const anna = await addOperator(`anna-${randomUUID()}@example.com`, { alertEmail: true });
@@ -2026,5 +2059,116 @@ describe("notes", () => {
       expect(mail.text).not.toContain("SECRET");
       expect(mail.html ?? "").not.toContain("SECRET");
     }
+  });
+
+  test("a mention alerts only that member, by push and by email as they chose, with the note's text", async () => {
+    const authorEmail = `author-${randomUUID()}@example.com`;
+    const annaEmail = `anna-${randomUUID()}@example.com`;
+    const author = await addOperator(authorEmail, { alertEmail: true });
+    const anna = await addOperator(annaEmail, { alertEmail: true });
+    const ben = await addOperator(`ben-${randomUUID()}@example.com`);
+    const quiet = await addOperator(`quiet-${randomUUID()}@example.com`, { alertEmail: true });
+    const gone = await addOperator(`gone-${randomUUID()}@example.com`, { alertEmail: true });
+    await owner
+      .update(workspaceMember)
+      .set({ removedAt: new Date() })
+      .where(eq(workspaceMember.operatorId, gone));
+    await addDevice(author, "author-phone");
+    const annaPhone = await addDevice(anna, "anna-phone");
+    await addDevice(ben, "ben-phone");
+    await addDevice(quiet, "quiet-phone");
+    const { conversationId } = await quietConversation();
+    // The author, a removed member and a stranger are dropped.
+    const note = await noteWrites(author, conversationId, "@Anna @Ben can you refund it?", [
+      anna,
+      ben,
+      author,
+      gone,
+      randomUUID(),
+    ]);
+    expect(note.message.mentions).toEqual([anna, ben]);
+
+    runWorker({ mail: true });
+    await until(() => received.length === 2 && mails.length === 1, "the alerts");
+    await until(
+      async () => (await deliveries()).every((row) => row.outcome === "sent"),
+      "the rows to finish",
+    );
+    expect(await recipients()).toEqual(
+      [`${anna} mention_email`, `${anna} mention_push`, `${ben} mention_push`].sort(),
+    );
+    const push = received.find((one) => one.url === "/anna-phone");
+    expect(decrypt(push?.body ?? Buffer.alloc(0), annaPhone)).toEqual({
+      title: "Acme",
+      body: `${authorEmail} mentioned you: @Anna @Ben can you refund it?`,
+      tag: `${space.id}:${note.message.seq}`,
+      url: `/?workspace=${space.id}&conversation=${conversationId}`,
+    });
+    expect(mails[0]?.to).toBe(annaEmail);
+    expect(mails[0]?.subject).toBe(`${authorEmail} mentioned you in Acme`);
+    expect(mails[0]?.text).toContain(`${authorEmail} mentioned you in a note in Acme:`);
+    expect(mails[0]?.text).toContain("@Anna @Ben can you refund it?");
+  });
+
+  test("an edit alerts only the members it newly mentions, and removing a mention sends nothing", async () => {
+    const author = await addOperator(`author-${randomUUID()}@example.com`);
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const ben = await addOperator(`ben-${randomUUID()}@example.com`);
+    await addDevice(anna, "anna-phone");
+    await addDevice(ben, "ben-phone");
+    const { conversationId } = await quietConversation();
+    const note = await noteWrites(author, conversationId, "@Anna look", [anna]);
+    await fanOutAll();
+    expect(await recipients()).toEqual([`${anna} mention_push`]);
+
+    const edited = await noteEdits(author, conversationId, note.message.id, [anna, ben]);
+    await fanOutAll();
+    expect(await recipients()).toEqual([`${anna} mention_push`, `${ben} mention_push`].sort());
+    expect(edited.kind === "edited" && edited.message.mentions).toEqual([anna, ben]);
+
+    const trimmed = await noteEdits(author, conversationId, note.message.id, [ben]);
+    await fanOutAll();
+    expect(await deliveries()).toHaveLength(2);
+    expect(trimmed.kind === "edited" && trimmed.message.mentions).toEqual([ben]);
+
+    const kept = await noteEdits(author, conversationId, note.message.id, undefined);
+    await fanOutAll();
+    expect(await deliveries()).toHaveLength(2);
+    expect(kept.kind === "edited" && kept.message.mentions).toEqual([ben]);
+  });
+
+  test("a note is unread for the members it mentions, and only for them", async () => {
+    const author = await addOperator(`author-${randomUUID()}@example.com`);
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const ben = await addOperator(`ben-${randomUUID()}@example.com`);
+    const written = await quietConversation();
+    const unread = (operatorId: string) =>
+      withWorkspace(app, space.id, (tx) =>
+        isUnread(tx, space.id, written.conversationId, operatorId),
+      );
+    await withWorkspace(app, space.id, async (tx) => {
+      for (const reader of [author, anna, ben]) {
+        await markConversationRead(tx, space.id, written.conversationId, reader, written.seq);
+      }
+    });
+    await noteWrites(author, written.conversationId, "@Anna see this", [anna]);
+    expect(await unread(anna)).toBe(true);
+    expect(await unread(ben)).toBe(false);
+    expect(await unread(author)).toBe(false);
+  });
+
+  test("an edit that mentions a member leaves what they read as read", async () => {
+    const author = await addOperator(`author-${randomUUID()}@example.com`);
+    const ben = await addOperator(`ben-${randomUUID()}@example.com`);
+    const { conversationId } = await quietConversation();
+    const note = await noteWrites(author, conversationId, "Look at this");
+    await withWorkspace(app, space.id, (tx) =>
+      markConversationRead(tx, space.id, conversationId, ben, note.message.seq),
+    );
+
+    await noteEdits(author, conversationId, note.message.id, [ben]);
+    expect(
+      await withWorkspace(app, space.id, (tx) => isUnread(tx, space.id, conversationId, ben)),
+    ).toBe(false);
   });
 });

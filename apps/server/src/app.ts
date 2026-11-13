@@ -45,6 +45,7 @@ import {
 import { imageUrls, registerPublicImages } from "./public-images.ts";
 import type { Push } from "./push.ts";
 import { createRateLimit, createSlots } from "./rate-limit.ts";
+import { registerSavedReplyRoutes } from "./saved-replies.ts";
 import { createSetup, registerSetupRoutes } from "./setup.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
@@ -498,6 +499,7 @@ export function createApp({
     registerContactRoutes(app, { db, live, visitorPresence });
     registerLiveVisitorRoutes(app, db, liveVisitors);
     registerGetStartedRoutes(app, db);
+    registerSavedReplyRoutes(app, db, live);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
     registerTeamRoutes(app, {
       auth,

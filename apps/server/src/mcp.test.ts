@@ -147,6 +147,7 @@ describe("the protocol", () => {
       "list_drafts",
       "hand_off",
       "list_members",
+      "list_saved_replies",
       "set_typing",
       "wait_for_messages",
       "get_contact",

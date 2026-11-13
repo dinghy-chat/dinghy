@@ -9,6 +9,7 @@ import { useTabVisible } from "./live.ts";
 import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
 import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
+import { composerPicks, mentionsIn } from "./picker.tsx";
 import { Confirm } from "./popup.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { useShortcuts } from "./shortcuts.tsx";
@@ -89,6 +90,7 @@ export function Thread({
   setDraft,
   receiptsVersion,
   rewriteVersion,
+  accountVersion,
   draftsVersion,
   typingDraft,
   botTyping,
@@ -122,6 +124,8 @@ export function Thread({
   receiptsVersion(visitorId: string): number;
   /** Goes up when someone edits or deletes a message here, so this loads every message again. */
   rewriteVersion: number;
+  /** Goes up when the workspace changed, such as its saved replies. */
+  accountVersion: number;
   /** Goes up when a bot's suggested reply here changed. */
   draftsVersion: number;
   /** What the visitor is typing and has not sent, or null. */
@@ -188,6 +192,8 @@ export function Thread({
     onBack,
   });
   const panel = usePanel();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
+  const savedReplies = useLoad(() => api.savedReplies(), [api, accountVersion]);
   const visitorId = conversation?.visitor.id ?? null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   const contact = useLoad(
@@ -262,6 +268,7 @@ export function Thread({
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
       mode === "note",
+      mode === "note" ? mentionsIn(body, members) : [],
     );
     setQuoting(null);
   };
@@ -378,6 +385,7 @@ export function Thread({
         <ThreadLog
           conversation={conversation}
           members={members}
+          savedReplies={savedReplies.data?.savedReplies ?? []}
           lines={lines}
           receipts={receipts}
           who={{ meId, mayDeleteAnyone, canWrite: repliesOffReason === null, canReply }}
@@ -409,6 +417,12 @@ export function Thread({
               setDraft={(text) => setDraft({ text, isNote: mode === "note" })}
               onSend={send}
               onFiles={imagesOn ? sendFiles : undefined}
+              picks={composerPicks(
+                savedReplies.data?.savedReplies ?? [],
+                members,
+                meId,
+                mode === "note",
+              )}
               mode={
                 closed
                   ? { value: "note" }
