@@ -61,7 +61,7 @@ function FileLink({
     >
       <Icon name="download" size={20} />
       <span className="file-name">{download.name}</span>
-      <span className="file-size">{fileSize(download.size)}</span>
+      <span className="file-size">{fileSize(download.size, [])}</span>
     </a>
   );
 }

@@ -28,7 +28,7 @@ test("a PDF from the visitor downloads in the operator app, and never opens in p
   await openWidget(widget, server);
   await widget.getByLabel("Attach an image or a file").first().setInputFiles(pdfFile);
   await expect(widget.locator(".doc.mine")).toContainText("Order 1042.pdf");
-  await expect(widget.locator(".doc.mine")).toContainText("1 KB");
+  await expect(widget.locator(".doc.mine")).toContainText("1 kB");
 
   const operatorContext = await browser.newContext();
   const operator = await operatorContext.newPage();
@@ -36,7 +36,7 @@ test("a PDF from the visitor downloads in the operator app, and never opens in p
   await operator.locator(".row").first().click();
   await expect(operator.locator(".row").first()).toContainText("Order 1042.pdf");
   const link = operator.locator(".file-link", { hasText: "Order 1042.pdf" });
-  await expect(link).toContainText("1 KB");
+  await expect(link).toContainText("1 kB");
   const [download] = await Promise.all([operator.waitForEvent("download"), link.click()]);
   expect(download.suggestedFilename()).toBe("Order 1042.pdf");
   expect(await readFile(await download.path())).toEqual(PDF);

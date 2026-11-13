@@ -81,11 +81,18 @@ export function refusalProblem(code: string | null, file: File) {
   return "imageFailed";
 }
 
-/** A file's size as both apps show it beside its name, such as 340 KB or 2.4 MB. */
-export const fileSize = (bytes: number) =>
-  bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+/** A file's size as both apps show it beside its name, such as 340 kB or 2.4 MB, or 2,4 Mo in French. */
+export function fileSize(bytes: number, locale: Intl.LocalesArgument): string {
+  const kilobytes = bytes / 1024;
+  const isSmall = kilobytes < 1024;
+  const digits = isSmall ? 0 : 1;
+  return new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: isSmall ? "kilobyte" : "megabyte",
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(isSmall ? Math.max(1, kilobytes) : kilobytes / 1024);
+}
 
 /**
  * Saves a file through a blob URL. A link cannot do it: a browser ignores `download` on a link to

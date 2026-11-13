@@ -48,10 +48,14 @@ test("other files go by their extension, up to 10 MB", () => {
   expect(acceptedFiles(true)).toContain(",.pdf,");
 });
 
-test("a file's size reads in KB under a megabyte, and in MB above", () => {
-  expect(fileSize(10)).toBe("1 KB");
-  expect(fileSize(340 * 1024)).toBe("340 KB");
-  expect(fileSize(2.45 * 1024 * 1024)).toBe("2.5 MB");
+test("a file's size reads in kB under a megabyte, and in MB above, in the reader's language", () => {
+  expect(fileSize(10, "en")).toBe("1 kB");
+  expect(fileSize(340 * 1024, "en")).toBe("340 kB");
+  expect(fileSize(2.45 * 1024 * 1024, "en")).toBe("2.5 MB");
+  expect(fileSize(2 * 1024 * 1024, "en")).toBe("2.0 MB");
+  expect(fileSize(340 * 1024, "fr")).toBe("340\u202fko");
+  expect(fileSize(2.45 * 1024 * 1024, "fr")).toBe("2,5\u202fMo");
+  expect(fileSize(2.45 * 1024 * 1024, "es")).toBe("2,5 MB");
 });
 
 test("a confirmed line goes in commit order, before the pending ones", () => {

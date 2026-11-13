@@ -498,7 +498,7 @@ function FileLink({
     >
       <Icon paths={DOWNLOAD_ICON} />
       <span>{download.name}</span>
-      <small>{fileSize(download.size)}</small>
+      <small>{fileSize(download.size, language())}</small>
     </a>
   );
 }
