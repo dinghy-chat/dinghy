@@ -14,6 +14,7 @@ const PAGES = [
   { name: "Team", path: "team", heading: "Team" },
   { name: "Saved replies", path: "saved-replies", heading: "Saved replies" },
   { name: "Appearance", path: "appearance", heading: "Appearance" },
+  { name: "Business hours", path: "business-hours", heading: "Business hours" },
   { name: "Install", path: "install", heading: "Install" },
   { name: "API & webhooks", path: "developers", heading: "API & webhooks" },
 ];

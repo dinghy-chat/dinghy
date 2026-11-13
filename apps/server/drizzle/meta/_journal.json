@@ -673,6 +673,20 @@
       "when": 1794587462404,
       "tag": "0095_chat_files",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1794591226085,
+      "tag": "0096_business_hours_and_languages",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1794591234186,
+      "tag": "0097_business_hours_grants",
+      "breakpoints": true
     }
   ]
 }

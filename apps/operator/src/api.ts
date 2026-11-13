@@ -1,6 +1,11 @@
 import type { BillingStateName } from "../../../ee/operator/billing.tsx";
 import type { Quote } from "../../../packages/widget/src/quote.ts";
-import type { SavedAppearance, WidgetSettings } from "../../../packages/widget/src/shared.ts";
+import type {
+  BusinessHours,
+  Locale,
+  SavedAppearance,
+  WidgetSettings,
+} from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
 import type { EventKind } from "../../server/src/db/schema.ts";
 import type { OperatorNotice } from "../../server/src/live.ts";
@@ -32,6 +37,8 @@ interface Visitor extends VisitorIdentity {
   country: string | null;
   /** IANA, such as Europe/Paris. */
   timeZone: string | null;
+  /** The widget's language. */
+  locale: Locale | null;
   /** Only Dinghy Cloud's welcome chat has one: its founder's. */
   pictureUrl: string | null;
   /** A test visitor that a bot's simulated message made. */
@@ -322,6 +329,11 @@ export type Role = "owner" | "admin" | "member";
 export interface AppearanceSettings extends WidgetSettings {
   /** Operator IDs, in order, for the `chosen` faces. Only members who are still on the team. */
   headerMembers: string[];
+}
+
+/** Settings > Business hours. Off, the widget follows presence alone. */
+export interface BusinessHoursSettings extends BusinessHours {
+  enabled: boolean;
 }
 
 /** The saved appearance, as the operator app reads it. */
@@ -672,6 +684,13 @@ export function workspaceApi(workspaceId: string) {
       call<OperatorAppearance>(`${base}/widget/typing-preview`, {
         method: "PUT",
         body: JSON.stringify({ enabled }),
+      }),
+    /** Null when nobody saved them, which means off. */
+    businessHours: () => call<BusinessHoursSettings | null>(`${base}/business-hours`),
+    setBusinessHours: (hours: BusinessHoursSettings) =>
+      call<BusinessHoursSettings>(`${base}/business-hours`, {
+        method: "PUT",
+        body: JSON.stringify(hours),
       }),
     exportUrl: `${base}/export`,
     contactsExportUrl: `${base}/contacts/export`,

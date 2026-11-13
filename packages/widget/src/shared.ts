@@ -9,6 +9,13 @@ export interface OpenOptions {
   message?: string;
 }
 
+/**
+ * The languages the widget speaks. English is in the chat bundle, and each other one is a file
+ * beside it.
+ */
+export const LOCALES = ["en", "fr", "es"] as const;
+export type Locale = (typeof LOCALES)[number];
+
 /** What `configure` and the script tag's data attributes change. Invalid values are ignored. */
 export interface Appearance {
   /** A six-digit hex color, such as `#0b2239`. */
@@ -19,6 +26,8 @@ export interface Appearance {
   offsetX?: number;
   offsetY?: number;
   zIndex?: number;
+  /** A language the widget speaks, such as `fr`, over the saved one. Set it before the chat opens. */
+  locale?: string;
 }
 
 /** What an owner saves in the operator app's Widget tab. Null texts and colors mean the widget's own. */
@@ -53,6 +62,11 @@ export interface WidgetSettings {
   headerDot: boolean;
   /** Under the title while someone is online: "Online", or the usual reply time. */
   headerStatus: "presence" | "reply_time";
+  /**
+   * The widget's own words in one language, or `visitor` for the first of the browser's languages
+   * that the widget speaks. The team's own texts stay as written.
+   */
+  language: "visitor" | Locale;
 }
 
 /** A member the widget's header shows: a first name and a picture, never an email. */
@@ -62,6 +76,22 @@ export interface TeamFace {
   id: string;
   name: string;
   pictureUrl: string | null;
+}
+
+/** The days of the week, in the order the settings list them. */
+export const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+
+/** The most opening ranges one day holds. */
+export const DAY_RANGES_MAX = 3;
+
+/**
+ * When the team answers: each day's ranges, such as `["09:00", "18:00"]`, in order and apart, in
+ * the workspace's IANA time zone. A range may end at "24:00". A day with none is closed.
+ */
+export interface BusinessHours {
+  timeZone: string;
+  week: Record<Weekday, [string, string][]>;
 }
 
 /** The saved settings, as the widget's appearance route answers them. */
@@ -76,6 +106,8 @@ export interface SavedAppearance extends WidgetSettings {
    * members online now, the latest repliers for `repliers`, the chosen members for `chosen`.
    */
   faces: TeamFace[];
+  /** Null while business hours are off, so the widget follows presence alone. */
+  hours: BusinessHours | null;
 }
 
 /** The longest title an owner can save. */
@@ -111,10 +143,12 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   headerFaceCount: 3,
   headerDot: true,
   headerStatus: "presence",
+  language: "visitor",
   typingPreview: true,
   logoUrl: null,
   team: [],
   faces: [],
+  hours: null,
 };
 
 /**
@@ -224,7 +258,10 @@ export interface WidgetContext {
   shadow: ShadowRoot;
   /** The saved settings, which the loader asked for. See loadAppearance. */
   appearance: Promise<SavedAppearance | null | undefined>;
-  /** Reads the tag's data attributes by dataset name, such as `mascot`. They win over the saved settings. */
+  /**
+   * Reads the tag's data attributes by dataset name, such as `mascot`, and the values configure()
+   * set. They win over the saved settings.
+   */
   attribute(name: string): string | undefined;
   /** The full-page chat that a reply email opens, on the Dinghy server's own origin. */
   page?: boolean;

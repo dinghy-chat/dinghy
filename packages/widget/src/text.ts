@@ -1,4 +1,6 @@
-// Every string the visitor reads has a key, so a locale can be added later.
+// Every string the visitor reads has a key. English is here, in the chat bundle, and each other
+// language is a file beside it, from texts/, which the chat loads with the saved look.
+import type { Locale } from "./shared.ts";
 
 // Apart from the others, so the loader does not bundle every string.
 export const LAUNCHER_LABEL = "Open chat";
@@ -7,11 +9,14 @@ export const DEFAULT_TITLE = "Chat with us";
 
 const en = {
   title: DEFAULT_TITLE,
+  launcher: LAUNCHER_LABEL,
   teamOnline: "Online",
   teamAway: "Away, we reply here and by email",
   replyMinutes: "Usually replies in {n} min",
   replyHours: "Usually replies in {n} h",
   waiting: "We will reply here",
+  backAt: "We're back {day} at {time}",
+  backToday: "We're back today at {time}",
   sceneSending: "Sending...",
   newReply: "New reply",
   close: "Close chat",
@@ -61,8 +66,21 @@ const en = {
   botTyping: "{name} is typing…",
 };
 
-export type TextId = keyof typeof en;
+export type Texts = typeof en;
+export type TextId = keyof Texts;
+
+let locale: Locale = "en";
+let texts: Partial<Texts> = {};
+
+/** Puts the chat in a language, with its texts. A key the texts lack stays in English. */
+export function setLanguage(next: Locale, nextTexts: Partial<Texts>): void {
+  locale = next;
+  texts = nextTexts;
+}
+
+/** The chat's language, for dates and times and for the server. */
+export const language = (): Locale => locale;
 
 export function t(id: TextId): string {
-  return en[id];
+  return texts[id] ?? en[id];
 }

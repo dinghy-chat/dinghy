@@ -19,6 +19,7 @@ import { newGeneration } from "./db/migrate.ts";
 import {
   apiKey,
   attachment,
+  businessHours,
   conversation,
   conversationRead,
   emailStop,
@@ -58,6 +59,11 @@ interface Install {
 const installs: Install[] = [];
 const SNOOZED_AT = new Date("2026-11-12T10:00:00.000Z");
 const SNOOZED_UNTIL = new Date("2030-01-07T09:00:00.000Z");
+const BUSINESS_HOURS = {
+  enabled: true,
+  timeZone: "Europe/Paris",
+  week: { mon: [["09:00", "18:00"]], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+};
 /** The installs that a beforeAll made for several tests. */
 let keptInstalls = 0;
 
@@ -221,6 +227,7 @@ async function makeSource(): Promise<Source> {
     mentions: [agent.id],
   });
   await write("POST", "/saved-replies", { shortcut: "hello", body: "Hi there!" });
+  await write("PUT", "/business-hours", BUSINESS_HOURS);
   // Assigned after the bot's turn, as giving it back clears the assignee.
   await write("PUT", `/conversations/${conversationId}/assignee`, { operatorId: agent.id });
   await app.request(`/v1/widget/${space.publicKey}/context`, {
@@ -230,7 +237,7 @@ async function makeSource(): Promise<Source> {
       authorization: `Bearer ${token}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ context: { plan: "pro", seats: 3 } }),
+    body: JSON.stringify({ context: { plan: "pro", seats: 3 }, locale: "fr" }),
   });
   await owner
     .update(workspaceMember)
@@ -628,6 +635,7 @@ describe("a round trip onto a fresh install", () => {
       .where(eq(visitor.id, source.visitorId));
     expect(before?.lastPage).toBe(`${SITE}/docs`);
     expect([after?.device, after?.lastPage]).toEqual([before?.device, before?.lastPage]);
+    expect(after?.locale).toBe("fr");
     // Streams in other tests move both sides' times, so the file is what this checks.
     let exported: { visitors: { id: string; lastSeenAt?: string | null }[] } | undefined;
     for await (const entry of readTar(once(archive))) {
@@ -636,6 +644,14 @@ describe("a round trip onto a fresh install", () => {
     const row = exported?.visitors.find((one) => one.id === source.visitorId);
     expect(row?.lastSeenAt).toMatch(/^\d{4}-/);
     expect(after?.lastSeenAt).toBeInstanceOf(Date);
+  });
+
+  test("the business hours come along", async () => {
+    const [row] = await target.owner
+      .select()
+      .from(businessHours)
+      .where(eq(businessHours.workspaceId, source.space.id));
+    expect(row).toEqual({ workspaceId: source.space.id, ...BUSINESS_HOURS });
   });
 
   test("the logo comes along, and the widget serves it", async () => {
@@ -660,12 +676,17 @@ describe("a round trip onto a fresh install", () => {
     expect(served.headers.get("content-type")).toBe("image/webp");
   });
 
-  test("a file from a release before logos imports, with no logo", async () => {
+  test("a file from before logos, business hours and languages imports, the widget in English", async () => {
     const parts: Uint8Array[] = [];
     for await (const entry of readTar(once(archive))) {
       const data =
         entry.name === "export.json" ? JSON.parse(Buffer.from(entry.bytes).toString()) : null;
-      if (data !== null) delete data.workspace.logo;
+      if (data !== null) {
+        delete data.workspace.logo;
+        delete data.workspace.businessHours;
+        delete data.workspace.widget.language;
+        for (const one of data.visitors) delete one.locale;
+      }
       const bytes = data === null ? entry.bytes : Buffer.from(JSON.stringify(data));
       parts.push(...tarEntry(entry.name, bytes));
     }
@@ -673,6 +694,9 @@ describe("a round trip onto a fresh install", () => {
     const fresh = await freshInstall();
     await importArchive(fresh.db, fresh.store, once(Buffer.concat(parts)));
     expect(await fresh.owner.select().from(workspaceLogo)).toEqual([]);
+    expect(await fresh.owner.select().from(businessHours)).toEqual([]);
+    const [widget] = await fresh.owner.select().from(widgetSettings);
+    expect(widget?.language).toBe("en");
   }, 30_000);
 
   test("an API key comes along revoked, with no token, and its replies keep its name", async () => {

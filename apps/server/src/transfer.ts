@@ -2,10 +2,11 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
-import { SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
+import { LOCALES, SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
+import { BusinessHoursSchema, readBusinessHours, saveBusinessHours } from "./business-hours.ts";
 import { newGeneration } from "./db/migrate.ts";
 import {
   apiKey,
@@ -19,6 +20,7 @@ import {
   SAVED_REPLY_BODY_MAX,
   savedReply,
   visitor,
+  widgetLanguage,
   widgetSettings,
   workspace,
   workspaceLogo,
@@ -65,7 +67,11 @@ const ExportFile = z.strictObject({
       sound: z.boolean().default(true),
       transcript: z.boolean().default(true),
       visitorFiles: z.boolean().default(true),
+      // English, as a workspace from before languages keeps on upgrade.
+      language: z.enum(widgetLanguage.enumValues).default("en"),
     }),
+    // A file from before business hours has none, and an install that never saved them has null.
+    businessHours: BusinessHoursSchema.nullable().default(null),
     // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z
       .base64()
@@ -120,6 +126,8 @@ const ExportFile = z.strictObject({
         .nullable()
         .default(null),
       timeZone: z.string().max(64).nullable().default(null),
+      // A file from before languages has none.
+      locale: z.enum(LOCALES).nullable().default(null),
       // A file from before test visitors has none.
       isTest: z.boolean().default(false),
       createdAt: date,
@@ -306,6 +314,7 @@ async function readWorkspace(
         .from(widgetSettings)
         .where(eq(widgetSettings.workspaceId, workspaceId));
       if (widget === undefined) return null;
+      const hours = await readBusinessHours(tx, workspaceId);
       const {
         workspaceId: _workspace,
         logoUpdatedAt: _logo,
@@ -355,6 +364,7 @@ async function readWorkspace(
           eventSeq: space.eventSeq.toString(),
           feedGeneration: space.feedGeneration,
           widget: look,
+          businessHours: hours ?? null,
           logo: logo === undefined ? null : Buffer.from(logo.data).toString("base64"),
           createdAt: iso(space.createdAt),
         },
@@ -388,6 +398,7 @@ async function readWorkspace(
           note: row.note,
           country: row.country,
           timeZone: row.timeZone,
+          locale: row.locale,
           isTest: row.isTest,
           createdAt: iso(row.createdAt),
         })),
@@ -627,6 +638,9 @@ async function insertWorkspace(
   if (logo !== null) {
     await tx.insert(workspaceLogo).values({ workspaceId, data: logo });
   }
+  if (data.workspace.businessHours !== null) {
+    await saveBusinessHours(tx, workspaceId, data.workspace.businessHours);
+  }
 
   // One email has one login on an install, so an existing account keeps its ID.
   const emails = data.members.map((member) => member.email.toLowerCase());
@@ -701,6 +715,7 @@ async function insertWorkspace(
         note: row.note,
         country: row.country,
         timeZone: row.timeZone,
+        locale: row.locale,
         isTest: row.isTest,
         createdAt: new Date(row.createdAt),
       })),

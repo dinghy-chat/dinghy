@@ -67,7 +67,7 @@ const text = {
 const WORKSPACE_NAME_MAX = 80;
 
 // One line, so a name cannot add paragraphs of its own.
-const oneLine = (words: string | undefined) => words?.replace(/\s+/g, " ").trim();
+export const oneLine = (words: string | undefined) => words?.replace(/\s+/g, " ").trim();
 
 /**
  * An email's text. Pass a name only when the person it goes to typed it and proved this address,

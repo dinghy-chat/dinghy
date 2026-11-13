@@ -2,11 +2,11 @@
 // What the team knows about a visitor, in folds: the right panel of a conversation and the contact
 // page show the same sections.
 import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Contact, ContactDetail, Conversation, Member, PageView } from "./api.ts";
+import type { ContactDetail, Conversation, Member, PageView } from "./api.ts";
 import { MINUTE_MS, shortTime } from "./format.ts";
 import { HandlerSelect } from "./handler.tsx";
 import { Icon, type IconName } from "./icons.tsx";
-import { countryName, flag, localTime } from "./place.ts";
+import { countryName, flag, languageName, localTime } from "./place.ts";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
@@ -79,12 +79,13 @@ function LocalTime({ timeZone }: { timeZone: string }) {
   return <>{localTime(timeZone, useNow())}</>;
 }
 
-type Place = Pick<Contact, "country" | "timeZone" | "device">;
+type Place = Pick<Conversation["visitor"], "country" | "timeZone" | "device" | "locale">;
 
 const hasPlace = (visitor: Place) =>
   visitor.country !== null ||
   (visitor.timeZone !== null && localTime(visitor.timeZone) !== null) ||
-  visitor.device !== null;
+  visitor.device !== null ||
+  visitor.locale !== null;
 
 /** Copies the visitor's email, and says so. */
 const copyEmail = (email: string) =>
@@ -168,7 +169,10 @@ export function Tile({
   );
 }
 
-/** Where the visitor is and what with: country and local time, and device. The pages come below. */
+/**
+ * Where the visitor is and what with: country and local time, device, and the widget's language.
+ * The pages come below.
+ */
 function PlaceTiles({ visitor }: { visitor: Place }) {
   const { country, timeZone } = visitor;
   const zone = timeZone !== null && localTime(timeZone) !== null ? timeZone : null;
@@ -192,6 +196,11 @@ function PlaceTiles({ visitor }: { visitor: Place }) {
       {visitor.device !== null && (
         <Tile icon="monitor" label={t("deviceLabel")}>
           <span title={visitor.device}>{visitor.device}</span>
+        </Tile>
+      )}
+      {visitor.locale !== null && (
+        <Tile icon="textAa" label={t("languageLabel")}>
+          {languageName(visitor.locale)}
         </Tile>
       )}
     </div>

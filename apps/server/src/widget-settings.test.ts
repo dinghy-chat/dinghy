@@ -28,7 +28,13 @@ const ORIGIN = new URL(PUBLIC_URL).origin;
 const logger = pino({ level: "silent" });
 
 // What the form saves: the widget's defaults without the logo and the faces, with no chosen member.
-const { logoUrl: _logo, team: _team, faces: _faces, ...WIDGET_SETTINGS } = WIDGET_DEFAULTS;
+const {
+  logoUrl: _logo,
+  team: _team,
+  faces: _faces,
+  hours: _hours,
+  ...WIDGET_SETTINGS
+} = WIDGET_DEFAULTS;
 const DEFAULTS = { ...WIDGET_SETTINGS, headerMembers: [] };
 
 const CHANGED = {
@@ -51,6 +57,7 @@ const CHANGED = {
   headerFaceCount: 5,
   headerDot: false,
   headerStatus: "reply_time",
+  language: "fr",
   headerMembers: [],
 };
 
@@ -135,6 +142,7 @@ describe("the widget's settings", () => {
       logoUrl: null,
       team: [],
       faces: [],
+      hours: null,
     };
     expect(await response.json()).toEqual(expected);
     const read = await app.request(settingsPath(space), { headers: { cookie: boss.cookie } });
@@ -160,6 +168,7 @@ describe("the widget's settings", () => {
     ["over 5 faces", { headerFaceCount: 6 }],
     ["an unknown faces mode", { headerFaces: "everyone" }],
     ["an unknown status line", { headerStatus: "busy" }],
+    ["a language the widget does not speak", { language: "de" }],
     ["a member chosen twice", { headerMembers: [SOME_ID, SOME_ID] }],
     ["a chosen member that is not an ID", { headerMembers: ["maya"] }],
   ])("%s is refused, and nothing changes", async (_name, change) => {

@@ -4,7 +4,7 @@ import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
-import { firstName } from "../../../packages/widget/src/shared.ts";
+import { firstName, LOCALES } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
@@ -45,7 +45,7 @@ import {
   PageContextSchema,
   pageTitle,
   recordPage,
-  recordPageContext,
+  recordVisitorContext,
 } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, wakeConversation } from "./live.ts";
@@ -235,17 +235,26 @@ const contextRoute = createRoute({
   method: "post",
   path: "/v1/widget/{key}/context",
   security: VISITOR_TOKEN,
-  summary: "Send what the host page set with Dinghy.setContext(), for operators",
+  summary:
+    "Send the widget's language, and what the host page set with Dinghy.setContext(), for operators",
   description:
-    "Unsigned values from the host page, such as a plan or a cart total, that operators read next to the visitor. They are not verified. The widget sends them only for a visitor who has a token because they used the chat, and again after the first message. The server keeps them only for a visitor who has a conversation, and never creates a visitor here. Each report replaces the last one: at most 20 keys of 1 to 40 characters, with a string of up to 200 characters, a number, true, false or null as each value.",
+    "`locale` is the widget's language, which the visitor's reply emails, transcripts and chat page use. `context` holds unsigned values from the host page, such as a plan or a cart total, that operators read next to the visitor. They are not verified. Each report replaces the last one: at most 20 keys of 1 to 40 characters, with a string of up to 200 characters, a number, true, false or null as each value. The widget sends a report on each page load for a visitor who has used the chat, and again after the first message. The server keeps it only for a visitor who has a conversation, and never creates a visitor here.",
   request: {
     params,
     body: {
       required: true,
       content: {
         "application/json": {
-          schema: z.object({ context: PageContextSchema }),
-          example: { context: { plan: "pro", seats: 4, trial: false } },
+          schema: z
+            .object({
+              context: PageContextSchema.optional(),
+              locale: z.enum(LOCALES).optional(),
+            })
+            .refine(
+              (report) => report.context !== undefined || report.locale !== undefined,
+              "a context, a locale or both",
+            ),
+          example: { context: { plan: "pro", seats: 4, trial: false }, locale: "fr" },
         },
       },
     },
@@ -1440,8 +1449,9 @@ export function registerWidgetRoutes(
     const visitorId = await knownVisitor(db, found, c.req.param("key"), token);
     if (visitorId === undefined) return c.json(UNAUTHORIZED, 401);
     if (visitorId === null) return c.json({ ok: true as const }, 200);
-    const { context } = c.req.valid("json");
-    await withWorkspace(db, found.id, (tx) => recordPageContext(tx, found.id, visitorId, context));
+    await withWorkspace(db, found.id, (tx) =>
+      recordVisitorContext(tx, found.id, visitorId, c.req.valid("json")),
+    );
     return c.json({ ok: true as const }, 200);
   });
 

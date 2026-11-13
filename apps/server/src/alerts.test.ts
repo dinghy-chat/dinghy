@@ -895,6 +895,25 @@ describe("email", () => {
     expect(mail?.html).not.toContain("<b>");
   });
 
+  test("a visitor whose chat spoke Spanish gets the reply email in Spanish", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    await owner.update(visitor).set({ locale: "es" }).where(eq(visitor.id, from));
+    const written = await visitorWrites(from, "Ayuda");
+    await operatorWrites(anna, written.message.conversationId, "Claro que sí");
+    await fanOutAll();
+    await makeDue();
+    runWorker({ mail: true });
+    await until(() => mails.length === 1, "the email");
+    const mail = mails[0];
+    expect(mail?.subject).toBe("Acme respondió a tu mensaje");
+    expect(mail?.text).toMatch(/^Hola:\n\nAcme respondió a tu mensaje:\n\nClaro que sí\n\n/);
+    expect(mail?.text).toContain("Lee la conversación y responde aquí: ");
+    expect(mail?.text).toMatch(/Un saludo,\nEl equipo de Acme$/);
+    expect(mail?.html).toContain(">Responder en el chat</a>");
+    expect(mail?.html).toContain(">Dejar de recibir estos correos</a>");
+  });
+
   test("a reply email quotes what the reply answers, and carries an edit made while it waited", async () => {
     const anna = await addOperator(`anna-${randomUUID()}@example.com`);
     const from = await addVisitor("v@example.com");
@@ -1842,12 +1861,25 @@ describe("transcripts", () => {
     expect(mails.map((mail) => mail.subject)).toEqual(["Your conversation with Acme"]);
     const [mail] = mails;
     expect(mail?.text).toMatch(
-      /You, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC:\nHow do I export my data\?/,
+      /You, [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2}\s[AP]M UTC:\nHow do I export my data\?/,
     );
     expect(mail?.text).toContain("anna-");
     expect(mail?.text).toContain("Continue the chat: ");
     expect(mail?.html).toContain("<strong>Settings</strong>");
     expect((await replyEmailRow())?.outcome).toBe("skipped");
+  });
+
+  test("a visitor whose chat spoke French gets the transcript in French", async () => {
+    const { from } = await replyThenClose();
+    await owner.update(visitor).set({ locale: "fr" }).where(eq(visitor.id, from));
+    runWorker({ mail: true });
+    await untilDue(allFinished, "both rows to finish");
+    expect(mails.map((mail) => mail.subject)).toEqual(["Votre conversation avec Acme"]);
+    expect(mails[0]?.text).toMatch(
+      /^Bonjour,\n\nVoici votre conversation avec Acme, pour vos archives\.\n\nVous, \d{1,2} [a-zéû.]+ \d{4}, \d{2}:\d{2} UTC\u00a0:\nHow do I export my data\?/,
+    );
+    expect(mails[0]?.text).toContain("Continuer la conversation\u00a0: ");
+    expect(mails[0]?.text).toMatch(/À bientôt,\nL'équipe Acme$/);
   });
 
   test("a transcript that fails or is cancelled leaves the reply email to carry the reply", async () => {

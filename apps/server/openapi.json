@@ -230,6 +230,10 @@
             "type": "string",
             "enum": ["presence", "reply_time"]
           },
+          "language": {
+            "type": "string",
+            "enum": ["visitor", "en", "fr", "es"]
+          },
           "typingPreview": {
             "type": "boolean"
           },
@@ -271,6 +275,18 @@
               },
               "required": ["id", "name", "pictureUrl"]
             }
+          },
+          "hours": {
+            "type": ["object", "null"],
+            "properties": {
+              "timeZone": {
+                "type": "string"
+              },
+              "week": {
+                "$ref": "#/components/schemas/BusinessWeek"
+              }
+            },
+            "required": ["timeZone", "week"]
           }
         },
         "required": [
@@ -293,11 +309,138 @@
           "headerFaceCount",
           "headerDot",
           "headerStatus",
+          "language",
           "typingPreview",
           "logoUrl",
           "team",
-          "faces"
+          "faces",
+          "hours"
         ]
+      },
+      "BusinessWeek": {
+        "type": "object",
+        "properties": {
+          "mon": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(([01]\\d|2[0-3]):[0-5]\\d|24:00)$"
+                }
+              ]
+            },
+            "maxItems": 3
+          },
+          "tue": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(([01]\\d|2[0-3]):[0-5]\\d|24:00)$"
+                }
+              ]
+            },
+            "maxItems": 3
+          },
+          "wed": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(([01]\\d|2[0-3]):[0-5]\\d|24:00)$"
+                }
+              ]
+            },
+            "maxItems": 3
+          },
+          "thu": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(([01]\\d|2[0-3]):[0-5]\\d|24:00)$"
+                }
+              ]
+            },
+            "maxItems": 3
+          },
+          "fri": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(([01]\\d|2[0-3]):[0-5]\\d|24:00)$"
+                }
+              ]
+            },
+            "maxItems": 3
+          },
+          "sat": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(([01]\\d|2[0-3]):[0-5]\\d|24:00)$"
+                }
+              ]
+            },
+            "maxItems": 3
+          },
+          "sun": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(([01]\\d|2[0-3]):[0-5]\\d|24:00)$"
+                }
+              ]
+            },
+            "maxItems": 3
+          }
+        },
+        "required": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
       },
       "NewVisitor": {
         "type": "object",
@@ -762,6 +905,10 @@
               "timeZone": {
                 "type": ["string", "null"]
               },
+              "locale": {
+                "type": ["string", "null"],
+                "enum": ["en", "fr", "es", null]
+              },
               "pictureUrl": {
                 "type": ["string", "null"]
               },
@@ -781,6 +928,7 @@
               "lastSeenAt",
               "country",
               "timeZone",
+              "locale",
               "pictureUrl",
               "isTest"
             ]
@@ -2193,9 +2341,21 @@
                   },
                   "required": ["id", "name", "pictureUrl"]
                 }
+              },
+              "hours": {
+                "type": ["object", "null"],
+                "properties": {
+                  "timeZone": {
+                    "type": "string"
+                  },
+                  "week": {
+                    "$ref": "#/components/schemas/BusinessWeek"
+                  }
+                },
+                "required": ["timeZone", "week"]
               }
             },
-            "required": ["typingPreview", "logoUrl", "team", "faces"]
+            "required": ["typingPreview", "logoUrl", "team", "faces", "hours"]
           }
         ]
       },
@@ -2280,6 +2440,10 @@
             "type": "string",
             "enum": ["presence", "reply_time"]
           },
+          "language": {
+            "type": "string",
+            "enum": ["visitor", "en", "fr", "es"]
+          },
           "headerMembers": {
             "type": "array",
             "items": {
@@ -2309,8 +2473,37 @@
           "headerFaceCount",
           "headerDot",
           "headerStatus",
+          "language",
           "headerMembers"
         ]
+      },
+      "BusinessHours": {
+        "type": ["object", "null"],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "timeZone": {
+            "type": "string"
+          },
+          "week": {
+            "$ref": "#/components/schemas/BusinessWeek"
+          }
+        },
+        "required": ["enabled", "timeZone", "week"],
+        "example": {
+          "enabled": true,
+          "timeZone": "Europe/Paris",
+          "week": {
+            "mon": [["09:00", "18:00"]],
+            "tue": [["09:00", "18:00"]],
+            "wed": [["09:00", "12:30"]],
+            "thu": [["09:00", "18:00"]],
+            "fri": [["09:00", "12:00"], ["14:00", "17:00"]],
+            "sat": [],
+            "sun": []
+          }
+        }
       },
       "AlertSettings": {
         "type": "object",
@@ -3877,8 +4070,8 @@
             "visitorToken": []
           }
         ],
-        "summary": "Send what the host page set with Dinghy.setContext(), for operators",
-        "description": "Unsigned values from the host page, such as a plan or a cart total, that operators read next to the visitor. They are not verified. The widget sends them only for a visitor who has a token because they used the chat, and again after the first message. The server keeps them only for a visitor who has a conversation, and never creates a visitor here. Each report replaces the last one: at most 20 keys of 1 to 40 characters, with a string of up to 200 characters, a number, true, false or null as each value.",
+        "summary": "Send the widget's language, and what the host page set with Dinghy.setContext(), for operators",
+        "description": "`locale` is the widget's language, which the visitor's reply emails, transcripts and chat page use. `context` holds unsigned values from the host page, such as a plan or a cart total, that operators read next to the visitor. They are not verified. Each report replaces the last one: at most 20 keys of 1 to 40 characters, with a string of up to 200 characters, a number, true, false or null as each value. The widget sends a report on each page load for a visitor who has used the chat, and again after the first message. The server keeps it only for a visitor who has a conversation, and never creates a visitor here.",
         "parameters": [
           {
             "schema": {
@@ -3899,16 +4092,20 @@
                   "plan": "pro",
                   "seats": 4,
                   "trial": false
-                }
+                },
+                "locale": "fr"
               },
               "schema": {
                 "type": "object",
                 "properties": {
                   "context": {
                     "$ref": "#/components/schemas/PageContext"
+                  },
+                  "locale": {
+                    "type": "string",
+                    "enum": ["en", "fr", "es"]
                   }
-                },
-                "required": ["context"]
+                }
               }
             }
           }
@@ -5316,6 +5513,7 @@
                         "lastSeenAt": "2026-11-08T09:30:00.000Z",
                         "country": "PT",
                         "timeZone": "Europe/Lisbon",
+                        "locale": "es",
                         "isTest": false
                       },
                       "lastMessage": {
@@ -15871,6 +16069,206 @@
           },
           "413": {
             "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/business-hours": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Get the business hours",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The business hours, or null when nobody saved them, which means off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessHours"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Replace the business hours. Outside these hours the widget shows the away message and when the team is back, and asks for an email: before the first message, or after it for a visitor who has chatted. Sites show it within 5 minutes. Owners, admins and Full access (`setup`) API keys only",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BusinessHours"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The business hours, or null when nobody saved them, which means off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessHours"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

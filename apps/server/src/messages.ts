@@ -20,7 +20,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { plainText } from "../../../packages/widget/src/markdown.ts";
-import { firstName } from "../../../packages/widget/src/shared.ts";
+import { firstName, type Locale } from "../../../packages/widget/src/shared.ts";
 import {
   apiKey,
   attachment,
@@ -943,6 +943,7 @@ export interface ConversationRow {
   visitorLastSeenAt: Date | null;
   visitorCountry: string | null;
   visitorTimeZone: string | null;
+  visitorLocale: Locale | null;
   /** A test visitor, made by a bot's simulated message. */
   visitorIsTest: boolean;
   /** Since when a person handles it, so bots stay quiet. */
@@ -1020,6 +1021,7 @@ const conversationColumns = {
   visitorLastSeenAt: visitor.lastSeenAt,
   visitorCountry: visitor.country,
   visitorTimeZone: visitor.timeZone,
+  visitorLocale: visitor.locale,
   visitorIsTest: visitor.isTest,
   humanSince: conversation.humanSince,
   assigneeName,

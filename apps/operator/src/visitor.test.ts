@@ -60,6 +60,7 @@ describe("waiting", () => {
       lastSeenAt: null,
       country: null,
       timeZone: null,
+      locale: null,
       pictureUrl: null,
       isTest: false,
     },

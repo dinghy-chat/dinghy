@@ -57,9 +57,10 @@ import {
   sentToday,
   VISITOR_EMAILS_PER_DAY,
   visitorAuthorName,
-  visitorEmailText,
   visitorLetterHtml,
+  visitorLetterText,
 } from "./visitor-email.ts";
+import { type VisitorWords, visitorWords } from "./visitor-words.ts";
 
 // A failed send retries after 30 seconds, doubling each time, and stops after this many attempts.
 export const MAX_ATTEMPTS = 6;
@@ -94,16 +95,6 @@ const text = {
   operatorWhy:
     "You get these because email alerts are on for you. You can turn them off in Settings, " +
     "under Alerts.",
-  replySubject: (name: string) => `${name} replied to your message`,
-  replied: (who: string) => `${who} replied`,
-  replyInChat: "Reply in the chat",
-  replyBody: (name: string, replies: string, chat: string, stop: string) => [
-    `${name} replied to your message:`,
-    replies,
-    `Read the conversation and answer here: ${chat}`,
-    visitorEmailText.linkWarning,
-    visitorEmailText.whyYouGotThis(name, stop),
-  ],
 };
 
 export const testPayload = (id: string): PushPayload => ({
@@ -687,7 +678,7 @@ async function replyEmailPlan(
 ): Promise<AlertPlan | null> {
   const { workspaceId, conversationId } = row;
   const [target] = await tx
-    .select({ email: visitor.email, lastReadSeq: visitor.lastReadSeq })
+    .select({ email: visitor.email, lastReadSeq: visitor.lastReadSeq, locale: visitor.locale })
     .from(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
   if (target === undefined || target.email === null) return null;
@@ -748,8 +739,9 @@ async function replyEmailPlan(
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
   const authors = await messageAuthors(tx, workspaceId, replies);
+  const words = visitorWords(target.locale);
   const written = replies.map((reply) => ({
-    author: visitorAuthorName(reply, authors, place.name),
+    author: visitorAuthorName(reply, authors, place.name, words),
     body: reply.body,
     kind: reply.kind,
     filename: reply.filename,
@@ -758,7 +750,7 @@ async function replyEmailPlan(
   return {
     channel: "email",
     to: target.email,
-    ...replyLetter(place, written, { chatUrl, stopUrl }),
+    ...replyLetter(place, written, { chatUrl, stopUrl }, words),
     stopUrl,
     carries: { fromSeq: replies[0]?.seq ?? 0n, toSeq: replies.at(-1)?.seq ?? 0n },
   };
@@ -771,11 +763,11 @@ const bubbleParagraphs = (html: string) => html.replaceAll("<p>", '<p style="mar
 const authorLineHtml = (words: string, top: number) =>
   `<p style="margin:${top}px 0 6px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(words)}</p>`;
 
-/** A message in an email's HTML: a chat bubble with its quote and its content. */
-const bubbleHtml = (content: string, quote: Quote | null) =>
+/** A message in an email's HTML: a chat bubble around its HTML. */
+const bubbleHtml = (html: string) =>
   '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px"><tr>' +
   `<td style="background:${EMAIL_COLORS.bubble};border-radius:4px 18px 18px 18px;padding:12px 16px 4px;font-size:16px;line-height:1.45">` +
-  `${quotedHtml(quote, bubbleParagraphs(content))}</td></tr></table>`;
+  `${html}</td></tr></table>`;
 
 /**
  * A reply in the HTML: its bubble, under who replied when the reply before it had another author,
@@ -784,18 +776,23 @@ const bubbleHtml = (content: string, quote: Quote | null) =>
  */
 const replyHtml = (
   reply: Omit<Written, "body"> & { body: string },
-  index: number,
-  replies: { author: string }[],
+  previous: { author: string } | undefined,
   chatUrl: string,
+  words: VisitorWords,
 ) =>
-  (replies[index - 1]?.author === reply.author
+  (previous?.author === reply.author
     ? ""
-    : authorLineHtml(text.replied(reply.author), index === 0 ? 0 : 12)) +
+    : authorLineHtml(words.replied(reply.author), previous === undefined ? 0 : 12)) +
   bubbleHtml(
-    reply.kind !== "file"
-      ? markdownHtml(reply.body)
-      : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(reply.body)}</a></p>`,
-    reply.quote,
+    quotedHtml(
+      reply.quote,
+      bubbleParagraphs(
+        reply.kind === "file"
+          ? `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(reply.body)}</a></p>`
+          : markdownHtml(reply.body),
+      ),
+      words,
+    ),
   );
 
 /**
@@ -807,28 +804,26 @@ export function replyLetter(
   place: Place,
   replies: Written[],
   links: { chatUrl: string; stopUrl: string },
+  words: VisitorWords,
 ): { subject: string; text: string; html: string } {
   const written = replies.map((reply) => ({
     ...reply,
-    body: messageText(reply),
+    body: reply.kind === "file" ? words.aFile(reply.filename) : (reply.body ?? words.anImage),
   }));
-  const plain = written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n");
+  const plain = written.map((reply) => quotedText(reply.quote, reply.body, words)).join("\n\n");
+  const paragraphs = [words.repliedTo(place.name), plain, words.answerHere(links.chatUrl)];
+  const html = written
+    .map((reply, index) => replyHtml(reply, written[index - 1], links.chatUrl, words))
+    .join("");
   return {
-    subject: text.replySubject(place.name),
-    text: letter(
-      text.replyBody(place.name, plain, links.chatUrl, links.stopUrl),
-      undefined,
-      place.name,
-    ),
+    subject: words.replySubject(place.name),
+    text: visitorLetterText(place.name, paragraphs, links.stopUrl, words),
     // The replies' Markdown shows as formatting here, and stays as typed in the text version.
     html: visitorLetterHtml(
       place.name,
-      written.map((reply, index) => replyHtml(reply, index, written, links.chatUrl)).join(""),
-      {
-        ...links,
-        logoUrl: place.logoUrl,
-        chatLabel: text.replyInChat,
-      },
+      html,
+      { ...links, logoUrl: place.logoUrl, chatLabel: words.replyInChat },
+      words,
     ),
   };
 }
@@ -953,7 +948,7 @@ async function operatorPlan(
     html: letterHtml({
       team: placeName,
       logoUrl: place.logoUrl,
-      html: authorLineHtml(wrote, 0) + bubbleHtml(markdownHtml(body), null),
+      html: authorLineHtml(wrote, 0) + bubbleHtml(bubbleParagraphs(markdownHtml(body))),
       action: { label: text.operatorOpen, url: threadUrl },
       footer: [escapeHtml(text.operatorWhy)],
     }),

@@ -1,5 +1,5 @@
 import type { Quote } from "./quote.ts";
-import type { PageContext } from "./shared.ts";
+import type { Locale, PageContext } from "./shared.ts";
 import { readStream, retryAfterMs } from "./stream.ts";
 
 /** The presence answer. */
@@ -139,9 +139,15 @@ export function createClient(
         method: "POST",
         body: JSON.stringify({ page: address, title }),
       }),
-    /** The page's setContext() data. It replaces what the server kept before. */
-    reportContext: (token: string, context: PageContext) =>
-      call<{ ok: true }>("context", token, { method: "POST", body: JSON.stringify({ context }) }),
+    /**
+     * The chat's language, for the visitor's emails, and the page's setContext() data, which
+     * replaces what the server kept before. Null leaves that data as it is.
+     */
+    reportContext: (token: string, locale: Locale, context: PageContext | null) =>
+      call<{ ok: true }>("context", token, {
+        method: "POST",
+        body: JSON.stringify({ locale, ...(context !== null && { context }) }),
+      }),
     /** The message box's text, for operators to see before it is sent. Empty when it is gone. */
     typing: (token: string, draft: string) =>
       call<{ ok: true }>("typing", token, { method: "POST", body: JSON.stringify({ draft }) }),

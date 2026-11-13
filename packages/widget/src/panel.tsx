@@ -17,7 +17,7 @@ import {
   type TeamFace,
   type WidgetSettings,
 } from "./shared.ts";
-import { type TextId, t } from "./text.ts";
+import { language, type TextId, t } from "./text.ts";
 
 /**
  * The panel's colors at night, for a dark theme and for auto on a dark device. A site's own main
@@ -41,6 +41,7 @@ export const CSS = `
 .scene small{font-size:12.5px;line-height:17px;opacity:.8}
 .scene small::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:currentColor;opacity:.55;vertical-align:1px}
 .on small::before{background:#2fd08a;opacity:1}
+.scene small+small::before{content:none}
 .sea,.port{position:relative;flex:none;width:36px;height:36px;overflow:hidden;background:#ffc917;border-radius:50%}
 .logo{flex:none;width:36px;height:36px;border-radius:10px;object-fit:contain;background:#fff}
 .sea canvas,.port canvas{position:absolute;left:0;top:0;width:100%;height:100%}
@@ -348,6 +349,16 @@ function replyTime(seconds: number): string {
     : t("replyHours").replace("{n}", `${Math.round(minutes / 60)}`);
 }
 
+/** "We're back Monday at 9:00 AM", on the visitor's own clock, in the chat's language. */
+export function backLine(at: Date, now: Date): string {
+  const time = at.toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" });
+  return at.toDateString() === now.toDateString()
+    ? t("backToday").replace("{time}", time)
+    : t("backAt")
+        .replace("{day}", at.toLocaleDateString(language(), { weekday: "long" }))
+        .replace("{time}", time);
+}
+
 /**
  * The panel's title bar: the workspace's logo or the boat's scene, what the scene means in words,
  * the team's faces and the close button.
@@ -360,6 +371,7 @@ export function ChatHead({
   mascot,
   saved,
   say,
+  back,
   onClose,
 }: {
   scene: SceneState;
@@ -371,6 +383,8 @@ export function ChatHead({
   mascot: boolean;
   saved: SavedAppearance;
   say: Say;
+  /** Outside business hours, when the team is back, under the away text. */
+  back?: string | undefined;
   /** Missing on the full-page chat, which has nothing to close. */
   onClose?: () => void;
 }) {
@@ -406,6 +420,7 @@ export function ChatHead({
           <small role="status" title={status}>
             {status}
           </small>
+          {back !== undefined && <small>{back}</small>}
         </div>
       </div>
       {/* The status line says whether anyone is online, so the faces and dots have no text. */}

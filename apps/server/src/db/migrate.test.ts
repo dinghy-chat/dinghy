@@ -381,6 +381,29 @@ describe("chat migrate", () => {
     ]);
   });
 
+  test("existing widgets keep English, and new ones follow the visitor's language", async () => {
+    await run(await migrationsBefore("0096_"));
+    const old = "00000000-0000-4000-8000-0000000000f1";
+    const made = "00000000-0000-4000-8000-0000000000f2";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${old}', 'Old', 'wk_00000000000000000000000000000005', 'secret')`,
+    );
+    await query(`insert into widget_settings (workspace_id) values ('${old}')`);
+    await run();
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${made}', 'New', 'wk_00000000000000000000000000000006', 'secret')`,
+    );
+    await query(`insert into widget_settings (workspace_id) values ('${made}')`);
+    expect(
+      await query("select workspace_id, language from widget_settings order by workspace_id"),
+    ).toEqual([
+      { workspace_id: old, language: "en" },
+      { workspace_id: made, language: "visitor" },
+    ]);
+  });
+
   test("existing conversations start read for their workspace's current members", async () => {
     await run(await migrationsBefore("0085_"));
     const workspace = "00000000-0000-4000-8000-0000000000e1";

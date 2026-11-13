@@ -25,6 +25,7 @@ const DEFAULTS = {
   headerFaceCount: 3,
   headerDot: true,
   headerStatus: "presence",
+  language: "visitor",
 } as const;
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
@@ -35,6 +36,7 @@ test.beforeAll(async () => {
       "/plain": page(),
       "/tagged": page('data-accent="#ff0000" data-position="right" data-launcher="boat"'),
       "/no-branding": page('data-branding="false"'),
+      "/spanish": page('data-locale="es"'),
     },
     { emailAvailable: true },
   );
@@ -48,7 +50,22 @@ test.afterAll(async () => {
 
 test.beforeEach(async () => {
   await server.setWidgetSettings(DEFAULTS);
+  await server.setBusinessHours(null);
 });
+
+const OFFICE_DAY: [string, string][] = [["09:00", "17:00"]];
+const PARIS_OFFICE = {
+  timeZone: "Europe/Paris",
+  week: {
+    mon: OFFICE_DAY,
+    tue: OFFICE_DAY,
+    wed: OFFICE_DAY,
+    thu: OFFICE_DAY,
+    fri: OFFICE_DAY,
+    sat: [],
+    sun: [],
+  },
+};
 
 /** A new visitor's page, in a context of its own, so no answer comes from the cache. */
 async function visit(browser: Browser, path = "/plain", options = {}): Promise<Page> {
@@ -200,6 +217,136 @@ test("before the first message, the email takes the message box's place until it
   await expect(visitor.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expect(email).toHaveCount(0);
   await visitor.context().close();
+});
+
+test("outside business hours, the header says when the team is back and asks for the email first", async ({
+  browser,
+}) => {
+  await server.setBusinessHours(PARIS_OFFICE);
+  // Monday 21:00 in Paris, for a visitor in New York.
+  const context = await browser.newContext({ timezoneId: "America/New_York" });
+  const visitor = await context.newPage();
+  await visitor.clock.setFixedTime(new Date("2026-11-16T20:00:00Z"));
+  await visitor.goto(`${server.hostOrigin}/plain`);
+  await launcher(visitor).click();
+  await expect(visitor.getByRole("status").first()).toHaveText("Away, we reply here and by email");
+  // Tuesday 09:00 in Paris is 03:00 in New York.
+  await expect(visitor.getByText("We're back Tuesday at 3:00 AM")).toBeVisible();
+  // The email setting says after the first message, and outside hours it comes first.
+  await expect(visitor.getByText("Leave your email so we can reply")).toBeVisible();
+  await expect(visitor.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
+  await context.close();
+});
+
+test("outside business hours, a visitor who already chatted gets the email form after the messages", async ({
+  browser,
+}) => {
+  await server.setWidgetSettings({ emailAsk: "off" });
+  await server.setBusinessHours(PARIS_OFFICE);
+  const visitor = await (await browser.newContext()).newPage();
+  // Monday 11:00 in Paris: open, and with emails off nothing asks for one.
+  await visitor.clock.setFixedTime(new Date("2026-11-16T10:00:00Z"));
+  await visitor.goto(`${server.hostOrigin}/plain`);
+  await launcher(visitor).click();
+  const box = visitor.getByRole("textbox", { name: "Your message" });
+  await box.fill("Hello");
+  await box.press("Enter");
+  await expect(visitor.getByText("Hello")).toBeVisible();
+  await expect(visitor.getByRole("textbox", { name: "Your email" })).toHaveCount(0);
+  // Monday 21:00 in Paris, on the next page, where the chat stays open.
+  await visitor.clock.setFixedTime(new Date("2026-11-16T20:00:00Z"));
+  await visitor.reload();
+  await expect(visitor.getByRole("textbox", { name: "Your email" })).toBeVisible();
+  await expect(box).toBeVisible();
+  await visitor.context().close();
+});
+
+test("an owner turns on business hours in Settings, and the widget follows", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ timezoneId: "UTC" });
+  const owner = await context.newPage();
+  await signInOn(owner, server, "owner@example.com");
+  await openSettings(owner, "Business hours");
+  // Before a first save: the browser's zone, and weekdays from 9 to 5.
+  await expect(owner.getByRole("button", { name: "Time zone UTC" })).toBeVisible();
+  await expect(owner.getByLabel("Monday opens at")).toHaveValue("09:00");
+  await expect(owner.getByLabel("Saturday opens at")).toHaveCount(0);
+  await owner.getByRole("checkbox", { name: "Use business hours" }).check();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    owner.getByText("Saved. New pages of your site follow these hours within 5 minutes."),
+  ).toBeVisible();
+
+  const visitorContext = await browser.newContext({ timezoneId: "UTC" });
+  const visitor = await visitorContext.newPage();
+  // A Saturday.
+  await visitor.clock.setFixedTime(new Date("2026-11-21T12:00:00Z"));
+  await visitor.goto(`${server.hostOrigin}/plain`);
+  await launcher(visitor).click();
+  await expect(visitor.getByText("We're back Monday at 9:00 AM")).toBeVisible();
+  await visitorContext.close();
+  await context.close();
+});
+
+test("a French browser gets the chat in French, and the server learns its language", async ({
+  browser,
+}) => {
+  const visitor = await visit(browser, "/plain", { locale: "fr-FR" });
+  await launcher(visitor).click();
+  await expect(visitor.getByText("Discutez avec nous")).toBeVisible();
+  await expect(visitor.getByRole("button", { name: "Fermer le chat" })).toBeVisible();
+  const box = visitor.getByRole("textbox", { name: "Votre message" });
+  await expect(box).toHaveAttribute("placeholder", "Écrivez un message...");
+  const report = visitor.waitForRequest((request) => request.url().endsWith("/context"));
+  await box.fill("Bonjour");
+  await box.press("Enter");
+  expect((await report).postDataJSON()).toEqual({ locale: "fr" });
+  // The loader names the launcher in English, and the chat names it in French once it runs.
+  await visitor.getByRole("button", { name: "Fermer le chat" }).click();
+  await expect(visitor.getByRole("button", { name: "Ouvrir le chat" })).toBeVisible();
+  await visitor.context().close();
+});
+
+test("a returning French visitor's language reaches the server only once the French texts load", async ({
+  browser,
+}) => {
+  const visitor = await visit(browser, "/plain", { locale: "fr-FR" });
+  await launcher(visitor).click();
+  const box = visitor.getByRole("textbox", { name: "Votre message" });
+  const firstReport = visitor.waitForRequest((request) => request.url().endsWith("/context"));
+  await box.fill("Bonjour");
+  await box.press("Enter");
+  await firstReport;
+  // The next page loads its French texts slowly, and its report must not say English first.
+  await visitor.route("**/fr.json", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  const reports: unknown[] = [];
+  visitor.on("request", (request) => {
+    if (request.url().endsWith("/context")) reports.push(request.postDataJSON());
+  });
+  const report = visitor.waitForRequest((request) => request.url().endsWith("/context"));
+  await visitor.reload();
+  await report;
+  await expect(visitor.getByRole("textbox", { name: "Votre message" })).toBeVisible();
+  expect(reports).toEqual([{ locale: "fr" }]);
+  await visitor.context().close();
+});
+
+test("the tag's data-locale wins over the browser's language, and a fixed one over both", async ({
+  browser,
+}) => {
+  const spanish = await visit(browser, "/spanish", { locale: "fr-FR" });
+  await launcher(spanish).click();
+  await expect(spanish.getByRole("textbox", { name: "Tu mensaje" })).toBeVisible();
+  await spanish.context().close();
+  await server.setWidgetSettings({ language: "en" });
+  const english = await visit(browser, "/plain", { locale: "fr-FR" });
+  await launcher(english).click();
+  await expect(english.getByRole("textbox", { name: "Your message" })).toBeVisible();
+  await english.context().close();
 });
 
 test("before the first message, a failed save keeps the email form and its error", async ({
@@ -376,6 +523,29 @@ test("an owner changes the color, theme and launcher in Appearance, and the site
   expect(await hostStyle(visitor, "--d-accent")).toBe("#1f6bff");
   await launcher(visitor).click();
   await expect(visitor.locator("dinghy-chat")).toHaveAttribute("data-theme", "dark");
+  await visitor.context().close();
+  await context.close();
+});
+
+test("an owner sets the widget's language in Appearance, and the preview and the site follow", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const owner = await context.newPage();
+  await signInOn(owner, server, "owner@example.com");
+  await openSettings(owner, "Appearance");
+  await owner.getByRole("button", { name: "Language Visitor's language" }).click();
+  await owner.getByRole("option", { name: "Spanish" }).click();
+  const preview = owner.locator(".preview-stage > div");
+  await expect(preview.getByRole("button", { name: "Enviar" })).toBeVisible();
+  await owner.locator(".widget-form").getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    owner.getByText("Saved. New pages of your site show this within 5 minutes."),
+  ).toBeVisible();
+
+  const visitor = await visit(browser);
+  await launcher(visitor).click();
+  await expect(visitor.getByRole("textbox", { name: "Tu mensaje" })).toBeVisible();
   await visitor.context().close();
   await context.close();
 });

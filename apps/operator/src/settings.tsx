@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import type { BillingState, Me, Member, Role, WorkspaceApi } from "./api.ts";
 import { AppearancePage } from "./appearance.tsx";
+import { BusinessHoursPage } from "./business-hours.tsx";
 import { DevelopersPage } from "./developers.tsx";
 import { Icon } from "./icons.tsx";
 import { InstallPage } from "./install.tsx";
@@ -20,6 +21,7 @@ const PAGES = [
   "team",
   "saved-replies",
   "appearance",
+  "business-hours",
   "install",
   "developers",
 ] as const;
@@ -30,7 +32,7 @@ export type SettingsPage = (typeof PAGES)[number];
 const GROUPS: { label: TextId; pages: SettingsPage[] }[] = [
   { label: "settingsGroupYou", pages: ["profile", "notifications"] },
   { label: "settingsGroupWorkspace", pages: ["workspace", "team", "saved-replies"] },
-  { label: "settingsGroupWidget", pages: ["appearance", "install"] },
+  { label: "settingsGroupWidget", pages: ["appearance", "business-hours", "install"] },
   { label: "settingsGroupDevelopers", pages: ["developers"] },
 ];
 
@@ -41,6 +43,7 @@ const PAGE_TEXT: Record<SettingsPage, TextId> = {
   team: "pageTeam",
   "saved-replies": "pageSavedReplies",
   appearance: "pageAppearance",
+  "business-hours": "pageBusinessHours",
   install: "pageInstall",
   developers: "pageDevelopers",
 };
@@ -245,6 +248,8 @@ export function Settings({
             onOpenWorkspace={() => onPage("workspace")}
           />
         );
+      case "business-hours":
+        return <BusinessHoursPage api={api} />;
       case "install":
         return settings.data === null ? (
           <Page title={t("pageInstall")}>

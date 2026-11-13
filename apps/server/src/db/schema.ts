@@ -21,7 +21,9 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import {
+  type BusinessHours,
   HEADER_FACES_MAX,
+  LOCALES,
   MESSAGE_MAX,
   RADIUS_MAX_PX,
   SAVED_REPLY_SHORTCUT,
@@ -82,6 +84,8 @@ export const widgetHeaderFaces = pgEnum("widget_header_faces", [
   "none",
 ]);
 export const widgetHeaderStatus = pgEnum("widget_header_status", ["presence", "reply_time"]);
+export const widgetLanguage = pgEnum("widget_language", ["visitor", ...LOCALES]);
+export const visitorLocale = pgEnum("visitor_locale", LOCALES);
 
 export const workspace = pgTable(
   "workspace",
@@ -289,6 +293,8 @@ export const visitor = pgTable(
     country: text("country"),
     // IANA, such as Europe/Paris, from the browser's last beat.
     timeZone: text("time_zone"),
+    // The widget's language, from its last context report, for the emails and the chat page.
+    locale: visitorLocale("locale"),
     // Made by a bot's simulated visitor message, to test it. Lists and analytics leave it out.
     isTest: boolean("is_test").notNull().default(false),
     createdAt: createdAt(),
@@ -1359,6 +1365,7 @@ export const widgetSettings = pgTable(
     // The operators that `chosen` shows, in order. Not a foreign key: a member who leaves is
     // skipped when the widget reads it, and comes back in place if they join again.
     headerMembers: uuid("header_members").array().notNull().default(sql`'{}'::uuid[]`),
+    language: widgetLanguage("language").notNull().default(WIDGET_DEFAULTS.language),
   },
   (table) => [
     check("widget_settings_primary_color", sql`${table.primary} ~ '^#[0-9a-f]{6}$'`),
@@ -1372,6 +1379,24 @@ export const widgetSettings = pgTable(
       sql`${table.headerFaceCount} between 1 and ${sql.raw(String(HEADER_FACES_MAX))}`,
     ),
   ],
+);
+
+/**
+ * When the team answers, which the widget reads with its appearance. Apart from `workspace` for the
+ * same reason as `widget_settings`. A workspace without a row has the hours off.
+ */
+export const businessHours = pgTable(
+  "business_hours",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(false),
+    // IANA, such as Europe/Paris. The server checks the name with Intl, which the database cannot.
+    timeZone: text("time_zone").notNull(),
+    week: jsonb("week").$type<BusinessHours["week"]>().notNull(),
+  },
+  (table) => [check("business_hours_time_zone_length", sql`char_length(${table.timeZone}) <= 64`)],
 );
 
 /**

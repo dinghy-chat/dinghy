@@ -1,7 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Logger } from "pino";
-import { MENTIONS_MAX } from "../../../packages/widget/src/shared.ts";
+import { LOCALES, MENTIONS_MAX } from "../../../packages/widget/src/shared.ts";
 import { type Actor, actorId, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
@@ -283,6 +283,8 @@ const Conversation = z
       // ISO 3166-1 alpha-2 and IANA, from the widget's last beat.
       country: z.string().nullable(),
       timeZone: z.string().nullable(),
+      // The widget's language, from its last context report.
+      locale: z.enum(LOCALES).nullable(),
       // A visitor has no picture. Only Dinghy Cloud's welcome chat shows its founder's here.
       pictureUrl: z.string().nullable(),
       // A test visitor that a bot's simulated message made.
@@ -403,6 +405,7 @@ const listRoute = createRoute({
                   lastSeenAt: "2026-11-08T09:30:00.000Z",
                   country: "PT",
                   timeZone: "Europe/Lisbon",
+                  locale: "es",
                   isTest: false,
                 },
                 lastMessage: {
@@ -885,6 +888,7 @@ export function conversationView(
       lastSeenAt: row.visitorLastSeenAt?.toISOString() ?? null,
       country: row.visitorCountry,
       timeZone: row.visitorTimeZone,
+      locale: row.visitorLocale,
       pictureUrl,
       isTest: row.visitorIsTest,
     },
