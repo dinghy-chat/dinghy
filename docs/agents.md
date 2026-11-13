@@ -69,8 +69,9 @@ Then:
 
 1. `get_conversation` reads the messages, internal notes among them with `kind: "note"`, who handles it, the visitor and the pages they saw. `format: "markdown"` gives a short transcript instead, which uses fewer tokens, with the assignee's name. `replySeconds` is the team's median first reply time over 30 days.
 2. `get_contact` reads who the visitor is: name, email, signed attributes, country, local time, pages, the team's note and other conversations.
-3. `set_typing` shows "<name> is typing…" in the chat for 6 seconds. Call it again while you write.
-4. `reply` with a `clientId` that you make. A retry with the same `clientId` cannot send twice.
+3. `list_saved_replies` lists the replies your team saved for common questions, such as a refund policy, with their `shortcut` and `body`. Use them to answer with the team's facts and in its words.
+4. `set_typing` shows "<name> is typing…" in the chat for 6 seconds. Call it again while you write.
+5. `reply` with a `clientId` that you make. A retry with the same `clientId` cannot send twice.
 
 `reply` answers `status: "sent"` when the visitor got the message, and `status: "drafted"` when it waits for a person. Errors to expect:
 
@@ -109,7 +110,7 @@ When the drafts read well, an owner or admin changes the key or the connection t
 
 ## Notes
 
-`add_note` writes an internal note on a conversation. The visitor never sees it: not in the widget, an email or a transcript. A note is a message with `kind: "note"`, so `get_conversation` reads it in its place among the messages, and operators write one from the **Note** tab above the reply box. A note goes in a closed conversation, while a person handles it and while bots are paused, and it alerts nobody. A link in a bot's note shows as its address, not as a link to click, so a link a visitor slipped in does not look trusted. Use a note to pass on what you found, or to suggest an answer while a person handles the chat.
+`add_note` writes an internal note on a conversation. The visitor never sees it: not in the widget, an email or a transcript. A note is a message with `kind: "note"`, so `get_conversation` reads it in its place among the messages, and operators write one from the **Note** tab above the reply box. A note goes in a closed conversation, while a person handles it and while bots are paused, and it alerts nobody unless it mentions someone. To ask a member for help, pass their `id` from `list_members` in `mentions`, at most 10, and write `@Name` in the text: each of them gets an alert with the note's text, by push and by email as their alert settings say. A link in a bot's note shows as its address, not as a link to click, so a link a visitor slipped in does not look trusted. Use a note to pass on what you found, or to suggest an answer while a person handles the chat.
 
 ## Pause all bots
 

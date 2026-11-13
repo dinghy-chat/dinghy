@@ -70,16 +70,31 @@ A note is a message that only the workspace's team sees. Send `"note": true` in 
 
 - A note goes in a closed conversation too, and leaves it closed. It never assigns the conversation, and an operator's first reply after it still does.
 - The visitor never gets a note in any form: not in the widget's message list or stream, not as an edit or a delete there, not in a reply email or a transcript, and not as a quote, because a reply that quotes a note answers 400 `invalid_reply_to`. A note can quote any message, another note too.
-- A note raises no push and no email. It is never a conversation's `lastMessage`, it does not stop a conversation from waiting, it does not move the conversation up the list, it is never unread, and it is not a first reply in analytics. Its receipt is always `{ "readAt": null, "emailedAt": null }`.
+- A note raises a push and an email only for the members it [mentions](#mentions). It is never a conversation's `lastMessage`, it does not stop a conversation from waiting, it does not move the conversation up the list, it is unread only for the members it mentions, and it is not a first reply in analytics. Its receipt is always `{ "readAt": null, "emailedAt": null }`.
 - Its author edits it at any time, as the visitor never sees it, and deletes it as a reply. An owner or admin deletes anyone's.
 - Its `message.created`, `message.updated` and `message.deleted` events reach webhooks as any message's do, with `data.message.kind` set to `note`. On the operator stream, its `message.created` change has `fromVisitor` false.
 - A workspace export keeps notes, with their kind.
+
+### Mentions
+
+A note can mention members: pass their operator IDs, from `GET .../members` or the MCP `list_members` tool, as `mentions` in the body of the send, at most 10. Write `@Name` in the text too, so people reading the note see who it is for. The server keeps only the IDs of current members, without the note's author, and drops the rest. Every message has `mentions`, the list it kept, which is empty for anything but a note.
+
+- Each member a note mentions gets an alert with the note's text, by push and by email as their email alert setting says, even when the conversation is assigned to someone else. A member the note names in its text but not in `mentions` gets nothing.
+- The conversation is unread for each of them until they read past the note.
+- An edit takes `mentions` too, and replaces the list. Only the members it did not mention before get an alert, and removing a mention sends nothing. An edit with no `mentions` clears them.
+- A workspace export keeps them, and an import maps them to the operators of the new server.
+
+### Saved replies
+
+Saved replies are the team's own answers to common questions, which an operator inserts in the composer by typing `/`. `GET /v1/operator/workspaces/{workspaceId}/saved-replies` lists them by `shortcut`, with `id`, `body` in Markdown, `createdBy` (the member who added it, or null once they left) and `updatedAt`. Any member, and any API key, reads them, and MCP has `list_saved_replies`, so a bot can answer in the team's words.
+
+With a session, any member adds one with `POST .../saved-replies` and `{ "shortcut", "body" }`, changes one with `PATCH .../saved-replies/{savedReplyId}` and either field, and deletes one with `DELETE`. A shortcut is 1 to 32 lowercase letters, digits and dashes, starts with a letter or a digit, and is unique in the workspace: a second one answers 409 `shortcut_taken`. A body is 1 to 5,000 characters. A workspace keeps up to 200, and the next answers 409 `saved_reply_limit`. API keys cannot change them.
 
 ### Quotes, edits and deletes
 
 A send can quote one earlier message of the same conversation: pass its ID as `replyToMessageId` in the body of a text reply or the widget's send, in the query of an image upload, or to the MCP `reply` tool. It must be text or an image that was not deleted, or the send answers 400 `invalid_reply_to`. Every message then has `replyTo`, null or `{ id, authorName, fromVisitor, text, hasImage }`. `text` is the quoted message's whole text with its line breaks, with its Markdown marks removed. When the quoted message is deleted later, `id` is null and `text` is empty: show "Original message deleted". The widget API gives an operator's first name as `authorName`, and null for the visitor's own message.
 
-`PATCH /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}` with `{ "body" }` changes the text of the signed-in operator's own text reply or note, and sets `editedAt`. It works only while the visitor has not seen the reply: it answers 409 `message_seen` once the visitor read it in the chat, or once a reply email or a transcript carried it or is being sent. A reply email still waiting reads the text when it goes, so it carries the edit. Nobody edits a visitor's message, and API keys and MCP cannot edit.
+`PATCH /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}` with `{ "body" }`, and a note's `mentions`, changes the text of the signed-in operator's own text reply or note, and sets `editedAt`. It works only while the visitor has not seen the reply: it answers 409 `message_seen` once the visitor read it in the chat, or once a reply email or a transcript carried it or is being sent. A reply email still waiting reads the text when it goes, so it carries the edit. Nobody edits a visitor's message, and API keys and MCP cannot edit.
 
 `DELETE` on the same path deletes a message: an operator deletes their own, and an owner or admin deletes anyone's, a visitor's too, such as a pasted card number. The row stays, so positions, receipts and quotes keep working: `deleted` is true, and `body` and `image` are null in every answer, webhook and export. Its image goes from storage as other deleted images do. API keys cannot delete.
 
@@ -168,7 +183,7 @@ A key works in its own workspace only, at the access level chosen when it was ma
 - list, search and read conversations, with the visitor and the page journey (`?assignee=none` lists the unassigned ones; a key is assigned nothing, so `assignee=me` answers 400),
 - reply with text or an image, as its reply mode says, write notes, hand a conversation to people and show that it types (see [Bots](#bots-reply-modes-drafts-notes-and-handoff)),
 - close, reopen, snooze and assign a conversation,
-- read contacts, the visitors on the site now and the analytics, and stream events from [`GET /v1/events`](#events-for-api-keys).
+- read contacts, the visitors on the site now, the analytics and the [saved replies](#saved-replies), and stream events from [`GET /v1/events`](#events-for-api-keys).
 
 **Full access** can do all of that, and set the workspace up: the [webhooks](#webhooks) (list, add, change, delete, replace a secret, send a test, read and replay the deliveries), the widget's look, and the [install routes and test visitors](#install-and-test-visitors). It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Full access key.
 
@@ -472,10 +487,11 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `search_conversations` | Chats | Finds conversations by the visitor's name, email or user ID, or by message text |
 | `get_conversation` | Chats | Reads a conversation: its messages, notes among them with `kind: "note"`, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
 | `reply` | Chats | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Quote an earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
-| `add_note` | Chats | Adds a note that only the team sees, in an open or closed conversation, even while a person handles it or bots are paused. Quote any earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
+| `add_note` | Chats | Adds a note that only the team sees, in an open or closed conversation, even while a person handles it or bots are paused. `mentions` takes member IDs from `list_members`, and each gets an alert. Quote any earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
 | `list_drafts` | Chats | Lists the drafts of keys in draft mode: `open`, `stale` or `all` |
 | `hand_off` | Chats | Hands a conversation to people, with a reason, a summary and an optional last message to the visitor |
-| `list_members` | Chats | Lists the members: `id`, `name`, `role` and whether they are `online`. The `id` is what `assign_conversation` and `hand_off` take |
+| `list_members` | Chats | Lists the members: `id`, `name`, `role` and whether they are `online`. The `id` is what `assign_conversation`, `hand_off` and the `mentions` of `add_note` take |
+| `list_saved_replies` | Chats | Lists the team's saved replies: `shortcut` and `body`, to answer in the team's words |
 | `set_typing` | Chats | Shows the visitor that the bot is typing, for 6 seconds |
 | `wait_for_messages` | Chats | Waits up to 30 seconds for new visitor messages, from a cursor. With no cursor it answers the cursor for now, and no earlier messages |
 | `close_conversation` | Chats | Closes a conversation. Marked destructive |

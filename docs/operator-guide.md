@@ -14,7 +14,11 @@ To send an image, paste it, drag it onto the chat, or select the image button. T
 
 If a message shows "Not sent", select it to try again. A retry cannot create a second copy.
 
-To write something only your team sees, choose **Note** above the reply box, write it and select **Add note**. The box turns yellow, and the note shows in a yellow bubble labeled **Internal note** with its author. The visitor never sees a note, in the chat or in an email, and a note sends no alert and does not assign the conversation. You can edit your own notes at any time and delete them as replies. A note can quote any message, but a reply cannot quote a note. Notes take text only, and the box goes back to **Reply** when you open another conversation.
+To write something only your team sees, choose **Note** above the reply box, write it and select **Add note**. The box turns yellow, and the note shows in a yellow bubble labeled **Internal note** with its author. The visitor never sees a note, in the chat or in an email, and a note does not assign the conversation. You can edit your own notes at any time and delete them as replies. A note can quote any message, but a reply cannot quote a note. Notes take text only, and the box goes back to **Reply** when you open another conversation.
+
+To ask a teammate about a chat, type **@** in a note and pick them from the list, or type `@` and their name as it shows in **Team**. The note keeps `@Name` in its text. Each teammate it mentions, up to 10, gets an alert with the note's text, by push and by email as their [alert settings](#get-alerts) say, even when the chat is not theirs, and the conversation shows as unread for them. A note with no mention alerts nobody. When you edit a note, only the teammates it did not mention before get an alert.
+
+To answer a common question in your team's words, type **/** at the start of a word in the reply box or the note box. A list shows the [saved replies](#saved-replies) whose shortcut or text holds what you type after it. Use the arrow keys to choose one, and press Enter or Tab to put its text in the box, where you can change it before you send. Esc closes the list.
 
 When you close a conversation, a visitor who gave an email gets the whole conversation by email 5 minutes later, if someone on the team replied, with a link to continue the chat. Reopening it within the 5 minutes cancels it. **Email transcript** in the conversation's **…** menu sends it now. **Settings > Appearance** turns the email at close off.
 
@@ -89,8 +93,8 @@ Below are the conversations per day, **Who sent the first reply**, by person or 
 
 Open **Settings > Notifications**. These settings affect only you, and each one has its own scope.
 
-- **Browser notifications** sends a push notification when a visitor writes. It is set per browser, and covers every workspace you are in. Turn it on in each browser you use. Select **Turn on**, then **Send a test** to see if it works. A private window usually cannot turn this on.
-- **Email me about new messages** is set per workspace, so turn it on in each workspace where you want emails. It needs a mail server on your Dinghy install. A burst of messages in one conversation sends one email.
+- **Browser notifications** sends a push notification when a visitor writes, and when a teammate mentions you in a note. It is set per browser, and covers every workspace you are in. Turn it on in each browser you use. Select **Turn on**, then **Send a test** to see if it works. A private window usually cannot turn this on.
+- **Email me about new messages** is set per workspace, so turn it on in each workspace where you want emails. It needs a mail server on your Dinghy install. A burst of messages in one conversation sends one email. A note that mentions you sends its own email each time.
 - **Play a sound for new messages** is set per browser. It plays a short chime when a visitor writes in a conversation you don't have open, or while the app's window is in the background. It is on unless you turn it off. The browser plays it only after your first click or key press in the app. A tab you are not on holds no live connection, so it stays silent: turn on notifications for that.
 
 On an iPhone, a web app can show notifications only from the Home Screen:
@@ -130,11 +134,11 @@ Everyone can open **Settings**. A list on its left groups the pages:
 | Group | Pages |
 |---|---|
 | **You** | **Profile**, **Notifications** |
-| **Workspace** | **Workspace**, **Team** |
+| **Workspace** | **Workspace**, **Team**, **Saved replies** |
 | **Chat widget** | **Appearance**, **Install** |
 | **Developers** | **API & webhooks** |
 
-Each page has its own address, such as `/settings/team?workspace=<id>`, so a reload, a bookmark or a shared link opens the same page of the same workspace. On a phone, the list is its own screen, and **Back** on a page returns to it. A member sees **Profile**, **Notifications**, **Team** and **Appearance**, and cannot change the team or the chat's look. Owners and admins see every page.
+Each page has its own address, such as `/settings/team?workspace=<id>`, so a reload, a bookmark or a shared link opens the same page of the same workspace. On a phone, the list is its own screen, and **Back** on a page returns to it. A member sees **Profile**, **Notifications**, **Team**, **Saved replies** and **Appearance**, and cannot change the team or the chat's look. Owners and admins see every page.
 
 To invite someone, open **Settings > Team**, select **Invite someone** at the top of the page, enter their email, pick a role, and select **Send invite**. Dinghy emails them a link to join. Without a mail server, select **Create invite link** instead, and send the link to that one person. Pending invites show in the team list with their email and the days they have left. Select the trash icon, then **Cancel invite**, to cancel one. To send an invite again, invite the same email again: the old link stops working. A link works once and lasts 7 days, and only that email can use it.
 
@@ -173,6 +177,10 @@ Someone in two workspaces switches between them with the workspace name at the t
 - **Identify signed-in users (optional)** holds the identity signing secret, for [signed-in users](add-to-your-site.md#show-who-is-chatting). Ordinary chat does not need it. It stays hidden until you select the eye. **Replace the secret** asks first, because the old one stops working at once.
 
 **Settings > API & webhooks** has the workspace's [API keys](api.md#api-keys), for your own scripts and AI assistants, and its [webhooks](api.md#webhooks), which tell another app about new conversations and messages. Both are optional. A key's token and a webhook's secret show once, so copy them then. A key's replies show its name, and **Revoke** stops it at once. Apps that you connected in the browser, such as Claude Code, show there too, with **Disconnect**, and [Use Dinghy with AI agents](agents.md) explains them. The card at the top counts them, and its switch pauses every bot. Owners and admins see this page.
+
+### Saved replies
+
+**Settings > Saved replies** holds the replies your team writes once and inserts with **/**. Every member can add, change and delete them. **New saved reply** asks for a **Shortcut**, of lowercase letters, digits and dashes, such as `refund-policy`, and the **Text**, with the same formatting as a message. A workspace keeps up to 200, and each shortcut is used once. A saved reply has no placeholders, such as the visitor's name, because most visitors do not give one. Bots read them too, through the API and MCP, so they can answer in your team's words.
 
 **Settings > Workspace** is for owners and admins. It has these sections:
 
