@@ -2,6 +2,7 @@
 import type { Conversation, Member, Snooze, WelcomeChat } from "./api.ts";
 import { HandlerSelect } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
+import { LabelPicker, type LabelPicks, LabelPills } from "./labels.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { useShortcutsOn, withKey } from "./shortcuts.tsx";
 import { SNOOZE_CHOICES } from "./snooze.ts";
@@ -72,6 +73,7 @@ export function ThreadHead({
   mayDeleteAnyone,
   onBack,
   onAssign,
+  labels,
   onStatus,
   onSnooze,
   onBlocked,
@@ -94,6 +96,7 @@ export function ThreadHead({
   mayDeleteAnyone: boolean;
   onBack(): void;
   onAssign(operatorId: string | null): void;
+  labels: LabelPicks;
   onStatus(status: "open" | "closed"): void;
   /** Snoozes the open conversation, or ends its snooze with null. */
   onSnooze(snooze: Snooze | null): void;
@@ -171,18 +174,22 @@ export function ThreadHead({
               <p className={online === true ? "visit live" : "visit"}>{presence}</p>
             )
           )}
+          <LabelPills labelIds={conversation.labelIds} labels={labels.all} />
         </div>
       </div>
       <div className="actions">
         {!(panel?.open ?? false) && (
-          <HandlerSelect
-            conversation={conversation}
-            members={members}
-            meId={meId}
-            side="end"
-            onAssign={onAssign}
-            onGiveBack={onGiveBack}
-          />
+          <>
+            <HandlerSelect
+              conversation={conversation}
+              members={members}
+              meId={meId}
+              side="end"
+              onAssign={onAssign}
+              onGiveBack={onGiveBack}
+            />
+            <LabelPicker picks={labels} labelIds={conversation.labelIds} />
+          </>
         )}
         <button
           type="button"

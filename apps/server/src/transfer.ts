@@ -12,7 +12,11 @@ import {
   apiKey,
   attachment,
   conversation,
+  conversationLabel,
   emailStop,
+  LABEL_COLORS,
+  LABEL_NAME_MAX,
+  label,
   MESSAGE_KINDS,
   message,
   operator,
@@ -199,6 +203,20 @@ const ExportFile = z.strictObject({
       }),
     )
     .default([]),
+  // A file from before labels has neither.
+  labels: z
+    .array(
+      z.strictObject({
+        id,
+        name: z.string().min(1).max(LABEL_NAME_MAX),
+        color: z.enum(LABEL_COLORS),
+        createdAt: date,
+      }),
+    )
+    .default([]),
+  conversationLabels: z
+    .array(z.strictObject({ conversationId: id, labelId: id, createdAt: date }))
+    .default([]),
   pageViews: z.array(
     z.strictObject({
       visitorId: id,
@@ -349,10 +367,21 @@ async function readWorkspace(
         .select()
         .from(savedReply)
         .where(eq(savedReply.workspaceId, workspaceId));
+      const labels = await tx.select().from(label).where(eq(label.workspaceId, workspaceId));
+      const onConversations = await tx
+        .select()
+        .from(conversationLabel)
+        .where(eq(conversationLabel.workspaceId, workspaceId));
       // The same bytes as one JSON.stringify of the whole file, in the schema's key order.
       const head: Omit<
         ExportData,
-        "messages" | "attachments" | "emailStops" | "savedReplies" | "pageViews"
+        | "messages"
+        | "attachments"
+        | "emailStops"
+        | "savedReplies"
+        | "labels"
+        | "conversationLabels"
+        | "pageViews"
       > = {
         version: VERSION,
         // The signing secret stays out. An export travels, and that secret signs in any user.
@@ -416,7 +445,10 @@ async function readWorkspace(
           updatedAt: iso(row.updatedAt),
         })),
       };
-      const tail: Pick<ExportData, "attachments" | "emailStops" | "savedReplies"> = {
+      const tail: Pick<
+        ExportData,
+        "attachments" | "emailStops" | "savedReplies" | "labels" | "conversationLabels"
+      > = {
         attachments: attachments.map((row) => ({
           id: row.id,
           messageId: row.messageId,
@@ -434,6 +466,17 @@ async function readWorkspace(
           shortcut: row.shortcut,
           body: row.body,
           updatedAt: iso(row.updatedAt),
+        })),
+        labels: labels.map((row) => ({
+          id: row.id,
+          name: row.name,
+          color: row.color,
+          createdAt: iso(row.createdAt),
+        })),
+        conversationLabels: onConversations.map((row) => ({
+          conversationId: row.conversationId,
+          labelId: row.labelId,
+          createdAt: iso(row.createdAt),
         })),
       };
       const json = [
@@ -784,6 +827,16 @@ async function insertWorkspace(
         updatedAt: new Date(row.updatedAt),
       })),
     );
+  }
+  for (const rows of batches(data.labels)) {
+    await tx
+      .insert(label)
+      .values(rows.map((row) => ({ workspaceId, ...row, createdAt: new Date(row.createdAt) })));
+  }
+  for (const rows of batches(data.conversationLabels)) {
+    await tx
+      .insert(conversationLabel)
+      .values(rows.map((row) => ({ workspaceId, ...row, createdAt: new Date(row.createdAt) })));
   }
   for (const rows of batches(data.emailStops)) {
     await tx.insert(emailStop).values(

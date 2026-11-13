@@ -18,6 +18,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import {
@@ -548,6 +549,8 @@ const EVENT_KINDS = [
   // A conversation's handler changed: a person took it, a bot handed it off, or a person gave
   // it back to the bots.
   "conversation.handled",
+  // A label was added to a conversation or removed from it. The payload is a LabeledPayload.
+  "conversation.labeled",
   "team.changed",
   "billing.changed",
   "workspace.changed",
@@ -566,6 +569,13 @@ export interface MessagePayload {
   conversationCreated?: boolean;
   /** The members a note's alert goes to: all it mentions when written, the new ones on an edit. */
   mentions?: string[];
+}
+
+/** The payload of a `conversation.labeled` event. */
+export interface LabeledPayload {
+  conversationId: string;
+  labelId: string;
+  added: boolean;
 }
 
 export const event = pgTable(
@@ -1066,6 +1076,7 @@ export const WEBHOOK_EVENTS = [
   // A bot handed a conversation to people, and a person gave it back to the bots.
   "conversation.handoff",
   "conversation.given_back",
+  "conversation.labeled",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -1119,6 +1130,10 @@ export const webhookDelivery = pgTable(
     type: text("type").$type<WebhookEvent>().notNull(),
     conversationId: uuid("conversation_id").notNull(),
     messageId: uuid("message_id"),
+    // A `conversation.labeled` delivery's label, and whether it was added or removed. Not a foreign
+    // key, so a delivery still says which label went after someone deletes it.
+    labelId: uuid("label_id"),
+    labelAdded: boolean("label_added"),
     attempts: integer("attempts").notNull().default(0),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     claimedUntil: timestamp("claimed_until", { withTimezone: true }),
@@ -1167,6 +1182,10 @@ export const webhookDelivery = pgTable(
     index("webhook_delivery_finished_idx").on(table.finishedAt),
     index("webhook_delivery_conversation_idx").on(table.workspaceId, table.conversationId),
     index("webhook_delivery_message_idx").on(table.workspaceId, table.messageId),
+    check(
+      "webhook_delivery_label",
+      sql`(${table.labelId} is null) = (${table.labelAdded} is null)`,
+    ),
     check(
       "webhook_delivery_response_excerpt_length",
       sql`char_length(${table.responseExcerpt}) <= ${sql.raw(String(RESPONSE_EXCERPT_MAX))}`,
@@ -1481,5 +1500,68 @@ export const conversationRead = pgTable(
       foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
     }).onDelete("cascade"),
     index("conversation_read_member_idx").on(table.workspaceId, table.operatorId),
+  ],
+);
+
+export const LABEL_COLORS = [
+  "gray",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "teal",
+  "blue",
+  "purple",
+] as const;
+export const labelColor = pgEnum("label_color", LABEL_COLORS);
+export const LABEL_NAME_MAX = 40;
+
+/** A label the team puts on conversations, such as "billing", to sort and count them. */
+export const label = pgTable(
+  "label",
+  {
+    workspaceId: workspaceId(),
+    id: id(),
+    name: text("name").notNull(),
+    color: labelColor("color").notNull().default("gray"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    // "Billing" and "billing" are one label, so the picker never offers both.
+    uniqueIndex("label_name_key").on(table.workspaceId, sql`lower(${table.name})`),
+    check(
+      "label_name_length",
+      sql`char_length(${table.name}) between 1 and ${sql.raw(String(LABEL_NAME_MAX))}`,
+    ),
+  ],
+);
+
+export const conversationLabel = pgTable(
+  "conversation_label",
+  {
+    workspaceId: workspaceId(),
+    conversationId: uuid("conversation_id").notNull(),
+    labelId: uuid("label_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.conversationId, table.labelId] }),
+    foreignKey({
+      name: "conversation_label_conversation_fk",
+      columns: [table.workspaceId, table.conversationId],
+      foreignColumns: [conversation.workspaceId, conversation.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "conversation_label_label_fk",
+      columns: [table.workspaceId, table.labelId],
+      foreignColumns: [label.workspaceId, label.id],
+    }).onDelete("cascade"),
+    // The Inbox's label filter, the analytics count and the label foreign key.
+    index("conversation_label_label_idx").on(
+      table.workspaceId,
+      table.labelId,
+      table.conversationId,
+    ),
   ],
 );

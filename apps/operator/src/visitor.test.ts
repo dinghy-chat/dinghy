@@ -75,6 +75,7 @@ describe("waiting", () => {
     bot: null,
     unread: false,
     snooze: null,
+    labelIds: [],
   };
 
   test("an open conversation whose newest message is the visitor's waits", () => {

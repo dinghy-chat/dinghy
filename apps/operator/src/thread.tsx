@@ -1,10 +1,18 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState } from "react";
-import type { Conversation, Member, ReplyReceipts, SuggestedReply, WorkspaceApi } from "./api.ts";
+import type {
+  Conversation,
+  Label,
+  Member,
+  ReplyReceipts,
+  SuggestedReply,
+  WorkspaceApi,
+} from "./api.ts";
 import { type ComposeMode, Composer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import type { Draft } from "./drafts.ts";
 import { Icon } from "./icons.tsx";
+import type { LabelPicks } from "./labels.tsx";
 import { useTabVisible } from "./live.ts";
 import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
@@ -81,6 +89,8 @@ export function Thread({
   conversationId,
   version,
   members,
+  labels,
+  onLabelAdded,
   replying,
   mayDeleteAnyone,
   emailAvailable,
@@ -109,6 +119,9 @@ export function Thread({
   draft: Draft;
   setDraft(draft: Draft): void;
   members: Member[];
+  labels: Label[];
+  /** The operator added a label to the team from the picker. */
+  onLabelAdded(): void;
   replying: string | null;
   /** An admin of a writable workspace: deletes the conversation and anyone's message in it. */
   mayDeleteAnyone: boolean;
@@ -190,6 +203,7 @@ export function Thread({
     setConversation: thread.setConversation,
     onChanged,
     onBack,
+    onLabelAdded,
   });
   const panel = usePanel();
   // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
@@ -294,6 +308,11 @@ export function Thread({
       operatorId,
       members.find((member) => member.id === operatorId)?.name ?? null,
     );
+  const labelPicks: LabelPicks = {
+    all: labels,
+    onChange: (labelId, added) => void change.setLabel(labelId, added),
+    onCreate: (name) => void change.addLabel(name),
+  };
   // A person handles it and a bot took part, so the bot can have it back.
   const canGiveBack =
     repliesOffReason === null &&
@@ -336,6 +355,7 @@ export function Thread({
           mayDeleteAnyone={mayDeleteAnyone}
           onBack={onBack}
           onAssign={assign}
+          labels={labelPicks}
           onStatus={(status) => void change.setStatus(status)}
           onSnooze={(snooze) => void change.setSnooze(snooze)}
           onBlocked={(blocked) => void change.setBlocked(blocked)}
@@ -469,6 +489,7 @@ export function Thread({
           onMoved={panel.moved}
           meId={meId}
           onAssign={assign}
+          labels={labelPicks}
           onGiveBack={() => void change.giveBack()}
           onOpenContact={() => onOpenContact(conversation.visitor.id)}
           onOpenConversation={onOpenConversation}

@@ -520,7 +520,7 @@ describe("images older than 12 months", () => {
     expect(row?.metadata).toEqual({ fileRemoved: true });
     // With its name gone, the inbox tells it from an image by its kind.
     const listed = await withWorkspace(db, space.id, (tx) =>
-      listConversations(tx, space.id, null, "open", { kind: "all" }, undefined, 10),
+      listConversations(tx, space.id, null, "open", { assignee: { kind: "all" } }, undefined, 10),
     );
     expect(listed.conversations[0]?.lastMessage).toMatchObject({ body: null, kind: "file" });
   });

@@ -653,12 +653,27 @@ export async function assignTo(
     if (operatorId !== null && !(await isActiveMember(tx, workspaceId, operatorId))) {
       return "not_member" as const;
     }
-    const found = await assignConversation(tx, workspaceId, conversationId, operatorId);
-    if (found && takesOver) await takeOver(tx, workspaceId, conversationId);
+    const found = await assignIn(tx, workspaceId, conversationId, operatorId, takesOver);
     return found ? ("ok" as const) : ("none" as const);
   });
   if (result === "ok") live.wake(workspaceId, OPERATORS);
   return result;
+}
+
+/**
+ * Assigns in the caller's transaction, to a member the caller checked. With `takesOver`, a person
+ * handles the conversation from now. False when it does not exist.
+ */
+export async function assignIn(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  operatorId: string | null,
+  takesOver: boolean,
+): Promise<boolean> {
+  const found = await assignConversation(tx, workspaceId, conversationId, operatorId);
+  if (found && takesOver) await takeOver(tx, workspaceId, conversationId);
+  return found;
 }
 
 /** Whether the operator is a member of the workspace who was not removed. */

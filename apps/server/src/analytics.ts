@@ -2,6 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { type SQL, sql } from "drizzle-orm";
 import { SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
+import { LABEL_COLORS } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure, INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
@@ -71,6 +72,15 @@ const Analytics = z
     ),
     // Conversations started, by weekday (Monday first) and hour, in the given time zone.
     hours: z.array(z.array(z.number().int()).length(24)).length(7),
+    // Conversations started, by each label they have now, most first. Labels on none are left out.
+    labels: z.array(
+      z.object({
+        labelId: z.string(),
+        name: z.string(),
+        color: z.enum(LABEL_COLORS),
+        conversations: z.number().int(),
+      }),
+    ),
   })
   .openapi("Analytics");
 
@@ -92,7 +102,7 @@ const analyticsRoute = createRoute({
   security: SESSION_OR_KEY,
   summary: "Support numbers for the last 7, 30 or 90 days",
   description:
-    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
+    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `labels` counts them by the labels they have now. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
   request: {
     params: z.object({ workspaceId: z.uuid() }),
     query: AnalyticsQuery,
@@ -122,6 +132,14 @@ const analyticsRoute = createRoute({
               },
             ],
             hours: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
+            labels: [
+              {
+                labelId: "9b1f4c2e-6d3a-4e8b-a7c5-2f0d1e3b4a69",
+                name: "Billing",
+                color: "blue",
+                conversations: 4,
+              },
+            ],
           },
         },
       },
@@ -185,6 +203,7 @@ interface Row extends Record<string, unknown> {
   per_day: { date: string; conversations: number }[];
   repliers: ReplierRow[];
   hours: { dow: number; hour: number; conversations: number }[];
+  labels: AnalyticsResult["labels"];
 }
 
 /**
@@ -193,7 +212,7 @@ interface Row extends Record<string, unknown> {
  * test visitor's chats are not ones.
  */
 const firstReplies = (workspaceId: string, since: SQL) => sql`
-  SELECT c.status, c.created_at,
+  SELECT c.id, c.status, c.created_at,
          extract(epoch FROM reply.created_at - c.created_at) AS wait,
          reply.author_operator_id AS operator_id,
          reply.author_api_key_id AS api_key_id
@@ -280,7 +299,15 @@ export async function readAnalytics(
                                                   'conversations', h.n)), '[]')
          FROM (SELECT extract(isodow FROM local_at)::int AS dow,
                       extract(hour FROM local_at)::int AS hour, count(*)::int AS n
-               FROM started GROUP BY 1, 2) AS h) AS hours`);
+               FROM started GROUP BY 1, 2) AS h) AS hours,
+      (SELECT coalesce(json_agg(json_build_object('labelId', l.id, 'name', l.name,
+                                                  'color', l.color, 'conversations', n.n)
+                                ORDER BY n.n DESC, lower(l.name)), '[]')
+         FROM (SELECT cl.label_id, count(*)::int AS n FROM started AS s
+               JOIN conversation_label AS cl
+                 ON cl.workspace_id = ${workspaceId} AND cl.conversation_id = s.id
+               GROUP BY cl.label_id) AS n
+         JOIN label AS l ON l.workspace_id = ${workspaceId} AND l.id = n.label_id) AS labels`);
   const row = result.rows[0];
   if (row === undefined) throw new Error("The analytics query returned no row");
   const hours = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
@@ -300,6 +327,7 @@ export async function readAnalytics(
     perDay: row.per_day,
     repliers: await nameRepliers(tx, workspaceId, row.repliers),
     hours,
+    labels: row.labels,
   };
 }
 

@@ -37,6 +37,7 @@ const EVENT_TEXT: Record<WebhookEvent, TextId> = {
   "conversation.assigned": "webhookEventAssigned",
   "conversation.handoff": "webhookEventHandoff",
   "conversation.given_back": "webhookEventGivenBack",
+  "conversation.labeled": "webhookEventLabeled",
 };
 
 const DELIVERY_TEXT: Record<WebhookDelivery["status"], TextId> = {

@@ -7,7 +7,7 @@ import type {
   WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
-import type { EventKind } from "../../server/src/db/schema.ts";
+import type { EventKind, LABEL_COLORS } from "../../server/src/db/schema.ts";
 import type { OperatorNotice } from "../../server/src/live.ts";
 
 export type { Quote };
@@ -107,6 +107,8 @@ export interface Analytics {
   )[];
   /** Weekday (Monday first) by hour. */
   hours: number[][];
+  /** By each label the conversations have now, most first. */
+  labels: { labelId: string; name: string; color: LabelColor; conversations: number }[];
 }
 
 /** Values a page sent about the visitor, unsigned. */
@@ -146,7 +148,25 @@ export interface Conversation {
   unread: boolean;
   /** Snoozed: it waits for nobody until `until`, or with null until the visitor writes. */
   snooze: Snooze | null;
+  labelIds: string[];
 }
+
+export type LabelColor = (typeof LABEL_COLORS)[number];
+
+export interface Label {
+  id: string;
+  name: string;
+  color: LabelColor;
+}
+
+/** One change to many conversations, which the bulk route makes one by one. */
+export type BulkAction =
+  | { action: "close" | "mark_read" | "delete" }
+  | { action: "assign"; operatorId: string | null }
+  | { action: "label"; labelId: string };
+
+/** What a bulk change did to one conversation. */
+type BulkResult = "ok" | "not_found" | "not_allowed" | "unchanged";
 
 export interface Snooze {
   until: string | null;
@@ -411,6 +431,7 @@ export const WEBHOOK_EVENTS = [
   "conversation.assigned",
   "conversation.handoff",
   "conversation.given_back",
+  "conversation.labeled",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -792,6 +813,21 @@ export function workspaceApi(workspaceId: string) {
       }),
     deleteSavedReply: (id: string) =>
       call<{ ok: true }>(`${base}/saved-replies/${id}`, { method: "DELETE" }),
+    labels: () => call<{ labels: Label[] }>(`${base}/labels`),
+    addLabel: (label: { name: string; color?: LabelColor }) => post<Label>(`${base}/labels`, label),
+    changeLabel: (id: string, change: { name: string; color: LabelColor }) =>
+      call<Label>(`${base}/labels/${id}`, { method: "PATCH", body: JSON.stringify(change) }),
+    deleteLabel: (id: string) => call<{ ok: true }>(`${base}/labels/${id}`, { method: "DELETE" }),
+    /** Puts one label on a conversation with `added`, or takes it off. */
+    setLabel: (id: string, labelId: string, added: boolean) =>
+      call<{ ok: true }>(`${conversation(id)}/labels/${labelId}`, {
+        method: added ? "PUT" : "DELETE",
+      }),
+    bulk: (conversationIds: string[], change: BulkAction) =>
+      post<{ results: { conversationId: string; result: BulkResult }[] }>(
+        `${base}/conversations/bulk`,
+        { ...change, conversationIds },
+      ),
     alerts: () => call<AlertSettings>(`${base}/alerts`),
     setAlerts: (change: { email: boolean }) =>
       call<AlertSettings>(`${base}/alerts`, { method: "PATCH", body: JSON.stringify(change) }),
@@ -799,6 +835,7 @@ export function workspaceApi(workspaceId: string) {
     async list(
       status: "open" | "closed",
       assignee: Assignee | null,
+      labelId: string | null,
       limit: number,
       cancelled: () => boolean,
     ) {
@@ -806,7 +843,9 @@ export function workspaceApi(workspaceId: string) {
       let waiting = 0;
       let snoozeEndsInMs: number | null = null;
       let openBy: OpenCounts | null = null;
-      const whose = assignee === null ? "" : `&assignee=${assignee}`;
+      const whose =
+        (assignee === null ? "" : `&assignee=${assignee}`) +
+        (labelId === null ? "" : `&label=${labelId}`);
       for (;;) {
         const last = conversations.at(-1);
         const before =

@@ -21,9 +21,11 @@ import {
   attachment,
   businessHours,
   conversation,
+  conversationLabel,
   conversationRead,
   emailStop,
   event,
+  label,
   message,
   operator,
   pageView,
@@ -228,6 +230,13 @@ async function makeSource(): Promise<Source> {
   });
   await write("POST", "/saved-replies", { shortcut: "hello", body: "Hi there!" });
   await write("PUT", "/business-hours", BUSINESS_HOURS);
+  const billing = (await (
+    await write("POST", "/labels", { name: "Billing", color: "blue" })
+  ).json()) as {
+    id: string;
+  };
+  await write("POST", "/labels", { name: "Unused" });
+  await write("PUT", `/conversations/${conversationId}/labels/${billing.id}`, {});
   // Assigned after the bot's turn, as giving it back clears the assignee.
   await write("PUT", `/conversations/${conversationId}/assignee`, { operatorId: agent.id });
   await app.request(`/v1/widget/${space.publicKey}/context`, {
@@ -494,6 +503,31 @@ describe("a round trip onto a fresh install", () => {
       .from(savedReply)
       .where(eq(savedReply.workspaceId, source.space.id));
     expect(replies).toMatchObject([{ shortcut: "hello", body: "Hi there!" }]);
+  });
+
+  test("keeps the labels and the conversations' labels", async () => {
+    const labelsIn = (db: Database) =>
+      db
+        .select({ name: label.name, color: label.color })
+        .from(label)
+        .where(eq(label.workspaceId, source.space.id))
+        .orderBy(label.name);
+    expect(await labelsIn(target.owner)).toEqual([
+      { name: "Billing", color: "blue" },
+      { name: "Unused", color: "gray" },
+    ]);
+    const onConversation = await target.owner
+      .select({ name: label.name })
+      .from(conversationLabel)
+      .innerJoin(
+        label,
+        and(
+          eq(label.workspaceId, conversationLabel.workspaceId),
+          eq(label.id, conversationLabel.labelId),
+        ),
+      )
+      .where(eq(conversationLabel.conversationId, source.conversationId));
+    expect(onConversation).toEqual([{ name: "Billing" }]);
   });
 
   test("keeps the members, with a removed one still removed", async () => {

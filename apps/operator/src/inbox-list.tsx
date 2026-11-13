@@ -1,12 +1,14 @@
 /** @jsxImportSource react */
 import { useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
-import type { Conversation, Member, OpenCounts, WorkspaceApi } from "./api.ts";
+import type { Conversation, Label, Member, OpenCounts, WorkspaceApi } from "./api.ts";
 import type { Draft } from "./drafts.ts";
 import { dayTime, shortTime } from "./format.ts";
 import { rowHandler } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
-import { emptyLook, ListFilters, type Status, type Who } from "./inbox-filters.tsx";
+import { emptyLook, type Filter, ListFilters, type Status } from "./inbox-filters.tsx";
+import { BulkBar, type Selection, useSelection, useTouchSelect } from "./inbox-select.tsx";
+import { LabelPills } from "./labels.tsx";
 import { EmptyArt } from "./scene.tsx";
 import { Keys, useShortcutsOn } from "./shortcuts.tsx";
 import { t } from "./text.ts";
@@ -19,7 +21,9 @@ const SEARCH_MIN = 3;
 function ConversationRow({
   conversation,
   selected,
+  selection,
   members,
+  labels,
   replying,
   typing,
   draft,
@@ -28,7 +32,9 @@ function ConversationRow({
 }: {
   conversation: Conversation;
   selected: boolean;
+  selection: Selection;
   members: Member[];
+  labels: Label[];
   replying: string | null;
   /** The visitor is typing now. */
   typing: boolean;
@@ -49,13 +55,33 @@ function ConversationRow({
   // The open conversation shows its draft in the composer, and is read. A blank draft is no draft.
   const shownDraft = selected || draft?.trim() === "" ? undefined : draft;
   const unread = conversation.unread && !selected;
+  const { id, labelIds } = conversation;
+  const { takesClick, ...press } = useTouchSelect(selection, id);
+  const keysOn = useShortcutsOn();
   return (
-    <li>
+    <li className={selection.isPicked(id) ? "picked" : undefined}>
+      <input
+        type="checkbox"
+        className="row-pick"
+        aria-label={t("selectConversation", { name: title(conversation) })}
+        checked={selection.isPicked(id)}
+        readOnly
+        // A tab stop once a row is chosen, or when X is off, so a keyboard can always start a
+        // selection. Otherwise Tab would pass two stops on every row.
+        tabIndex={selection.chosen.length > 0 || !keysOn ? 0 : -1}
+        // Shift picks a range, and must not select the text between.
+        onMouseDown={(event) => event.shiftKey && event.preventDefault()}
+        onClick={(event) => selection.toggle(id, event.shiftKey)}
+        onKeyDown={selection.onBoxKey}
+      />
       <button
         type="button"
         className={unread ? "row unread" : "row"}
         aria-current={selected}
-        onClick={onSelect}
+        {...press}
+        onClick={() => {
+          if (!takesClick()) onSelect();
+        }}
       >
         <span className="avatar-wrap">
           <Avatar
@@ -87,7 +113,8 @@ function ConversationRow({
             closed ||
             isTest ||
             replying !== null ||
-            handler !== null) && (
+            handler !== null ||
+            labelIds.length > 0) && (
             <span className="row-meta">
               {waits && <span className="chip warn">{t("waiting")}</span>}
               {snooze !== null && (
@@ -104,6 +131,7 @@ function ConversationRow({
                   {t("testChip")}
                 </span>
               )}
+              <LabelPills labelIds={labelIds} labels={labels} />
               {replying !== null && <em>{replying}</em>}
               {handler}
             </span>
@@ -212,11 +240,13 @@ function listContext(status: Status, waiting: number): string {
   return t("waitingMany", { count: waiting });
 }
 
-/** The Inbox's list: the search and its filters, and a row for each conversation. */
+/**
+ * The Inbox's list: the search and its filters, and a row for each conversation. While rows are
+ * chosen, the bar of bulk actions takes the search's place.
+ */
 export function InboxList({
   api,
-  status,
-  who,
+  filter,
   isTeam,
   openBy,
   waiting,
@@ -224,6 +254,9 @@ export function InboxList({
   listed,
   hasMore,
   members,
+  labels,
+  isWritable,
+  mayDelete,
   selected,
   typing,
   drafts,
@@ -232,10 +265,10 @@ export function InboxList({
   onFilter,
   onSelect,
   onMore,
+  onChanged,
 }: {
   api: WorkspaceApi;
-  status: Status;
-  who: Who;
+  filter: Filter;
   isTeam: boolean;
   openBy: OpenCounts | null;
   waiting: number;
@@ -244,6 +277,11 @@ export function InboxList({
   listed: boolean;
   hasMore: boolean;
   members: Member[];
+  labels: Label[];
+  /** False while the workspace is read-only or suspended, where only reading is allowed. */
+  isWritable: boolean;
+  /** An owner or admin of a writable workspace, who may delete conversations. */
+  mayDelete: boolean;
   selected: string | null;
   /** What each visitor is typing now, by conversation. */
   typing: Record<string, string>;
@@ -252,36 +290,59 @@ export function InboxList({
   /** Grows with each conversation the operator reads. */
   reads: number;
   replying(conversationId: string): string | null;
-  onFilter(status: Status, who: Who): void;
+  onFilter(filter: Filter): void;
   onSelect(conversationId: string): void;
   onMore(): void;
+  /** A bulk action changed conversations, so the list loads again. */
+  onChanged(): void;
 }) {
   const [query, setQuery] = useState("");
-  const { found, searching, failed: searchFailed } = useSearch(api, query, reads);
+  // Grows with each bulk action, so a search shows its changes too.
+  const [bulkRuns, setBulkRuns] = useState(0);
+  const { found, searching, failed: searchFailed } = useSearch(api, query, reads + bulkRuns);
   const searchTooShort = query.trim().length > 0 && query.trim().length < SEARCH_MIN;
-  const empty = emptyLook(status, who);
+  const { status } = filter;
+  const empty = emptyLook(filter);
+  const rows = found ?? conversations;
+  const selection = useSelection(rows, selected);
   return (
     <section className="list" aria-label={t("inbox")}>
       <PageHead
         title={t("inbox")}
         context={found === null ? listContext(status, waiting) : foundContext(found.length)}
       />
-      <div className="list-tools">
-        <SearchField value={query} searching={searching} onChange={setQuery} />
-        <ListFilters
-          status={status}
-          who={who}
-          isTeam={isTeam}
-          openBy={openBy}
-          onChange={onFilter}
+      {selection.chosen.length > 0 ? (
+        <BulkBar
+          api={api}
+          selection={selection}
+          total={rows.length}
+          members={members}
+          labels={labels}
+          isWritable={isWritable}
+          mayDelete={mayDelete}
+          onDone={() => {
+            setBulkRuns((current) => current + 1);
+            onChanged();
+          }}
         />
-      </div>
+      ) : (
+        <div className="list-tools">
+          <SearchField value={query} searching={searching} onChange={setQuery} />
+          <ListFilters
+            filter={filter}
+            isTeam={isTeam}
+            openBy={openBy}
+            labels={labels}
+            onChange={onFilter}
+          />
+        </div>
+      )}
       {(searchTooShort || searchFailed) && (
         <p className={searchFailed ? "bad search-note" : "hint search-note"} role="status">
           {t(searchFailed ? "searchFailed" : "searchTooShort")}
         </p>
       )}
-      <ul className="rows" aria-busy={searching}>
+      <ul className={selection.chosen.length > 0 ? "rows selecting" : "rows"} aria-busy={searching}>
         {found === null && listed && conversations.length === 0 && (
           <li className="list-empty">
             <EmptyArt scene={status === "open" ? "day" : "evening"} />
@@ -294,12 +355,14 @@ export function InboxList({
             <b>{t("searchNone")}</b>
           </li>
         )}
-        {(found ?? conversations).map((conversation) => (
+        {rows.map((conversation) => (
           <ConversationRow
             key={conversation.id}
             conversation={conversation}
             selected={conversation.id === selected}
+            selection={selection}
             members={members}
+            labels={labels}
             replying={replying(conversation.id)}
             typing={conversation.id in typing}
             draft={drafts[conversation.id]?.text}

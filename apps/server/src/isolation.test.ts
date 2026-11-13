@@ -21,11 +21,13 @@ import {
   attachment,
   businessHours,
   conversation,
+  conversationLabel,
   conversationRead,
   draftReply,
   emailStop,
   event,
   invite,
+  label,
   message,
   operator,
   operatorPicture,
@@ -119,6 +121,9 @@ interface World {
   hookB: { id: string; secret: string; url: string };
   /** A saved reply in the other workspace. */
   replyB: { id: string; body: string };
+  /** A label in each workspace. */
+  labelA: { id: string; name: string };
+  labelB: { id: string; name: string };
   /** Strings that belong to someone else, for each kind of caller. */
   secrets: { two: string; b: string };
   widget(
@@ -1462,6 +1467,110 @@ const ATTACKS: Record<string, Attack> = {
       1,
     );
   },
+  "GET /v1/operator/workspaces/:workspaceId/labels": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, labelB } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/labels"))).status).toBe(404);
+    expect((await withKey(keyA.token, "GET", inWorkspace(b.id, "/labels"))).status).toBe(404);
+    const own = await as(anna, "GET", inWorkspace(a.id, "/labels"));
+    expect(own.status).toBe(200);
+    expect(await own.text()).not.toContain(labelB.name);
+    const keyed = await withKey(keyA.token, "GET", inWorkspace(a.id, "/labels"));
+    expect(await keyed.text()).not.toContain(labelB.name);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/labels": async ({ operator: as, anna, b }) => {
+    expect((await as(anna, "POST", inWorkspace(b.id, "/labels"), { name: "Planted" })).status).toBe(
+      404,
+    );
+    const rows = await owner.select().from(label).where(eq(label.workspaceId, b.id));
+    expect(rows.map((row) => row.name)).not.toContain("Planted");
+  },
+  "PATCH /v1/operator/workspaces/:workspaceId/labels/:labelId": async (world) => {
+    const { operator: as, anna, a, b, labelB } = world;
+    for (const space of [a.id, b.id]) {
+      const path = inWorkspace(space, `/labels/${labelB.id}`);
+      expect((await as(anna, "PATCH", path, { name: "Renamed across" })).status).toBe(404);
+    }
+    const [row] = await owner.select().from(label).where(eq(label.id, labelB.id));
+    expect(row?.name).toBe(labelB.name);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/labels/:labelId": async (world) => {
+    const { operator: as, anna, a, b, labelB } = world;
+    for (const space of [a.id, b.id]) {
+      expect((await as(anna, "DELETE", inWorkspace(space, `/labels/${labelB.id}`))).status).toBe(
+        404,
+      );
+    }
+    expect(await owner.select().from(label).where(eq(label.id, labelB.id))).toHaveLength(1);
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/conversations/:conversationId/labels/:labelId": async ({
+    operator: as,
+    withKey,
+    anna,
+    a,
+    keyA,
+    one,
+    other,
+    labelA,
+    labelB,
+  }) => {
+    // Their conversation with our label, and our conversation with their label.
+    for (const [conversationId, labelId] of [
+      [other.conversationId, labelA.id],
+      [one.conversationId, labelB.id],
+    ]) {
+      const path = inWorkspace(a.id, `/conversations/${conversationId}/labels/${labelId}`);
+      expect((await as(anna, "PUT", path)).status).toBe(404);
+      expect((await withKey(keyA.token, "PUT", path)).status).toBe(404);
+    }
+    const rows = await owner
+      .select()
+      .from(conversationLabel)
+      .where(eq(conversationLabel.labelId, labelB.id));
+    expect(rows.map((row) => row.conversationId)).not.toContain(one.conversationId);
+    const theirs = await owner
+      .select()
+      .from(conversationLabel)
+      .where(eq(conversationLabel.conversationId, other.conversationId));
+    expect(theirs.map((row) => row.labelId)).not.toContain(labelA.id);
+  },
+  "DELETE /v1/operator/workspaces/:workspaceId/conversations/:conversationId/labels/:labelId":
+    async ({ operator: as, withKey, anna, a, b, keyA, other, labelB }) => {
+      const onTheirs = `/conversations/${other.conversationId}/labels/${labelB.id}`;
+      for (const space of [a.id, b.id]) {
+        expect((await as(anna, "DELETE", inWorkspace(space, onTheirs))).status).toBe(404);
+        expect((await withKey(keyA.token, "DELETE", inWorkspace(space, onTheirs))).status).toBe(
+          404,
+        );
+      }
+      const rows = await owner
+        .select()
+        .from(conversationLabel)
+        .where(eq(conversationLabel.conversationId, other.conversationId));
+      expect(rows.map((row) => row.labelId)).toContain(labelB.id);
+    },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/bulk": async (world) => {
+    const { operator: as, anna, a, b, other, labelB } = world;
+    const ids = [other.conversationId];
+    const bulk = (space: string, body: Record<string, unknown>) =>
+      as(anna, "POST", inWorkspace(space, "/conversations/bulk"), {
+        ...body,
+        conversationIds: ids,
+      });
+    for (const action of ["close", "mark_read", "delete"]) {
+      expect((await bulk(b.id, { action })).status).toBe(404);
+      const answer = await bulk(a.id, { action });
+      expect(await answer.json()).toEqual({
+        results: [{ conversationId: other.conversationId, result: "not_found" }],
+      });
+    }
+    expect((await bulk(a.id, { action: "assign", operatorId: anna.id })).status).toBe(200);
+    expect((await bulk(a.id, { action: "label", labelId: labelB.id })).status).toBe(404);
+    const [row] = await owner
+      .select()
+      .from(conversation)
+      .where(eq(conversation.id, other.conversationId));
+    expect(row).toMatchObject({ status: "open", assigneeOperatorId: null });
+  },
   "GET /v1/operator/workspaces/:workspaceId/webhooks": async (world) => {
     const { operator: as, withKey, anna, a, b, keyA, hookB } = world;
     expect((await as(anna, "GET", inWorkspace(b.id, "/webhooks"))).status).toBe(404);
@@ -2164,10 +2273,21 @@ async function buildWorld(db: Database): Promise<World> {
     shortcut: "secret-offer",
     body: "The other workspace's secret offer",
   });
+  const madeLabel = async (as: { cookie: string }, space: NewWorkspace, name: string) =>
+    (await (await operatorCall(as, "POST", inWorkspace(space.id, "/labels"), { name })).json()) as {
+      id: string;
+      name: string;
+    };
   const madeHook = await operatorCall(bea, "POST", inWorkspace(b.id, "/webhooks"), {
     url: "https://93.184.215.14/b-hook",
     events: ["message.created"],
   });
+  const one = await visitorIn(a, SITE_A, "written by one");
+  const two = await visitorIn(a, SITE_A, "written by two, in the same workspace");
+  const other = await visitorIn(b, SITE_B, "written in the other workspace");
+  const labelB = await madeLabel(bea, b, "Their secret label");
+  const onTheirs = `/conversations/${other.conversationId}/labels/${labelB.id}`;
+  await operatorCall(bea, "PUT", inWorkspace(b.id, onTheirs));
   return {
     server,
     a,
@@ -2176,9 +2296,9 @@ async function buildWorld(db: Database): Promise<World> {
     bea,
     sam,
     decoy,
-    one: await visitorIn(a, SITE_A, "written by one"),
-    two: await visitorIn(a, SITE_A, "written by two, in the same workspace"),
-    other: await visitorIn(b, SITE_B, "written in the other workspace"),
+    one,
+    two,
+    other,
     inviteB: (await madeInvite.json()) as { id: string; email: string; token: string },
     keyA: await madeKey(anna, a, "Helper A"),
     keyB: await madeKey(bea, b, "Helper B"),
@@ -2188,6 +2308,8 @@ async function buildWorld(db: Database): Promise<World> {
     grantB: await madeGrant(bea, b),
     hookB: (await madeHook.json()) as { id: string; secret: string; url: string },
     replyB: (await madeReply.json()) as { id: string; body: string },
+    labelA: await madeLabel(anna, a, "Ours"),
+    labelB,
     secrets: { two: "written by two", b: "written in the other workspace" },
     widget,
     operator: operatorCall,

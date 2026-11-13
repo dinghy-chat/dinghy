@@ -288,12 +288,12 @@ describe("conversations", () => {
       logger: { logQuery: (query, params) => queries.push({ query, params }) },
     });
     const page = await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, null, "open", { kind: "all" }, undefined, 2),
+      listConversations(tx, own.id, null, "open", { assignee: { kind: "all" } }, undefined, 2),
     );
     const last = page.conversations.at(-1);
     queries.length = 0;
     await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, null, "open", { kind: "all" }, last, 2),
+      listConversations(tx, own.id, null, "open", { assignee: { kind: "all" } }, last, 2),
     );
     const list = queries.filter((one) => one.query.includes('from "conversation"'));
     expect(list).toHaveLength(1);
@@ -433,11 +433,11 @@ describe("the assignee filter", () => {
     });
     const mine = { kind: "operator", operatorId: ann.id } as const;
     const page = await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, null, "open", mine, undefined, 2),
+      listConversations(tx, own.id, null, "open", { assignee: mine }, undefined, 2),
     );
     queries.length = 0;
     await withWorkspace(traced, own.id, (tx) =>
-      listConversations(tx, own.id, null, "open", mine, page.conversations.at(-1), 2),
+      listConversations(tx, own.id, null, "open", { assignee: mine }, page.conversations.at(-1), 2),
     );
     const list = queries.filter((one) => one.query.includes('from "conversation"'));
     const client = await database.connect("migrator", 1).pool.connect();

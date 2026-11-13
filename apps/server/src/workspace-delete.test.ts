@@ -17,7 +17,9 @@ import {
   attachment,
   businessHours,
   conversation,
+  conversationLabel,
   draftReply,
+  label,
   message,
   pageView,
   savedReply,
@@ -242,6 +244,15 @@ describe("the owner's delete", () => {
       enabled: true,
       timeZone: "Europe/Paris",
       week: { mon: [["09:00", "18:00"]], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    });
+    const [tag] = await owner
+      .insert(label)
+      .values({ workspaceId: created.id, name: "Billing" })
+      .returning({ id: label.id });
+    await owner.insert(conversationLabel).values({
+      workspaceId: created.id,
+      conversationId: talk?.id ?? "",
+      labelId: tag?.id ?? "",
     });
     // A logo, which goes with the workspace row by its foreign key.
     await owner

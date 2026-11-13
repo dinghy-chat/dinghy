@@ -4,10 +4,11 @@ import { authenticateRequest, type KeyActor } from "./api-keys.ts";
 import { API_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { WEBHOOK_EVENTS } from "./db/schema.ts";
-import { type Database, writable } from "./db/tenant.ts";
+import { type Database, withWorkspace, writable } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND, RATE_LIMITED, WRONG_ORIGIN } from "./errors.ts";
 import { type Inbox, parseSnooze, SNOOZE_CLOSED, type SnoozeOutcome } from "./inbox.ts";
-import { conversationId, UNTRUSTED_TEXT, webhookId } from "./inputs.ts";
+import { conversationId, labelId, UNTRUSTED_TEXT, webhookId } from "./inputs.ts";
+import { labelConversation, listLabels } from "./labels.ts";
 import type { Live } from "./live.ts";
 import { type ChatToolsOptions, chatTools } from "./mcp-chat-tools.ts";
 import { mcpSetupTools, type SetupToolOptions } from "./mcp-setup-tools.ts";
@@ -133,6 +134,12 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       (await inbox.setStatus(workspaceId, actor, input.conversationId, target))
         ? { data: { ok: true } }
         : { error: NOT_FOUND };
+  const label =
+    (added: boolean) =>
+    async (input: { conversationId: string; labelId: string }, { workspaceId }: Context) =>
+      (await labelConversation(db, live, workspaceId, { ...input, added })) === "missing"
+        ? { error: NOT_FOUND }
+        : { data: { ok: true } };
   return [
     tool({
       name: "list_conversations",
@@ -149,7 +156,14 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
         const match = cursor === undefined ? null : CURSOR.exec(cursor);
         const before =
           match === null ? undefined : { updatedAt: new Date(match[1] ?? ""), id: match[2] ?? "" };
-        const page = await inbox.list(workspaceId, null, wanted, { kind: "all" }, before, limit);
+        const page = await inbox.list(
+          workspaceId,
+          null,
+          wanted,
+          { assignee: { kind: "all" } },
+          before,
+          limit,
+        );
         const last = page.conversations.at(-1);
         return {
           data: {
@@ -232,6 +246,35 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
         if (result === "none") return { error: NOT_FOUND };
         return { data: { ok: true } };
       },
+    }),
+    tool({
+      name: "list_labels",
+      title: "List labels",
+      description:
+        "Lists the workspace's labels by name, each with its `id` and `color`. A conversation's `labelIds` name them. Only people add new labels, so use these.",
+      input: z.object({}),
+      readOnly: true,
+      run: async (_input, { workspaceId }) => ({
+        data: { labels: await withWorkspace(db, workspaceId, (tx) => listLabels(tx, workspaceId)) },
+      }),
+    }),
+    tool({
+      name: "label_conversation",
+      title: "Label a conversation",
+      description:
+        "Puts a label, by its id from list_labels, on a conversation. It changes only this label, and a repeat changes nothing.",
+      input: z.object({ conversationId, labelId }),
+      idempotent: true,
+      run: label(true),
+    }),
+    tool({
+      name: "unlabel_conversation",
+      title: "Take a label off a conversation",
+      description:
+        "Takes a label, by its id from list_labels, off a conversation. It changes only this label, and a repeat changes nothing.",
+      input: z.object({ conversationId, labelId }),
+      idempotent: true,
+      run: label(false),
     }),
   ];
 }

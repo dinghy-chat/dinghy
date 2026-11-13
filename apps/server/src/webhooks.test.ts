@@ -617,6 +617,39 @@ describe("replays and refusals", () => {
     expect(unknown.status).toBe(404);
   });
 
+  test("a label's add and removal arrive with the label and whether it was added, also on a replay", async () => {
+    const hook = await addWebhook(["conversation.labeled"]);
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Invoice question");
+    const made = await asOperator(app, boss.cookie, "POST", inSpace("/labels"), {
+      name: "Billing",
+    });
+    const { id: labelId } = (await made.json()) as { id: string };
+    const path = inSpace(`/conversations/${conversationId}/labels/${labelId}`);
+    await asOperator(app, boss.cookie, "PUT", path);
+    await asOperator(app, boss.cookie, "DELETE", path);
+    await runWorker();
+    // Deliveries go out side by side, so they can arrive in either order.
+    const bodies = received
+      .map((request) => verified(request, hook.secret))
+      .sort((a, b) => Number(b.data.added) - Number(a.data.added));
+    expect(bodies.map((one) => [one.type, one.data.labelId, one.data.added])).toEqual([
+      ["conversation.labeled", labelId, true],
+      ["conversation.labeled", labelId, false],
+    ]);
+    expect(bodies[0]?.data.conversation).toMatchObject({ id: conversationId, labelIds: [] });
+    const [first] = await deliveries(hook.id);
+    await asOperator(
+      app,
+      boss.cookie,
+      "POST",
+      inSpace(`/webhooks/${hook.id}/deliveries/${first?.id}/replay`),
+      {},
+    );
+    await runWorker();
+    const replayed = verified(received.at(-1) as Received, hook.secret);
+    expect(replayed.data).toMatchObject({ labelId });
+  });
+
   test("a replay of an old event still gets its day of retries", async () => {
     const hook = await addWebhook(["message.created"]);
     await visitorStarts(app, space.publicKey, "Old news");

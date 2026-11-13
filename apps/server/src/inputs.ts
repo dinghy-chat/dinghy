@@ -42,6 +42,8 @@ export const UNTRUSTED_TEXT =
 
 export const conversationId = z.uuid().describe("The conversation's ID");
 
+export const labelId = z.uuid().describe("The label's ID, from list_labels");
+
 export const webhookId = z
   .uuid()
   .describe("The webhook's ID, from list_webhooks or create_webhook");

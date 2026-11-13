@@ -69,6 +69,7 @@ import {
   isUnread,
   type KeySource,
   type LastMessage,
+  type ListFilter,
   listConversationMessages,
   listConversations,
   listWorkspaceEvents,
@@ -302,6 +303,8 @@ const Conversation = z
     // Set while an operator has snoozed it: it waits for nobody until `until`, or with `until` null
     // until the visitor writes. Null when it is not snoozed.
     snooze: SnoozeSchema.nullable(),
+    // Its labels' IDs, from the labels list.
+    labelIds: z.array(z.string()),
     // A visitor message is past the signed-in operator's read position. Always false for an API
     // key, which has no read position.
     unread: z.boolean(),
@@ -353,6 +356,9 @@ const listRoute = createRoute({
       assignee: z.enum(["me", "none"]).optional().openapi({
         description:
           "`me`: assigned to the signed-in operator. `none`: assigned to no one. Leave it out for all. An API key has no assignments, so it may pass `none` only.",
+      }),
+      label: z.uuid().optional().openapi({
+        description: "A label's ID: only the conversations with that label.",
       }),
       beforeUpdatedAt: z.iso.datetime().optional(),
       beforeId: z.uuid().optional(),
@@ -415,6 +421,7 @@ const listRoute = createRoute({
                   createdAt: "2026-11-08T09:30:00.000Z",
                 },
                 snooze: null,
+                labelIds: [],
                 unread: true,
               },
             ],
@@ -768,7 +775,7 @@ const streamRoute = createRoute({
   summary: "Stream the workspace's changes after a cursor",
   description:
     "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
-    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `draft.changed`, `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `conversation.labeled` (a label was put on or taken off), `draft.changed`, `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
     'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, `{ kind: "bot_typing", conversationId, name, typing }` when an API key types or stops, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
@@ -897,6 +904,7 @@ export function conversationView(
         ? null
         : { ...lastMessage, createdAt: lastMessage.createdAt.toISOString() },
     snooze: row.snooze && { until: row.snooze.until?.toISOString() ?? null },
+    labelIds: row.labelIds,
   };
 }
 
@@ -1122,7 +1130,7 @@ export function createInbox({
       workspaceId: string,
       operatorId: string | null,
       status: "open" | "closed",
-      assignee: AssigneeFilter,
+      filter: ListFilter,
       before: { updatedAt: Date; id: string } | undefined,
       limit: number,
     ) {
@@ -1132,7 +1140,7 @@ export function createInbox({
           workspaceId,
           operatorId,
           status,
-          assignee,
+          filter,
           before,
           limit,
         );
@@ -1343,7 +1351,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   });
 
   app.openapi(listRoute, async (c) => {
-    const { status, assignee, beforeUpdatedAt, beforeId, limit } = c.req.valid("query");
+    const { status, assignee, label, beforeUpdatedAt, beforeId, limit } = c.req.valid("query");
     const actor = c.get("actor");
     if (assignee === "me" && actor.kind === "key") return c.json(KEY_HAS_NO_ASSIGNMENTS, 400);
     const filter: AssigneeFilter =
@@ -1360,7 +1368,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       c.get("memberWorkspaceId"),
       readerId(actor),
       status,
-      filter,
+      { assignee: filter, labelId: label },
       before,
       limit,
     );

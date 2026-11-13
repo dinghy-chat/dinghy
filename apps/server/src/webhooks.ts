@@ -14,6 +14,7 @@ import type { HandledPayload } from "./bots.ts";
 import {
   apiKey,
   event,
+  type LabeledPayload,
   type MessagePayload,
   operator,
   RESPONSE_EXCERPT_MAX,
@@ -707,7 +708,7 @@ export function createWebhooks({
             ),
           );
         if (found === undefined) return [];
-        const { eventId, type, conversationId, messageId } = found;
+        const { eventId, type, conversationId, messageId, labelId, labelAdded } = found;
         return tx
           .insert(webhookDelivery)
           .values({
@@ -717,6 +718,8 @@ export function createWebhooks({
             type,
             conversationId,
             messageId,
+            labelId,
+            labelAdded,
             replayOf: deliveryId,
             // The change keeps its own time in the payload. The replay's retries count from now.
             createdAt: found.createdAt,
@@ -830,10 +833,18 @@ export function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
 export const isWebhookEvent = (name: string): name is WebhookEvent =>
   WEBHOOK_EVENTS.some((one) => one === name);
 
-/** What one webhook event names: its conversation, and its message. */
+/** What one webhook event names: its conversation, its message, and the label it changed. */
 interface WebhookSubject {
   conversationId: string;
   messageId: string | null;
+  label: { labelId: string; added: boolean } | null;
+}
+
+/** The label a `conversation.labeled` event changed, from its feed payload. Null for other types. */
+export function labelChange(type: WebhookEvent, payload: unknown): WebhookSubject["label"] {
+  if (type !== "conversation.labeled") return null;
+  const { labelId, added } = payload as LabeledPayload;
+  return { labelId, added };
 }
 
 /**
@@ -863,6 +874,7 @@ export async function webhookData(
     const found = conversations.get(subject.conversationId);
     if (found === undefined) return "The conversation was deleted.";
     const data: Record<string, unknown> = { conversation: conversationView(found, null) };
+    if (subject.label !== null) return { ...data, ...subject.label };
     if (subject.messageId === null) return data;
     const stored = messages.get(subject.messageId);
     if (stored === undefined) return "The message was deleted.";
@@ -906,6 +918,7 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     if (payload.conversationId !== undefined) {
       for (const type of types) {
         const eventId = randomUUID();
+        const label = labelChange(type, found.payload);
         for (const hook of hooks.filter((one) => one.events.includes(type))) {
           rows.push({
             workspaceId,
@@ -914,6 +927,8 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
             type,
             conversationId: payload.conversationId,
             messageId: type.startsWith("message.") ? (payload.messageId ?? null) : null,
+            labelId: label?.labelId ?? null,
+            labelAdded: label?.added ?? null,
             createdAt: found.createdAt,
           });
         }
@@ -1006,6 +1021,8 @@ async function planWebhook(
         type: webhookDelivery.type,
         conversationId: webhookDelivery.conversationId,
         messageId: webhookDelivery.messageId,
+        labelId: webhookDelivery.labelId,
+        labelAdded: webhookDelivery.labelAdded,
         createdAt: webhookDelivery.createdAt,
         replayedAt: webhookDelivery.replayedAt,
         url: webhook.url,
@@ -1025,7 +1042,12 @@ async function planWebhook(
     if (!delivery.enabled) {
       return "Dinghy stopped this delivery because the webhook is off. Turn it on to receive future events.";
     }
-    const subject = { conversationId: delivery.conversationId, messageId: delivery.messageId };
+    const { labelId, labelAdded } = delivery;
+    const subject = {
+      conversationId: delivery.conversationId,
+      messageId: delivery.messageId,
+      label: labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
+    };
     const [data] = await webhookData(tx, images, row.workspaceId, [subject]);
     // One subject has one answer.
     if (typeof data !== "object") return data ?? "The conversation was deleted.";

@@ -6,7 +6,7 @@ The operator app is where your team reads and answers chats. Open your Dinghy ad
 
 ## Answer a chat
 
-The sidebar has **Inbox**, **Contacts**, **Visitors**, **Analytics** and **Settings**. Until the first steps are done, owners and admins also see **Get started** above their name, with a ring and a count such as 2/6. It lists six steps, each of which opens its page: install the widget (done once a page of an allowed site loads it), add a logo, customize the widget, invite a teammate, turn on notifications for yourself, and send a test chat. Dinghy checks each one itself. **Hide for good** hides the steps for you on every device. New conversations appear in the **Inbox** with no reload. The red number counts the people who wait for a reply from you: conversations assigned to you or to nobody, not a teammate's, and not snoozed ones. The tab's title shows the same number, the tab's icon gets a red dot, and an installed app shows the number on its icon. The filter button beside the search opens **Open** and **Closed**, which pick the conversations the list shows, and in a team of more than one **All**, **Mine** and **Unassigned**, which pick whose. A dot on the button says a filter is on. The app remembers both in the address, so a reload or a shared link keeps them. Select one to read it, write in the reply box, and press Enter or the send button. If your site sends details with `setContext()`, they show in italics under **Details**. Visitors can change these details in their browser, so do not use them to verify identity or account access.
+The sidebar has **Inbox**, **Contacts**, **Visitors**, **Analytics** and **Settings**. Until the first steps are done, owners and admins also see **Get started** above their name, with a ring and a count such as 2/6. It lists six steps, each of which opens its page: install the widget (done once a page of an allowed site loads it), add a logo, customize the widget, invite a teammate, turn on notifications for yourself, and send a test chat. Dinghy checks each one itself. **Hide for good** hides the steps for you on every device. New conversations appear in the **Inbox** with no reload. The red number counts the people who wait for a reply from you: conversations assigned to you or to nobody, not a teammate's, and not snoozed ones. The tab's title shows the same number, the tab's icon gets a red dot, and an installed app shows the number on its icon. The filter button beside the search opens **Open** and **Closed**, which pick the conversations the list shows, and in a team of more than one **All**, **Mine** and **Unassigned**, which pick whose, and once your team has labels, **Label**, which lists only the conversations with one label. A dot on the button says a filter is on. The app remembers them in the address, so a reload or a shared link keeps them. Select one to read it, write in the reply box, and press Enter or the send button. If your site sends details with `setContext()`, they show in italics under **Details**. Visitors can change these details in their browser, so do not use them to verify identity or account access.
 
 Messages can carry a little formatting, written as Markdown: `**bold**`, `*italic*`, `` `code` ``, a block between two lines of three backticks, `[words](https://example.com)` for a link, and lines that start with `-` or `1.` for a list. A web address becomes a link by itself. The buttons under the reply box, and Cmd or Ctrl with B, I, E and K, add the marks around the selected words. Visitors see the formatting in the widget and in reply emails, and can type it too. Links open in a new tab, and only `http`, `https` and `mailto` links work. HTML, images and headings stay plain text.
 
@@ -21,6 +21,10 @@ To write something only your team sees, choose **Note** above the reply box, wri
 To ask a teammate about a chat, type **@** in a note and pick them from the list, or type `@` and their name as it shows in **Team**. The note keeps `@Name` in its text. Each teammate it mentions, up to 10, gets an alert with the note's text, by push and by email as their [alert settings](#get-alerts) say, even when the chat is not theirs, and the conversation shows as unread for them. A note with no mention alerts nobody. When you edit a note, only the teammates it did not mention before get an alert, and the conversation stays as they last read it.
 
 To answer a common question in your team's words, type **/** at the start of a word in the reply box or the note box. A list shows the [saved replies](#saved-replies) whose shortcut holds what you type after it. Use the arrow keys to choose one, and press Enter or Tab to put its text in the box, where you can change it before you send. Esc closes the list.
+
+To sort conversations, such as billing questions or bug reports, give them labels. Press **L** in a conversation, or select the tag button beside **Who answers** or in the panel on the right. Type to find a label, and check or uncheck it. To make a new one, type its name and press Enter, or select **Add "name"**. Anyone on the team can do this, and a workspace keeps up to 100 labels. Labels show as small colored pills under the visitor's name in the conversation, and on its row in the Inbox. Owners and admins rename, recolor and delete them in [Settings > Labels](#labels).
+
+To act on several conversations at once, choose them in the list. Point at a row and check the box over its picture, press **X** on the open conversation, or hold Shift and check a box to choose every row between it and the last one you chose. On a phone, press and hold a row, then tap the others. While rows are chosen, a bar takes the search's place and shows how many are chosen. The box beside the count chooses every row the list shows. The bar's buttons **Close** them, **Assign** them and **Label** them, and the **More actions** menu has **Mark read** and, for owners and admins, **Delete**, which asks first with the count, such as "Delete 12 conversations?". In a read-only or suspended workspace, the bar has **Mark read** alone. Each conversation changes as it would alone, so webhooks and alerts behave the same. The cross or Esc clears the choice. There is no reply to many at once.
 
 When you close a conversation, a visitor who gave an email gets the whole conversation by email 5 minutes later, if someone on the team replied, with a link to continue the chat. Reopening it within the 5 minutes cancels it. **Email transcript** in the conversation's **…** menu sends it now. **Settings > Appearance** turns the email at close off.
 
@@ -62,9 +66,11 @@ Press **?** anywhere in the app, or open **Help** at the bottom of the sidebar, 
 | **/** | Puts the cursor in the search box |
 | **G** then **I**, **C**, **V**, **A** or **S** | Opens Inbox, Contacts, Visitors, Analytics or Settings |
 | **J** and **K** | Open the next or the previous conversation in the list |
+| **X** | Chooses the open conversation for a [bulk action](#answer-a-chat), or takes it out |
 | **R** and **N** | Put the cursor in the reply box, as a reply or as a note |
 | **E** | Closes the conversation and opens the next one in the list. On a closed conversation, reopens it |
 | **A** and **I** | Open **Who answers**, or assign the conversation to you |
+| **L** | Opens the conversation's labels |
 | **.** | Opens the **…** menu |
 | **P** | Shows or hides the visitor's panel |
 | **Esc** | Leaves the reply box, so the keys work again. On a small screen, it also goes back to the list |
@@ -89,7 +95,7 @@ Under a number, a change compares it with the period of the same length just bef
 
 A first reply can come from a person on your team or from software that uses an [API key](api.md#api-keys). Both count. On Dinghy Cloud, the welcome chat counts nowhere.
 
-Below are the conversations per day, **Who sent the first reply**, by person or API key, and the busiest hours, as a grid of weekdays by hours where a darker square means more conversations started then. Hold the pointer over a bar or a square to see its number. With no conversation in the period, the page says so.
+Below are the conversations per day, **Who sent the first reply**, by person or API key, the busiest hours, as a grid of weekdays by hours where a darker square means more conversations started then, and **Conversations by label**, which counts the period's conversations by each label they have now. Hold the pointer over a bar or a square to see its number. With no conversation in the period, the page says so.
 
 ## Get alerts
 
@@ -150,11 +156,11 @@ Everyone can open **Settings**. A list on its left groups the pages:
 | Group | Pages |
 |---|---|
 | **You** | **Profile**, **Notifications** |
-| **Workspace** | **Workspace**, **Team**, **Saved replies** |
+| **Workspace** | **Workspace**, **Team**, **Saved replies**, **Labels** |
 | **Chat widget** | **Appearance**, **Install** |
 | **Developers** | **API & webhooks** |
 
-Each page has its own address, such as `/settings/team?workspace=<id>`, so a reload, a bookmark or a shared link opens the same page of the same workspace. On a phone, the list is its own screen, and **Back** on a page returns to it. A member sees **Profile**, **Notifications**, **Team**, **Saved replies** and **Appearance**, and cannot change the team or the chat's look. Owners and admins see every page.
+Each page has its own address, such as `/settings/team?workspace=<id>`, so a reload, a bookmark or a shared link opens the same page of the same workspace. On a phone, the list is its own screen, and **Back** on a page returns to it. A member sees **Profile**, **Notifications**, **Team**, **Saved replies** and **Appearance**, and cannot change the team or the chat's look. Owners and admins see every page, **Labels** too.
 
 To invite someone, open **Settings > Team**, select **Invite someone** at the top of the page, enter their email, pick a role, and select **Send invite**. Dinghy emails them a link to join. Without a mail server, select **Create invite link** instead, and send the link to that one person. Pending invites show in the team list with their email and the days they have left. Select the trash icon, then **Cancel invite**, to cancel one. To send an invite again, invite the same email again: the old link stops working. A link works once and lasts 7 days, and only that email can use it.
 
@@ -203,6 +209,10 @@ Outside these hours, the chat's header shows your away message from **Settings >
 ### Saved replies
 
 **Settings > Saved replies** holds the replies your team writes once and inserts with **/**. Every member can add, change and delete them. **New saved reply** asks for a **Shortcut**, of lowercase letters, digits and dashes, such as `refund-policy`, and the **Text**, with the same formatting as a message. A workspace keeps up to 200, and no two saved replies share a shortcut. A saved reply has no placeholders, such as the visitor's name, because most visitors do not give one. Bots read them too, through the API and MCP, so they can answer in your team's words.
+
+### Labels
+
+**Settings > Labels** lists the workspace's labels, for owners and admins. **New label** asks for a **Name**, up to 40 characters, and a **Color**, one of eight. **Edit** renames or recolors one, and **Delete** takes it off every conversation that has it. No two labels share a name, whatever the case, so "Billing" and "billing" are one label. Anyone on the team adds new labels from a conversation too, with **L**.
 
 **Settings > Workspace** is for owners and admins. It has these sections:
 

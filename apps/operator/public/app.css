@@ -2135,6 +2135,46 @@ img.ws-tile {
 .row .avatar-wrap {
   align-self: flex-start;
 }
+/* A row's box sits over its avatar: on hover, and on every row once one is chosen. */
+.rows > li {
+  position: relative;
+}
+.row-pick {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--navy);
+  cursor: pointer;
+  position: absolute;
+  top: 24px;
+  left: 34px;
+  z-index: 1;
+  opacity: 0;
+  /* Hidden, a tap on the picture opens the conversation. */
+  pointer-events: none;
+}
+.rows.selecting .row-pick,
+.row-pick:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.rows.selecting .row .avatar-wrap,
+.rows > li:has(.row-pick:focus-visible) .row .avatar-wrap {
+  visibility: hidden;
+}
+/* A touch screen starts a selection with a long press instead. */
+@media (hover: hover) {
+  .rows > li:hover .row-pick {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .rows > li:hover .row .avatar-wrap {
+    visibility: hidden;
+  }
+}
+.rows > li.picked .row {
+  background: var(--suggest);
+}
 .who-is .avatar {
   width: 40px;
   height: 40px;
@@ -5167,6 +5207,137 @@ button.quote:hover {
   background: var(--on-fill);
 }
 
+/* Labels: a soft fill and a strong ink for each color, and the dot that stands for it. */
+[data-color="gray"] {
+  --label-soft: light-dark(#eceae4, #26323f);
+  --label-ink: light-dark(#4a5565, #c3ccd6);
+}
+[data-color="red"] {
+  --label-soft: light-dark(#fde3e1, #4a2226);
+  --label-ink: light-dark(#a8261d, #ff9d95);
+}
+[data-color="orange"] {
+  --label-soft: light-dark(#fde8d6, #4a2f1b);
+  --label-ink: light-dark(#9a4a0b, #ffb77a);
+}
+[data-color="yellow"] {
+  --label-soft: light-dark(#faf0c8, #43391a);
+  --label-ink: light-dark(#7a5b00, #ffd96b);
+}
+[data-color="green"] {
+  --label-soft: light-dark(#dcf1e4, #1c3a2b);
+  --label-ink: light-dark(#17703f, #7fdca5);
+}
+[data-color="teal"] {
+  --label-soft: light-dark(#d8f0ef, #183a3a);
+  --label-ink: light-dark(#0f6a68, #7fd8d4);
+}
+[data-color="blue"] {
+  --label-soft: light-dark(#e0eaff, #1b2f50);
+  --label-ink: light-dark(#1d55c4, #9cc3ff);
+}
+[data-color="purple"] {
+  --label-soft: light-dark(#ece4fb, #33264d);
+  --label-ink: light-dark(#6237b3, #c9adff);
+}
+.label-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.who-text .label-pills {
+  margin-top: 4px;
+}
+.label-pill {
+  max-width: 14em;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--label-soft);
+  color: var(--label-ink);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.label-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--label-ink);
+}
+.label-find {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--field-line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-strong);
+  font: inherit;
+}
+.label-choices {
+  display: grid;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.label-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+.label-choice:hover {
+  background: var(--soft);
+}
+.label-choice input,
+.bulk-all input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--navy);
+  cursor: pointer;
+}
+.label-create {
+  justify-self: start;
+  margin-top: 4px;
+}
+.label-edit {
+  flex: 1;
+}
+
+/* The bar that takes the search's place while rows are chosen: one row as tall as the search, so
+   the list does not move, and narrow enough for the list's narrowest width. */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 42px;
+  margin: 0 16px 12px;
+}
+.bulk-all {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 8px;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.bulk-bar .round,
+.bulk-bar .bulk-clear {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+
 /* Rules that must come after the general ones they refine. */
 .card .note strong {
   color: var(--navy);
@@ -5595,7 +5766,8 @@ button.quote:hover {
   .list .page-head {
     padding: 22px 18px 12px;
   }
-  .list-tools {
+  .list-tools,
+  .bulk-bar {
     margin-inline: 12px;
   }
   .page-head h2 {

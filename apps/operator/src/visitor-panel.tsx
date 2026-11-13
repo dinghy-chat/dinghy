@@ -6,6 +6,7 @@ import type { ContactDetail, Conversation, Member, PageView } from "./api.ts";
 import { MINUTE_MS, shortTime } from "./format.ts";
 import { HandlerSelect } from "./handler.tsx";
 import { Icon, type IconName } from "./icons.tsx";
+import { LabelPicker, type LabelPicks } from "./labels.tsx";
 import { countryName, flag, languageName, localTime } from "./place.ts";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
@@ -482,6 +483,7 @@ export function VisitorPanel({
   onMoved,
   meId,
   onAssign,
+  labels,
   onGiveBack,
   onOpenContact,
   onOpenConversation,
@@ -501,6 +503,7 @@ export function VisitorPanel({
   onMoved(): void;
   meId: string;
   onAssign(operatorId: string | null): void;
+  labels: LabelPicks;
   onGiveBack(): void;
   onOpenContact(): void;
   onOpenConversation(id: string, status: "open" | "closed"): void;
@@ -572,6 +575,7 @@ export function VisitorPanel({
         >
           {t(conversation.status)}
         </span>
+        <LabelPicker picks={labels} labelIds={conversation.labelIds} />
       </div>
       <ContactFolds
         contact={contact}

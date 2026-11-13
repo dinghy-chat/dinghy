@@ -39,7 +39,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
 | 503 | `busy`, `check_unavailable` | The server is overloaded for a moment, or it cannot count [two-step sign-in](#two-step-sign-in) attempts. Try again |
 
-In a read-only or suspended workspace, operators can read and export, and a write answers 402 `read_only` or 403 `suspended`. A route whose OpenAPI entry has `x-workspace-access: closed` still works then: presence, removing a member and revoking an invite. Deleting the workspace, with `x-workspace-access: always`, works in every state, also while a cloud workspace waits for its first payment. On Dinghy Cloud, an operator of a read-only workspace can still send a text reply in its welcome chat, which is the route with `x-workspace-access: welcome`; anywhere else it answers 402 `read_only`.
+In a read-only or suspended workspace, operators can read and export, and a write answers 402 `read_only` or 403 `suspended`. A route whose OpenAPI entry has `x-workspace-access: closed` still works then: presence, removing a member, revoking an invite, and the bulk route, which allows only `mark_read` then. Deleting the workspace, with `x-workspace-access: always`, works in every state, also while a cloud workspace waits for its first payment. On Dinghy Cloud, an operator of a read-only workspace can still send a text reply in its welcome chat, which is the route with `x-workspace-access: welcome`; anywhere else it answers 402 `read_only`.
 
 ## Two-step sign-in
 
@@ -84,6 +84,28 @@ A message's `kind` is `text`, `image` or `file` for what people wrote, and `note
 The `url` of an image or a file is signed and works for at least 15 minutes. A file's URL serves only a download: `Content-Disposition: attachment` with its name, `Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. Dinghy does not scan files for viruses. On Dinghy Cloud, a file counts toward the workspace's storage as an image does, and goes after 12 months: then `file` is null and `fileRemoved` is true. A full workspace answers 507 `storage_full`, and text still sends. Reply emails and transcripts show a file by its name, with a link to the conversation, never as an attachment.
 
 An operator's first reply in a conversation with no assignee assigns it to them, with a `conversation.assigned` event. A reply with an API key never assigns.
+
+### Labels
+
+Labels sort conversations, such as billing or bugs. `GET /v1/operator/workspaces/{workspaceId}/labels` lists them by name, each `{ id, name, color }`. `color` is one of `gray`, `red`, `orange`, `yellow`, `green`, `teal`, `blue` and `purple`. Every `Conversation` has `labelIds`, the IDs of its labels, and `GET .../conversations?label={labelId}` lists only the conversations with that label. Any member, and any API key, reads them.
+
+With a session, any member adds a label with `POST .../labels` and `{ "name", "color" }`, where `color` defaults to `gray`. Owners and admins change one with `PATCH .../labels/{labelId}` and either field, and delete one with `DELETE`, which takes it off every conversation. A name is 1 to 40 characters on one line, and unique in the workspace whatever its case: a second one answers 409 `label_name_taken`. A workspace keeps up to 100, and the next answers 409 `label_limit`. Each of these changes writes a `workspace.changed` change to the operator stream.
+
+`PUT .../conversations/{conversationId}/labels/{labelId}` puts one label on a conversation, and `DELETE` on the same path takes it off. Each call changes that label only, so two people, or a person and a bot, never overwrite each other's labels. A repeat changes nothing and answers 200. Signed in or with an API key, both answer 404 when the conversation or the label does not exist. A change writes a `conversation.labeled` event, for the operator stream and the [webhooks](#webhooks).
+
+### Bulk actions
+
+`POST /v1/operator/workspaces/{workspaceId}/conversations/bulk`, with a session, changes up to 100 conversations at once. Its body has an `action`, the `conversationIds`, 1 to 100 of them, and the action's own field:
+
+| `action` | Field | What it does to each conversation |
+|---|---|---|
+| `close` | | Closes it, as `PATCH` with `{ "status": "closed" }` does |
+| `assign` | `operatorId`, a member or `null` | Assigns it, and makes a person handle it, as `PUT .../assignee` with a session does. A non-member answers 400 `not_a_member` |
+| `label` | `labelId` | Puts the label on it. A missing label answers 404 |
+| `mark_read` | | Marks it read up to its newest message, for the signed-in operator. It is the only action a read-only or suspended workspace allows, and the others answer 402 `read_only` or 403 `suspended` there |
+| `delete` | | Deletes it, with its messages and images. Owners and admins only |
+
+It answers `{ "results": [{ "conversationId", "result" }] }`, one per ID in the order sent, with a repeated ID once. `result` is `ok`, `unchanged` when it already was as asked (for `mark_read`, when it was read up to its newest message already), `not_found`, or `not_allowed` for each conversation of a member's `delete`. Each conversation goes through the same code as the single action, with its own event, so webhooks and alerts behave as if done one by one. They change 25 to a transaction, so a failure partway keeps the transactions before it, and a retry of the same request is safe. There is no bulk reply.
 
 ### Notes
 
@@ -147,7 +169,7 @@ Each operator has their own read position in each conversation. A `Conversation`
 
 `GET /v1/operator/workspaces/{workspaceId}/conversations/search?q=` searches open and closed conversations by the visitor's name, email or user ID and by message text, ignoring case. `q` has 3 to 100 characters, and the answer has at most 50 conversations, newest activity first. A conversation found by a message has that message's text as `lastMessage.body` and `text` as its `kind`, while `fromVisitor` and `createdAt` stay those of the newest message.
 
-`GET /v1/operator/workspaces/{workspaceId}/analytics?days=30&tz=Europe/Paris` answers support numbers for any member and any API key. `days` is 7, 30 or 90, and `tz` is an IANA time zone, by default `UTC`. The period runs from the start of the day, `days - 1` days ago, in `tz`, to now, and every number is about the conversations that started in it: `started`, `closed` (closed now), `answered`, `firstReply` with `medianSeconds`, `p90Seconds` and `fast` (how many of `started` got a first reply within 5 minutes), `perDay` (one `{ date, conversations }` per day, oldest first), `repliers` (conversations by who sent the first reply, most first: `{ kind: "operator", operatorId, name }`, `{ kind: "api_key", apiKeyId, name }`, or one `{ kind: "former" }` for deleted operators, each with `conversations`) and `hours` (7 rows, Monday first, of 24 counts by the hour each conversation started), and `previous`, with `started` and `firstReply` (`medianSeconds` and `fast`) for a period of the same length just before, which ends `days` days ago, to compare with. A first reply is the conversation's first message from an operator or an API key, timed from the conversation's start. The numbers come from the stored conversations and messages; nothing tracks visitors for them. On Dinghy Cloud, the welcome chat counts nowhere, and [test visitors](#install-and-test-visitors) count nowhere either.
+`GET /v1/operator/workspaces/{workspaceId}/analytics?days=30&tz=Europe/Paris` answers support numbers for any member and any API key. `days` is 7, 30 or 90, and `tz` is an IANA time zone, by default `UTC`. The period runs from the start of the day, `days - 1` days ago, in `tz`, to now, and every number is about the conversations that started in it: `started`, `closed` (closed now), `answered`, `firstReply` with `medianSeconds`, `p90Seconds` and `fast` (how many of `started` got a first reply within 5 minutes), `perDay` (one `{ date, conversations }` per day, oldest first), `repliers` (conversations by who sent the first reply, most first: `{ kind: "operator", operatorId, name }`, `{ kind: "api_key", apiKeyId, name }`, or one `{ kind: "former" }` for deleted operators, each with `conversations`) `hours` (7 rows, Monday first, of 24 counts by the hour each conversation started) and `labels` (conversations by each [label](#labels) they have now, most first: `{ labelId, name, color, conversations }`, leaving out labels on none), and `previous`, with `started` and `firstReply` (`medianSeconds` and `fast`) for a period of the same length just before, which ends `days` days ago, to compare with. A first reply is the conversation's first message from an operator or an API key, timed from the conversation's start. The numbers come from the stored conversations and messages; nothing tracks visitors for them. On Dinghy Cloud, the welcome chat counts nowhere, and [test visitors](#install-and-test-visitors) count nowhere either.
 
 ## The widget's look
 
@@ -208,8 +230,8 @@ A key works in its own workspace only, at the access level chosen when it was ma
 
 - list, search and read conversations, with the visitor and the page journey (`?assignee=none` lists the unassigned ones; a key is assigned nothing, so `assignee=me` answers 400),
 - reply with text or an image, as its reply mode says, write notes, hand a conversation to people and show that it types (see [Bots](#bots-reply-modes-drafts-notes-and-handoff)),
-- close, reopen, snooze and assign a conversation,
-- read contacts, the visitors on the site now, the analytics and the [saved replies](#saved-replies), and stream events from [`GET /v1/events`](#events-for-api-keys).
+- close, reopen, snooze, assign and label a conversation,
+- read contacts, the visitors on the site now, the analytics, the [saved replies](#saved-replies) and the [labels](#labels), and stream events from [`GET /v1/events`](#events-for-api-keys).
 
 **Full access** can do all of that, and set the workspace up: the [webhooks](#webhooks) (list, add, change, delete, replace a secret, send a test, read and replay the deliveries), the widget's look, and the [install routes and test visitors](#install-and-test-visitors). It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Full access key.
 
@@ -362,6 +384,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `conversation.assigned` | A conversation's assignee changes, or is cleared |
 | `conversation.handoff` | An API key's bot handed the conversation to people |
 | `conversation.given_back` | An operator gave the conversation back to the bots |
+| `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `labelId` and `added`, true when it was put on |
 
 Drafts send no webhook. The body is JSON:
 
@@ -524,6 +547,8 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `reopen_conversation` | Chats | Reopens a closed conversation |
 | `snooze_conversation`, `unsnooze_conversation` | Chats | Snoozes an open conversation until `until`, or with `until` null until the visitor writes, or ends its snooze |
 | `assign_conversation` | Chats | Assigns a conversation to a member by operator ID, or clears it with `null` |
+| `list_labels` | Chats | Lists the team's labels: `id`, `name` and `color`. A conversation's `labelIds` name them |
+| `label_conversation`, `unlabel_conversation` | Chats | Puts one label on a conversation, or takes it off. A repeat changes nothing |
 | `get_contact` | Chats | Reads a visitor, by `visitorId` or by `conversationId`, exactly one of them, with their local time, pages and other conversations |
 | `list_contacts`, `search_contacts` | Chats | Lists or finds the people who have a conversation |
 | `get_live_visitors` | Chats | Lists the tabs of the site open now |

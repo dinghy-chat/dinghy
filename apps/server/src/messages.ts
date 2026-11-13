@@ -26,6 +26,7 @@ import {
   attachment,
   CHAT_KINDS,
   conversation,
+  conversationLabel,
   conversationRead,
   draftReply,
   type EventKind,
@@ -954,6 +955,8 @@ export interface ConversationRow {
   botKey: KeyName | null;
   /** Null unless it is snoozed now. */
   snooze: Snooze | null;
+  /** Its labels' IDs. */
+  labelIds: string[];
 }
 
 /** How long a snooze lasts: until a time, or with null until the visitor writes. */
@@ -1002,6 +1005,15 @@ const botKey = sql<KeyName | null>`(
 const snoozedNow = (row: SQLWrapper = conversation) =>
   sql<boolean>`(${row}.snoozed_at is not null and (${row}.snoozed_until is null or ${row}.snoozed_until > now()))`;
 
+/**
+ * The conversation's labels, read in the same statement as each listed row. The primary key's order,
+ * so the probe needs no sort.
+ */
+const labelIds = sql<string[]>`array(
+  select l.label_id from conversation_label as l
+  where l.workspace_id = "conversation"."workspace_id" and l.conversation_id = "conversation"."id"
+  order by l.label_id)`;
+
 const conversationColumns = {
   id: conversation.id,
   status: conversation.status,
@@ -1028,6 +1040,7 @@ const conversationColumns = {
   botKey,
   snoozed: snoozedNow(),
   snoozedUntil: conversation.snoozedUntil,
+  labelIds,
 };
 
 /** A row with its snooze as one value, so an ended snooze's time never reads as a snooze. */
@@ -1158,6 +1171,32 @@ export async function markConversationRead(
 }
 
 /**
+ * Marks these conversations read up to their newest message, for one operator, in one statement. A
+ * position never moves back. The conversations whose position moved, or that had none.
+ */
+export async function markConversationsRead(
+  tx: Transaction,
+  workspaceId: string,
+  conversationIds: string[],
+  operatorId: string,
+): Promise<Set<string>> {
+  if (conversationIds.length === 0) return new Set();
+  const result = await tx.execute<{ conversation_id: string }>(sql`
+    insert into ${conversationRead} (workspace_id, conversation_id, operator_id, read_seq)
+    select c.workspace_id, c.id, ${operatorId}, coalesce((
+             select max(m.seq) from ${message} as m
+             where m.workspace_id = c.workspace_id and m.conversation_id = c.id
+           ), 0)
+    from ${conversation} as c
+    where c.workspace_id = ${workspaceId} and c.id in ${conversationIds}
+    on conflict (workspace_id, conversation_id, operator_id) do update
+      set read_seq = greatest(${conversationRead}.read_seq, excluded.read_seq)
+      where ${conversationRead}.read_seq < excluded.read_seq
+    returning conversation_id`);
+  return new Set(result.rows.map((row) => row.conversation_id));
+}
+
+/**
  * Marks every conversation read up to its newest message, for one member or for every current one,
  * so a teammate who joins or a workspace that arrives by import does not start with all its
  * history unread. A position never moves back.
@@ -1187,6 +1226,22 @@ export type AssigneeFilter =
   | { kind: "operator"; operatorId: string }
   | { kind: "none" };
 
+/** What a list holds: whose conversations, and with a label ID only those with that label. */
+export interface ListFilter {
+  assignee: AssigneeFilter;
+  labelId?: string | undefined;
+}
+
+/** Only when the filter names a label, so a list without one never reads the labels. */
+function labelCondition(workspaceId: string, labelId: string | undefined) {
+  if (labelId === undefined) return undefined;
+  return inArray(
+    conversation.id,
+    sql`(select l.conversation_id from ${conversationLabel} as l
+         where l.workspace_id = ${workspaceId} and l.label_id = ${labelId})`,
+  );
+}
+
 function assigneeCondition(assignee: AssigneeFilter) {
   if (assignee.kind === "all") return undefined;
   if (assignee.kind === "none") return isNull(conversation.assigneeOperatorId);
@@ -1199,7 +1254,7 @@ export async function listConversations(
   workspaceId: string,
   operatorId: string | null,
   status: "open" | "closed",
-  assignee: AssigneeFilter,
+  filter: ListFilter,
   before: { updatedAt: Date; id: string } | undefined,
   limit: number,
 ): Promise<{ conversations: ConversationSummary[]; hasMore: boolean }> {
@@ -1240,7 +1295,8 @@ export async function listConversations(
       and(
         eq(conversation.workspaceId, workspaceId),
         eq(conversation.status, status),
-        assigneeCondition(assignee),
+        assigneeCondition(filter.assignee),
+        labelCondition(workspaceId, filter.labelId),
         // A row comparison bounds the scan of conversation_list_idx, where an OR would not.
         before === undefined
           ? undefined
@@ -1484,7 +1540,7 @@ export async function listConversationMessages(
  * Closes or reopens a conversation. Its event tells other operators, and a status line with the
  * event's sequence tells the visitor, in the same transaction, so both see it in order. The line has
  * no message.created event, so it raises no reply alert and no message webhook. A close asks the
- * worker whether to email the visitor a transcript.
+ * worker whether to email the visitor a transcript. False when it already had this status.
  */
 export async function setConversationStatus(
   tx: Transaction,
@@ -1492,7 +1548,7 @@ export async function setConversationStatus(
   conversationId: string,
   status: "open" | "closed",
   actor: StatusActor,
-): Promise<void> {
+): Promise<boolean> {
   const seq = await nextSeq(tx, workspaceId);
   const changed = await tx
     .update(conversation)
@@ -1506,7 +1562,7 @@ export async function setConversationStatus(
       ),
     )
     .returning({ id: conversation.id });
-  if (changed.length === 0) return;
+  if (changed.length === 0) return false;
   const [line] = await tx
     .insert(message)
     .values({
@@ -1533,6 +1589,7 @@ export async function setConversationStatus(
     needsAlert: status === "closed",
     needsWebhook: wantsWebhook(workspaceId),
   });
+  return true;
 }
 
 /**

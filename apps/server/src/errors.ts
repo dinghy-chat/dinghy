@@ -87,6 +87,8 @@ export const ERROR_CODES = [
   "invalid_request",
   "invite_invalid",
   "invite_other_email",
+  "label_limit",
+  "label_name_taken",
   "last_owner",
   "last_workspace",
   "link_invalid",
