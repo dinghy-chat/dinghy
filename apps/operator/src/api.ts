@@ -368,6 +368,10 @@ export interface Me {
   twoFactor: "off" | "on" | "required";
   /** The recovery codes not used yet. Null unless `twoFactor` is `on`. */
   recoveryCodesLeft: number | null;
+  /** When a waiting recovery removes two-step sign-in, unless someone cancels it, or null. */
+  recoveryCompletesAt: string | null;
+  /** A recovery or a reset removed two-step sign-in, so this sign-in asks to turn it on again. */
+  asksTwoFactorAgain: boolean;
 }
 
 export type Role = "owner" | "admin" | "member";
@@ -401,8 +405,10 @@ export interface Member {
   email: string;
   role: Role;
   pictureUrl: string | null;
-  /** Whether the member turned on two-step sign-in. */
-  twoFactor: "off" | "on";
+  /** Whether the member turned on two-step sign-in. `recovery`: a request to remove it waits. */
+  twoFactor: "off" | "on" | "recovery";
+  /** Whether you may reset their two-step sign-in now. */
+  canResetTwoFactor: boolean;
 }
 
 export interface PendingInvite {
@@ -613,6 +619,18 @@ export const disableTwoFactor = (code: string) =>
 /** The second step of a sign-in, with a code from the app or a recovery code. */
 export const checkTwoFactor = (code: string) =>
   post<{ ok: true }>("/v1/operator/two-factor/check", { code });
+/** Asks to remove two-step sign-in after the wait, from the code screen. */
+export const askRecovery = () =>
+  post<{ completesAt: string }>("/v1/operator/two-factor/recovery", {});
+/** Cancels the account's waiting recovery, from a session that passed the check. */
+export const cancelRecovery = () =>
+  post<{ ok: true }>("/v1/operator/two-factor/recovery/cancel", {});
+/** Cancels a waiting recovery with its link's token, from the button on the page the link opens. */
+export const cancelRecoveryByLink = (token: string) =>
+  post<{ ok: true }>("/v1/two-factor-recovery/cancel", { token });
+/** Stops asking to turn two-step sign-in on again. */
+export const skipTwoFactorPrompt = () =>
+  post<{ ok: true }>("/v1/operator/two-factor/skip-prompt", {});
 /**
  * Deletes the account. With email, a link goes to it and `deleted` is false. Without, the typed
  * email confirms, and the account is gone.
@@ -714,6 +732,8 @@ export function workspaceApi(workspaceId: string) {
         body: JSON.stringify({ role }),
       }),
     removeMember: (id: string) => call<{ ok: true }>(`${base}/members/${id}`, { method: "DELETE" }),
+    resetTwoFactor: (id: string) =>
+      post<{ ok: true }>(`${base}/members/${id}/two-factor-reset`, {}),
     invites: () => call<{ invites: PendingInvite[] }>(`${base}/invites`),
     /** `token` is null when the server emailed the invite. */
     createInvite: (email: string, role: "admin" | "member") =>

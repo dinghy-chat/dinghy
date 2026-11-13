@@ -15,7 +15,7 @@ import { readStored, store } from "./stored.ts";
 import { t } from "./text.ts";
 import { applyTheme, savedTheme } from "./theme.ts";
 import { Toaster } from "./toast.tsx";
-import { TwoFactorCheck } from "./two-factor.tsx";
+import { TwoFactorAgain, TwoFactorCheck } from "./two-factor.tsx";
 
 applyTheme(savedTheme());
 followNotificationClicks();
@@ -89,8 +89,9 @@ function App() {
   }
   // Before every page, the consent page too: the server refuses all else until the check passes.
   if (me?.twoFactor === "required") {
-    return <TwoFactorCheck onPassed={load} onSignedOut={signedOut} />;
+    return <TwoFactorCheck me={me} onChanged={load} onSignedOut={signedOut} />;
   }
+  if (me?.asksTwoFactorAgain === true) return <TwoFactorAgain me={me} onDone={load} />;
   const inviteToken = query.get("token");
   if (path === "/invite" && inviteToken !== null) {
     return <InvitePage token={inviteToken} me={me} />;

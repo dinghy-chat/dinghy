@@ -44,6 +44,10 @@ const BY_CODE: Record<string, TextId> = {
   saved_reply_limit: "savedReplyLimit",
   saved_reply_shortcut_taken: "savedReplyShortcutTaken",
   two_factor_unreadable: "twoFactorUnreadable",
+  // The code screen shows Dinghy Cloud's address in its place, where there is one.
+  manual_review: "recoveryManualSelfHosted",
+  recovery_blocked: "recoveryBlocked",
+  sign_in_again: "recoverySignInAgain",
   label_limit: "labelLimit",
   label_name_taken: "labelNameTaken",
 };

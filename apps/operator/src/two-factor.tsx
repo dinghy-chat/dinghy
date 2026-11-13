@@ -3,14 +3,18 @@ import { type FormEvent, useState } from "react";
 import { encode } from "uqr";
 import { TWO_FACTOR_CODE_MAX } from "../../../packages/widget/src/shared.ts";
 import {
+  askRecovery,
   checkTwoFactor,
   disableTwoFactor,
   enableTwoFactor,
   type Me,
   newRecoveryCodes,
   signOut,
+  skipTwoFactorPrompt,
   startTwoFactor,
 } from "./api.ts";
+import { dayTime } from "./format.ts";
+import { useAction } from "./load.ts";
 import { AuthPage } from "./scene.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { CopyButton, CopyField, ErrorNote, Field, failureText } from "./ui.tsx";
@@ -295,17 +299,72 @@ export function TwoFactorRow({ me, onChanged }: { me: Me; onChanged(): void }) {
   );
 }
 
+/** Where a recovery that nobody else can be warned of goes: Dinghy Cloud, or the server's admin. */
+function ManualReview({ contact }: { contact: string | null }) {
+  if (contact === null) return <p className="note">{t("recoveryManualSelfHosted")}</p>;
+  const [before, after] = t("recoveryManualCloud").split("{contact}");
+  return (
+    <p className="note">
+      {before}
+      <a href={`mailto:${contact}`}>{contact}</a>
+      {after}
+    </p>
+  );
+}
+
+/**
+ * For someone who lost their app and their codes: a request that removes two-step sign-in after
+ * the wait, or the way to a manual review. Once one waits, the date it ends.
+ */
+function Recovery({ me, onChanged }: { me: Me; onChanged(): void }) {
+  const [isOpen, setOpen] = useState(false);
+  const ask = useAction(onChanged);
+  if (me.recoveryCompletesAt !== null) {
+    return (
+      <p className="note" role="status">
+        {t("recoveryWaiting", { date: dayTime(me.recoveryCompletesAt) })}
+      </p>
+    );
+  }
+  if (ask.failure === "recoveryManualSelfHosted") return <ManualReview contact={me.contact} />;
+  if (!isOpen) {
+    return (
+      <button type="button" className="btn link" onClick={() => setOpen(true)}>
+        {t("recoveryLost")}
+      </button>
+    );
+  }
+  return (
+    <div className="stack">
+      <strong>{t("recoveryAskTitle")}</strong>
+      <p className="note">{t("recoveryAskHelp")}</p>
+      <ErrorNote text={ask.failure} />
+      <button
+        type="button"
+        className="btn outline"
+        disabled={ask.busy}
+        onClick={() => void ask.run(askRecovery)}
+      >
+        {t("recoveryAskButton")}
+      </button>
+    </div>
+  );
+}
+
 /** After the email link, for an operator with two-step sign-in on: nothing else opens before it. */
 export function TwoFactorCheck({
-  onPassed,
+  me,
+  onChanged,
   onSignedOut,
 }: {
-  onPassed(): void;
+  me: Me;
+  /** The check passed, or a recovery started: `me` loads again. */
+  onChanged(): void;
   onSignedOut(): void;
 }) {
   const { code, setCode, error, busy, send, isLocked } = useCode(async (typed) => {
     await checkTwoFactor(typed);
-    onPassed();
+    onChanged();
   });
   if (isLocked) {
     return (
@@ -339,6 +398,28 @@ export function TwoFactorCheck({
         onClick={() => void signOut().finally(onSignedOut)}
       >
         {t("signOut")}
+      </button>
+      <Recovery me={me} onChanged={onChanged} />
+    </AuthPage>
+  );
+}
+
+/** The first page after a recovery or a reset removed two-step sign-in: turn it on, or skip. */
+export function TwoFactorAgain({ me, onDone }: { me: Me; onDone(): void }) {
+  const skip = useAction(onDone);
+  return (
+    <AuthPage time="noon">
+      <h1>{t("twoFactorAgainTitle")}</h1>
+      <p className="note">{t("twoFactorAgainHelp")}</p>
+      <TwoFactorRow me={me} onChanged={onDone} />
+      <ErrorNote text={skip.failure} />
+      <button
+        type="button"
+        className="btn link"
+        disabled={skip.busy}
+        onClick={() => void skip.run(skipTwoFactorPrompt)}
+      >
+        {t("twoFactorAgainSkip")}
       </button>
     </AuthPage>
   );

@@ -282,6 +282,7 @@ export function Inbox({
             botsPausedBy={botsPausedBy}
             botsPausedAt={membership?.botsPausedAt ?? null}
             onResumeBots={setBotsPaused && (() => setBotsPaused(false))}
+            onRecoveryCancelled={onAccountChanged}
           />
           <main className="panel">
             {view === "settings" && (

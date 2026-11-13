@@ -1,6 +1,12 @@
 /** @jsxImportSource react */
 import { type FormEvent, useState } from "react";
-import { askSignInLink, confirmAccountDelete, redeemJoinLink, redeemSignInLink } from "./api.ts";
+import {
+  askSignInLink,
+  cancelRecoveryByLink,
+  confirmAccountDelete,
+  redeemJoinLink,
+  redeemSignInLink,
+} from "./api.ts";
 import { navigate } from "./nav.ts";
 import { AuthPage } from "./scene.tsx";
 import { readStored, store } from "./stored.ts";
@@ -159,11 +165,23 @@ const PURPOSES = {
     help: "linkDeleteAccountHelp",
     again: null,
   },
+  // The recovery's emails carry it. It works only while the recovery waits.
+  "cancel-recovery": {
+    title: "linkCancelRecoveryTitle",
+    button: "recoveryBannerCancel",
+    help: "linkCancelRecoveryHelp",
+    again: null,
+  },
 } satisfies Record<string, { title: TextId; button: TextId; help: TextId; again: string | null }>;
 type Purpose = keyof typeof PURPOSES;
 /** The answers that use up a join link, unlike a lost connection, which leaves it to try again. */
 const SPENT = new Set<TextId>(["inviteInvalid", "operatorLimit"]);
 const isPurpose = (value: string): value is Purpose => Object.hasOwn(PURPOSES, value);
+/** What a used or expired link says, for the kinds that no page can make again. */
+const SPENT_LINK: Partial<Record<Purpose, TextId>> = {
+  "delete-account": "deleteLinkInvalid",
+  "cancel-recovery": "linkCancelRecoveryInvalid",
+};
 
 /**
  * Every emailed link opens this page. Only its button uses the link, so a mail scanner that opens
@@ -173,7 +191,7 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
   const kind = isPurpose(purpose) ? purpose : "sign-in";
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
-  const [deleted, setDeleted] = useState(false);
+  const [finished, setFinished] = useState<"deleted" | "cancelled" | null>(null);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -182,7 +200,12 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
     try {
       if (kind === "delete-account") {
         await confirmAccountDelete(token);
-        setDeleted(true);
+        setFinished("deleted");
+        return;
+      }
+      if (kind === "cancel-recovery") {
+        await cancelRecoveryByLink(token);
+        setFinished("cancelled");
         return;
       }
       if (kind === "join") {
@@ -198,10 +221,11 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
     }
   };
 
-  if (deleted) return <AccountDeleted />;
+  if (finished === "deleted") return <AccountDeleted />;
+  if (finished === "cancelled") return <RecoveryCancelled />;
   const { again } = PURPOSES[kind];
-  // Only the invite, or the Profile page, makes a new link of these kinds.
-  const spent: TextId = kind === "delete-account" ? "deleteLinkInvalid" : "joinLinkInvalid";
+  // Only the invite, the Profile page or a new recovery makes a new link of these kinds.
+  const spent = SPENT_LINK[kind] ?? "joinLinkInvalid";
   // A refused join link is used up too, so its button would only say the link expired.
   if (error === "linkInvalid" || (again === null && error !== null && SPENT.has(error))) {
     return (
@@ -223,6 +247,21 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
       <button type="submit" className="btn primary large" disabled={busy}>
         {t(PURPOSES[kind].button)}
       </button>
+    </AuthPage>
+  );
+}
+
+/** After a recovery's cancel link: what the cancel means, and the way to sign in. */
+function RecoveryCancelled() {
+  return (
+    <AuthPage time="noon">
+      <h1>{t("recoveryCancelledTitle")}</h1>
+      <p className="note" role="status">
+        {t("recoveryCancelledHelp")}
+      </p>
+      <AppLink className="btn primary large" href="/">
+        {t("linkSignIn")}
+      </AppLink>
     </AuthPage>
   );
 }
