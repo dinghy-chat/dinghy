@@ -16,6 +16,9 @@ export const EMAIL_COLORS = {
   onDark: "#ffffff",
 };
 
+/** Who turned off two-step sign-in: the operator in the app, or the server's admin. */
+type TwoFactorOffBy = "operator" | "admin";
+
 // Every email is plain text in one voice: a greeting, a few short paragraphs and the same sign-off.
 // Every string has a key here or next to its sender, so a locale can be added later.
 const text = {
@@ -53,6 +56,32 @@ const text = {
     text.linkLasts,
     "Deleting it takes you out of every workspace, and can't be undone. Your old replies stay, from a former team member.",
     "Didn't ask for it? Ignore this email, and nothing happens.",
+  ],
+  twoFactorNotYou:
+    "Wasn't you? Someone may be able to read your email. Secure your email account, and tell the person who runs your Dinghy server.",
+  twoFactorOnSubject: "Two-step sign-in is on for your Dinghy account",
+  twoFactorOnBody: () => [
+    "Two-step sign-in is now on for your Dinghy account. Each new sign-in asks for a code from your authenticator app.",
+    text.twoFactorNotYou,
+  ],
+  twoFactorOffSubject: "Two-step sign-in is off for your Dinghy account",
+  twoFactorOffBody: (by: TwoFactorOffBy) => [
+    by === "operator"
+      ? "Two-step sign-in was turned off for your Dinghy account. A sign-in now needs only the email link."
+      : "The admin of your Dinghy server turned off two-step sign-in for your account and signed out its sessions. A sign-in now needs only the email link.",
+    "You can turn it on again in Profile.",
+    text.twoFactorNotYou,
+  ],
+  recoveryUsedSubject: "A recovery code was used on your Dinghy account",
+  recoveryUsedBody: () => [
+    "A recovery code was just used on your Dinghy account, in place of a code from your authenticator app. Each code works once.",
+    text.twoFactorNotYou,
+  ],
+  lockoutSubject: "Too many wrong codes on your Dinghy account",
+  lockoutBody: (failures: number, minutes: number) => [
+    `Someone entered ${failures} wrong two-step sign-in codes for your Dinghy account, so that session ended. No code works for up to ${minutes} minutes.`,
+    "If it was you, wait and sign in again.",
+    text.twoFactorNotYou,
   ],
   inviteSubject: (workspace: string) => `Join ${workspace} on Dinghy`,
   inviteBody: (url: string, workspace: string, role: "admin" | "member") => [
@@ -188,6 +217,30 @@ export function inviteMail(url: string, workspaceName: string, role: "admin" | "
     body: letter(text.inviteBody(url, workspace, role)),
   };
 }
+
+/** Two-step sign-in was turned on for this account. */
+export const twoFactorOnMail = () => ({
+  subject: text.twoFactorOnSubject,
+  body: letter(text.twoFactorOnBody()),
+});
+
+/** Two-step sign-in was turned off for this account. */
+export const twoFactorOffMail = (by: TwoFactorOffBy) => ({
+  subject: text.twoFactorOffSubject,
+  body: letter(text.twoFactorOffBody(by)),
+});
+
+/** A recovery code passed the second step or turned it off. */
+export const recoveryUsedMail = () => ({
+  subject: text.recoveryUsedSubject,
+  body: letter(text.recoveryUsedBody()),
+});
+
+/** Too many wrong codes ended a session, and the account refuses codes for a while. */
+export const lockoutMail = (failures: number, minutes: number) => ({
+  subject: text.lockoutSubject,
+  body: letter(text.lockoutBody(failures, minutes)),
+});
 
 /** The sentence that says how long a link works, for the emails in ee/. */
 export const LINK_LASTS = text.linkLasts;

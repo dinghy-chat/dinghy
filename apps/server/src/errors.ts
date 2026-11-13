@@ -124,6 +124,7 @@ export const ERROR_CODES = [
   "two_factor_off",
   "two_factor_on",
   "two_factor_required",
+  "two_factor_unreadable",
   "type_not_allowed",
   "unauthorized",
   "unsupported_media_type",

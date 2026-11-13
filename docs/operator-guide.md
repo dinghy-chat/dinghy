@@ -139,6 +139,8 @@ To turn it off, select **Turn off** and enter a code from the app or a recovery 
 
 **Settings > Team** shows who has it on.
 
+When the server can send email, Dinghy emails you when two-step sign-in is turned on or off, when a recovery code is used, and when too many wrong codes sign you out. If you did not do it, someone may be able to read your email.
+
 If you lose your phone and your recovery codes, ask the person who runs your Dinghy server to run `chat two-factor-reset <email>`, as [Self-hosting](self-hosting.md#common-commands) shows. It turns two-step sign-in off and ends your sessions. On Dinghy Cloud, write to hello@dinghy.chat. Support resets it only with proof from outside your mailbox, such as the invoice number and the last four digits of the card, because anyone who reads your mailbox already has the first step.
 
 ### Delete your account

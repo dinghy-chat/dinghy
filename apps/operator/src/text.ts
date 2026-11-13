@@ -863,6 +863,8 @@ const en = {
   twoFactorWrongCode: "That code is not right, or it was already used.",
   twoFactorLocked: "Too many wrong codes, so you were signed out. Try again in 15 minutes.",
   twoFactorUnavailable: "Codes cannot be checked right now. Try again in a minute.",
+  twoFactorUnreadable:
+    "This server cannot read your two-step sign-in, because its settings changed. Ask its admin to reset it.",
   twoFactorCheckTitle: "Enter your code",
   twoFactorCheckHelp:
     "Open your authenticator app and enter the 6-digit code for Dinghy. Lost your phone? Enter a recovery code.",

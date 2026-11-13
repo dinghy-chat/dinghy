@@ -40,9 +40,12 @@ import {
 import { ROLES, type RoleName } from "./db/roles.ts";
 import * as schema from "./db/schema.ts";
 import { type Database, enterWorkspace, withWorkspace } from "./db/tenant.ts";
+import { safeErrorFields } from "./errors.ts";
 import { normalizeOrigin } from "./identity.ts";
 import { runInit, type SetupAnswers, widgetSnippet, writePushKeys } from "./install.ts";
+import { twoFactorOffMail } from "./letter.ts";
 import { createSignals } from "./live.ts";
+import { createMailer } from "./mailer.ts";
 import { type ObjectStore, storeFromConfig } from "./storage.ts";
 import { setSuspended, signalSuspension } from "./suspension.ts";
 import { exportArchive, ImportError, importArchive } from "./transfer.ts";
@@ -726,10 +729,13 @@ async function signInLinkCommand(db: Database, auth: Auth, email: string): Promi
   return 0;
 }
 
-/** Turns off an operator's two-step sign-in, with an audit line that names the account. */
-async function twoFactorResetCommand(db: Database, email: string): Promise<number> {
+/**
+ * Turns off an operator's two-step sign-in, with an audit line that names the account, and tells
+ * the account by email when the server has a mail server.
+ */
+async function twoFactorResetCommand(db: Database, config: Config, email: string): Promise<number> {
   const [found] = await db
-    .select({ id: schema.operator.id })
+    .select({ id: schema.operator.id, email: schema.operator.email })
     .from(schema.operator)
     .where(eq(schema.operator.email, email.toLowerCase()));
   if (found === undefined) {
@@ -742,6 +748,18 @@ async function twoFactorResetCommand(db: Database, email: string): Promise<numbe
   }
   audit(pino(), "two_factor.reset", { operatorId: found.id, by: "cli" });
   console.log(`Two-step sign-in is off for ${email}, and their sessions ended.`);
+  if (config.SMTP_URL !== undefined && config.MAIL_FROM !== undefined) {
+    const mail = twoFactorOffMail("admin");
+    try {
+      await createMailer(config.SMTP_URL, config.MAIL_FROM, { pool: false }).send(
+        found.email,
+        mail.subject,
+        mail.body,
+      );
+    } catch (err) {
+      console.error("The email that tells the operator could not be sent:", safeErrorFields(err));
+    }
+  }
   return 0;
 }
 
@@ -831,7 +849,7 @@ async function main(): Promise<number> {
       return 2;
     }
     if (command === "sign-in-link") return await signInLinkCommand(db, auth, email);
-    if (command === "two-factor-reset") return await twoFactorResetCommand(db, email);
+    if (command === "two-factor-reset") return await twoFactorResetCommand(db, config, email);
     if (name === undefined) {
       console.error(USAGE);
       return 2;

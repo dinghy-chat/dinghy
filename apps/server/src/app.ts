@@ -431,6 +431,7 @@ export function createApp({
       // AUTH_SECRET itself. A fallback to a random secret would change the keys at each restart.
       authSecret: auth.options.secret,
       valkey,
+      mailer,
     });
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);

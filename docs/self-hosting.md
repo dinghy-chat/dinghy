@@ -257,7 +257,9 @@ To grow, run more `web` instances behind one load balancer, and one or more `wor
 
 `chat workspaces` prints each workspace's ID, public key, state and name. The state is `active`, `suspended`, `read_only`, `waiting_payment` or `waiting_cloud`, the last three only on Dinghy Cloud. `chat setup` also prints the ID of the workspace it creates.
 
-`chat two-factor-reset` is for an operator who lost their authenticator app and their recovery codes. It turns two-step sign-in off, ends every session of the account and writes a `two_factor.reset` audit line. Whoever can read the operator's email can ask you for it, so check that the request comes from them, such as in person or on a call.
+`chat two-factor-reset` is for an operator who lost their authenticator app and their recovery codes. It turns two-step sign-in off, ends every session of the account and writes a `two_factor.reset` audit line. Whoever can read the operator's email can ask you for it, so check that the request comes from them, such as in person or on a call. With `SMTP_URL` and `MAIL_FROM` set, the command emails the operator that you turned it off. The app also emails an operator when they turn it on or off, use a recovery code, or enter too many wrong codes.
+
+The secrets of two-step sign-in are encrypted with a key derived from `AUTH_SECRET`. If you change `AUTH_SECRET`, they no longer open: an operator who has it on sees **This server cannot read your two-step sign-in** at the code page, and the API answers 500 `two_factor_unreadable`. Run `chat two-factor-reset <email>` for each of them, and they can turn it on again.
 
 A suspended workspace cannot send messages or images, its widget answers as if it did not exist, and its open chats close at once. Its operators can still sign in, read and export, and a banner tells them it is suspended. The reason is for you, and they do not see it.
 

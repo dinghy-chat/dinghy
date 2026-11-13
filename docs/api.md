@@ -50,7 +50,9 @@ An operator can turn on two-step sign-in, with a TOTP code (RFC 6238: 30 seconds
 - `POST /v1/operator/two-factor/check` with `{ "code" }` passes the check, with a code from the app or a recovery code.
 - `POST /v1/operator/two-factor/disable` with `{ "code" }` turns it off. Sessions that never passed the check end.
 
-A wrong code, or one used before, answers 400 `wrong_code`. A code from the app works once, and so does a recovery code. After 5 wrong codes in 15 minutes, the check and the turn-off answer 429 `too_many_attempts` and end the session, and they refuse every code until 15 minutes after the first wrong one. When Valkey does not answer, they check no code and answer 503 `check_unavailable`, because the limit cannot count.
+A wrong code, or one used before, answers 400 `wrong_code`. A code from the app works once, and so does a recovery code. After 5 wrong codes in 15 minutes, the check and the turn-off answer 429 `too_many_attempts` and end the session, and they refuse every code until 15 minutes after the first wrong one. When Valkey does not answer, they check no code and answer 503 `check_unavailable`, because the limit cannot count. When the stored secret does not open, because `AUTH_SECRET` changed, they answer 500 `two_factor_unreadable`, and only the server's admin can turn it off, with `chat two-factor-reset`.
+
+With a mail server, the account gets an email when two-step sign-in is turned on, turned off, by the operator or by `chat two-factor-reset`, when a recovery code is used, and when the 5th wrong code ends a session.
 
 ## Sending without duplicates
 

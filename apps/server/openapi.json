@@ -104,6 +104,7 @@
                   "two_factor_off",
                   "two_factor_on",
                   "two_factor_required",
+                  "two_factor_unreadable",
                   "type_not_allowed",
                   "unauthorized",
                   "unsupported_media_type",
@@ -5067,6 +5068,16 @@
               }
             }
           },
+          "500": {
+            "description": "two_factor_unreadable: the stored secret does not open, because AUTH_SECRET changed. The server's admin runs `chat two-factor-reset`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "check_unavailable: the server cannot count attempts right now, so it checks no code. Retry later",
             "content": {
@@ -5176,6 +5187,16 @@
           },
           "429": {
             "description": "too_many_attempts: 5 wrong codes in 15 minutes. The session ended. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "two_factor_unreadable: the stored secret does not open, because AUTH_SECRET changed. The server's admin runs `chat two-factor-reset`",
             "content": {
               "application/json": {
                 "schema": {
