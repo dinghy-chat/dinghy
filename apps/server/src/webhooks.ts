@@ -14,8 +14,8 @@ import type { HandledPayload } from "./bots.ts";
 import {
   apiKey,
   event,
-  label,
   type LabeledPayload,
+  label,
   type MessagePayload,
   operator,
   RESPONSE_EXCERPT_MAX,

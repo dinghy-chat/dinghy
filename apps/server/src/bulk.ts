@@ -7,10 +7,10 @@ import { label } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace, writable } from "./db/tenant.ts";
 import {
   errorAnswer,
+  FORBIDDEN,
   type failure,
   jsonAnswer,
   jsonBody,
-  FORBIDDEN,
   NOT_FOUND,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
