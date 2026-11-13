@@ -426,7 +426,7 @@ export function AddForm({
 }
 
 /** Where the docs live. Each link names a page and, often, a section on it. */
-const DOCS_URL = "https://dinghy.chat/docs/";
+export const DOCS_URL = "https://dinghy.chat/docs/";
 
 /** A section of the docs, such as `api#webhooks`, and the words of its link. */
 export type Doc = { path: string; text: TextId };

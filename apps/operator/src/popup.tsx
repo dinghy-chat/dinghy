@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { Icon } from "./icons.tsx";
+import { Keys, useShortcutsOn, withKey } from "./shortcuts.tsx";
 import { t } from "./text.ts";
 import { useModal } from "./ui.tsx";
 
@@ -233,9 +234,12 @@ export function Select<V extends string>({
   disabled = false,
   side = "start",
   className = "",
+  shortcut,
 }: {
   /** What the choice is for. Screen readers read it with the chosen value. */
   label: string;
+  /** The key that opens the choices from anywhere. */
+  shortcut?: string;
   value: V;
   choices: Choice<V>[];
   onChange(value: V): void;
@@ -253,6 +257,7 @@ export function Select<V extends string>({
     () => chosen,
   );
   const current = choices[chosen];
+  const keysOn = useShortcutsOn();
   const choose = (index: number) => {
     const next = choices[index];
     popup.hide(true);
@@ -269,6 +274,8 @@ export function Select<V extends string>({
         ref={popup.button}
         type="button"
         className="select-button"
+        data-shortcut={shortcut}
+        title={shortcut === undefined ? undefined : withKey(label, shortcut, keysOn)}
         aria-haspopup="listbox"
         aria-expanded={popup.open}
         aria-labelledby={`${labelId} ${valueId}`}
@@ -350,6 +357,8 @@ export interface MenuItem {
   divider?: boolean;
   /** Something small after the label, such as a count. */
   trail?: ReactNode;
+  /** The key that runs it from anywhere, drawn after the label. */
+  shortcut?: string;
   /** Why it cannot be chosen now, shown under its label. */
   unavailable?: string;
   /**
@@ -413,6 +422,7 @@ function MenuRow({
         {item.unavailable !== undefined && <small>{item.unavailable}</small>}
       </span>
       {item.trail}
+      {item.shortcut !== undefined && <Keys keys={item.shortcut} />}
       {item.switched !== undefined && (
         <i className={item.switched ? "mini-switch on" : "mini-switch"} aria-hidden="true" />
       )}
@@ -431,6 +441,7 @@ export function Menu({
   side = "end",
   placement = "down",
   className = "",
+  shortcut,
 }: {
   /** The button's accessible name. */
   label: string;
@@ -438,6 +449,8 @@ export function Menu({
   /** What the button shows. */
   children: ReactNode;
   buttonClass: string;
+  /** The key that opens the menu from anywhere. */
+  shortcut?: string;
   side?: Side;
   placement?: Placement;
   className?: string;
@@ -447,6 +460,7 @@ export function Menu({
   // The active choice of a submenu beside the menu, or null while the keys are on the menu.
   const [sub, setSub] = useState<number | null>(null);
   const [beside, setBeside] = useState(false);
+  const keysOn = useShortcutsOn();
   const flyout = useRef<HTMLDivElement>(null);
   const submenu = opened === null ? undefined : items[opened];
   const inPlace = submenu !== undefined && !beside;
@@ -546,6 +560,8 @@ export function Menu({
         type="button"
         className={buttonClass}
         aria-label={label}
+        data-shortcut={shortcut}
+        title={shortcut === undefined ? undefined : withKey(label, shortcut, keysOn)}
         aria-haspopup="menu"
         aria-expanded={popup.open}
         onClick={() => (popup.open ? popup.hide(false) : popup.show())}

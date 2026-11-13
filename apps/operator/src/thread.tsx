@@ -11,6 +11,7 @@ import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
 import { type Act, quoteOf, useMessageActions } from "./message-actions.tsx";
 import { Confirm } from "./popup.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
+import { useShortcuts } from "./shortcuts.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   DraftCards,
@@ -92,6 +93,7 @@ export function Thread({
   typingDraft,
   botTyping,
   onBack,
+  nextAfterClose,
   onChanged,
   onLoaded,
   inView,
@@ -127,6 +129,11 @@ export function Thread({
   /** The name of the bot that types a reply now, or null. */
   botTyping: string | null;
   onBack(): void;
+  /**
+   * Picks the conversation to open after this one closes from the keyboard, and returns what opens
+   * it once the close saved.
+   */
+  nextAfterClose(conversationId: string): () => void;
   onChanged(): void;
   /** The conversation as each load finds it. */
   onLoaded(conversation: Conversation): void;
@@ -201,6 +208,37 @@ export function Thread({
   const [dropping, setDropping] = useState(false);
   // The bot's draft whose text is in the composer: sending it sends the draft.
   const [editingDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
+  /** Puts the caret in the composer, as a reply or a note. A closed conversation takes notes only. */
+  const write = (next: ComposeMode) => {
+    if (repliesOffReason !== null) return;
+    if (!closed && next !== mode) {
+      setEditingDraft(null);
+      setDraft({ ...draft, isNote: next === "note" });
+    }
+    // After the render, which may switch the composer between reply and note.
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(".compose:not(.editing) .ProseMirror")?.focus(),
+    );
+  };
+  useShortcuts(
+    conversation === null || !inView
+      ? {}
+      : {
+          r: () => write("reply"),
+          n: () => write("note"),
+          // A close moves on to the next chat, so the keyboard can clear a queue.
+          e: () => {
+            const next = closed ? null : nextAfterClose(conversationId);
+            void change.setStatus(closed ? "open" : "closed").then((saved) => {
+              if (saved) next?.();
+            });
+          },
+          i: () => {
+            if (conversation.assigneeOperatorId === meId) return;
+            void change.assign(meId, members.find((member) => member.id === meId)?.name ?? null);
+          },
+        },
+  );
 
   if (conversation === null) {
     return (

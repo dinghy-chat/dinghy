@@ -6993,3 +6993,171 @@ button.quote:hover {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+/* Keyboard shortcuts. A key shows as a small cap where its action is: on a view's row while the
+   pointer is on it, in the empty search field and composer, and in a menu. A touch screen has no
+   keys to show, and the operator can turn the keys off. */
+.keys {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+}
+.keys kbd,
+.keys-groups kbd {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 1px 0 var(--line);
+  color: var(--mute);
+  font: 600 11.5px / 20px var(--body);
+  text-align: center;
+}
+.keys kbd::after {
+  content: attr(data-key);
+}
+:root[data-shortcuts="off"] .keys {
+  display: none;
+}
+@media (hover: none) {
+  .keys {
+    display: none;
+  }
+}
+.nav .keys {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.nav .count + .keys {
+  margin-left: 0;
+}
+.nav button:is(:hover, :focus-visible) .keys {
+  opacity: 1;
+}
+.search .keys {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.search input:is(:focus, :not(:placeholder-shown)) ~ .keys {
+  display: none;
+}
+.box {
+  position: relative;
+}
+.box > .keys {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  pointer-events: none;
+}
+.box:focus-within > .keys {
+  display: none;
+}
+
+/* Help, above the operator: the docs and the shortcuts. */
+.help-menu {
+  margin-top: auto;
+}
+.help-menu + .get-started,
+.help-menu + .me-menu {
+  margin-top: 4px;
+}
+.help {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 650;
+  text-align: left;
+  transition: background-color 0.15s;
+}
+.help:is(:hover, [aria-expanded="true"]) {
+  background: var(--side-tint);
+}
+
+/* The sheet of every shortcut, in columns where there is room. */
+.dialog.shortcuts {
+  width: min(640px, calc(100vw - 32px));
+}
+.shortcuts .dialog-body {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
+.keys-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 18px 32px;
+}
+.keys-groups.off {
+  opacity: 0.5;
+}
+.keys-groups h3 {
+  margin-bottom: 4px;
+  color: var(--mute);
+  font: 700 11px / 1.3 var(--body);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.keys-groups dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 14px;
+}
+.keys-groups dd {
+  display: flex;
+  gap: 3px;
+  margin: 0;
+}
+.shortcuts .dialog-actions {
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* The top bar, on a tablet and a phone: Help shrinks to its icon, and its menu opens down. */
+@media (max-width: 1000px) {
+  .nav .keys {
+    display: none;
+  }
+  .help-menu,
+  .help-menu + .get-started,
+  .help-menu + .me-menu {
+    margin: 0;
+  }
+  .help-menu {
+    margin-left: auto;
+  }
+  .help {
+    justify-content: center;
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+  .help-text {
+    display: none;
+  }
+  .help-menu .popup.up {
+    top: 100%;
+    bottom: auto;
+    margin: 6px 0 0;
+    animation-name: pop;
+  }
+  .help-menu .side-start {
+    right: 0;
+    left: auto;
+  }
+}

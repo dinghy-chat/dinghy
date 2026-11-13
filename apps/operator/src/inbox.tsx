@@ -21,6 +21,7 @@ import { leave, NAVIGATE_EVENT, navigate, pushAddress, replaceAddress } from "./
 import { useDeviceSync } from "./notifications.tsx";
 import { Harbor } from "./scene.tsx";
 import { Settings, type SettingsPage, settingsAddress, settingsInAddress } from "./settings.tsx";
+import { ShortcutsDialog, useShortcuts } from "./shortcuts.tsx";
 import { Sidebar, type View } from "./sidebar.tsx";
 import { t } from "./text.ts";
 import { Thread } from "./thread.tsx";
@@ -52,6 +53,21 @@ function useViews(setFilter: Dispatch<SetStateAction<Filter>>) {
     return () => removeEventListener(NAVIGATE_EVENT, moved);
   }, [setFilter]);
   return { view, setView, settingsPage, setSettingsPage };
+}
+
+/**
+ * The row `by` rows from the open conversation in the list as shown, search results included.
+ * With none open, it is the first row.
+ */
+function rowFrom(by: 1 | -1): HTMLElement | undefined {
+  const rows = [...document.querySelectorAll<HTMLElement>(".list .rows .row")];
+  const at = rows.findIndex((row) => row.getAttribute("aria-current") === "true");
+  return rows[at === -1 ? 0 : at + by];
+}
+
+function openRow(row: HTMLElement | undefined) {
+  row?.click();
+  row?.scrollIntoView({ block: "nearest" });
 }
 
 /** The conversation the address names, when it is in this workspace, as a notification's link. */
@@ -99,6 +115,16 @@ export function Inbox({
   const { view, setView, settingsPage, setSettingsPage } = useViews(setFilter);
   // The contact the Contacts view shows, or null for its list.
   const [contactId, setContactId] = useState<string | null>(null);
+  // Each opening of the shortcuts is a new sheet. A dialog's close event comes a moment after
+  // Escape, so a quick ? must not meet the old sheet's late close.
+  const selectedNow = useRef(selected);
+  selectedNow.current = selected;
+  const [keysSheet, setKeysSheet] = useState<number | null>(null);
+  const keysSheets = useRef(0);
+  const openKeys = () => {
+    keysSheets.current += 1;
+    setKeysSheet(keysSheets.current);
+  };
   const data = useInboxData({
     api,
     workspaceId,
@@ -176,8 +202,36 @@ export function Inbox({
       showFilter(conversationStatus, who);
     });
 
+  /** Shows a view from the sidebar or the keyboard. Contacts opens on its list. */
+  const openView = (next: View) => {
+    if (next === "contacts") setContactId(null);
+    if (next !== view || next === "contacts") leave(() => showView(next));
+  };
+  useShortcuts({
+    "?": openKeys,
+    "/": () =>
+      [...document.querySelectorAll<HTMLElement>("input[type='search']")]
+        .find((field) => field.getClientRects().length > 0)
+        ?.focus(),
+    "g i": () => openView("inbox"),
+    "g c": () => openView("contacts"),
+    "g v": () => openView("visitors"),
+    "g a": () => openView("analytics"),
+    "g s": () => openView("settings"),
+    ...(view === "inbox" && {
+      j: () => openRow(rowFrom(1)),
+      k: () => openRow(rowFrom(-1)),
+    }),
+  });
+
   return (
     <div className="shell">
+      {keysSheet !== null && (
+        <ShortcutsDialog
+          key={keysSheet}
+          onClose={() => setKeysSheet((shown) => (shown === keysSheet ? null : shown))}
+        />
+      )}
       <div className={view !== "inbox" ? "app paging" : selected === null ? "app" : "app showing"}>
         <Sidebar
           me={me}
@@ -198,10 +252,8 @@ export function Inbox({
               <GetStarted api={api} version={version} onOpen={openSettings} />
             )
           }
-          onView={(next) => {
-            if (next === "contacts") setContactId(null);
-            if (next !== view || next === "contacts") leave(() => showView(next));
-          }}
+          onView={openView}
+          onShortcuts={openKeys}
           onProfileOpen={() => openSettings("profile")}
           onSwitch={onSwitch}
           onStatusChanged={onAccountChanged}
@@ -321,6 +373,16 @@ export function Inbox({
                   botTyping={data.botTyping[selected] ?? null}
                   draftsVersion={data.draftsVersion(selected)}
                   onBack={() => setSelected(null)}
+                  nextAfterClose={(closing) => {
+                    // Chosen now, as the close's update may take its row out of the list first.
+                    const next = rowFrom(1) ?? rowFrom(-1);
+                    return () => {
+                      // The operator moved on while the close saved, as with J or a second E.
+                      if (selectedNow.current !== closing) return;
+                      if (next?.isConnected) openRow(next);
+                      else setSelected(null);
+                    };
+                  }}
                   onChanged={reload}
                   inView={view === "inbox"}
                   onRead={data.markedRead}

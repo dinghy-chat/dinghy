@@ -46,6 +46,25 @@ On the right of a conversation, a panel shows who the visitor is: their name, em
 
 **Pages visited** lists the pages the visitor went through after they first chatted, newest first, with how long ago. Each one shows the page's title, or its address when it has none, and opens in a new tab. It shows 5, and **Show all** shows up to 20. The list reads the pages again every 30 seconds. Dinghy keeps a visitor's newest 100 pages for 90 days, and deleting the visitor's last conversation deletes them.
 
+## Keyboard shortcuts
+
+Press **?** anywhere in the app, or open **Help** at the bottom of the sidebar, for the list of keys. **Help** also links to these docs. The app shows a key where it applies too: next to a sidebar item when you point at it, in the empty search and reply boxes, and in a button's tooltip.
+
+| Key | What it does |
+|---|---|
+| **?** | Shows every shortcut |
+| **/** | Puts the cursor in the search box |
+| **G** then **I**, **C**, **V**, **A** or **S** | Opens Inbox, Contacts, Visitors, Analytics or Settings |
+| **J** and **K** | Open the next or the previous conversation in the list |
+| **R** and **N** | Put the cursor in the reply box, as a reply or as a note |
+| **E** | Closes the conversation and opens the next one in the list. On a closed conversation, reopens it |
+| **A** and **I** | Open **Who answers**, or assign the conversation to you |
+| **.** | Opens the **…** menu |
+| **P** | Shows or hides the visitor's panel |
+| **Esc** | Leaves the reply box, so the keys work again. On a small screen, it also goes back to the list |
+
+The keys work only while you are not typing in a box. If you use speech input, or keys run by mistake, turn off **Single-key shortcuts** in the list of keys. This applies only to this browser.
+
 ## See how support is going
 
 Select **Analytics** in the sidebar. Every member can see it. Pick the last 7, 30 or 90 days in the list at the top right. Days and hours are in your browser's time zone, which the line under the title names.
