@@ -435,6 +435,8 @@ export function fileView(
   return { name: file.name, size: file.size, url: images.url(workspaceId, file.attachmentId) };
 }
 
+const STORE_FAILED = failure("busy", "The file could not be read. Try again.");
+
 /**
  * Serves an image or a file to anyone with a current signed URL, because an <img> or a download
  * link cannot send a bearer token. Only a client that could read the message gets the URL, and it
@@ -443,8 +445,6 @@ export function fileView(
  * With a separate image origin, that origin serves this route and the public images and nothing else,
  * and the app's origin does not serve them. Register this before every other route.
  */
-const STORE_FAILED = failure("busy", "The file could not be read. Try again.");
-
 export function registerImageFiles(app: App, db: Database, images: Images, logger: Logger) {
   const uuid = z.uuid();
   const filesHost = images.origin === undefined ? undefined : new URL(images.origin).host;
