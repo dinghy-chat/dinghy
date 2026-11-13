@@ -75,9 +75,9 @@ const fr: VisitorWords = {
   replyInChat: "Répondre dans le chat",
   transcriptSubject: (name) => `Votre conversation avec ${name}`,
   transcriptIntro: (name) => `Voici votre conversation avec ${name}, pour vos archives.`,
-  transcriptImage: "A envoyé une image. Ouvrez le chat pour la voir.",
+  transcriptImage: "Image envoyée. Ouvrez le chat pour la voir.",
   transcriptFile: (name) =>
-    `A envoyé ${name === null ? "un fichier" : `le fichier ${name}`}. Ouvrez le chat pour le télécharger.`,
+    `${name === null ? "Fichier envoyé" : `Fichier ${name} envoyé`}. Ouvrez le chat pour le télécharger.`,
   continueChat: "Continuer la conversation",
   time: utcTime("fr"),
 };
@@ -105,9 +105,9 @@ const es: VisitorWords = {
   replyInChat: "Responder en el chat",
   transcriptSubject: (name) => `Tu conversación con ${name}`,
   transcriptIntro: (name) => `Esta es tu conversación con ${name}, para que la guardes.`,
-  transcriptImage: "Envió una imagen. Abre el chat para verla.",
+  transcriptImage: "Se envió una imagen. Abre el chat para verla.",
   transcriptFile: (name) =>
-    `Envió ${name === null ? "un archivo" : `el archivo ${name}`}. Abre el chat para descargarlo.`,
+    `Se envió ${name === null ? "un archivo" : `el archivo ${name}`}. Abre el chat para descargarlo.`,
   continueChat: "Continuar la conversación",
   time: utcTime("es"),
 };

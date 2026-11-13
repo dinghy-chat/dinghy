@@ -263,7 +263,7 @@ describe("in the visitor's language", () => {
     expect(letter.text).toContain("Vous, 11 nov. 2026, 20:20 UTC\u00a0:\nBonjour");
     expect(letter.text).toContain(`Continuer la conversation\u00a0: ${links.chatUrl}`);
     expect(letter.html).toContain(">Continuer la conversation</a>");
-    const said = "A envoyé le fichier notes.txt. Ouvrez le chat pour le télécharger.";
+    const said = "Fichier notes.txt envoyé. Ouvrez le chat pour le télécharger.";
     expect(letter.text).toContain(`L'équipe Acme, 11 nov. 2026, 20:20 UTC\u00a0:\n${said}`);
     expect(letter.html).toContain(`<a href="${links.chatUrl}">${said}</a>`);
   });
