@@ -78,9 +78,7 @@ const en = {
   savedReplyShortcutPlaceholder: "refund-policy",
   savedReplyBody: "Text",
   savedReplyBodyHint: "Markdown works as in a reply.",
-  savedReplyEdit: "Edit",
   savedReplyEditLabel: "Edit /{shortcut}",
-  savedReplyDelete: "Delete",
   savedReplyDeleteLabel: "Delete /{shortcut}",
   savedReplyDeleteTitle: "Delete /{shortcut}?",
   savedReplyDeleteText: "Your team can no longer insert it. Messages that used it keep their text.",
@@ -95,9 +93,7 @@ const en = {
   labelAdd: "Add label",
   labelName: "Name",
   labelColor: "Color",
-  labelEdit: "Edit",
   labelEditLabel: "Edit {name}",
-  labelDelete: "Delete",
   labelDeleteLabel: "Delete {name}",
   labelDeleteTitle: "Delete {name}?",
   labelDeleteText: "It comes off every conversation that has it.",
@@ -121,7 +117,7 @@ const en = {
   pickerNoMembers: "No teammate matches.",
   pageAppearance: "Appearance",
   invitePendingOne: "Invite pending · 1 day left",
-  invitePendingMany: "Invite pending · {days} days left",
+  invitePendingMany: "Invite pending · {count} days left",
   usageOperatorsNote: "This limit includes team members and pending invites.",
   usageFilesNote: "Dinghy Cloud automatically deletes chat images and files after 12 months.",
   sceneMorning: "Early morning. The boat sets out on a calm sea.",
@@ -160,7 +156,7 @@ const en = {
   bulkClear: "Clear selection",
   bulkDeleteOne: "Delete 1 conversation?",
   bulkDeleteMany: "Delete {count} conversations?",
-  bulkDeleteText: "This deletes them and their images for good.",
+  bulkDeleteText: "This deletes them and their images and files for good.",
   bulkClosedOne: "Closed 1 conversation.",
   bulkClosedMany: "Closed {done} conversations.",
   bulkAssignedOne: "Assigned 1 conversation.",
@@ -214,6 +210,8 @@ const en = {
   moreActions: "More actions",
   cancel: "Cancel",
   save: "Save",
+  edit: "Edit",
+  delete: "Delete",
   saved: "Saved.",
   back: "Back",
   close: "Close",
@@ -1208,11 +1206,18 @@ Ask me before you change anything outside the install. Never ask for a secret or
 
 export type TextId = keyof typeof en;
 
+type Values = Record<string, string | number>;
+
+/** The text for `count` things: `one` for 1, else `many`, with `{count}` and `values` filled in. */
+export function plural(count: number, one: TextId, many: TextId, values: Values = {}): string {
+  return t(count === 1 ? one : many, { ...values, count });
+}
+
 /**
  * The text for `id`, with each `{name}` in it replaced by `values.name`. One pass with a function,
  * so a value that holds `$&` or `{other}` shows as it is.
  */
-export function t(id: TextId, values: Record<string, string | number> = {}): string {
+export function t(id: TextId, values: Values = {}): string {
   return en[id].replace(/\{(\w+)\}/g, (match, name: string) =>
     name in values ? String(values[name]) : match,
   );

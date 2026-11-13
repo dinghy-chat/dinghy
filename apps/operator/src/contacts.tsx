@@ -7,7 +7,7 @@ import { useLoad } from "./load.ts";
 import { countryName, flag, zoneCity, zoneClock } from "./place.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { EmptyArt } from "./scene.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { ONLINE_EVERY_MS } from "./thread-lines.ts";
 import { toast } from "./toast.tsx";
 import {
@@ -391,9 +391,7 @@ function conversationFacts(one: ContactConversation): string {
         : t("contactClosedBy", { name: one.closedBy });
   return [
     who,
-    one.messageCount === 1
-      ? t("contactMessagesOne")
-      : t("contactMessagesMany", { count: one.messageCount }),
+    plural(one.messageCount, "contactMessagesOne", "contactMessagesMany"),
     one.firstReplySeconds === null
       ? null
       : t("contactRepliedIn", { time: duration(one.firstReplySeconds) }),

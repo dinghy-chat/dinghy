@@ -17,7 +17,7 @@ import { MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { type Loaded, useAction, useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { AddForm, CopyField, ErrorNote, Field, failureText, Page, StatusNote } from "./ui.tsx";
 import { ago, bare } from "./visitor.ts";
@@ -396,7 +396,7 @@ function testResultText(result: WebhookTest): { ok: boolean; text: string } {
 function deliveryLine(row: WebhookDelivery): string {
   return [
     when(row.replayedAt ?? row.createdAt),
-    t(row.attempts === 1 ? "deliveryAttemptOne" : "deliveryAttempts", { count: row.attempts }),
+    plural(row.attempts, "deliveryAttemptOne", "deliveryAttempts"),
     row.lastStatus === null ? null : `HTTP ${row.lastStatus}`,
     row.lastError,
   ]
@@ -783,8 +783,8 @@ function countLine(keys: ApiKey[]): string {
   const apps = keys.filter((key) => key.source === "oauth").length;
   const made = keys.length - apps;
   return t("botsCount", {
-    apps: apps === 1 ? t("botsCountAppOne") : t("botsCountApps", { count: apps }),
-    keys: made === 1 ? t("botsCountKeyOne") : t("botsCountKeys", { count: made }),
+    apps: plural(apps, "botsCountAppOne", "botsCountApps"),
+    keys: plural(made, "botsCountKeyOne", "botsCountKeys"),
   });
 }
 

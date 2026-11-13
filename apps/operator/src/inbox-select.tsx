@@ -13,7 +13,7 @@ import { Icon, type IconName } from "./icons.tsx";
 import { LabelDot } from "./labels.tsx";
 import { Confirm, Menu, type MenuItem } from "./popup.tsx";
 import { useShortcuts } from "./shortcuts.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { Avatar, failureText } from "./ui.tsx";
 
@@ -301,7 +301,7 @@ export function BulkBar({
       </button>
       {confirming && (
         <Confirm
-          title={count === 1 ? t("bulkDeleteOne") : t("bulkDeleteMany", { count })}
+          title={plural(count, "bulkDeleteOne", "bulkDeleteMany")}
           text={t("bulkDeleteText")}
           confirm={t("deleteYes")}
           disabled={busy}

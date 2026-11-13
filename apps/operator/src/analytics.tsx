@@ -4,7 +4,7 @@ import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
 import { browserTimeZone, duration, weekdayNames } from "./format.ts";
 import { LabelDot } from "./labels.tsx";
 import { Pond } from "./scene.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
 
 type Period = `${AnalyticsDays}`;
@@ -36,7 +36,7 @@ const hourName = (hour: number) =>
   new Date(2024, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" });
 const HOURS = Array.from({ length: 24 }, (_, hour) => hourName(hour));
 
-const conversations = (count: number) => (count === 1 ? t("chartOne") : t("chartMany", { count }));
+const conversations = (count: number) => plural(count, "chartOne", "chartMany");
 
 /** A number with its label, or the words behind an "i" button. */
 type TipContent = { value: string; label: string } | { text: string };

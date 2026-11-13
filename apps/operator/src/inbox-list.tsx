@@ -11,7 +11,7 @@ import { BulkBar, type Selection, useSelection, useTouchSelect } from "./inbox-s
 import { LabelPills } from "./labels.tsx";
 import { EmptyArt } from "./scene.tsx";
 import { Keys, useShortcutsOn } from "./shortcuts.tsx";
-import { t } from "./text.ts";
+import { plural, t } from "./text.ts";
 import { Avatar, FlagBadge, PageHead } from "./ui.tsx";
 import { avatarLetters, isWaiting, messagePreview, title } from "./visitor.ts";
 
@@ -229,7 +229,7 @@ function SearchField({
 
 /** The line under the list's title while a search shows its results. */
 function foundContext(count: number): string {
-  return count === 1 ? t("searchOne") : t("searchMany", { count });
+  return plural(count, "searchOne", "searchMany");
 }
 
 /** The line under the list's title: who waits, or what the closed list holds. */

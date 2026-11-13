@@ -5,7 +5,7 @@ import type { BillingState, Usage, WorkspaceApi, WorkspaceSettings } from "./api
 import { useLoad } from "./load.ts";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, type Team } from "./team.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import {
   ErrorNote,
@@ -147,12 +147,10 @@ type Deletion = WorkspaceSettings["deletion"];
 
 /** "This permanently deletes 312 conversations and 40 images and files. It removes workspace access for 3 team members, ..." */
 function deletionText({ conversations, images, members }: Deletion): string {
-  const count = (value: number, one: TextId, many: TextId) =>
-    value === 1 ? t(one) : t(many, { count: value });
   return t("deleteWorkspaceCounts", {
-    conversations: count(conversations, "deleteCountConversationsOne", "deleteCountConversations"),
-    files: count(images, "deleteCountFilesOne", "deleteCountFiles"),
-    members: count(members, "deleteCountMembersOne", "deleteCountMembers"),
+    conversations: plural(conversations, "deleteCountConversationsOne", "deleteCountConversations"),
+    files: plural(images, "deleteCountFilesOne", "deleteCountFiles"),
+    members: plural(members, "deleteCountMembersOne", "deleteCountMembers"),
   });
 }
 

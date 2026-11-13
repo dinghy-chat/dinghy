@@ -14,7 +14,7 @@ import { useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
 import { countryName, flag, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import { Choices, FlagBadge, initials, Loading, type Option, Page } from "./ui.tsx";
 import { bare, pageName, visitorName, webLink } from "./visitor.ts";
 
@@ -96,9 +96,7 @@ function shows(one: LiveVisitor, show: Show): boolean {
 /** "France: 2 people", for a dot and its card. */
 function countryLine(country: string, count: number): string {
   const name = countryName(country);
-  return count === 1
-    ? t("visitorsInCountryOne", { country: name })
-    : t("visitorsInCountry", { country: name, count });
+  return plural(count, "visitorsInCountryOne", "visitorsInCountry", { country: name });
 }
 
 function pageTitle(one: LiveVisitor): string {
@@ -600,7 +598,7 @@ export function VisitorsPage({
         list.state === "ready" ? (
           <span className="live-count">
             <span className="live-pulse" aria-hidden="true" />
-            {count === 1 ? t("visitorsOne") : t("visitorsMany", { count })}
+            {plural(count, "visitorsOne", "visitorsMany")}
           </span>
         ) : undefined
       }

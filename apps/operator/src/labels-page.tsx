@@ -8,8 +8,8 @@ import { Confirm, Select } from "./popup.tsx";
 import { t } from "./text.ts";
 import { AddForm, EditForm, ErrorNote, Field, Loading, Page, StatusNote } from "./ui.tsx";
 
-type Typed = { name: string; color: LabelColor };
-const EMPTY: Typed = { name: "", color: "gray" };
+type LabelInput = { name: string; color: LabelColor };
+const EMPTY: LabelInput = { name: "", color: "gray" };
 
 const COLOR_CHOICES = Object.entries(COLOR_TEXT).map(([color, text]) => ({
   value: color as LabelColor,
@@ -18,7 +18,13 @@ const COLOR_CHOICES = Object.entries(COLOR_TEXT).map(([color, text]) => ({
 }));
 
 /** A label's name and color, new or changed. */
-function LabelFields({ value, onChange }: { value: Typed; onChange(value: Typed): void }) {
+function LabelFields({
+  value,
+  onChange,
+}: {
+  value: LabelInput;
+  onChange(value: LabelInput): void;
+}) {
   return (
     <>
       <Field
@@ -45,15 +51,15 @@ function LabelFields({ value, onChange }: { value: Typed; onChange(value: Typed)
 /** Settings > Labels: owners and admins add, rename, recolor and delete the team's labels. */
 export function LabelsPage({ api }: { api: WorkspaceApi }) {
   const labels = useLoad(() => api.labels(), [api]);
-  const [adding, setAdding] = useState<Typed | null>(null);
-  const [editing, setEditing] = useState<{ id: string; typed: Typed } | null>(null);
+  const [adding, setAdding] = useState<LabelInput | null>(null);
+  const [editing, setEditing] = useState<{ id: string; input: LabelInput } | null>(null);
   const [deleting, setDeleting] = useState<Label | null>(null);
   const { busy, failure, run: act } = useAction(labels.reload);
-  const add = async (typed: Typed) => {
-    if (await act(() => api.addLabel(typed))) setAdding(null);
+  const add = async (input: LabelInput) => {
+    if (await act(() => api.addLabel(input))) setAdding(null);
   };
-  const save = async (id: string, typed: Typed) => {
-    if (await act(() => api.changeLabel(id, typed))) setEditing(null);
+  const save = async (id: string, input: LabelInput) => {
+    if (await act(() => api.changeLabel(id, input))) setEditing(null);
   };
   const remove = async (label: Label) => {
     if (await act(() => api.deleteLabel(label.id))) setDeleting(null);
@@ -74,13 +80,13 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
               <li key={label.id} className="item-row label-row">
                 <EditForm
                   label={t("labelEditLabel", { name: label.name })}
-                  canSubmit={!busy && editing.typed.name.trim() !== ""}
+                  canSubmit={!busy && editing.input.name.trim() !== ""}
                   onCancel={() => setEditing(null)}
-                  onSubmit={() => void save(label.id, editing.typed)}
+                  onSubmit={() => void save(label.id, editing.input)}
                 >
                   <LabelFields
-                    value={editing.typed}
-                    onChange={(typed) => setEditing({ id: label.id, typed })}
+                    value={editing.input}
+                    onChange={(input) => setEditing({ id: label.id, input })}
                   />
                 </EditForm>
               </li>
@@ -96,10 +102,10 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
                     aria-label={t("labelEditLabel", { name: label.name })}
                     onClick={() => {
                       setAdding(null);
-                      setEditing({ id: label.id, typed: { name: label.name, color: label.color } });
+                      setEditing({ id: label.id, input: { name: label.name, color: label.color } });
                     }}
                   >
-                    {t("labelEdit")}
+                    {t("edit")}
                   </button>
                   <button
                     type="button"
@@ -107,7 +113,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
                     aria-label={t("labelDeleteLabel", { name: label.name })}
                     onClick={() => setDeleting(label)}
                   >
-                    {t("labelDelete")}
+                    {t("delete")}
                   </button>
                 </div>
               </li>
@@ -140,7 +146,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
         <Confirm
           title={t("labelDeleteTitle", { name: deleting.name })}
           text={t("labelDeleteText")}
-          confirm={t("labelDelete")}
+          confirm={t("delete")}
           disabled={busy}
           onConfirm={() => void remove(deleting)}
           onCancel={() => setDeleting(null)}

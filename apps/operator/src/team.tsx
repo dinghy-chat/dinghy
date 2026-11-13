@@ -12,7 +12,7 @@ import type {
 import { shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { Confirm, Select } from "./popup.tsx";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 import {
   Avatar,
   Choices,
@@ -207,9 +207,7 @@ const daysLeft = (iso: string) =>
 
 function InviteRow({ pending, onRevoke }: { pending: PendingInvite; onRevoke(): void }) {
   const days = daysLeft(pending.expiresAt);
-  const pendingText = t(days === 1 ? "invitePendingOne" : "invitePendingMany", {
-    days: String(days),
-  });
+  const pendingText = plural(days, "invitePendingOne", "invitePendingMany");
   const revokeText = t("inviteRevokeLabel", { email: pending.email });
   return (
     <tr>
