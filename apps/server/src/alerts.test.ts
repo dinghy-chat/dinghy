@@ -2110,7 +2110,7 @@ describe("notes", () => {
     expect(mails[0]?.text).toContain("@Anna @Ben can you refund it?");
   });
 
-  test("an edit alerts only the members it mentions anew, and removing a mention sends nothing", async () => {
+  test("an edit alerts only the members it newly mentions, and removing a mention sends nothing", async () => {
     const author = await addOperator(`author-${randomUUID()}@example.com`);
     const anna = await addOperator(`anna-${randomUUID()}@example.com`);
     const ben = await addOperator(`ben-${randomUUID()}@example.com`);

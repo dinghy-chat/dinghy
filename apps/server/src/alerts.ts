@@ -321,7 +321,7 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
     await enterWorkspace(tx, workspaceId);
     // The email limits read past rows and then write new ones, so two workers must take turns.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}))`);
-    // Only a message.created event, an edit that mentions members anew, a close, a transcript
+    // Only a message.created event, an edit that newly mentions members, a close, a transcript
     // request and a handoff set needsAlert. Each names a message: the new or edited one, the
     // close's status line, or the newest message when it was asked for or handed off.
     const { messageId, conversationId } = found.payload as
@@ -395,7 +395,7 @@ async function eventRows(
     case "transcript.requested":
       return channels.email ? requestedTranscriptRows(tx, base) : [];
     case "message.updated":
-      // Only an edit that mentions members anew asks for alerts.
+      // Only an edit that newly mentions members asks for alerts.
       return written.deletedAt === null ? mentionRows(tx, channels, base, mentioned) : [];
     case "message.created":
       // A message deleted before this step has nothing to alert about.
