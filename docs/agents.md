@@ -112,6 +112,10 @@ When the drafts read well, an owner or admin changes the key or the connection t
 
 `add_note` writes an internal note on a conversation. The visitor never sees it: not in the widget, an email or a transcript. A note is a message with `kind: "note"`, so `get_conversation` reads it in its place among the messages, and operators write one from the **Note** tab above the reply box. A note goes in a closed conversation, while a person handles it and while bots are paused, and it alerts nobody unless it mentions someone. To ask a member for help, pass their `id` from `list_members` in `mentions`, at most 10, and write `@Name` in the text: each of them gets an alert with the note's text, by push and by email as their alert settings say. A link in a bot's note shows as its address, not as a link to click, so a link a visitor slipped in does not look trusted. Use a note to pass on what you found, or to suggest an answer while a person handles the chat.
 
+## Labels
+
+Labels sort conversations, such as `billing` or `bug`, so the team can filter the Inbox by one and count them in Analytics. `list_labels` lists the team's labels with their `id`, `name` and `color`, and each conversation has `labelIds`. `label_conversation` puts one label on a conversation by its `id`, and `unlabel_conversation` takes it off. Each call changes that one label, so your bot never undoes a label a person just put on, and a repeat changes nothing. Only people add new labels, in the operator app, so a bot picks from the team's list. A webhook or `GET /v1/events` asked for `conversation.labeled` hears of each change.
+
 ## Pause all bots
 
 An owner or admin can pause every bot of a workspace with one switch, in **Settings > API & webhooks** or in the workspace menu. While paused, every reply, draft and `set_typing` from a key answers `bots_paused`, and a banner on every operator page says so, with who paused them and when. Owners and admins resume them from the banner. Reads, notes and handoffs still work, so a bot can still pass a conversation to people. A bot cannot pause or resume itself.

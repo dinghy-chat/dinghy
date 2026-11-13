@@ -5,6 +5,7 @@ import { BusinessHoursPage } from "./business-hours.tsx";
 import { DevelopersPage } from "./developers.tsx";
 import { Icon } from "./icons.tsx";
 import { InstallPage } from "./install.tsx";
+import { LabelsPage } from "./labels-page.tsx";
 import { useLoad } from "./load.ts";
 import { NotificationsPage } from "./notifications.tsx";
 import { ProfilePage } from "./profile.tsx";
@@ -20,6 +21,7 @@ const PAGES = [
   "workspace",
   "team",
   "saved-replies",
+  "labels",
   "appearance",
   "business-hours",
   "install",
@@ -31,7 +33,7 @@ export type SettingsPage = (typeof PAGES)[number];
 /** The list on the left of Settings, in groups, in this order. */
 const GROUPS: { label: TextId; pages: SettingsPage[] }[] = [
   { label: "settingsGroupYou", pages: ["profile", "notifications"] },
-  { label: "settingsGroupWorkspace", pages: ["workspace", "team", "saved-replies"] },
+  { label: "settingsGroupWorkspace", pages: ["workspace", "team", "saved-replies", "labels"] },
   { label: "settingsGroupWidget", pages: ["appearance", "business-hours", "install"] },
   { label: "settingsGroupDevelopers", pages: ["developers"] },
 ];
@@ -42,6 +44,7 @@ const PAGE_TEXT: Record<SettingsPage, TextId> = {
   workspace: "pageWorkspace",
   team: "pageTeam",
   "saved-replies": "pageSavedReplies",
+  labels: "pageLabels",
   appearance: "pageAppearance",
   "business-hours": "pageBusinessHours",
   install: "pageInstall",
@@ -238,6 +241,8 @@ export function Settings({
         );
       case "saved-replies":
         return <SavedRepliesPage api={api} />;
+      case "labels":
+        return <LabelsPage api={api} />;
       case "appearance":
         return (
           <AppearancePage

@@ -710,6 +710,7 @@ export function Popover({
   children,
   buttonClass,
   buttonContent,
+  shortcut,
 }: {
   /** The button's accessible name. */
   label: string;
@@ -718,6 +719,8 @@ export function Popover({
   children: ReactNode;
   buttonClass: string;
   buttonContent: ReactNode;
+  /** The key that opens the card from anywhere. */
+  shortcut?: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -725,8 +728,11 @@ export function Popover({
   const card = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
+  const keysOn = useShortcutsOn();
+  // A card with a field to type in starts there, and one of choices on the chosen one.
   useLayoutEffect(() => {
-    if (open) card.current?.querySelector<HTMLElement>("input:checked")?.focus();
+    if (open)
+      card.current?.querySelector<HTMLElement>("input[type='text'], input:checked")?.focus();
   }, [open]);
   const close = useCallback(() => setOpen(false), []);
   useOutsidePress(open, wrap, close);
@@ -740,6 +746,8 @@ export function Popover({
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
+        data-shortcut={shortcut}
+        title={shortcut === undefined ? undefined : withKey(label, shortcut, keysOn)}
         onClick={() => setOpen(!open)}
       >
         {buttonContent}

@@ -12,7 +12,7 @@ import {
 import { type Filter, WHO_ASSIGNEE, type Who } from "./inbox-filters.tsx";
 import { useChanges, usePresence, useTabVisible } from "./live.ts";
 import { useLiveCount, useWaitingBy } from "./live-counts.ts";
-import { useLatestLoad } from "./load.ts";
+import { useLatestLoad, useLoad } from "./load.ts";
 import { chime, prepareSound } from "./sound.ts";
 import { readStored, store } from "./stored.ts";
 import { useWaitingBadge } from "./tab-badge.ts";
@@ -113,11 +113,11 @@ function useConversationList({
   const [snoozeEnd, setSnoozeEnd] = useState<{ inMs: number } | null>(null);
   const [openBy, setOpenBy] = useState<OpenCounts | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const { status } = filter;
+  const { status, label } = filter;
   const assignee = WHO_ASSIGNEE[who];
-  const shown = useRef({ status, assignee, limit });
+  const shown = useRef({ status, assignee, label, limit });
   useLayoutEffect(() => {
-    shown.current = { status, assignee, limit };
+    shown.current = { status, assignee, label, limit };
   });
   const firstList = useRef(true);
   const welcomeKey = `dinghy.welcome-opened.${workspaceId}`;
@@ -125,8 +125,16 @@ function useConversationList({
     const wanted = shown.current;
     try {
       const moved = () =>
-        wanted.status !== shown.current.status || wanted.assignee !== shown.current.assignee;
-      const page = await api.list(wanted.status, wanted.assignee, wanted.limit, moved);
+        wanted.status !== shown.current.status ||
+        wanted.assignee !== shown.current.assignee ||
+        wanted.label !== shown.current.label;
+      const page = await api.list(
+        wanted.status,
+        wanted.assignee,
+        wanted.label,
+        wanted.limit,
+        moved,
+      );
       // The operator may have picked another filter while this was on its way.
       if (moved()) return;
       setConversations(page.conversations);
@@ -135,7 +143,12 @@ function useConversationList({
       setWaiting(page.waiting);
       setSnoozeEnd(page.snoozeEndsInMs === null ? null : { inMs: page.snoozeEndsInMs });
       setOpenBy(page.openBy);
-      if (firstList.current && wanted.status === "open" && wanted.assignee === null) {
+      if (
+        firstList.current &&
+        wanted.status === "open" &&
+        wanted.assignee === null &&
+        wanted.label === null
+      ) {
         firstList.current = false;
         const [only, ...rest] = page.conversations;
         if (only?.welcome && rest.length === 0 && !remembered(welcomeKey)) {
@@ -148,7 +161,7 @@ function useConversationList({
     }
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: each of these asks for a load.
-  useEffect(reload, [reload, status, assignee, limit, version]);
+  useEffect(reload, [reload, status, assignee, label, limit, version]);
   // A snooze ends with no event, so the list loads again when the workspace's next one ends. The
   // server gives the delay, so this device's clock does not matter, and each load sets a new timer.
   useEffect(() => {
@@ -204,6 +217,9 @@ export function useInboxData({
     onAccountChanged();
   }, [live.accountVersion, onAccountChanged]);
   const team = useTeam(api, meId, selected, live.visible, live.teamVersion);
+  // A label's add, change or delete is a workspace change, so they load again with `me`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
+  const labels = useLoad(() => api.labels(), [api, live.accountVersion]);
   // A team of one has nothing to filter. The roster is empty only until it loads, and the
   // address's filter holds until then.
   const isTeam = team.members.length > 1;
@@ -222,5 +238,14 @@ export function useInboxData({
   useWaitingBadge(
     live.visible ? list.waiting : (live.waitingElsewhere[workspaceId] ?? list.waiting),
   );
-  return { ...live, ...team, ...list, isTeam, who };
+  return {
+    ...live,
+    ...team,
+    ...list,
+    isTeam,
+    who,
+    labels: labels.data?.labels ?? [],
+    labelsLoaded: labels.data !== null,
+    reloadLabels: labels.reload,
+  };
 }

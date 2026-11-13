@@ -4,9 +4,9 @@ import type { Act } from "./message-actions.tsx";
 import { toast } from "./toast.tsx";
 
 /**
- * What the operator does to the whole conversation: assign it, close, reopen or snooze it, block its
- * visitor, email its transcript, give it back to the bots, or delete it, which asks first. Each
- * change shows at once.
+ * What the operator does to the whole conversation: assign it, label it, close, reopen or snooze
+ * it, block its visitor, email its transcript, give it back to the bots, or delete it, which asks
+ * first. Each change shows at once.
  */
 export function useConversationActions({
   api,
@@ -15,6 +15,7 @@ export function useConversationActions({
   setConversation,
   onChanged,
   onBack,
+  onLabelAdded,
 }: {
   api: WorkspaceApi;
   conversationId: string;
@@ -22,6 +23,8 @@ export function useConversationActions({
   setConversation: Dispatch<SetStateAction<Conversation | null>>;
   onChanged(): void;
   onBack(): void;
+  /** The team has a new label, so the labels load again. */
+  onLabelAdded(): void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const change = (patch: (current: Conversation) => Conversation) => {
@@ -59,6 +62,27 @@ export function useConversationActions({
     }));
   };
 
+  const showLabel = (labelId: string, added: boolean) =>
+    change((current) => ({
+      ...current,
+      labelIds: added
+        ? [...current.labelIds, labelId]
+        : current.labelIds.filter((id) => id !== labelId),
+    }));
+
+  const setLabel = async (labelId: string, added: boolean) => {
+    if (await act(() => api.setLabel(conversationId, labelId, added))) showLabel(labelId, added);
+  };
+
+  /** Adds a label to the team, then puts it on this conversation. */
+  const addLabel = (name: string) =>
+    act(async () => {
+      const made = await api.addLabel({ name });
+      onLabelAdded();
+      await api.setLabel(conversationId, made.id, true);
+      showLabel(made.id, true);
+    });
+
   const sendTranscript = async () => {
     if (await act(() => api.sendTranscript(conversationId))) toast("transcriptSent");
   };
@@ -93,6 +117,8 @@ export function useConversationActions({
     setBlocked,
     remove,
     assign,
+    setLabel,
+    addLabel,
     sendTranscript,
     setStatus,
     giveBack,

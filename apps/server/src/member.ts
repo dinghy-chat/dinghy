@@ -106,7 +106,12 @@ export function registerMemberCheck(app: App, db: Database): void {
   };
 
   const requireMember = createMiddleware<{
-    Variables: { actor: Actor; memberWorkspaceId: string; memberRole: Role };
+    Variables: {
+      actor: Actor;
+      memberWorkspaceId: string;
+      memberRole: Role;
+      memberAccess: WorkspaceAccess;
+    };
   }>(async (c, next) => {
     const workspaceId = c.req.param("workspaceId") ?? "";
     if (!z.uuid().safeParse(workspaceId).success) return c.json(NOT_FOUND, 404);
@@ -135,6 +140,7 @@ export function registerMemberCheck(app: App, db: Database): void {
     }
     c.set("memberWorkspaceId", workspaceId);
     c.set("memberRole", membership.role);
+    c.set("memberAccess", access);
     await next();
   });
   app.use(`${WORKSPACE_PREFIX}/:workspaceId/*`, requireMember);

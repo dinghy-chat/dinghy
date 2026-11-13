@@ -14,7 +14,7 @@ import {
   filterAddress,
   filterInAddress,
   type Status,
-  type Who,
+  sameFilter,
 } from "./inbox-filters.tsx";
 import { InboxList } from "./inbox-list.tsx";
 import { leave, NAVIGATE_EVENT, navigate, pushAddress, replaceAddress } from "./nav.ts";
@@ -41,9 +41,7 @@ function useViews(setFilter: Dispatch<SetStateAction<Filter>>) {
       if (page === undefined) {
         setView((current) => (current === "settings" ? "inbox" : current));
         const next = filterInAddress();
-        setFilter((current) =>
-          current.status === next.status && current.who === next.who ? current : next,
-        );
+        setFilter((current) => (sameFilter(current, next) ? current : next));
         return;
       }
       setView("settings");
@@ -108,7 +106,6 @@ export function Inbox({
   const api = useMemo(() => workspaceApi(workspaceId), [workspaceId]);
   useDeviceSync();
   const [filter, setFilter] = useState(filterInAddress);
-  const { status } = filter;
   const [drafts, setDraft] = useDrafts(me.id, workspaceId);
   // A notification opens the app on its conversation.
   const [selected, setSelected] = useState(() => linkedConversation(workspaceId));
@@ -137,7 +134,9 @@ export function Inbox({
     onAccountChanged,
     onWelcome: (id) => setSelected((current) => current ?? id),
   });
-  const { members, waiting, version, who, reload, loadMembers, accountVersion } = data;
+  const { members, waiting, version, who, reload, loadMembers, accountVersion, labels } = data;
+  // What the list shows: a team of one has no assignee filter.
+  const shownFilter = { ...filter, who };
   const membership = me.workspaces.find((one) => one.workspaceId === workspaceId);
   const name = membership?.name ?? t("appName");
   const logoUrl = membership?.logoUrl ?? null;
@@ -176,17 +175,23 @@ export function Inbox({
     const address =
       next === "settings"
         ? settingsAddress(page, workspaceId)
-        : filterAddress(status, who, new URL("/", location.origin).href);
+        : filterAddress(shownFilter, new URL("/", location.origin).href);
     if (address !== `${location.pathname}${location.search}`) pushAddress(address);
   };
   const openSettings = (page: SettingsPage | null) => leave(() => showView("settings", page));
 
   /** Shows another filter, and puts it in the address, so a reload or a shared link keeps it. */
-  const showFilter = (nextStatus: Status, nextWho: Who) => {
-    if (nextStatus === status && nextWho === who) return;
-    replaceAddress(filterAddress(nextStatus, nextWho));
-    setFilter({ status: nextStatus, who: nextWho });
+  const showFilter = (next: Filter) => {
+    if (sameFilter(next, shownFilter)) return;
+    replaceAddress(filterAddress(next));
+    setFilter(next);
   };
+  // A label deleted while the list shows only its conversations would leave the list empty.
+  const isLabelGone =
+    data.labelsLoaded && filter.label !== null && !labels.some((one) => one.id === filter.label);
+  useEffect(() => {
+    if (isLabelGone) showFilter({ ...shownFilter, label: null });
+  });
 
   /** Opens a contact's page, from a conversation's panel or from Visitors. */
   const openContact = (visitorId: string) =>
@@ -199,7 +204,7 @@ export function Inbox({
     leave(() => {
       showView("inbox");
       setSelected(conversationId);
-      showFilter(conversationStatus, who);
+      showFilter({ ...shownFilter, status: conversationStatus });
     });
 
   /** Shows a view from the sidebar or the keyboard. Contacts opens on its list. */
@@ -328,8 +333,7 @@ export function Inbox({
             <div className="split">
               <InboxList
                 api={api}
-                status={status}
-                who={who}
+                filter={shownFilter}
                 isTeam={data.isTeam}
                 openBy={data.openBy}
                 waiting={waiting}
@@ -337,6 +341,9 @@ export function Inbox({
                 listed={data.listed}
                 hasMore={data.hasMore}
                 members={members}
+                labels={labels}
+                isWritable={!readOnly && !suspended}
+                mayDelete={role !== "member" && !readOnly && !suspended}
                 selected={selected}
                 typing={data.typing}
                 drafts={drafts}
@@ -345,6 +352,7 @@ export function Inbox({
                 onFilter={showFilter}
                 onSelect={setSelected}
                 onMore={data.loadMore}
+                onChanged={reload}
               />
               {selected === null ? (
                 <div className="thread">
@@ -358,6 +366,8 @@ export function Inbox({
                   draft={drafts[selected] ?? NO_DRAFT}
                   setDraft={(draft) => setDraft(selected, draft)}
                   members={members}
+                  labels={labels}
+                  onLabelAdded={data.reloadLabels}
                   replying={data.replying(selected)}
                   mayDeleteAnyone={role !== "member" && !readOnly && !suspended}
                   emailAvailable={emailAvailable}
@@ -390,7 +400,7 @@ export function Inbox({
                   onLoaded={(conversation) => {
                     if (linked.current !== conversation.id) return;
                     linked.current = null;
-                    showFilter(conversation.status, who);
+                    showFilter({ ...shownFilter, status: conversation.status });
                   }}
                 />
               )}

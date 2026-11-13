@@ -2,6 +2,7 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
 import { duration } from "./format.ts";
+import { LabelDot } from "./labels.tsx";
 import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
 import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
@@ -510,6 +511,37 @@ function Repliers({ numbers }: { numbers: Analytics }) {
   );
 }
 
+/** Conversations started in the period by each label they have now. One can have several. */
+function Labels({ numbers }: { numbers: Analytics }) {
+  const { labels, started } = numbers;
+  return (
+    <Card title="byLabelTitle">
+      {labels.length === 0 ? (
+        <p className="note">{t("noLabeledConversations")}</p>
+      ) : (
+        <ol className="repliers">
+          {labels.map((one) => {
+            const share = shareOf(one.conversations, started);
+            return (
+              <li key={one.labelId}>
+                <LabelDot color={one.color} />
+                <span className="replier-name">{one.name}</span>
+                <span className="share-count">
+                  {one.conversations}
+                  <span>{percent(share)}</span>
+                </span>
+                <span className="share-track" aria-hidden="true">
+                  <span style={{ width: `${share * 100}%` }} />
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Card>
+  );
+}
+
 export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
   const [days, setDays] = useState<Period>("30");
   const [numbers, setNumbers] = useState<Analytics | null>(null);
@@ -564,6 +596,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
             <Outcomes numbers={numbers} />
             <Hours hours={numbers.hours} />
             <Repliers numbers={numbers} />
+            <Labels numbers={numbers} />
           </div>
           <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
         </Tipped>

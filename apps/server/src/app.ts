@@ -14,11 +14,17 @@ import { registerAnalyticsRoute } from "./analytics.ts";
 import { type Actor, registerApiKeyRoutes } from "./api-keys.ts";
 import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
+import { registerBulkRoute } from "./bulk.ts";
 import { registerBusinessHoursRoutes } from "./business-hours.ts";
 import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
 import { registerContactRoutes } from "./contacts.ts";
-import { AccountDeletedError, type Database, type Transaction } from "./db/tenant.ts";
+import {
+  AccountDeletedError,
+  type Database,
+  type Transaction,
+  type WorkspaceAccess,
+} from "./db/tenant.ts";
 import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { registerGetStartedRoutes } from "./get-started.ts";
@@ -26,6 +32,7 @@ import { registerHandlingRoutes } from "./handling.ts";
 import { type Images, registerImageFiles } from "./images.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { registerKeyEvents } from "./key-events.ts";
+import { registerLabelRoutes } from "./labels.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { type Live, noLive } from "./live.ts";
 import { createLiveVisitors, registerLiveVisitorRoutes } from "./live-visitors.ts";
@@ -135,6 +142,8 @@ export interface AppEnv {
     twoFactor: TwoFactorState;
     memberWorkspaceId: string;
     memberRole: Role;
+    /** The workspace's access, for a route open while closed that refuses some writes itself. */
+    memberAccess: WorkspaceAccess;
     clientIp: string;
   };
 }
@@ -512,6 +521,8 @@ export function createApp({
     registerLiveVisitorRoutes(app, db, liveVisitors);
     registerGetStartedRoutes(app, db);
     registerSavedReplyRoutes(app, db, live);
+    registerLabelRoutes(app, db, live);
+    registerBulkRoute(app, db, live);
     if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
     registerTeamRoutes(app, {
       auth,

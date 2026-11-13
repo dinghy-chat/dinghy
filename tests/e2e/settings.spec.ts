@@ -13,6 +13,7 @@ const PAGES = [
   { name: "Workspace", path: "workspace", heading: "Workspace" },
   { name: "Team", path: "team", heading: "Team" },
   { name: "Saved replies", path: "saved-replies", heading: "Saved replies" },
+  { name: "Labels", path: "labels", heading: "Labels" },
   { name: "Appearance", path: "appearance", heading: "Appearance" },
   { name: "Business hours", path: "business-hours", heading: "Business hours" },
   { name: "Install", path: "install", heading: "Install" },

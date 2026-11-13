@@ -135,6 +135,7 @@ const GROUPS: { title: TextId; rows: [keys: string, text: TextId][] }[] = [
     rows: [
       ["j", "keysNext"],
       ["k", "keysPrevious"],
+      ["x", "keysSelect"],
       ["Escape", "keysBack"],
     ],
   },
@@ -146,6 +147,7 @@ const GROUPS: { title: TextId; rows: [keys: string, text: TextId][] }[] = [
       ["e", "keysClose"],
       ["a", "keysAssign"],
       ["i", "keysAssignMe"],
+      ["l", "keysLabels"],
       [".", "keysMore"],
       ["p", "keysPanel"],
     ],

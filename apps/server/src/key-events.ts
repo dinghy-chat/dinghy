@@ -13,7 +13,7 @@ import { closedFailure } from "./member.ts";
 import { type Cursor, formatCursor, listWorkspaceEvents, parseCursor } from "./messages.ts";
 import type { RateLimit } from "./rate-limit.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
-import { isWebhookEvent, webhookData, webhookTypes } from "./webhooks.ts";
+import { isWebhookEvent, labelChange, webhookData, webhookTypes } from "./webhooks.ts";
 
 const PATH = "/v1/events";
 /** Events read for one page of the stream. */
@@ -130,6 +130,7 @@ const readPage = (
           subject: {
             conversationId,
             messageId: type.startsWith("message.") ? (ids.messageId ?? null) : null,
+            label: labelChange(type, one.payload),
           },
         }));
     });
