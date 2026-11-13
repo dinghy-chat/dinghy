@@ -1,18 +1,18 @@
 /** @jsxImportSource react */
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import {
   type BusinessHours,
   DAY_RANGES_MAX,
   WEEKDAYS,
 } from "../../../packages/widget/src/shared.ts";
 import type { BusinessHoursSettings, WorkspaceApi } from "./api.ts";
-import { SettingRow, Switch } from "./appearance.tsx";
+import { browserTimeZone, weekdayNames } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import { Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { ErrorNote, failureText, Loading, Page } from "./ui.tsx";
+import { ErrorNote, failureText, Loading, Page, SettingRow, Switch } from "./ui.tsx";
 
 type Range = [string, string];
 type Week = BusinessHours["week"];
@@ -20,9 +20,6 @@ type Week = BusinessHours["week"];
 // A time input has no 24:00, so its midnight ends a day when it closes a range.
 const MIDNIGHT = "00:00";
 const END_OF_DAY = "24:00";
-// Monday, 1 January 2024, for each day's name.
-const A_MONDAY_MS = Date.UTC(2024, 0, 1);
-const DAY_MS = 86_400_000;
 // A new day's hours, and a weekday's before the first save.
 const DEFAULT_RANGE: Range = ["09:00", "17:00"];
 
@@ -41,7 +38,7 @@ function firstHours(): BusinessHoursSettings {
   const weekday: Range[] = [DEFAULT_RANGE];
   return {
     enabled: false,
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    timeZone: browserTimeZone(),
     week: {
       mon: weekday,
       tue: weekday,
@@ -54,11 +51,7 @@ function firstHours(): BusinessHoursSettings {
   };
 }
 
-const dayName = (index: number) =>
-  new Date(A_MONDAY_MS + index * DAY_MS).toLocaleDateString([], {
-    weekday: "long",
-    timeZone: "UTC",
-  });
+const DAY_NAMES = weekdayNames("long");
 
 /** Each range ends after it starts, and the next one starts after it ends. */
 const isValidWeek = (week: Week) =>
@@ -146,6 +139,9 @@ export function BusinessHoursPage({ api }: { api: WorkspaceApi }) {
   const [error, setError] = useState<TextId | null>(null);
   const [busy, setBusy] = useState(false);
   const saved = loaded.data;
+  // The browser knows hundreds of zones, so the list is built again only for another saved zone.
+  const savedZone = saved?.timeZone;
+  const zones = useMemo(() => (savedZone === undefined ? [] : zoneChoices(savedZone)), [savedZone]);
   if (saved === null) {
     return (
       <Page title={t("pageBusinessHours")}>
@@ -194,13 +190,13 @@ export function BusinessHoursPage({ api }: { api: WorkspaceApi }) {
                 label={t("businessHoursZone")}
                 side="end"
                 value={hours.timeZone}
-                choices={zoneChoices(hours.timeZone)}
+                choices={zones}
                 onChange={(timeZone) => change({ timeZone })}
               />
             )}
           </SettingRow>
           {WEEKDAYS.map((day, index) => {
-            const name = dayName(index);
+            const name = DAY_NAMES[index] ?? day;
             return (
               <SettingRow key={day} label={name}>
                 {() => (

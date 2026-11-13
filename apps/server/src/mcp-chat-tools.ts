@@ -5,7 +5,6 @@ import { BOT_TYPING_MS, MENTIONS_MAX } from "../../../packages/widget/src/shared
 import {
   AnalyticsQuery,
   analyticsFor,
-  isTimeZone,
   medianFirstReplySeconds,
   UNKNOWN_ZONE,
 } from "./analytics.ts";
@@ -45,7 +44,7 @@ import {
 import type { Presence, VisitorPresence } from "./presence.ts";
 import { listSavedReplies } from "./saved-replies.ts";
 import { listMembers } from "./team.ts";
-import { MINUTE_MS } from "./time.ts";
+import { isTimeZone, MINUTE_MS } from "./time.ts";
 
 /** The days of first replies that `replySeconds` takes its median from, as the widget's header does. */
 const REPLY_TIME_DAYS = 30;

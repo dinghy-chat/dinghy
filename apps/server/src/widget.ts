@@ -75,6 +75,7 @@ import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
 import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
+import { isTimeZone } from "./time.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
@@ -311,16 +312,6 @@ const leaveRoute = createRoute({
     ...WIDGET_WRITE_ERRORS,
   },
 });
-
-/** The time zone, when the server knows it too. */
-function knownTimeZone(timeZone: string | undefined): string | null {
-  if (timeZone === undefined) return null;
-  try {
-    return new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Only the origin of where the visitor came from, never its path. The site's own pages are no
@@ -1393,7 +1384,8 @@ export function registerWidgetRoutes(
     }
     await sites.siteSeen(found.id, c.req.header("origin") ?? "");
     const country = countryOf(c.get("clientIp"));
-    const zone = knownTimeZone(timeZone);
+    // The time zone, when the server knows it too.
+    const zone = timeZone !== undefined && isTimeZone(timeZone) ? timeZone : null;
     // A token that no longer works still counts the tab, as a visitor with none.
     const visitorId =
       token.kind === null ? null : await knownVisitor(db, found, c.req.param("key"), token);

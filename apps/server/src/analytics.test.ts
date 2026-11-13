@@ -5,11 +5,12 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { addOperator, signIn } from "../test/operators.ts";
-import { type AnalyticsResult, isTimeZone, readAnalytics } from "./analytics.ts";
+import { type AnalyticsResult, readAnalytics } from "./analytics.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import { apiKey, conversation, message, operator, visitor } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { isTimeZone } from "./time.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;

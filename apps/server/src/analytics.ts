@@ -7,6 +7,7 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure, INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { conversationHasTestVisitor, isChat, messageAuthors } from "./messages.ts";
+import { isTimeZone } from "./time.ts";
 
 // Support numbers from the conversations and messages already stored. Nothing here tracks anyone.
 
@@ -14,20 +15,6 @@ const PERIODS = [7, 30, 90] as const;
 const FAST_REPLY_SECONDS = 5 * 60;
 /** Postgres's code for a time zone it does not know. */
 const PG_INVALID_PARAMETER = "22023";
-
-/**
- * An IANA zone name that this Node knows. An offset such as "+01:00" is refused, because Postgres
- * reads its sign the other way round.
- */
-export function isTimeZone(name: string): boolean {
-  if (!/^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$/.test(name)) return false;
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: name });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // Seconds from the start of a conversation to its first operator reply. Null with no reply.
 const medianSeconds = z.number().nullable();

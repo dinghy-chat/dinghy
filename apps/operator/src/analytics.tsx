@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
-import { duration } from "./format.ts";
+import { browserTimeZone, duration, weekdayNames } from "./format.ts";
 import { LabelDot } from "./labels.tsx";
 import { Pond } from "./scene.tsx";
 import { type TextId, t } from "./text.ts";
@@ -14,9 +14,6 @@ const PERIODS: readonly Option<Period>[] = [
   { value: "30", label: "period30" },
   { value: "90", label: "period90" },
 ];
-
-/** The browser's zone, which the server checks. Days and hours read in it. */
-const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 const percent = (share: number) =>
   new Intl.NumberFormat([], { style: "percent", maximumFractionDigits: 0 }).format(share);
@@ -33,11 +30,6 @@ function dayName(
   return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1).toLocaleDateString([], options);
 }
 
-/** Monday first, as the server sends the hours. 2024-01-01 was a Monday. */
-const weekdayNames = (weekday: "short" | "long") =>
-  Array.from({ length: 7 }, (_, index) =>
-    new Date(2024, 0, 1 + index).toLocaleDateString([], { weekday }),
-  );
 const WEEKDAYS = weekdayNames("short");
 const WEEKDAYS_LONG = weekdayNames("long");
 const hourName = (hour: number) =>
@@ -546,7 +538,8 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
   const [days, setDays] = useState<Period>("30");
   const [numbers, setNumbers] = useState<Analytics | null>(null);
   const [failure, setFailure] = useState<TextId | null>(null);
-  const zone = timeZone();
+  // The server checks the zone, and days and hours read in it.
+  const zone = browserTimeZone();
 
   useEffect(() => {
     // An answer for another period or workspace must not land here.

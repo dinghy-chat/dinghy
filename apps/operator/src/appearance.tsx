@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { loadTexts, pickLocale } from "../../../packages/widget/src/locale.ts";
 import { clearPreview, renderPreview } from "../../../packages/widget/src/preview.tsx";
 import {
@@ -28,13 +28,14 @@ import {
   AppLink,
   Avatar,
   Choices,
-  DocLink,
   ErrorNote,
   Field,
   failureText,
   Loading,
   type Option,
   Page,
+  SettingRow,
+  Switch,
 } from "./ui.tsx";
 
 const HIDDEN_BUTTON_DOC = {
@@ -223,78 +224,6 @@ function ColorField({
         </button>
       )}
     </div>
-  );
-}
-
-/**
- * One line of the "Colors and layout" and "Email and branding" sections: the label and its hint on
- * the left, the control on the right.
- */
-export function SettingRow({
-  label,
-  hint,
-  doc,
-  stacked = false,
-  children,
-}: {
-  label: string;
-  hint?: string | undefined;
-  /** A docs section that explains the setting, as a link under the hint. */
-  doc?: { path: string; text: TextId } | undefined;
-  /** The control goes under the label, for a control too wide to share the line. */
-  stacked?: boolean;
-  /** The control, which names the hint with this ID, so a screen reader reads it too. */
-  children(hintId: string | undefined): ReactNode;
-}) {
-  const hintId = useId();
-  return (
-    <div className={stacked ? "setting-row setting-stacked" : "setting-row"}>
-      <div className="setting-label">
-        <span aria-hidden="true">{label}</span>
-        {hint !== undefined && (
-          <small className="hint" id={hintId}>
-            {hint}
-          </small>
-        )}
-        {doc !== undefined && <DocLink path={doc.path} text={doc.text} />}
-      </div>
-      {children(hint === undefined ? undefined : hintId)}
-    </div>
-  );
-}
-
-/** An on or off setting, as a switch, with a hint under its label. */
-export function Switch({
-  label,
-  hint,
-  checked,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  checked: boolean;
-  onChange(checked: boolean): void;
-}) {
-  const hintId = useId();
-  return (
-    <label className="check">
-      <span className="setting-label">
-        {label}
-        {hint !== undefined && (
-          <small className="hint" id={hintId}>
-            {hint}
-          </small>
-        )}
-      </span>
-      {/* Named by the label alone, and described by the hint. */}
-      <input
-        aria-label={label}
-        aria-describedby={hint === undefined ? undefined : hintId}
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-    </label>
   );
 }
 

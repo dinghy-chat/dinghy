@@ -1,7 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { eq } from "drizzle-orm";
 import { DAY_RANGES_MAX, type Weekday } from "../../../packages/widget/src/shared.ts";
-import { isTimeZone } from "./analytics.ts";
 import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { businessHours } from "./db/schema.ts";
@@ -18,6 +17,7 @@ import type { Live } from "./live.ts";
 import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import { changeWorkspace } from "./messages.ts";
 import { maySetUp } from "./team.ts";
+import { isTimeZone } from "./time.ts";
 
 const PATH = `${WORKSPACE_PREFIX}/{workspaceId}/business-hours`;
 
