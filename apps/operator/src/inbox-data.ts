@@ -217,9 +217,11 @@ export function useInboxData({
     onAccountChanged();
   }, [live.accountVersion, onAccountChanged]);
   const team = useTeam(api, meId, selected, live.visible, live.teamVersion);
-  // A label's add, change or delete is a workspace change, so they load again with `me`.
+  // A change to a label or a saved reply is a workspace change, so they load again with `me`.
   // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
   const labels = useLoad(() => api.labels(), [api, live.accountVersion]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
+  const savedReplies = useLoad(() => api.savedReplies(), [api, live.accountVersion]);
   // A team of one has nothing to filter. The roster is empty only until it loads, and the
   // address's filter holds until then.
   const isTeam = team.members.length > 1;
@@ -247,5 +249,6 @@ export function useInboxData({
     labels: labels.data?.labels ?? [],
     labelsLoaded: labels.data !== null,
     reloadLabels: labels.reload,
+    savedReplies: savedReplies.data?.savedReplies ?? [],
   };
 }

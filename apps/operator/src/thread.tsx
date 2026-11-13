@@ -5,6 +5,7 @@ import type {
   Label,
   Member,
   ReplyReceipts,
+  SavedReply,
   SuggestedReply,
   WorkspaceApi,
 } from "./api.ts";
@@ -100,7 +101,7 @@ export function Thread({
   setDraft,
   receiptsVersion,
   rewriteVersion,
-  accountVersion,
+  savedReplies,
   draftsVersion,
   typingDraft,
   botTyping,
@@ -137,8 +138,7 @@ export function Thread({
   receiptsVersion(visitorId: string): number;
   /** Goes up when someone edits or deletes a message here, so this loads every message again. */
   rewriteVersion: number;
-  /** Goes up when the workspace changed, such as its saved replies. */
-  accountVersion: number;
+  savedReplies: SavedReply[];
   /** Goes up when a bot's suggested reply here changed. */
   draftsVersion: number;
   /** What the visitor is typing and has not sent, or null. */
@@ -206,8 +206,6 @@ export function Thread({
     onLabelAdded,
   });
   const panel = usePanel();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: accountVersion asks for a load.
-  const savedReplies = useLoad(() => api.savedReplies(), [api, accountVersion]);
   const visitorId = conversation?.visitor.id ?? null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   const contact = useLoad(
@@ -405,7 +403,7 @@ export function Thread({
         <ThreadLog
           conversation={conversation}
           members={members}
-          savedReplies={savedReplies.data?.savedReplies ?? []}
+          savedReplies={savedReplies}
           lines={lines}
           receipts={receipts}
           who={{ meId, mayDeleteAnyone, canWrite: repliesOffReason === null, canReply }}
@@ -437,12 +435,7 @@ export function Thread({
               setDraft={(text) => setDraft({ text, isNote: mode === "note" })}
               onSend={send}
               onFiles={uploadsOn ? sendFiles : undefined}
-              picks={composerPicks(
-                savedReplies.data?.savedReplies ?? [],
-                members,
-                meId,
-                mode === "note",
-              )}
+              picks={composerPicks(savedReplies, members, meId, mode === "note")}
               mode={
                 closed
                   ? { value: "note" }
