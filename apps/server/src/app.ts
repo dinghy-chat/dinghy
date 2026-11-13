@@ -415,7 +415,7 @@ export function createApp({
     const intake = createEmailIntake({ db, domain, uploads, limits, live, rateLimit });
     if (inboundEmail.secret !== undefined) registerInboundEmail(app, intake, inboundEmail.secret);
     if (inboundEmail.shipmail !== undefined) {
-      registerShipmailInbound(app, intake, inboundEmail.shipmail);
+      registerShipmailInbound(app, { db, intake }, inboundEmail.shipmail);
     }
   }
   if (auth !== undefined) {

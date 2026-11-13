@@ -97,14 +97,26 @@ export interface Cloud {
   registerRoutes(app: App): void;
 }
 
+/** How signup works, or null when the cloud is off. */
+const signupMode = (settings: CloudSettings | undefined): SignupMode | null =>
+  settings?.billing !== undefined ? "payment" : settings?.signup === "early" ? "early" : null;
+
+/** The plan's limits for a message the worker writes, or none when the cloud is off. */
+export function cloudLimits(
+  settings: CloudSettings | undefined,
+  valkey: Redis | null,
+  logger: Logger,
+): Limits | undefined {
+  return signupMode(settings) === null ? undefined : createLimits(valkey, logger, settings?.limits);
+}
+
 /** The cloud's part of the app, or none when its settings are unset. */
 export function createCloud(
   settings: CloudSettings | undefined,
   deps: CloudDeps,
 ): Cloud | undefined {
   const billing = settings?.billing;
-  const signup: SignupMode | null =
-    billing !== undefined ? "payment" : settings?.signup === "early" ? "early" : null;
+  const signup = signupMode(settings);
   if (signup === null) return undefined;
   const { auth, db, live, logger, mailer, rateLimit, store, valkey } = deps;
   const client = billing === undefined ? undefined : createBilling(billing, db, logger, live);

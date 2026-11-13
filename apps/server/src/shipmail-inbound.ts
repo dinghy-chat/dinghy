@@ -1,7 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
+import { and, eq, sql } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
+import type { Logger } from "pino";
 import type { App } from "./app.ts";
+import { shipmailHeldEmail } from "./db/schema.ts";
+import { type Database, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure } from "./errors.ts";
 import {
   BAD_SIGNATURE,
@@ -10,9 +14,12 @@ import {
   type EmailIntake,
   MESSAGES_PER_ADDRESS_PER_HOUR,
   OK,
+  REPLY_ADDRESS_DAYS,
+  type Received,
   receivedAnswer,
 } from "./inbound-email.ts";
 import { SIGNATURE_TOLERANCE_MINUTES, SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
+import { MINUTE_MS } from "./time.ts";
 
 /** Shipmail's webhook for the mailbox that gets the replies, and the API key that reads it. */
 export interface ShipmailInbound {
@@ -28,6 +35,13 @@ const PATH = "/v1/inbound-email/shipmail";
 const EVENT_MAX_BYTES = 256 * 1024;
 /** Each call to Shipmail. A 25 MB download takes a few seconds on a working link. */
 const SHIPMAIL_TIMEOUT_MS = 30_000;
+/** Kept emails one worker pass takes at once, each up to EMAIL_MAX_BYTES. */
+const HELD_EMAILS_AT_ONCE = 4;
+/**
+ * How long a claimed kept email stays with one worker, and so the wait before a failed one is tried
+ * again. A take makes up to three Shipmail calls of SHIPMAIL_TIMEOUT_MS each.
+ */
+const HELD_CLAIM_MS = 5 * MINUTE_MS;
 const EVENT_TOO_LARGE = failure("too_large", `An event can be up to ${EVENT_MAX_BYTES / 1024} KB.`);
 
 // Only what the receiver reads. Shipmail adds fields to events, and they pass.
@@ -119,41 +133,149 @@ function shipmailInbox({ apiBase, apiKey, mailboxId }: ShipmailInbound) {
       }
       return (await readUpTo(response, EMAIL_MAX_BYTES)) ?? "too_large";
     },
-    /** Shipmail deletes only a message in Trash, so it goes there first. */
+    /** Shipmail deletes only a message in Trash, so it goes there first. A gone one is done. */
     async remove(emailId: string): Promise<void> {
-      await drain(await call("POST", emailId, "/move", { body: { target_role: "trash" } }));
-      await drain(await call("DELETE", emailId, ""));
+      const moved = await call("POST", emailId, "/move", {
+        body: { target_role: "trash" },
+        allowedStatuses: [404],
+      });
+      await drain(moved);
+      if (moved.status === 404) return;
+      await drain(await call("DELETE", emailId, "", { allowedStatuses: [404] }));
     },
   };
 }
 
-type Inbox = ReturnType<typeof shipmailInbox>;
+interface Taker {
+  /** The app's database, which the intake writes the messages with. */
+  db: Database;
+  intake: EmailIntake;
+  inbox: ReturnType<typeof shipmailInbox>;
+}
+
+/**
+ * What became of an email: in, refused for good or already gone; kept for a closed workspace; or
+ * left for a retry.
+ */
+type Taken = { status: 200; isHeld: boolean } | Extract<Received, { status: 429 | 503 }>;
 
 /**
  * Takes the email into the conversation, then deletes it from the mailbox, so the mailbox keeps
  * only what still has to come in. An email refused for good, such as for a blocked visitor or an
  * unknown address, is deleted too, as the raw route's forwarder rejects it. One the intake asks to
  * send later stays for Shipmail's retry. One for a closed workspace stays in the mailbox with a
- * 200: Shipmail cannot bounce it any more, a delete would lose it, and a retry could last weeks.
+ * 200, and a row for the worker, which takes it once the workspace opens again: Shipmail cannot
+ * bounce it any more, a delete would lose it, and a retry could last weeks.
  */
-async function take(intake: EmailIntake, inbox: Inbox, emailId: string) {
+async function take({ db, intake, inbox }: Taker, emailId: string): Promise<Taken> {
   const raw = await inbox.raw(emailId);
-  const done = { status: 200 as const };
+  const done = { status: 200 as const, isHeld: false };
   if (raw === "gone") return done;
   if (raw !== "too_large") {
     const received = await intake.receive(raw);
     if (received.status === 429 || received.status === 503) return received;
-    if ("isWorkspaceClosed" in received) return done;
+    if ("isWorkspaceClosed" in received) {
+      const { workspaceId } = received;
+      await withWorkspace(db, workspaceId, (tx) =>
+        tx.insert(shipmailHeldEmail).values({ workspaceId, emailId }).onConflictDoNothing(),
+      );
+      return { status: 200, isHeld: true };
+    }
   }
   await inbox.remove(emailId);
   return done;
+}
+
+interface HeldEmail {
+  workspaceId: string;
+  emailId: string;
+  isExpired: boolean;
+}
+
+/**
+ * Claims kept emails whose workspace takes them again, or refuses them for good once deleted, and
+ * those kept past the reply address's lifetime. The claim moves each row's next try ahead.
+ */
+async function claimHeldEmails(workerDb: Database): Promise<HeldEmail[]> {
+  const cutoff = sql`now() - make_interval(days => ${REPLY_ADDRESS_DAYS})`;
+  const result = await workerDb.execute<{
+    workspace_id: string;
+    email_id: string;
+    is_expired: boolean;
+  }>(sql`
+    WITH due AS MATERIALIZED (
+      SELECT workspace_id, email_id FROM shipmail_held_email
+      WHERE next_try_at <= now()
+        AND (held_at < ${cutoff}
+          OR workspace_access(workspace_id) IN ('active', 'waiting_cloud', 'deleted'))
+      ORDER BY next_try_at
+      LIMIT ${HELD_EMAILS_AT_ONCE}
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE shipmail_held_email AS row
+    SET next_try_at = now() + ${HELD_CLAIM_MS}::float8 * interval '1 millisecond'
+    FROM due
+    WHERE row.workspace_id = due.workspace_id AND row.email_id = due.email_id
+    RETURNING row.workspace_id, row.email_id, row.held_at < ${cutoff} AS is_expired`);
+  return result.rows.map((row) => ({
+    workspaceId: row.workspace_id,
+    emailId: row.email_id,
+    isExpired: row.is_expired,
+  }));
+}
+
+interface HeldEmailOptions {
+  /** The app's database, so the worker's own role writes no messages. */
+  db: Database;
+  workerDb: Database;
+  intake: EmailIntake;
+  settings: ShipmailInbound;
+  logger: Logger;
+}
+
+/**
+ * The worker's step for kept emails. It takes each claimed email as the webhook does, or deletes it
+ * from the mailbox once it is 90 days old, then deletes its row. A row whose email is kept again, or
+ * whose Shipmail call failed, stays for a later pass. Answers whether it claimed any.
+ */
+export function heldEmailStep({ db, workerDb, intake, settings, logger }: HeldEmailOptions) {
+  const taker = { db, intake, inbox: shipmailInbox(settings) };
+  const takeOne = async ({ workspaceId, emailId, isExpired }: HeldEmail) => {
+    if (isExpired) {
+      await taker.inbox.remove(emailId);
+    } else {
+      const taken = await intake.hold(() => take(taker, emailId));
+      if (taken.status !== 200 || taken.isHeld) return;
+    }
+    await withWorkspace(workerDb, workspaceId, (tx) =>
+      tx
+        .delete(shipmailHeldEmail)
+        .where(
+          and(
+            eq(shipmailHeldEmail.workspaceId, workspaceId),
+            eq(shipmailHeldEmail.emailId, emailId),
+          ),
+        ),
+    );
+  };
+  return async (): Promise<boolean> => {
+    const rows = await claimHeldEmails(workerDb);
+    await Promise.all(
+      rows.map((row) =>
+        takeOne(row).catch((err: unknown) =>
+          logger.warn({ err, emailId: row.emailId }, "a kept email failed and will retry"),
+        ),
+      ),
+    );
+    return rows.length > 0;
+  };
 }
 
 const shipmailRoute = createRoute({
   method: "post",
   path: PATH,
   summary: "Receive a visitor's reply by email, from Shipmail",
-  description: `For Shipmail's webhook, and only on a server with \`INBOUND_EMAIL_DOMAIN\`, \`SHIPMAIL_API_KEY\`, \`SHIPMAIL_WEBHOOK_SECRET\` and \`SHIPMAIL_MAILBOX_ID\` set. The body is Shipmail's JSON event, up to ${EVENT_MAX_BYTES / 1024} KB. \`X-Shipmail-Signature\` is the hex HMAC-SHA256 of "v1=<X-Shipmail-Timestamp>\\n<body>" under SHIPMAIL_WEBHOOK_SECRET, and the time must be within ${SIGNATURE_TOLERANCE_MINUTES} minutes. Any event but \`message.received\` in SHIPMAIL_MAILBOX_ID gets a 200 and is ignored. For that one, the server downloads the email, up to ${EMAIL_MAX_MB} MB, and takes it as \`POST /v1/inbound-email\` does. It then deletes the message from the mailbox: once taken, once dropped as an automatic answer, and once refused for good, such as for an unknown address or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox with a 200, and does not come in by itself when the workspace opens again. Shipmail retries any other answer, and a retry adds nothing.`,
+  description: `For Shipmail's webhook, and only on a server with \`INBOUND_EMAIL_DOMAIN\`, \`SHIPMAIL_API_KEY\`, \`SHIPMAIL_WEBHOOK_SECRET\` and \`SHIPMAIL_MAILBOX_ID\` set. The body is Shipmail's JSON event, up to ${EVENT_MAX_BYTES / 1024} KB. \`X-Shipmail-Signature\` is the hex HMAC-SHA256 of "v1=<X-Shipmail-Timestamp>\\n<body>" under SHIPMAIL_WEBHOOK_SECRET, and the time must be within ${SIGNATURE_TOLERANCE_MINUTES} minutes. Any event but \`message.received\` in SHIPMAIL_MAILBOX_ID gets a 200 and is ignored. For that one, the server downloads the email, up to ${EMAIL_MAX_MB} MB, and takes it as \`POST /v1/inbound-email\` does. It then deletes the message from the mailbox: once taken, once dropped as an automatic answer, and once refused for good, such as for an unknown address or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox with a 200. It comes in by itself once the workspace opens again, within the worker's next passes, and is deleted from the mailbox after ${REPLY_ADDRESS_DAYS} days if the workspace never opens. Shipmail retries any other answer, and a retry adds nothing.`,
   responses: {
     200: {
       description: "Taken, dropped or refused for good, or an event the server ignores",
@@ -175,10 +297,10 @@ const shipmailRoute = createRoute({
 /** The route Shipmail posts its events to. It checks the signature before it parses the event. */
 export function registerShipmailInbound(
   app: App,
-  intake: EmailIntake,
+  { db, intake }: { db: Database; intake: EmailIntake },
   settings: ShipmailInbound,
 ): void {
-  const inbox = shipmailInbox(settings);
+  const taker = { db, intake, inbox: shipmailInbox(settings) };
   app.use(
     PATH,
     bodyLimit({ maxSize: EVENT_MAX_BYTES, onError: (c) => c.json(EVENT_TOO_LARGE, 413) }),
@@ -192,6 +314,6 @@ export function registerShipmailInbound(
     }
     const emailId = receivedEmailId(body, settings.mailboxId);
     if (emailId === null) return c.json(OK, 200);
-    return receivedAnswer(c, await intake.hold(() => take(intake, inbox, emailId)));
+    return receivedAnswer(c, await intake.hold(() => take(taker, emailId)));
   });
 }

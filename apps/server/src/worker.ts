@@ -80,6 +80,8 @@ interface WorkerOptions {
   secret: string;
   /** The domain of reply addresses. Without it, emails to visitors take no replies. */
   inboundDomain?: string | undefined;
+  /** Takes reply emails kept in the Shipmail mailbox. Without it, Shipmail's replies are off. */
+  takeHeldEmails?: (() => Promise<boolean>) | undefined;
   /** How often the subscription lifecycle and the purge of deleted workspaces run. */
   lifecycleMs?: number;
   pollMs?: number;
@@ -164,6 +166,7 @@ export function startWorker({
   publicUrl,
   secret,
   inboundDomain,
+  takeHeldEmails,
   lifecycleMs = LIFECYCLE_EVERY_MS,
   pollMs = POLL_MS,
   retryMs = RETRY_MS,
@@ -342,6 +345,21 @@ export function startWorker({
     return rows.length > 0;
   };
 
+  // Its Shipmail calls can take minutes, so kept emails go beside the pass and never hold it.
+  let heldEmailsRun: Promise<void> | undefined;
+  const startHeldEmails = () => {
+    if (takeHeldEmails === undefined || heldEmailsRun !== undefined) return;
+    heldEmailsRun = takeHeldEmails()
+      .catch((err: unknown) => {
+        logger.error({ err, stage: "held emails" }, "worker stage failed");
+        return false;
+      })
+      .then((busy) => {
+        heldEmailsRun = undefined;
+        if (busy) wake();
+      });
+  };
+
   const deleteFiles = async () => {
     if (store === undefined) return false;
     const deletions = await claimDeletions(db, BATCH, CLAIM_MS);
@@ -368,6 +386,7 @@ export function startWorker({
         busy = (await stage("file deletions", deleteFiles)) || busy;
         // Each pass, so a removal request's first warning goes out within seconds.
         busy = (await stage("two-factor removal", removalStep)) || busy;
+        startHeldEmails();
       }
       if (Date.now() >= pruneAt) {
         pruneAt = Date.now() + PRUNE_EVERY_MS;
@@ -403,7 +422,7 @@ export function startWorker({
       stopping.abort(new Error("The worker is stopping"));
       wake();
       await Promise.race([
-        running.then(() => Promise.allSettled([...inFlight, ...hooksInFlight])),
+        running.then(() => Promise.allSettled([...inFlight, ...hooksInFlight, heldEmailsRun])),
         delay(STOP_WAIT_MS, undefined, { ref: false }),
       ]);
       logger.info("worker stopped");

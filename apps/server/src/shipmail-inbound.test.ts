@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
@@ -8,14 +8,25 @@ import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
 import { inboundEmailFromConfig, loadConfig } from "./config.ts";
-import { conversation, message, subscription, visitor, workspace } from "./db/schema.ts";
+import {
+  conversation,
+  message,
+  shipmailHeldEmail,
+  subscription,
+  visitor,
+  workspace,
+} from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import {
+  createEmailIntake,
   createReplyAddress,
   EMAIL_MAX_BYTES,
   MESSAGES_PER_ADDRESS_PER_HOUR,
 } from "./inbound-email.ts";
-import type { ShipmailInbound } from "./shipmail-inbound.ts";
+import { NO_LIMITS } from "./limits.ts";
+import { noLive } from "./live.ts";
+import { createRateLimit } from "./rate-limit.ts";
+import { heldEmailStep, type ShipmailInbound } from "./shipmail-inbound.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const DOMAIN = "reply.example.com";
@@ -93,6 +104,7 @@ let valkey: Redis;
 let shipmail: Awaited<ReturnType<typeof fakeShipmail>>;
 let app: App;
 let space: NewWorkspace;
+let takeHeldEmails: () => Promise<boolean>;
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -116,6 +128,16 @@ beforeAll(async () => {
     checks: { postgres: ok, valkey: ok },
   });
   space = await createWorkspace(db, "Acme", ["https://a.example.com"]);
+  // As the worker process builds it: the intake writes with the app's role.
+  const intake = createEmailIntake({
+    db,
+    domain: DOMAIN,
+    uploads: undefined,
+    limits: NO_LIMITS,
+    live: noLive,
+    rateLimit: createRateLimit(valkey, logger),
+  });
+  takeHeldEmails = heldEmailStep({ db, workerDb, intake, settings, logger });
 });
 
 beforeEach(() => {
@@ -439,5 +461,132 @@ describe("the settings", () => {
       body: "hi",
     });
     expect(answer.status).toBe(404);
+  });
+});
+
+/** The worker's passes over kept emails, until one claims nothing. */
+async function workerPasses() {
+  while (await takeHeldEmails()) {}
+}
+
+/** The Shipmail IDs of the emails kept for a workspace, as the worker sees them. */
+const heldIn = async (workspaceId: string) =>
+  (
+    await owner
+      .select({ emailId: shipmailHeldEmail.emailId })
+      .from(shipmailHeldEmail)
+      .where(eq(shipmailHeldEmail.workspaceId, workspaceId))
+  ).map((row) => row.emailId);
+
+const setSuspended = (workspaceId: string, at: Date | null) =>
+  owner.update(workspace).set({ suspendedAt: at }).where(eq(workspace.id, workspaceId));
+
+/** A reply that arrives while its workspace is suspended, and that the webhook keeps. */
+async function keptEmail(text: string) {
+  const chat = await chatInNewWorkspace();
+  await setSuspended(chat.workspaceId, new Date());
+  const emailId = arrives(chat.address, text);
+  expect((await deliver(receivedEvent(emailId))).status).toBe(200);
+  expect(await heldIn(chat.workspaceId)).toEqual([emailId]);
+  return { ...chat, emailId };
+}
+
+/** Makes a kept email due again now, as when its claim ran out. */
+const dueNow = (emailId: string) =>
+  owner
+    .update(shipmailHeldEmail)
+    .set({ nextTryAt: sql`now()` })
+    .where(eq(shipmailHeldEmail.emailId, emailId));
+
+describe("a kept email", () => {
+  test("stays while the workspace is closed, and comes in once it opens again", async () => {
+    const kept = await keptEmail("Are you back?");
+    await workerPasses();
+    expect(shipmail.messages.has(kept.emailId)).toBe(true);
+    expect(await heldIn(kept.workspaceId)).toEqual([kept.emailId]);
+    await setSuspended(kept.workspaceId, null);
+    await workerPasses();
+    expect(await bodiesOf(kept.conversationId)).toEqual(["Are you back?"]);
+    expect(shipmail.messages.has(kept.emailId)).toBe(false);
+    expect(await heldIn(kept.workspaceId)).toEqual([]);
+  });
+
+  test("a second delivery of its event keeps one row and its first time", async () => {
+    const kept = await keptEmail("Twice");
+    const [first] = await owner
+      .select({ heldAt: shipmailHeldEmail.heldAt })
+      .from(shipmailHeldEmail)
+      .where(eq(shipmailHeldEmail.emailId, kept.emailId));
+    expect((await deliver(receivedEvent(kept.emailId))).status).toBe(200);
+    expect(
+      await owner
+        .select({ heldAt: shipmailHeldEmail.heldAt })
+        .from(shipmailHeldEmail)
+        .where(eq(shipmailHeldEmail.emailId, kept.emailId)),
+    ).toEqual([first]);
+  });
+
+  test("is deleted from the mailbox after 90 days if the workspace never opens", async () => {
+    const kept = await keptEmail("Too late");
+    await owner
+      .update(shipmailHeldEmail)
+      .set({ heldAt: sql`now() - interval '91 days'` })
+      .where(eq(shipmailHeldEmail.emailId, kept.emailId));
+    await workerPasses();
+    expect(shipmail.messages.has(kept.emailId)).toBe(false);
+    expect(await heldIn(kept.workspaceId)).toEqual([]);
+    expect(await bodiesOf(kept.conversationId)).toEqual([]);
+  });
+
+  test("whose message is gone at Shipmail clears its row", async () => {
+    const kept = await keptEmail("Gone");
+    shipmail.messages.delete(kept.emailId);
+    await setSuspended(kept.workspaceId, null);
+    await workerPasses();
+    expect(await heldIn(kept.workspaceId)).toEqual([]);
+    expect(await bodiesOf(kept.conversationId)).toEqual([]);
+  });
+
+  test("whose download fails stays for a later pass, and comes in then", async () => {
+    const kept = await keptEmail("Retry me");
+    await setSuspended(kept.workspaceId, null);
+    shipmail.failing.add("GET");
+    await workerPasses();
+    expect(await heldIn(kept.workspaceId)).toEqual([kept.emailId]);
+    expect(shipmail.messages.has(kept.emailId)).toBe(true);
+    // The claim holds it back until it runs out.
+    shipmail.failing.clear();
+    shipmail.calls.length = 0;
+    await workerPasses();
+    expect(shipmail.calls).toEqual([]);
+    await dueNow(kept.emailId);
+    await workerPasses();
+    expect(await bodiesOf(kept.conversationId)).toEqual(["Retry me"]);
+    expect(await heldIn(kept.workspaceId)).toEqual([]);
+  });
+
+  test("of a workspace deleted meanwhile is refused for good and deleted", async () => {
+    const kept = await keptEmail("Still there?");
+    await owner
+      .update(workspace)
+      .set({ deletedAt: new Date() })
+      .where(eq(workspace.id, kept.workspaceId));
+    await workerPasses();
+    expect(shipmail.messages.has(kept.emailId)).toBe(false);
+    expect(await heldIn(kept.workspaceId)).toEqual([]);
+  });
+
+  test("stays in its workspace: the app cannot note one for another workspace or read any", async () => {
+    const kept = await keptEmail("Mine");
+    const other = await createWorkspace(db, "Other", ["https://other.example.com"]);
+    await expect(
+      withWorkspace(db, other.id, (tx) =>
+        tx.insert(shipmailHeldEmail).values({ workspaceId: kept.workspaceId, emailId: "eml_x" }),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      withWorkspace(db, kept.workspaceId, (tx) => tx.select().from(shipmailHeldEmail)),
+    ).rejects.toThrow();
+    expect(await heldIn(kept.workspaceId)).toEqual([kept.emailId]);
   });
 });

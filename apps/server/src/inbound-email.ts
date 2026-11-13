@@ -39,7 +39,7 @@ export interface InboundEmail {
 }
 
 const PATH = "/v1/inbound-email";
-const REPLY_ADDRESS_DAYS = 90;
+export const REPLY_ADDRESS_DAYS = 90;
 export const EMAIL_MAX_MB = 25;
 export const EMAIL_MAX_BYTES = EMAIL_MAX_MB * 1024 * 1024;
 const ATTACHMENTS_MAX = 5;
@@ -379,7 +379,7 @@ type Failure = ReturnType<typeof failure>;
  */
 export type Received =
   | { status: 200 }
-  | { status: 402 | 403; body: Failure; isWorkspaceClosed: true }
+  | { status: 402 | 403; body: Failure; isWorkspaceClosed: true; workspaceId: string }
   | { status: 403 | 404 | 413; body: Failure }
   | { status: 429 | 503; body: Failure; retryAfterSeconds: number };
 
@@ -463,7 +463,7 @@ async function receive(options: IntakeOptions, body: Buffer): Promise<Received> 
   if (outcome instanceof WorkspaceClosedError) {
     // A deleted workspace never opens again, so its address is as gone as an unknown one.
     if (outcome.access === "deleted") return { status: 404, body: NOT_FOUND };
-    return { ...closedFailure(outcome.access), isWorkspaceClosed: true };
+    return { ...closedFailure(outcome.access), isWorkspaceClosed: true, workspaceId };
   }
   if (outcome === "too_long") return { status: 413, body: TOO_LARGE };
   if (outcome === "busy") return BUSY_NOW;
