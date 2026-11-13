@@ -63,10 +63,12 @@ export function useConversationActions({
     if (await act(() => api.sendTranscript(conversationId))) toast("transcriptSent");
   };
 
+  /** True once the change is saved. */
   const setStatus = async (status: "open" | "closed") => {
-    if (!(await act(() => api.setStatus(conversationId, status)))) return;
+    if (!(await act(() => api.setStatus(conversationId, status)))) return false;
     // A close ends a snooze, and a reopen starts with none.
     change((current) => ({ ...current, status, snooze: null }));
+    return true;
   };
 
   /** Gives the conversation back to its bot: nobody is assigned, and the bot may answer again. */

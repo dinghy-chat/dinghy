@@ -16,6 +16,7 @@ import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.t
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { hasFormatting, linkHref, toMarkdown } from "./rich-text.ts";
+import { Keys } from "./shortcuts.tsx";
 import { type TextId, t } from "./text.ts";
 import { Choices, EmojiButton, type Option } from "./ui.tsx";
 
@@ -142,10 +143,12 @@ const composerExtension = (latest: RefObject<Latest>) =>
           () => commands.splitListItem("listItem"),
           () => commands.setHardBreak(),
         ]),
-      Escape() {
+      // With nothing to cancel, Escape leaves the box, so the app's single keys work again.
+      Escape({ editor }) {
         const { onEscape } = latest.current;
-        onEscape?.();
-        return onEscape !== undefined;
+        if (onEscape === undefined) editor.commands.blur();
+        else onEscape();
+        return true;
       },
     }),
     addProseMirrorPlugins: () => [
@@ -348,6 +351,8 @@ export function Composer({
       )}
       <div className="box">
         {above}
+        {/* The key that comes back here, while the box is empty and has no focus. */}
+        {!editing && draft === "" && <Keys keys={isNote ? "n" : "r"} />}
         <EditorContent editor={editor} className="compose-text" />
         {typedLink !== null && (
           <div className="link-field">

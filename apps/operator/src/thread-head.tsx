@@ -3,6 +3,7 @@ import type { Conversation, Member, Snooze, WelcomeChat } from "./api.ts";
 import { HandlerSelect } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
+import { useShortcutsOn, withKey } from "./shortcuts.tsx";
 import { SNOOZE_CHOICES } from "./snooze.ts";
 import { type TextId, t } from "./text.ts";
 import { Avatar } from "./ui.tsx";
@@ -107,6 +108,7 @@ export function ThreadHead({
   emailAvailable: boolean;
 }) {
   const closed = conversation.status === "closed";
+  const keysOn = useShortcutsOn();
   const { blocked } = conversation.visitor;
   const noEmail = !emailAvailable
     ? t("transcriptNoServer")
@@ -143,7 +145,13 @@ export function ThreadHead({
   return (
     <header className="thread-head">
       <div className="who-is">
-        <button type="button" className="icon-button back" aria-label={t("back")} onClick={onBack}>
+        <button
+          type="button"
+          className="icon-button back"
+          aria-label={t("back")}
+          data-shortcut="Escape"
+          onClick={onBack}
+        >
           <Icon name="back" />
         </button>
         <span className="avatar-wrap">
@@ -179,12 +187,13 @@ export function ThreadHead({
         <button
           type="button"
           className={closed ? "pill" : "pill dark"}
+          title={withKey(closed ? t("reopen") : t("close"), "e", keysOn)}
           onClick={() => onStatus(closed ? "open" : "closed")}
         >
           <Icon name={closed ? "inbox" : "done"} size={16} />
           {closed ? t("reopen") : t("close")}
         </button>
-        <Menu label={t("moreActions")} items={more} buttonClass="round">
+        <Menu label={t("moreActions")} items={more} buttonClass="round" shortcut=".">
           <Icon name="dots" />
         </Menu>
         {panel !== null && (
@@ -193,7 +202,8 @@ export function ThreadHead({
             className="round panel-toggle"
             aria-pressed={panel.open}
             aria-label={panel.open ? t("hidePanel") : t("showPanel")}
-            title={panel.open ? t("hidePanel") : t("showPanel")}
+            data-shortcut="p"
+            title={withKey(panel.open ? t("hidePanel") : t("showPanel"), "p", keysOn)}
             onClick={panel.toggle}
           >
             <Icon name="sidebar" />

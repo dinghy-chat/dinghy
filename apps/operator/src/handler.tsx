@@ -87,6 +87,7 @@ export function HandlerSelect({
     <Select
       label={t("handlerLabel")}
       className="assignee"
+      shortcut="a"
       side={side}
       value={value}
       choices={[

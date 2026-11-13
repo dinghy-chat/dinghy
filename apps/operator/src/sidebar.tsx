@@ -7,19 +7,21 @@ import { leave, navigate } from "./nav.ts";
 import { leaveDevice } from "./notifications.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { Logo } from "./scene.tsx";
+import { Keys } from "./shortcuts.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Avatar, initials, ROLE_TEXT } from "./ui.tsx";
+import { Avatar, DOCS_URL, initials, ROLE_TEXT } from "./ui.tsx";
 
 /** What the panel shows: the Inbox, or a page. */
 export type View = "inbox" | "contacts" | "visitors" | "analytics" | "settings";
 
-const NAV: { view: View; label: TextId; icon: IconName }[] = [
-  { view: "inbox", label: "inbox", icon: "inbox" },
-  { view: "contacts", label: "contacts", icon: "contacts" },
-  { view: "visitors", label: "visitors", icon: "globe" },
-  { view: "analytics", label: "analytics", icon: "chart" },
-  { view: "settings", label: "settings", icon: "gear" },
+/** Each view's keys: G, then its letter. */
+const NAV: { view: View; label: TextId; icon: IconName; keys: string }[] = [
+  { view: "inbox", label: "inbox", icon: "inbox", keys: "g i" },
+  { view: "contacts", label: "contacts", icon: "contacts", keys: "g c" },
+  { view: "visitors", label: "visitors", icon: "globe", keys: "g v" },
+  { view: "analytics", label: "analytics", icon: "chart", keys: "g a" },
+  { view: "settings", label: "settings", icon: "gear", keys: "g s" },
 ];
 
 /**
@@ -130,6 +132,35 @@ function WorkspaceSwitcher({
   );
 }
 
+/** Above the operator: the docs, and the keyboard shortcuts. */
+function HelpMenu({ onShortcuts }: { onShortcuts(): void }) {
+  return (
+    <Menu
+      label={t("help")}
+      buttonClass="help"
+      side="start"
+      placement="up"
+      className="help-menu"
+      items={[
+        {
+          label: t("helpDocs"),
+          lead: <Icon name="book" size={18} />,
+          onSelect: () => open(`${DOCS_URL}operator-guide`, "_blank", "noopener,noreferrer"),
+        },
+        {
+          label: t("keysTitle"),
+          lead: <Icon name="keyboard" size={18} />,
+          shortcut: "?",
+          onSelect: onShortcuts,
+        },
+      ]}
+    >
+      <Icon name="question" size={20} />
+      <span className="help-text">{t("help")}</span>
+    </Menu>
+  );
+}
+
 /** The operator at the foot of the sidebar, with their status, their profile and sign out. */
 function UserMenu({
   me,
@@ -216,6 +247,7 @@ export function Sidebar({
   onBotsPaused,
   steps,
   onView,
+  onShortcuts,
   onProfileOpen,
   onSwitch,
   onStatusChanged,
@@ -243,6 +275,8 @@ export function Sidebar({
   /** Above the user menu: the Get started steps, while they show. */
   steps: ReactNode;
   onView(view: View): void;
+  /** Opens the sheet of keyboard shortcuts. */
+  onShortcuts(): void;
   onProfileOpen(): void;
   onSwitch(id: string): void;
   onStatusChanged(): void;
@@ -293,6 +327,7 @@ export function Sidebar({
                   {liveCount}
                 </span>
               )}
+              <Keys keys={item.keys} />
             </button>
           );
         })}
@@ -302,6 +337,7 @@ export function Sidebar({
           {waitingText}
         </span>
       )}
+      <HelpMenu onShortcuts={onShortcuts} />
       {steps}
       <UserMenu
         me={me}
