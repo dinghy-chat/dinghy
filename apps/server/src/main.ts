@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Redis } from "iovalkey";
 import pg from "pg";
 import { pino } from "pino";
-import { cloudFromConfig, cloudProblem } from "../../../ee/server/index.ts";
+import { cloudFromConfig, cloudLimits, cloudProblem } from "../../../ee/server/index.ts";
 import serverPackage from "../package.json" with { type: "json" };
 import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -12,9 +12,13 @@ import { inboundEmailFromConfig, loadConfig, pushKeysFromConfig } from "./config
 import * as schema from "./db/schema.ts";
 import { startErrorReports } from "./error-reports.ts";
 import { loadCountries } from "./geo.ts";
-import { createLive, createSignals } from "./live.ts";
+import { createEmailIntake } from "./inbound-email.ts";
+import { NO_LIMITS } from "./limits.ts";
+import { createLive, createSignals, type Signals } from "./live.ts";
 import { createMailer } from "./mailer.ts";
 import { createPush } from "./push.ts";
+import { createRateLimit } from "./rate-limit.ts";
+import { mailboxSweep } from "./shipmail-inbound.ts";
 import { storeFromConfig } from "./storage.ts";
 import { createUploads } from "./uploads.ts";
 import { startWorker } from "./worker.ts";
@@ -153,10 +157,12 @@ if (role === "worker" || role === "all") {
     commandTimeout: 2000,
   });
   publisher.on("error", (err) => logger.error({ err }, "valkey error"));
+  const signals = createSignals(publisher, logger);
+  const sweep = mailboxSweepFor(signals, publisher);
   const worker = startWorker({
     db: workerDb,
     cloud,
-    signals: createSignals(publisher, logger),
+    signals,
     logger,
     push,
     // Its own connections, so the web side's emails never queue in front of an alert, whose time
@@ -167,13 +173,38 @@ if (role === "worker" || role === "all") {
     store: storeFromConfig(config),
     uploads: uploadsFor(),
     inboundDomain: inboundEmail?.domain,
+    sweepMailbox: sweep?.run,
     webhooks,
   });
   stops.push(
     () => worker.stop(),
     () => pool.end(),
+    async () => sweep?.pool.end(),
     async () => publisher.disconnect(),
   );
+}
+
+/**
+ * The sweep of the Shipmail mailbox, when Shipmail is set. It takes emails as the webhook does,
+ * through the app's role, so the worker's own role writes no messages. Its two connections are the
+ * sweep's lock and the intake's writes.
+ */
+function mailboxSweepFor(signals: Signals, valkey: Redis) {
+  const shipmail = inboundEmail?.shipmail;
+  if (inboundEmail === undefined || shipmail === undefined) return undefined;
+  const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 });
+  pool.on("error", (err) => logger.error({ err }, "postgres pool error"));
+  const db = drizzle(pool, { schema });
+  const { domain } = inboundEmail;
+  const intake = createEmailIntake({
+    db,
+    domain,
+    uploads: uploadsFor(),
+    limits: cloudLimits(cloud, valkey, logger) ?? NO_LIMITS,
+    live: signals,
+    rateLimit: createRateLimit(valkey, logger, config.RATE_LIMIT_SCALE),
+  });
+  return { pool, run: mailboxSweep({ db, intake, domain, settings: shipmail, logger }) };
 }
 
 let stopping = false;

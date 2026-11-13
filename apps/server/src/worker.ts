@@ -80,6 +80,8 @@ interface WorkerOptions {
   secret: string;
   /** The domain of reply addresses. Without it, emails to visitors take no replies. */
   inboundDomain?: string | undefined;
+  /** Sweeps the Shipmail mailbox for replies still to come in. Without it, Shipmail is off. */
+  sweepMailbox?: ((stopping: AbortSignal) => Promise<void>) | undefined;
   /** How often the subscription lifecycle and the purge of deleted workspaces run. */
   lifecycleMs?: number;
   pollMs?: number;
@@ -141,9 +143,9 @@ function boundedMailer(mailer: Mailer, stopping: AbortSignal, timeoutMs: number)
     for (const resolve of waiters.splice(0)) resolve();
   };
   return {
-    async send(to, subject, text, headers, html) {
+    async send(to, subject, text, extras) {
       await takeConnection(deadline());
-      const sent = mailer.send(to, subject, text, headers, html).finally(freeConnection);
+      const sent = mailer.send(to, subject, text, extras).finally(freeConnection);
       // A send that fails after the worker stopped waiting must not crash the process.
       sent.catch(() => {});
       await Promise.race([sent, aborted(deadline())]);
@@ -164,6 +166,7 @@ export function startWorker({
   publicUrl,
   secret,
   inboundDomain,
+  sweepMailbox,
   lifecycleMs = LIFECYCLE_EVERY_MS,
   pollMs = POLL_MS,
   retryMs = RETRY_MS,
@@ -200,14 +203,18 @@ export function startWorker({
       return result.sent > 0 ? "sent" : "skipped";
     }
     if (bounded === undefined) return "skipped";
-    const headers = {
-      ...(plan.stopUrl !== undefined && {
-        "list-unsubscribe": `<${plan.stopUrl}>`,
-        "list-unsubscribe-post": "List-Unsubscribe=One-Click",
-      }),
-      ...(plan.replyTo !== undefined && { "reply-to": plan.replyTo }),
-    };
-    await bounded.send(plan.to, plan.subject, plan.text, headers, plan.html);
+    const headers =
+      plan.stopUrl === undefined
+        ? undefined
+        : {
+            "list-unsubscribe": `<${plan.stopUrl}>`,
+            "list-unsubscribe-post": "List-Unsubscribe=One-Click",
+          };
+    await bounded.send(plan.to, plan.subject, plan.text, {
+      html: plan.html,
+      headers,
+      replyTo: plan.replyTo,
+    });
     return "sent";
   };
 
@@ -338,6 +345,17 @@ export function startWorker({
     return rows.length > 0;
   };
 
+  // Its Shipmail calls can take minutes, so the sweep goes beside the pass and never holds it.
+  let sweepRun: Promise<void> | undefined;
+  const startSweep = () => {
+    if (sweepMailbox === undefined || sweepRun !== undefined) return;
+    sweepRun = sweepMailbox(stopping.signal)
+      .catch((err: unknown) => logger.error({ err, stage: "mailbox sweep" }, "worker stage failed"))
+      .finally(() => {
+        sweepRun = undefined;
+      });
+  };
+
   const deleteFiles = async () => {
     if (store === undefined) return false;
     const deletions = await claimDeletions(db, BATCH, CLAIM_MS);
@@ -380,6 +398,7 @@ export function startWorker({
         await stage("purge", async () => {
           await purgeDeletedWorkspaces(db);
         });
+        startSweep();
       }
       await stage("heartbeat", heartbeat);
       if (busy || stopping.signal.aborted) continue;
@@ -399,7 +418,7 @@ export function startWorker({
       stopping.abort(new Error("The worker is stopping"));
       wake();
       await Promise.race([
-        running.then(() => Promise.allSettled([...inFlight, ...hooksInFlight])),
+        running.then(() => Promise.allSettled([...inFlight, ...hooksInFlight, sweepRun])),
         delay(STOP_WAIT_MS, undefined, { ref: false }),
       ]);
       logger.info("worker stopped");

@@ -2,15 +2,22 @@ import nodemailer from "nodemailer";
 import type { Logger } from "pino";
 import { safeErrorFields } from "./errors.ts";
 
+/** An address with a display name. The mailer quotes or encodes the name, whatever it holds. */
+export interface NamedAddress {
+  name: string;
+  address: string;
+}
+
+/** What an email can carry beside its text. */
+export interface MailExtras {
+  /** A second version of the same email, for mail apps that show HTML. */
+  html?: string | undefined;
+  headers?: Record<string, string> | undefined;
+  replyTo?: NamedAddress | undefined;
+}
+
 export interface Mailer {
-  /** `html` is an optional second version of the same email, for mail apps that show HTML. */
-  send(
-    to: string,
-    subject: string,
-    text: string,
-    headers?: Record<string, string>,
-    html?: string,
-  ): Promise<void>;
+  send(to: string, subject: string, text: string, extras?: MailExtras): Promise<void>;
 }
 
 /** One plain-text email, as the builders in letter.ts make them. */
@@ -66,14 +73,15 @@ export function createMailer(smtpUrl: string, from: string, { pool = true } = {}
     socketTimeout: 15_000,
   });
   return {
-    async send(to, subject, text, headers, html) {
+    async send(to, subject, text, { html, headers, replyTo } = {}) {
       await transport.sendMail({
         from,
         to,
         subject,
         text,
         ...(html !== undefined && { html }),
-        ...(headers && { headers }),
+        ...(headers !== undefined && { headers }),
+        ...(replyTo !== undefined && { replyTo }),
       });
     },
   };

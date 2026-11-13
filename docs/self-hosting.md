@@ -86,7 +86,8 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Keeps images and files in a bucket, not on this disk |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | An encrypted copy of each backup in another place |
 | `BACKUP_HEARTBEAT_URL` | An address that `chat backup` pings after each backup that worked, such as a [healthchecks.io](https://healthchecks.io) check, so a monitor tells you when a night has none. Optional |
-| `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_SECRET` | Let visitors answer reply emails and transcripts by email. Optional, and set both or neither. See below |
+| `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_SECRET` | Let visitors answer reply emails and transcripts by email. Optional. The domain needs a receiver: this secret, the Shipmail settings, or both. See below |
+| `SHIPMAIL_API_KEY`, `SHIPMAIL_WEBHOOK_SECRET`, `SHIPMAIL_MAILBOX_ID` | Receive those answers through a Shipmail webhook. Optional, and set all three or none. See below |
 | `UPLOADS_ORIGIN` | A separate origin for images and files that visitors and operators send, such as `https://files.example.com`. Optional. See below. `IMAGES_ORIGIN`, its old name, still works until the next release |
 | `TRUSTED_PROXY_HOPS` | See below |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent` |
@@ -110,9 +111,16 @@ Image and file links then use that origin, with the same short-lived signed URLs
 
 ### Replies by email
 
-A visitor who left your site gets your team's replies and the transcript by email. With replies by email on, they can answer that email, and their answer lands in the conversation as if they had written in the chat. It is off until you set both settings, and it needs a mail server for the emails that go out (`SMTP_URL`).
+A visitor who left your site gets your team's replies and the transcript by email. With replies by email on, they can answer that email, and their answer lands in the conversation as if they had written in the chat. It is off until you set `INBOUND_EMAIL_DOMAIN` and a receiver for its mail, and it needs a mail server for the emails that go out (`SMTP_URL`).
 
-Each email to a visitor then has its own reply address, `reply+<workspace>.<token>@<INBOUND_EMAIL_DOMAIN>`, which leads to that one conversation. The address works until 90 days after its last use. Mail to it must reach Dinghy as the raw email, posted to `/v1/inbound-email` and signed with `INBOUND_EMAIL_SECRET` (see [the API](api.md#replies-by-email)). Dinghy documents one forwarder, a Cloudflare Email Worker, which needs a domain on Cloudflare and no paid plan. Other mail providers post their own formats, so they need an adapter that turns their post into this one.
+Each email to a visitor then has its own reply address, `reply+<workspace>.<token>@<INBOUND_EMAIL_DOMAIN>`, which leads to that one conversation. Mail apps show the workspace's name with it. The address works until 90 days after its last use. Mail to it reaches Dinghy in one of two ways, and both can be on at once:
+
+- A forwarder posts the raw email to `/v1/inbound-email`, signed with `INBOUND_EMAIL_SECRET` (see [the API](api.md#replies-by-email)). Dinghy documents one forwarder, a Cloudflare Email Worker, below. It needs a domain on Cloudflare and no paid plan.
+- [Shipmail](#receive-replies-through-shipmail) keeps the email in a mailbox and posts a webhook. Dinghy downloads the email, takes it and deletes it from the mailbox.
+
+Other mail providers post their own formats, so they need an adapter that turns their post into the forwarder's.
+
+#### Receive replies through Cloudflare
 
 1. Pick a subdomain for the reply addresses, such as `reply.example.com`, on a domain that Cloudflare runs. It takes no other mail, so use a subdomain that nothing else uses.
 2. In Cloudflare, open **Email > Email Routing** for the domain, and add the subdomain. Cloudflare adds its MX and TXT records.
@@ -164,7 +172,31 @@ export default {
 
 To test it, answer a reply email from Dinghy. The answer shows in the conversation within seconds. If it does not, the Worker's logs in Cloudflare show what Dinghy answered: 401 means the two secrets differ or the server's clock is more than 5 minutes off, and 404 means the address is not a current one.
 
-Dinghy takes the plain text of the answer, or its HTML made into text. Each email from Dinghy starts with "Write your reply above this line", and Dinghy keeps only what is above the quote of that line. Without the line, it keeps the whole text, and it never cuts a signature. Up to 5 attachments go in the conversation, with the same types and size limits as the chat. An email is at most 25 MB, so a proxy of your own must accept 26 MB on `/v1/inbound-email` (see [below](#behind-your-own-reverse-proxy)). The server holds at most 4 emails at a time, so a fifth waits for the forwarder's retry. Out-of-office answers and other automatic emails are dropped, and one address takes at most 20 emails an hour.
+#### Receive replies through Shipmail
+
+1. In [Shipmail](https://shipmail.to), add a subdomain for the reply addresses, such as `reply.example.com`, and set the DNS records Shipmail lists, so that its mail comes to Shipmail. Use a subdomain that nothing else uses.
+2. Create the mailbox `reply@reply.example.com`. Mail to every `reply+…` address of the subdomain lands in it. Its ID, which starts with `mbx_`, is `SHIPMAIL_MAILBOX_ID`.
+3. Create an API key for that mailbox only, with the scopes `messages:read`, to download each email, and `messages:write`, to delete it. If the mailbox holds flagged mail for review, add `messages:review`, or Dinghy cannot download a held email. The key is `SHIPMAIL_API_KEY`.
+4. Create a second API key with the scope `webhooks:write`, to create the webhook. Dinghy's key needs no access to webhooks, so keep this one out of `.env`, and delete it once the webhook exists. Then create a webhook for `message.received`, with `mailbox_ids` set to that mailbox only and no `domain_ids`, so that no other mail reaches Dinghy. In the command below, `SETUP_KEY` is that second key, `MAILBOX_ID` is `SHIPMAIL_MAILBOX_ID` and `PUBLIC_URL` is the address of your Dinghy server, as in `.env`:
+
+```sh
+SETUP_KEY=sm_live_...
+MAILBOX_ID=mbx_...
+PUBLIC_URL=https://chat.example.com
+curl -X POST https://shipmail.to/api/v1/webhooks \
+  -H "Authorization: Bearer $SETUP_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"url\":\"$PUBLIC_URL/v1/inbound-email/shipmail\",\"events\":[\"message.received\"],\"mailbox_ids\":[\"$MAILBOX_ID\"]}"
+```
+
+5. Copy the `secret` from the answer into `SHIPMAIL_WEBHOOK_SECRET`. Shipmail shows it only this once.
+6. In `.env`, set `INBOUND_EMAIL_DOMAIN=reply.example.com` and the three `SHIPMAIL_` settings, then run `docker compose up -d --wait`.
+
+Dinghy deletes each email from the mailbox once it took it, dropped it as an automatic answer, or refused it for good, such as for an address that is not a current one or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox, so nothing is lost while the workspace is closed. It comes in by itself within a minute or two of the workspace opening again, and Dinghy then deletes it from the mailbox. If the workspace never opens again, Dinghy deletes the email from the mailbox after 90 days. When the server is busy or Shipmail cannot be reached, Dinghy answers with an error, the email stays, and Shipmail retries. A retry never adds the email twice. The worker sweeps the mailbox once a minute, so a reply whose webhook delivery failed for good still comes in, about 10 minutes after it arrived. Shipmail's webhook deliveries show what Dinghy answered: 401 means the webhook secret differs or the server's clock is more than 5 minutes off, and 500 means Dinghy could not download or delete the email, so check the API key and its scopes.
+
+#### What Dinghy keeps
+
+Dinghy takes the plain text of the answer, or its HTML made into text. Each email from Dinghy starts with "Write your reply above this line", and Dinghy keeps only what is above the quote of that line. Without the line, it keeps the whole text, and it never cuts a signature. Up to 5 attachments go in the conversation, with the same types and size limits as the chat. An email is at most 25 MB, so with the forwarder, a proxy of your own must accept 26 MB on `/v1/inbound-email` (see [below](#behind-your-own-reverse-proxy)). The server holds at most 4 emails at a time, so a fifth waits for the forwarder's retry. Out-of-office answers and other automatic emails are dropped, and one address takes at most 20 emails an hour.
 
 ## Behind your own reverse proxy
 
@@ -238,7 +270,7 @@ The image runs in one of three roles, the word after the image in `command`:
 
 - `all`, the default, runs the web server and the worker in one process. One server needs nothing else.
 - `web` answers requests and holds the live streams. It needs `DATABASE_URL`, `VALKEY_URL` and `AUTH_SECRET`, as `app` gets them from its secrets. `VALKEY_URL` carries Valkey's password, as `redis://:<password>@valkey:6379`.
-- `worker` sends alerts and emails, deletes files and workspaces, and prunes old events. It also needs `WORKER_DATABASE_URL`.
+- `worker` sends alerts and emails, deletes files and workspaces, and prunes old events. It also needs `WORKER_DATABASE_URL`. With Shipmail set, it also sweeps the mailbox for replies still to come in, and writes them through `DATABASE_URL`.
 
 To grow, run more `web` instances behind one load balancer, and one or more `worker` instances. They share Postgres and Valkey, so any instance can answer any request. Several workers are safe, because each claims its jobs with `SKIP LOCKED`. [Architecture](architecture.md) explains how the parts fit together.
 

@@ -20,25 +20,28 @@ import {
   type NewAttachment,
   WorkspaceClosedError,
 } from "./messages.ts";
-import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
-import { SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
-import { HOUR_SECONDS, MINUTE_SECONDS } from "./time.ts";
+import { type RateLimit, TOO_MANY_REQUESTS } from "./rate-limit.ts";
+import { SIGNATURE_TOLERANCE_MINUTES, SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
+import type { ShipmailInbound } from "./shipmail-inbound.ts";
+import { HOUR_SECONDS } from "./time.ts";
 import type { Uploads } from "./uploads.ts";
 import { REPLY_MARKERS, visitorWords } from "./visitor-words.ts";
 import { signatureDigest } from "./webhooks.ts";
 
-/** The settings for replies by email. */
+/** The settings for replies by email. At least one of the two receivers is on. */
 export interface InboundEmail {
   /** The domain of reply addresses, whose mail reaches this server. */
   domain: string;
-  /** Signs each email the forwarder posts. */
-  secret: string;
+  /** Signs each email the raw forwarder posts. Without it, that route is off. */
+  secret?: string | undefined;
+  /** Shipmail's webhook for the mailbox that gets the replies. Without it, that route is off. */
+  shipmail?: ShipmailInbound | undefined;
 }
 
 const PATH = "/v1/inbound-email";
-const REPLY_ADDRESS_DAYS = 90;
-const EMAIL_MAX_MB = 25;
-const EMAIL_MAX_BYTES = EMAIL_MAX_MB * 1024 * 1024;
+export const REPLY_ADDRESS_DAYS = 90;
+export const EMAIL_MAX_MB = 25;
+export const EMAIL_MAX_BYTES = EMAIL_MAX_MB * 1024 * 1024;
 const ATTACHMENTS_MAX = 5;
 /** A signature logo is smaller; a pasted screenshot is larger. */
 const INLINE_IMAGE_MIN_BYTES = 16 * 1024;
@@ -46,7 +49,7 @@ const INLINE_IMAGE_MIN_BYTES = 16 * 1024;
 const TEXT_PARTS_MAX = 10;
 /** How far back from a part's end a paragraph or line break may be to end the part there. */
 const BREAK_SEARCH_CHARS = 1000;
-const MESSAGES_PER_ADDRESS_PER_HOUR = 20;
+export const MESSAGES_PER_ADDRESS_PER_HOUR = 20;
 /** Emails this process holds at once, each up to EMAIL_MAX_BYTES, so many cannot fill its memory. */
 const EMAILS_AT_ONCE = 4;
 const SIGNATURE_HEADER = "dinghy-inbound-signature";
@@ -232,14 +235,19 @@ const addresses = (list: Address[] | undefined): string[] =>
     one.group === undefined ? one.address : one.group.map((member) => member.address),
   );
 
+/** The workspace and token of a reply address at the domain, or null for any other address. */
+export function parseReplyAddress(recipient: string, domain: string) {
+  const match = ADDRESS.exec(recipient.toLowerCase());
+  if (match?.[1] === undefined || match[2] === undefined || match[3] !== domain) return null;
+  return { workspaceId: asUuid(match[1]), token: match[2] };
+}
+
 /** The workspace and token of the first recipient at the reply domain, or null. */
 function replyTarget(email: Email, domain: string) {
   const recipients = [...addresses(email.to), ...addresses(email.cc), email.deliveredTo ?? ""];
   for (const recipient of recipients) {
-    const match = ADDRESS.exec(recipient.toLowerCase());
-    if (match?.[1] !== undefined && match[2] !== undefined && match[3] === domain) {
-      return { workspaceId: asUuid(match[1]), token: match[2] };
-    }
+    const target = parseReplyAddress(recipient, domain);
+    if (target !== null) return target;
   }
   return null;
 }
@@ -310,11 +318,10 @@ async function findAddress(tx: Transaction, workspaceId: string, token: string) 
 
 type FoundAddress = NonNullable<Awaited<ReturnType<typeof findAddress>>>;
 
-const OK = { ok: true as const };
-const BAD_SIGNATURE = failure("bad_signature", "The signature is missing, stale or wrong.");
+export const OK = { ok: true as const };
+export const BAD_SIGNATURE = failure("bad_signature", "The signature is missing, stale or wrong.");
 const LENGTH_REQUIRED = failure("length_required", "Send the email with a Content-Length.");
 const TEXT_MAX = (TEXT_PARTS_MAX * MESSAGE_MAX).toLocaleString("en-US");
-const SIGNATURE_TOLERANCE_MINUTES = SIGNATURE_TOLERANCE_SECONDS / MINUTE_SECONDS;
 const TOO_LARGE = failure(
   "too_large",
   `An email can be up to ${EMAIL_MAX_MB} MB, with up to ${TEXT_MAX} characters of text.`,
@@ -358,75 +365,118 @@ const inboundEmailRoute = createRoute({
   },
 });
 
-interface InboundOptions {
+interface IntakeOptions {
   db: Database;
-  inbound: InboundEmail;
+  /** The domain of reply addresses, lower case. */
+  domain: string;
   uploads: Uploads | undefined;
   limits: Limits;
   live: Signals;
   rateLimit: RateLimit;
 }
 
+type Failure = ReturnType<typeof failure>;
+
+/**
+ * What became of an email. 200 took it, had taken it, or dropped it as an automatic answer. A
+ * closed workspace, unpaid or suspended, refuses it until it opens again. 429 and 503 ask the
+ * sender to retry later. The rest refuse it for good.
+ */
+export type Received =
+  | { status: 200 }
+  | { status: 402 | 403; body: Failure; isWorkspaceClosed: true }
+  | { status: 403 | 404 | 413; body: Failure }
+  | { status: 429 | 503; body: Failure; retryAfterSeconds: number };
+
+const BUSY_RETRY_SECONDS = 1;
+const BUSY_NOW = { status: 503, body: BUSY, retryAfterSeconds: BUSY_RETRY_SECONDS } as const;
+
+/**
+ * The emails this process holds. Every intake shares it, so the process holds at most
+ * EMAILS_AT_ONCE, whether they came by a web route or the worker's Shipmail sweep, which in the
+ * 'all' role run in one process.
+ */
+let held = 0;
+
+/** Takes in emails for every route that receives them, and for the Shipmail sweep. */
+export function createEmailIntake(options: IntakeOptions) {
+  return {
+    /** Runs `work` while it holds one email, or answers busy without running it. */
+    async hold<T>(work: () => Promise<T>): Promise<T | typeof BUSY_NOW> {
+      if (held >= EMAILS_AT_ONCE) return BUSY_NOW;
+      held += 1;
+      try {
+        return await work();
+      } finally {
+        held -= 1;
+      }
+    },
+    /** Takes an email whose sender was checked, as the visitor's messages. */
+    receive: (body: Buffer) => receive(options, body),
+  };
+}
+
+export type EmailIntake = ReturnType<typeof createEmailIntake>;
+
+/** The answer to a sender that posted an email, for the outcomes its route can give. */
+export function receivedAnswer<Status extends Exclude<Received["status"], 200>>(
+  c: Context,
+  received: { status: 200 } | { status: Status; body: Failure; retryAfterSeconds?: number },
+) {
+  if (!("body" in received)) return c.json(OK, 200);
+  const { body, status, retryAfterSeconds } = received;
+  if (retryAfterSeconds !== undefined) c.header("retry-after", String(retryAfterSeconds));
+  return c.json(body, status);
+}
+
 /**
  * The route the mail forwarder posts each reply to. It checks the length, the signature's age and
  * the emails it holds before it reads a byte of the body, so no request makes it hold more.
  */
-export function registerInboundEmail(app: App, options: InboundOptions): void {
-  let held = 0;
+export function registerInboundEmail(app: App, intake: EmailIntake, secret: string): void {
   app.openapi(inboundEmailRoute, async (c) => {
     const length = c.req.header("content-length");
     if (length === undefined || !/^\d{1,12}$/.test(length)) return c.json(LENGTH_REQUIRED, 411);
     if (Number(length) > EMAIL_MAX_BYTES) return c.json(TOO_LARGE, 413);
     const signed = parseSignature(c.req.header(SIGNATURE_HEADER));
     if (signed === null) return c.json(BAD_SIGNATURE, 401);
-    if (held >= EMAILS_AT_ONCE) {
-      c.header("retry-after", "1");
-      return c.json(BUSY, 503);
-    }
-    held += 1;
-    try {
+    const received = await intake.hold(async () => {
       const body = Buffer.from(await c.req.arrayBuffer());
-      if (!signatureMatches(options.inbound.secret, signed, body)) {
-        return c.json(BAD_SIGNATURE, 401);
-      }
-      return await receive(c, options, body);
-    } finally {
-      held -= 1;
-    }
+      return signatureMatches(secret, signed, body) ? intake.receive(body) : null;
+    });
+    return received === null ? c.json(BAD_SIGNATURE, 401) : receivedAnswer(c, received);
   });
 }
 
-async function receive(c: Context, options: InboundOptions, body: Buffer) {
-  const { db, inbound, rateLimit, live } = options;
+async function receive(options: IntakeOptions, body: Buffer): Promise<Received> {
+  const { db, domain, rateLimit, live } = options;
   const email = await PostalMime.parse(body);
-  if (isAutoReply(email)) return c.json(OK, 200);
-  const target = replyTarget(email, inbound.domain);
-  if (target === null) return c.json(NOT_FOUND, 404);
+  if (isAutoReply(email)) return { status: 200 };
+  const target = replyTarget(email, domain);
+  if (target === null) return { status: 404, body: NOT_FOUND };
   const { workspaceId } = target;
   const address = await withWorkspace(db, workspaceId, (tx) =>
     findAddress(tx, workspaceId, target.token),
   );
-  if (address === null) return c.json(NOT_FOUND, 404);
-  if (address.blocked) return c.json(BLOCKED, 403);
+  if (address === null) return { status: 404, body: NOT_FOUND };
+  if (address.blocked) return { status: 403, body: BLOCKED };
   const wait = await rateLimit.hit(
     "inbound-email",
     address.id,
     MESSAGES_PER_ADDRESS_PER_HOUR,
     HOUR_SECONDS,
   );
-  if (wait !== null) return tooManyRequests(c, wait);
+  if (wait !== null) return { status: 429, body: TOO_MANY_REQUESTS, retryAfterSeconds: wait };
   const outcome = await catchClosed(addMessages(options, workspaceId, address, email, body));
   if (outcome instanceof WorkspaceClosedError) {
-    const refused = closedFailure(outcome.access);
-    return c.json(refused.body, refused.status);
+    // A deleted workspace never opens again, so its address is as gone as an unknown one.
+    if (outcome.access === "deleted") return { status: 404, body: NOT_FOUND };
+    return { ...closedFailure(outcome.access), isWorkspaceClosed: true };
   }
-  if (outcome === "too_long") return c.json(TOO_LARGE, 413);
-  if (outcome === "busy") {
-    c.header("retry-after", "1");
-    return c.json(BUSY, 503);
-  }
+  if (outcome === "too_long") return { status: 413, body: TOO_LARGE };
+  if (outcome === "busy") return BUSY_NOW;
   if (outcome.created) wakeConversation(live, workspaceId, address.visitorId);
-  return c.json(OK, 200);
+  return { status: 200 };
 }
 
 /**
@@ -472,7 +522,7 @@ const withNote = (parts: string[], note: string) => {
  * conversation. The text comes last, so it can say which attachments were left out.
  */
 async function addMessages(
-  { db, uploads, limits }: InboundOptions,
+  { db, uploads, limits }: IntakeOptions,
   workspaceId: string,
   address: FoundAddress,
   email: Email,
@@ -525,7 +575,7 @@ const isSmallInlineImage = ({ related, mimeType, content }: Attachment) =>
  * Adds the first 5 attachments through the uploads' checks and image queue, and counts the ones
  * left out. Small inline images are skipped without a count. The body limit bounds their decoded
  * size too, since decoding never makes one larger. A busy image queue stops here, so the
- * forwarder's retry brings the rest.
+ * sender's retry brings the rest.
  */
 async function addAttachments(
   uploads: Uploads | undefined,

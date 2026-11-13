@@ -21,7 +21,7 @@ import {
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { createSignals } from "../../apps/server/src/live.ts";
-import type { Mailer } from "../../apps/server/src/mailer.ts";
+import type { MailExtras, Mailer } from "../../apps/server/src/mailer.ts";
 import { appendMessage } from "../../apps/server/src/messages.ts";
 import { localStore, type ObjectStore } from "../../apps/server/src/storage.ts";
 import { createUploads } from "../../apps/server/src/uploads.ts";
@@ -84,16 +84,10 @@ const keys = (): BillingOptions => ({
   now: () => clock,
 });
 
-const mails: {
-  to: string;
-  subject: string;
-  text: string;
-  headers?: Record<string, string>;
-  html?: string;
-}[] = [];
+const mails: ({ to: string; subject: string; text: string } & MailExtras)[] = [];
 const mailer: Mailer = {
-  async send(to, subject, text, headers, html) {
-    mails.push({ to, subject, text, ...(headers && { headers }), ...(html && { html }) });
+  async send(to, subject, text, extras) {
+    mails.push({ to, subject, text, ...extras });
   },
 };
 const mailsAbout = (name: string) => mails.filter((mail) => mail.subject.includes(name));
@@ -976,10 +970,10 @@ describe("the subscription lifecycle", () => {
       .values({ workspaceId: paid.workspaceId, operatorId: second?.id ?? "", role: "owner" });
     const tries: string[] = [];
     const picky: Mailer = {
-      async send(to, subject, text, headers) {
+      async send(to, subject, text, extras) {
         tries.push(to);
         if (to === bad) throw new Error("550 no such mailbox");
-        await mailer.send(to, subject, text, headers);
+        await mailer.send(to, subject, text, extras);
       },
     };
     await stripeSays(paid.workspaceId, paid.subscriptionId, "canceled");

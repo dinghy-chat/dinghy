@@ -29,7 +29,7 @@ import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { registerGetStartedRoutes } from "./get-started.ts";
 import { registerHandlingRoutes } from "./handling.ts";
-import { type InboundEmail, registerInboundEmail } from "./inbound-email.ts";
+import { createEmailIntake, type InboundEmail, registerInboundEmail } from "./inbound-email.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { registerKeyEvents } from "./key-events.ts";
 import { registerLabelRoutes } from "./labels.ts";
@@ -55,6 +55,7 @@ import type { Push } from "./push.ts";
 import { createRateLimit, createSlots } from "./rate-limit.ts";
 import { registerSavedReplyRoutes } from "./saved-replies.ts";
 import { createSetup, registerSetupRoutes } from "./setup.ts";
+import { registerShipmailInbound } from "./shipmail-inbound.ts";
 import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
 import { createTestVisitors, registerTestVisitorRoutes } from "./test-visitors.ts";
@@ -100,7 +101,7 @@ export interface AppOptions {
   logger: Logger;
   metricsToken?: string | undefined;
   uploads?: Uploads | undefined;
-  /** Visitors' replies by email. Without it, the route is off. */
+  /** Visitors' replies by email. Without it, their routes are off. */
   inboundEmail?: InboundEmail | undefined;
   stream?: StreamOptions;
   valkey?: Redis | null;
@@ -410,7 +411,12 @@ export function createApp({
     registerChatPage(app, { db, rateLimit, uploadsOrigin: uploads?.origin });
   }
   if (inboundEmail !== undefined) {
-    registerInboundEmail(app, { db, inbound: inboundEmail, uploads, limits, live, rateLimit });
+    const { domain } = inboundEmail;
+    const intake = createEmailIntake({ db, domain, uploads, limits, live, rateLimit });
+    if (inboundEmail.secret !== undefined) registerInboundEmail(app, intake, inboundEmail.secret);
+    if (inboundEmail.shipmail !== undefined) {
+      registerShipmailInbound(app, intake, inboundEmail.shipmail);
+    }
   }
   if (auth !== undefined) {
     registerOperatorRoutes(app, {
@@ -678,7 +684,16 @@ export async function openApiDocument(): Promise<unknown> {
     }),
     checks: { postgres: unused, valkey: unused },
     db,
-    inboundEmail: { domain: "reply.example.com", secret: "unused-while-building-the-document" },
+    inboundEmail: {
+      domain: "reply.example.com",
+      secret: "unused-while-building-the-document",
+      shipmail: {
+        apiBase: "http://localhost",
+        apiKey: "unused-while-building-the-document",
+        webhookSecret: "unused-while-building-the-document",
+        mailboxId: "unused-while-building-the-document",
+      },
+    },
     logger: pino({ level: "silent" }),
   });
   const response = await app.request("/v1/openapi.json");
