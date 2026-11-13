@@ -96,6 +96,13 @@ describe("business hours", () => {
     expect(await read(space, boss.cookie)).toEqual({ ...HOURS, enabled: false });
   });
 
+  test("a time zone in another case is saved under its one spelling", async () => {
+    const { space, boss } = await workspaceWithOwner();
+    const saved = await save(space, boss.cookie, { ...HOURS, timeZone: "europe/paris" });
+    expect(saved.status).toBe(200);
+    expect(await read(space, boss.cookie)).toEqual(HOURS);
+  });
+
   test("a save records workspace.changed, so open operator apps read them again", async () => {
     const { space, boss } = await workspaceWithOwner();
     const changes = () =>

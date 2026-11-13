@@ -17,7 +17,7 @@ import type { Live } from "./live.ts";
 import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import { changeWorkspace } from "./messages.ts";
 import { maySetUp } from "./team.ts";
-import { isTimeZone } from "./time.ts";
+import { TimeZone } from "./time.ts";
 
 const PATH = `${WORKSPACE_PREFIX}/{workspaceId}/business-hours`;
 
@@ -50,7 +50,7 @@ export const WidgetHoursSchema = z.object({ timeZone: z.string(), week: Week });
 export const BusinessHoursSchema = z
   .object({
     enabled: z.boolean(),
-    timeZone: z.string().refine(isTimeZone, "an IANA time zone, such as Europe/Paris"),
+    timeZone: TimeZone,
     week: Week,
   })
   .openapi("BusinessHours", {

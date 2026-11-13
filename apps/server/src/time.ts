@@ -1,3 +1,5 @@
+import { z } from "@hono/zod-openapi";
+
 // Durations in milliseconds, the unit Date and timers use.
 
 export const MINUTE_MS = 60_000;
@@ -22,3 +24,13 @@ export function isTimeZone(name: string): boolean {
     return false;
   }
 }
+
+/** The spelling this Node uses for a zone that isTimeZone accepts: Europe/Paris for europe/paris. */
+export const canonicalTimeZone = (name: string): string =>
+  new Intl.DateTimeFormat("en", { timeZone: name }).resolvedOptions().timeZone;
+
+/** An IANA time zone, under the spelling this Node uses. */
+export const TimeZone = z
+  .string()
+  .refine(isTimeZone, "an IANA time zone, such as Europe/Paris")
+  .transform(canonicalTimeZone);

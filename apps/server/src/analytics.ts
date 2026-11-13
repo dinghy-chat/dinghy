@@ -7,7 +7,7 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure, INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { conversationHasTestVisitor, isChat, messageAuthors } from "./messages.ts";
-import { isTimeZone } from "./time.ts";
+import { TimeZone } from "./time.ts";
 
 // Support numbers from the conversations and messages already stored. Nothing here tracks anyone.
 
@@ -80,7 +80,7 @@ export const AnalyticsQuery = z.object({
     .int()
     .refine((days) => (PERIODS as readonly number[]).includes(days), "7, 30 or 90")
     .default(30),
-  tz: z.string().refine(isTimeZone, "an IANA time zone, such as Europe/Paris").default("UTC"),
+  tz: TimeZone.default("UTC"),
 });
 
 const analyticsRoute = createRoute({

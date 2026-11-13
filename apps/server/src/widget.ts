@@ -67,7 +67,7 @@ import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
 import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
-import { isTimeZone } from "./time.ts";
+import { canonicalTimeZone, isTimeZone } from "./time.ts";
 import { AttachmentSchema, attachmentView, refuseUpload, type Uploads } from "./uploads.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
@@ -1367,8 +1367,9 @@ export function registerWidgetRoutes(
     }
     await sites.siteSeen(found.id, c.req.header("origin") ?? "");
     const country = countryOf(c.get("clientIp"));
-    // The time zone, when the server knows it too.
-    const zone = timeZone !== undefined && isTimeZone(timeZone) ? timeZone : null;
+    // The time zone, when the server knows it too, under one spelling.
+    const zone =
+      timeZone !== undefined && isTimeZone(timeZone) ? canonicalTimeZone(timeZone) : null;
     // A token that no longer works still counts the tab, as a visitor with none.
     const visitorId =
       token.kind === null ? null : await knownVisitor(db, found, c.req.param("key"), token);

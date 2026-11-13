@@ -30,8 +30,8 @@ function dayName(
   return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1).toLocaleDateString([], options);
 }
 
-const WEEKDAYS = weekdayNames("short");
-const WEEKDAYS_LONG = weekdayNames("long");
+const DAY_NAMES_SHORT = weekdayNames("short");
+const DAY_NAMES = weekdayNames("long");
 const hourName = (hour: number) =>
   new Date(2024, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" });
 const HOURS = Array.from({ length: 24 }, (_, hour) => hourName(hour));
@@ -406,12 +406,12 @@ function Hours({ hours }: { hours: number[][] }) {
   return (
     <Card
       title="hoursTitle"
-      hint={t("hoursBusiest", { day: WEEKDAYS_LONG[peak.day] ?? "", hour: hourName(peak.hour) })}
+      hint={t("hoursBusiest", { day: DAY_NAMES[peak.day] ?? "", hour: hourName(peak.hour) })}
     >
       <figure className="hours">
         <figcaption className="visually-hidden">
           {t("hoursSummary", {
-            day: WEEKDAYS_LONG[peak.day] ?? "",
+            day: DAY_NAMES[peak.day] ?? "",
             hour: hourName(peak.hour),
             conversations: conversations(peak.count),
           })}
@@ -424,8 +424,8 @@ function Hours({ hours }: { hours: number[][] }) {
             </span>
           ))}
           {hours.map((row, day) => [
-            <span key={`d${WEEKDAYS[day]}`} className="heat-day">
-              {WEEKDAYS[day]}
+            <span key={`d${DAY_NAMES_SHORT[day]}`} className="heat-day">
+              {DAY_NAMES_SHORT[day]}
             </span>,
             ...row.map((count, hour) => (
               <span
@@ -435,7 +435,7 @@ function Hours({ hours }: { hours: number[][] }) {
                   day === peak.day && hour === peak.hour ? " peak" : ""
                 }`}
                 data-value={conversations(count)}
-                data-label={t("hoursCell", { day: WEEKDAYS_LONG[day] ?? "", hour: hourName(hour) })}
+                data-label={t("hoursCell", { day: DAY_NAMES[day] ?? "", hour: hourName(hour) })}
               />
             )),
           ])}
