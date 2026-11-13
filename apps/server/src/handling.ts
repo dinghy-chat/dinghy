@@ -23,7 +23,12 @@ import {
 import { InboxMessage, KEY_REPLY_REFUSALS, messageView, refusedReply } from "./inbox.ts";
 import { Body, ClientId, HandoffReason, HandoffSummary } from "./inputs.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
-import { closedFailure, WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
+import {
+  closedFailure,
+  conversationParams,
+  WORKSPACE_PREFIX as PREFIX,
+  workspaceParams,
+} from "./member.ts";
 import {
   authorNames,
   catchClosed,
@@ -36,7 +41,6 @@ import {
 import { allowed, NOT_A_MEMBER } from "./team.ts";
 import type { Uploads } from "./uploads.ts";
 
-const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const draftParams = conversationParams.extend({ draftId: z.uuid() });
 
 const KEYS_ONLY = failure("forbidden", "Only an API key's bot does this.");

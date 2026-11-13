@@ -16,7 +16,7 @@ import {
   OPERATOR_WRITE_ERRORS,
   okContent,
 } from "./errors.ts";
-import { workspaceParams } from "./member.ts";
+import { conversationParams, workspaceParams } from "./member.ts";
 import { isPushEndpoint, isPushKeys, type Push } from "./push.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
 import { queueTranscript } from "./transcripts.ts";
@@ -130,7 +130,7 @@ const sendTranscript = createRoute({
   security: SESSION,
   summary:
     "Email the visitor the whole conversation now, through the worker. A second request before a new message sends nothing more",
-  request: { params: z.object({ workspaceId: z.uuid(), conversationId: z.uuid() }) },
+  request: { params: conversationParams },
   responses: {
     200: { description: "Queued", content: okContent },
     ...MEMBER_WRITE_ERRORS,

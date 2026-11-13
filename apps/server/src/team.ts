@@ -45,7 +45,7 @@ import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { type Mailer, recipientRejected } from "./mailer.ts";
-import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
+import { conversationParams, OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import {
   assignConversation,
   changeWorkspace,
@@ -339,7 +339,7 @@ const assignRoute = createRoute({
   description:
     "Signed in, it also makes a person handle the conversation, as a reply does, so a key that sends directly stops replying. With an API key, it changes only the assignee.",
   request: {
-    params: workspaceParams.extend({ conversationId: z.uuid() }),
+    params: conversationParams,
     body: jsonBody(z.object({ operatorId: z.uuid().nullable() })),
   },
   responses: {

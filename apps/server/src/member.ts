@@ -16,6 +16,7 @@ export const WORKSPACE_PREFIX = "/v1/operator/workspaces";
 
 /** The path parameters of every route under WORKSPACE_PREFIX. */
 export const workspaceParams = z.object({ workspaceId: z.uuid() });
+export const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 
 /** RFC 6750's answer for a token that lacks a scope, here the Setup level. */
 const INSUFFICIENT_SCOPE = 'Bearer error="insufficient_scope", scope="setup"';

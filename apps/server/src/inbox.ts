@@ -36,6 +36,7 @@ import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import {
   closedFailure,
+  conversationParams,
   OPEN_TO_WELCOME,
   OPEN_WHILE_CLOSED,
   WORKSPACE_PREFIX as PREFIX,
@@ -134,7 +135,6 @@ const INVALID_REPLY_TO_ANSWER = {
   ),
 };
 
-const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const messageParams = conversationParams.extend({ messageId: z.uuid() });
 
 const MENTIONS_TEXT = `Only on a note: the members it mentions, by their operator IDs from the members list, at most ${MENTIONS_MAX}. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped.`;
