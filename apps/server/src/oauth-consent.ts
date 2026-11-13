@@ -30,7 +30,7 @@ import {
   RATE_LIMITED,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { WORKSPACE_PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import {
   type AuthorizeRequest,
   type AuthorizeResult,
@@ -145,7 +145,7 @@ const grantRoute = createRoute({
   summary:
     "Approve an OAuth client for this workspace. Owners and admins only. It replaces the operator's earlier grant to the same client, and answers the redirect with the code",
   request: {
-    params: z.object({ workspaceId: z.uuid() }),
+    params: workspaceParams,
     body: {
       required: true,
       content: {

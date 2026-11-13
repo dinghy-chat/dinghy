@@ -24,7 +24,7 @@ import type { Images } from "./images.ts";
 import { InboxMessage, KEY_REPLY_REFUSALS, messageView, refusedReply } from "./inbox.ts";
 import { Body, ClientId, HandoffReason, HandoffSummary } from "./inputs.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
-import { closedFailure, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import { closedFailure, WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import {
   authorNames,
   catchClosed,
@@ -36,7 +36,6 @@ import {
 } from "./messages.ts";
 import { allowed, NOT_A_MEMBER } from "./team.ts";
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const draftParams = conversationParams.extend({ draftId: z.uuid() });
 

@@ -15,7 +15,7 @@ import {
   WIDGET_ERRORS,
 } from "./errors.ts";
 import { visitorAuthorId } from "./identity.ts";
-import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import { headerReplySeconds } from "./widget-settings.ts";
 
 // A client that stops sending, because of a crash or a lost network, expires after this long.
@@ -185,8 +185,6 @@ export function createVisitorPresence(
   };
 }
 
-const params = z.object({ workspaceId: z.uuid() });
-
 const beatRoute = createRoute({
   method: "put",
   ...OPEN_WHILE_CLOSED,
@@ -194,7 +192,7 @@ const beatRoute = createRoute({
   security: SESSION,
   summary: "Say that this operator is online, and which conversation is open",
   request: {
-    params,
+    params: workspaceParams,
     body: {
       required: true,
       content: {
@@ -234,7 +232,7 @@ const leaveRoute = createRoute({
   description:
     "A closing tab ends only its mark on the conversation it showed, as another tab may still keep the operator online, and the online mark expires on its own. A sign-out ends the online mark too.",
   request: {
-    params,
+    params: workspaceParams,
     body: {
       required: true,
       content: {

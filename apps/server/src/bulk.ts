@@ -15,7 +15,7 @@ import {
 } from "./errors.ts";
 import { setLabel } from "./labels.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { closedFailure, OPEN_WHILE_CLOSED, WORKSPACE_PREFIX } from "./member.ts";
+import { closedFailure, OPEN_WHILE_CLOSED, WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import {
   type ConversationRow,
   findConversations,
@@ -79,7 +79,7 @@ const bulkRoute = createRoute({
   security: SESSION,
   summary: "Close, assign, label, mark read or delete several conversations",
   description: `Each conversation changes as the single action would, with its own event, so webhooks and alerts behave as if done one by one. They change in transactions of ${BATCH}, so a failure partway keeps the batches before it. \`mark_read\` reads each one up to its newest message, for the signed-in operator, and is the only action a read-only or suspended workspace allows. \`delete\` is for owners and admins: for a member, every result is \`not_allowed\`. There is no bulk reply.`,
-  request: { params: z.object({ workspaceId: z.uuid() }), body: jsonBody(BulkRequest) },
+  request: { params: workspaceParams, body: jsonBody(BulkRequest) },
   responses: {
     200: jsonAnswer("A result for each conversation", BulkResults),
     ...MEMBER_WRITE_ERRORS,

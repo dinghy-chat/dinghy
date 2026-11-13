@@ -25,7 +25,7 @@ import { newBrowserToken, sha256Hex } from "./identity.ts";
 import { InboxMessage, messageView } from "./inbox.ts";
 import { Body } from "./inputs.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
-import { closedFailure, OPEN_WHILE_CLOSED, WORKSPACE_PREFIX } from "./member.ts";
+import { closedFailure, OPEN_WHILE_CLOSED, WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import { appendMessage, catchClosed, joinVisitor, WorkspaceClosedError } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { requireSetUp } from "./team.ts";
@@ -176,7 +176,6 @@ export type TestVisitors = ReturnType<typeof createTestVisitors>;
 // Routes ------------------------------------------------------------------------------------------
 
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/test-visitors`;
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 
 const sendRoute = createRoute({
   method: "post",

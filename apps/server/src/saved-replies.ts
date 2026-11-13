@@ -22,7 +22,7 @@ import {
 } from "./errors.ts";
 import { boundedText } from "./inputs.ts";
 import type { Live } from "./live.ts";
-import { WORKSPACE_PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import { changeWorkspace } from "./messages.ts";
 
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/saved-replies`;
@@ -61,7 +61,6 @@ const SavedReply = z
     },
   });
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const savedReplyParams = workspaceParams.extend({ savedReplyId: z.uuid() });
 
 const WRITE_ERRORS = {

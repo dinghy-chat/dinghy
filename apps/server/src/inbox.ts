@@ -48,6 +48,7 @@ import {
   OPEN_TO_WELCOME,
   OPEN_WHILE_CLOSED,
   WORKSPACE_PREFIX as PREFIX,
+  workspaceParams,
 } from "./member.ts";
 import { deleteMessage, editMessage, emailedAt, replyReceipts } from "./message-changes.ts";
 import {
@@ -135,7 +136,6 @@ const INVALID_REPLY_TO_ANSWER = {
   ),
 };
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const messageParams = conversationParams.extend({ messageId: z.uuid() });
 

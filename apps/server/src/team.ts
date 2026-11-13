@@ -46,7 +46,7 @@ import { inviteMail, joinMail } from "./letter.ts";
 import { type Limits, OPERATOR_LIMIT, OperatorLimitError } from "./limits.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { type Mailer, recipientRejected } from "./mailer.ts";
-import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import {
   assignConversation,
   changeWorkspace,
@@ -146,7 +146,6 @@ const inviteErrors = {
 
 const roleEnum = z.enum(["owner", "admin", "member"]);
 const invitedRole = z.enum(["admin", "member"]);
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const memberParams = workspaceParams.extend({ operatorId: z.uuid() });
 const inviteParams = workspaceParams.extend({ inviteId: z.uuid() });
 

@@ -41,6 +41,7 @@ import {
 import { visitorAuthorId } from "./identity.ts";
 import { processLogo, refuseImage } from "./images.ts";
 import type { Live } from "./live.ts";
+import { workspaceParams } from "./member.ts";
 import { changeWorkspace, isChat } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
@@ -132,7 +133,6 @@ const PublicAppearanceSchema = SavedAppearanceSchema.omit({ headerMembers: true 
 
 type OperatorAppearance = z.infer<typeof SavedAppearanceSchema>;
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const appearanceAnswer = {
   description: "The widget's settings, with its logo and the members it shows",
   content: { "application/json": { schema: SavedAppearanceSchema } },

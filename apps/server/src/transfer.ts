@@ -39,6 +39,7 @@ import { allowedFileName, FILE_TYPE, FILENAME_INPUT_MAX } from "./files.ts";
 import { sha256Hex } from "./identity.ts";
 import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
+import { workspaceParams } from "./member.ts";
 import { markHistoryRead } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
@@ -914,7 +915,7 @@ const exportRoute = createRoute({
   path: "/v1/operator/workspaces/{workspaceId}/export",
   security: SESSION,
   summary: "Download this workspace's data, images and files as a tar file. Owners only.",
-  request: { params: z.object({ workspaceId: z.uuid() }) },
+  request: { params: workspaceParams },
   responses: {
     200: {
       description: "A tar file with export.json, and the images and files",

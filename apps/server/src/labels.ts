@@ -27,7 +27,7 @@ import {
 } from "./errors.ts";
 import { boundedText } from "./inputs.ts";
 import { type Live, OPERATORS } from "./live.ts";
-import { WORKSPACE_PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import { changeWorkspace, lockWorkspace, nextSeq, wantsWebhook } from "./messages.ts";
 import { allowed } from "./team.ts";
 
@@ -52,7 +52,6 @@ const Label = z.object({ id: z.string(), name: z.string(), color: Color }).opena
   example: { id: "9b1f4c2e-6d3a-4e8b-a7c5-2f0d1e3b4a69", name: "Billing", color: "blue" },
 });
 
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const labelParams = workspaceParams.extend({ labelId: z.uuid() });
 const conversationLabelParams = labelParams.extend({ conversationId: z.uuid() });
 

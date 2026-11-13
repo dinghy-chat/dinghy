@@ -16,6 +16,7 @@ import {
   OPERATOR_WRITE_ERRORS,
   okContent,
 } from "./errors.ts";
+import { workspaceParams } from "./member.ts";
 import { isPushEndpoint, isPushKeys, type Push } from "./push.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
 import { queueTranscript } from "./transcripts.ts";
@@ -42,8 +43,6 @@ const Settings = z
     emailAvailable: z.boolean(),
   })
   .openapi("AlertSettings");
-
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 
 const getSettings = createRoute({
   method: "get",

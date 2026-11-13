@@ -15,7 +15,7 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import type { Live } from "./live.ts";
-import { WORKSPACE_PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import { changeWorkspace } from "./messages.ts";
 import { maySetUp } from "./team.ts";
 
@@ -74,7 +74,6 @@ export const BusinessHoursSchema = z
 
 type SavedHours = z.infer<typeof BusinessHoursSchema>;
 
-const params = z.object({ workspaceId: z.uuid() });
 const answer = jsonAnswer(
   "The business hours, or null when nobody saved them, which means off",
   BusinessHoursSchema.nullable(),
@@ -85,7 +84,7 @@ const getRoute = createRoute({
   path: PATH,
   security: SESSION_OR_SETUP_KEY,
   summary: "Get the business hours",
-  request: { params },
+  request: { params: workspaceParams },
   responses: { ...KEY_LIMITED, 200: answer, ...MEMBER_ERRORS },
 });
 
@@ -95,7 +94,7 @@ const putRoute = createRoute({
   security: SESSION_OR_SETUP_KEY,
   summary:
     "Replace the business hours. Outside these hours the widget shows the away message and when the team is back, and asks for an email: before the first message, or after it for a visitor who has chatted. Sites show it within 5 minutes. Owners, admins and Full access (`setup`) API keys only",
-  request: { params, body: jsonBody(BusinessHoursSchema) },
+  request: { params: workspaceParams, body: jsonBody(BusinessHoursSchema) },
   responses: { ...KEY_LIMITED, 200: answer, ...ROLE_WRITE_ERRORS },
 });
 

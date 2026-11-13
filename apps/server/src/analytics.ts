@@ -5,7 +5,7 @@ import type { App } from "./app.ts";
 import { LABEL_COLORS } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure, INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
-import { WORKSPACE_PREFIX as PREFIX } from "./member.ts";
+import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { conversationHasTestVisitor, isChat, messageAuthors } from "./messages.ts";
 
 // Support numbers from the conversations and messages already stored. Nothing here tracks anyone.
@@ -104,7 +104,7 @@ const analyticsRoute = createRoute({
   description:
     "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `labels` counts them by the labels they have now. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
   request: {
-    params: z.object({ workspaceId: z.uuid() }),
+    params: workspaceParams,
     query: AnalyticsQuery,
   },
   responses: {

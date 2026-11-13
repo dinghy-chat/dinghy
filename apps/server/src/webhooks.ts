@@ -42,7 +42,7 @@ import {
 } from "./errors.ts";
 import type { Images } from "./images.ts";
 import { conversationView, messageView } from "./inbox.ts";
-import { OPEN_WHILE_CLOSED } from "./member.ts";
+import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import {
   authorNames,
   findConversation,
@@ -306,7 +306,6 @@ function webhookBody(
 // Routes ------------------------------------------------------------------------------------------
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}/webhooks";
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 const webhookParams = workspaceParams.extend({ webhookId: z.uuid() });
 const EventList = z.array(z.enum(WEBHOOK_EVENTS)).min(1).max(WEBHOOK_EVENTS.length);
 const Url = z.string().trim().max(2000);

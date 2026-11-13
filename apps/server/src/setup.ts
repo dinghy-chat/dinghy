@@ -18,7 +18,7 @@ import {
 } from "./errors.ts";
 import { normalizeOrigin } from "./identity.ts";
 import type { LiveVisitors } from "./live-visitors.ts";
-import { OPEN_WHILE_CLOSED, WORKSPACE_PREFIX } from "./member.ts";
+import { OPEN_WHILE_CLOSED, WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
 import { FRAMEWORKS, IDENTITY_LANGUAGES, identitySetup, installSnippet } from "./setup-code.ts";
 import { badOrigin, MAX_ORIGINS, requireSetUp, SETUP_DENIED } from "./team.ts";
 import { DAY_MS, HOUR_MS } from "./time.ts";
@@ -311,7 +311,6 @@ export type SiteSignals = Pick<Setup, "siteSeen" | "siteRefused">;
 // Routes ------------------------------------------------------------------------------------------
 
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}`;
-const workspaceParams = z.object({ workspaceId: z.uuid() });
 export const Origin = z
   .string()
   .trim()

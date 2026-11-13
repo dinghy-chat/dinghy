@@ -24,6 +24,7 @@ import {
 } from "./errors.ts";
 import { forgetPagesWithoutChat, lockVisitors } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
+import { workspaceParams } from "./member.ts";
 import {
   findConversation,
   recordConversationChange,
@@ -201,7 +202,7 @@ const blockedList = createRoute({
   security: SESSION,
   summary: "List blocked visitors, including those with no conversation left",
   request: {
-    params: z.object({ workspaceId: z.uuid() }),
+    params: workspaceParams,
     query: z.object({ offset: z.coerce.number().int().min(0).default(0) }),
   },
   responses: {
