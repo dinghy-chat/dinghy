@@ -8,7 +8,7 @@ import { rowHandler } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
 import { emptyLook, ListFilters, type Status, type Who } from "./inbox-filters.tsx";
 import { EmptyArt } from "./scene.tsx";
-import { Keys } from "./shortcuts.tsx";
+import { Keys, useShortcutsOn } from "./shortcuts.tsx";
 import { t } from "./text.ts";
 import { Avatar, FlagBadge, PageHead } from "./ui.tsx";
 import { avatarLetters, isWaiting, title } from "./visitor.ts";
@@ -172,6 +172,7 @@ function SearchField({
   searching: boolean;
   onChange(value: string): void;
 }) {
+  const keysOn = useShortcutsOn();
   return (
     <div className="search">
       {searching ? (
@@ -184,7 +185,7 @@ function SearchField({
         aria-label={t("searchLabel")}
         aria-busy={searching}
         aria-description={t("searchHint")}
-        aria-keyshortcuts="/"
+        aria-keyshortcuts={keysOn ? "/" : undefined}
         title={t("searchHint")}
         placeholder={t("searchPlaceholder")}
         maxLength={100}

@@ -66,6 +66,16 @@ test("the keyboard moves through the Inbox, replies, and closes a chat to open t
   await expect(current(operator)).toHaveCount(1);
   await expect(current(operator)).not.toHaveText(first);
 
+  // A second E while the first saves does not skip past the chat the first opened.
+  await visitor(browser, "Third question");
+  await expect(rows).toHaveCount(2);
+  const left = (await current(operator).textContent()) ?? "";
+  await operator.keyboard.press("e");
+  await operator.keyboard.press("e");
+  await expect(rows).toHaveCount(1);
+  await expect(current(operator)).toHaveCount(1);
+  await expect(current(operator)).not.toHaveText(left);
+
   // G then S opens Settings, and G then I comes back.
   await operator.keyboard.press("g");
   await operator.keyboard.press("s");

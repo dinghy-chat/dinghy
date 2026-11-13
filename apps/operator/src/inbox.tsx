@@ -56,17 +56,18 @@ function useViews(setFilter: Dispatch<SetStateAction<Filter>>) {
 }
 
 /**
- * Opens the conversation `by` rows from the open one in the list as shown, search results
- * included. With none open, J opens the first. Returns false when no row is there.
+ * The row `by` rows from the open conversation in the list as shown, search results included.
+ * With none open, it is the first row.
  */
-function stepConversation(by: 1 | -1): boolean {
+function rowFrom(by: 1 | -1): HTMLElement | undefined {
   const rows = [...document.querySelectorAll<HTMLElement>(".list .rows .row")];
   const at = rows.findIndex((row) => row.getAttribute("aria-current") === "true");
-  const next = rows[at === -1 ? 0 : at + by];
-  if (next === undefined) return false;
-  next.click();
-  next.scrollIntoView({ block: "nearest" });
-  return true;
+  return rows[at === -1 ? 0 : at + by];
+}
+
+function openRow(row: HTMLElement | undefined) {
+  row?.click();
+  row?.scrollIntoView({ block: "nearest" });
 }
 
 /** The conversation the address names, when it is in this workspace, as a notification's link. */
@@ -116,6 +117,8 @@ export function Inbox({
   const [contactId, setContactId] = useState<string | null>(null);
   // Each opening of the shortcuts is a new sheet. A dialog's close event comes a moment after
   // Escape, so a quick ? must not meet the old sheet's late close.
+  const selectedNow = useRef(selected);
+  selectedNow.current = selected;
   const [keysSheet, setKeysSheet] = useState<number | null>(null);
   const keysSheets = useRef(0);
   const openKeys = () => {
@@ -216,8 +219,8 @@ export function Inbox({
     "g a": () => openView("analytics"),
     "g s": () => openView("settings"),
     ...(view === "inbox" && {
-      j: () => stepConversation(1),
-      k: () => stepConversation(-1),
+      j: () => openRow(rowFrom(1)),
+      k: () => openRow(rowFrom(-1)),
     }),
   });
 
@@ -370,8 +373,15 @@ export function Inbox({
                   botTyping={data.botTyping[selected] ?? null}
                   draftsVersion={data.draftsVersion(selected)}
                   onBack={() => setSelected(null)}
-                  onNext={() => {
-                    if (!stepConversation(1) && !stepConversation(-1)) setSelected(null);
+                  nextAfterClose={(closing) => {
+                    // Chosen now, as the close's update may take its row out of the list first.
+                    const next = rowFrom(1) ?? rowFrom(-1);
+                    return () => {
+                      // The operator moved on while the close saved, as with J or a second E.
+                      if (selectedNow.current !== closing) return;
+                      if (next?.isConnected) openRow(next);
+                      else setSelected(null);
+                    };
                   }}
                   onChanged={reload}
                   inView={view === "inbox"}

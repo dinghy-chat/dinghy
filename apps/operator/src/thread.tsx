@@ -93,7 +93,7 @@ export function Thread({
   typingDraft,
   botTyping,
   onBack,
-  onNext,
+  nextAfterClose,
   onChanged,
   onLoaded,
   inView,
@@ -129,8 +129,11 @@ export function Thread({
   /** The name of the bot that types a reply now, or null. */
   botTyping: string | null;
   onBack(): void;
-  /** Opens the conversation after this one in the list, as a close from the keyboard does. */
-  onNext(): void;
+  /**
+   * Picks the conversation to open after this one closes from the keyboard, and returns what opens
+   * it once the close saved.
+   */
+  nextAfterClose(conversationId: string): () => void;
   onChanged(): void;
   /** The conversation as each load finds it. */
   onLoaded(conversation: Conversation): void;
@@ -224,10 +227,12 @@ export function Thread({
           r: () => write("reply"),
           n: () => write("note"),
           // A close moves on to the next chat, so the keyboard can clear a queue.
-          e: () =>
+          e: () => {
+            const next = closed ? null : nextAfterClose(conversationId);
             void change.setStatus(closed ? "open" : "closed").then((saved) => {
-              if (saved && !closed) onNext();
-            }),
+              if (saved) next?.();
+            });
+          },
           i: () => {
             if (conversation.assigneeOperatorId === meId) return;
             void change.assign(meId, members.find((member) => member.id === meId)?.name ?? null);

@@ -7016,6 +7016,9 @@ button.quote:hover {
   font: 600 11.5px / 20px var(--body);
   text-align: center;
 }
+.keys kbd::after {
+  content: attr(data-key);
+}
 :root[data-shortcuts="off"] .keys {
   display: none;
 }
@@ -7125,7 +7128,7 @@ button.quote:hover {
   justify-content: space-between;
 }
 
-/* The top bar: Help shrinks to its icon, and its menu opens down. */
+/* The top bar, on a tablet and a phone: Help shrinks to its icon, and its menu opens down. */
 @media (max-width: 1000px) {
   .nav .keys {
     display: none;
@@ -7156,15 +7159,5 @@ button.quote:hover {
   .help-menu .side-start {
     right: 0;
     left: auto;
-  }
-}
-/* A phone has no keys, and its top bar has no room for Help. */
-@media (max-width: 760px) {
-  .help-menu {
-    display: none;
-  }
-  .help-menu + .get-started,
-  .help-menu + .me-menu {
-    margin-left: auto;
   }
 }

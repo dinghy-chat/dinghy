@@ -36,6 +36,8 @@ export function useShortcutsOn(): boolean {
   );
 }
 
+const shown = (element: Element) => element.getClientRects().length > 0;
+
 /** Where a key types or picks something itself: a field, the composer, a menu or a dialog. */
 const OWNS_KEYS =
   "input, textarea, select, [contenteditable='true'], [role='menu'], [role='listbox'], dialog";
@@ -45,7 +47,8 @@ const OPEN_OVER = "[role='menu'], [role='listbox'], dialog[open]";
 /** A plain key, pressed outside anything that takes keys itself, with nothing open over the page. */
 function isShortcut(event: KeyboardEvent): boolean {
   if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false;
-  if (document.querySelector(OPEN_OVER) !== null) return false;
+  // A page that hides the Inbox keeps its open menus mounted, so only a visible one counts.
+  if ([...document.querySelectorAll(OPEN_OVER)].some(shown)) return false;
   return !(event.target instanceof Element && event.target.closest(OWNS_KEYS) !== null);
 }
 
@@ -53,8 +56,6 @@ function isShortcut(event: KeyboardEvent): boolean {
 type Keys = Record<string, () => void>;
 const registered = new Set<{ current: Keys }>();
 let first: { key: string; at: number } | null = null;
-
-const shown = (element: Element) => element.getClientRects().length > 0;
 
 function onKey(event: KeyboardEvent) {
   if (!isOn || event.defaultPrevented || !isShortcut(event)) return;
@@ -108,7 +109,8 @@ export function Keys({ keys }: { keys: string }) {
   return (
     <span className="keys" aria-hidden="true">
       {keys.split(" ").map((key) => (
-        <kbd key={key}>{keyName(key)}</kbd>
+        // The CSS draws the letter, so it stays out of the button's text.
+        <kbd key={key} data-key={keyName(key)} />
       ))}
     </span>
   );
