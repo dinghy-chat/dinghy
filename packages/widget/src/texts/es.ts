@@ -57,5 +57,5 @@ export const es: Texts = {
   quoteDeleted: "Mensaje original eliminado",
   quoteImage: "Imagen",
   messageDeleted: "Mensaje eliminado",
-  botTyping: "{name} está escribiendo…",
+  botTyping: "{name} está escribiendo...",
 };

@@ -414,7 +414,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "set_typing",
       title: "Show that you are typing",
-      description: `Shows the visitor "<key name> is typing…" for ${BOT_TYPING_MS / 1000} seconds, or until the next message, so call it again while you write. Operators see it too. A key in draft mode shows it to operators only. Errors like \`reply\`: \`bots_paused\`, and \`human_handling\` for a key that sends directly.`,
+      description: `Shows the visitor "<key name> is typing..." for ${BOT_TYPING_MS / 1000} seconds, or until the next message, so call it again while you write. Operators see it too. A key in draft mode shows it to operators only. Errors like \`reply\`: \`bots_paused\`, and \`human_handling\` for a key that sends directly.`,
       input: z.object({ conversationId, typing: z.boolean().default(true) }),
       idempotent: true,
       async run(input, { workspaceId, actor }) {
