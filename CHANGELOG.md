@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-13
+
 ### Added
 
 - Keyboard shortcuts in the operator app: **?** lists them, **/** searches, **G** then **I**, **C**, **V**, **A** or **S** opens a view, **J** and **K** move through the Inbox, **R** and **N** write a reply or a note, **E** closes the conversation and opens the next one, **A** and **I** assign, **.** opens the **…** menu, and **P** shows the visitor's panel. **Esc** leaves the reply box. The app shows each key where it applies, and a switch in the list turns the single keys off for this browser.
@@ -481,7 +483,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/dinghy-chat/dinghy/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/dinghy-chat/dinghy/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/dinghy-chat/dinghy/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/dinghy-chat/dinghy/compare/v0.23.0...v0.24.0
