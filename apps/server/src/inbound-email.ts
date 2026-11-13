@@ -235,14 +235,19 @@ const addresses = (list: Address[] | undefined): string[] =>
     one.group === undefined ? one.address : one.group.map((member) => member.address),
   );
 
+/** The workspace and token of a reply address at the domain, or null for any other address. */
+export function parseReplyAddress(recipient: string, domain: string) {
+  const match = ADDRESS.exec(recipient.toLowerCase());
+  if (match?.[1] === undefined || match[2] === undefined || match[3] !== domain) return null;
+  return { workspaceId: asUuid(match[1]), token: match[2] };
+}
+
 /** The workspace and token of the first recipient at the reply domain, or null. */
 function replyTarget(email: Email, domain: string) {
   const recipients = [...addresses(email.to), ...addresses(email.cc), email.deliveredTo ?? ""];
   for (const recipient of recipients) {
-    const match = ADDRESS.exec(recipient.toLowerCase());
-    if (match?.[1] !== undefined && match[2] !== undefined && match[3] === domain) {
-      return { workspaceId: asUuid(match[1]), token: match[2] };
-    }
+    const target = parseReplyAddress(recipient, domain);
+    if (target !== null) return target;
   }
   return null;
 }
@@ -379,7 +384,7 @@ type Failure = ReturnType<typeof failure>;
  */
 export type Received =
   | { status: 200 }
-  | { status: 402 | 403; body: Failure; isWorkspaceClosed: true; workspaceId: string }
+  | { status: 402 | 403; body: Failure; isWorkspaceClosed: true }
   | { status: 403 | 404 | 413; body: Failure }
   | { status: 429 | 503; body: Failure; retryAfterSeconds: number };
 
@@ -387,11 +392,14 @@ const BUSY_RETRY_SECONDS = 1;
 const BUSY_NOW = { status: 503, body: BUSY, retryAfterSeconds: BUSY_RETRY_SECONDS } as const;
 
 /**
- * Takes in emails for every route that receives them. They share one count of the emails held,
- * so the process holds at most EMAILS_AT_ONCE, whichever route they came by.
+ * The emails this process holds. Every intake shares it, so the process holds at most
+ * EMAILS_AT_ONCE, whether they came by a web route or the worker's Shipmail sweep, which in the
+ * 'all' role run in one process.
  */
+let held = 0;
+
+/** Takes in emails for every route that receives them, and for the Shipmail sweep. */
 export function createEmailIntake(options: IntakeOptions) {
-  let held = 0;
   return {
     /** Runs `work` while it holds one email, or answers busy without running it. */
     async hold<T>(work: () => Promise<T>): Promise<T | typeof BUSY_NOW> {
@@ -463,7 +471,7 @@ async function receive(options: IntakeOptions, body: Buffer): Promise<Received> 
   if (outcome instanceof WorkspaceClosedError) {
     // A deleted workspace never opens again, so its address is as gone as an unknown one.
     if (outcome.access === "deleted") return { status: 404, body: NOT_FOUND };
-    return { ...closedFailure(outcome.access), isWorkspaceClosed: true, workspaceId };
+    return { ...closedFailure(outcome.access), isWorkspaceClosed: true };
   }
   if (outcome === "too_long") return { status: 413, body: TOO_LARGE };
   if (outcome === "busy") return BUSY_NOW;

@@ -742,26 +742,6 @@ export const replyAddress = pgTable(
 );
 
 /**
- * A reply email that waits in the Shipmail mailbox while its workspace is unpaid or suspended. Only
- * Shipmail's message ID is stored, never the email. The worker takes the email in once the workspace
- * opens again, and deletes it from the mailbox after 90 days. A claim moves `next_try_at` ahead, so
- * a pass that fails leaves the row for a later one.
- */
-export const shipmailHeldEmail = pgTable(
-  "shipmail_held_email",
-  {
-    workspaceId: ownedByWorkspace(),
-    emailId: text("email_id").notNull(),
-    heldAt: timestamp("held_at", { withTimezone: true }).notNull().defaultNow(),
-    nextTryAt: timestamp("next_try_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.workspaceId, table.emailId] }),
-    index("shipmail_held_email_next_try_idx").on(table.nextTryAt),
-  ],
-);
-
-/**
  * A page a visitor who chatted went through, as the widget reported it. Only visitors who already
  * have a conversation get rows, at most 100 each, and the worker deletes rows after 90 days.
  */

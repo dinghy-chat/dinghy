@@ -24,7 +24,6 @@ import {
   pageView,
   replyAddress,
   savedReply,
-  shipmailHeldEmail,
   subscription,
   visitor,
   webhook,
@@ -264,8 +263,6 @@ describe("the owner's delete", () => {
       conversationId: talk?.id ?? "",
       labelId: tag?.id ?? "",
     });
-    // A reply email kept in the Shipmail mailbox, which goes with the workspace row by cascade.
-    await owner.insert(shipmailHeldEmail).values({ workspaceId: created.id, emailId: "eml_home" });
     // A logo, which goes with the workspace row by its foreign key.
     await owner
       .insert(workspaceLogo)

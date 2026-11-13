@@ -1,32 +1,27 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
 import { inboundEmailFromConfig, loadConfig } from "./config.ts";
-import {
-  conversation,
-  message,
-  shipmailHeldEmail,
-  subscription,
-  visitor,
-  workspace,
-} from "./db/schema.ts";
+import { conversation, message, subscription, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import {
   createEmailIntake,
   createReplyAddress,
   EMAIL_MAX_BYTES,
   MESSAGES_PER_ADDRESS_PER_HOUR,
+  REPLY_ADDRESS_DAYS,
 } from "./inbound-email.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { noLive } from "./live.ts";
 import { createRateLimit } from "./rate-limit.ts";
-import { heldEmailStep, type ShipmailInbound } from "./shipmail-inbound.ts";
+import { mailboxSweep, type ShipmailInbound } from "./shipmail-inbound.ts";
+import { DAY_MS, MINUTE_MS } from "./time.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const DOMAIN = "reply.example.com";
@@ -36,15 +31,18 @@ const WEBHOOK_SECRET = "a-shipmail-webhook-secret";
 const PATH = "/v1/inbound-email/shipmail";
 const logger = pino({ level: "silent" });
 const ok = async () => {};
+/** The fake lists at most this many messages a page, so a sweep turns pages. */
+const FAKE_PAGE_MAX = 2;
 
 /**
- * Shipmail's inbox API for one mailbox, as the receiver uses it: a download, a move to Trash and a
- * delete that works only in Trash. `failing` makes every call with that method answer 500,
- * `rawStatus` makes a message's download answer that status, and `downloads` holds every download
- * until it resolves.
+ * Shipmail's inbox API for one mailbox, as the receiver uses it: a cursor-paged list, a download, a
+ * move to Trash and a delete that works only in Trash. `failing` makes every call with that method
+ * answer 500, `rawStatus` makes a message's download answer that status, and `downloads` holds
+ * every download until it resolves. A message arrives now unless `receivedAt` says otherwise.
  */
 async function fakeShipmail() {
   const messages = new Map<string, string>();
+  const receivedAt = new Map<string, Date>();
   const trashed = new Set<string>();
   const calls: string[] = [];
   const failing = new Set<string>();
@@ -55,15 +53,21 @@ async function fakeShipmail() {
     for await (const chunk of request) body += chunk;
     const { method = "", url = "" } = request;
     calls.push(`${method} ${url}`);
-    const match = /^\/api\/v1\/mailboxes\/([^/]+)\/inbox\/messages\/([^/]+)(\/raw|\/move)?$/.exec(
-      url,
-    );
-    const [, mailbox, id = "", action] = match ?? [];
+    const { pathname, searchParams } = new URL(url, "http://shipmail");
+    const match =
+      /^\/api\/v1\/mailboxes\/([^/]+)\/inbox\/messages(?:\/([^/]+)(\/raw|\/move)?)?$/.exec(
+        pathname,
+      );
+    const [, mailbox, id, action] = match ?? [];
     if (request.headers.authorization !== `Bearer ${API_KEY}` || mailbox !== MAILBOX) {
       response.writeHead(401).end();
     } else if (failing.has(method)) {
       response.writeHead(500).end();
-    } else if (!messages.has(id)) {
+    } else if (method === "GET" && id === undefined) {
+      const page = listPage(searchParams);
+      response.writeHead(page === null ? 409 : 200, { "content-type": "application/json" });
+      response.end(JSON.stringify(page ?? {}));
+    } else if (id === undefined || !messages.has(id)) {
       response.writeHead(404).end();
     } else if (method === "GET" && action === "/raw") {
       await fake.downloads;
@@ -83,12 +87,44 @@ async function fakeShipmail() {
       response.writeHead(422).end();
     }
   });
+  const arrivedAt = (emailId: string) => receivedAt.get(emailId) ?? new Date();
+  /** The messages received before `before`, oldest first, after the cursor's message. */
+  function listPage(query: URLSearchParams) {
+    const before = new Date(query.get("before") ?? "");
+    const ids = [...messages.keys()]
+      .filter((emailId) => arrivedAt(emailId) < before)
+      .sort((a, b) => arrivedAt(a).getTime() - arrivedAt(b).getTime() || a.localeCompare(b));
+    const cursor = query.get("cursor");
+    const start = cursor === null ? 0 : ids.indexOf(cursor) + 1;
+    if (start === 0 && cursor !== null) return null;
+    const limit = Math.min(Number(query.get("limit")), FAKE_PAGE_MAX);
+    const pageIds = ids.slice(start, start + limit);
+    const hasMore = start + limit < ids.length;
+    return {
+      object: "inbox_messages",
+      mailbox_id: MAILBOX,
+      data: pageIds.map((emailId) => ({
+        object: "inbox_message",
+        id: emailId,
+        to: [{ name: null, email: /^To: (.*)$/m.exec(messages.get(emailId) ?? "")?.[1] ?? null }],
+        received_at: arrivedAt(emailId).toISOString(),
+      })),
+      junk_total: null,
+      pagination: {
+        limit,
+        total: ids.length,
+        has_more: hasMore,
+        next_cursor: hasMore ? pageIds.at(-1) : null,
+      },
+    };
+  }
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   const port = typeof address === "object" && address !== null ? address.port : 0;
   return Object.assign(fake, {
     apiBase: `http://127.0.0.1:${port}/api/v1`,
     messages,
+    receivedAt,
     calls,
     failing,
     rawStatus,
@@ -104,7 +140,7 @@ let valkey: Redis;
 let shipmail: Awaited<ReturnType<typeof fakeShipmail>>;
 let app: App;
 let space: NewWorkspace;
-let takeHeldEmails: () => Promise<boolean>;
+let sweep: () => Promise<void>;
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -137,7 +173,7 @@ beforeAll(async () => {
     live: noLive,
     rateLimit: createRateLimit(valkey, logger),
   });
-  takeHeldEmails = heldEmailStep({ db, workerDb, intake, settings, logger });
+  sweep = mailboxSweep({ db, intake, domain: DOMAIN, settings, logger });
 });
 
 beforeEach(() => {
@@ -464,129 +500,118 @@ describe("the settings", () => {
   });
 });
 
-/** The worker's passes over kept emails, until one claims nothing. */
-async function workerPasses() {
-  while (await takeHeldEmails()) {}
-}
-
-/** The Shipmail IDs of the emails kept for a workspace, as the worker sees them. */
-const heldIn = async (workspaceId: string) =>
-  (
-    await owner
-      .select({ emailId: shipmailHeldEmail.emailId })
-      .from(shipmailHeldEmail)
-      .where(eq(shipmailHeldEmail.workspaceId, workspaceId))
-  ).map((row) => row.emailId);
-
 const setSuspended = (workspaceId: string, at: Date | null) =>
   owner.update(workspace).set({ suspendedAt: at }).where(eq(workspace.id, workspaceId));
 
-/** A reply that arrives while its workspace is suspended, and that the webhook keeps. */
+/** Makes a message older, as the sweep sees it. */
+const arrivedAgo = (emailId: string, ms: number) =>
+  shipmail.receivedAt.set(emailId, new Date(Date.now() - ms));
+
+/** Past the sweep's 10 minutes, so a message is no longer in its webhook delivery. */
+const SWEPT_AFTER_MS = 11 * MINUTE_MS;
+
+/** A reply that arrived while its workspace was suspended, which the webhook kept. */
 async function keptEmail(text: string) {
   const chat = await chatInNewWorkspace();
   await setSuspended(chat.workspaceId, new Date());
   const emailId = arrives(chat.address, text);
   expect((await deliver(receivedEvent(emailId))).status).toBe(200);
-  expect(await heldIn(chat.workspaceId)).toEqual([emailId]);
+  expect(shipmail.messages.has(emailId)).toBe(true);
+  arrivedAgo(emailId, SWEPT_AFTER_MS);
   return { ...chat, emailId };
 }
 
-/** Makes a kept email due again now, as when its claim ran out. */
-const dueNow = (emailId: string) =>
-  owner
-    .update(shipmailHeldEmail)
-    .set({ nextTryAt: sql`now()` })
-    .where(eq(shipmailHeldEmail.emailId, emailId));
+const downloadsOf = (emailId: string) =>
+  shipmail.calls.filter((call) => call.endsWith(`/${emailId}/raw`)).length;
 
-describe("a kept email", () => {
-  test("stays while the workspace is closed, and comes in once it opens again", async () => {
+const listCalls = () =>
+  shipmail.calls.filter((call) =>
+    call.startsWith(`GET /api/v1/mailboxes/${MAILBOX}/inbox/messages?`),
+  ).length;
+
+describe("the mailbox sweep", () => {
+  test("leaves a kept email while its workspace is closed, and takes it once it opens again", async () => {
     const kept = await keptEmail("Are you back?");
-    await workerPasses();
+    await sweep();
     expect(shipmail.messages.has(kept.emailId)).toBe(true);
-    expect(await heldIn(kept.workspaceId)).toEqual([kept.emailId]);
+    // A closed workspace's email is skipped by its address, without a download.
+    expect(downloadsOf(kept.emailId)).toBe(1);
+    expect(await bodiesOf(kept.conversationId)).toEqual([]);
     await setSuspended(kept.workspaceId, null);
-    await workerPasses();
+    await sweep();
     expect(await bodiesOf(kept.conversationId)).toEqual(["Are you back?"]);
     expect(shipmail.messages.has(kept.emailId)).toBe(false);
-    expect(await heldIn(kept.workspaceId)).toEqual([]);
   });
 
-  test("a second delivery of its event keeps one row and its first time", async () => {
-    const kept = await keptEmail("Twice");
-    const [first] = await owner
-      .select({ heldAt: shipmailHeldEmail.heldAt })
-      .from(shipmailHeldEmail)
-      .where(eq(shipmailHeldEmail.emailId, kept.emailId));
-    expect((await deliver(receivedEvent(kept.emailId))).status).toBe(200);
-    expect(
-      await owner
-        .select({ heldAt: shipmailHeldEmail.heldAt })
-        .from(shipmailHeldEmail)
-        .where(eq(shipmailHeldEmail.emailId, kept.emailId)),
-    ).toEqual([first]);
-  });
-
-  test("is deleted from the mailbox after 90 days if the workspace never opens", async () => {
+  test("deletes an email older than the reply address's lifetime", async () => {
     const kept = await keptEmail("Too late");
-    await owner
-      .update(shipmailHeldEmail)
-      .set({ heldAt: sql`now() - interval '91 days'` })
-      .where(eq(shipmailHeldEmail.emailId, kept.emailId));
-    await workerPasses();
+    arrivedAgo(kept.emailId, (REPLY_ADDRESS_DAYS + 1) * DAY_MS);
+    await sweep();
     expect(shipmail.messages.has(kept.emailId)).toBe(false);
-    expect(await heldIn(kept.workspaceId)).toEqual([]);
     expect(await bodiesOf(kept.conversationId)).toEqual([]);
   });
 
-  test("whose message is gone at Shipmail clears its row", async () => {
-    const kept = await keptEmail("Gone");
-    shipmail.messages.delete(kept.emailId);
-    await setSuspended(kept.workspaceId, null);
-    await workerPasses();
-    expect(await heldIn(kept.workspaceId)).toEqual([]);
-    expect(await bodiesOf(kept.conversationId)).toEqual([]);
+  test("deletes an email for a workspace that was purged", async () => {
+    const gone = `reply+${randomUUID().replaceAll("-", "")}.${"a".repeat(25)}@${DOMAIN}`;
+    const emailId = arrives(gone, "Hello?");
+    arrivedAgo(emailId, SWEPT_AFTER_MS);
+    await sweep();
+    expect(shipmail.messages.has(emailId)).toBe(false);
   });
 
-  test("whose download fails stays for a later pass, and comes in then", async () => {
-    const kept = await keptEmail("Retry me");
-    await setSuspended(kept.workspaceId, null);
-    shipmail.failing.add("GET");
-    await workerPasses();
-    expect(await heldIn(kept.workspaceId)).toEqual([kept.emailId]);
-    expect(shipmail.messages.has(kept.emailId)).toBe(true);
-    // The claim holds it back until it runs out.
-    shipmail.failing.clear();
-    shipmail.calls.length = 0;
-    await workerPasses();
-    expect(shipmail.calls).toEqual([]);
-    await dueNow(kept.emailId);
-    await workerPasses();
-    expect(await bodiesOf(kept.conversationId)).toEqual(["Retry me"]);
-    expect(await heldIn(kept.workspaceId)).toEqual([]);
+  test("leaves a message under 10 minutes old to its webhook delivery", async () => {
+    const chat = await newChat();
+    const emailId = arrives(chat.address, "Just sent");
+    arrivedAgo(emailId, 9 * MINUTE_MS);
+    await sweep();
+    expect(downloadsOf(emailId)).toBe(0);
+    expect(shipmail.messages.has(emailId)).toBe(true);
+    arrivedAgo(emailId, SWEPT_AFTER_MS);
+    await sweep();
+    expect(await bodiesOf(chat.conversationId)).toEqual(["Just sent"]);
   });
 
-  test("of a workspace deleted meanwhile is refused for good and deleted", async () => {
-    const kept = await keptEmail("Still there?");
-    await owner
-      .update(workspace)
-      .set({ deletedAt: new Date() })
-      .where(eq(workspace.id, kept.workspaceId));
-    await workerPasses();
-    expect(shipmail.messages.has(kept.emailId)).toBe(false);
-    expect(await heldIn(kept.workspaceId)).toEqual([]);
+  test("takes a reply whose webhook never arrived, across pages", async () => {
+    const chat = await newChat();
+    const emailIds = ["First", "Second", "Third"].map((text, index) => {
+      const emailId = arrives(chat.address, text);
+      arrivedAgo(emailId, SWEPT_AFTER_MS - index * 1000);
+      return emailId;
+    });
+    await sweep();
+    expect(await bodiesOf(chat.conversationId)).toEqual(["First", "Second", "Third"]);
+    expect(emailIds.filter((emailId) => shipmail.messages.has(emailId))).toEqual([]);
   });
 
-  test("stays in its workspace: the app cannot note one for another workspace or read any", async () => {
-    const kept = await keptEmail("Mine");
-    const other = await createWorkspace(db, "Other", ["https://other.example.com"]);
-    await expect(
-      withWorkspace(db, other.id, (tx) =>
-        tx.insert(shipmailHeldEmail).values({ workspaceId: kept.workspaceId, emailId: "eml_x" }),
-      ),
-    ).rejects.toThrow();
-    await expect(
-      withWorkspace(db, kept.workspaceId, (tx) => tx.select().from(shipmailHeldEmail)),
-    ).rejects.toThrow();
-    expect(await heldIn(kept.workspaceId)).toEqual([kept.emailId]);
+  test("runs once when two start at the same time", async () => {
+    const chat = await newChat();
+    const emailId = arrives(chat.address, "Only once");
+    arrivedAgo(emailId, SWEPT_AFTER_MS);
+    let release = () => {};
+    shipmail.downloads = new Promise((resolve) => {
+      release = resolve;
+    });
+    const first = sweep();
+    await vi.waitFor(() => expect(downloadsOf(emailId)).toBe(1));
+    const listed = listCalls();
+    await sweep();
+    expect(listCalls()).toBe(listed);
+    release();
+    await first;
+    expect(await bodiesOf(chat.conversationId)).toEqual(["Only once"]);
+    expect(downloadsOf(emailId)).toBe(1);
+  });
+
+  test("leaves a message whose download failed for the next sweep", async () => {
+    const chat = await newChat();
+    const emailId = arrives(chat.address, "Retry me");
+    arrivedAgo(emailId, SWEPT_AFTER_MS);
+    shipmail.rawStatus.set(emailId, 500);
+    await sweep();
+    expect(shipmail.messages.has(emailId)).toBe(true);
+    shipmail.rawStatus.clear();
+    await sweep();
+    expect(await bodiesOf(chat.conversationId)).toEqual(["Retry me"]);
+    expect(shipmail.messages.has(emailId)).toBe(false);
   });
 });

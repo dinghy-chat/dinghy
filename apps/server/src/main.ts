@@ -10,7 +10,6 @@ import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { inboundEmailFromConfig, loadConfig, pushKeysFromConfig } from "./config.ts";
 import * as schema from "./db/schema.ts";
-import type { Database } from "./db/tenant.ts";
 import { startErrorReports } from "./error-reports.ts";
 import { loadCountries } from "./geo.ts";
 import { createEmailIntake } from "./inbound-email.ts";
@@ -19,7 +18,7 @@ import { createLive, createSignals, type Signals } from "./live.ts";
 import { createMailer } from "./mailer.ts";
 import { createPush } from "./push.ts";
 import { createRateLimit } from "./rate-limit.ts";
-import { heldEmailStep } from "./shipmail-inbound.ts";
+import { mailboxSweep } from "./shipmail-inbound.ts";
 import { storeFromConfig } from "./storage.ts";
 import { createUploads } from "./uploads.ts";
 import { startWorker } from "./worker.ts";
@@ -159,7 +158,7 @@ if (role === "worker" || role === "all") {
   });
   publisher.on("error", (err) => logger.error({ err }, "valkey error"));
   const signals = createSignals(publisher, logger);
-  const heldEmails = heldEmailsFor(workerDb, signals, publisher);
+  const sweep = mailboxSweepFor(signals, publisher);
   const worker = startWorker({
     db: workerDb,
     cloud,
@@ -174,36 +173,38 @@ if (role === "worker" || role === "all") {
     store: storeFromConfig(config),
     uploads: uploadsFor(),
     inboundDomain: inboundEmail?.domain,
-    takeHeldEmails: heldEmails?.step,
+    sweepMailbox: sweep?.run,
     webhooks,
   });
   stops.push(
     () => worker.stop(),
     () => pool.end(),
-    async () => heldEmails?.pool.end(),
+    async () => sweep?.pool.end(),
     async () => publisher.disconnect(),
   );
 }
 
 /**
- * The step that takes reply emails kept in the Shipmail mailbox, when Shipmail is set. It takes them
- * as the webhook does, through the app's role, so the worker's own role writes no messages.
+ * The sweep of the Shipmail mailbox, when Shipmail is set. It takes emails as the webhook does,
+ * through the app's role, so the worker's own role writes no messages. Its two connections are the
+ * sweep's lock and the intake's writes.
  */
-function heldEmailsFor(workerDb: Database, signals: Signals, valkey: Redis) {
+function mailboxSweepFor(signals: Signals, valkey: Redis) {
   const shipmail = inboundEmail?.shipmail;
   if (inboundEmail === undefined || shipmail === undefined) return undefined;
   const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 });
   pool.on("error", (err) => logger.error({ err }, "postgres pool error"));
   const db = drizzle(pool, { schema });
+  const { domain } = inboundEmail;
   const intake = createEmailIntake({
     db,
-    domain: inboundEmail.domain,
+    domain,
     uploads: uploadsFor(),
     limits: cloudLimits(cloud, valkey, logger) ?? NO_LIMITS,
     live: signals,
     rateLimit: createRateLimit(valkey, logger, config.RATE_LIMIT_SCALE),
   });
-  return { pool, step: heldEmailStep({ db, workerDb, intake, settings: shipmail, logger }) };
+  return { pool, run: mailboxSweep({ db, intake, domain, settings: shipmail, logger }) };
 }
 
 let stopping = false;
