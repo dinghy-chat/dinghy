@@ -653,6 +653,16 @@ describe("the text", () => {
     expect(replyText(outlook)).toBe("It works.");
   });
 
+  test("keeps a paragraph that starts like a quote's name, above a blank line", () => {
+    const text = [
+      "On Tuesday I'm free.",
+      "",
+      "Acme Support <support@acme.example> wrote:",
+      "> Write your reply above this line",
+    ].join("\n");
+    expect(replyText(text)).toBe("On Tuesday I'm free.");
+  });
+
   test("keeps the visitor's text right above the quote when nothing names it", () => {
     expect(replyText("Thanks\nAda\n\n> Write your reply above this line\n> Hi,")).toBe(
       "Thanks\nAda",

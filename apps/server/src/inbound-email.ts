@@ -106,7 +106,9 @@ const WROTE_LINES_MAX = 3;
  */
 function attributionStart(lines: string[], end: number): number | null {
   if (WROTE_LINE.test(lines[end - 1] ?? "")) {
+    // A wrapped "wrote:" line has no blank line in it, so the visitor's text starts above one.
     for (let at = end - 1; at >= Math.max(0, end - WROTE_LINES_MAX); at -= 1) {
+      if (lines[at]?.trim() === "") break;
       if (WROTE_START.test(lines[at] ?? "")) return at;
     }
     return end - 1;
