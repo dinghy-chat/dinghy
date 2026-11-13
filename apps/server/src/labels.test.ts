@@ -283,4 +283,22 @@ describe("labels", () => {
     });
     expect(missing.isError).toBe(true);
   });
+
+  test("MCP's list_conversations keeps the conversations with a label, as the list route does", async () => {
+    const { space, boss, token, add, onConversation, conversationId } = await team();
+    await visitorStarts(app, space.publicKey, "No label here");
+    const billing = await add(boss.cookie, "Billing");
+    await asOperator(app, boss.cookie, "PUT", onConversation(billing.id));
+    const ids = async (args: Record<string, unknown>) => {
+      const answer = await callTool(app, token, "list_conversations", args);
+      return (answer.structuredContent as { conversations: { id: string }[] }).conversations.map(
+        (one) => one.id,
+      );
+    };
+    expect(await ids({})).toHaveLength(2);
+    expect(await ids({ label: billing.id })).toEqual([conversationId]);
+    expect(await ids({ label: randomUUID() })).toEqual([]);
+    const invalid = await callTool(app, token, "list_conversations", { label: "billing" });
+    expect(invalid.isError).toBe(true);
+  });
 });

@@ -114,7 +114,7 @@ When the drafts read well, an owner or admin changes the key or the connection t
 
 ## Labels
 
-Labels sort conversations, such as `billing` or `bug`, so the team can filter the Inbox by one and count them in Analytics. `list_labels` lists the team's labels with their `id`, `name` and `color`, and each conversation has `labelIds`. `label_conversation` puts one label on a conversation by its `id`, and `unlabel_conversation` takes it off. Each call changes that one label, so your bot never undoes a label a person just put on, and a repeat changes nothing. Only people add new labels, in the operator app, so a bot picks from the team's list. A webhook or `GET /v1/events` asked for `conversation.labeled` hears of each change.
+Labels sort conversations, such as `billing` or `bug`, so the team can filter the Inbox by one and count them in Analytics. `list_labels` lists the team's labels with their `id`, `name` and `color`, each conversation has `labelIds`, and `list_conversations` with a `label` lists only the conversations with that label. `label_conversation` puts one label on a conversation by its `id`, and `unlabel_conversation` takes it off. Each call changes that one label, so your bot never undoes a label a person just put on, and a repeat changes nothing. Only people add new labels, in the operator app, so a bot picks from the team's list. A webhook or `GET /v1/events` asked for `conversation.labeled` hears of each change.
 
 ## Pause all bots
 

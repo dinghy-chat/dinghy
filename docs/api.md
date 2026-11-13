@@ -543,7 +543,7 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 
 | Tool | Level | What it does |
 |---|---|---|
-| `list_conversations` | Chats | Lists open or closed conversations, newest activity first. Pass `nextCursor` back as `cursor` for the next page |
+| `list_conversations` | Chats | Lists open or closed conversations, newest activity first. `label`, a label's ID, keeps only the conversations with it, as the list route's `label` does. Pass `nextCursor` back as `cursor` for the next page |
 | `search_conversations` | Chats | Finds conversations by the visitor's name, email or user ID, or by message text |
 | `get_conversation` | Chats | Reads a conversation: its messages, notes among them with `kind: "note"`, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
 | `reply` | Chats | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Quote an earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |

@@ -145,14 +145,15 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
       name: "list_conversations",
       title: "List conversations",
       description:
-        "Lists conversations, newest activity first, with each visitor and the last message. `waiting` counts the open conversations whose last message is the visitor's. Pass `nextCursor` back as `cursor` for the next page.",
+        "Lists conversations, newest activity first, with each visitor and the last message. `label` keeps only the conversations with that label, by its ID from list_labels. `waiting` counts the open conversations whose last message is the visitor's. Pass `nextCursor` back as `cursor` for the next page.",
       input: z.object({
         status: z.enum(["open", "closed"]).default("open"),
+        label: z.uuid().optional().describe("A label's ID: only the conversations with that label"),
         limit: z.number().int().min(1).max(100).default(20),
         cursor: z.string().regex(CURSOR).optional().describe("The nextCursor of the page before"),
       }),
       readOnly: true,
-      async run({ status: wanted, limit, cursor }, { workspaceId }) {
+      async run({ status: wanted, label: labelId, limit, cursor }, { workspaceId }) {
         const match = cursor === undefined ? null : CURSOR.exec(cursor);
         const before =
           match === null ? undefined : { updatedAt: new Date(match[1] ?? ""), id: match[2] ?? "" };
@@ -160,7 +161,7 @@ function tools(inbox: Inbox, db: Database, live: Live): Tool[] {
           workspaceId,
           null,
           wanted,
-          { assignee: { kind: "all" } },
+          { assignee: { kind: "all" }, labelId },
           before,
           limit,
         );
