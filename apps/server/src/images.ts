@@ -443,6 +443,8 @@ export function fileView(
  * With a separate image origin, that origin serves this route and the public images and nothing else,
  * and the app's origin does not serve them. Register this before every other route.
  */
+const STORE_FAILED = failure("busy", "The file could not be read. Try again.");
+
 export function registerImageFiles(app: App, db: Database, images: Images, logger: Logger) {
   const uuid = z.uuid();
   const filesHost = images.origin === undefined ? undefined : new URL(images.origin).host;
@@ -510,8 +512,10 @@ export function registerImageFiles(app: App, db: Database, images: Images, logge
     // A stream, so slow readers of a large file cannot hold it in memory many times over.
     const contents = await images.store.get(row.storageKey).catch((error: unknown) => {
       logger.error(safeErrorFields(error), "could not read an image or a file");
-      return null;
+      return undefined;
     });
+    // A failed read is not an expired URL, so an app does not ask for new ones and save it later.
+    if (contents === undefined) return c.json(STORE_FAILED, 503);
     if (contents === null) return c.json(NOT_FOUND, 404);
     return c.body(contents, 200, headers);
   });

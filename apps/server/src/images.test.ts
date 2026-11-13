@@ -551,6 +551,22 @@ describe.each([
       expect(opened).toBe(0);
     });
 
+    test("a failed read answers 503, not the 404 of an expired URL", async () => {
+      const failing = createApp({
+        db,
+        logger,
+        checks: { postgres: ok, valkey: ok },
+        images: createImages({
+          store: { ...store, get: () => Promise.reject(new Error("The store timed out")) },
+          secret: "a-test-secret",
+          publicUrl: PUBLIC_URL,
+        }),
+      });
+      const response = await failing.request(sent.image.url.replace(PUBLIC_URL, ""));
+      expect(response.status).toBe(503);
+      expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    });
+
     test("a changed signature fails", async () => {
       const url = parts();
       url.searchParams.set("signature", "forged");
