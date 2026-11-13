@@ -331,7 +331,10 @@ for previous in "${previous_images[@]}"; do
   COMPOSE_YAML="$previous_yaml" setup "$d"
   token_d="$(new_visitor "$d_port")"
   send "$d_port" "$token_d" "Written on the previous release" >/dev/null
-  send_image "$d_port" "$token_d" images >/dev/null
+  # 0.29.0 renamed the upload route, with no alias.
+  route=uploads
+  [ "$(printf '%s\n' "$from" 0.29.0 | sort -V | head -1)" = 0.29.0 ] || route=images
+  send_image "$d_port" "$token_d" "$route" >/dev/null
   path_d="$(image_url "$d_port" "$token_d")"
   curl -sf -o "$work/reencoded.png" "http://127.0.0.1:$d_port$path_d"
   COMPOSE_YAML="$previous_yaml" DINGHY_IMAGE="$previous" DINGHY_PORT="$d_port" compose "$d" down >/dev/null 2>&1
