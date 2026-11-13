@@ -127,10 +127,16 @@ function shipmailInbox({ apiBase, apiKey, mailboxId }: ShipmailInbound) {
 type Inbox = ReturnType<typeof shipmailInbox>;
 type Later = Extract<Received, { status: 429 | 503 }>;
 
+/** The workspace is unpaid or suspended, which can end, so its visitors' replies must not be lost. */
+const isClosedWorkspace = (received: Received) =>
+  received.status === 402 || (received.status === 403 && received.body.error.code === "suspended");
+
 /**
  * Takes the email into the conversation, then deletes it from the mailbox, so the mailbox keeps
- * only what still has to come in. An email the intake refuses for good is deleted too, as the raw
- * route's forwarder rejects it. One the intake asks to send later stays for Shipmail's retry.
+ * only what still has to come in. An email refused for good, such as for a blocked visitor or an
+ * unknown address, is deleted too, as the raw route's forwarder rejects it. One the intake asks to
+ * send later stays for Shipmail's retry. One for a closed workspace stays in the mailbox with a
+ * 200: Shipmail cannot bounce it any more, a delete would lose it, and a retry could last weeks.
  */
 async function take(intake: EmailIntake, inbox: Inbox, emailId: string) {
   const raw = await inbox.raw(emailId);
@@ -138,6 +144,7 @@ async function take(intake: EmailIntake, inbox: Inbox, emailId: string) {
   if (raw !== "too_large") {
     const received = await intake.receive(raw);
     if (received.status === 429 || received.status === 503) return received;
+    if (isClosedWorkspace(received)) return null;
   }
   await inbox.remove(emailId);
   return null;
@@ -147,7 +154,7 @@ const shipmailRoute = createRoute({
   method: "post",
   path: PATH,
   summary: "Receive a visitor's reply by email, from Shipmail",
-  description: `For Shipmail's webhook, and only on a server with \`INBOUND_EMAIL_DOMAIN\`, \`SHIPMAIL_API_KEY\`, \`SHIPMAIL_WEBHOOK_SECRET\` and \`SHIPMAIL_MAILBOX_ID\` set. The body is Shipmail's JSON event, up to ${EVENT_MAX_BYTES / 1024} KB. \`X-Shipmail-Signature\` is the hex HMAC-SHA256 of "v1=<X-Shipmail-Timestamp>\\n<body>" under SHIPMAIL_WEBHOOK_SECRET, and the time must be within ${SIGNATURE_TOLERANCE_MINUTES} minutes. Any event but \`message.received\` in SHIPMAIL_MAILBOX_ID gets a 200 and is ignored. For that one, the server downloads the email, up to ${EMAIL_MAX_MB} MB, and takes it as \`POST /v1/inbound-email\` does. It then deletes the message from the mailbox: once taken, once dropped as an automatic answer, and once refused for good, such as for an unknown address. Shipmail retries any other answer, and a retry adds nothing.`,
+  description: `For Shipmail's webhook, and only on a server with \`INBOUND_EMAIL_DOMAIN\`, \`SHIPMAIL_API_KEY\`, \`SHIPMAIL_WEBHOOK_SECRET\` and \`SHIPMAIL_MAILBOX_ID\` set. The body is Shipmail's JSON event, up to ${EVENT_MAX_BYTES / 1024} KB. \`X-Shipmail-Signature\` is the hex HMAC-SHA256 of "v1=<X-Shipmail-Timestamp>\\n<body>" under SHIPMAIL_WEBHOOK_SECRET, and the time must be within ${SIGNATURE_TOLERANCE_MINUTES} minutes. Any event but \`message.received\` in SHIPMAIL_MAILBOX_ID gets a 200 and is ignored. For that one, the server downloads the email, up to ${EMAIL_MAX_MB} MB, and takes it as \`POST /v1/inbound-email\` does. It then deletes the message from the mailbox: once taken, once dropped as an automatic answer, and once refused for good, such as for an unknown address or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox with a 200, and does not come in by itself when the workspace opens again. Shipmail retries any other answer, and a retry adds nothing.`,
   responses: {
     200: {
       description: "Taken, dropped or refused for good, or an event the server ignores",

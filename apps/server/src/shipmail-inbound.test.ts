@@ -8,7 +8,7 @@ import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
 import { inboundEmailFromConfig, loadConfig } from "./config.ts";
-import { conversation, message, visitor } from "./db/schema.ts";
+import { conversation, message, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { createReplyAddress } from "./inbound-email.ts";
 import type { ShipmailInbound } from "./shipmail-inbound.ts";
@@ -263,6 +263,21 @@ describe("Shipmail's webhook", () => {
       `GET /api/v1/mailboxes/${MAILBOX}/inbox/messages/${emailId}/raw`,
     ]);
     expect(await bodiesOf(chat.conversationId)).toEqual(["Once only"]);
+  });
+
+  test("a suspended workspace's email stays in the mailbox, answered 200 so Shipmail stops", async () => {
+    const chat = await newChat();
+    const emailId = arrives(chat.address, "Anyone there?");
+    const suspend = (at: Date | null) =>
+      owner.update(workspace).set({ suspendedAt: at }).where(eq(workspace.id, space.id));
+    await suspend(new Date());
+    try {
+      expect((await deliver(receivedEvent(emailId))).status).toBe(200);
+    } finally {
+      await suspend(null);
+    }
+    expect(shipmail.messages.has(emailId)).toBe(true);
+    expect(await bodiesOf(chat.conversationId)).toEqual([]);
   });
 
   test("an automatic answer and an unknown address are dropped and deleted", async () => {

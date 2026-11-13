@@ -188,7 +188,7 @@ curl -X POST https://shipmail.to/api/v1/webhooks \
 
 5. In `.env`, set `INBOUND_EMAIL_DOMAIN=reply.example.com` and the three `SHIPMAIL_` settings, then run `docker compose up -d --wait`.
 
-Dinghy deletes each email from the mailbox once it took it, dropped it as an automatic answer, or refused it for good, such as for an address that is not a current one. When the server is busy or Shipmail cannot be reached, Dinghy answers with an error, the email stays, and Shipmail retries. A retry never adds the email twice. Shipmail's webhook deliveries show what Dinghy answered: 401 means the webhook secret differs or the server's clock is more than 5 minutes off, and 500 means Dinghy could not download or delete the email, so check the API key and its scopes.
+Dinghy deletes each email from the mailbox once it took it, dropped it as an automatic answer, or refused it for good, such as for an address that is not a current one or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox, so nothing is lost while the workspace is closed, and it does not come in by itself when the workspace opens again. When the server is busy or Shipmail cannot be reached, Dinghy answers with an error, the email stays, and Shipmail retries. A retry never adds the email twice. Shipmail's webhook deliveries show what Dinghy answered: 401 means the webhook secret differs or the server's clock is more than 5 minutes off, and 500 means Dinghy could not download or delete the email, so check the API key and its scopes.
 
 #### What Dinghy keeps
 
