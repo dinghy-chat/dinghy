@@ -743,6 +743,13 @@
       "when": 1794598092042,
       "tag": "0105_two_factor_on_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1794599531201,
+      "tag": "0106_purge_without_cascading_tables",
+      "breakpoints": true
     }
   ]
 }
