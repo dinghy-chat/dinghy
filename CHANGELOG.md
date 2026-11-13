@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-13
+
 ### Changed
 
 - The keyboard shortcuts list is easier to scan: a close button, keys that read **G** then **I**, and the switch for single keys in its own panel. **Documentation** in **Help** shows that it opens a new tab.
@@ -492,7 +494,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/dinghy-chat/dinghy/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/dinghy-chat/dinghy/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/dinghy-chat/dinghy/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/dinghy-chat/dinghy/compare/v0.24.0...v0.25.0
