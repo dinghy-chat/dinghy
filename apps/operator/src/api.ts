@@ -166,7 +166,7 @@ export type BulkAction =
   | { action: "label"; labelId: string };
 
 /** What a bulk change did to one conversation. */
-type BulkResult = "ok" | "not_found" | "not_allowed" | "unchanged";
+export type BulkResult = "ok" | "not_found" | "not_allowed" | "unchanged";
 
 export interface Snooze {
   until: string | null;
