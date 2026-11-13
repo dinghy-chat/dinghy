@@ -632,6 +632,19 @@ describe("the text", () => {
     );
   });
 
+  test.each(["Order: 1042", "My order:", "Date: tomorrow works"])(
+    "keeps %j above the quote, which names no quote",
+    (said) => {
+      expect(replyText(`${said}\n\n> Write your reply above this line\n> Hi,`)).toBe(said);
+    },
+  );
+
+  test("is cut at French Outlook headers", () => {
+    const text =
+      "Merci\n\nDe : Acme\nEnvoyé : lundi\nÀ : Ada\nObjet : Re\n\n> Write your reply above this line";
+    expect(replyText(text)).toBe("Merci");
+  });
+
   test("keeps everything without a marker, signatures too", () => {
     const text = "Thanks:\n\n> Some quote\n\n-- \nAda Lovelace\nAnalytical Engines Ltd";
     expect(replyText(text)).toBe(text);

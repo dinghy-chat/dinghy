@@ -86,15 +86,19 @@ export async function pruneReplyAddresses(db: Database, limit: number): Promise<
 
 const unquoted = (line: string) => line.replace(/^[>\s]+/, "").trimEnd();
 
-// The lines that name a quote: Outlook's From:, Sent:, To: and Subject: in any language, and the
-// rule of underscores or dashes above them.
-const HEADER_LINE = /^[\p{L} -]{1,20} ?: /u;
+// Outlook's header lines above a copy, in English, French and Spanish, and the rule of
+// underscores or dashes above them. Any other "Name: value" line is the visitor's text.
+const HEADER_LINE = /^(from|sent|date|to|cc|subject|de|envoyé|à|objet|enviado|para|asunto) ?: /iu;
+const FROM_LINE = /^(from|de) ?: /i;
 const RULE_LINE = /^(_{5,}|-{3,}.*-{3,})$/;
+// The end of a line such as "On Monday, Acme wrote:", which may wrap onto two lines.
+const WROTE_LINE = /\b(wrote|a écrit|escribió) ?:$/iu;
 
-/** The block above a quote names it, such as "On Monday, Acme wrote:", or Outlook's headers. */
+/** The block above a quote names it: a "wrote:" line, or Outlook's headers from From: on. */
 const isAttribution = (block: string[]) =>
-  block.at(-1)?.endsWith(":") === true ||
-  block.every((line) => HEADER_LINE.test(line) || RULE_LINE.test(line));
+  WROTE_LINE.test(block.at(-1) ?? "") ||
+  (block.some((line) => FROM_LINE.test(line)) &&
+    block.every((line) => HEADER_LINE.test(line) || RULE_LINE.test(line)));
 
 /**
  * What the visitor wrote: the text above the quote of Dinghy's email. The quote starts at the
