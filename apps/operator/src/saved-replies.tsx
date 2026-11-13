@@ -2,9 +2,10 @@
 import { useId, useState } from "react";
 import { plainText } from "../../../packages/widget/src/markdown.ts";
 import {
+  SAVED_REPLIES_MAX,
   SAVED_REPLY_BODY_MAX,
-  SAVED_REPLY_LIMIT,
   SAVED_REPLY_SHORTCUT,
+  SAVED_REPLY_SHORTCUT_MAX,
 } from "../../../packages/widget/src/shared.ts";
 import type { SavedReply, WorkspaceApi } from "./api.ts";
 import { Icon } from "./icons.tsx";
@@ -12,9 +13,6 @@ import { useAction, useLoad } from "./load.ts";
 import { Confirm } from "./popup.tsx";
 import { t } from "./text.ts";
 import { AddForm, EditForm, ErrorNote, Field, Loading, Page, StatusNote } from "./ui.tsx";
-
-// The longest shortcut SAVED_REPLY_SHORTCUT takes, so the field stops there.
-const SHORTCUT_MAX = 32;
 
 type SavedReplyInput = { shortcut: string; body: string };
 const EMPTY: SavedReplyInput = { shortcut: "", body: "" };
@@ -35,7 +33,7 @@ function ReplyFields({
         label={t("savedReplyShortcut")}
         hint={t("savedReplyShortcutHint")}
         placeholder={t("savedReplyShortcutPlaceholder")}
-        maxLength={SHORTCUT_MAX}
+        maxLength={SAVED_REPLY_SHORTCUT_MAX}
         required
         autoComplete="off"
         value={value.shortcut}
@@ -82,7 +80,7 @@ export function SavedRepliesPage({ api }: { api: WorkspaceApi }) {
   };
 
   const list = replies.data?.savedReplies;
-  const isFull = list !== undefined && list.length >= SAVED_REPLY_LIMIT;
+  const isFull = list !== undefined && list.length >= SAVED_REPLIES_MAX;
   return (
     <Page title={t("pageSavedReplies")} context={t("savedRepliesContext")}>
       {list === undefined ? (

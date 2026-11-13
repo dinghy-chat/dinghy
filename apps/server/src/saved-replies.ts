@@ -1,8 +1,8 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
+  SAVED_REPLIES_MAX,
   SAVED_REPLY_BODY_MAX,
-  SAVED_REPLY_LIMIT,
   SAVED_REPLY_SHORTCUT,
 } from "../../../packages/widget/src/shared.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
@@ -29,7 +29,7 @@ const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/saved-replies`;
 
 const LIMIT = failure(
   "saved_reply_limit",
-  `A workspace can have ${SAVED_REPLY_LIMIT} saved replies.`,
+  `A workspace can have ${SAVED_REPLIES_MAX} saved replies.`,
 );
 const SHORTCUT_TAKEN = failure(
   "saved_reply_shortcut_taken",
@@ -65,7 +65,7 @@ const savedReplyParams = workspaceParams.extend({ savedReplyId: z.uuid() });
 
 const WRITE_ERRORS = {
   409: errorAnswer(
-    `saved_reply_shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has ${SAVED_REPLY_LIMIT} already`,
+    `saved_reply_shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has ${SAVED_REPLIES_MAX} already`,
   ),
 };
 
@@ -86,7 +86,7 @@ const addRoute = createRoute({
   method: "post",
   path: PREFIX,
   security: SESSION,
-  summary: `Add a saved reply. Any member can, up to ${SAVED_REPLY_LIMIT} per workspace`,
+  summary: `Add a saved reply. Any member can, up to ${SAVED_REPLIES_MAX} per workspace`,
   request: {
     params: workspaceParams,
     body: jsonBody(z.object({ shortcut: Shortcut, body: ReplyBody })),
@@ -175,7 +175,7 @@ async function refusal(
     })
     .from(savedReply)
     .where(eq(savedReply.workspaceId, workspaceId));
-  if (savedReplyId === null && (counts?.total ?? 0) >= SAVED_REPLY_LIMIT) return LIMIT;
+  if (savedReplyId === null && (counts?.total ?? 0) >= SAVED_REPLIES_MAX) return LIMIT;
   return (counts?.taken ?? 0) > 0 ? SHORTCUT_TAKEN : null;
 }
 

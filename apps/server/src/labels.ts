@@ -1,6 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, sql } from "drizzle-orm";
-import { LABEL_LIMIT, LABEL_NAME_MAX } from "../../../packages/widget/src/shared.ts";
+import { LABEL_NAME_MAX, LABELS_MAX } from "../../../packages/widget/src/shared.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import {
@@ -36,7 +36,7 @@ const ON_CONVERSATION = `${WORKSPACE_PREFIX}/{workspaceId}/conversations/{conver
 
 const LIMIT = failure(
   "label_limit",
-  `A workspace can have ${LABEL_LIMIT} labels. An owner or admin can delete one.`,
+  `A workspace can have ${LABELS_MAX} labels. An owner or admin can delete one.`,
 );
 const NAME_TAKEN = failure("label_name_taken", "Another label has this name.");
 
@@ -57,7 +57,7 @@ const conversationLabelParams = labelParams.extend({ conversationId: z.uuid() })
 
 const WRITE_ERRORS = {
   409: errorAnswer(
-    `label_name_taken: another label has this name. label_limit: the workspace has ${LABEL_LIMIT} already`,
+    `label_name_taken: another label has this name. label_limit: the workspace has ${LABELS_MAX} already`,
   ),
 };
 
@@ -78,7 +78,7 @@ const addRoute = createRoute({
   method: "post",
   path: PREFIX,
   security: SESSION,
-  summary: `Add a label. Any member can, up to ${LABEL_LIMIT} per workspace`,
+  summary: `Add a label. Any member can, up to ${LABELS_MAX} per workspace`,
   request: {
     params: workspaceParams,
     body: jsonBody(z.object({ name: Name, color: Color.default("gray") })),
@@ -185,7 +185,7 @@ async function refusal(
     })
     .from(label)
     .where(eq(label.workspaceId, workspaceId));
-  if (labelId === null && (counts?.total ?? 0) >= LABEL_LIMIT) return LIMIT;
+  if (labelId === null && (counts?.total ?? 0) >= LABELS_MAX) return LIMIT;
   return (counts?.taken ?? 0) > 0 ? NAME_TAKEN : null;
 }
 

@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useState } from "react";
-import { LABEL_LIMIT, LABEL_NAME_MAX } from "../../../packages/widget/src/shared.ts";
+import { LABEL_NAME_MAX, LABELS_MAX } from "../../../packages/widget/src/shared.ts";
 import type { Label, LabelColor, WorkspaceApi } from "./api.ts";
 import { COLOR_TEXT, LabelDot } from "./labels.tsx";
 import { useAction, useLoad } from "./load.ts";
@@ -66,7 +66,7 @@ export function LabelsPage({ api }: { api: WorkspaceApi }) {
   };
 
   const list = labels.data?.labels;
-  const isFull = list !== undefined && list.length >= LABEL_LIMIT;
+  const isFull = list !== undefined && list.length >= LABELS_MAX;
   return (
     <Page title={t("pageLabels")} context={t("labelsContext")}>
       {list === undefined ? (

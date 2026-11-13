@@ -1,4 +1,4 @@
-import { LABEL_LIMIT, SAVED_REPLY_LIMIT } from "../../../packages/widget/src/shared.ts";
+import { LABELS_MAX, SAVED_REPLIES_MAX } from "../../../packages/widget/src/shared.ts";
 
 // Every string an operator reads has a key, so a locale can be added later.
 const en = {
@@ -82,7 +82,7 @@ const en = {
   savedReplyDeleteLabel: "Delete /{shortcut}",
   savedReplyDeleteTitle: "Delete /{shortcut}?",
   savedReplyDeleteText: "Your team can no longer insert it. Messages that used it keep their text.",
-  savedReplyLimit: `A workspace can have ${SAVED_REPLY_LIMIT} saved replies. Delete one to add another.`,
+  savedReplyLimit: `A workspace can have ${SAVED_REPLIES_MAX} saved replies. Delete one to add another.`,
   savedReplyShortcutTaken: "Another saved reply has this shortcut.",
   pageLabels: "Labels",
   labelsContext:
@@ -97,7 +97,7 @@ const en = {
   labelDeleteLabel: "Delete {name}",
   labelDeleteTitle: "Delete {name}?",
   labelDeleteText: "It comes off every conversation that has it.",
-  labelLimit: `A workspace can have ${LABEL_LIMIT} labels. An owner or admin can delete one.`,
+  labelLimit: `A workspace can have ${LABELS_MAX} labels. An owner or admin can delete one.`,
   labelNameTaken: "Another label has this name.",
   labelsButton: "Labels",
   labelsTitle: "Labels",

@@ -13,6 +13,7 @@ import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Context } from "hono";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
+import { TWO_FACTOR_CODE_MAX } from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { audit } from "./audit.ts";
@@ -50,8 +51,6 @@ const TOTP_CODE = new RegExp(`^\\d{${DIGITS}}$`);
 const RECOVERY_CODE_COUNT = 10;
 /** Each character is one of 32, so a code holds 50 random bits. */
 const RECOVERY_CODE_LENGTH = 10;
-/** The longest code the routes accept once spaces are gone, well above a recovery code's 11. */
-const CODE_MAX_LENGTH = 40;
 const RECOVERY_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
 
 const NONCE_BYTES = 12;
@@ -303,9 +302,9 @@ const CodeBody = z.strictObject({
   code: z
     .string()
     .transform((typed) => typed.replaceAll(/\s/g, ""))
-    .pipe(z.string().min(1).max(CODE_MAX_LENGTH))
+    .pipe(z.string().min(1).max(TWO_FACTOR_CODE_MAX))
     .openapi({
-      description: `${DIGITS} digits from the authenticator app, or a recovery code. Spaces do not count, and without them it has 1 to ${CODE_MAX_LENGTH} characters.`,
+      description: `${DIGITS} digits from the authenticator app, or a recovery code. Spaces do not count, and without them it has 1 to ${TWO_FACTOR_CODE_MAX} characters.`,
     }),
 });
 

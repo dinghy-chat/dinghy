@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type FormEvent, useState } from "react";
 import { encode } from "uqr";
+import { TWO_FACTOR_CODE_MAX } from "../../../packages/widget/src/shared.ts";
 import {
   checkTwoFactor,
   disableTwoFactor,
@@ -17,8 +18,6 @@ import { CopyButton, CopyField, ErrorNote, Field, failureText } from "./ui.tsx";
 /** The empty modules around the code that a scanner needs, as the QR standard asks. */
 const QR_QUIET_MODULES = 4;
 const RECOVERY_FILE = "dinghy-recovery-codes.txt";
-/** The server's limit once spaces are gone, so a code typed with spaces always fits. */
-const CODE_MAX_LENGTH = 40;
 
 /**
  * A refused code: wrong, the session ended after too many, the server cannot read the secret, or
@@ -105,7 +104,7 @@ function CodeForm({
         label={t(label)}
         autoComplete="one-time-code"
         inputMode={numeric ? "numeric" : "text"}
-        maxLength={CODE_MAX_LENGTH}
+        maxLength={TWO_FACTOR_CODE_MAX}
         required
         value={code}
         onChange={setCode}
@@ -326,7 +325,7 @@ export function TwoFactorCheck({
       <Field
         label={t("twoFactorCodeOrRecovery")}
         autoComplete="one-time-code"
-        maxLength={CODE_MAX_LENGTH}
+        maxLength={TWO_FACTOR_CODE_MAX}
         required
         value={code}
         onChange={setCode}
