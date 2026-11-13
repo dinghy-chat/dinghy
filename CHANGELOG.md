@@ -4,6 +4,15 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The keyboard shortcuts list is easier to scan: a close button, keys that read **G** then **I**, and the switch for single keys in its own panel. **Documentation** in **Help** shows that it opens a new tab.
+- In the sidebar, the Inbox and Visitors counts sit at the right edge. With the pointer on a view, its keys take the count's place.
+
+### Fixed
+
+- A visitor signed in with `Dinghy.identify(async () => token)` now gets a country and a time zone, and shows as known in **Visitors**. Before, the widget sent their beat without the token, so the contact had no country.
+
 ## [0.27.0] - 2026-11-13
 
 ### Added

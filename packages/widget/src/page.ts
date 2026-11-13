@@ -39,6 +39,7 @@ if (script !== null && publicKey !== null && publicKey !== undefined) {
     attribute: () => undefined,
     page: true,
     identity: token,
+    hostToken: null,
     pageContext: null,
     // There is no launcher: the chat is open from the start.
     wanted: [undefined],

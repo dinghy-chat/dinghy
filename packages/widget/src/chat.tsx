@@ -143,6 +143,11 @@ function Chat({
   const [token, setToken] = useState(() =>
     identity === null ? readToken(publicKey) : typeof identity === "string" ? identity : null,
   );
+  // The loader's beat sends it, so a visitor signed in with an identify() function is known. The
+  // loader reads it only for such a visitor.
+  useEffect(() => {
+    context.hostToken = token;
+  }, [context, token]);
   const [openConversation, setOpenConversation] = useState(false);
   // Has a conversation, open or closed. Only such a visitor's pages are reported.
   const [chatted, setChatted] = useState(false);
