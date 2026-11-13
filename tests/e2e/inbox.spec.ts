@@ -108,8 +108,11 @@ test("each reply shows who sent it, and your own say You", async ({ browser }) =
 
   // A signed-out visitor has a short code, and the thread shows the page without its query.
   await expect(alice.locator(".thread-head h2")).toHaveText(/^Visitor [0-9A-Z]{4}$/);
-  // The last page is in the visitor's panel, by its path.
-  await expect(alice.locator(".visitor-panel")).toContainText("/pricing");
+  // The last page is in the visitor's panel, named by its title, with its path and no query on
+  // the link. Every page of the test site has the title "Host".
+  const lastPage = alice.locator(".visitor-panel .journey .page-name").first();
+  await expect(lastPage).toHaveText("Host");
+  await expect(lastPage).toHaveAttribute("title", /\/pricing$/);
   await expect(alice.locator(".thread")).not.toContainText("SECRET");
 
   for (const page of [customer, alice, bob]) await page.context().close();
