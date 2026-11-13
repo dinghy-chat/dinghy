@@ -46,11 +46,11 @@ import {
 } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { visitorAuthorId } from "./identity.ts";
-import { createImages } from "./images.ts";
 import { createReplyAddress } from "./inbound-email.ts";
 import { appendMessage } from "./messages.ts";
 import { createPush } from "./push.ts";
 import { localStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { emailStopUrl } from "./visitor-email.ts";
 import { signature } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
@@ -318,9 +318,9 @@ const ATTACKS: Record<string, Attack> = {
     expect(text).not.toContain(secrets.b);
     expect((await widget(b.publicKey, "GET", "stream", one.token, SITE_B)).status).toBe(401);
   },
-  "POST /v1/widget/:key/images": async ({ server, b, one }) => {
+  "POST /v1/widget/:key/uploads": async ({ server, b, one }) => {
     const before = await owner.select().from(attachment).where(eq(attachment.workspaceId, b.id));
-    const response = await server.request(`/v1/widget/${b.publicKey}/images?clientId=x1`, {
+    const response = await server.request(`/v1/widget/${b.publicKey}/uploads?clientId=x1`, {
       method: "POST",
       headers: {
         origin: SITE_B,
@@ -661,7 +661,7 @@ const ATTACKS: Record<string, Attack> = {
       .where(and(eq(event.workspaceId, b.id), eq(event.kind, "transcript.requested")));
     expect(requested).toEqual([]);
   },
-  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/images": async ({
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/uploads": async ({
     server,
     anna,
     a,
@@ -669,7 +669,7 @@ const ATTACKS: Record<string, Attack> = {
   }) => {
     const before = await owner.select().from(attachment);
     const response = await server.request(
-      inWorkspace(a.id, `/conversations/${other.conversationId}/images?clientId=x2`),
+      inWorkspace(a.id, `/conversations/${other.conversationId}/uploads?clientId=x2`),
       {
         method: "POST",
         headers: { cookie: anna.cookie, origin: ORIGIN, "content-type": "image/png" },
@@ -2145,7 +2145,7 @@ async function setupToolsStayHome({ withKey, setupA, other, hookB, a, b }: World
 }
 
 const pushed: string[] = [];
-const signer = createImages({
+const signer = createUploads({
   store: localStore(tmpdir()),
   secret: AUTH_SECRET,
   publicUrl: PUBLIC_URL,
@@ -2164,7 +2164,7 @@ async function buildWorld(db: Database): Promise<World> {
     },
     auth,
     db,
-    images: createImages({
+    uploads: createUploads({
       store: localStore(await mkdtemp(join(tmpdir(), "dinghy-isolation-"))),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
@@ -2215,7 +2215,7 @@ async function buildWorld(db: Database): Promise<World> {
     });
     const { conversationId } = (await sent.json()) as { conversationId: string };
     const uploaded = await server.request(
-      `/v1/widget/${space.publicKey}/images?clientId=${randomUUID()}`,
+      `/v1/widget/${space.publicKey}/uploads?clientId=${randomUUID()}`,
       {
         method: "POST",
         headers: { origin: site, authorization: `Bearer ${token}`, "content-type": "image/png" },
@@ -2529,7 +2529,7 @@ describe("the list of routes", () => {
       alerts: { emailAvailable: true, secret: AUTH_SECRET },
       auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
       db,
-      images: createImages({
+      uploads: createUploads({
         store: localStore(tmpdir()),
         secret: AUTH_SECRET,
         publicUrl: PUBLIC_URL,
@@ -2637,7 +2637,7 @@ describe("the worker with no row-level security", () => {
     const plan = await planDelivery(worker, mine, {
       publicUrl: PUBLIC_URL,
       secret: AUTH_SECRET,
-      imageOrigin: PUBLIC_URL,
+      uploadsOrigin: PUBLIC_URL,
     });
     expect(plan?.channel === "push" && plan.payload.title).toBe("The right workspace");
   });

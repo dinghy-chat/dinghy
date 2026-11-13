@@ -164,7 +164,7 @@ export function createClient(
       const at = page();
       const response = await fetch(
         url(
-          `images?clientId=${clientId}&filename=${encodeURIComponent(file.name)}${at === undefined ? "" : `&page=${encodeURIComponent(at)}`}`,
+          `uploads?clientId=${clientId}&filename=${encodeURIComponent(file.name)}${at === undefined ? "" : `&page=${encodeURIComponent(at)}`}`,
         ),
         {
           method: "POST",

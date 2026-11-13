@@ -20,10 +20,10 @@ import { readTar } from "./archive.ts";
 import { createAuth } from "./auth.ts";
 import { conversation, event, webhook } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import type { Live } from "./live.ts";
 import { localStore } from "./storage.ts";
 import { exportArchive } from "./transfer.ts";
+import { createUploads } from "./uploads.ts";
 import { claimWebhookDeliveries, deliverWebhook, fanOutWebhooksOne } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -143,8 +143,8 @@ beforeAll(async () => {
     checks: { postgres: ok, valkey: ok },
     stream: { heartbeatMs: 25_000, lifetimeMs: 60_000 },
     auth: createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL }),
-    images: createImages({
-      store: localStore(await mkdtemp(join(tmpdir(), "dinghy-notes-images-"))),
+    uploads: createUploads({
+      store: localStore(await mkdtemp(join(tmpdir(), "dinghy-notes-uploads-"))),
       secret: "a-test-secret",
       publicUrl: PUBLIC_URL,
     }),
@@ -269,7 +269,7 @@ describe("writing a note", () => {
   test("a note with an image is refused", async () => {
     const { conversationId } = await visitorStarts(app, space.publicKey, "Hello");
     const response = await app.request(
-      inSpace(`/conversations/${conversationId}/images?clientId=img-note&note=true`),
+      inSpace(`/conversations/${conversationId}/uploads?clientId=img-note&note=true`),
       {
         method: "POST",
         headers: { cookie: ana.cookie, origin: ORIGIN, "content-type": "image/png" },
@@ -542,7 +542,7 @@ describe("webhooks and export", () => {
       const stopping = new AbortController().signal;
       for (const row of await claimWebhookDeliveries(workerDb, 50, 60_000)) {
         const policy = { allowPrivate: true };
-        await deliverWebhook(workerDb, row, { images: undefined, policy, retryMs: 1, stopping });
+        await deliverWebhook(workerDb, row, { uploads: undefined, policy, retryMs: 1, stopping });
       }
       const forNote = bodies
         .map((body) => JSON.parse(body) as { type: string; data: { message: Line } })

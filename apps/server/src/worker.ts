@@ -17,7 +17,6 @@ import {
 } from "./alerts.ts";
 import { workerHeartbeat } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import type { Images } from "./images.ts";
 import { noLive, type Signals } from "./live.ts";
 import { MAIL_CONNECTIONS, type Mailer } from "./mailer.ts";
 import { pruneOAuth } from "./oauth-grants.ts";
@@ -30,6 +29,7 @@ import {
   retryDeletion,
 } from "./storage.ts";
 import { MINUTE_MS, RETENTION_MS } from "./time.ts";
+import type { Uploads } from "./uploads.ts";
 import {
   abandonWebhook,
   claimWebhookDeliveries,
@@ -65,10 +65,10 @@ interface WorkerOptions {
   logger: Logger;
   push?: Push | undefined;
   mailer?: Mailer | undefined;
-  /** Where deleted conversations' images are removed from. */
+  /** Where deleted conversations' uploads are removed from. */
   store?: ObjectStore | undefined;
   /** Signs the image URLs in a webhook's message. Without it, a webhook's image is null. */
-  images?: Images | undefined;
+  uploads?: Uploads | undefined;
   /** Whether webhooks may go over http and to private addresses. */
   webhooks?: WebhookPolicy;
   /** Dinghy Cloud's settings, read by `ee/`. Without billing, no subscription lifecycle runs. */
@@ -156,7 +156,7 @@ export function startWorker({
   push,
   mailer,
   store,
-  images,
+  uploads,
   webhooks = PUBLIC_ONLY,
   cloud,
   signals = noLive,
@@ -216,7 +216,7 @@ export function startWorker({
       const plan = await planDelivery(db, row, {
         publicUrl,
         secret,
-        imageOrigin: images?.origin ?? publicUrl,
+        uploadsOrigin: uploads?.origin ?? publicUrl,
         inboundDomain,
       });
       if (plan?.channel === "later") {
@@ -311,7 +311,7 @@ export function startWorker({
         row.attempts > WEBHOOK_MAX_ATTEMPTS
           ? abandonWebhook(db, row)
           : deliverWebhook(db, row, {
-              images,
+              uploads,
               policy: webhooks,
               retryMs,
               stopping: stopping.signal,
@@ -363,7 +363,7 @@ export function startWorker({
         lifecycleAt = Date.now() + lifecycleMs;
         // The cloud step keeps its own claim time, sized for slow Stripe calls and emails.
         await stage("cloud", async () => cloudStep?.({ mailer: bounded }));
-        // Its images go through the deletions above, and the workspace row after them.
+        // Its uploads go through the deletions above, and the workspace row after them.
         await stage("purge", async () => {
           await purgeDeletedWorkspaces(db);
         });

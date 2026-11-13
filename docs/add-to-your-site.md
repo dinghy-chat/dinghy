@@ -286,7 +286,7 @@ connect-src https://chat.example.com;
 img-src https://chat.example.com;
 ```
 
-If your Dinghy serves images and files from a separate origin (`IMAGES_ORIGIN`), allow that origin in `img-src` and `connect-src` too, as the chat fetches a file to save it.
+If your Dinghy serves images and files from a separate origin (`UPLOADS_ORIGIN`), allow that origin in `img-src` and `connect-src` too, as the chat fetches a file to save it.
 
 ## What visitors can do
 

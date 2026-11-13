@@ -24,10 +24,10 @@ import {
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
-import { createImages } from "../../apps/server/src/images.ts";
 import { appendMessage } from "../../apps/server/src/messages.ts";
 import { localStore, type ObjectStore } from "../../apps/server/src/storage.ts";
 import { exportArchive, importArchive } from "../../apps/server/src/transfer.ts";
+import { createUploads } from "../../apps/server/src/uploads.ts";
 import { purgeDeletedWorkspaces } from "../../apps/server/src/workspace-delete.ts";
 import { createWorkspace, type NewWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
@@ -140,7 +140,7 @@ const PNG = Buffer.from(
 
 const replyImage = (server: App, cookie: string, workspaceId: string, chatId: string) =>
   server.request(
-    inWorkspace(workspaceId, `/conversations/${chatId}/images?clientId=${randomUUID()}`),
+    inWorkspace(workspaceId, `/conversations/${chatId}/uploads?clientId=${randomUUID()}`),
     {
       method: "POST",
       headers: { origin: ORIGIN, cookie, "content-type": "image/png" },
@@ -173,7 +173,7 @@ beforeAll(async () => {
   stripe = await startFakeStripe();
   directory = await mkdtemp(join(tmpdir(), "dinghy-welcome-"));
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
-  store = localStore(join(directory, "images"));
+  store = localStore(join(directory, "uploads"));
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   shared = {
     auth,
@@ -183,7 +183,7 @@ beforeAll(async () => {
     trustedProxyHops: 1,
     limitScale: 100,
     alerts: { emailAvailable: true, secret: AUTH_SECRET },
-    images: createImages({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL }),
+    uploads: createUploads({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL }),
     checks: { postgres: ok, valkey: ok },
   };
   dinghy = await createWorkspace(db, "Dinghy", []);

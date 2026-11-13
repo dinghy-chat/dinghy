@@ -19,9 +19,9 @@ import { type App, type AppOptions, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import { operator, operatorTwoFactor, session } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { localStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
@@ -88,7 +88,7 @@ beforeAll(async () => {
     logger,
     valkey,
     mailer: mail,
-    images: createImages({
+    uploads: createUploads({
       store: localStore(tmpdir()),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
@@ -476,7 +476,7 @@ describe("every way in", () => {
         });
       },
     });
-    const pending = app.request(inSpace(`/conversations/${conversationId}/images?clientId=late`), {
+    const pending = app.request(inSpace(`/conversations/${conversationId}/uploads?clientId=late`), {
       method: "POST",
       headers: { cookie: uploading, origin: ORIGIN, "content-type": "image/png" },
       body,

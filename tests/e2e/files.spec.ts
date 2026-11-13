@@ -104,7 +104,7 @@ test("a file whose URL expired still downloads in the widget, and the page stays
   await page.route("**/v1/files/**", async (route) => {
     requests += 1;
     // The first URL has expired by the time it reaches the server, as in a tab left open.
-    if (requests === 1) server.expireImageUrls();
+    if (requests === 1) server.expireUploadUrls();
     return route.continue();
   });
   const [download] = await Promise.all([page.waitForEvent("download"), line.click()]);
@@ -129,7 +129,7 @@ test("a file whose URL expired still downloads in the operator app", async ({ br
   let requests = 0;
   await operator.route("**/v1/files/**", async (route) => {
     requests += 1;
-    if (requests === 1) server.expireImageUrls();
+    if (requests === 1) server.expireUploadUrls();
     return route.continue();
   });
   const [download] = await Promise.all([operator.waitForEvent("download"), link.click()]);

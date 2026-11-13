@@ -26,9 +26,9 @@ import {
   workspaceMember,
 } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { createLive } from "./live.ts";
 import { localStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const logger = pino({ level: "silent" });
@@ -133,7 +133,7 @@ beforeAll(async () => {
     logger,
     auth,
     live,
-    images: createImages({
+    uploads: createUploads({
       store: localStore(tmpdir()),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
@@ -217,7 +217,7 @@ describe("reply modes", () => {
     })
       .png()
       .toBuffer();
-    const response = await app.request(inChat(chat.conversationId, "/images?clientId=img1"), {
+    const response = await app.request(inChat(chat.conversationId, "/uploads?clientId=img1"), {
       method: "POST",
       headers: { authorization: `Bearer ${key.token}`, "content-type": "image/png" },
       body: png,

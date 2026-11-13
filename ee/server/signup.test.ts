@@ -23,10 +23,10 @@ import {
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
-import { createImages } from "../../apps/server/src/images.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import { appendMessage } from "../../apps/server/src/messages.ts";
 import { localStore } from "../../apps/server/src/storage.ts";
+import { createUploads } from "../../apps/server/src/uploads.ts";
 import { widgetWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.ts";
@@ -205,8 +205,8 @@ beforeAll(async () => {
     limitScale: 100,
     operatorDirectory: directory,
     alerts: { emailAvailable: true, secret: AUTH_SECRET },
-    images: createImages({
-      store: localStore(join(directory, "images")),
+    uploads: createUploads({
+      store: localStore(join(directory, "uploads")),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
     }),

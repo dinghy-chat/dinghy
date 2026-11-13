@@ -2487,7 +2487,7 @@
                 },
                 "required": ["used", "limit"]
               },
-              "imageBytes": {
+              "storageBytes": {
                 "type": "object",
                 "properties": {
                   "used": {
@@ -2500,7 +2500,7 @@
                 "required": ["used", "limit"]
               }
             },
-            "required": ["operators", "imageBytes"]
+            "required": ["operators", "storageBytes"]
           },
           "deletion": {
             "type": "object",
@@ -2508,7 +2508,7 @@
               "conversations": {
                 "type": "number"
               },
-              "images": {
+              "uploads": {
                 "type": "number"
               },
               "members": {
@@ -2518,7 +2518,7 @@
                 "type": "boolean"
               }
             },
-            "required": ["conversations", "images", "members", "onlyWorkspace"]
+            "required": ["conversations", "uploads", "members", "onlyWorkspace"]
           }
         },
         "required": ["publicKey", "allowedOrigins", "signingSecret", "usage", "deletion"]
@@ -3355,7 +3355,7 @@
         }
       }
     },
-    "/v1/widget/{key}/images": {
+    "/v1/widget/{key}/uploads": {
       "post": {
         "security": [
           {
@@ -6602,7 +6602,7 @@
         }
       }
     },
-    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/images": {
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/uploads": {
       "post": {
         "security": [
           {

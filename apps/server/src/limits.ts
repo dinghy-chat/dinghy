@@ -5,7 +5,7 @@ export type StreamKind = "widget" | "operator";
 
 interface Usage {
   operators: { used: number; limit: number };
-  imageBytes: { used: number; limit: number };
+  storageBytes: { used: number; limit: number };
 }
 
 /**

@@ -31,14 +31,6 @@ import {
   verifyHostToken,
   visitorAuthorId,
 } from "./identity.ts";
-import {
-  FileSchema,
-  fileView,
-  ImageSchema,
-  type Images,
-  imageView,
-  refuseImage,
-} from "./images.ts";
 import { Body, ClientId, Filename } from "./inputs.ts";
 import {
   PAGE_PATH_MAX,
@@ -76,6 +68,14 @@ import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
 import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { isTimeZone } from "./time.ts";
+import {
+  FileSchema,
+  fileView,
+  ImageSchema,
+  imageView,
+  refuseUpload,
+  type Uploads,
+} from "./uploads.ts";
 import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
 
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
@@ -470,7 +470,7 @@ const sendMessageRoute = createRoute({
 
 const sendUploadRoute = createRoute({
   method: "post",
-  path: "/v1/widget/{key}/images",
+  path: "/v1/widget/{key}/uploads",
   security: VISITOR_TOKEN,
   summary:
     "Send an image or a file as the raw request body. A retry with the same clientId returns the original",
@@ -571,7 +571,7 @@ const shownName = (author: MessageAuthor, isKey: boolean) =>
 
 /** A message as the widget shows it. `authors` holds the reply authors by operator or key ID. */
 function messageView(
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   urls: ImageUrls,
   workspaceId: string,
   authors: Map<string, MessageAuthor>,
@@ -612,8 +612,8 @@ function messageView(
         : urls.picture(authorOperatorId, author?.pictureUpdatedAt ?? null),
     authorId: authorId === null || author === undefined ? null : visitorAuthorId(authorId),
     createdAt: createdAt.toISOString(),
-    image: imageView(images, workspaceId, image),
-    file: fileView(images, workspaceId, file),
+    image: imageView(uploads, workspaceId, image),
+    file: fileView(uploads, workspaceId, file),
   };
 }
 
@@ -939,7 +939,7 @@ async function notePlace(
   return newest?.id ?? null;
 }
 
-/** Whether Settings > Appearance lets visitors send files as well as images. */
+/** Whether Settings > Appearance lets visitors send files as well as uploads. */
 async function visitorFilesAllowed(tx: Transaction, workspaceId: string): Promise<boolean> {
   const [row] = await tx
     .select({ allowed: widgetSettings.visitorFiles })
@@ -987,7 +987,7 @@ function limitFor(method: string, path: string): [string, number, number] {
   if (method === "GET") return ["widget-read", 600, 60];
   if (path.endsWith("/visitors")) return ["widget-visitors", 20, 3600];
   if (path.endsWith("/messages")) return ["widget-send", 60, 60];
-  if (path.endsWith("/images")) return ["widget-image", 20, 60];
+  if (path.endsWith("/uploads")) return ["widget-upload", 20, 60];
   // A single-page site reports each change of address, and a page should not need more.
   if (path.endsWith("/page")) return ["widget-page", 30, 60];
   if (path.endsWith("/context")) return ["widget-context", 30, 60];
@@ -1003,7 +1003,7 @@ const NO_AUTHORS = new Map<string, MessageAuthor>();
 
 interface WidgetOptions {
   db: Database;
-  images: Images | undefined;
+  uploads: Uploads | undefined;
   imageUrls: ImageUrls;
   ipSecret: string;
   limits: Limits;
@@ -1038,7 +1038,7 @@ export function registerWidgetRoutes(
   app: App,
   {
     db,
-    images,
+    uploads,
     imageUrls: urls,
     ipSecret,
     limits,
@@ -1055,7 +1055,7 @@ export function registerWidgetRoutes(
   }: WidgetOptions,
 ): void {
   const view = (workspaceId: string, message: VisitorMessage, authors = NO_AUTHORS) =>
-    messageView(images, urls, workspaceId, authors, message);
+    messageView(uploads, urls, workspaceId, authors, message);
 
   /** A page of the visitor's messages, with the authors of its replies. */
   const readPage = (
@@ -1111,7 +1111,7 @@ export function registerWidgetRoutes(
   // The longest message is well under this, and it stops an oversized body before it is parsed.
   const smallBody = bodyLimit({ maxSize: 64 * 1024 });
   app.use("/v1/widget/:key/*", (c, next) =>
-    c.req.path.endsWith("/images") ? next() : smallBody(c, next),
+    c.req.path.endsWith("/uploads") ? next() : smallBody(c, next),
   );
 
   app.openapi(sendMessageRoute, async (c) => {
@@ -1255,7 +1255,7 @@ export function registerWidgetRoutes(
     );
   });
 
-  if (images !== undefined) {
+  if (uploads !== undefined) {
     app.openapi(sendUploadRoute, async (c) => {
       const found = c.get("workspace");
       const identified = await identify(c);
@@ -1270,7 +1270,7 @@ export function registerWidgetRoutes(
       if (checked.blocked) return c.json(BLOCKED, 403);
       const outcome = await catchInvalidQuote(
         catchClosed(
-          images.receive(
+          uploads.receive(
             c.req.raw,
             found.id,
             (attachment) =>
@@ -1296,7 +1296,7 @@ export function registerWidgetRoutes(
       if (outcome instanceof InvalidReplyToError) return c.json(INVALID_REPLY_TO, 400);
       // Closed while the upload arrived: the same answer as an unknown key.
       if (outcome instanceof WorkspaceClosedError) return c.json(ORIGIN_NOT_ALLOWED, 403);
-      if ("refused" in outcome) return refuseImage(c, outcome.refused);
+      if ("refused" in outcome) return refuseUpload(c, outcome.refused);
       if (outcome.result.created) {
         wakeConversation(live, found.id, identified.visitorId);
       }

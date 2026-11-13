@@ -204,7 +204,7 @@ test("a failed image can be sent again, and creates one message", async ({ brows
   const page = await context.newPage();
   await openWidget(page, server);
   let attempts = 0;
-  await page.route("**/images*", async (route) => {
+  await page.route("**/uploads*", async (route) => {
     attempts += 1;
     if (attempts === 1) return route.abort();
     return route.continue();
@@ -272,7 +272,7 @@ test("an expired image URL is replaced in the widget", async ({ browser }) => {
   await page.route("**/v1/files/**", async (route) => {
     requests += 1;
     // The first URL has expired by the time it reaches the server.
-    if (requests === 1) server.expireImageUrls();
+    if (requests === 1) server.expireUploadUrls();
     return route.continue();
   });
   await page.reload();
@@ -296,7 +296,7 @@ test("an expired image URL is replaced in the operator app", async ({ browser })
   await operator.route("**/v1/files/**", async (route) => {
     requests += 1;
     // The first URL has expired by the time it reaches the server.
-    if (requests === 1) server.expireImageUrls();
+    if (requests === 1) server.expireUploadUrls();
     return route.continue();
   });
   await operator.locator(".row").first().click();
@@ -356,7 +356,7 @@ test("a paste that holds text and a picture of it does not upload the picture", 
   await openWidget(page, server);
   const uploads: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("/images")) uploads.push(request.url());
+    if (request.url().includes("/uploads")) uploads.push(request.url());
   });
   await pasteImage(page.getByRole("textbox", { name: "Your message" }), "cell A1");
   await page.waitForTimeout(300);

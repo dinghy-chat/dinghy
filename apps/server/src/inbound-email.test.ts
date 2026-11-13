@@ -14,11 +14,11 @@ import { type App, createApp } from "./app.ts";
 import { inboundEmailFromConfig, loadConfig } from "./config.ts";
 import { conversation, event, message, replyAddress, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { createReplyAddress, pruneReplyAddresses, replyText, textParts } from "./inbound-email.ts";
 import { appendMessage, setConversationStatus } from "./messages.ts";
 import { localStore } from "./storage.ts";
 import { DAY_MS } from "./time.ts";
+import { createUploads } from "./uploads.ts";
 import { signature } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -44,14 +44,14 @@ beforeAll(async () => {
   workerDb = database.connect("worker").db;
   owner = database.connect("migrator").db;
   valkey = new Redis(VALKEY_URL, { maxRetriesPerRequest: 1 });
-  const images = createImages({
+  const uploads = createUploads({
     store: localStore(await mkdtemp(join(tmpdir(), "dinghy-inbound-"))),
     secret: AUTH_SECRET,
     publicUrl: PUBLIC_URL,
   });
   app = createApp({
     db,
-    images,
+    uploads,
     inboundEmail: { domain: DOMAIN, secret: SECRET },
     logger,
     valkey,

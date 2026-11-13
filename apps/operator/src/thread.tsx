@@ -416,7 +416,7 @@ export function Thread({
             node: <OlderDrafts drafts={suggestions.drafts} {...draftHandlers} />,
             before: staleBefore(suggestions.drafts),
           }}
-          onImageError={thread.refreshImages}
+          onUploadError={thread.refreshUploads}
           onRetry={thread.retry}
         />
         <ErrorNote text={problem} />

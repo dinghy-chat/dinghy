@@ -39,13 +39,13 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { visitorAuthorId } from "./identity.ts";
-import { processLogo, refuseImage } from "./images.ts";
 import type { Live } from "./live.ts";
 import { workspaceParams } from "./member.ts";
 import { changeWorkspace, isChat } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
 import { maySetUp } from "./team.ts";
+import { processLogo, refuseUpload } from "./uploads.ts";
 import { PUBLIC_KEY, widgetWorkspace } from "./workspaces.ts";
 
 const PREFIX = "/v1/operator/workspaces/{workspaceId}/widget";
@@ -389,7 +389,7 @@ export function registerWidgetSettingsRoutes(
   app.openapi(setLogoRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const logo = await processLogo(new Uint8Array(await c.req.arrayBuffer()));
-    if (typeof logo === "string") return refuseImage(c, logo);
+    if (typeof logo === "string") return refuseUpload(c, logo);
     const saved = await changeLogo(id, async (tx) => {
       await tx
         .insert(workspaceLogo)

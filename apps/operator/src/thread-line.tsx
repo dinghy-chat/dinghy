@@ -72,13 +72,13 @@ function Bubble({
   quote,
   noteBy,
   onView,
-  onImageError,
+  onUploadError,
 }: {
   line: Line;
   quote: ReactNode;
   noteBy: string | null;
   onView(): void;
-  onImageError(): void;
+  onUploadError(): void;
 }) {
   const side = line.fromVisitor ? " visitor" : line.kind === "note" ? " note" : "";
   if (line.deleted) return <div className={`msg${side} removed`}>{t("messageDeleted")}</div>;
@@ -98,7 +98,7 @@ function Bubble({
             height={line.image.height}
             alt={t("imageAlt")}
             loading="lazy"
-            onError={onImageError}
+            onError={onUploadError}
           />
         </button>
       </div>
@@ -108,7 +108,7 @@ function Bubble({
     return (
       <div className={`msg${side}`}>
         {quote}
-        <FileLink download={line.download} onExpired={onImageError} />
+        <FileLink download={line.download} onExpired={onUploadError} />
       </div>
     );
   }
@@ -139,7 +139,7 @@ export function ThreadLine({
   flash,
   receipt,
   onView,
-  onImageError,
+  onUploadError,
   onRetry,
 }: {
   line: Line;
@@ -154,7 +154,7 @@ export function ThreadLine({
   /** The receipt line under this reply, or null when it shows none. */
   receipt: Receipt | null;
   onView(): void;
-  onImageError(): void;
+  onUploadError(): void;
   onRetry(): void;
 }) {
   const row = ["bubble-row", line.fromVisitor && "visitor", flash && "flash"]
@@ -169,7 +169,7 @@ export function ThreadLine({
             quote={quote}
             noteBy={noteBy}
             onView={onView}
-            onImageError={onImageError}
+            onUploadError={onUploadError}
           />
           {menu}
         </div>

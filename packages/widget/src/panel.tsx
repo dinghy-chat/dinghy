@@ -521,14 +521,14 @@ export function ChatLine({
   line,
   showAuthor,
   onView,
-  onImageError,
+  onUploadError,
   onRetry,
   onReply,
 }: {
   line: Line;
   showAuthor: boolean;
   onView(): void;
-  onImageError(): void;
+  onUploadError(): void;
   onRetry(): void;
   /** Only on the team's messages: quotes this one in the next message. */
   onReply?: (() => void) | undefined;
@@ -555,11 +555,11 @@ export function ChatLine({
             height={line.image.height}
             alt={t("imageAlt")}
             loading="lazy"
-            onError={onImageError}
+            onError={onUploadError}
           />
         </button>
       ) : line.download !== null ? (
-        <FileLink download={line.download} mine={line.fromVisitor} onExpired={onImageError} />
+        <FileLink download={line.download} mine={line.fromVisitor} onExpired={onUploadError} />
       ) : line.file !== undefined ? (
         <div class="msg mine">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>
       ) : (

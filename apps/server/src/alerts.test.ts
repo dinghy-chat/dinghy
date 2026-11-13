@@ -206,7 +206,7 @@ const operatorWrites = (operatorId: string, conversationId: string, body: string
 // Oldest first, as a test reads [0] for the first delivery, and an unordered select has no order.
 const deliveries = () =>
   owner.select().from(alertDelivery).orderBy(alertDelivery.eventSeq, alertDelivery.id);
-const planOptions = { publicUrl: PUBLIC_URL, secret: AUTH_SECRET, imageOrigin: PUBLIC_URL };
+const planOptions = { publicUrl: PUBLIC_URL, secret: AUTH_SECRET, uploadsOrigin: PUBLIC_URL };
 const fanOutAll = async (channels = { push: true, email: true }) => {
   while (await fanOutOne(workerDb, channels));
 };

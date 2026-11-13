@@ -5,7 +5,7 @@ import type { App } from "./app.ts";
 import { operatorPicture } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { errorAnswer, INVALID, NOT_FOUND } from "./errors.ts";
-import { PUBLIC_IMAGE_TYPE } from "./images.ts";
+import { PUBLIC_IMAGE_TYPE } from "./uploads.ts";
 import { PUBLIC_KEY } from "./workspaces.ts";
 
 /** The address carries the upload's time, so an image can stay in any cache for good. */
@@ -62,8 +62,8 @@ const pictureRoute = createRoute({
  * and these images are public. With a separate image origin, only that origin serves them. Register
  * this before the widget routes, whose access check would refuse a logo.
  */
-export function registerPublicImages(app: App, db: Database, imagesOrigin: string | undefined) {
-  const filesHost = imagesOrigin === undefined ? undefined : new URL(imagesOrigin).host;
+export function registerPublicImages(app: App, db: Database, uploadsOrigin: string | undefined) {
+  const filesHost = uploadsOrigin === undefined ? undefined : new URL(uploadsOrigin).host;
   const serve = async (c: Context, read: () => Promise<Uint8Array | null>) => {
     if (filesHost !== undefined && new URL(c.req.url).host !== filesHost) {
       return c.json(NOT_FOUND, 404);

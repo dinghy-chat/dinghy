@@ -20,7 +20,6 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import type { Images } from "./images.ts";
 import { InboxMessage, KEY_REPLY_REFUSALS, messageView, refusedReply } from "./inbox.ts";
 import { Body, ClientId, HandoffReason, HandoffSummary } from "./inputs.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
@@ -35,6 +34,7 @@ import {
   WorkspaceClosedError,
 } from "./messages.ts";
 import { allowed, NOT_A_MEMBER } from "./team.ts";
+import type { Uploads } from "./uploads.ts";
 
 const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const draftParams = conversationParams.extend({ draftId: z.uuid() });
@@ -179,7 +179,7 @@ const typingRoute = createRoute({
 
 interface HandlingOptions {
   db: Database;
-  images: Images | undefined;
+  uploads: Uploads | undefined;
   live: Live;
 }
 
@@ -209,7 +209,7 @@ export async function setTyping(
  * clients wake after the commit.
  */
 export async function handOff(
-  { db, images, live }: HandlingOptions,
+  { db, uploads, live }: HandlingOptions,
   workspaceId: string,
   actor: KeyActor,
   conversationId: string,
@@ -241,13 +241,13 @@ export async function handOff(
     created: outcome.kind === "handed_off",
     visitorMessage:
       sent?.status === "sent"
-        ? { ...sent, message: messageView(images, workspaceId, names, sent.message) }
+        ? { ...sent, message: messageView(uploads, workspaceId, names, sent.message) }
         : sent,
   };
 }
 
 export function registerHandlingRoutes(app: App, options: HandlingOptions): void {
-  const { db, images, live } = options;
+  const { db, uploads, live } = options;
   app.openapi(listDraftsRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
@@ -273,7 +273,7 @@ export function registerHandlingRoutes(app: App, options: HandlingOptions): void
           const found = await conversationVisitor(tx, id, conversationId);
           return {
             ...sent,
-            view: messageView(images, id, names, sent.message),
+            view: messageView(uploads, id, names, sent.message),
             visitorId: found?.id,
           };
         }),

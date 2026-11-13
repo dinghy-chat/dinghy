@@ -173,7 +173,7 @@ const Settings = z
       .object({
         operators: z.object({ used: z.number(), limit: z.number() }),
         // Images and files, in bytes.
-        imageBytes: z.object({ used: z.number(), limit: z.number() }),
+        storageBytes: z.object({ used: z.number(), limit: z.number() }),
       })
       .nullable(),
     // What a delete removes, and whether it is refused: on a self-hosted server, the only
@@ -181,7 +181,7 @@ const Settings = z
     deletion: z.object({
       conversations: z.number(),
       // Images and files.
-      images: z.number(),
+      uploads: z.number(),
       members: z.number(),
       onlyWorkspace: z.boolean(),
     }),
@@ -531,7 +531,7 @@ interface SettingsSources {
 async function deletionContents(tx: Transaction, workspaceId: string) {
   const counted = (table: typeof conversation | typeof attachment) =>
     tx.$count(table, eq(table.workspaceId, workspaceId));
-  const [conversations, images, members] = await Promise.all([
+  const [conversations, uploads, members] = await Promise.all([
     counted(conversation),
     counted(attachment),
     tx.$count(
@@ -539,7 +539,7 @@ async function deletionContents(tx: Transaction, workspaceId: string) {
       and(eq(workspaceMember.workspaceId, workspaceId), isNull(workspaceMember.removedAt)),
     ),
   ]);
-  return { conversations, images, members };
+  return { conversations, uploads, members };
 }
 
 async function readSettings(

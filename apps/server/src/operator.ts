@@ -25,12 +25,6 @@ import {
   WRONG_ORIGIN,
 } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
-import {
-  PUBLIC_IMAGE_MAX_BYTES,
-  PUBLIC_IMAGE_TOO_LARGE,
-  processPicture,
-  refuseImage,
-} from "./images.ts";
 import { noAccountMail, signInMail } from "./letter.ts";
 import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
@@ -39,6 +33,12 @@ import { countWaiting } from "./messages.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { type TwoFactorState, twoFactorStateOf } from "./two-factor.ts";
+import {
+  PUBLIC_IMAGE_MAX_BYTES,
+  PUBLIC_IMAGE_TOO_LARGE,
+  processPicture,
+  refuseUpload,
+} from "./uploads.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
 const AccountName = z.strictObject({
@@ -274,7 +274,7 @@ export function registerOperatorRoutes(
     // The whole body first, so the session and membership checks see the state when the request
     // ends. Otherwise a member could send a body slowly and finish it after their removal. Hono
     // keeps the text for the route. An image streams instead, and its route checks again.
-    if (c.req.method !== "GET" && !c.req.path.endsWith("/images")) {
+    if (c.req.method !== "GET" && !c.req.path.endsWith("/uploads")) {
       // A logo or a picture is binary, which reading it as text would garble for its route.
       const body = PUBLIC_IMAGE_PATH.test(c.req.path) ? c.req.arrayBuffer() : c.req.text();
       await body.catch(() => undefined);
@@ -403,7 +403,7 @@ export function registerOperatorRoutes(
   app.use(
     "/v1/operator/*",
     (c, next) => {
-      if (c.req.path.endsWith("/images")) return next();
+      if (c.req.path.endsWith("/uploads")) return next();
       return (PUBLIC_IMAGE_PATH.test(c.req.path) ? imageBody : smallBody)(c, next);
     },
     requireOperator,
@@ -511,7 +511,7 @@ export function registerOperatorRoutes(
 
   app.openapi(setPictureRoute, async (c) => {
     const picture = await processPicture(new Uint8Array(await c.req.arrayBuffer()));
-    if (typeof picture === "string") return refuseImage(c, picture);
+    if (typeof picture === "string") return refuseUpload(c, picture);
     const saved = await savePicture(c.get("operatorId"), picture);
     return saved === null ? c.json(UNAUTHORIZED, 401) : c.json(saved, 200);
   });

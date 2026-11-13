@@ -19,10 +19,10 @@ import {
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
-import { createImages, processImage } from "../../apps/server/src/images.ts";
 import { StorageFullError } from "../../apps/server/src/limits.ts";
 import { appendMessage, listConversations } from "../../apps/server/src/messages.ts";
 import { localStore } from "../../apps/server/src/storage.ts";
+import { createUploads, processImage } from "../../apps/server/src/uploads.ts";
 import { startWorker } from "../../apps/server/src/worker.ts";
 import { createWorkspace, type NewWorkspace } from "../../apps/server/src/workspaces.ts";
 import { createTestDatabase, type TestDatabase } from "../../apps/server/test/database.ts";
@@ -44,7 +44,7 @@ let workerDb: Database;
 let valkey: Redis;
 let directory: string;
 let auth: ReturnType<typeof createAuth>;
-/** The cloud, with room for two of the test's images and one operator stream. */
+/** The cloud, with room for two of the test's uploads and one operator stream. */
 let cloud: App;
 let selfHosted: App;
 let imageSize: number;
@@ -61,7 +61,7 @@ const app = (settings: CloudSettings | undefined) =>
     auth,
     cloud: settings,
     db,
-    images: createImages({
+    uploads: createUploads({
       store: localStore(directory),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
@@ -180,7 +180,7 @@ async function visitorToken(server: App, space: NewWorkspace): Promise<string> {
 }
 
 async function upload(server: App, space: NewWorkspace, visitorBearer: string, address: string) {
-  return server.request(`/v1/widget/${space.publicKey}/images?clientId=${randomUUID()}`, {
+  return server.request(`/v1/widget/${space.publicKey}/uploads?clientId=${randomUUID()}`, {
     method: "POST",
     headers: {
       origin: SITE,
@@ -197,7 +197,7 @@ function uploadPdf(server: App, space: NewWorkspace, visitorBearer: string, size
   const bytes = Buffer.alloc(size, " ");
   bytes.write("%PDF-1.7\n");
   return server.request(
-    `/v1/widget/${space.publicKey}/images?clientId=${randomUUID()}&filename=notes.pdf`,
+    `/v1/widget/${space.publicKey}/uploads?clientId=${randomUUID()}&filename=notes.pdf`,
     {
       method: "POST",
       headers: { origin: SITE, authorization: `Bearer ${visitorBearer}` },
@@ -267,12 +267,12 @@ describe("operators: 5 per workspace on the cloud", () => {
     };
     expect(body.usage).toEqual({
       operators: { used: 1, limit: 5 },
-      imageBytes: { used: 0, limit: Math.floor(imageSize * 2.5) },
+      storageBytes: { used: 0, limit: Math.floor(imageSize * 2.5) },
     });
   });
 });
 
-describe("images: a byte limit per workspace on the cloud", () => {
+describe("uploads: a byte limit per workspace on the cloud", () => {
   test("the sum runs under the workspace lock, so it reads only an index", async () => {
     await owner.transaction(async (tx) => {
       // The test table is tiny, so make reading the table look as costly as it would be.
@@ -288,7 +288,7 @@ describe("images: a byte limit per workspace on the cloud", () => {
     });
   });
 
-  test("concurrent images near the limit cannot pass it", async () => {
+  test("concurrent uploads near the limit cannot pass it", async () => {
     const space = await createWorkspace(db, "Race", [SITE]);
     const [row] = await withWorkspace(db, space.id, (tx) =>
       tx.insert(visitor).values({ workspaceId: space.id, externalId: "v" }).returning(),
@@ -352,9 +352,9 @@ describe("images: a byte limit per workspace on the cloud", () => {
     expect((await call(cloud, "DELETE", path, boss)).status).toBe(404);
     expect(await storedBytes(space)).toBe(0);
     const usage = (await (await call(cloud, "GET", inSpace(space, "/settings"), boss)).json()) as {
-      usage: { imageBytes: { used: number } };
+      usage: { storageBytes: { used: number } };
     };
-    expect(usage.usage.imageBytes.used).toBe(0);
+    expect(usage.usage.storageBytes.used).toBe(0);
     // With room again, an upload works.
     expect((await upload(cloud, space, bearer, "192.0.2.4")).status).toBe(201);
     expect(await storedBytes(space)).toBe(imageSize);
@@ -392,7 +392,7 @@ describe("images: a byte limit per workspace on the cloud", () => {
       tx.execute<{ id: string }>(sql`select id from conversation where workspace_id = ${space.id}`),
     ).then((result) => result.rows);
     const response = await cloud.request(
-      inSpace(space, `/conversations/${conversation?.id}/images?clientId=${randomUUID()}`),
+      inSpace(space, `/conversations/${conversation?.id}/uploads?clientId=${randomUUID()}`),
       {
         method: "POST",
         headers: { cookie: boss.cookie, origin: ORIGIN, "content-type": "image/png" },
@@ -444,7 +444,7 @@ describe("open streams: counted in Valkey per workspace", () => {
   });
 });
 
-describe("images older than 12 months", () => {
+describe("uploads older than 12 months", () => {
   test("the cloud's worker removes them, and the message says so", async () => {
     const space = await createWorkspace(db, "Old", [SITE]);
     const bearer = await visitorToken(cloud, space);
@@ -587,7 +587,7 @@ describe("a self-hosted install", () => {
     expect(streams.map((one) => one.status)).toEqual([200, 200, 200]);
     await Promise.all(streams.map((one) => one.body?.cancel()));
 
-    // The worker keeps images for good, because the cloud's step does not exist here.
+    // The worker keeps uploads for good, because the cloud's step does not exist here.
     expect(
       cloudWorkerStep(undefined, {
         db: workerDb,

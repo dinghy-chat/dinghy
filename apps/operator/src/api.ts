@@ -408,7 +408,7 @@ export interface BlockedVisitor extends VisitorIdentity {
 
 export interface Usage {
   operators: { used: number; limit: number };
-  imageBytes: { used: number; limit: number };
+  storageBytes: { used: number; limit: number };
 }
 
 export interface WorkspaceSettings {
@@ -418,7 +418,7 @@ export interface WorkspaceSettings {
   /** The plan's limits and their use, on Dinghy Cloud. Null with no limits. */
   usage: Usage | null;
   /** What a delete removes. A self-hosted server keeps its only workspace. */
-  deletion: { conversations: number; images: number; members: number; onlyWorkspace: boolean };
+  deletion: { conversations: number; uploads: number; members: number; onlyWorkspace: boolean };
 }
 
 /** A workspace API key. Its token is shown only when it is made. */
@@ -931,7 +931,7 @@ export function workspaceApi(workspaceId: string) {
       const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
       const name = `&filename=${encodeURIComponent(file.name)}`;
       const response = await fetch(
-        `${conversation(id)}/images?clientId=${clientId}${name}${quote}`,
+        `${conversation(id)}/uploads?clientId=${clientId}${name}${quote}`,
         {
           method: "POST",
           cache: "no-store",

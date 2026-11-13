@@ -12,11 +12,11 @@ import { inboundEmailFromConfig, loadConfig, pushKeysFromConfig } from "./config
 import * as schema from "./db/schema.ts";
 import { startErrorReports } from "./error-reports.ts";
 import { loadCountries } from "./geo.ts";
-import { createImages } from "./images.ts";
 import { createLive, createSignals } from "./live.ts";
 import { createMailer } from "./mailer.ts";
 import { createPush } from "./push.ts";
 import { storeFromConfig } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { startWorker } from "./worker.ts";
 
 const ROLES = ["web", "worker", "all"] as const;
@@ -56,12 +56,12 @@ const cloud = cloudFromConfig(config);
 const push = pushKeys === undefined ? undefined : createPush(pushKeys);
 const webhooks = { allowPrivate: config.WEBHOOK_ALLOW_PRIVATE };
 const inboundEmail = inboundEmailFromConfig(config);
-const imagesFor = () =>
-  createImages({
+const uploadsFor = () =>
+  createUploads({
     store: storeFromConfig(config),
     secret: config.AUTH_SECRET,
     publicUrl: config.PUBLIC_URL,
-    origin: config.IMAGES_ORIGIN,
+    origin: config.UPLOADS_ORIGIN,
   });
 const smtp =
   config.SMTP_URL !== undefined && config.MAIL_FROM !== undefined
@@ -102,7 +102,7 @@ if (role === "web" || role === "all") {
     mailer,
     auth: createAuth({ db, secret: config.AUTH_SECRET, baseURL: config.PUBLIC_URL }),
     db,
-    images: imagesFor(),
+    uploads: uploadsFor(),
     inboundEmail,
     webhooks,
     live,
@@ -165,7 +165,7 @@ if (role === "worker" || role === "all") {
     publicUrl: config.PUBLIC_URL,
     secret: config.AUTH_SECRET,
     store: storeFromConfig(config),
-    images: imagesFor(),
+    uploads: uploadsFor(),
     inboundDomain: inboundEmail?.domain,
     webhooks,
   });

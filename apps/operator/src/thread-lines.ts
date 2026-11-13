@@ -170,7 +170,7 @@ export function useThreadLines({
   }, [load]);
 
   // An image's URL expires after 15 minutes. Loading from the start gives every line a new one.
-  const refreshImages = () => {
+  const refreshUploads = () => {
     if (Date.now() - lastRefresh.current < REFRESH_LIMIT_MS) return;
     lastRefresh.current = Date.now();
     reloadAll();
@@ -266,7 +266,7 @@ export function useThreadLines({
     receipts,
     lines,
     loadFailure,
-    refreshImages,
+    refreshUploads,
     retry: (line: Line) => void deliver(line),
     sendText,
     sendFiles,

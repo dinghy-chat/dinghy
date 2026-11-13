@@ -41,7 +41,6 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import type { Images } from "./images.ts";
 import { conversationView, messageView } from "./inbox.ts";
 import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import {
@@ -54,6 +53,7 @@ import {
 import { retryDelayMs } from "./retry.ts";
 import { requireSetUp, SETUP_DENIED } from "./team.ts";
 import { DAY_MS } from "./time.ts";
+import type { Uploads } from "./uploads.ts";
 
 /** At most this many webhooks per workspace. */
 export const WEBHOOK_LIMIT = 5;
@@ -883,7 +883,7 @@ async function findLabels(tx: Transaction, workspaceId: string, subjects: Webhoo
  */
 export async function webhookData(
   tx: Transaction,
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   workspaceId: string,
   subjects: WebhookSubject[],
 ): Promise<(Record<string, unknown> | string)[]> {
@@ -911,7 +911,7 @@ export async function webhookData(
     if (subject.messageId === null) return data;
     const stored = messages.get(subject.messageId);
     if (stored === undefined) return "The message was deleted.";
-    return { ...data, message: messageView(images, workspaceId, names, stored) };
+    return { ...data, message: messageView(uploads, workspaceId, names, stored) };
   });
 }
 
@@ -1042,7 +1042,7 @@ const held = (row: ClaimedWebhook) =>
 /** What one claimed row sends: its URL, secret, ID and body, or a reason it sends nothing. */
 async function planWebhook(
   db: Database,
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   row: ClaimedWebhook,
 ): Promise<
   { url: string; secret: string; eventId: string; body: string; retryFrom: Date } | string
@@ -1081,7 +1081,7 @@ async function planWebhook(
       messageId: delivery.messageId,
       label: labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
     };
-    const [data] = await webhookData(tx, images, row.workspaceId, [subject]);
+    const [data] = await webhookData(tx, uploads, row.workspaceId, [subject]);
     // One subject has one answer.
     if (typeof data !== "object") return data ?? "The conversation was deleted.";
     return {
@@ -1121,13 +1121,18 @@ export async function deliverWebhook(
   db: Database,
   row: ClaimedWebhook,
   {
-    images,
+    uploads,
     policy,
     retryMs,
     stopping,
-  }: { images: Images | undefined; policy: WebhookPolicy; retryMs: number; stopping: AbortSignal },
+  }: {
+    uploads: Uploads | undefined;
+    policy: WebhookPolicy;
+    retryMs: number;
+    stopping: AbortSignal;
+  },
 ): Promise<void> {
-  const plan = await planWebhook(db, images, row);
+  const plan = await planWebhook(db, uploads, row);
   if (typeof plan === "string") {
     await finishWebhook(db, row, "failed", { status: null, error: plan, excerpt: null });
     return;

@@ -73,7 +73,7 @@ async function runWorker(policy = LOCAL) {
   const stopping = new AbortController().signal;
   await Promise.all(
     rows.map((row) =>
-      deliverWebhook(workerDb, row, { images: undefined, policy, retryMs: 30_000, stopping }),
+      deliverWebhook(workerDb, row, { uploads: undefined, policy, retryMs: 30_000, stopping }),
     ),
   );
   return rows.length;

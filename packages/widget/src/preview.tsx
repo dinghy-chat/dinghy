@@ -111,7 +111,7 @@ function Preview({ appearance, sample }: PreviewProps) {
                 line={line}
                 showAuthor={startsRun(lines, index)}
                 onView={ignore}
-                onImageError={ignore}
+                onUploadError={ignore}
                 onRetry={ignore}
               />
               {/* The card follows the sample visitor's message, as in the chat. */}

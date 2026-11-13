@@ -167,7 +167,7 @@ export function ThreadLog({
   drafts,
   olderDrafts,
   draftCount,
-  onImageError,
+  onUploadError,
   onRetry,
 }: {
   conversation: Conversation;
@@ -190,7 +190,7 @@ export function ThreadLog({
    */
   olderDrafts: { node: ReactNode; before: string | null };
   draftCount: number;
-  onImageError(): void;
+  onUploadError(): void;
   onRetry(line: Line): void;
 }) {
   const { log, flashId, jump } = useLogScroll(lines, [
@@ -262,7 +262,7 @@ export function ThreadLog({
           flash={flashId === line.id}
           receipt={receiptFor.get(line.id) ?? null}
           onView={() => setViewing(line.id)}
-          onImageError={onImageError}
+          onUploadError={onUploadError}
           onRetry={() => onRetry(line)}
         />
         {meta !== null && <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>}
@@ -298,7 +298,7 @@ export function ThreadLog({
         <ImageViewer
           url={lines.find((line) => line.id === viewing)?.image?.url}
           onClose={() => setViewing(null)}
-          onError={onImageError}
+          onError={onUploadError}
         />
       )}
     </>

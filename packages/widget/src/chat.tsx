@@ -624,7 +624,7 @@ function Chat({
   };
 
   // An image's URL expires after 15 minutes. Replaying from the start gives every line a new one.
-  const refreshImages = () => {
+  const refreshUploads = () => {
     if (Date.now() - lastRefresh.current < REFRESH_LIMIT_MS) return;
     lastRefresh.current = Date.now();
     cursor.current = null;
@@ -763,7 +763,7 @@ function Chat({
               line={line}
               showAuthor={startsRun(lines, index)}
               onView={() => setViewing(line.id)}
-              onImageError={refreshImages}
+              onUploadError={refreshUploads}
               onRetry={() => void deliver(line.id, line.body, line.file, line.quote?.id)}
               onReply={
                 line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
@@ -792,7 +792,7 @@ function Chat({
           <img
             src={lines.find((line) => line.id === viewing)?.image?.url}
             alt={t("imageAlt")}
-            onError={refreshImages}
+            onError={refreshUploads}
           />
         </dialog>
       )}

@@ -30,15 +30,6 @@ import {
   ROLE_WRITE_ERRORS,
   UPLOAD_ERRORS,
 } from "./errors.ts";
-import {
-  FileSchema,
-  fileView,
-  ImageSchema,
-  type Images,
-  imageView,
-  lostConnection,
-  refuseImage,
-} from "./images.ts";
 import { Body, ClientId, Filename, Mentions } from "./inputs.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
@@ -92,6 +83,15 @@ import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { allowed } from "./team.ts";
 import { twoFactorState } from "./two-factor.ts";
+import {
+  FileSchema,
+  fileView,
+  ImageSchema,
+  imageView,
+  lostConnection,
+  refuseUpload,
+  type Uploads,
+} from "./uploads.ts";
 import { readWorkspaceFace } from "./workspaces.ts";
 
 export const SNOOZE_CLOSED = failure(
@@ -653,7 +653,7 @@ const receiptRoute = createRoute({
 
 const replyUploadRoute = createRoute({
   method: "post",
-  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/images`,
+  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/uploads`,
   security: SESSION_OR_KEY,
   summary:
     "Reply with an image or a file as the raw request body. A retry with the same clientId returns the original",
@@ -803,7 +803,7 @@ const streamRoute = createRoute({
 
 /** A message as the operator API shows it. `names` holds author names by operator or key ID. */
 export function messageView(
-  images: Images | undefined,
+  uploads: Uploads | undefined,
   workspaceId: string,
   names: Map<string, string>,
   {
@@ -826,8 +826,8 @@ export function messageView(
     createdAt: createdAt.toISOString(),
     editedAt: editedAt?.toISOString() ?? null,
     readAt: readAt?.toISOString() ?? null,
-    image: imageView(images, workspaceId, image),
-    file: fileView(images, workspaceId, file),
+    image: imageView(uploads, workspaceId, image),
+    file: fileView(uploads, workspaceId, file),
     replyTo: quoteView(replyTo),
   };
 }
@@ -1042,7 +1042,7 @@ async function keyTurn(
 
 interface InboxOptions {
   db: Database;
-  images: Images | undefined;
+  uploads: Uploads | undefined;
   limits: Limits;
   live: Live;
   logger: Logger;
@@ -1059,14 +1059,14 @@ interface InboxOptions {
  */
 export function createInbox({
   db,
-  images,
+  uploads,
   live,
   visitorPresence,
   copyReply,
   founderPicture = async () => null,
 }: Pick<
   InboxOptions,
-  "db" | "images" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
+  "db" | "uploads" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
 >) {
   /**
    * Writes a reply or a note in the caller's transaction, and wakes the clients after the commit. A
@@ -1123,7 +1123,7 @@ export function createInbox({
     return {
       kind: "sent",
       created: result.created,
-      message: messageView(images, workspaceId, names, result.message),
+      message: messageView(uploads, workspaceId, names, result.message),
     };
   };
 
@@ -1204,7 +1204,7 @@ export function createInbox({
           unread: result.unread,
         },
         messages: result.page.messages.map((message) =>
-          messageView(images, workspaceId, result.names, message),
+          messageView(uploads, workspaceId, result.names, message),
         ),
         hasMore: result.page.hasMore,
         visitorOnline: await visitorPresence.online(workspaceId, result.found.visitorId),
@@ -1346,7 +1346,7 @@ async function keyStillHolds(db: Database, actor: KeyActor) {
 }
 
 export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrls: ImageUrls }) {
-  const { db, images, imageUrls, limits, live, logger, stream } = options;
+  const { db, uploads, imageUrls, limits, live, logger, stream } = options;
   const inbox = createInbox(options);
 
   app.openapi(workspaceRoute, async (c) => {
@@ -1414,7 +1414,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     return c.json(refused.body, refused.status);
   });
 
-  if (images !== undefined) {
+  if (uploads !== undefined) {
     app.openapi(replyUploadRoute, async (c) => {
       const id = c.get("memberWorkspaceId");
       const { conversationId } = c.req.valid("param");
@@ -1433,7 +1433,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
           throw new AccessEndedError();
         }
       };
-      const outcome = await images
+      const outcome = await uploads
         .receive(
           c.req.raw,
           id,
@@ -1454,7 +1454,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
           throw error;
         });
       if (outcome === "ended") return c.json(NOT_FOUND, 404);
-      if ("refused" in outcome) return refuseImage(c, outcome.refused);
+      if ("refused" in outcome) return refuseUpload(c, outcome.refused);
       const result = outcome.result;
       if (result.kind === "sent") return c.json(result.message, result.created ? 201 : 200);
       const refused = refusedReply(result);
@@ -1476,7 +1476,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       );
       if (edited.kind !== "edited") return edited;
       const names = await authorNames(tx, id, [edited.message]);
-      return { ...edited, view: messageView(images, id, names, edited.message) };
+      return { ...edited, view: messageView(uploads, id, names, edited.message) };
     });
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
     if (outcome.kind === "not_yours") return c.json(NOT_YOURS, 403);

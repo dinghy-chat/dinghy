@@ -29,7 +29,6 @@ import { safeErrorFields, UNAUTHORIZED } from "./errors.ts";
 import { type CountryOf, NO_COUNTRIES } from "./geo.ts";
 import { registerGetStartedRoutes } from "./get-started.ts";
 import { registerHandlingRoutes } from "./handling.ts";
-import { type Images, registerImageFiles } from "./images.ts";
 import { type InboundEmail, registerInboundEmail } from "./inbound-email.ts";
 import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { registerKeyEvents } from "./key-events.ts";
@@ -62,6 +61,7 @@ import { createTestVisitors, registerTestVisitorRoutes } from "./test-visitors.t
 import { MINUTE_MS } from "./time.ts";
 import { registerExportRoute } from "./transfer.ts";
 import { registerTwoFactorRoutes, type TwoFactorState } from "./two-factor.ts";
+import { registerUploadFiles, type Uploads } from "./uploads.ts";
 import {
   createWebhooks,
   PUBLIC_ONLY,
@@ -98,7 +98,7 @@ export interface AppOptions {
   live?: Live;
   logger: Logger;
   metricsToken?: string | undefined;
-  images?: Images | undefined;
+  uploads?: Uploads | undefined;
   /** Visitors' replies by email. Without it, the route is off. */
   inboundEmail?: InboundEmail | undefined;
   stream?: StreamOptions;
@@ -226,7 +226,7 @@ export function createApp({
   cloud: cloudSettings,
   mailer,
   db,
-  images,
+  uploads,
   inboundEmail,
   live = noLive,
   logger,
@@ -319,13 +319,13 @@ export function createApp({
     );
   });
 
-  // First, so a separate image origin serves images and nothing else.
-  if (images !== undefined) registerImageFiles(app, db, images, logger);
+  // First, so a separate image origin serves uploads and nothing else.
+  if (uploads !== undefined) registerUploadFiles(app, db, uploads, logger);
   // Before the widget routes, whose access check would refuse an <img>'s request.
-  registerPublicImages(app, db, images?.origin);
+  registerPublicImages(app, db, uploads?.origin);
   // Logos and pictures come from the image origin, like every user image, or from this server's own.
   const urls = imageUrls(
-    images?.origin ?? publicUrl ?? (auth === undefined ? "" : String(auth.options.baseURL)),
+    uploads?.origin ?? publicUrl ?? (auth === undefined ? "" : String(auth.options.baseURL)),
   );
 
   // Liveness: the process answers. A restart cannot fix a database outage, so it checks nothing.
@@ -362,7 +362,7 @@ export function createApp({
           logger,
           mailer,
           rateLimit,
-          store: images?.store,
+          store: uploads?.store,
           valkey,
         });
   app.openapi(metaRoute, (c) =>
@@ -388,7 +388,7 @@ export function createApp({
   registerWidgetAppearance(app, db, urls, rateLimit);
   registerWidgetRoutes(app, {
     db,
-    images,
+    uploads,
     imageUrls: urls,
     ipSecret,
     limits,
@@ -406,10 +406,10 @@ export function createApp({
   const presence = createPresence(valkey, logger, presenceTtlMs);
   registerWidgetPresence(app, db, presence, alerts?.emailAvailable ?? false);
   if (ownOrigin !== undefined) {
-    registerChatPage(app, { db, rateLimit, imagesOrigin: images?.origin });
+    registerChatPage(app, { db, rateLimit, uploadsOrigin: uploads?.origin });
   }
   if (inboundEmail !== undefined) {
-    registerInboundEmail(app, { db, inbound: inboundEmail, images, limits, live, rateLimit });
+    registerInboundEmail(app, { db, inbound: inboundEmail, uploads, limits, live, rateLimit });
   }
   if (auth !== undefined) {
     registerOperatorRoutes(app, {
@@ -457,7 +457,7 @@ export function createApp({
       copyReply: cloud?.copyReply,
       founderPicture,
       db,
-      images,
+      uploads,
       imageUrls: urls,
       limits,
       live,
@@ -481,7 +481,7 @@ export function createApp({
     }
     const webhookManager = createWebhooks({ db, logger, policy: webhooks });
     registerWebhookRoutes(app, { webhooks: webhookManager });
-    registerHandlingRoutes(app, { db, images, live });
+    registerHandlingRoutes(app, { db, uploads, live });
     const serverUrl = new URL(String(auth.options.baseURL)).origin;
     registerSetupRoutes(app, setup, serverUrl);
     const testVisitors = createTestVisitors({ db, live, rateLimit });
@@ -490,7 +490,7 @@ export function createApp({
       copyReply: cloud?.copyReply,
       founderPicture,
       db,
-      images,
+      uploads,
       live,
       visitorPresence,
     });
@@ -509,12 +509,12 @@ export function createApp({
         testVisitors,
         serverUrl,
       },
-      chat: { db, images, inbox, limits, live, liveVisitors, presence, visitorPresence },
+      chat: { db, uploads, inbox, limits, live, liveVisitors, presence, visitorPresence },
       resourceMetadata: issuer === null ? null : resourceMetadataUrl(issuer),
     });
     registerKeyEvents(app, {
       db,
-      images,
+      uploads,
       limits,
       live,
       logger,
@@ -531,7 +531,7 @@ export function createApp({
     registerSavedReplyRoutes(app, db, live);
     registerLabelRoutes(app, db, live);
     registerBulkRoute(app, db, live);
-    if (images !== undefined) registerExportRoute(app, db, images.store, rateLimit);
+    if (uploads !== undefined) registerExportRoute(app, db, uploads.store, rateLimit);
     registerTeamRoutes(app, {
       auth,
       db,
@@ -569,7 +569,7 @@ export function createApp({
     registerOperatorApp(app, operatorDirectory, {
       billing: cloud?.billing ?? false,
       signup: cloud !== undefined,
-      imagesOrigin: images?.origin,
+      uploadsOrigin: uploads?.origin,
     });
   if (widgetDirectory !== undefined) registerWidgetFiles(app, widgetDirectory);
 
@@ -653,10 +653,10 @@ export async function openApiDocument(): Promise<unknown> {
   const schema = await import("./db/schema.ts");
   // The pool connects on first use, and building the document runs no query.
   const db = drizzle(new pg.Pool(), { schema });
-  const { createImages } = await import("./images.ts");
+  const { createUploads } = await import("./uploads.ts");
   const app = createApp({
     alerts: { emailAvailable: false, secret: "unused-while-building-the-document" },
-    images: createImages({
+    uploads: createUploads({
       store: { put: unused, get: async () => null, delete: unused },
       secret: "unused-while-building-the-document",
       publicUrl: "http://localhost",

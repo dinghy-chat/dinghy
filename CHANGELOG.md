@@ -9,7 +9,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Behind your own reverse proxy, accept request bodies of at least 11 MB, such as `client_max_body_size 11m;` in nginx, because a file in the chat can be 10 MB. The bundled Caddy needs no change.
 - To turn on replies by email behind your own reverse proxy, accept 26 MB on `/v1/inbound-email`, such as `client_max_body_size 26m;` in an nginx `location = /v1/inbound-email` block, because an email can be 25 MB. A smaller limit makes the forwarder reject large emails for good. [Self-hosting](docs/self-hosting.md#behind-your-own-reverse-proxy) has the block.
 - Existing workspaces keep visitors' files off, so no visitor starts sending files after the upgrade. Turn them on in **Settings > Appearance** with **Visitors can send files**.
-- If you set `IMAGES_ORIGIN` and your site has a Content Security Policy, allow that origin in `connect-src` as well as `img-src`, because the chat fetches a file to save it.
+- `IMAGES_ORIGIN` is now `UPLOADS_ORIGIN`; the old name still works until the next release.
+- If you set `UPLOADS_ORIGIN` and your site has a Content Security Policy, allow that origin in `connect-src` as well as `img-src`, because the chat fetches a file to save it.
+- API: the upload routes `POST /v1/widget/{key}/images` and `POST .../conversations/{conversationId}/images` are now `.../uploads`, with no alias, because they take files as well as images.
+- API: in a workspace's settings, `usage.imageBytes` is now `usage.storageBytes`, and `deletion.images` is now `deletion.uploads`, as both count files too.
 
 ### Added
 

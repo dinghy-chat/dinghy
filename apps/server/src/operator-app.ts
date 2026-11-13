@@ -33,10 +33,10 @@ export function registerOperatorApp(
   {
     billing = false,
     signup = false,
-    imagesOrigin,
-  }: { billing?: boolean; signup?: boolean; imagesOrigin?: string | undefined } = {},
+    uploadsOrigin,
+  }: { billing?: boolean; signup?: boolean; uploadsOrigin?: string | undefined } = {},
 ): void {
-  const images = imagesOrigin === undefined ? "" : ` ${imagesOrigin}`;
+  const images = uploadsOrigin === undefined ? "" : ` ${uploadsOrigin}`;
   const page = async () => {
     const html = await readFile(join(directory, "index.html"), "utf8").catch(() => null);
     if (html === null) return null;

@@ -37,12 +37,12 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { allowedFileName, FILE_TYPE, FILENAME_INPUT_MAX } from "./files.ts";
 import { sha256Hex } from "./identity.ts";
-import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./images.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { workspaceParams } from "./member.ts";
 import { markHistoryRead } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
+import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./uploads.ts";
 import { WidgetSettingsSchema } from "./widget-settings.ts";
 
 const VERSION = 1;

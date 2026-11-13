@@ -560,7 +560,7 @@ export interface PlanOptions {
   publicUrl: string;
   secret: string;
   /** Where the workspace's logo is served: the image origin, or the app's. */
-  imageOrigin: string;
+  uploadsOrigin: string;
   /** The domain of reply addresses. Without it, a visitor's email takes no replies. */
   inboundDomain?: string | undefined;
 }
@@ -597,7 +597,7 @@ export function planDelivery(
     if (place === undefined || written === undefined) return null;
     const from: Place = {
       name: place.name,
-      logoUrl: imageUrls(options.imageOrigin).logo(place.publicKey, place.logoUpdatedAt),
+      logoUrl: imageUrls(options.uploadsOrigin).logo(place.publicKey, place.logoUpdatedAt),
     };
     if (row.visitorId !== null) {
       // A reply email is not skipped when its own reply was deleted: it carries every unread one.

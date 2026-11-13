@@ -97,7 +97,7 @@ export function createLimits(
     async usage(tx, workspaceId) {
       return {
         operators: { used: await members(tx, workspaceId), limit: maxOperators },
-        imageBytes: { used: await storedBytes(tx, workspaceId), limit: maxStoredBytes },
+        storageBytes: { used: await storedBytes(tx, workspaceId), limit: maxStoredBytes },
       };
     },
   };

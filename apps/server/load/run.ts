@@ -151,7 +151,7 @@ function uploadImage(token: string, number: number, bytes: Uint8Array) {
         host: url.hostname,
         port: url.port,
         method: "POST",
-        path: `/v1/widget/${key}/images?clientId=image-${number}`,
+        path: `/v1/widget/${key}/uploads?clientId=image-${number}`,
         headers: {
           origin,
           authorization: `Bearer ${token}`,

@@ -24,8 +24,8 @@ import {
   visitor,
 } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
-import { createImages } from "./images.ts";
 import { claimDeletions, localStore, type ObjectStore } from "./storage.ts";
+import { createUploads } from "./uploads.ts";
 import { startWorker } from "./worker.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -490,12 +490,12 @@ describe("blocking a visitor", () => {
 
   test("a blocked visitor cannot upload an image, and nothing is stored", async () => {
     const directory = await mkdtemp(join(tmpdir(), "dinghy-safety-"));
-    const images = createImages({
+    const uploads = createUploads({
       store: localStore(directory),
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
     });
-    const server = makeApp({ images });
+    const server = makeApp({ uploads });
     const { email } = await makeOperator("member");
     const cookie = await signIn(server, email);
     const address = "198.51.100.83";
@@ -509,7 +509,7 @@ describe("blocking a visitor", () => {
       .png()
       .toBuffer();
     const refused = await server.request(
-      `/v1/widget/${space.publicKey}/images?clientId=${randomUUID()}`,
+      `/v1/widget/${space.publicKey}/uploads?clientId=${randomUUID()}`,
       {
         method: "POST",
         headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "image/png" },
@@ -541,12 +541,12 @@ describe("deleting a conversation", () => {
   async function world() {
     const directory = await mkdtemp(join(tmpdir(), "dinghy-delete-"));
     const flaky = flakyStore(localStore(directory));
-    const images = createImages({
+    const uploads = createUploads({
       store: flaky.store,
       secret: AUTH_SECRET,
       publicUrl: PUBLIC_URL,
     });
-    const server = makeApp({ images });
+    const server = makeApp({ uploads });
     const admin = await makeOperator("admin");
     const cookie = await signIn(server, admin.email);
     const address = "198.51.100.84";
@@ -559,7 +559,7 @@ describe("deleting a conversation", () => {
       .png()
       .toBuffer();
     const uploaded = await server.request(
-      `/v1/widget/${space.publicKey}/images?clientId=${randomUUID()}`,
+      `/v1/widget/${space.publicKey}/uploads?clientId=${randomUUID()}`,
       {
         method: "POST",
         headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "image/png" },
