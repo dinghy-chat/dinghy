@@ -131,7 +131,7 @@ The same menu sets you **Available** or **Away**, and a dot on your picture show
 
 After the email link, two-step sign-in asks for a 6-digit code from an authenticator app, such as 1Password, Google Authenticator or Authy. Someone who can read your email still cannot sign in. API keys and connected apps do not use it: they are workspace keys, not sign-ins.
 
-To turn it on, open **Profile**, select **Turn on** under **Two-step sign-in**, and scan the QR code with the app, or type the key under it. Enter the code the app shows, then select **Turn on**. Dinghy then shows 10 recovery codes, once. Copy or download them, and keep them somewhere other than your phone. Each one signs you in once in place of a code. Your other open sessions ask for a code at their next request.
+To turn it on, open **Profile**, select **Turn on** under **Two-step sign-in**, and scan the QR code with the app, or type the key under it. Enter the code the app shows, then select **Turn on**. Dinghy then shows 10 recovery codes, once. Copy or download them, and keep them somewhere other than your authenticator app. Each one signs you in once in place of a code. Your other open sessions ask for a code at their next request.
 
 Each new sign-in then opens **Enter your code** after the link. Nothing else in the app works until you enter a code from the app or a recovery code. A code works once. After 5 wrong codes in 15 minutes, Dinghy signs you out and refuses every code until 15 minutes after the first wrong one.
 
@@ -139,25 +139,38 @@ Each new sign-in then opens **Enter your code** after the link. Nothing else in 
 
 To turn it off, select **Turn off** and enter a code from the app or a recovery code. Sessions that never passed the check end.
 
-**Settings > Team** shows who has it on, and **Recovery pending** while someone asks to remove it.
+**Settings > Team** shows who has it on, and **Removal requested** while someone asks to remove it.
 
 When the server can send email, Dinghy emails you when two-step sign-in is turned on or off, when a recovery code is used, and when too many wrong codes sign you out. If you did not do it, someone may be able to read your email.
 
-### If you lose your phone
+### If you lose your authenticator app
 
 If you still have a recovery code, enter it on **Enter your code**, then make new codes in **Profile**.
 
-If you lost your phone and your recovery codes, sign in with a new email link and select **Lost your authenticator and your recovery codes?** on **Enter your code**, within 15 minutes of the link. Then select **Start the 72-hour wait**. After 72 hours, Dinghy removes two-step sign-in from your account, its secret and its recovery codes, and signs out every session. Your next sign-in needs only the email link, and asks whether to turn two-step sign-in on again.
+If you lost your authenticator app and your recovery codes:
 
-Whoever reads your mailbox can ask too, so the request starts only when someone else can stop it: another owner or admin of one of your workspaces, or a device of yours that passed the check, such as a signed-in laptop or a phone that gets alerts. At once, Dinghy warns:
+1. Sign in with a new email link.
+2. Within 15 minutes of the link, select **Lost your authenticator app and your recovery codes?** on **Enter your code**.
+3. Select **Start the 72-hour wait**.
+
+After 72 hours, Dinghy removes two-step sign-in from your account and signs out every session. Your next sign-in needs only the email link, and asks whether to turn two-step sign-in on again.
+
+The request starts only when someone else can stop it: another owner or admin of one of your workspaces, or another session of yours that passed the check, such as a signed-in laptop. Dinghy then warns:
 
 - you, by email, with a link to cancel, and again 24 hours before the end
-- your devices, with a push alert, and every session that passed the check, with a banner and **Cancel the recovery**
-- the owners and admins of your workspaces, by email, and in **Settings > Team**
+- your devices that get alerts, with a push alert
+- every session of yours that passed the check, with a banner and **Cancel the request**
+- the owners and admins of your workspaces, by email and in **Settings > Team**
 
-Any of these can stop it. The email's link opens a page with a **Cancel the recovery** button, and only the button cancels, so a mail scanner that opens the link changes nothing. A code from your app or a recovery code, entered during the wait, also cancels it. A cancel means that someone else may read your email, so Dinghy signs out every session that never passed the check, refuses new requests for 7 days and emails you to secure your email account.
+To stop the request, do one of these:
 
-When nobody else can be warned, the screen sends you to a manual review instead. On Dinghy Cloud, write to the address it shows, with your last invoice number and the last 4 digits of the card that pays for Dinghy, because anyone who reads your mailbox already has the first step. On your own server, ask its admin to run `chat two-factor-reset <email>`, as [Self-hosting](self-hosting.md#common-commands) shows. The wait alone stops nobody who holds your mailbox, since they get the same emails you do. The warnings to other people and devices are what stop them. For a signed-out solo owner whose mailbox is stolen, the waiting period is only a delay, and that is why that case goes to manual review.
+- Select **Cancel the request** on the page that the email's link opens. Opening the link alone changes nothing.
+- Select **Cancel the request** on the banner.
+- Enter a code from your app or a recovery code on **Enter your code**.
+
+A cancel signs out every session that never passed the check, and no new request can start for 7 days. Dinghy also emails you to secure your email account, because someone else may read it.
+
+If nobody else can stop the request, the screen sends you to a manual review instead. On Dinghy Cloud, write to the address it shows, with your last invoice number and the last 4 digits of the card that pays for Dinghy. On your own server, ask its admin to run `chat two-factor-reset <email>`, as [Self-hosting](self-hosting.md#common-commands) shows.
 
 ### Reset a teammate's two-step sign-in
 
