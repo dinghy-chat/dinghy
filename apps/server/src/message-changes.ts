@@ -239,7 +239,8 @@ export async function editMessage(
   conversationId: string,
   messageId: string,
   operatorId: string,
-  change: { body: string; mentions: string[] },
+  /** Mentions left out keep the note's. */
+  change: { body: string; mentions?: string[] | undefined },
 ): Promise<EditOutcome> {
   const seq = await nextSeq(tx, workspaceId);
   const reader = await conversationVisitor(tx, workspaceId, conversationId, "no key update");
@@ -253,9 +254,10 @@ export async function editMessage(
   if (!isNote && (await visitorMaySee(tx, workspaceId, conversationId, reader, line))) {
     return { kind: "seen" };
   }
-  const mentions = isNote
-    ? await changedMentions(tx, workspaceId, operatorId, line.metadata, change.mentions)
-    : null;
+  const mentions =
+    isNote && change.mentions !== undefined
+      ? await changedMentions(tx, workspaceId, operatorId, line.metadata, change.mentions)
+      : null;
   const [row] = await tx
     .update(message)
     .set({

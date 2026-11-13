@@ -1,7 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "@hono/zod-openapi";
 import { and, eq, inArray } from "drizzle-orm";
-import { BOT_TYPING_MS } from "../../../packages/widget/src/shared.ts";
+import { BOT_TYPING_MS, MENTIONS_MAX } from "../../../packages/widget/src/shared.ts";
 import {
   AnalyticsQuery,
   analyticsFor,
@@ -316,7 +316,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
         clientId,
         replyToMessageId,
         mentions: Mentions.optional().describe(
-          "Members to alert, by their id from list_members, at most 10",
+          `Members to alert, by their id from list_members, at most ${MENTIONS_MAX}`,
         ),
       }),
       idempotent: true,
@@ -378,7 +378,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "list_members",
       title: "List the team",
       description:
-        "Lists the workspace's members by name: `id` (the operatorId that assign_conversation and hand_off take), `name`, `role` (owner, admin or member) and `online`: true while their operator app is open and they are not away, null when the server cannot tell now.",
+        "Lists the workspace's members by name: `id` (the operatorId that assign_conversation and hand_off take, and add_note takes in `mentions`), `name`, `role` (owner, admin or member) and `online`: true while their operator app is open and they are not away, null when the server cannot tell now.",
       input: z.object({}),
       readOnly: true,
       async run(_input, { workspaceId }) {

@@ -23,7 +23,6 @@ interface SavedReply {
   id: string;
   shortcut: string;
   body: string;
-  createdBy: string | null;
 }
 
 /** A workspace of its own, with an owner, a member and a key. */
@@ -72,7 +71,7 @@ describe("saved replies", () => {
     const refund = await add("refund", "Full refund within 30 days.");
     expect(refund.status).toBe(201);
     const made = (await refund.json()) as SavedReply;
-    expect(made).toMatchObject({ shortcut: "refund", createdBy: member.id });
+    expect(made).toMatchObject({ shortcut: "refund" });
     expect((await add("hello", "Hi there!")).status).toBe(201);
     expect((await list(member.cookie, space.id)).map((one) => one.shortcut)).toEqual([
       "hello",
@@ -101,7 +100,7 @@ describe("saved replies", () => {
     expect((await add("hello")).status).toBe(201);
     const taken = await add("hello");
     expect(taken.status).toBe(409);
-    expect(await taken.json()).toMatchObject({ error: { code: "shortcut_taken" } });
+    expect(await taken.json()).toMatchObject({ error: { code: "saved_reply_shortcut_taken" } });
     for (const bad of ["Hello", "-hello", "hello world", "a".repeat(33)]) {
       expect((await add(bad)).status).toBe(400);
     }
@@ -153,24 +152,6 @@ describe("saved replies", () => {
     });
     const add = await withKey(app, token, "POST", base(space.id), { shortcut: "bot", body: "Hi" });
     expect(add.status).toBe(403);
-  });
-
-  test("a member who leaves no longer names their saved replies, which stay", async () => {
-    const { space, boss, member } = await team();
-    await asOperator(app, member.cookie, "POST", base(space.id), {
-      shortcut: "hello",
-      body: "Hi",
-    });
-    const removed = await asOperator(
-      app,
-      boss.cookie,
-      "DELETE",
-      inSpace(space.id, `/members/${member.id}`),
-    );
-    expect(removed.status).toBe(200);
-    expect(await list(boss.cookie, space.id)).toMatchObject([
-      { shortcut: "hello", createdBy: null },
-    ]);
   });
 
   test("a missing saved reply is not found", async () => {

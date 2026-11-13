@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { SAVED_REPLY_BODY_MAX, savedReply } from "./db/schema.ts";
@@ -17,6 +18,7 @@ import {
 } from "./errors.ts";
 import { boundedText } from "./inputs.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
+import { recordWorkspaceChange } from "./messages.ts";
 
 const SAVED_REPLY_LIMIT = 200;
 const PREFIX = `${WORKSPACE_PREFIX}/{workspaceId}/saved-replies`;
@@ -25,16 +27,16 @@ const LIMIT = failure(
   "saved_reply_limit",
   `A workspace can have ${SAVED_REPLY_LIMIT} saved replies.`,
 );
-const SHORTCUT_TAKEN = failure("shortcut_taken", "Another saved reply has this shortcut.");
+const SHORTCUT_TAKEN = failure(
+  "saved_reply_shortcut_taken",
+  "Another saved reply has this shortcut.",
+);
 
-const Shortcut = z
-  .string()
-  .regex(/^[a-z0-9][a-z0-9-]{0,31}$/)
-  .openapi({
-    description:
-      "What an operator types after `/` to find it: up to 32 lowercase letters, digits and dashes, starting with a letter or digit. Unique in the workspace.",
-    example: "refund-policy",
-  });
+const Shortcut = z.string().regex(SAVED_REPLY_SHORTCUT).openapi({
+  description:
+    "What an operator types after `/` to find it: up to 32 lowercase letters, digits and dashes, starting with a letter or digit. Unique in the workspace.",
+  example: "refund-policy",
+});
 const ReplyBody = boundedText(SAVED_REPLY_BODY_MAX).openapi({
   description: "The text the composer inserts, in the same Markdown as a message",
 });
@@ -44,8 +46,6 @@ const SavedReply = z
     id: z.string(),
     shortcut: z.string(),
     body: z.string(),
-    // The member who added it, or null once they left the team.
-    createdBy: z.string().nullable(),
     updatedAt: z.string(),
   })
   .openapi("SavedReply", {
@@ -53,7 +53,6 @@ const SavedReply = z
       id: "3f6b2c1e-8d4a-4e7f-9b05-1a2c3d4e5f60",
       shortcut: "refund-policy",
       body: "You can get a full refund within 30 days. Reply here and we will start it.",
-      createdBy: "7a3e5b20-9c1d-4f6a-b8e2-4d0f1c9a6b53",
       updatedAt: "2026-11-13T10:00:00.000Z",
     },
   });
@@ -64,7 +63,7 @@ const savedReplyParams = workspaceParams.extend({ savedReplyId: z.uuid() });
 const WRITE_ERRORS = {
   ...MEMBER_WRITE_ERRORS,
   409: errorAnswer(
-    `shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has ${SAVED_REPLY_LIMIT} already`,
+    `saved_reply_shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has ${SAVED_REPLY_LIMIT} already`,
   ),
 };
 
@@ -81,7 +80,7 @@ const listRoute = createRoute({
   },
 });
 
-const createSavedReplyRoute = createRoute({
+const addRoute = createRoute({
   method: "post",
   path: PREFIX,
   security: SESSION,
@@ -118,7 +117,6 @@ const columns = {
   id: savedReply.id,
   shortcut: savedReply.shortcut,
   body: savedReply.body,
-  createdBy: savedReply.createdBy,
   updatedAt: savedReply.updatedAt,
 };
 
@@ -168,7 +166,7 @@ export function registerSavedReplyRoutes(app: App, db: Database): void {
     return c.json({ savedReplies }, 200);
   });
 
-  app.openapi(createSavedReplyRoute, async (c) => {
+  app.openapi(addRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const input = c.req.valid("json");
     const outcome = await withWorkspace(db, id, async (tx) => {
@@ -176,9 +174,10 @@ export function registerSavedReplyRoutes(app: App, db: Database): void {
       if (refused !== null) return refused;
       const [row] = await tx
         .insert(savedReply)
-        .values({ workspaceId: id, ...input, createdBy: c.get("operatorId") })
+        .values({ workspaceId: id, ...input })
         .returning(columns);
       if (row === undefined) throw new Error("The saved reply insert returned no row");
+      await recordWorkspaceChange(tx, id);
       return view(row);
     });
     if ("error" in outcome) return c.json(outcome, 409);
@@ -197,7 +196,9 @@ export function registerSavedReplyRoutes(app: App, db: Database): void {
         .set({ ...input, updatedAt: sql`now()` })
         .where(thisReply(id, savedReplyId))
         .returning(columns);
-      return row === undefined ? null : view(row);
+      if (row === undefined) return null;
+      await recordWorkspaceChange(tx, id);
+      return view(row);
     });
     if (outcome === null) return c.json(NOT_FOUND, 404);
     if ("error" in outcome) return c.json(outcome, 409);
@@ -207,10 +208,16 @@ export function registerSavedReplyRoutes(app: App, db: Database): void {
   app.openapi(deleteRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { savedReplyId } = c.req.valid("param");
-    const deleted = await withWorkspace(db, id, (tx) =>
-      tx.delete(savedReply).where(thisReply(id, savedReplyId)).returning({ id: savedReply.id }),
-    );
-    if (deleted.length === 0) return c.json(NOT_FOUND, 404);
+    const isDeleted = await withWorkspace(db, id, async (tx) => {
+      const deleted = await tx
+        .delete(savedReply)
+        .where(thisReply(id, savedReplyId))
+        .returning({ id: savedReply.id });
+      if (deleted.length === 0) return false;
+      await recordWorkspaceChange(tx, id);
+      return true;
+    });
+    if (!isDeleted) return c.json(NOT_FOUND, 404);
     return c.json({ ok: true as const }, 200);
   });
 }

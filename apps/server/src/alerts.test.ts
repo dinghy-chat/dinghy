@@ -1997,7 +1997,7 @@ describe("notes", () => {
     operatorId: string,
     conversationId: string,
     noteId: string,
-    mentions: string[],
+    mentions: string[] | undefined,
   ) =>
     withWorkspace(app, space.id, (tx) =>
       editMessage(tx, space.id, conversationId, noteId, operatorId, { body: "Look", mentions }),
@@ -2130,6 +2130,11 @@ describe("notes", () => {
     await fanOutAll();
     expect(await deliveries()).toHaveLength(2);
     expect(trimmed.kind === "edited" && trimmed.message.mentions).toEqual([ben]);
+
+    const kept = await noteEdits(author, conversationId, note.message.id, undefined);
+    await fanOutAll();
+    expect(await deliveries()).toHaveLength(2);
+    expect(kept.kind === "edited" && kept.message.mentions).toEqual([ben]);
   });
 
   test("a note is unread for the members it mentions, and only for them", async () => {
@@ -2150,5 +2155,26 @@ describe("notes", () => {
     expect(await unread(anna)).toBe(true);
     expect(await unread(ben)).toBe(false);
     expect(await unread(author)).toBe(false);
+  });
+
+  test("an edit that mentions a member makes the conversation unread for them until they read it", async () => {
+    const author = await addOperator(`author-${randomUUID()}@example.com`);
+    const ben = await addOperator(`ben-${randomUUID()}@example.com`);
+    const { conversationId } = await quietConversation();
+    const note = await noteWrites(author, conversationId, "Look at this");
+    const readsUpTo = (seq: bigint) =>
+      withWorkspace(app, space.id, (tx) =>
+        markConversationRead(tx, space.id, conversationId, ben, seq),
+      );
+    const unread = () =>
+      withWorkspace(app, space.id, (tx) => isUnread(tx, space.id, conversationId, ben));
+    await readsUpTo(note.message.seq);
+    expect(await unread()).toBe(false);
+
+    await noteEdits(author, conversationId, note.message.id, [ben]);
+    expect(await unread()).toBe(true);
+    // The app reads up to the newest message, which the edit did not move.
+    await readsUpTo(note.message.seq);
+    expect(await unread()).toBe(false);
   });
 });

@@ -233,10 +233,9 @@ describe("the owner's delete", () => {
     await owner
       .insert(widgetSiteSeen)
       .values({ workspaceId: created.id, origin: "https://home.example" });
-    // A saved reply names its author, a member, so it must go before the members.
     await owner
       .insert(savedReply)
-      .values({ workspaceId: created.id, shortcut: "hello", body: "Hello", createdBy: selfId });
+      .values({ workspaceId: created.id, shortcut: "hello", body: "Hello" });
     // A logo, which goes with the workspace row by its foreign key.
     await owner
       .insert(workspaceLogo)

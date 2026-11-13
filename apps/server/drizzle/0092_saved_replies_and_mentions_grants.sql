@@ -3,10 +3,10 @@ ALTER TABLE saved_reply ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON saved_reply TO dinghy_app, dinghy_worker
   USING (workspace_id = current_workspace_id()) WITH CHECK (workspace_id = current_workspace_id());
 --> statement-breakpoint
--- Every member adds, changes and deletes them, and a member's removal clears the author.
+-- Every member adds, changes and deletes them.
 GRANT SELECT, INSERT, UPDATE, DELETE ON saved_reply TO dinghy_app;
 --> statement-breakpoint
--- As before, with saved_reply, which names a member and so goes before the members.
+-- As before, with saved_reply.
 CREATE OR REPLACE FUNCTION purge_deleted_workspaces()
   RETURNS integer
   LANGUAGE plpgsql SECURITY DEFINER

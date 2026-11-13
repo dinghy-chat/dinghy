@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Logger } from "pino";
+import { MENTIONS_MAX } from "../../../packages/widget/src/shared.ts";
 import { type Actor, actorId, type KeyActor, keyStillValid } from "./api-keys.ts";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
@@ -127,9 +128,10 @@ const workspaceParams = z.object({ workspaceId: z.uuid() });
 const conversationParams = workspaceParams.extend({ conversationId: z.uuid() });
 const messageParams = conversationParams.extend({ messageId: z.uuid() });
 
-const NOTE_MENTIONS = Mentions.default([]).openapi({
-  description:
-    "Only on a note: the members it mentions, by their operator IDs from the members list, at most 10. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped.",
+const MENTIONS_TEXT = `Only on a note: the members it mentions, by their operator IDs from the members list, at most ${MENTIONS_MAX}. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped.`;
+const NOTE_MENTIONS = Mentions.default([]).openapi({ description: MENTIONS_TEXT });
+const EDIT_MENTIONS = Mentions.optional().openapi({
+  description: `${MENTIONS_TEXT} They replace the note's list, and leaving them out keeps it.`,
 });
 
 const REPLY_TO = z.uuid().optional().openapi({
@@ -559,7 +561,7 @@ const editRoute = createRoute({
     body: {
       required: true,
       content: {
-        "application/json": { schema: z.object({ body: Body, mentions: NOTE_MENTIONS }) },
+        "application/json": { schema: z.object({ body: Body, mentions: EDIT_MENTIONS }) },
       },
     },
   },

@@ -5,7 +5,6 @@ CREATE TABLE "saved_reply" (
 	"id" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"shortcut" text NOT NULL,
 	"body" text NOT NULL,
-	"created_by" uuid,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "saved_reply_workspace_id_id_pk" PRIMARY KEY("workspace_id","id"),
 	CONSTRAINT "saved_reply_shortcut_key" UNIQUE("workspace_id","shortcut"),
@@ -13,5 +12,4 @@ CREATE TABLE "saved_reply" (
 	CONSTRAINT "saved_reply_body_length" CHECK (char_length("saved_reply"."body") between 1 and 5000)
 );
 --> statement-breakpoint
-ALTER TABLE "saved_reply" ADD CONSTRAINT "saved_reply_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "saved_reply" ADD CONSTRAINT "saved_reply_created_by_fk" FOREIGN KEY ("workspace_id","created_by") REFERENCES "public"."workspace_member"("workspace_id","operator_id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "saved_reply" ADD CONSTRAINT "saved_reply_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE no action ON UPDATE no action;

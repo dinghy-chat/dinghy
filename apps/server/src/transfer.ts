@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { SAVED_REPLY_SHORTCUT } from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
@@ -163,9 +164,8 @@ const ExportFile = z.strictObject({
     .array(
       z.strictObject({
         id,
-        shortcut: z.string().max(32),
+        shortcut: z.string().regex(SAVED_REPLY_SHORTCUT),
         body: z.string().max(SAVED_REPLY_BODY_MAX),
-        createdBy: id.nullable(),
         updatedAt: date,
       }),
     )
@@ -398,7 +398,6 @@ async function readWorkspace(
           id: row.id,
           shortcut: row.shortcut,
           body: row.body,
-          createdBy: row.createdBy,
           updatedAt: iso(row.updatedAt),
         })),
       };
@@ -732,7 +731,6 @@ async function insertWorkspace(
         id: row.id,
         shortcut: row.shortcut,
         body: row.body,
-        createdBy: mapOperator(row.createdBy),
         updatedAt: new Date(row.updatedAt),
       })),
     );

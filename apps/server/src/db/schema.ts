@@ -24,6 +24,7 @@ import {
   HEADER_FACES_MAX,
   MESSAGE_MAX,
   RADIUS_MAX_PX,
+  SAVED_REPLY_SHORTCUT,
   WIDGET_DEFAULTS,
 } from "../../../../packages/widget/src/shared.ts";
 
@@ -1384,19 +1385,15 @@ export const savedReply = pgTable(
     // What follows `/` in the composer, such as `refund-policy`.
     shortcut: text("shortcut").notNull(),
     body: text("body").notNull(),
-    // Null once its author leaves the team.
-    createdBy: uuid("created_by"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.id] }),
     unique("saved_reply_shortcut_key").on(table.workspaceId, table.shortcut),
-    foreignKey({
-      name: "saved_reply_created_by_fk",
-      columns: [table.workspaceId, table.createdBy],
-      foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
-    }),
-    check("saved_reply_shortcut", sql`${table.shortcut} ~ '^[a-z0-9][a-z0-9-]{0,31}$'`),
+    check(
+      "saved_reply_shortcut",
+      sql`${table.shortcut} ~ ${sql.raw(`'${SAVED_REPLY_SHORTCUT.source}'`)}`,
+    ),
     check(
       "saved_reply_body_length",
       sql`char_length(${table.body}) between 1 and ${sql.raw(String(SAVED_REPLY_BODY_MAX))}`,

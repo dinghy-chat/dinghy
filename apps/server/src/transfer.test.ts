@@ -213,7 +213,7 @@ async function makeSource(): Promise<Source> {
       note: true,
     }),
   });
-  // A note that mentions a member, and a saved reply, which both name operators.
+  // A note that mentions a member, which names an operator, and a saved reply.
   await write("POST", `/conversations/${conversationId}/messages`, {
     clientId: "note-from-owner",
     body: "@Agent please follow up",
@@ -456,7 +456,7 @@ describe("a round trip onto a fresh install", () => {
     );
   });
 
-  test("names this install's operators in a note's mentions and a saved reply's author", async () => {
+  test("names this install's operators in a note's mentions, and keeps the saved replies", async () => {
     const idOf = async (email: string) =>
       (await target.owner.select().from(operator).where(eq(operator.email, email)))[0]?.id;
     const [note] = await target.owner
@@ -470,9 +470,7 @@ describe("a round trip onto a fresh install", () => {
       .select()
       .from(savedReply)
       .where(eq(savedReply.workspaceId, source.space.id));
-    expect(replies).toMatchObject([
-      { shortcut: "hello", body: "Hi there!", createdBy: await idOf(source.ownerEmail) },
-    ]);
+    expect(replies).toMatchObject([{ shortcut: "hello", body: "Hi there!" }]);
   });
 
   test("keeps the members, with a removed one still removed", async () => {

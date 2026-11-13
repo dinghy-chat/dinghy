@@ -303,6 +303,12 @@ export const MESSAGE_MAX = 10_000;
 export const MENTIONS_MAX = 10;
 
 /**
+ * A saved reply's shortcut, what follows `/` in the composer. The form, the server and the database
+ * check it.
+ */
+export const SAVED_REPLY_SHORTCUT = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/**
  * A bot repeats its typing notice while it writes, so one that stops repeating has stopped: the
  * chat and the operator app drop it after this long with no update.
  */

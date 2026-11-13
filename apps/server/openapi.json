@@ -84,8 +84,8 @@
                   "push_unavailable",
                   "read_only",
                   "saved_reply_limit",
+                  "saved_reply_shortcut_taken",
                   "signed_in",
-                  "shortcut_taken",
                   "site_limit",
                   "storage_full",
                   "suspended",
@@ -1961,19 +1961,15 @@
           "body": {
             "type": "string"
           },
-          "createdBy": {
-            "type": ["string", "null"]
-          },
           "updatedAt": {
             "type": "string"
           }
         },
-        "required": ["id", "shortcut", "body", "createdBy", "updatedAt"],
+        "required": ["id", "shortcut", "body", "updatedAt"],
         "example": {
           "id": "3f6b2c1e-8d4a-4e7f-9b05-1a2c3d4e5f60",
           "shortcut": "refund-policy",
           "body": "You can get a full refund within 30 days. Reply here and we will start it.",
-          "createdBy": "7a3e5b20-9c1d-4f6a-b8e2-4d0f1c9a6b53",
           "updatedAt": "2026-11-13T10:00:00.000Z"
         }
       },
@@ -5640,8 +5636,7 @@
                       "format": "uuid"
                     },
                     "maxItems": 10,
-                    "default": [],
-                    "description": "Only on a note: the members it mentions, by their operator IDs from the members list, at most 10. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped."
+                    "description": "Only on a note: the members it mentions, by their operator IDs from the members list, at most 10. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped. They replace the note's list, and leaving them out keeps it."
                   }
                 },
                 "required": ["body"]
@@ -12880,7 +12875,7 @@
             }
           },
           "409": {
-            "description": "shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has 200 already",
+            "description": "saved_reply_shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has 200 already",
             "content": {
               "application/json": {
                 "schema": {
@@ -13027,7 +13022,7 @@
             }
           },
           "409": {
-            "description": "shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has 200 already",
+            "description": "saved_reply_shortcut_taken: another saved reply has this shortcut. saved_reply_limit: the workspace has 200 already",
             "content": {
               "application/json": {
                 "schema": {

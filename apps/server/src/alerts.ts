@@ -342,12 +342,12 @@ export function fanOutOne(db: Database, channels: Channels): Promise<boolean> {
       })
       .from(message)
       .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
-    // A message whose row was deleted before this step has nothing to alert about.
     const mentioned = (found.payload as MessagePayload).mentions ?? [];
+    // A message whose row was deleted before this step has nothing to alert about.
     const rows =
       written === undefined
         ? []
-        : await eventRows(tx, found.kind, { ...written, mentioned }, channels, base);
+        : await eventRows(tx, found.kind, written, mentioned, channels, base);
     if (rows.length > 0) await tx.insert(alertDelivery).values(rows).onConflictDoNothing();
     await tx
       .update(event)
@@ -380,9 +380,9 @@ async function eventRows(
     authorVisitorId: string | null;
     deletedAt: Date | null;
     fromTest: boolean;
-    /** The members a note's event alerts. */
-    mentioned: string[];
   },
+  /** The members a note's event alerts. */
+  mentioned: string[],
   channels: Channels,
   base: DeliveryBase,
 ): Promise<DeliveryRow[]> {
@@ -396,11 +396,11 @@ async function eventRows(
       return channels.email ? requestedTranscriptRows(tx, base) : [];
     case "message.updated":
       // Only an edit that mentions members anew asks for alerts.
-      return written.deletedAt === null ? mentionRows(tx, channels, base, written.mentioned) : [];
+      return written.deletedAt === null ? mentionRows(tx, channels, base, mentioned) : [];
     case "message.created":
       // A message deleted before this step has nothing to alert about.
       if (written.deletedAt !== null) return [];
-      if (written.kind === "note") return mentionRows(tx, channels, base, written.mentioned);
+      if (written.kind === "note") return mentionRows(tx, channels, base, mentioned);
       if (written.authorVisitorId !== null) return operatorAlertRows(tx, channels, base);
       return channels.email ? replyEmailRows(tx, base) : [];
     default:
@@ -601,7 +601,9 @@ export function planDelivery(
     // A message deleted while its alert waited has nothing to alert about.
     if (written.deletedAt !== null) return null;
     if (row.channel === "mention_push" || row.channel === "mention_email") {
-      const [by = text.someone] = (await authorNames(tx, workspaceId, [written])).values();
+      const names = await authorNames(tx, workspaceId, [written]);
+      const author = written.authorOperatorId ?? written.authorApiKeyId;
+      const by = (author === null ? undefined : names.get(author)) ?? text.someone;
       return operatorPlan(tx, row, from, { mention: written.body ?? "", by }, threadUrl);
     }
     return operatorPlan(tx, row, from, { body: written.body }, threadUrl);

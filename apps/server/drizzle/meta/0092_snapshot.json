@@ -1,6 +1,6 @@
 {
-  "id": "e6a22d40-5c35-40a0-bfa4-3dd45854c834",
-  "prevId": "891602a8-203d-44c7-b921-789c0bfd90bb",
+  "id": "d4dde223-2faf-4588-9f70-600114a5979c",
+  "prevId": "57eee515-a847-48b7-8c46-331ee1810e84",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2908,12 +2908,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -2930,15 +2924,6 @@
           "columnsFrom": ["workspace_id"],
           "tableTo": "workspace",
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
-        },
-        "saved_reply_created_by_fk": {
-          "name": "saved_reply_created_by_fk",
-          "tableFrom": "saved_reply",
-          "columnsFrom": ["workspace_id", "created_by"],
-          "tableTo": "workspace_member",
-          "columnsTo": ["workspace_id", "operator_id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
