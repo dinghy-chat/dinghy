@@ -15,9 +15,9 @@ import {
   BUSY,
   errorAnswer,
   failure,
-  IMAGE_UPLOAD_ERRORS,
   INVALID,
   okContent,
+  UPLOAD_ERRORS,
   WIDGET_ERRORS,
   WIDGET_TOKEN_ERRORS,
   WIDGET_WRITE_ERRORS,
@@ -31,8 +31,15 @@ import {
   verifyHostToken,
   visitorAuthorId,
 } from "./identity.ts";
-import { ImageSchema, type Images, imageView, refuseImage } from "./images.ts";
-import { Body, ClientId } from "./inputs.ts";
+import {
+  FileSchema,
+  fileView,
+  ImageSchema,
+  type Images,
+  imageView,
+  refuseImage,
+} from "./images.ts";
+import { Body, ClientId, Filename } from "./inputs.ts";
 import {
   PAGE_PATH_MAX,
   PageContextSchema,
@@ -367,6 +374,10 @@ const MessageSchema = z
     image: ImageSchema.nullable(),
     // The image was deleted after 12 months, on Dinghy Cloud.
     imageRemoved: z.boolean(),
+    // A `file` message's file, which only downloads.
+    file: FileSchema.nullable(),
+    // The file was deleted after 12 months, on Dinghy Cloud.
+    fileRemoved: z.boolean(),
     // The message this one quotes, or null. Its author is a first name, as on replies.
     replyTo: QuoteSchema.nullable(),
     // An operator deleted it, so it shows as a placeholder with no body.
@@ -393,6 +404,8 @@ const MessageSchema = z
       body: "Do you have a yearly plan?",
       image: null,
       imageRemoved: false,
+      file: null,
+      fileRemoved: false,
       replyTo: null,
       deleted: false,
       fromBot: false,
@@ -455,15 +468,22 @@ const sendMessageRoute = createRoute({
   },
 });
 
-const sendImageRoute = createRoute({
+const sendUploadRoute = createRoute({
   method: "post",
   path: "/v1/widget/{key}/images",
   security: VISITOR_TOKEN,
   summary:
-    "Send an image as the raw request body. A retry with the same clientId returns the original",
+    "Send an image or a file as the raw request body. A retry with the same clientId returns the original",
+  description:
+    "PNG, JPEG and WebP bytes become an `image` message, whatever their name. Any other file becomes a `file` message when its `filename` names an allowed type and its first bytes match, up to 10 MB, and only while the widget's `visitorFiles` is on.",
   request: {
     params,
-    query: z.object({ clientId: ClientId, page: PAGE, replyToMessageId: REPLY_TO }),
+    query: z.object({
+      clientId: ClientId,
+      page: PAGE,
+      replyToMessageId: REPLY_TO,
+      filename: Filename,
+    }),
   },
   responses: {
     200: {
@@ -475,8 +495,8 @@ const sendImageRoute = createRoute({
       content: { "application/json": { schema: SentSchema } },
     },
     ...WIDGET_TOKEN_ERRORS,
-    ...IMAGE_UPLOAD_ERRORS,
-    400: errorAnswer(`${IMAGE_UPLOAD_ERRORS[400].description}. ${INVALID_REPLY_TO_TEXT}`),
+    ...UPLOAD_ERRORS,
+    400: errorAnswer(`${UPLOAD_ERRORS[400].description}. ${INVALID_REPLY_TO_TEXT}`),
     ...SEND_REFUSED,
   },
 });
@@ -562,6 +582,7 @@ function messageView(
     createdAt,
     clientId,
     image,
+    file,
     authorOperatorId,
     authorApiKeyId,
     replyTo,
@@ -591,6 +612,7 @@ function messageView(
     authorId: authorId === null || author === undefined ? null : visitorAuthorId(authorId),
     createdAt: createdAt.toISOString(),
     image: imageView(images, workspaceId, image),
+    file: fileView(images, workspaceId, file),
   };
 }
 
@@ -916,6 +938,15 @@ async function notePlace(
   return newest?.id ?? null;
 }
 
+/** Whether Settings > Appearance lets visitors send files as well as images. */
+async function visitorFilesAllowed(tx: Transaction, workspaceId: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ allowed: widgetSettings.visitorFiles })
+    .from(widgetSettings)
+    .where(eq(widgetSettings.workspaceId, workspaceId));
+  return row?.allowed === true;
+}
+
 /**
  * The open conversation a visitor's draft belongs to, or null when the workspace turned the preview
  * off, the visitor is blocked, or they have no open conversation. One statement.
@@ -1224,24 +1255,24 @@ export function registerWidgetRoutes(
   });
 
   if (images !== undefined) {
-    app.openapi(sendImageRoute, async (c) => {
+    app.openapi(sendUploadRoute, async (c) => {
       const found = c.get("workspace");
       const identified = await identify(c);
       if (identified === null) return c.json(UNAUTHORIZED, 401);
-      const { clientId, page, replyToMessageId } = c.req.valid("query");
+      const { clientId, page, replyToMessageId, filename } = c.req.valid("query");
       const ipHash = hashIp(ipSecret, found.id, c.get("clientIp"));
-      const blocked = await withWorkspace(db, found.id, async (tx) => {
-        const refused = await isBlocked(tx, found.id, identified, ipHash);
-        if (!refused) await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
-        return refused;
+      const checked = await withWorkspace(db, found.id, async (tx) => {
+        const blocked = await isBlocked(tx, found.id, identified, ipHash);
+        if (!blocked) await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
+        return { blocked, filesAllowed: await visitorFilesAllowed(tx, found.id) };
       });
-      if (blocked) return c.json(BLOCKED, 403);
+      if (checked.blocked) return c.json(BLOCKED, 403);
       const outcome = await catchInvalidQuote(
         catchClosed(
           images.receive(
             c.req.raw,
             found.id,
-            (image) =>
+            (attachment) =>
               withWorkspace(db, found.id, (tx) =>
                 appendMessage(
                   tx,
@@ -1249,7 +1280,7 @@ export function registerWidgetRoutes(
                   { kind: "visitor", visitorId: identified.visitorId },
                   {
                     clientId,
-                    image,
+                    attachment,
                     page: identified.link ? null : sitePage(page, c.req.header("origin")),
                     replyToMessageId,
                   },
@@ -1257,11 +1288,12 @@ export function registerWidgetRoutes(
                 ),
               ),
             c.get("clientIp"),
+            checked.filesAllowed ? filename : null,
           ),
         ),
       );
       if (outcome instanceof InvalidReplyToError) return c.json(INVALID_REPLY_TO, 400);
-      // Closed while the image arrived: the same answer as an unknown key.
+      // Closed while the upload arrived: the same answer as an unknown key.
       if (outcome instanceof WorkspaceClosedError) return c.json(ORIGIN_NOT_ALLOWED, 403);
       if ("refused" in outcome) return refuseImage(c, outcome.refused);
       if (outcome.result.created) {

@@ -92,7 +92,7 @@ const en = {
   invitePendingOne: "Invite pending · 1 day left",
   invitePendingMany: "Invite pending · {days} days left",
   usageOperatorsNote: "This limit includes team members and pending invites.",
-  usageImagesNote: "Dinghy Cloud automatically deletes chat images after 12 months.",
+  usageFilesNote: "Dinghy Cloud automatically deletes chat images and files after 12 months.",
   sceneMorning: "Early morning. The boat sets out on a calm sea.",
   sceneForenoon: "Mid-morning. The boat sails on.",
   sceneNoon: "Midday. The boat is halfway across.",
@@ -176,9 +176,10 @@ const en = {
   failed: "Not sent. Select to try again.",
   closedHelp: "This conversation is closed. Reopen it to reply, or add a note.",
   reconnecting: "Connection lost. Trying again...",
-  attach: "Attach an image",
+  attach: "Attach an image or a file",
   emoji: "Add an emoji",
   image: "Image",
+  file: "File",
   imageAlt: "An image in this conversation",
   imageSending: "Sending an image...",
   imageTooLarge: "This image is larger than 5 MB. Choose a smaller image.",
@@ -189,7 +190,13 @@ const en = {
   imageSave: "Save image",
   imageSaveFailed: "Dinghy could not save this image. Try again.",
   imageRemoved: "Image removed after 12 months",
-  imageNoRoom: "Image storage is full. Ask an owner or admin to delete conversations with images.",
+  storageFull:
+    "File storage is full. Ask an owner or admin to delete conversations with images or files.",
+  fileSending: "Sending a file...",
+  fileTooLarge: "This file is larger than 10 MB. Choose a smaller file.",
+  fileWrongType:
+    "Send an image, or a PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV file.",
+  fileRemoved: "File removed after 12 months",
   settings: "Settings",
   snippetTitle: "Install by hand",
   logoTitle: "Logo",
@@ -261,7 +268,10 @@ const en = {
     'Says "Online" while someone is online, and your away message when nobody is.',
   widgetStatusReplyTimeHelp:
     'While someone is online, says "Usually replies in 2 min", from your median first reply time over 30 days. With no replies yet, it says "Online".',
-  widgetEmailTitle: "Email, sound and branding",
+  widgetFilesEmailTitle: "Files, email, sound and branding",
+  widgetVisitorFiles: "Visitors can send files",
+  widgetVisitorFilesHelp:
+    "PDF, TXT, CSV, LOG, JSON, ZIP, Office, OpenDocument, MP4 and MOV files up to 10 MB, as well as images. Your team can always send files.",
   widgetSound: "Play a sound for new replies",
   widgetSoundHelp: "A soft chime when a reply arrives and the visitor is not looking at the chat.",
   widgetEmailAsk: "Ask visitors for their email",
@@ -377,7 +387,7 @@ const en = {
     "This workspace has reached its limit of 5 team members, including pending invites. Ask an owner or admin to free a place.",
   usageTitle: "Plan and usage",
   usageOperators: "Team members",
-  usageImages: "Image storage",
+  usageFiles: "File storage",
   usageOf: "{used} of {limit}",
   usageNear: "Almost at the limit.",
   usageFullTeam:
@@ -389,7 +399,7 @@ const en = {
   areReplying: "{names} have this conversation open",
   exportTitle: "Export workspace",
   exportHelp:
-    "Download this workspace's conversations, images, team, and settings for use on another Dinghy server. Keep the file private because it contains personal data.",
+    "Download this workspace's conversations, images, files, team, and settings for use on another Dinghy server. Keep the file private because it contains personal data.",
   exportDownload: "Download an export",
   blockedTitle: "Blocked visitors",
   blockedHelp: "They can't send messages until you unblock them.",
@@ -407,7 +417,7 @@ const en = {
   widgetTranscriptHelp:
     "Five minutes after the close, if someone on the team replied. Without it, Email transcript in a conversation still works.",
   deleteTitle: "Delete this conversation?",
-  deleteConfirm: "This deletes the conversation and its images for good.",
+  deleteConfirm: "This deletes the conversation and its images and files for good.",
   deleteYes: "Delete it",
   unassigned: "Unassigned",
   inviteInvalid: "This invite has expired or was already used. Ask for a new one.",
@@ -725,7 +735,7 @@ const en = {
   deliveryExcerpt: "The server's answer",
   deleteWorkspaceTitle: "Delete this workspace",
   deleteWorkspaceHelp:
-    "This deletes every conversation, image and setting for good. Download an export first to keep a copy.",
+    "This deletes every conversation, image, file and setting for good. Download an export first to keep a copy.",
   deleteWorkspaceCloud: "The subscription ends today, with no refund.",
   deleteWorkspaceOpen: "Delete workspace",
   deleteWorkspaceConfirmTitle: "Delete {name}?",
@@ -735,11 +745,11 @@ const en = {
   deleteWorkspaceButton: "Delete the workspace",
   deleteWorkspaceFailed: "The workspace could not be deleted. Try again.",
   deleteWorkspaceCounts:
-    "This permanently deletes {conversations} and {images}. It removes workspace access for {members}, but keeps their Dinghy accounts.",
+    "This permanently deletes {conversations} and {files}. It removes workspace access for {members}, but keeps their Dinghy accounts.",
   deleteCountConversationsOne: "1 conversation",
   deleteCountConversations: "{count} conversations",
-  deleteCountImagesOne: "1 image",
-  deleteCountImages: "{count} images",
+  deleteCountFilesOne: "1 image or file",
+  deleteCountFiles: "{count} images and files",
   deleteCountMembersOne: "1 team member",
   deleteCountMembers: "{count} team members",
   deleteWorkspaceExport: "Download an export first",
@@ -802,8 +812,8 @@ const en = {
   emailMismatch: "That email does not match your account. Enter the email you use to sign in.",
   linkDeleteAccountTitle: "Delete your account",
   linkDeleteAccountHelp: "This deletes your Dinghy account for good. It can't be undone.",
-  usageFullImages:
-    "Image storage is full. An owner or admin can delete conversations with images to make space.",
+  usageFullFiles:
+    "File storage is full. An owner or admin can delete conversations with images or files to make space.",
   settingsGroupYou: "You",
   settingsGroupWorkspace: "Workspace",
   settingsGroupWidget: "Chat widget",
@@ -985,7 +995,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   deleteContact: "Delete contact",
   deleteContactTitle: "Delete {name}?",
   deleteContactConfirm:
-    "This deletes the contact and their {count} conversations, with every message and image. It can't be undone.",
+    "This deletes the contact and their {count} conversations, with every message, image and file. It can't be undone.",
   visitors: "Visitors",
   visitorsMany: "{count} people on your site now.",
   visitorsOne: "1 person on your site now.",
@@ -1050,7 +1060,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   messageDeleteTitle: "Delete this message?",
   noteDeleteText: 'It becomes "Message deleted" for your team. This can\'t be undone.',
   messageDeleteText:
-    'It becomes "Message deleted" for everyone, the visitor too, and its image is removed. This can\'t be undone.',
+    'It becomes "Message deleted" for everyone, the visitor too, and its image or file is removed. This can\'t be undone.',
   messageDeleteYes: "Delete message",
   messageDeleteFailed: "The message could not be deleted. Try again.",
   linkCopied: "Link copied",

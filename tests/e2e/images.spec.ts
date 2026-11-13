@@ -159,11 +159,11 @@ test("the widget refuses a file it cannot send, with a message", async ({ browse
   await openWidget(page);
   const picker = page.getByLabel("Attach an image").first();
   await picker.setInputFiles({
-    name: "notes.txt",
-    mimeType: "text/plain",
+    name: "setup.exe",
+    mimeType: "application/octet-stream",
     buffer: Buffer.from("not an image"),
   });
-  await expect(page.getByRole("alert")).toHaveText("Send a PNG, JPEG or WebP image.");
+  await expect(page.getByRole("alert")).toContainText("Send an image, or a PDF, TXT");
   await picker.setInputFiles({
     name: "huge.png",
     mimeType: "image/png",

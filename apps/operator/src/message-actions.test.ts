@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { editorAfterSave, lineMenu } from "./message-actions.tsx";
+import { editorAfterSave, lineMenu, quoteOf } from "./message-actions.tsx";
 import type { Line } from "./thread-lines.ts";
 
 const editing = (draft: string) => ({ id: "m1", draft, problem: null });
@@ -25,6 +25,8 @@ const mine = (kind: "text" | "note"): Line => ({
   body: "Hello",
   image: null,
   imageRemoved: false,
+  download: null,
+  fileRemoved: false,
   fromVisitor: false,
   kind,
   createdAt: "2026-11-12T10:00:00.000Z",
@@ -63,4 +65,14 @@ test("a reply the visitor read offers a quote, and no longer an edit", () => {
   const items = menuOf(mine("text"));
   expect(items.map((item) => item.label)).toContain("Reply");
   expect(items.find((item) => item.label === "Edit")?.unavailable).toBe("Already read");
+});
+
+test("a file's quote shows its name", () => {
+  const file: Line = {
+    ...mine("text"),
+    body: "",
+    kind: "file",
+    download: { name: "invoice.pdf", size: 2048, url: "https://chat.example.com/f" },
+  };
+  expect(quoteOf(file, "Me").text).toBe("invoice.pdf");
 });

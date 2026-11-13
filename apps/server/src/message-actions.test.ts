@@ -494,7 +494,8 @@ describe("deleting a message", () => {
         { kind: "visitor", visitorId },
         {
           clientId: randomUUID(),
-          image: {
+          attachment: {
+            kind: "image",
             attachmentId: randomUUID(),
             storageKey: `${space.id}/shot-${randomUUID()}`,
             byteSize: 10,

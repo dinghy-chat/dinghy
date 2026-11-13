@@ -147,14 +147,14 @@ const text = {
     `Last reminder: ${name} will be deleted on ${date(deleteOn)}`,
   deletionBody: (c: MailContext) => [
     `${c.name} is still read-only. On ${date(c.deleteOn)}, we delete it with all its ` +
-      "conversations and images.",
+      "conversations, images and files.",
     `To keep it, subscribe again in Settings under Billing: ${c.settingsUrl}`,
     "Or, to keep a copy, download an export in Settings under Export before then.",
   ],
   deletedSubject: (name: string) => `${name} has been deleted`,
   deletedBody: (c: MailContext) => [
     `${c.name} was read-only for ${c.days.readOnly} days, so we've now closed it. Its ` +
-      "conversations and images are being removed, and backup copies expire within 30 days.",
+      "conversations, images and files are being removed, and backup copies expire within 30 days.",
     `Your Dinghy account stays. If you ever want to start again, sign in and add a workspace: ` +
       `${c.signInUrl}`,
     "Thanks for giving Dinghy a try.",

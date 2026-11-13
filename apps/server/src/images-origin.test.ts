@@ -9,6 +9,7 @@ import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET } from "../test/env.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
+import { chatLinkUrl, createChatLink } from "./chat-link.ts";
 import { loadConfig } from "./config.ts";
 import { attachment, message, visitor } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
@@ -50,6 +51,7 @@ beforeAll(async () => {
     images,
     logger,
     operatorDirectory: directory,
+    publicUrl: APP,
     checks: { postgres: ok, valkey: ok },
   });
   space = await createWorkspace(db, "Shop", [SITE]);
@@ -76,7 +78,8 @@ async function stored(bytes: Uint8Array, contentType: string): Promise<URL> {
       { kind: "visitor", visitorId: row?.id ?? "" },
       {
         clientId: randomUUID(),
-        image: {
+        attachment: {
+          kind: "image",
           attachmentId,
           storageKey,
           byteSize: bytes.byteLength,
@@ -125,6 +128,24 @@ describe("a separate origin for user images", () => {
     expect(page.headers.get("content-security-policy")).toContain(`img-src 'self' data: ${FILES};`);
     // The image viewer reads the file to save it on the device.
     expect(page.headers.get("content-security-policy")).toContain(`connect-src 'self' ${FILES};`);
+    // The chat page from a reply email fetches a file to save it, too.
+    const token = await withWorkspace(owner, space.id, async (tx) => {
+      const [row] = await tx
+        .insert(visitor)
+        .values({ workspaceId: space.id, externalId: randomUUID() })
+        .returning({ id: visitor.id });
+      const visitorId = row?.id ?? "";
+      const { message: sent } = await appendMessage(
+        tx,
+        space.id,
+        { kind: "visitor", visitorId },
+        { clientId: randomUUID(), body: "Hello" },
+      );
+      return createChatLink(tx, space.id, visitorId, sent.conversationId);
+    });
+    const chat = await app.request(chatLinkUrl(APP, token));
+    expect(chat.status).toBe(200);
+    expect(chat.headers.get("content-security-policy")).toContain(`connect-src 'self' ${FILES};`);
   });
 
   test("an HTML or SVG body is never served, whatever its row says", async () => {

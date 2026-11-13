@@ -36,6 +36,7 @@ import {
   authorNames,
   conversationHasTestVisitor,
   conversationVisitor,
+  filename,
   isChat,
   messageAuthors,
   messageColumns,
@@ -77,6 +78,7 @@ const PRUNE_BATCH = 1000;
 // Every string a person reads has a key, so a locale can be added later.
 const text = {
   anImage: "Sent an image.",
+  aFile: (name: string | null) => (name === null ? "Sent a file." : `Sent the file ${name}.`),
   visitor: "A visitor",
   someone: "A teammate",
   testTitle: "Dinghy",
@@ -114,7 +116,19 @@ export const testPayload = (id: string): PushPayload => ({
 const threadPath = (workspaceId: string, conversationId: string) =>
   `/?workspace=${workspaceId}&conversation=${conversationId}`;
 
-const messageText = (body: string | null) => body ?? text.anImage;
+/** A reply as an email to the visitor shows it. */
+interface Written {
+  author: string;
+  body: string | null;
+  kind: (typeof message.$inferSelect)["kind"];
+  /** A file's name. Null for any other message, and once the file was removed. */
+  filename: string | null;
+  quote: Quote | null;
+}
+
+/** A message's words in an alert: its text, or what stands in for its image or its file. */
+const messageText = (said: Pick<Written, "body" | "kind" | "filename">) =>
+  said.kind === "file" ? text.aFile(said.filename) : (said.body ?? text.anImage);
 
 /** Sends to each of the operator's devices. A device that is gone is deleted. */
 export async function sendToOperator(
@@ -573,6 +587,8 @@ export function planDelivery(
     const [written] = await tx
       .select({
         body: message.body,
+        kind: message.kind,
+        filename: filename(),
         deletedAt: message.deletedAt,
         authorOperatorId: message.authorOperatorId,
         authorApiKeyId: message.authorApiKeyId,
@@ -606,7 +622,7 @@ export function planDelivery(
       const by = (author === null ? undefined : names.get(author)) ?? text.someone;
       return operatorPlan(tx, row, from, { mention: written.body ?? "", by }, threadUrl);
     }
-    return operatorPlan(tx, row, from, { body: written.body }, threadUrl);
+    return operatorPlan(tx, row, from, { body: messageText(written) }, threadUrl);
   });
 }
 
@@ -687,6 +703,8 @@ async function replyEmailPlan(
     .select({
       seq: message.seq,
       body: message.body,
+      kind: message.kind,
+      filename: filename(),
       replyTo: messageColumns.replyTo,
       authorVisitorId: message.authorVisitorId,
       authorOperatorId: message.authorOperatorId,
@@ -733,6 +751,8 @@ async function replyEmailPlan(
   const written = replies.map((reply) => ({
     author: visitorAuthorName(reply, authors, place.name),
     body: reply.body,
+    kind: reply.kind,
+    filename: reply.filename,
     quote: visitorQuote(reply.replyTo),
   }));
   return {
@@ -751,25 +771,32 @@ const bubbleParagraphs = (html: string) => html.replaceAll("<p>", '<p style="mar
 const authorLineHtml = (words: string, top: number) =>
   `<p style="margin:${top}px 0 6px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(words)}</p>`;
 
-/** A message in an email's HTML: a chat bubble with its quote and its Markdown as formatting. */
-const bubbleHtml = (body: string, quote: Quote | null) =>
+/** A message in an email's HTML: a chat bubble with its quote and its content. */
+const bubbleHtml = (content: string, quote: Quote | null) =>
   '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px"><tr>' +
   `<td style="background:${EMAIL_COLORS.bubble};border-radius:4px 18px 18px 18px;padding:12px 16px 4px;font-size:16px;line-height:1.45">` +
-  `${quotedHtml(quote, bubbleParagraphs(markdownHtml(body)))}</td></tr></table>`;
+  `${quotedHtml(quote, bubbleParagraphs(content))}</td></tr></table>`;
 
 /**
  * A reply in the HTML: its bubble, under who replied when the reply before it had another author,
- * as a chat groups one person's messages.
+ * as a chat groups one person's messages. Its Markdown shows as formatting, and a file as its name,
+ * which links to the chat, because an email never carries the file itself.
  */
 const replyHtml = (
-  reply: { author: string; body: string; quote: Quote | null },
+  reply: Omit<Written, "body"> & { body: string },
   index: number,
   replies: { author: string }[],
+  chatUrl: string,
 ) =>
   (replies[index - 1]?.author === reply.author
     ? ""
     : authorLineHtml(text.replied(reply.author), index === 0 ? 0 : 12)) +
-  bubbleHtml(reply.body, reply.quote);
+  bubbleHtml(
+    reply.kind !== "file"
+      ? markdownHtml(reply.body)
+      : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(reply.body)}</a></p>`,
+    reply.quote,
+  );
 
 /**
  * The reply email's words: each reply under its quote. The visitor typed this address, and nobody
@@ -778,10 +805,13 @@ const replyHtml = (
  */
 export function replyLetter(
   place: Place,
-  replies: { author: string; body: string | null; quote: Quote | null }[],
+  replies: Written[],
   links: { chatUrl: string; stopUrl: string },
 ): { subject: string; text: string; html: string } {
-  const written = replies.map((reply) => ({ ...reply, body: messageText(reply.body) }));
+  const written = replies.map((reply) => ({
+    ...reply,
+    body: messageText(reply),
+  }));
   const plain = written.map((reply) => quotedText(reply.quote, reply.body)).join("\n\n");
   return {
     subject: text.replySubject(place.name),
@@ -791,11 +821,15 @@ export function replyLetter(
       place.name,
     ),
     // The replies' Markdown shows as formatting here, and stays as typed in the text version.
-    html: visitorLetterHtml(place.name, written.map(replyHtml).join(""), {
-      ...links,
-      logoUrl: place.logoUrl,
-      chatLabel: text.replyInChat,
-    }),
+    html: visitorLetterHtml(
+      place.name,
+      written.map((reply, index) => replyHtml(reply, index, written, links.chatUrl)).join(""),
+      {
+        ...links,
+        logoUrl: place.logoUrl,
+        chatLabel: text.replyInChat,
+      },
+    ),
   };
 }
 
@@ -824,14 +858,14 @@ async function handoffNote(tx: Transaction, workspaceId: string, eventSeq: strin
   return row?.body ?? null;
 }
 
-/** What an operator's alert says: a message's text, a handoff's note, or a note that mentions them. */
-type AlertText = { body: string | null } | { handoff: string } | { mention: string; by: string };
+/** What an operator's alert says: a message's words, a handoff's note, or a note that mentions them. */
+type AlertText = { body: string } | { handoff: string } | { mention: string; by: string };
 
 /** A push's text: what was said, and who mentioned the operator in a note. */
 function pushBody(said: AlertText): string {
   if ("handoff" in said) return said.handoff;
   if ("mention" in said) return text.mentionPush(said.by, said.mention);
-  return messageText(said.body);
+  return said.body;
 }
 
 /** An email's subject, the line above what was said, and what was said. */
@@ -859,7 +893,7 @@ async function emailWords(
   return {
     subject: text.operatorSubject(placeName),
     wrote: text.operatorWrote(visitorEmail ?? text.visitor, placeName),
-    body: messageText(said.body),
+    body: said.body,
   };
 }
 
@@ -919,7 +953,7 @@ async function operatorPlan(
     html: letterHtml({
       team: placeName,
       logoUrl: place.logoUrl,
-      html: authorLineHtml(wrote, 0) + bubbleHtml(body, null),
+      html: authorLineHtml(wrote, 0) + bubbleHtml(markdownHtml(body), null),
       action: { label: text.operatorOpen, url: threadUrl },
       footer: [escapeHtml(text.operatorWhy)],
     }),

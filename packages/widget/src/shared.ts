@@ -43,6 +43,8 @@ export interface WidgetSettings {
   sound: boolean;
   /** The visitor gets the conversation by email when it closes. The widget does not use it. */
   transcript: boolean;
+  /** Visitors may send files as well as images. */
+  visitorFiles: boolean;
   /** Whose faces the header shows. `online` falls back to the latest repliers when nobody is. */
   headerFaces: "online" | "repliers" | "chosen" | "none";
   /** How many faces, 1 to HEADER_FACES_MAX. */
@@ -104,6 +106,7 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   branding: true,
   sound: true,
   transcript: true,
+  visitorFiles: true,
   headerFaces: "online",
   headerFaceCount: 3,
   headerDot: true,

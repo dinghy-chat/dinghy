@@ -6,7 +6,7 @@ import { type Actor, actorId, type KeyActor, keyStillValid } from "./api-keys.ts
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { keyGate, takeOver } from "./bots.ts";
-import { MESSAGE_KINDS, session, welcomeLink } from "./db/schema.ts";
+import { CHAT_KINDS, MESSAGE_KINDS, session, welcomeLink } from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
@@ -20,7 +20,6 @@ import {
   errorAnswer,
   FORBIDDEN,
   failure,
-  IMAGE_UPLOAD_ERRORS,
   INVALID,
   KEY_LIMITED,
   MEMBER_ERRORS,
@@ -29,9 +28,18 @@ import {
   OPERATOR_WRITE_ERRORS,
   okContent,
   ROLE_WRITE_ERRORS,
+  UPLOAD_ERRORS,
 } from "./errors.ts";
-import { ImageSchema, type Images, imageView, lostConnection, refuseImage } from "./images.ts";
-import { Body, ClientId, Mentions } from "./inputs.ts";
+import {
+  FileSchema,
+  fileView,
+  ImageSchema,
+  type Images,
+  imageView,
+  lostConnection,
+  refuseImage,
+} from "./images.ts";
+import { Body, ClientId, Filename, Mentions } from "./inputs.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
@@ -60,11 +68,12 @@ import {
   InvalidReplyToError,
   isUnread,
   type KeySource,
+  type LastMessage,
   listConversationMessages,
   listConversations,
   listWorkspaceEvents,
   markConversationRead,
-  type NewImage,
+  type NewAttachment,
   nextSnoozeEndMs,
   parseCursor,
   QuoteSchema,
@@ -106,7 +115,7 @@ const HUMAN_HANDLING = failure(
 );
 const DRAFTS_TEXT_ONLY = failure(
   "drafts_text_only",
-  "This API key writes drafts, and a draft holds text only. Send the image as a person.",
+  "This API key writes drafts, and a draft holds text only. Send the image or file as a person.",
 );
 const KEY_HAS_NO_ASSIGNMENTS = failure(
   "invalid_request",
@@ -160,11 +169,15 @@ export const InboxMessage = z
     image: ImageSchema.nullable(),
     // The image was deleted after 12 months, on Dinghy Cloud.
     imageRemoved: z.boolean(),
+    // A `file` message's file, which only downloads.
+    file: FileSchema.nullable(),
+    // The file was deleted after 12 months, on Dinghy Cloud.
+    fileRemoved: z.boolean(),
     // The message this one quotes, or null.
     replyTo: QuoteSchema.nullable(),
     // When its author last changed its text. Only an operator's text reply or note can change.
     editedAt: z.string().nullable(),
-    // An operator deleted it: its body and image are gone, and its row stays in place.
+    // An operator deleted it: its body and image or file are gone, and its row stays in place.
     deleted: z.boolean(),
     // When the visitor first read this reply in the chat, when known.
     readAt: z.string().nullable(),
@@ -192,6 +205,8 @@ export const InboxMessage = z
       body: "Yes, it is two months free.",
       image: null,
       imageRemoved: false,
+      file: null,
+      fileRemoved: false,
       replyTo: {
         id: "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
         authorName: "Ada",
@@ -274,7 +289,13 @@ const Conversation = z
       isTest: z.boolean(),
     }),
     lastMessage: z
-      .object({ body: z.string().nullable(), fromVisitor: z.boolean(), createdAt: z.string() })
+      .object({
+        // The text, or a file's name. Null for an image, and for a file that was removed.
+        body: z.string().nullable(),
+        kind: z.enum(CHAT_KINDS),
+        fromVisitor: z.boolean(),
+        createdAt: z.string(),
+      })
       .nullable(),
     // Set while an operator has snoozed it: it waits for nobody until `until`, or with `until` null
     // until the visitor writes. Null when it is not snoozed.
@@ -386,6 +407,7 @@ const listRoute = createRoute({
                 },
                 lastMessage: {
                   body: "Do you have a yearly plan?",
+                  kind: "text",
                   fromVisitor: true,
                   createdAt: "2026-11-08T09:30:00.000Z",
                 },
@@ -613,18 +635,21 @@ const receiptRoute = createRoute({
   },
 });
 
-const replyImageRoute = createRoute({
+const replyUploadRoute = createRoute({
   method: "post",
   path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/images`,
   security: SESSION_OR_KEY,
   summary:
-    "Reply with an image as the raw request body. A retry with the same clientId returns the original",
+    "Reply with an image or a file as the raw request body. A retry with the same clientId returns the original",
+  description:
+    "PNG, JPEG and WebP bytes become an `image` message, whatever their name. Any other file becomes a `file` message when its `filename` names an allowed type and its first bytes match, up to 10 MB.",
   request: {
     params: conversationParams,
     // Strict, so a `note` here is refused rather than sent to the visitor: a note is text only.
     query: z.strictObject({
       clientId: ClientId,
       replyToMessageId: REPLY_TO,
+      filename: Filename,
     }),
   },
   responses: {
@@ -638,9 +663,9 @@ const replyImageRoute = createRoute({
       content: { "application/json": { schema: InboxMessage } },
     },
     ...MEMBER_WRITE_ERRORS,
-    ...IMAGE_UPLOAD_ERRORS,
+    ...UPLOAD_ERRORS,
     400: errorAnswer(
-      `${IMAGE_UPLOAD_ERRORS[400].description}. invalid_reply_to: the quoted message is not in this conversation`,
+      `${UPLOAD_ERRORS[400].description}. invalid_reply_to: the quoted message is not in this conversation`,
     ),
     409: errorAnswer(
       `conversation_closed: reopen it to reply. ${KEY_REPLY_REFUSALS}. drafts_text_only: the key writes drafts, which hold text only`,
@@ -772,6 +797,7 @@ export function messageView(
     editedAt,
     readAt,
     image,
+    file,
     replyTo,
     ...message
   }: StoredMessage,
@@ -785,6 +811,7 @@ export function messageView(
     editedAt: editedAt?.toISOString() ?? null,
     readAt: readAt?.toISOString() ?? null,
     image: imageView(images, workspaceId, image),
+    file: fileView(images, workspaceId, file),
     replyTo: quoteView(replyTo),
   };
 }
@@ -833,7 +860,7 @@ function handlerOf(row: ConversationRow): z.infer<typeof ConversationHandler> | 
 /** A conversation as the operator API and webhooks show it. */
 export function conversationView(
   row: ConversationRow,
-  lastMessage: { body: string | null; fromVisitor: boolean; createdAt: Date } | null,
+  lastMessage: LastMessage | null,
   pictureUrl: string | null = null,
 ) {
   return {
@@ -923,12 +950,12 @@ export type WelcomeFace = (
 
 /**
  * Cloud only: copies a reply into another workspace, in the reply's own transaction. It runs before
- * that transaction, where it can copy an image's file, and returns what runs in it, or null.
+ * that transaction, where it can copy an image or a file, and returns what runs in it, or null.
  */
 export type CopyReply = (
   workspaceId: string,
   conversationId: string,
-  image: NewImage | undefined,
+  attachment: NewAttachment | undefined,
 ) => Promise<ReplyCopy | null>;
 
 interface ReplyCopy {
@@ -956,7 +983,7 @@ export type ReplyOutcome =
   | { kind: "drafts_text_only" }
   | { kind: "refused"; access: WorkspaceAccess };
 
-/** What a key's reply asks for: its text, or an image's clientId with no text. */
+/** What a key's reply asks for: its text, or an upload's clientId with no text. */
 interface KeyRequest {
   clientId: string;
   body?: string | undefined;
@@ -1032,13 +1059,13 @@ export function createInbox({
     workspaceId: string,
     actor: Actor,
     conversationId: string,
-    content: { image: NewImage | undefined; isNote: boolean },
+    content: { attachment: NewAttachment | undefined; isNote: boolean },
     request: KeyRequest,
     write: (tx: Transaction, author: Author) => Promise<Appended>,
   ): Promise<ReplyOutcome> => {
     const copy = content.isNote
       ? null
-      : ((await copyReply?.(workspaceId, conversationId, content.image)) ?? null);
+      : ((await copyReply?.(workspaceId, conversationId, content.attachment)) ?? null);
     let outcome: CommitOutcome = "rolled_back";
     const result = await catchClosed(
       withWorkspace(db, workspaceId, async (tx): Promise<Written> => {
@@ -1211,21 +1238,21 @@ export function createInbox({
       },
     ) {
       const { note, mentions, ...text } = input;
-      const content = { image: undefined, isNote: note };
+      const content = { attachment: undefined, isNote: note };
       return reply(workspaceId, actor, conversationId, content, text, (tx, author) =>
         appendMessage(tx, workspaceId, author, note ? { ...text, note, mentions } : text),
       );
     },
 
     /**
-     * An image reply, whose upload has arrived. `check` runs in its transaction first. `created` tells
-     * the upload whether to keep the stored file.
+     * A reply with an image or a file, whose upload has arrived. `check` runs in its transaction
+     * first. `created` tells the upload whether to keep the stored object.
      */
-    async replyImage(
+    async replyUpload(
       workspaceId: string,
       actor: Actor,
       conversationId: string,
-      input: { clientId: string; image: NewImage; replyToMessageId?: string | undefined },
+      input: { clientId: string; attachment: NewAttachment; replyToMessageId?: string | undefined },
       limits: Limits,
       check: (tx: Transaction) => Promise<void>,
     ): Promise<Exclude<ReplyOutcome, { kind: "drafted" }> & { created: boolean }> {
@@ -1233,7 +1260,7 @@ export function createInbox({
         workspaceId,
         actor,
         conversationId,
-        { image: input.image, isNote: false },
+        { attachment: input.attachment, isNote: false },
         { clientId: input.clientId },
         async (tx, author) => {
           await check(tx);
@@ -1241,7 +1268,7 @@ export function createInbox({
         },
       );
       // With no text, a draft-mode key's reply stops at drafts_text_only, so it never drafts.
-      if (outcome.kind === "drafted") throw new Error("An image reply made a draft");
+      if (outcome.kind === "drafted") throw new Error("An upload's reply made a draft");
       return { ...outcome, created: outcome.kind === "sent" && outcome.created };
     },
 
@@ -1370,10 +1397,10 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   });
 
   if (images !== undefined) {
-    app.openapi(replyImageRoute, async (c) => {
+    app.openapi(replyUploadRoute, async (c) => {
       const id = c.get("memberWorkspaceId");
       const { conversationId } = c.req.valid("param");
-      const { clientId, replyToMessageId } = c.req.valid("query");
+      const { clientId, replyToMessageId, filename } = c.req.valid("query");
       const actor = c.get("actor");
       const exists = await withWorkspace(
         db,
@@ -1392,16 +1419,17 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
         .receive(
           c.req.raw,
           id,
-          (image) =>
-            inbox.replyImage(
+          (attachment) =>
+            inbox.replyUpload(
               id,
               actor,
               conversationId,
-              { clientId, image, replyToMessageId },
+              { clientId, attachment, replyToMessageId },
               limits,
               check,
             ),
           c.get("clientIp"),
+          filename,
         )
         .catch((error: unknown) => {
           if (error instanceof AccessEndedError) return "ended" as const;

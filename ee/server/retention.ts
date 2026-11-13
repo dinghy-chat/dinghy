@@ -3,28 +3,28 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { message, storageDeletion } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 
-/** The cloud keeps an image this long. Text stays for as long as the subscription is active. */
-const IMAGE_RETENTION_MONTHS = 12;
+/** The cloud keeps images and files this long. Text stays while the subscription is active. */
+const RETENTION_MONTHS = 12;
 
 const BATCH = 100;
 
 /** 12 months before `now`, at the same time of day, clamped to the last day of the target month. */
-export function imageCutoff(now: Date): Date {
+export function uploadCutoff(now: Date): Date {
   const cutoff = new Date(now);
-  const month = now.getUTCMonth() - IMAGE_RETENTION_MONTHS;
+  const month = now.getUTCMonth() - RETENTION_MONTHS;
   const lastDay = new Date(Date.UTC(now.getUTCFullYear(), month + 1, 0)).getUTCDate();
   cutoff.setUTCFullYear(now.getUTCFullYear(), month, Math.min(now.getUTCDate(), lastDay));
   return cutoff;
 }
 
 /**
- * Removes images older than 12 months, in each workspace's own context. Each row goes with its
- * attachment, its message is marked so the apps show that the image was removed, and the stored file
- * joins the deletions the worker already retries. Rows another worker holds are skipped, so two
- * workers never take the same image. Returns how many it removed.
+ * Removes images and files older than 12 months, in each workspace's own context. Each row goes
+ * with its attachment, its message is marked so the apps show that the image or file was removed,
+ * and the stored object joins the deletions the worker already retries. Rows another worker holds
+ * are skipped, so two workers never take the same one. Returns how many it removed.
  */
-export async function removeOldImages(db: Database, now = new Date()): Promise<number> {
-  const cutoff = imageCutoff(now);
+export async function removeOldUploads(db: Database, now = new Date()): Promise<number> {
+  const cutoff = uploadCutoff(now);
   const found = await db.execute<{ workspace_id: string }>(
     sql`select workspace_id from workspaces_with_old_images(${cutoff.toISOString()}, ${BATCH})`,
   );
@@ -47,7 +47,9 @@ export async function removeOldImages(db: Database, now = new Date()): Promise<n
         .values(claimed.rows.map((row) => ({ workspaceId, storageKey: row.storage_key })));
       await tx
         .update(message)
-        .set({ metadata: sql`(${message.metadata} - 'image') || '{"imageRemoved": true}'::jsonb` })
+        .set({
+          metadata: sql`(${message.metadata} - 'image' - 'file') || jsonb_build_object(case when ${message.metadata} ? 'file' then 'fileRemoved' else 'imageRemoved' end, true)`,
+        })
         .where(
           and(
             eq(message.workspaceId, workspaceId),

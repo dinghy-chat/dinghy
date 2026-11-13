@@ -233,7 +233,8 @@ async function paidWorkspace({ onboarding = false } = {}) {
     await appendMessage(tx, workspaceId, author, { clientId: "c1", body: "Hello there" });
     await appendMessage(tx, workspaceId, author, {
       clientId: "c2",
-      image: {
+      attachment: {
+        kind: "image",
         attachmentId: randomUUID(),
         storageKey,
         byteSize: 3,

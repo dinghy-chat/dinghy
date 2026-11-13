@@ -6,7 +6,7 @@ import type { Line } from "./thread-lines.ts";
 
 /** A team reply that the visitor may have seen, so it has a receipt. Not a note, which they never see. */
 export const hasReceipt = (line: Line): line is Line & { seq: bigint } =>
-  !line.fromVisitor && line.seq !== null && (line.kind === "text" || line.kind === "image");
+  !line.fromVisitor && line.seq !== null && ["text", "image", "file"].includes(line.kind);
 
 export type Receipt = "sent" | "emailed" | "emailFailed" | "read";
 

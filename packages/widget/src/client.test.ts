@@ -37,10 +37,11 @@ test("a send that never gets an answer fails after its deadline, so it can be re
 test("an image upload that never gets an answer fails after its own deadline", async () => {
   const client = createClient(base, "wk_test", { requestMs: 60_000, uploadMs: 300 });
   const file = new File([new Uint8Array(16)], "a.png", { type: "image/png" });
-  const failure = await client.sendImage("token", "line-2", file).catch((error: unknown) => error);
+  const failure = await client.sendUpload("token", "line-2", file).catch((error: unknown) => error);
   expect((failure as Error).name).toBe("TimeoutError");
   // The page goes with it as origin and path, and the server keeps it when a conversation starts.
   expect(paths.at(-1)).toContain(`page=${encodeURIComponent("https://shop.example/cart")}`);
+  expect(paths.at(-1)).toContain("filename=a.png");
 });
 
 /** Runs `use` with a client of a server that answers every request with `respond`. */

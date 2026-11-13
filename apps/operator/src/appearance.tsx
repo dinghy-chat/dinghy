@@ -785,7 +785,7 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
           <FormSection title="widgetHeaderTitle" help="widgetHeaderHelp">
             <HeaderFields settings={draft} members={members} onChange={change} />
           </FormSection>
-          <FormSection title="widgetEmailTitle">
+          <FormSection title="widgetFilesEmailTitle">
             <div className="setting-rows">
               <SettingRow
                 label={t("widgetEmailAsk")}
@@ -804,6 +804,14 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
                   />
                 )}
               </SettingRow>
+              <div className="setting-row setting-switch">
+                <Switch
+                  label={t("widgetVisitorFiles")}
+                  hint={t("widgetVisitorFilesHelp")}
+                  checked={draft.visitorFiles}
+                  onChange={(visitorFiles) => change({ visitorFiles })}
+                />
+              </div>
               <div className="setting-row setting-switch">
                 <Switch
                   label={t("widgetTranscript")}

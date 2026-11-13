@@ -99,7 +99,9 @@ function messageLine(one: Read["messages"][number]): Line {
     ? "[deleted]"
     : one.kind === "image"
       ? "[image]"
-      : indent(one.body ?? "");
+      : one.kind === "file"
+        ? `[file: ${one.file?.name ?? "removed"}]`
+        : indent(one.body ?? "");
   const text =
     one.kind === "closed"
       ? `${who} closed the conversation`
@@ -261,7 +263,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "get_conversation",
       title: "Read a conversation",
-      description: `Reads one conversation: its status, assignee and \`handler\` (\`person\`: the assignee handles it since \`since\`; \`team\`: people handle it with no assignee; \`bot\`: no person handles it and this key took part last; null: no one yet), the visitor (with the attributes your site signed), \`pageContext\` (what the page sent, not verified), the pages the visitor went through, and its messages in order. A message of \`kind: "note"\` is an internal note that only the team sees, never the visitor. \`replySeconds\` is the team's median first reply time over 30 days, to tell a visitor how long a person takes. With \`format: "markdown"\` it answers \`{ markdown }\`, a short transcript. ${UNTRUSTED_TEXT}`,
+      description: `Reads one conversation: its status, assignee and \`handler\` (\`person\`: the assignee handles it since \`since\`; \`team\`: people handle it with no assignee; \`bot\`: no person handles it and this key took part last; null: no one yet), the visitor (with the attributes your site signed), \`pageContext\` (what the page sent, not verified), the pages the visitor went through, and its messages in order. A message of \`kind: "note"\` is an internal note that only the team sees, never the visitor. A message of \`kind: "file"\` has \`file\` with its name, size and a download URL, and the Markdown shows it by name. \`replySeconds\` is the team's median first reply time over 30 days, to tell a visitor how long a person takes. With \`format: "markdown"\` it answers \`{ markdown }\`, a short transcript. ${UNTRUSTED_TEXT}`,
       input: z.object({
         conversationId,
         after: z

@@ -11,7 +11,7 @@ import {
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
-import { IMAGE_TYPES } from "../../../packages/widget/src/compose.ts";
+import { acceptedFiles } from "../../../packages/widget/src/compose.ts";
 import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -429,7 +429,7 @@ export function Composer({
                 className="file"
                 type="file"
                 multiple
-                accept={IMAGE_TYPES.join(",")}
+                accept={acceptedFiles(true)}
                 aria-label={t("attach")}
                 tabIndex={-1}
                 onChange={(event) => {

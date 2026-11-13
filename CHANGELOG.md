@@ -4,9 +4,15 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Upgrading
+
+- Behind your own reverse proxy, accept request bodies of at least 11 MB, such as `client_max_body_size 11m;` in nginx, because a file in the chat can be 10 MB. The bundled Caddy needs no change.
+- If you set `IMAGES_ORIGIN` and your site has a Content Security Policy, allow that origin in `connect-src` as well as `img-src`, because the chat fetches a file to save it.
+
 ### Added
 
 - Saved replies: the team writes common answers once in **Settings > Saved replies**, and anyone inserts one by typing **/** in the reply or note box, then changes it before sending. Every member can add, change and delete them, up to 200 per workspace. The API lists them at `GET .../saved-replies`, and MCP has `list_saved_replies`, so a bot can answer in the team's words.
+- Files in the chat: visitors and operators send a PDF, TXT, CSV, LOG, JSON, ZIP, Word, Excel, PowerPoint, OpenDocument text or spreadsheet, MP4 or MOV file of up to 10 MB beside images. The chat shows its name and size, and it only downloads, never opens in the page. **Visitors can send files** in **Settings > Appearance**, the widget setting `visitorFiles`, is on by default, and operators can always send files. The upload routes take the file's name as `filename` in the query and answer `kind: "file"` with `file: { name, size, url }`, a conversation's `lastMessage` has its `kind`, and a contact's conversations have `lastKind`, exports carry files, and on Dinghy Cloud files count toward the 1 GB of storage and go after 12 months, as images do. Dinghy does not scan files for viruses.
 - Mentions in notes: type **@** in a note to pick a teammate. Each member a note mentions gets an alert with its text, by push and by email as their alert settings say, and the conversation is unread for them. An edit alerts only the members it newly mentions. The API takes `mentions` on a note, and MCP's `add_note` takes them too.
 - Two-step sign-in for operators. **Profile** turns it on with a QR code for an authenticator app and shows 10 single-use recovery codes once. Each new sign-in then asks for a 6-digit code after the email link, and **Settings > Team** shows who has it on. A server's admin turns it off for an operator who lost their phone with `chat two-factor-reset <email>`. The API has `/v1/operator/two-factor/setup`, `enable`, `check` and `disable`, and `twoFactor` in `/v1/operator/me`.
 

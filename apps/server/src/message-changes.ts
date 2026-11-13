@@ -280,9 +280,9 @@ type DeleteOutcome =
   | { kind: "not_yours" };
 
 /**
- * Clears a message's body and image, and keeps its row, so positions, receipts and quotes still
- * work. The worker deletes the image's file, as for a deleted conversation. `mayDeleteAnyone` is
- * set for an owner or an admin; others delete their own.
+ * Clears a message's body and image or file, and keeps its row, so positions, receipts and quotes
+ * still work. The worker deletes the stored object, as for a deleted conversation.
+ * `mayDeleteAnyone` is set for an owner or an admin; others delete their own.
  */
 export async function deleteMessage(
   tx: Transaction,
@@ -305,7 +305,7 @@ export async function deleteMessage(
       body: null,
       deletedAt: sql`now()`,
       changedSeq: seq,
-      metadata: sql`${message.metadata} - 'image'`,
+      metadata: sql`${message.metadata} - 'image' - 'file'`,
     })
     .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
   const files = await tx

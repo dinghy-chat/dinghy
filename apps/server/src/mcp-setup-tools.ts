@@ -128,7 +128,7 @@ function appearanceTools({ appearance }: SetupToolOptions): Tool[] {
       name: "get_appearance",
       title: "Get the widget's look",
       description:
-        "Reads the widget's saved look, words and behavior: title, greeting, away text, colors, position, theme, launcher, boat, corners, when it asks for an email, branding, sound, transcript and header. `logoUrl` and `team` are read only. The words were written by the team, not visitors.",
+        "Reads the widget's saved look, words and behavior: title, greeting, away text, colors, position, theme, launcher, boat, corners, when it asks for an email, branding, sound, transcript, whether visitors can send files, and header. `logoUrl` and `team` are read only. The words were written by the team, not visitors.",
       input: z.object({}),
       readOnly: true,
       run: async (_input, { workspaceId }) => ({ data: await appearance.read(workspaceId) }),

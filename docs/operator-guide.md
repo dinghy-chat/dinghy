@@ -10,7 +10,9 @@ The sidebar has **Inbox**, **Contacts**, **Visitors**, **Analytics** and **Setti
 
 Messages can carry a little formatting, written as Markdown: `**bold**`, `*italic*`, `` `code` ``, a block between two lines of three backticks, `[words](https://example.com)` for a link, and lines that start with `-` or `1.` for a list. A web address becomes a link by itself. The buttons under the reply box, and Cmd or Ctrl with B, I, E and K, add the marks around the selected words. Visitors see the formatting in the widget and in reply emails, and can type it too. Links open in a new tab, and only `http`, `https` and `mailto` links work. HTML, images and headings stay plain text.
 
-To send an image, paste it, drag it onto the chat, or select the image button. The rules are the same as for visitors: PNG, JPEG or WebP, under 5 MB and under 16 megapixels.
+To send an image or a file, paste it, drag it onto the chat, or select the attach button. An image must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels. A file can be a PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4 or MOV, up to 10 MB. A file shows as its name and size, and selecting it downloads it: Dinghy never opens a file in the page. Dinghy does not scan files for viruses, so open a visitor's file with the care you give an email attachment.
+
+Visitors can send the same files, unless an owner or admin turns off **Visitors can send files** in **Settings > Appearance**. Your team can always send files.
 
 If a message shows "Not sent", select it to try again. A retry cannot create a second copy.
 
@@ -40,7 +42,7 @@ Under the visitor's name, the header shows their email and user ID, when the nam
 | **Close** | Moves it under **Closed** in the Inbox. **Reopen** brings it back. If the visitor writes after a close, their message reopens it, with its assignee |
 | **…** then **Snooze** | Keeps it open, but out of the people waiting for you: **until they reply**, **until tomorrow** (9:00 your time) or **until next week** (Monday 9:00). The list shows **Snoozed** in place of **Waiting for a reply**. A message from the visitor ends it, and your own replies do not. **Unsnooze** in the same place ends it now, and so does a close |
 | **…** then **Block** | Stops this visitor from sending messages. **Unblock** in the same place undoes it, and so does **Blocked visitors** in **Settings > Workspace** |
-| **…** then **Delete** | Deletes the conversation and its images for good, after you confirm. Owners and admins only |
+| **…** then **Delete** | Deletes the conversation and its images and files for good, after you confirm. Owners and admins only |
 
 For a signed-in user, the conversation shows the name, email, user ID and custom attributes that [your site sent](add-to-your-site.md#show-who-is-chatting). An attribute that is a web address is a link.
 
@@ -203,17 +205,17 @@ Someone in two workspaces switches between them with the workspace name at the t
 - **Plan and usage**, on Dinghy Cloud only. See [Plan and usage](#plan-and-usage).
 - **Billing**, on Dinghy Cloud, for owners. See [Billing](#billing).
 - **Blocked visitors**, once someone is blocked, with **Unblock** for each one.
-- **Export workspace**, for owners: **Download an export** saves the workspace's conversations, images, team and settings as one file, which imports into another Dinghy server. See [Moving a workspace](self-hosting.md#moving-a-workspace).
+- **Export workspace**, for owners: **Download an export** saves the workspace's conversations, images, files, team and settings as one file, which imports into another Dinghy server. See [Moving a workspace](self-hosting.md#moving-a-workspace).
 - **Delete workspace**, for owners. See [Deleting a workspace](self-hosting.md#deleting-a-workspace).
 
 ## Plan and usage
 
 This applies to Dinghy Cloud only. A self-hosted server has no plan limits.
 
-Each workspace on Dinghy Cloud includes up to 5 team members and 1 GB of image storage. **Settings > Workspace** shows how much of each is in use, and the **Team** page says how many of the 5 places are taken.
+Each workspace on Dinghy Cloud includes up to 5 team members and 1 GB of files. **Settings > Workspace** shows how much of each is in use, and the **Team** page says how many of the 5 places are taken.
 
 - **Team members**: pending invites count toward the limit, because each one can still become a member. An invite stops counting once it is used, canceled or expired, after 7 days. To free a place, remove someone in **Settings > Team**, or cancel a pending invite.
-- **Image storage**: the images sent in chats count, by their stored size. Dinghy Cloud deletes each image automatically 12 months after it was sent, and the conversation shows "Image removed after 12 months" in its place. The text stays. To free space now, an owner or admin deletes conversations that hold images. When an image does not fit in the space left, Dinghy refuses it, for your team and for visitors.
+- **File storage**: the images and files sent in chats count, by their stored size. Dinghy Cloud deletes each one automatically 12 months after it was sent, and the conversation shows "Image removed after 12 months" or "File removed after 12 months" in its place. The text stays. To free space now, an owner or admin deletes conversations that hold images or files. When an image or a file does not fit in the space left, Dinghy refuses it, for your team and for visitors, and text still sends.
 
 ## Billing
 

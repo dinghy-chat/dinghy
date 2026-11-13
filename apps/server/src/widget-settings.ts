@@ -86,6 +86,8 @@ export const WidgetSettingsSchema = z
     branding: z.boolean(),
     sound: z.boolean(),
     transcript: z.boolean(),
+    // Visitors may send files as well as images. Operators always may.
+    visitorFiles: z.boolean(),
     headerFaces: z.enum(widgetHeaderFaces.enumValues),
     headerFaceCount: z.number().int().min(1).max(HEADER_FACES_MAX),
     headerDot: z.boolean(),

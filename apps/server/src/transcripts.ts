@@ -23,6 +23,7 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { EMAIL_COLORS, letter } from "./letter.ts";
 import {
   conversationVisitor,
+  filename,
   isChat,
   joinVisitor,
   type MessageAuthor,
@@ -56,6 +57,8 @@ const text = {
   subject: (name: string) => `Your conversation with ${name}`,
   intro: (name: string) => `Here is your conversation with ${name}, for your records.`,
   image: "Sent an image. Open the chat to see it.",
+  file: (name: string | null) =>
+    `Sent ${name === null ? "a file" : `the file ${name}`}. Open the chat to download it.`,
   line: (who: string, when: string) => `${who}, ${when}`,
   continueChat: "Continue the chat",
   body: (name: string, messages: string, chat: string, stop: string) => [
@@ -195,6 +198,7 @@ export async function transcriptPlan(
       .select({
         seq: message.seq,
         body: message.body,
+        filename: filename(),
         kind: message.kind,
         authorVisitorId: message.authorVisitorId,
         authorOperatorId: message.authorOperatorId,
@@ -234,6 +238,8 @@ export async function transcriptPlan(
 /** A message as a transcript shows it. */
 interface TranscriptLine {
   body: string | null;
+  /** Null for any message but a file, and once the file was removed. */
+  filename: string | null;
   kind: (typeof message.$inferSelect)["kind"];
   authorVisitorId: string | null;
   authorOperatorId: string | null;
@@ -241,6 +247,13 @@ interface TranscriptLine {
   replyTo: QuoteRow | null;
   createdAt: Date;
 }
+
+/**
+ * What a transcript says in place of an image or a file, which the email never carries: the chat
+ * has them. Null for text.
+ */
+const standIn = (line: TranscriptLine) =>
+  line.kind === "image" ? text.image : line.kind === "file" ? text.file(line.filename) : null;
 
 /** The transcript's words: each message under its author and time, as text and as HTML. */
 export function transcriptLetter(
@@ -256,21 +269,23 @@ export function transcriptLetter(
   const plain = lines
     .map(
       (line, index) =>
-        `${heads[index]}:\n${quotedText(visitorQuote(line.replyTo), line.kind === "image" ? text.image : (line.body ?? ""))}`,
+        `${heads[index]}:\n${quotedText(visitorQuote(line.replyTo), standIn(line) ?? line.body ?? "")}`,
     )
     .join("\n\n");
   const html = [
     `<p style="margin:0">${escapeHtml(text.intro(place.name))}</p>`,
-    ...lines.map(
-      (line, index) =>
+    ...lines.map((line, index) => {
+      const shown = standIn(line);
+      return (
         `<p style="margin:18px 0 2px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
         quotedHtml(
           visitorQuote(line.replyTo),
-          line.kind === "image"
-            ? `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(text.image)}</a></p>`
-            : markdownHtml(line.body ?? ""),
-        ),
-    ),
+          shown === null
+            ? markdownHtml(line.body ?? "")
+            : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(shown)}</a></p>`,
+        )
+      );
+    }),
   ].join("");
   return {
     subject: text.subject(place.name),

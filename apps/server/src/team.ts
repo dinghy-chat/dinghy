@@ -174,6 +174,7 @@ const Settings = z
     usage: z
       .object({
         operators: z.object({ used: z.number(), limit: z.number() }),
+        // Images and files, in bytes.
         imageBytes: z.object({ used: z.number(), limit: z.number() }),
       })
       .nullable(),
@@ -181,6 +182,7 @@ const Settings = z
     // workspace that is not deleted stays.
     deletion: z.object({
       conversations: z.number(),
+      // Images and files.
       images: z.number(),
       members: z.number(),
       onlyWorkspace: z.boolean(),

@@ -21,7 +21,7 @@ import {
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
 import { createImages, processImage } from "../../apps/server/src/images.ts";
 import { StorageFullError } from "../../apps/server/src/limits.ts";
-import { appendMessage } from "../../apps/server/src/messages.ts";
+import { appendMessage, listConversations } from "../../apps/server/src/messages.ts";
 import { localStore } from "../../apps/server/src/storage.ts";
 import { startWorker } from "../../apps/server/src/worker.ts";
 import { createWorkspace, type NewWorkspace } from "../../apps/server/src/workspaces.ts";
@@ -30,7 +30,7 @@ import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../../apps/server/test/env.
 import { signedInOperator } from "../../apps/server/test/operators.ts";
 import { type CloudSettings, cloudWorkerStep } from "./index.ts";
 import { createLimits, MAX_OPERATORS } from "./limits.ts";
-import { imageCutoff, removeOldImages } from "./retention.ts";
+import { removeOldUploads, uploadCutoff } from "./retention.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
 const SITE = "https://site.example";
@@ -89,7 +89,7 @@ beforeAll(async () => {
   cloud = app({
     signup: "early",
     limits: {
-      maxImageBytes: Math.floor(imageSize * 2.5),
+      maxStoredBytes: Math.floor(imageSize * 2.5),
       maxStreams: { widget: 2, operator: 1 },
     },
   });
@@ -192,6 +192,20 @@ async function upload(server: App, space: NewWorkspace, visitorBearer: string, a
   });
 }
 
+/** A visitor's PDF of `size` bytes, which is stored as it came. */
+function uploadPdf(server: App, space: NewWorkspace, visitorBearer: string, size: number) {
+  const bytes = Buffer.alloc(size, " ");
+  bytes.write("%PDF-1.7\n");
+  return server.request(
+    `/v1/widget/${space.publicKey}/images?clientId=${randomUUID()}&filename=notes.pdf`,
+    {
+      method: "POST",
+      headers: { origin: SITE, authorization: `Bearer ${visitorBearer}` },
+      body: bytes,
+    },
+  );
+}
+
 describe("operators: 5 per workspace on the cloud", () => {
   test("two simultaneous acceptances at the limit admit one", async () => {
     const space = await createWorkspace(db, "Full", [SITE]);
@@ -280,7 +294,7 @@ describe("images: a byte limit per workspace on the cloud", () => {
       tx.insert(visitor).values({ workspaceId: space.id, externalId: "v" }).returning(),
     );
     const visitorId = row?.id ?? "";
-    const limits = createLimits(valkey, logger, { maxImageBytes: 350 });
+    const limits = createLimits(valkey, logger, { maxStoredBytes: 350 });
     const results = await Promise.allSettled(
       Array.from({ length: 8 }, () => {
         const attachmentId = randomUUID();
@@ -291,7 +305,8 @@ describe("images: a byte limit per workspace on the cloud", () => {
             { kind: "visitor", visitorId },
             {
               clientId: randomUUID(),
-              image: {
+              attachment: {
+                kind: "image",
                 attachmentId,
                 storageKey: `${space.id}/${attachmentId}`,
                 byteSize: 100,
@@ -343,6 +358,28 @@ describe("images: a byte limit per workspace on the cloud", () => {
     // With room again, an upload works.
     expect((await upload(cloud, space, bearer, "192.0.2.4")).status).toBe(201);
     expect(await storedBytes(space)).toBe(imageSize);
+  });
+
+  test("files count toward the same limit, and a full workspace still takes text", async () => {
+    const space = await createWorkspace(db, "Files", [SITE]);
+    const bearer = await visitorToken(cloud, space);
+    expect((await uploadPdf(cloud, space, bearer, imageSize * 2)).status).toBe(201);
+    expect(await storedBytes(space)).toBe(imageSize * 2);
+    const full = await uploadPdf(cloud, space, bearer, imageSize);
+    expect(full.status).toBe(507);
+    expect(await full.json()).toMatchObject({ error: { code: "storage_full" } });
+    expect((await upload(cloud, space, bearer, "192.0.2.30")).status).toBe(507);
+    expect(await files(space)).toHaveLength(1);
+    const text = await cloud.request(`/v1/widget/${space.publicKey}/messages`, {
+      method: "POST",
+      headers: {
+        origin: SITE,
+        authorization: `Bearer ${bearer}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ clientId: randomUUID(), body: "Did my file arrive?" }),
+    });
+    expect(text.status).toBe(201);
   });
 
   test("an operator's image is refused the same way", async () => {
@@ -417,7 +454,7 @@ describe("images older than 12 months", () => {
     expect((await upload(cloud, space, bearer, "192.0.2.21")).status).toBe(201);
     expect(await files(space)).toHaveLength(2);
     // One image is a day past the cutoff.
-    const past = new Date(imageCutoff(new Date()).getTime() - 86_400_000);
+    const past = new Date(uploadCutoff(new Date()).getTime() - 86_400_000);
     await owner
       .update(attachment)
       .set({ createdAt: past })
@@ -456,7 +493,36 @@ describe("images older than 12 months", () => {
     const [row] = await owner.select().from(message).where(eq(message.id, old.id));
     expect(row?.metadata).toEqual({ imageRemoved: true });
     // A second pass finds nothing more to do.
-    expect(await removeOldImages(workerDb)).toBe(0);
+    expect(await removeOldUploads(workerDb)).toBe(0);
+  });
+
+  test("a file goes after 12 months too, and its message says so", async () => {
+    const space = await createWorkspace(db, "Old file", [SITE]);
+    const bearer = await visitorToken(cloud, space);
+    const sent = (await (await uploadPdf(cloud, space, bearer, 100)).json()) as { id: string };
+    const past = new Date(uploadCutoff(new Date()).getTime() - 86_400_000);
+    await owner
+      .update(attachment)
+      .set({ createdAt: past })
+      .where(and(eq(attachment.workspaceId, space.id), eq(attachment.messageId, sent.id)));
+    expect(await removeOldUploads(workerDb)).toBe(1);
+    const page = (await (
+      await cloud.request(`/v1/widget/${space.publicKey}/messages`, {
+        headers: { origin: SITE, authorization: `Bearer ${bearer}` },
+      })
+    ).json()) as { messages: { id: string; kind: string; file: unknown; fileRemoved: boolean }[] };
+    expect(page.messages.find((one) => one.id === sent.id)).toMatchObject({
+      kind: "file",
+      file: null,
+      fileRemoved: true,
+    });
+    const [row] = await owner.select().from(message).where(eq(message.id, sent.id));
+    expect(row?.metadata).toEqual({ fileRemoved: true });
+    // With its name gone, the inbox tells it from an image by its kind.
+    const listed = await withWorkspace(db, space.id, (tx) =>
+      listConversations(tx, space.id, null, "open", { kind: "all" }, undefined, 10),
+    );
+    expect(listed.conversations[0]?.lastMessage).toMatchObject({ body: null, kind: "file" });
   });
 
   test("two workers at once queue each old image's file once", async () => {
@@ -473,14 +539,14 @@ describe("images older than 12 months", () => {
       }
     }
     const ids = spaces.map((space) => space.id);
-    const past = new Date(imageCutoff(new Date()).getTime() - 86_400_000);
+    const past = new Date(uploadCutoff(new Date()).getTime() - 86_400_000);
     await owner
       .update(attachment)
       .set({ createdAt: past })
       .where(inArray(attachment.workspaceId, ids));
 
     const second = database.connect("worker").db;
-    const removed = await Promise.all([removeOldImages(workerDb), removeOldImages(second)]);
+    const removed = await Promise.all([removeOldUploads(workerDb), removeOldUploads(second)]);
     expect(removed[0] + removed[1]).toBe(4);
     const queued = await owner
       .select()

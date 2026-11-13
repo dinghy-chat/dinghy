@@ -49,7 +49,7 @@ const WELCOME =
   "your website visitors. Reply here and it comes to my own Dinghy inbox. I read every reply, so " +
   "tell me what you need or what feels confusing.";
 /** Room for a small image and not much more, so the image limit can refuse a copy. */
-const MAX_IMAGE_BYTES = 10_000;
+const MAX_STORED_BYTES = 10_000;
 const logger = pino({ level: "silent" });
 const ok = async () => {};
 
@@ -196,7 +196,7 @@ beforeAll(async () => {
     workspaceId: dinghy.id,
   });
   settings = { workspaceId: dinghy.id, operatorEmail: julien.email };
-  const limits = { maxImageBytes: MAX_IMAGE_BYTES };
+  const limits = { maxStoredBytes: MAX_STORED_BYTES };
   early = createApp({ ...shared, cloud: { signup: "early", welcome: settings, limits } });
   paying = createApp({
     ...shared,
@@ -495,7 +495,7 @@ describe("copies between the two sides", () => {
     const server = createApp({
       ...shared,
       db: lossy,
-      cloud: { signup: "early", welcome: settings, limits: { maxImageBytes: MAX_IMAGE_BYTES } },
+      cloud: { signup: "early", welcome: settings, limits: { maxStoredBytes: MAX_STORED_BYTES } },
     });
     const acme = await signUp(early);
     const link = await linkOf(acme.workspaceId);
@@ -531,10 +531,11 @@ describe("copies between the two sides", () => {
         { kind: "visitor", visitorId: guest[0]?.id ?? "" },
         {
           clientId: randomUUID(),
-          image: {
+          attachment: {
+            kind: "image",
             attachmentId: randomUUID(),
             storageKey: `${acme.workspaceId}/full`,
-            byteSize: MAX_IMAGE_BYTES,
+            byteSize: MAX_STORED_BYTES,
             contentType: "image/png",
             width: 1,
             height: 1,

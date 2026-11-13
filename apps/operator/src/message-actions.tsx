@@ -15,7 +15,8 @@ export const quoteOf = (line: Line, author: string): Quote => ({
   id: line.id,
   authorName: line.fromVisitor ? null : author,
   fromVisitor: line.fromVisitor,
-  text: plainText(line.body),
+  // As the server quotes it: a file by its name.
+  text: line.download === null ? plainText(line.body) : line.download.name,
   hasImage: line.image !== null,
 });
 
@@ -51,7 +52,7 @@ export function lineMenu(
   });
   const info = item("messageInfo", "info", act.info);
   if (line.deleted) return [info];
-  const isText = line.image === null && !line.imageRemoved && line.body !== "";
+  const isText = line.kind === "text" || line.kind === "note";
   const isMine = line.authorOperatorId === who.meId;
   const items: MenuItem[] = [];
   // A reply cannot quote a note, as the visitor would see the quote.

@@ -115,7 +115,13 @@ export interface Conversation {
   visitor: Visitor;
   /** What the host page sent with setContext(). Nobody signed it, so it is not verified. */
   pageContext: PageContext | null;
-  lastMessage: { body: string | null; fromVisitor: boolean; createdAt: string } | null;
+  lastMessage: {
+    /** The text, or a file's name. Null for an image, and for a file that was removed. */
+    body: string | null;
+    kind: ChatKind;
+    fromVisitor: boolean;
+    createdAt: string;
+  } | null;
   /** A welcome chat on Dinghy Cloud. */
   welcome: boolean;
   /**
@@ -152,6 +158,9 @@ export interface SuggestedReply {
   createdAt: string;
 }
 
+/** The kinds of message that visitors and the team write to each other. */
+export type ChatKind = "text" | "image" | "file";
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -160,7 +169,7 @@ export interface Message {
    * `closed` and `reopened` are status lines that a close or a reopen wrote, with no body. A `note`
    * is text that only the team sees.
    */
-  kind: "text" | "image" | "closed" | "reopened" | "note";
+  kind: ChatKind | "closed" | "reopened" | "note";
   fromVisitor: boolean;
   /** The operator who sent it, and their current name. Both null for a visitor's message. */
   authorOperatorId: string | null;
@@ -172,11 +181,15 @@ export interface Message {
   image: { url: string; width: number; height: number } | null;
   /** The image was deleted after 12 months, on Dinghy Cloud. */
   imageRemoved: boolean;
+  /** A file that only downloads. `size` is in bytes. */
+  file: { name: string; size: number; url: string } | null;
+  /** The file was deleted after 12 months, on Dinghy Cloud. */
+  fileRemoved: boolean;
   /** The message this one quotes. Its `id` is null when that message was deleted. */
   replyTo: Quote | null;
   /** When its author last changed its text. */
   editedAt: string | null;
-  /** Deleted: no body and no image, and the line says so. */
+  /** Deleted: no body and no image or file, and the line says so. */
   deleted: boolean;
   /** A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft. */
   via: "api" | "mcp" | "draft" | null;
@@ -245,6 +258,8 @@ export interface ContactDetail extends Contact {
     createdAt: string;
     updatedAt: string;
     lastBody: string | null;
+    /** Null with no message. */
+    lastKind: ChatKind | null;
     messageCount: number;
     assigneeName: string | null;
     /** The member or key that closed it. Null while open, or when the visitor closed it. */
@@ -834,15 +849,19 @@ export function workspaceApi(workspaceId: string) {
         note,
         mentions,
       }),
-    replyImage: async (id: string, clientId: string, file: File, replyToMessageId?: string) => {
+    replyUpload: async (id: string, clientId: string, file: File, replyToMessageId?: string) => {
       const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
-      const response = await fetch(`${conversation(id)}/images?clientId=${clientId}${quote}`, {
-        method: "POST",
-        cache: "no-store",
-        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
-        headers: { "content-type": file.type },
-        body: file,
-      });
+      const name = `&filename=${encodeURIComponent(file.name)}`;
+      const response = await fetch(
+        `${conversation(id)}/images?clientId=${clientId}${name}${quote}`,
+        {
+          method: "POST",
+          cache: "no-store",
+          signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+          headers: { "content-type": file.type },
+          body: file,
+        },
+      );
       if (!response.ok) return failed(response);
       return (await response.json()) as Message;
     },

@@ -54,7 +54,7 @@ How a workspace's widget looks and behaves lives in `widget_settings`, one row p
 
 The loader asks for them on each page view at `GET /v1/widget/{key}/appearance`, which any site may read and a browser keeps for 5 minutes, then draws the launcher. The chat bundle uses the same answer. The snippet's attributes and `Dinghy.configure()` win over it. The answer also names up to 3 members who replied last, by first name and picture, so its ETag hashes the whole answer rather than the row's change time.
 
-A logo and an operator's picture are small WebP files in Postgres, in `workspace_logo` and `operator_picture`, and do not count as image storage. Their addresses carry the upload's time, so they cache for good.
+A logo and an operator's picture are small WebP files in Postgres, in `workspace_logo` and `operator_picture`, and do not count as file storage. Their addresses carry the upload's time, so they cache for good.
 
 ## Live signals
 
@@ -69,7 +69,7 @@ Background work lives in Postgres tables, and the worker claims rows with `FOR U
 1. Fan out alerts: turn new visitor messages into one delivery per operator device and email.
 2. Fan out webhooks: turn each event that a workspace's webhooks asked for into one delivery per webhook. An event is flagged for this only when its workspace had an enabled webhook when it committed.
 3. Send the claimed deliveries: web push, email and webhooks. Webhooks have their own slots, so a slow receiver never holds an alert back.
-4. Delete stored image files that are queued for deletion.
+4. Delete stored images and files that are queued for deletion.
 5. Prune old events and finished rows. Events go only from the start of a workspace's feed, so a client can tell a gap from its cursor.
 6. Purge workspaces that an owner deleted.
 
@@ -81,14 +81,14 @@ Delivery is at least once. A claim counts as an attempt, and a worker that stops
 
 ## Core and `ee/`
 
-Everything a self-hosted install uses is outside `ee/`. `ee/` holds what only Dinghy Cloud runs: Stripe billing, signup, the welcome chat, the plan's limits and image retention. Core reaches it only through `ee/server/index.ts` and the screens in `ee/operator/`, and only when a cloud setting is set (`STRIPE_*` or `CLOUD_SIGNUP`). [`LICENSE-NOTICE.md`](../LICENSE-NOTICE.md) has the licenses.
+Everything a self-hosted install uses is outside `ee/`. `ee/` holds what only Dinghy Cloud runs: Stripe billing, signup, the welcome chat, the plan's limits and the 12-month retention of images and files. Core reaches it only through `ee/server/index.ts` and the screens in `ee/operator/`, and only when a cloud setting is set (`STRIPE_*` or `CLOUD_SIGNUP`). [`LICENSE-NOTICE.md`](../LICENSE-NOTICE.md) has the licenses.
 
 The welcome chat needs two more cloud settings, and is off unless both are set. A self-hosted install leaves them unset.
 
 - `CLOUD_WELCOME_WORKSPACE_ID`: Dinghy's own workspace on the same server.
 - `CLOUD_WELCOME_OPERATOR_EMAIL`: the operator there who sends the welcome. The web role refuses to start when this operator is not an active member of that workspace.
 
-Each new cloud workspace then starts with one open conversation from that operator, and Dinghy's workspace gets the other side, assigned to them. The two conversations are linked in `welcome_link`, which both workspaces' row-level security lets them read. An operator's or an API key's reply on one side is copied, in the reply's own transaction, as a visitor message on the other side. Visitor messages are never copied, so a copy never makes another. A reply takes both workspace row locks in one order, so two replies that cross cannot deadlock. Nothing is copied when either side blocked its visitor or the other workspace is suspended or deleted, and the reply still goes. The welcome chat is the one exception to the payment states: it takes messages while its workspace waits for its first payment or is read-only, so a copy waits in that inbox, and an operator of a read-only workspace can still reply there in text. An image is copied as a file of the receiving workspace, within its image limit. Analytics leave welcome chats out, an export leaves the link out, and a deleted workspace's links go with its conversations.
+Each new cloud workspace then starts with one open conversation from that operator, and Dinghy's workspace gets the other side, assigned to them. The two conversations are linked in `welcome_link`, which both workspaces' row-level security lets them read. An operator's or an API key's reply on one side is copied, in the reply's own transaction, as a visitor message on the other side. Visitor messages are never copied, so a copy never makes another. A reply takes both workspace row locks in one order, so two replies that cross cannot deadlock. Nothing is copied when either side blocked its visitor or the other workspace is suspended or deleted, and the reply still goes. The welcome chat is the one exception to the payment states: it takes messages while its workspace waits for its first payment or is read-only, so a copy waits in that inbox, and an operator of a read-only workspace can still reply there in text. An image or a file is copied under the receiving workspace's own key, within its storage limit. Analytics leave welcome chats out, an export leaves the link out, and a deleted workspace's links go with its conversations.
 
 ## Scaling
 

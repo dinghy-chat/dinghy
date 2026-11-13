@@ -101,6 +101,7 @@
                   "two_factor_off",
                   "two_factor_on",
                   "two_factor_required",
+                  "type_not_allowed",
                   "unauthorized",
                   "unsupported_media_type",
                   "webhook_limit",
@@ -210,6 +211,9 @@
           "transcript": {
             "type": "boolean"
           },
+          "visitorFiles": {
+            "type": "boolean"
+          },
           "headerFaces": {
             "type": "string",
             "enum": ["online", "repliers", "chosen", "none"]
@@ -284,6 +288,7 @@
           "branding",
           "sound",
           "transcript",
+          "visitorFiles",
           "headerFaces",
           "headerFaceCount",
           "headerDot",
@@ -325,6 +330,21 @@
         },
         "required": ["url", "width", "height"]
       },
+      "File": {
+        "type": ["object", "null"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": ["name", "size", "url"]
+      },
       "Quote": {
         "type": ["object", "null"],
         "properties": {
@@ -360,7 +380,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["text", "image", "closed", "reopened"]
+            "enum": ["text", "image", "closed", "reopened", "file"]
           },
           "fromVisitor": {
             "type": "boolean"
@@ -375,6 +395,12 @@
             "$ref": "#/components/schemas/Image"
           },
           "imageRemoved": {
+            "type": "boolean"
+          },
+          "file": {
+            "$ref": "#/components/schemas/File"
+          },
+          "fileRemoved": {
             "type": "boolean"
           },
           "replyTo": {
@@ -409,6 +435,8 @@
           "body",
           "image",
           "imageRemoved",
+          "file",
+          "fileRemoved",
           "replyTo",
           "deleted",
           "fromBot",
@@ -427,6 +455,8 @@
           "body": "Do you have a yearly plan?",
           "image": null,
           "imageRemoved": false,
+          "file": null,
+          "fileRemoved": false,
           "replyTo": null,
           "deleted": false,
           "fromBot": false,
@@ -761,6 +791,10 @@
               "body": {
                 "type": ["string", "null"]
               },
+              "kind": {
+                "type": "string",
+                "enum": ["text", "image", "file"]
+              },
               "fromVisitor": {
                 "type": "boolean"
               },
@@ -768,7 +802,7 @@
                 "type": "string"
               }
             },
-            "required": ["body", "fromVisitor", "createdAt"]
+            "required": ["body", "kind", "fromVisitor", "createdAt"]
           },
           "snooze": {
             "$ref": "#/components/schemas/Snooze"
@@ -872,7 +906,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["text", "image", "closed", "reopened", "note"]
+            "enum": ["text", "image", "closed", "reopened", "file", "note"]
           },
           "fromVisitor": {
             "type": "boolean"
@@ -896,6 +930,12 @@
             "$ref": "#/components/schemas/Image"
           },
           "imageRemoved": {
+            "type": "boolean"
+          },
+          "file": {
+            "$ref": "#/components/schemas/File"
+          },
+          "fileRemoved": {
             "type": "boolean"
           },
           "replyTo": {
@@ -946,6 +986,8 @@
           "body",
           "image",
           "imageRemoved",
+          "file",
+          "fileRemoved",
           "replyTo",
           "editedAt",
           "deleted",
@@ -968,6 +1010,8 @@
           "body": "Yes, it is two months free.",
           "image": null,
           "imageRemoved": false,
+          "file": null,
+          "fileRemoved": false,
           "replyTo": {
             "id": "8c2d7a51-6e0f-4b3a-9d18-5f7e2c4a1b90",
             "authorName": "Ada",
@@ -1823,6 +1867,10 @@
                     "lastBody": {
                       "type": ["string", "null"]
                     },
+                    "lastKind": {
+                      "type": ["string", "null"],
+                      "enum": ["text", "image", "file", null]
+                    },
                     "messageCount": {
                       "type": "integer"
                     },
@@ -1842,6 +1890,7 @@
                     "createdAt",
                     "updatedAt",
                     "lastBody",
+                    "lastKind",
                     "messageCount",
                     "assigneeName",
                     "closedBy",
@@ -2212,6 +2261,9 @@
           "transcript": {
             "type": "boolean"
           },
+          "visitorFiles": {
+            "type": "boolean"
+          },
           "headerFaces": {
             "type": "string",
             "enum": ["online", "repliers", "chosen", "none"]
@@ -2252,6 +2304,7 @@
           "branding",
           "sound",
           "transcript",
+          "visitorFiles",
           "headerFaces",
           "headerFaceCount",
           "headerDot",
@@ -2583,6 +2636,8 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "file": null,
+                    "fileRemoved": false,
                     "replyTo": null,
                     "deleted": false,
                     "fromBot": false,
@@ -2624,6 +2679,8 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "file": null,
+                    "fileRemoved": false,
                     "replyTo": null,
                     "deleted": false,
                     "fromBot": false,
@@ -2881,7 +2938,8 @@
             "visitorToken": []
           }
         ],
-        "summary": "Send an image as the raw request body. A retry with the same clientId returns the original",
+        "summary": "Send an image or a file as the raw request body. A retry with the same clientId returns the original",
+        "description": "PNG, JPEG and WebP bytes become an `image` message, whatever their name. Any other file becomes a `file` message when its `filename` names an allowed type and its first bytes match, up to 10 MB, and only while the widget's `visitorFiles` is on.",
         "parameters": [
           {
             "schema": {
@@ -2920,6 +2978,18 @@
             "description": "An earlier message of the visitor's conversation that this one quotes.",
             "name": "replyToMessageId",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 1000,
+              "default": "",
+              "description": "The file's name, such as report.pdf. Its extension says the type, one of PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4, MOV. An image needs none, as its bytes say what it is"
+            },
+            "required": false,
+            "description": "The file's name, such as report.pdf. Its extension says the type, one of PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4, MOV. An image needs none, as its bytes say what it is",
+            "name": "filename",
+            "in": "query"
           }
         ],
         "responses": {
@@ -2952,6 +3022,8 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "file": null,
+                    "fileRemoved": false,
                     "replyTo": null,
                     "deleted": false,
                     "fromBot": false,
@@ -2993,6 +3065,8 @@
                     "body": "Do you have a yearly plan?",
                     "image": null,
                     "imageRemoved": false,
+                    "file": null,
+                    "fileRemoved": false,
                     "replyTo": null,
                     "deleted": false,
                     "fromBot": false,
@@ -3006,7 +3080,7 @@
             }
           },
           "400": {
-            "description": "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels. invalid_reply_to: the quoted message is not in this conversation",
+            "description": "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP, where only images may come. type_not_allowed: neither an image nor an allowed file, by its name's extension and its first bytes. too_many_pixels: over 16 megapixels. invalid_reply_to: the quoted message is not in this conversation",
             "content": {
               "application/json": {
                 "schema": {
@@ -3046,7 +3120,7 @@
             }
           },
           "413": {
-            "description": "too_large: the image is over 5 MB",
+            "description": "too_large: an image over 5 MB, or another file over 10 MB",
             "content": {
               "application/json": {
                 "schema": {
@@ -3066,7 +3140,7 @@
             }
           },
           "503": {
-            "description": "busy: too many images at once, or the workspace is busy. Retry after `retry-after`",
+            "description": "busy: too many uploads at once, or the workspace is busy. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3076,7 +3150,7 @@
             }
           },
           "507": {
-            "description": "storage_full: the workspace has no room for more images",
+            "description": "storage_full: the workspace has no room for more images or files",
             "content": {
               "application/json": {
                 "schema": {
@@ -5246,6 +5320,7 @@
                       },
                       "lastMessage": {
                         "body": "Do you have a yearly plan?",
+                        "kind": "text",
                         "fromVisitor": true,
                         "createdAt": "2026-11-08T09:30:00.000Z"
                       },
@@ -5832,7 +5907,8 @@
             "apiKey": []
           }
         ],
-        "summary": "Reply with an image as the raw request body. A retry with the same clientId returns the original",
+        "summary": "Reply with an image or a file as the raw request body. A retry with the same clientId returns the original",
+        "description": "PNG, JPEG and WebP bytes become an `image` message, whatever their name. Any other file becomes a `file` message when its `filename` names an allowed type and its first bytes match, up to 10 MB.",
         "parameters": [
           {
             "schema": {
@@ -5871,6 +5947,18 @@
             "description": "An earlier message of the same conversation that this one quotes. Not a status line, and not a deleted message. A reply cannot quote a note, and a note can quote any of them.",
             "name": "replyToMessageId",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 1000,
+              "default": "",
+              "description": "The file's name, such as report.pdf. Its extension says the type, one of PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4, MOV. An image needs none, as its bytes say what it is"
+            },
+            "required": false,
+            "description": "The file's name, such as report.pdf. Its extension says the type, one of PDF, TXT, CSV, LOG, JSON, ZIP, DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, MP4, MOV. An image needs none, as its bytes say what it is",
+            "name": "filename",
+            "in": "query"
           }
         ],
         "responses": {
@@ -5895,7 +5983,7 @@
             }
           },
           "400": {
-            "description": "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP. too_many_pixels: over 16 megapixels. invalid_reply_to: the quoted message is not in this conversation",
+            "description": "invalid_request: the query is not valid. not_an_image: not a PNG, JPEG or WebP, where only images may come. type_not_allowed: neither an image nor an allowed file, by its name's extension and its first bytes. too_many_pixels: over 16 megapixels. invalid_reply_to: the quoted message is not in this conversation",
             "content": {
               "application/json": {
                 "schema": {
@@ -5965,7 +6053,7 @@
             }
           },
           "413": {
-            "description": "too_large: the image is over 5 MB",
+            "description": "too_large: an image over 5 MB, or another file over 10 MB",
             "content": {
               "application/json": {
                 "schema": {
@@ -5985,7 +6073,7 @@
             }
           },
           "503": {
-            "description": "busy: too many images at once, or the workspace is busy. Retry after `retry-after`",
+            "description": "busy: too many uploads at once, or the workspace is busy. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5995,7 +6083,7 @@
             }
           },
           "507": {
-            "description": "storage_full: the workspace has no room for more images",
+            "description": "storage_full: the workspace has no room for more images or files",
             "content": {
               "application/json": {
                 "schema": {
@@ -13607,7 +13695,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Download this workspace's data and images as a tar file. Owners only.",
+        "summary": "Download this workspace's data, images and files as a tar file. Owners only.",
         "parameters": [
           {
             "schema": {
@@ -13621,7 +13709,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A tar file with export.json and the images",
+            "description": "A tar file with export.json, and the images and files",
             "content": {
               "application/x-tar": {
                 "schema": {

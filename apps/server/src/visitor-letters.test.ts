@@ -19,9 +19,9 @@ describe("the reply email", () => {
   const letter = replyLetter(
     acme,
     [
-      { author: "Anna", body: "It ships **today**.", quote },
-      { author: "Acme", body: null, quote: null },
-      { author: "Acme", body: "Anything else?", quote: null },
+      { author: "Anna", body: "It ships **today**.", kind: "text", filename: null, quote },
+      { author: "Acme", body: null, kind: "image", filename: null, quote: null },
+      { author: "Acme", body: "Anything else?", kind: "text", filename: null, quote: null },
     ],
     links,
   );
@@ -65,7 +65,7 @@ describe("the reply email", () => {
     expect(letter.html).not.toContain("<img");
     const withLogo = replyLetter(
       { name: "Acme", logoUrl: "https://chat.example.com/logo.webp?v=1&x=2" },
-      [{ author: "Anna", body: "Hi", quote: null }],
+      [{ author: "Anna", body: "Hi", kind: "text", filename: null, quote: null }],
       links,
     );
     expect(withLogo.html).toContain('<img src="https://chat.example.com/logo.webp?v=1&amp;x=2"');
@@ -74,7 +74,15 @@ describe("the reply email", () => {
   test("escapes what people wrote, the workspace's name included", () => {
     const written = replyLetter(
       { name: "<b>Shop</b>", logoUrl: null },
-      [{ author: "<i>Eve</i>", body: "<script>x</script>", quote: null }],
+      [
+        {
+          author: "<i>Eve</i>",
+          body: "<script>x</script>",
+          kind: "text",
+          filename: null,
+          quote: null,
+        },
+      ],
       links,
     );
     expect(written.html).not.toMatch(/<(b|i|script)>/);
@@ -83,10 +91,27 @@ describe("the reply email", () => {
   });
 });
 
+test("a reply email shows a file by its name, linked to the chat", () => {
+  const letter = replyLetter(
+    acme,
+    [
+      { author: "Anna", body: null, kind: "file", filename: "invoice (May).pdf", quote: null },
+      { author: "Anna", body: null, kind: "file", filename: null, quote: null },
+    ],
+    links,
+  );
+  expect(letter.text).toContain("Sent the file invoice (May).pdf.");
+  expect(letter.html).toContain(`<a href="${links.chatUrl}">Sent the file invoice (May).pdf.</a>`);
+  // A removed file has no name left, and is still not an image.
+  expect(letter.text).toContain("Sent a file.");
+  expect(letter.text).not.toContain("image");
+});
+
 describe("the transcript", () => {
   const at = new Date("2026-11-11T20:20:00Z");
   const line = {
     body: "Hello",
+    filename: null,
     kind: "text" as const,
     authorVisitorId: null,
     authorOperatorId: null,
@@ -118,6 +143,18 @@ describe("the transcript", () => {
     expect(letter.text).toContain(`Continue the chat: ${links.chatUrl}`);
     expect(letter.html).toContain("<strong>Export</strong>");
     expect(letter.html).not.toContain("<img");
+  });
+
+  test("shows a file by its name, linked to the chat", () => {
+    const letter = transcriptLetter(
+      acme,
+      [{ ...line, authorVisitorId: "v", kind: "file", body: null, filename: "notes.txt" }],
+      new Map(),
+      links,
+    );
+    const said = "Sent the file notes.txt. Open the chat to download it.";
+    expect(letter.text).toContain(`You, 2026-11-11 20:20 UTC:\n${said}`);
+    expect(letter.html).toContain(`<a href="${links.chatUrl}">${said}</a>`);
   });
 
   test("shares the reply email's header and footer", () => {

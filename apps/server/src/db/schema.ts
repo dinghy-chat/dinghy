@@ -42,7 +42,7 @@ export const conversationStatus = pgEnum("conversation_status", ["open", "closed
  * writes, with the event's own sequence, so both sides see them in order. They are not chat: no
  * alert, no preview, no unread count.
  */
-export const VISITOR_KINDS = ["text", "image", "closed", "reopened"] as const;
+export const VISITOR_KINDS = ["text", "image", "closed", "reopened", "file"] as const;
 /**
  * A message's kind. A `note` is text that only the workspace's team sees. It never reaches the
  * visitor, and it is not chat either. It reaches an alert or an email only when it mentions a
@@ -51,7 +51,7 @@ export const VISITOR_KINDS = ["text", "image", "closed", "reopened"] as const;
 export const MESSAGE_KINDS = [...VISITOR_KINDS, "note"] as const;
 export const messageKind = pgEnum("message_kind", MESSAGE_KINDS);
 /** The kinds that people wrote in the chat, which both sides see. */
-export const CHAT_KINDS = ["text", "image"] as const;
+export const CHAT_KINDS = ["text", "image", "file"] as const;
 /** What people wrote: the chat, and the notes only the team sees. */
 export const WRITTEN_KINDS = [...CHAT_KINDS, "note"] as const;
 // `transcript` is the email of a whole conversation to its visitor, after a close or on request.
@@ -492,8 +492,11 @@ export const attachment = pgTable(
     storageKey: text("storage_key").notNull(),
     byteSize: bigint("byte_size", { mode: "number" }).notNull(),
     contentType: text("content_type").notNull(),
-    width: integer("width").notNull(),
-    height: integer("height").notNull(),
+    // An image's size in pixels. A file has none.
+    width: integer("width"),
+    height: integer("height"),
+    // A file's cleaned name. An image has none.
+    filename: text("filename"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -504,10 +507,14 @@ export const attachment = pgTable(
       foreignColumns: [message.workspaceId, message.id],
     }),
     index("attachment_message_idx").on(table.workspaceId, table.messageId),
-    // The cloud's image limit sums a workspace's bytes under the workspace lock: an index-only scan.
+    // The cloud's storage limit sums a workspace's bytes under the workspace lock: an index-only scan.
     index("attachment_bytes_idx").on(table.workspaceId, table.byteSize),
-    // The cloud deletes images after 12 months, oldest first.
+    // The cloud deletes images and files after 12 months, oldest first.
     index("attachment_created_idx").on(table.createdAt),
+    check(
+      "attachment_image_or_file",
+      sql`${table.filename} is null and ${table.width} is not null and ${table.height} is not null or ${table.filename} is not null and ${table.width} is null and ${table.height} is null`,
+    ),
   ],
 );
 
@@ -1261,7 +1268,7 @@ const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({ dataTyp
 
 /**
  * The workspace's logo, at most 256 pixels a side and encoded as WebP by the server. It lives in
- * Postgres rather than the object store because it is small, and it does not count as image storage.
+ * Postgres rather than the object store because it is small, and it does not count as stored images and files.
  * When it last changed is in `widget_settings`, which the widget reads.
  */
 export const workspaceLogo = pgTable("workspace_logo", {
@@ -1274,7 +1281,7 @@ export const workspaceLogo = pgTable("workspace_logo", {
 
 /**
  * An operator's picture, 128 pixels square and encoded as WebP by the server, as a logo is. It is
- * global, like the operator: one face in every workspace. It does not count as image storage.
+ * global, like the operator: one face in every workspace. It does not count as stored images and files.
  */
 export const operatorPicture = pgTable("operator_picture", {
   operatorId: uuid("operator_id")
@@ -1335,6 +1342,8 @@ export const widgetSettings = pgTable(
     sound: boolean("sound").notNull().default(WIDGET_DEFAULTS.sound),
     // The visitor gets the conversation by email when it closes.
     transcript: boolean("transcript").notNull().default(WIDGET_DEFAULTS.transcript),
+    // Visitors may send files as well as images. Operators always may.
+    visitorFiles: boolean("visitor_files").notNull().default(WIDGET_DEFAULTS.visitorFiles),
     // When an owner or admin first saved these settings, for the Get started steps.
     customizedAt: timestamp("customized_at", { withTimezone: true }),
     // Operators see what a visitor types before they send it. Nothing stores the draft.

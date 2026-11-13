@@ -2969,6 +2969,27 @@ img.ws-tile {
 .msg.quote-only {
   padding: 5px;
 }
+/* A file only downloads: its icon, its name and its size, never a preview. */
+.file-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.file-name {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.file-link:hover .file-name {
+  text-decoration: underline;
+}
+.file-size {
+  flex: none;
+  opacity: 0.75;
+  font-size: 13px;
+}
 /* The quoted message inside a reply: a soft block, a shade off the bubble, with no side bar. */
 .quote {
   display: grid;

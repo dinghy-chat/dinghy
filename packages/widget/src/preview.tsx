@@ -44,7 +44,7 @@ const ignore = () => {};
 const preventSubmit = (event: Event) => event.preventDefault();
 
 function sampleLines({ question, answer, author }: PreviewSample): Line[] {
-  const line = { seq: null, image: null, status: "sent" } as const;
+  const line = { seq: null, image: null, download: null, status: "sent" } as const;
   return [
     { ...line, id: "question", body: question, fromVisitor: true, author: null },
     { ...line, id: "answer", body: answer, fromVisitor: false, author: { ...author, bot: false } },
@@ -127,6 +127,7 @@ function Preview({ appearance, sample }: PreviewProps) {
             onDraft={ignore}
             onSubmit={preventSubmit}
             onFiles={ignore}
+            filesAllowed={appearance.visitorFiles}
           />
         )}
         {appearance.branding && <Branding />}

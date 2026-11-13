@@ -1,7 +1,9 @@
 /** @jsxImportSource react */
-import { createElement, type ReactNode } from "react";
+import { createElement, type ReactNode, useEffect, useRef, useState } from "react";
+import { fileSize, isImage, saveFile } from "../../../packages/widget/src/compose.ts";
 import { type CreateElement, renderMarkdown } from "../../../packages/widget/src/markdown.ts";
 import { clockTime, isToday } from "./format.ts";
+import { Icon } from "./icons.tsx";
 import { type Receipt, ReceiptLine } from "./receipts.tsx";
 import { t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
@@ -24,7 +26,51 @@ export const plainLinks: CreateElement<ReactNode> = (tag, props, ...children) =>
   );
 };
 
-/** A message's bubble: its quote and text, its image, or what stands in for them. */
+/**
+ * A file's link, which saves the file and never leaves the page. A URL lives 15 minutes, so when the
+ * server says one expired, it asks once for new URLs and saves again with the line's new one. The
+ * device's clock does not decide, as it can be wrong.
+ */
+function FileLink({
+  download,
+  onExpired,
+}: {
+  download: NonNullable<Line["download"]>;
+  onExpired(): void;
+}) {
+  // Each click asks for a save. It ends with the save, with any failure but an expired URL, or with
+  // a second expired one.
+  const [clicks, setClicks] = useState(0);
+  // The expired URL, which waits for the new one that onExpired brings.
+  const expired = useRef<string | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new URL or a click asks for a save.
+  useEffect(() => {
+    if (clicks === 0 || download.url === expired.current) return;
+    const end = () => setClicks(0);
+    saveFile(download.url, download.name).then((isSaved) => {
+      if (isSaved || expired.current !== null) return end();
+      expired.current = download.url;
+      onExpired();
+    }, end);
+  }, [clicks, download.url]);
+  return (
+    <a
+      className="file-link"
+      href={download.url}
+      onClick={(event) => {
+        event.preventDefault();
+        expired.current = null;
+        setClicks((count) => count + 1);
+      }}
+    >
+      <Icon name="download" size={20} />
+      <span className="file-name">{download.name}</span>
+      <span className="file-size">{fileSize(download.size)}</span>
+    </a>
+  );
+}
+
+/** A message's bubble: its quote and text, its image or file, or what stands in for them. */
 function Bubble({
   line,
   quote,
@@ -62,8 +108,19 @@ function Bubble({
       </div>
     );
   }
+  if (line.download !== null) {
+    return (
+      <div className={`msg${side}`}>
+        {quote}
+        <FileLink download={line.download} onExpired={onImageError} />
+      </div>
+    );
+  }
   if (line.imageRemoved) return <div className={`msg${side} removed`}>{t("imageRemoved")}</div>;
-  if (line.file !== undefined) return <div className="msg">{t("imageSending")}</div>;
+  if (line.fileRemoved) return <div className={`msg${side} removed`}>{t("fileRemoved")}</div>;
+  if (line.file !== undefined) {
+    return <div className="msg">{t(isImage(line.file) ? "imageSending" : "fileSending")}</div>;
+  }
   return createElement(
     "div",
     { className: `msg${side}` },
