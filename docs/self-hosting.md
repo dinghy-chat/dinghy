@@ -113,7 +113,7 @@ Image and file links then use that origin, with the same short-lived signed URLs
 
 A visitor who left your site gets your team's replies and the transcript by email. With replies by email on, they can answer that email, and their answer lands in the conversation as if they had written in the chat. It is off until you set `INBOUND_EMAIL_DOMAIN` and a receiver for its mail, and it needs a mail server for the emails that go out (`SMTP_URL`).
 
-Each email to a visitor then has its own reply address, `reply+<workspace>.<token>@<INBOUND_EMAIL_DOMAIN>`, which leads to that one conversation. The address works until 90 days after its last use. Mail to it reaches Dinghy in one of two ways, and both can be on at once:
+Each email to a visitor then has its own reply address, `reply+<workspace>.<token>@<INBOUND_EMAIL_DOMAIN>`, which leads to that one conversation. Mail apps show the workspace's name with it. The address works until 90 days after its last use. Mail to it reaches Dinghy in one of two ways, and both can be on at once:
 
 - A forwarder posts the raw email to `/v1/inbound-email`, signed with `INBOUND_EMAIL_SECRET` (see [the API](api.md#replies-by-email)). Dinghy documents one forwarder, a Cloudflare Email Worker, below. It needs a domain on Cloudflare and no paid plan.
 - [Shipmail](#receive-replies-through-shipmail) keeps the email in a mailbox and posts a webhook. Dinghy downloads the email, takes it and deletes it from the mailbox.

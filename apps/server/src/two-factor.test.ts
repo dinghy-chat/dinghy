@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { base32 } from "@better-auth/utils/base32";
@@ -13,6 +12,7 @@ import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { addOperator, captureMail, signIn } from "../test/operators.ts";
 import { asOperator, ORIGIN, withKey } from "../test/requests.ts";
+import { fakeSmtp } from "../test/smtp.ts";
 import { readStream } from "../test/sse.ts";
 import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, type AppOptions, createApp } from "./app.ts";
@@ -522,39 +522,6 @@ function resetFromCli(email: string, env: Record<string, string> = {}) {
     });
     child.on("exit", (code) => resolve({ code, out }));
   });
-}
-
-/**
- * The least of an SMTP server, for the command's one email: it accepts every message and keeps
- * its text.
- */
-async function fakeSmtp() {
-  const received: string[] = [];
-  const server = createServer((socket) => {
-    let inData = false;
-    let message = "";
-    socket.write("220 test\r\n");
-    socket.on("data", (chunk) => {
-      for (const line of chunk.toString().split("\r\n").slice(0, -1)) {
-        if (inData) {
-          if (line === ".") {
-            inData = false;
-            received.push(message);
-            socket.write("250 ok\r\n");
-          } else message += `${line}\n`;
-        } else if (line.startsWith("DATA")) {
-          inData = true;
-          message = "";
-          socket.write("354 go\r\n");
-        } else if (line.startsWith("QUIT")) socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
-      }
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  const port = typeof address === "object" && address !== null ? address.port : 0;
-  return { url: `smtp://127.0.0.1:${port}`, received, close: () => server.close() };
 }
 
 describe("security emails", () => {

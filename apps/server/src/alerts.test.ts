@@ -38,7 +38,7 @@ import {
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { emailAddressHash } from "./identity.ts";
-import type { Mailer } from "./mailer.ts";
+import type { MailExtras, Mailer } from "./mailer.ts";
 import { deleteMessage, editMessage, emailedAt, replyReceipts } from "./message-changes.ts";
 import {
   appendMessage,
@@ -88,16 +88,10 @@ const service = http.createServer((req, res) => {
 const serviceUrl = (path: string) =>
   `http://127.0.0.1:${(service.address() as AddressInfo).port}/${path}`;
 
-const mails: {
-  to: string;
-  subject: string;
-  text: string;
-  headers?: Record<string, string>;
-  html?: string;
-}[] = [];
+const mails: ({ to: string; subject: string; text: string } & MailExtras)[] = [];
 const mailer: Mailer = {
-  async send(to, subject, text, headers, html) {
-    mails.push({ to, subject, text, ...(headers && { headers }), ...(html && { html }) });
+  async send(to, subject, text, extras) {
+    mails.push({ to, subject, text, ...extras });
   },
 };
 
@@ -909,7 +903,9 @@ describe("email", () => {
     const mail = mails[0];
     expect(mail?.text).toMatch(/^Write your reply above this line\n\nHi,\n\n/);
     expect(mail?.html).toMatch(/<body[^>]*>.*?>Write your reply above this line</);
-    const replyTo = mail?.headers?.["reply-to"] ?? "";
+    // The workspace's name, so the visitor's mail app shows who the answer goes to.
+    expect(mail?.replyTo?.name).toBe("Acme");
+    const replyTo = mail?.replyTo?.address ?? "";
     expect(replyTo).toMatch(/^reply\+[0-9a-f]{32}\.[0-9a-z]{25}@reply\.example\.com$/);
     expect(replyTo.split("@")[0]?.length).toBeLessThanOrEqual(64);
     const [address] = await owner
@@ -1932,6 +1928,21 @@ describe("transcripts", () => {
     );
     expect(mails[0]?.text).toContain("Continuer la conversation\u00a0: ");
     expect(mails[0]?.text).toMatch(/À bientôt,\nL'équipe Acme$/);
+  });
+
+  test("with replies by email on, a transcript's Reply-To has the workspace's name", async () => {
+    const { conversationId } = await replyThenClose();
+    runWorker({ mail: true, inboundDomain: "reply.example.com" });
+    await untilDue(allFinished, "both rows to finish");
+    expect(mails[0]?.replyTo).toEqual({
+      name: "Acme",
+      address: expect.stringMatching(/^reply\+[0-9a-f]{32}\.[0-9a-z]{25}@reply\.example\.com$/),
+    });
+    const addresses = await owner
+      .select({ conversationId: replyAddress.conversationId })
+      .from(replyAddress)
+      .where(eq(replyAddress.conversationId, conversationId));
+    expect(addresses).toHaveLength(1);
   });
 
   test("a transcript that fails or is cancelled leaves the reply email to carry the reply", async () => {

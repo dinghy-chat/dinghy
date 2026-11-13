@@ -33,6 +33,7 @@ import { type Database, enterWorkspace, type Transaction, withWorkspace } from "
 import { createReplyAddress, pruneReplyAddresses } from "./inbound-email.ts";
 import { prunePageViews } from "./journey.ts";
 import { EMAIL_COLORS, letter, letterHtml } from "./letter.ts";
+import type { NamedAddress } from "./mailer.ts";
 import {
   authorNames,
   conversationHasTestVisitor,
@@ -543,8 +544,8 @@ export type AlertPlan =
       /** A second version for mail apps that show HTML, with the replies' formatting. */
       html?: string;
       stopUrl?: string;
-      /** The visitor's reply address, when replies by email are on. */
-      replyTo?: string | undefined;
+      /** The visitor's reply address, with the workspace's name, when replies by email are on. */
+      replyTo?: NamedAddress | undefined;
       /** The first and last message a visitor's email carries, which the plan records. */
       carries?: { fromSeq: bigint; toSeq: bigint };
     }
@@ -750,7 +751,10 @@ async function replyEmailPlan(
   const replyTo =
     inboundDomain === undefined
       ? undefined
-      : await createReplyAddress(tx, workspaceId, visitorId, newest, inboundDomain);
+      : {
+          name: place.name,
+          address: await createReplyAddress(tx, workspaceId, visitorId, newest, inboundDomain),
+        };
   const authors = await messageAuthors(tx, workspaceId, replies);
   const words = visitorWords(target.locale);
   const written = replies.map((reply) => ({

@@ -141,9 +141,9 @@ function boundedMailer(mailer: Mailer, stopping: AbortSignal, timeoutMs: number)
     for (const resolve of waiters.splice(0)) resolve();
   };
   return {
-    async send(to, subject, text, headers, html) {
+    async send(to, subject, text, extras) {
       await takeConnection(deadline());
-      const sent = mailer.send(to, subject, text, headers, html).finally(freeConnection);
+      const sent = mailer.send(to, subject, text, extras).finally(freeConnection);
       // A send that fails after the worker stopped waiting must not crash the process.
       sent.catch(() => {});
       await Promise.race([sent, aborted(deadline())]);
@@ -200,14 +200,18 @@ export function startWorker({
       return result.sent > 0 ? "sent" : "skipped";
     }
     if (bounded === undefined) return "skipped";
-    const headers = {
-      ...(plan.stopUrl !== undefined && {
-        "list-unsubscribe": `<${plan.stopUrl}>`,
-        "list-unsubscribe-post": "List-Unsubscribe=One-Click",
-      }),
-      ...(plan.replyTo !== undefined && { "reply-to": plan.replyTo }),
-    };
-    await bounded.send(plan.to, plan.subject, plan.text, headers, plan.html);
+    const headers =
+      plan.stopUrl === undefined
+        ? undefined
+        : {
+            "list-unsubscribe": `<${plan.stopUrl}>`,
+            "list-unsubscribe-post": "List-Unsubscribe=One-Click",
+          };
+    await bounded.send(plan.to, plan.subject, plan.text, {
+      html: plan.html,
+      headers,
+      replyTo: plan.replyTo,
+    });
     return "sent";
   };
 

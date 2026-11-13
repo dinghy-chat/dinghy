@@ -212,7 +212,16 @@ export async function transcriptPlan(
   const replyTo =
     inboundDomain === undefined
       ? undefined
-      : await createReplyAddress(tx, workspaceId, visitorId, conversationId, inboundDomain);
+      : {
+          name: place.name,
+          address: await createReplyAddress(
+            tx,
+            workspaceId,
+            visitorId,
+            conversationId,
+            inboundDomain,
+          ),
+        };
   const links = { chatUrl, stopUrl, canReply: replyTo !== undefined };
   return {
     channel: "email",

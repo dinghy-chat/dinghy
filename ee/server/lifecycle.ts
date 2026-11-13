@@ -613,7 +613,7 @@ async function sendLifecycleEmails({
         const signed = letter(mail.body, owner.name, undefined, LIFECYCLE_SIGN_OFF);
         const body = mail.footer === undefined ? signed : `${signed}\n\n${mail.footer}`;
         const html = lifecycleHtml(signed, mail.stopUrl);
-        await mailer?.send(owner.email, mail.subject, body, mail.headers, html);
+        await mailer?.send(owner.email, mail.subject, body, { headers: mail.headers, html });
         delivered += 1;
       } catch (err) {
         lastError = err;
