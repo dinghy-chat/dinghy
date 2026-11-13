@@ -18,7 +18,10 @@ interface PickerItem {
   insert(editor: Editor, place: { from: number; to: number }): void;
 }
 
-/** What each trigger offers for the words typed after it. A trigger left out opens nothing. */
+/**
+ * What each trigger offers for the words typed after it, at most SHOWN_MAX. A trigger left out opens
+ * nothing.
+ */
 export type PickerSources = Partial<Record<Trigger, (typed: string) => PickerItem[]>>;
 
 /** The keys the picker takes while it is open. Any other key types as usual. */
@@ -93,7 +96,7 @@ export function usePicker(editor: Editor, sources: PickerSources) {
   const listId = useId();
   const find = typed === null ? undefined : sources[typed.trigger];
   const active = typed !== null && find !== undefined && typed.from !== closedAt ? typed : null;
-  const items = active === null || find === undefined ? [] : find(active.word).slice(0, SHOWN_MAX);
+  const items = active === null || find === undefined ? [] : find(active.word);
   const index = active === null ? 0 : chosenIndex(chosen, active, items.length);
   const optionId = (at: number) => `${listId}-${at}`;
 
@@ -173,6 +176,7 @@ const savedReplyItems =
     return replies
       .filter((reply) => reply.shortcut.includes(word))
       .sort((a, b) => Number(b.shortcut.startsWith(word)) - Number(a.shortcut.startsWith(word)))
+      .slice(0, SHOWN_MAX)
       .map((reply) => ({
         id: reply.id,
         label: `/${reply.shortcut}`,
@@ -191,6 +195,7 @@ const memberItems =
   (typed: string): PickerItem[] =>
     members
       .filter((member) => member.name.toLowerCase().includes(typed.toLowerCase()))
+      .slice(0, SHOWN_MAX)
       .map((member) => ({
         id: member.id,
         label: member.name,

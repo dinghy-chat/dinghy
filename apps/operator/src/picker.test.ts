@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import type { Member } from "./api.ts";
-import { chosenIndex, mentionsIn } from "./picker.tsx";
+import type { Member, SavedReply } from "./api.ts";
+import { chosenIndex, composerPicks, mentionsIn } from "./picker.tsx";
 
 const member = (id: string, name: string): Member => ({
   id,
@@ -69,4 +69,16 @@ test("the arrows' choice holds for the same trigger and word, within the items t
 test("a new trigger starts at the first item, even with the same word", () => {
   expect(chosenIndex({ from: 1, word: "", index: 2 }, typed, 4)).toBe(0);
   expect(chosenIndex({ from: 7, word: "re", index: 2 }, typed, 4)).toBe(0);
+});
+
+test("the picker builds at most 8 saved replies, those that start with the word first", () => {
+  const replies: SavedReply[] = Array.from({ length: 12 }, (_, index) => ({
+    id: `reply-${index}`,
+    shortcut: index === 11 ? "refund" : `about-refund-${index}`,
+    body: "**Hello**",
+    updatedAt: "2026-11-13T10:00:00.000Z",
+  }));
+  const items = composerPicks(replies, [], "me", false)["/"]?.("refund") ?? [];
+  expect(items.map((item) => item.label)).toHaveLength(8);
+  expect(items[0]).toMatchObject({ label: "/refund", detail: "Hello" });
 });
