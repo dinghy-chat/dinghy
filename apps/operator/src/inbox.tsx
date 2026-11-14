@@ -41,8 +41,9 @@ function viewInAddress(): { view: View; contactId: string | null } {
 }
 
 /**
- * The address of a view other than Settings. The Inbox's names its open conversation and filter,
- * and every address names the workspace, so a reload or a copied link opens the same screen.
+ * The address of a view other than Settings, so a reload or a copied link opens the same screen.
+ * A page's names the workspace. The Inbox's names its filter, and an open conversation with its
+ * workspace.
  */
 function viewAddress(
   view: Exclude<View, "settings">,
@@ -66,6 +67,17 @@ function viewAddress(
 }
 
 const here = () => `${location.pathname}${location.search}`;
+
+/**
+ * False while the address leads away from this workspace's views, as a notification for another
+ * workspace or the signup does. The app is then loading that screen, so its address must stay.
+ */
+function isOwnAddress(workspaceId: string): boolean {
+  const named = new URLSearchParams(location.search).get("workspace");
+  if (named !== null && named !== workspaceId) return false;
+  const first = location.pathname.split("/")[1] ?? "";
+  return first === "" || PAGES.some((page) => page === first);
+}
 
 /**
  * The view, Settings page and contact shown, which the address can open, as a reload or a link
@@ -226,7 +238,7 @@ export function Inbox({
   // them and Back does not step through each one.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a filter writes its own address.
   useEffect(() => {
-    if (view === "settings") return;
+    if (view === "settings" || !isOwnAddress(workspaceId)) return;
     const address = viewAddress(view, workspaceId, { selected, contactId, filter: shownFilter });
     if (address !== here()) replaceAddress(address);
   }, [view, workspaceId, selected, contactId]);
