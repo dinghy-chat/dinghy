@@ -16,7 +16,7 @@ sudo ./install.sh
 
 The installer asks a few questions, installs Docker if it is missing, gets an HTTPS certificate and prints a sign-in link and the tag for your site. [The docs](docs/README.md) have the next steps.
 
-It has text, images and files in both directions, verified users, several operators, web push and email alerts, and export and import.
+It has text, images and files in both directions, several operators, labels, saved replies, notes with mentions, bulk actions and keyboard shortcuts. It also has web push and email alerts, replies by email, business hours, a widget in English, French and Spanish, verified users, two-step sign-in, and export and import.
 
 An AI agent can install it on your site and answer chats through its MCP server, with OAuth in the browser, drafts that a person approves, and a handoff to your team. [Use Dinghy with AI agents](docs/agents.md) has the steps.
 

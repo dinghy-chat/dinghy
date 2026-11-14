@@ -1109,6 +1109,11 @@ main {
   font-weight: 500;
 }
 
+.chip-label {
+  background: #ecebe7;
+  color: #3d4756;
+}
+
 .typing {
   display: flex;
   gap: 5px;
