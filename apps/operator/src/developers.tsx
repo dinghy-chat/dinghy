@@ -17,6 +17,7 @@ import { MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { type Loaded, useAction, useLoad } from "./load.ts";
 import { Confirm, Select } from "./popup.tsx";
+import { ListSkeleton } from "./skeleton.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { AddForm, CopyField, ErrorNote, Field, failureText, Page, StatusNote } from "./ui.tsx";
@@ -452,7 +453,7 @@ function Deliveries({ api, webhookId }: { api: WorkspaceApi; webhookId: string }
     );
   };
   if (deliveries.failure !== null) return <ErrorNote text={deliveries.failure} />;
-  if (rows === null) return <p className="quiet">{t("loading")}</p>;
+  if (rows === null) return <ListSkeleton />;
   if (rows.length === 0) return <p className="quiet">{t("deliveriesNone")}</p>;
   return (
     <>

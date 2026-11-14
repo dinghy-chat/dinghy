@@ -22,6 +22,7 @@ import { composerPicks, mentionsIn } from "./picker.tsx";
 import { Confirm } from "./popup.tsx";
 import { hasReceipt, receiptOf } from "./receipts.tsx";
 import { useShortcuts } from "./shortcuts.tsx";
+import { ThreadSkeleton } from "./skeleton.tsx";
 import { type TextId, t } from "./text.ts";
 import {
   DraftCards,
@@ -261,7 +262,9 @@ export function Thread({
   if (conversation === null) {
     return (
       <div className="thread">
-        <Loading failure={thread.loadFailure} />
+        <Loading failure={thread.loadFailure}>
+          <ThreadSkeleton />
+        </Loading>
       </div>
     );
   }

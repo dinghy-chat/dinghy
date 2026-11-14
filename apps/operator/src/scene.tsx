@@ -13,6 +13,7 @@ import {
 } from "react";
 import { BOAT_CSS, type BoatKind, boatSvg, logoSvg } from "../../../packages/widget/src/boat.ts";
 import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "../../../packages/widget/src/sea.ts";
+import { Bone, PageSkeleton, RowsSkeleton, SideSkeleton } from "./skeleton.tsx";
 import { type TextId, t } from "./text.ts";
 
 // One set of boat colors for the widget and this app. A constructed sheet passes style-src 'self'.
@@ -277,23 +278,58 @@ export function SceneLoading() {
 }
 
 /**
- * The app's frame with nothing in it yet, while a signed-in operator's app loads, so the first
- * screen is the shape of the next one.
+ * The app's frame with bones where its menu and its first screen will be, while a signed-in
+ * operator's app loads, so the first screen is the shape of the next one.
  */
 export function ShellLoading() {
+  const atInbox = location.pathname === "/";
   return (
     <div className="shell">
-      <div className="app">
+      <div className={atInbox ? "app" : "app paging"}>
         <aside className="side">
           <div className="brand">
             <Logo />
           </div>
+          <SideSkeleton />
         </aside>
-        <main className="panel" aria-busy="true">
-          <p className="visually-hidden" role="status">
-            {t("loading")}
-          </p>
-        </main>
+        <div className="stage">
+          <main className="panel">
+            {atInbox ? (
+              <div className="split">
+                <section className="list">
+                  <header className="page-head">
+                    <div className="page-title">
+                      <h2>{t("inbox")}</h2>
+                      <p>
+                        <Bone width={170} height={14} />
+                      </p>
+                    </div>
+                  </header>
+                  <div className="list-tools" aria-hidden="true">
+                    <Bone width="100%" height={42} />
+                    <Bone width={42} height={42} round />
+                  </div>
+                  <RowsSkeleton />
+                </section>
+                <div className="thread" />
+              </div>
+            ) : (
+              <section className="page">
+                <header className="page-head">
+                  <div className="page-title">
+                    <Bone width={160} height={28} />
+                    <p>
+                      <Bone width={260} height={14} />
+                    </p>
+                  </div>
+                </header>
+                <div className="page-body">
+                  <PageSkeleton />
+                </div>
+              </section>
+            )}
+          </main>
+        </div>
       </div>
     </div>
   );

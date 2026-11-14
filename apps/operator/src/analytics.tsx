@@ -4,6 +4,7 @@ import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
 import { browserTimeZone, duration, weekdayNames } from "./format.ts";
 import { LabelDot } from "./labels.tsx";
 import { Pond } from "./scene.tsx";
+import { AnalyticsSkeleton } from "./skeleton.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
 
@@ -574,7 +575,9 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
       }
     >
       {numbers === null ? (
-        <Loading failure={failure} />
+        <Loading failure={failure}>
+          <AnalyticsSkeleton />
+        </Loading>
       ) : numbers.started === 0 ? (
         <div className="nothing empty-boat">
           <Pond />

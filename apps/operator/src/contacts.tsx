@@ -7,6 +7,7 @@ import { useLoad } from "./load.ts";
 import { countryName, flag, zoneCity, zoneClock } from "./place.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { EmptyArt } from "./scene.tsx";
+import { TableSkeleton } from "./skeleton.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { ONLINE_EVERY_MS } from "./thread-lines.ts";
 import { toast } from "./toast.tsx";
@@ -153,7 +154,9 @@ function ContactList({ api, onOpen }: { api: WorkspaceApi; onOpen(visitorId: str
         />
       </div>
       {pages === null ? (
-        <Loading failure={first.failure} />
+        <Loading failure={first.failure}>
+          <TableSkeleton />
+        </Loading>
       ) : pages.contacts.length === 0 ? (
         <div className="nothing empty-boat">
           <EmptyArt scene="day" />
@@ -481,7 +484,9 @@ function ContactView({
   if (contact === null) {
     return (
       <section className="page">
-        <Loading failure={loaded.failure} />
+        <div className="page-body">
+          <Loading failure={loaded.failure} />
+        </div>
       </section>
     );
   }

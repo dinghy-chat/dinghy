@@ -15,7 +15,7 @@ import { ApiError, type Role } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { navigate } from "./nav.ts";
 import { countryName, flag } from "./place.ts";
-import { Pond } from "./scene.tsx";
+import { PageSkeleton } from "./skeleton.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 
@@ -697,8 +697,17 @@ export function AppLink({
   );
 }
 
-/** The loading state, or why the load failed once it has. */
-export function Loading({ failure = null }: { failure?: TextId | null }) {
+/**
+ * While a screen loads: its skeleton, a settings page's rows unless it gives another one. A failed
+ * load says why instead.
+ */
+export function Loading({
+  failure = null,
+  children = <PageSkeleton />,
+}: {
+  failure?: TextId | null;
+  children?: ReactNode;
+}) {
   if (failure !== null) {
     return (
       <div className="nothing">
@@ -706,12 +715,7 @@ export function Loading({ failure = null }: { failure?: TextId | null }) {
       </div>
     );
   }
-  return (
-    <div className="nothing loading">
-      <Pond />
-      <p>{t("loading")}</p>
-    </div>
-  );
+  return children;
 }
 
 const TINT_COUNT = 4;

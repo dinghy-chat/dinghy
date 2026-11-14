@@ -14,8 +14,9 @@ import { useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
 import { countryName, flag, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
+import { VisitorsSkeleton } from "./skeleton.tsx";
 import { plural, type TextId, t } from "./text.ts";
-import { Choices, FlagBadge, initials, Loading, type Option, Page } from "./ui.tsx";
+import { Choices, FlagBadge, initials, type Option, Page } from "./ui.tsx";
 import { bare, pageName, visitorName, webLink } from "./visitor.ts";
 
 /** The live list loads again this often while the page shows. */
@@ -615,7 +616,7 @@ export function VisitorsPage({
       }
     >
       {list.state === "loading" ? (
-        <Loading />
+        <VisitorsSkeleton />
       ) : list.state === "unknown" ? (
         <p className="hint">{t("visitorsUnknown")}</p>
       ) : (
