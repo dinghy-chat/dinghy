@@ -1,7 +1,7 @@
 ---
 title: Show signed-in Better Auth users in your live chat | Dinghy
 nav: Signed-in users: Better Auth
-description: Tell Dinghy which Better Auth user is chatting in a Next.js app. A route signs a token from auth.api.getSession(), and a client component passes it to the chat.
+description: Tell Dinghy which Better Auth user is chatting in a Next.js app. A route signs a token from auth.api.getSession(), a client component passes it on.
 date: 2026-11-09
 updated: 2026-11-14
 order: 22
@@ -11,16 +11,16 @@ logo: betterauth
 
 # Show signed-in Better Auth users in your live chat
 
-If your Next.js app uses Better Auth, your team can see who they're talking to in the Dinghy inbox. The chat shows the user's email and name, and their conversation follows them to every device they sign in on.
+In Dinghy, your team sees the Better Auth user's email and name. Their chat follows them to every device they sign in on.
 
-It takes three pieces. A route signs a short token for the current user, a client component hands that token to the chat, and sign-out clears the chat in that browser.
+A route signs a short token for the current user, a client component hands that token to the chat, and sign-out clears the chat in that browser.
 
 ## What you need
 
 - The Dinghy tag in `app/layout.tsx`, from the [Next.js guide](/guides/nextjs).
 - Better Auth set up for Next.js, with your server instance in `lib/auth.ts` and a React client in `lib/auth-client.ts` made with `createAuthClient` from `better-auth/react`.
-- The `jose` package. Install it with `bun add jose` or your package manager.
-- Your workspace's signing secret, from Settings > Install in the Dinghy operator app, under Identify signed-in users. Put it in `.env.local` as `DINGHY_SIGNING_SECRET`. It stays on the server.
+- The `jose` package. `bun add jose`, or use your package manager.
+- Your workspace's signing secret. It's in Settings > Install in the Dinghy operator app, under Identify signed-in users. Put it in `.env.local` as `DINGHY_SIGNING_SECRET`. It never leaves the server.
 
 ## 1. Sign a token for the current user
 
@@ -50,11 +50,11 @@ export async function POST(request: Request) {
 }
 ```
 
-Replace `wk_your_public_key` with the `data-key` from your tag. The `sub` is the Better Auth user ID, so the same person gets the same chat everywhere. Your team sees the `name` and `email` in the inbox. To show more, like a plan or a link to the user in your admin, add an `attributes` object, up to 2 KB of JSON. A value that starts with `https://` shows as a link.
+Put the `data-key` from your tag in place of `wk_your_public_key`. The `sub` is the Better Auth user ID, so the same person gets the same chat everywhere. Your team sees the `name` and `email` in the inbox. Want more, like a plan or a link to the user in your admin? Add an `attributes` object, up to 2 KB of JSON. A value that starts with `https://` shows as a link.
 
 ## 2. Hand the token to the chat
 
-Put the queue helper in its own file. If you added `DinghyIdentify` from the Next.js guide, delete it. This file replaces it. The helper works whether or not the chat script has loaded yet:
+Put the queue helper in its own file. If you already added `DinghyIdentify` from the Next.js guide, delete it, because this replaces it. The helper works whether the chat script has loaded yet or not:
 
 ```ts
 // lib/dinghy.ts
@@ -110,13 +110,13 @@ Render it once in `app/layout.tsx`, next to the Dinghy `Script`:
 <DinghyIdentify />
 ```
 
-The widget gets a function, not a fixed token, so it asks your route for a new token when the old one expires. A tab left open all day keeps working.
+The widget gets a function, not a fixed token. So when a token expires, it asks your route for a new one, and a tab left open all day keeps working.
 
 ## 3. Clear the chat on sign-out
 
-`authClient.signOut()` clears the session on the client too, so `useSession()` goes to `null` and the component calls `Dinghy.reset()`. That ends the chat in this browser, so the next person on a shared computer can't read it. Visitors who never signed in keep their anonymous chat, because the component only resets after it has seen a user.
+`authClient.signOut()` clears the session on the client too. So `useSession()` goes to `null` and the component calls `Dinghy.reset()`. That ends the chat in this browser, so the next person on a shared computer can't read it. Visitors who never signed in keep their anonymous chat. The component only resets after it has seen a user.
 
-If your sign-out does a full page load, the component never sees the change. Call reset first:
+But if your sign-out does a full page load, the component never sees the change. Call reset first:
 
 ```ts
 import { authClient } from "@/lib/auth-client";
@@ -132,4 +132,4 @@ If you sign out on the server, call `dinghy("reset")` in the browser before you 
 
 ## Good to know
 
-If you replace the signing secret in Dinghy, tokens signed with the old one stop working at once, so update `DINGHY_SIGNING_SECRET` at the same time. [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting) has the full token rules, and what happens to a chat the visitor started before signing in. Using another auth library? See the guides for [Clerk](/guides/identify-clerk) and [Supabase](/guides/identify-supabase).
+If you replace the signing secret in Dinghy, tokens signed with the old one stop working right away. Update `DINGHY_SIGNING_SECRET` at the same time. [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting) has the full token rules, and what happens to a chat the visitor started before signing in. Different auth library? See the guides for [Clerk](/guides/identify-clerk) and [Supabase](/guides/identify-supabase).

@@ -1,7 +1,7 @@
 ---
 title: How to add live chat to a React app | Dinghy
 nav: React
-description: Add Dinghy live chat to a React app built with Vite or an older Create React App setup. The tag goes in index.html, and you open it from any component.
+description: Add Dinghy live chat to a React app built with Vite or an older Create React App setup. The tag goes in index.html, and any component can open it.
 date: 2026-11-09
 updated: 2026-11-14
 order: 10
@@ -11,11 +11,11 @@ logo: react
 
 # Add live chat to a React app
 
-In a React single-page app, the chat tag goes in `index.html`, not in a component. It loads once, and the chat stays put while your router changes pages. This guide covers Vite, and older Create React App projects too. For Next.js, see the [Next.js guide](/guides/nextjs).
+In a React single-page app, the chat tag goes in `index.html`, not in a component. It loads once, and the chat stays put while your router changes pages. This works for Vite and for older Create React App projects. For Next.js, see the [Next.js guide](/guides/nextjs).
 
 ## Get your tag
 
-Copy it from the Dinghy operator app, under Settings > Install:
+It's in the Dinghy operator app, under Settings > Install:
 
 ```html
 <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
@@ -35,19 +35,19 @@ With Vite, `index.html` is at the root of your project. With Create React App, i
   </body>
 ```
 
-That's the install. The build leaves the tag alone, because it points at another address.
+The build leaves the tag alone, because it points at another address.
 
-Don't add the script from a `useEffect` instead. In development, React's Strict Mode runs effects twice, and each run adds a script. The chat script doesn't check for a copy of itself, so you'd get two chat buttons.
+Don't add the script from a `useEffect`. In development, React's Strict Mode runs effects twice, and each run adds a script. The chat script doesn't check for a copy of itself, so you'd get two chat buttons.
 
-If you'd rather install from npm, the `@dinghy-chat/widget` package adds the tag once, however often it runs, and gives typed calls. See [Install it from npm](/docs/add-to-your-site#install-it-from-npm).
+If you'd rather install from npm, the `@dinghy-chat/widget` package adds the tag once, no matter how often it runs, and gives you typed calls. See [Install it from npm](/docs/add-to-your-site#install-it-from-npm).
 
 ## Route changes
 
-The chat adds itself to `<body>`, outside the element React renders into. When React Router or any other router changes the page, nothing reloads, so the chat stays where it is. An open chat stays open, and a visitor can keep typing while they click around your app.
+The chat adds itself to `<body>`, outside the element React renders into. When React Router or any other router changes the page, nothing reloads, so the chat stays where it is. Visitors can keep typing in an open chat while they change pages.
 
 ## Open the chat from a component
 
-The tag adds a `Dinghy` object to the page. Because the script loads with `async`, it might not be there yet when your component first renders. This helper handles both cases. If the script hasn't loaded, it queues the call, and the script runs it when it starts:
+The tag adds a `Dinghy` object to the page. But the script loads with `async`, so it might not be there yet when your component first renders. If the script hasn't loaded, it queues the call, and the script runs it when it starts:
 
 ```tsx
 // src/dinghy.ts
@@ -73,13 +73,13 @@ export function HelpButton() {
 }
 ```
 
-If you'd rather have only your own button, add `data-launcher="hidden"` to the tag in `index.html`. Dinghy's button goes away, and `openChat()` still opens the chat. `Dinghy.on("unread", (count) => ...)` gives you the unread count for your own badge. See [Control it from your page](/docs/add-to-your-site#control-it-from-your-page).
+Want only your own button? Add `data-launcher="hidden"` to the tag in `index.html`. Dinghy's button goes away, and `openChat()` still opens the chat. `Dinghy.on("unread", (count) => ...)` gives you the unread count for your own badge. See [Control it from your page](/docs/add-to-your-site#control-it-from-your-page).
 
 ## Show who is chatting
 
-If your app has accounts, your server can sign a short token so the chat follows the user across devices and your team sees who they are. The [Next.js guide](/guides/nextjs#show-who-is-chatting) has a full React example, and the server part works with any backend. The rules for the token are in [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting).
+If your app has accounts, your server can sign a short token. Then the chat follows the user across devices and your team sees who they are. The [Next.js guide](/guides/nextjs#show-who-is-chatting) has a full React example, and the server part works with any backend. The token rules are in [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting).
 
-When the user signs out, call `Dinghy.reset()` so the next person on that computer can't read the chat.
+When the user signs out, call `Dinghy.reset()`, so the next person on that computer can't read the chat.
 
 ## If you use a Content Security Policy
 

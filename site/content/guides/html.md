@@ -1,7 +1,7 @@
 ---
 title: How to add live chat to any website | Dinghy
 nav: Any website
-description: Add the Dinghy live chat to a plain HTML site, or any site where you can edit the page. Paste one script tag before the closing body tag.
+description: Add the Dinghy live chat to a plain HTML site, or any site where you can edit the page. It's one script tag before the closing body tag.
 date: 2026-11-09
 updated: 2026-11-14
 order: 12
@@ -15,7 +15,7 @@ If you can edit your site's HTML, you can add Dinghy. Paste one script tag befor
 
 ## Get your tag
 
-Copy it from the Dinghy operator app, under Settings > Install:
+It's in the Dinghy operator app, under Settings > Install:
 
 ```html
 <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
@@ -25,7 +25,7 @@ The `data-key` is public. It only names your workspace, so it's fine in your pag
 
 ## Add your site to Allowed sites
 
-In Dinghy, open Settings > Install and, under Allowed sites, add your site's address, like `https://www.example.com`. Put one address on each line, with no path. `https://example.com` and `https://www.example.com` count as two different sites, so add both if visitors use both.
+In Dinghy, open Settings > Install and add your site's address under Allowed sites, like `https://www.example.com`. One address per line, no path. `https://example.com` and `https://www.example.com` are two different sites, so add both if people use both.
 
 ## Paste the tag
 
@@ -46,17 +46,17 @@ Put it just above `</body>`:
 </html>
 ```
 
-Do this on every page. If your site has a shared footer or layout file, paste it there once. In a static site generator like Hugo, Jekyll or Eleventy, that's the base template or footer partial.
+Do it on every page. If you have a shared footer or layout file, paste it there once. In Hugo, Jekyll or Eleventy that's the base template or the footer partial.
 
-The script is under 4 KB. The rest of the chat only loads when a visitor opens it, so the tag costs your pages almost nothing.
+The script is under 4 KB. The rest of the chat loads when a visitor opens it, or comes back to a chat they started.
 
 ## Check that it works
 
-Open your site in a private window. The chat button should be in the bottom right corner. Send a test message, and it shows up in your Dinghy inbox.
+Open your site in a private window. The chat button should be in the bottom right corner. Send a test message and it shows up in your Dinghy inbox.
 
-If the button isn't there, open the browser's developer console. A failed `loader.js` means the address in the tag is wrong or a Content Security Policy blocks it. If the button shows but each message says "Not sent", add the exact address you're visiting to Allowed sites, `www` included. [Troubleshooting](/docs/troubleshooting#the-chat-widget) has more.
+No button? Open the browser's developer console. If `loader.js` failed, the address in the tag is wrong or a Content Security Policy blocks it. If the button shows but every message says "Not sent", add the exact address you're on to Allowed sites, `www` included. [Troubleshooting](/docs/troubleshooting#the-chat-widget) has more.
 
-Opening the file straight from your disk won't work, because a `file://` page has no address to put in Allowed sites. Serve it from a local server and add that address, like `http://localhost:8000`.
+Opening the file straight from your disk won't work. A `file://` page has no address to put in Allowed sites. Serve it from a local server and add that address, like `http://localhost:8000`.
 
 ## Make it yours
 
@@ -79,8 +79,8 @@ With the button hidden, any element can open the chat:
 </script>
 ```
 
-[Add the chat to your site](/docs/add-to-your-site) covers every option, the unread count and how to show which signed-in user is chatting.
+For widget options, unread counts and signed-in users, see [Add the chat to your site](/docs/add-to-your-site).
 
 ## If you use a Content Security Policy
 
-Allow your Dinghy address in `script-src`, `connect-src` and `img-src`. Dinghy doesn't need `unsafe-inline`. See [the policy to use](/docs/add-to-your-site#if-your-site-has-a-content-security-policy).
+Allow your Dinghy address in `script-src`, `connect-src` and `img-src`. Dinghy doesn't need `unsafe-inline`. Use [this policy](/docs/add-to-your-site#if-your-site-has-a-content-security-policy).

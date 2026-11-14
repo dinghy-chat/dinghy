@@ -11,11 +11,11 @@ logo: webflow
 
 # Add live chat to Webflow
 
-Webflow has a box for code that goes before `</body>` on every page. Put the Dinghy tag there, publish, and you're done.
+Webflow has a box for code that goes before `</body>` on every page. Paste the Dinghy tag there and publish.
 
 ## Get your tag
 
-Copy it from the Dinghy operator app, under Settings > Install:
+It's in the Dinghy operator app, under Settings > Install:
 
 ```html
 <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
@@ -23,7 +23,7 @@ Copy it from the Dinghy operator app, under Settings > Install:
 
 ## Add your site to Allowed sites
 
-In Dinghy, open Settings > Install and, under Allowed sites, add your domain, like `https://www.example.com`. If you want the chat on your `webflow.io` staging address too, add `https://your-site.webflow.io` as well.
+In Dinghy, open Settings > Install and add your domain under Allowed sites, like `https://www.example.com`. If you want the chat on your `webflow.io` staging address too, add `https://your-site.webflow.io` as well.
 
 ## Paste the tag
 
@@ -33,17 +33,17 @@ In Dinghy, open Settings > Install and, under Allowed sites, add your domain, li
 4. Save.
 5. Publish the site.
 
-Webflow's custom code fields need a paid Site plan. On a free site, Webflow doesn't let you add the code.
+Webflow's custom code fields need a paid Site plan. On a free site, you can't add the code.
 
 ## Check that it works
 
-Custom code doesn't run in the Designer preview, so check the published site. Open it in a private window, click the chat button and send a test message. It shows up in your Dinghy inbox.
+Custom code doesn't run in the Designer preview, so test the published site. Open it in a private window, click the chat button and send a test message. It shows up in your Dinghy inbox.
 
-If the button isn't there, check that you published after saving, then open the browser's developer console. A failed `loader.js` means the address in the tag is wrong or a Content Security Policy blocks it. If the button shows but each message says "Not sent", add the exact address you're visiting to Allowed sites, `www` included.
+No button? Check you published after saving, then open the browser's developer console. If `loader.js` failed, the address in the tag is wrong or a Content Security Policy blocks it. If the button shows but every message says "Not sent", add the exact address you're on to Allowed sites, `www` included.
 
 ## Open the chat from your own button
 
-Maybe your design already has a "Talk to us" button. Add `data-launcher="hidden"` to the tag to hide Dinghy's button. Then give your own button a link to `#chat` and add this script in the Footer code, after the tag:
+Add `data-launcher="hidden"` to the tag to hide Dinghy's button. Then link your button to `#chat` and add this script in the Footer code, after the tag:
 
 ```html
 <script>
@@ -57,4 +57,4 @@ Maybe your design already has a "Talk to us" button. Add `data-launcher="hidden"
 </script>
 ```
 
-[Add the chat to your site](/docs/add-to-your-site#control-it-from-your-page) has more on `Dinghy.open()`.
+See [Add the chat to your site](/docs/add-to-your-site#control-it-from-your-page) for `Dinghy.open()`.
