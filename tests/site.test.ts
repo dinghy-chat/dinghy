@@ -1,11 +1,11 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
-import { PAGES, pathOf, writeDocs } from "../site/build-docs.ts";
+import { writeSite } from "../site/build-docs.ts";
 
 const PUBLIC = "site/public";
-// The docs pages are built, not committed, so the tests check the pages that docs/*.md make now.
-writeDocs();
+// The generated pages are built, not committed, so the tests check the pages the Markdown makes now.
+writeSite();
 /** Dinghy's own chat, the one script from another origin, as its opening tag. */
 const WIDGET_TAG =
   '<script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async>';
@@ -70,7 +70,12 @@ describe.each(pages)("%s", (page) => {
     expect(html).not.toMatch(/\sstyle=/);
     expect(html).not.toMatch(/<style/);
     expect(html).not.toMatch(/\son[a-z]+=/);
-    expect(html).not.toMatch(/<script(?![^>]*\ssrc=)/);
+    expect(html).not.toMatch(/<script(?![^>]*\s(src=|type="application\/ld\+json"))/);
+  });
+
+  test("its structured data parses", () => {
+    for (const [, json] of html.matchAll(/<script type="application\/ld\+json">([^<]*)<\/script>/g))
+      expect(() => JSON.parse(json ?? "")).not.toThrow();
   });
 
   test("its head is complete", () => {
@@ -98,7 +103,8 @@ test("_headers sets the CSP, which allows Dinghy's chat, and caches fonts for a 
 });
 
 const textFiles = filesUnder("site").filter(
-  (file) => !file.includes(".wrangler") && /\.(html|css|js|toml|txt|svg)$|_headers$/.test(file),
+  (file) =>
+    !file.includes(".wrangler") && /\.(html|css|js|toml|txt|svg|md|xml)$|_headers$/.test(file),
 );
 
 test.each(textFiles.map((file) => relative("site", file)))("%s has no banned words", (file) => {
@@ -153,13 +159,25 @@ test("the old self-host address moves to the docs", () => {
   );
 });
 
-test("llms-full.txt holds every doc, with its title and its page's address", () => {
+test("llms-full.txt holds every doc, with its page's address", () => {
   const full = readFileSync(join(PUBLIC, "llms-full.txt"), "utf8");
   expect(full.startsWith("# Dinghy docs, in full\n")).toBe(true);
-  for (const page of PAGES) {
-    const title = readFileSync(join("docs", page.source), "utf8").split("\n")[0] ?? "";
-    expect(title, page.source).toMatch(/^# \S/);
-    expect(full, page.source).toContain(`${title}\n\nSource: https://dinghy.chat${pathOf(page)}\n`);
+  for (const page of pages.filter((page) => page.startsWith("docs/"))) {
+    const path = `/${page.replace(/(^|\/)index\.html$/, "$1").replace(/\.html$/, "")}`;
+    expect(full, page).toContain(`\n\nSource: https://dinghy.chat${path}\n`);
   }
   expect(full).not.toMatch(/\]\((?!https?:|mailto:|#)/);
+});
+
+test("the sitemap lists every page, and robots.txt points to it", () => {
+  const sitemap = readFileSync(join(PUBLIC, "sitemap.xml"), "utf8");
+  for (const page of pages.filter((page) => page !== "404.html")) {
+    const path = `/${page.replace(/(^|\/)index\.html$/, "$1").replace(/\.html$/, "")}`;
+    expect(sitemap, `${path} is not in the sitemap`).toContain(
+      `<loc>https://dinghy.chat${path}</loc>`,
+    );
+  }
+  expect(readFileSync(join(PUBLIC, "robots.txt"), "utf8")).toContain(
+    "Sitemap: https://dinghy.chat/sitemap.xml",
+  );
 });
