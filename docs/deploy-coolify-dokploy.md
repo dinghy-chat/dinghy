@@ -6,7 +6,7 @@ Both platforms run a Docker Compose file and put their own proxy, Traefik, in fr
 
 ## What to keep
 
-- Use `compose.yaml` from a release tag as it is, such as `v0.31.1`. Do not split it into separate services.
+- Use `compose.yaml` from a release tag as it is, such as `v0.32.0`. Do not split it into separate services.
 - Keep every service. `init` writes the secrets and exits, `migrate` creates the database roles and runs migrations and exits, and `app` starts only after both. The platform must not report these two exits as failures or restart them.
 - Keep the named volumes. Each service mounts only the secrets it needs, and the data lives in `postgres`, `images` and `backups`.
 - Do not turn on the `tls` profile. The platform's proxy owns ports 80 and 443, and Caddy would fail to start on them.

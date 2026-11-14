@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-14
+
 ### Changed
 
 - A visitor's reply by email from an address other than their email now names that address: **Replied by email from ada@example.org**. API: messages with `via: "email"` have `fromAddress`, the address or null, in place of `fromOtherAddress`. Replies stored before this change read as from the visitor's email.
@@ -569,7 +571,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.31.1...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/dinghy-chat/dinghy/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/dinghy-chat/dinghy/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/dinghy-chat/dinghy/compare/v0.30.1...v0.31.0
 [0.30.1]: https://github.com/dinghy-chat/dinghy/compare/v0.30.0...v0.30.1
