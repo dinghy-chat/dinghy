@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The operator app shows a skeleton in the shape of each screen while it loads, in place of the boat and "Loading...": the sidebar and the Inbox on start, the conversation, Contacts, Analytics, Visitors and the settings pages. It fades in only after 0.3 s, so a quick load shows nothing. While the Inbox's first list loads, it no longer says "Nothing is waiting for you."
+
 ## [0.32.0] - 2026-11-14
 
 ### Changed
