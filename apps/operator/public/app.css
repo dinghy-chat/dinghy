@@ -629,9 +629,6 @@ textarea {
   color: var(--navy);
   font: 700 19px / 1.2 var(--display);
 }
-.loading {
-  min-height: 100%;
-}
 .ship {
   display: block;
   animation: bob 3.4s ease-in-out infinite;
@@ -675,6 +672,229 @@ textarea {
   margin-bottom: 10px;
   border-radius: 24px;
   background: var(--pond);
+}
+
+/* Skeletons: grey bones in the shape of what loads, which skeleton.tsx draws. They fade in after
+   0.3 s, so a quick load shows nothing. One light passes over every bone at once, because the
+   gradient is fixed to the window and not to each bone. */
+.skeleton {
+  animation: skeleton-in 0.3s 0.3s both;
+}
+@keyframes skeleton-in {
+  from {
+    opacity: 0;
+  }
+}
+/* The bones lay out in the screen's own grid, such as the Analytics cards. */
+.skeleton-bones {
+  display: contents;
+}
+.skeleton-bones > .page-row:first-child {
+  border-top: 0;
+}
+.bone {
+  display: inline-block;
+  flex: none;
+  max-width: 100%;
+  border-radius: 6px;
+  /* A screen can set --bone and --bone-light, as the sidebar does. */
+  background: linear-gradient(
+      100deg,
+      var(--bone, var(--soft)) 40%,
+      var(--bone-light, var(--soft-hover)) 50%,
+      var(--bone, var(--soft)) 60%
+    )
+    fixed var(--bone, var(--soft));
+  background-size: 200vw 100%;
+  vertical-align: middle;
+  animation: shimmer 1.6s linear infinite;
+}
+.bone.round {
+  border-radius: 50%;
+}
+@keyframes shimmer {
+  from {
+    background-position-x: 100vw;
+  }
+  to {
+    background-position-x: -100vw;
+  }
+}
+.bone-lines {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+}
+.bone-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* An Inbox row: the same box as .row, so nothing moves when the rows arrive. */
+.rows-skeleton {
+  padding: 0 8px 12px;
+}
+.bone-row {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.table-skeleton {
+  padding-top: 10px;
+}
+.table-skeleton .bone-row {
+  align-items: center;
+  min-height: 60px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.table-skeleton .wide-cell {
+  width: 140px;
+}
+.rows-skeleton .bone-row + .bone-row {
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.rows-skeleton .bone-lines {
+  padding-top: 3px;
+}
+.thread-skeleton {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.thread-skeleton .skeleton-bones {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.bone-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 11px 20px 11px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.bone-head .bone-lines {
+  gap: 7px;
+}
+/* The newest messages sit at the bottom, over the composer, as in a loaded thread. */
+.bone-bubbles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 24px;
+}
+.bone-bubble {
+  align-self: flex-end;
+  max-width: 560px;
+  border-radius: 18px;
+}
+.bone-bubble.visitor {
+  align-self: flex-start;
+}
+.bone-composer {
+  height: 96px;
+  margin: 0 20px 20px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.bone-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 180px;
+  margin-top: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.bone-bars .bone {
+  flex: 1;
+  border-radius: 6px 6px 0 0;
+}
+.bone-map {
+  aspect-ratio: 360 / 150;
+  border-radius: 20px;
+  background: var(--map-sea);
+  opacity: 0.12;
+}
+/* On the grey sidebar, the bones take the tint of its buttons. */
+.side-skeleton {
+  --bone: var(--side-tint);
+  --bone-light: var(--side-tint-hover);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+.bone-workspace {
+  display: block;
+  height: 48px;
+  margin-bottom: 10px;
+}
+.bone-nav {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+.bone-me {
+  display: block;
+  height: 56px;
+  margin: auto 0 8px;
+}
+:is(.bone-workspace, .bone-me) > .bone {
+  border-radius: 14px;
+}
+/* The search field, while the app loads. */
+.list-tools > .bone:first-child {
+  flex: 1;
+  border-radius: 999px;
+}
+/* On a phone: the workspace and the operator in the top bar, the sections in the tab bar. */
+@media (max-width: 760px) {
+  .side-skeleton {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .bone-workspace {
+    width: 112px;
+    height: 40px;
+    margin: 0;
+  }
+  .bone-nav {
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    height: calc(var(--tab-bar-height) - 9px);
+    min-height: 0;
+    padding: 0;
+  }
+  .bone-nav > .bone:last-child {
+    max-width: 70%;
+  }
+  .bone-me {
+    width: 40px;
+    height: 40px;
+    margin: 0;
+  }
+  .bone-me > .bone {
+    border-radius: 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .bone {
+    animation: none;
+  }
 }
 
 /* Sign in, signup, invite: the landing page's sky and sea around one card. The scene stays put
@@ -5595,7 +5815,8 @@ button.quote:hover {
   .app {
     padding: 0 var(--phone-edge) calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 8px);
   }
-  .contacts .wide-cell {
+  .contacts .wide-cell,
+  .table-skeleton .wide-cell {
     display: none;
   }
   .visitor-panel.overlay {

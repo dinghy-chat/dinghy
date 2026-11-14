@@ -11,6 +11,7 @@ import { BulkBar, type Selection, useSelection, useTouchSelect } from "./inbox-s
 import { LabelPills } from "./labels.tsx";
 import { EmptyArt } from "./scene.tsx";
 import { Keys, useShortcutsOn } from "./shortcuts.tsx";
+import { Bone, RowsSkeleton } from "./skeleton.tsx";
 import { plural, t } from "./text.ts";
 import { Avatar, FlagBadge, PageHead } from "./ui.tsx";
 import { avatarLetters, isWaiting, messagePreview, title } from "./visitor.ts";
@@ -309,7 +310,15 @@ export function InboxList({
     <section className="list" aria-label={t("inbox")}>
       <PageHead
         title={t("inbox")}
-        context={found === null ? listContext(status, waiting) : foundContext(found.length)}
+        context={
+          found !== null ? (
+            foundContext(found.length)
+          ) : listed ? (
+            listContext(status, waiting)
+          ) : (
+            <Bone width={170} height={14} />
+          )
+        }
       />
       {selection.chosen.length > 0 ? (
         <BulkBar
@@ -342,6 +351,7 @@ export function InboxList({
           {t(searchFailed ? "searchFailed" : "searchTooShort")}
         </p>
       )}
+      {found === null && !listed && <RowsSkeleton />}
       <ul className={selection.chosen.length > 0 ? "rows selecting" : "rows"} aria-busy={searching}>
         {found === null && listed && conversations.length === 0 && (
           <li className="list-empty">
