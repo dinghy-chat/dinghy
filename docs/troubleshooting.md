@@ -39,7 +39,7 @@ curl https://chat.example.com/readyz
 
 **A signed-in user sees "Not sent. Select to try again".** Check the token fields in [the table](add-to-your-site.md#show-who-is-chatting). The usual causes are a wrong `aud`, `iat` and `exp` more than 24 hours apart, or a secret that was replaced in **Settings > Install**.
 
-**A visitor's image fails.** It must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels. Under heavy load, the server also refuses uploads for a short time. [The measurements](measurements.md) have the numbers.
+**A visitor's image or file fails.** An image must be PNG, JPEG or WebP, under 5 MB and under 16 megapixels. A file must be one of [the allowed types](add-to-your-site.md#what-visitors-can-do), up to 10 MB, and visitors can send files only while **Visitors can send files** is on in **Settings > Appearance**. Under heavy load, the server also refuses uploads for a short time. [The measurements](measurements.md) have the numbers.
 
 ## Alerts
 

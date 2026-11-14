@@ -80,6 +80,8 @@ test("record", async () => {
     [SITE, server.hostOrigin],
     server.workspaceId(),
   ]);
+  // A team that has used Dinghy for a while has hidden the Get started steps.
+  await database.query("update workspace_member set get_started_dismissed_at = now()");
   const page = await (await fetch(`${server.hostOrigin}/`)).text();
   // The page's address is public and the test server is on 127.0.0.1, which Chrome's private
   // network protection blocks. Only this recording turns it off; a real site never meets it.
@@ -133,6 +135,14 @@ test("record", async () => {
 
   // The pictures in the docs, after the recording, so the GIF never shows them.
   await visitor.screenshot({ path: join(directory, "widget.png") });
+  // A label, as a team would sort this chat.
+  await operator.getByRole("button", { name: "Labels", exact: true }).click();
+  const labels = operator.getByRole("dialog", { name: "Labels" });
+  await labels.getByRole("textbox", { name: "Find or add a label" }).fill("Bug");
+  await labels.getByRole("textbox", { name: "Find or add a label" }).press("Enter");
+  await expect(labels.getByRole("checkbox", { name: "Bug" })).toBeChecked();
+  await operator.keyboard.press("Escape");
+  await expect(labels).toBeHidden();
   await operator.setViewportSize({ width: 1100, height: 720 });
   // No hover state in the pictures.
   await operator.mouse.move(0, 0);
