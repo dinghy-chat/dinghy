@@ -1201,11 +1201,12 @@
                     "type": "string",
                     "enum": ["email"]
                   },
-                  "fromOtherAddress": {
-                    "type": "boolean"
+                  "fromAddress": {
+                    "type": ["string", "null"],
+                    "description": "The address the email came from, or null when it was the visitor's email."
                   }
                 },
-                "required": ["via", "fromOtherAddress"]
+                "required": ["via", "fromAddress"]
               }
             ]
           }

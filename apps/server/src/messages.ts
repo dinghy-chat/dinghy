@@ -171,7 +171,7 @@ type Channel = (typeof CHANNELS)[number];
 export type MessageSource =
   | { via: "mcp" }
   | { via: "draft"; draftId: string }
-  | { via: "email"; fromOtherAddress: boolean };
+  | { via: "email"; fromAddress: string | null };
 
 /** How a key's write came, when not through the REST API. */
 export type KeySource = Extract<MessageSource, { via: "mcp" }>;
@@ -217,12 +217,12 @@ interface StoredFields {
 
 /**
  * A key's reply: through the API or MCP. `draft`: an operator sent a key's draft. Null for anyone
- * else's message. `email`: a visitor's reply by email, which may come from an address other than
- * the visitor's email.
+ * else's message. `email`: a visitor's reply by email, with `fromAddress` when it came from an
+ * address other than the visitor's email.
  */
 type MessageVia =
-  | { via: Exclude<Channel, "email"> | null; fromOtherAddress?: never }
-  | { via: "email"; fromOtherAddress: boolean };
+  | { via: Exclude<Channel, "email"> | null; fromAddress?: never }
+  | { via: "email"; fromAddress: string | null };
 
 export type StoredMessage = StoredFields & MessageVia;
 
@@ -280,8 +280,8 @@ interface MessageMetadata {
   fileRemoved?: boolean;
   /** Set on a key's reply that came through MCP, an operator's that sent a draft, and an email. */
   via?: Exclude<Channel, "api">;
-  /** Set on a reply by email from an address other than the visitor's email. */
-  fromOtherAddress?: true;
+  /** Set on a reply by email from an address other than the visitor's email: that address. */
+  fromAddress?: string;
   /** Set on a bot's handoff note: who it handed the conversation to, or null for the team. */
   handoff?: { operatorId: string | null };
   /** Set on a note that mentions members. */
@@ -290,8 +290,7 @@ interface MessageMetadata {
 
 /** A key's message without a `via` came through the REST API, which writes none. */
 function viaOf(meta: MessageMetadata | null, authorApiKeyId: string | null): MessageVia {
-  if (meta?.via === "email")
-    return { via: "email", fromOtherAddress: meta.fromOtherAddress === true };
+  if (meta?.via === "email") return { via: "email", fromAddress: meta.fromAddress ?? null };
   if (meta?.via === "draft") return { via: "draft" };
   return { via: authorApiKeyId === null ? null : (meta?.via ?? "api") };
 }
@@ -645,7 +644,7 @@ export async function appendMessage(
     ...(upload !== undefined && attachmentMetadata(upload)),
     ...(input.source !== undefined && { via: input.source.via }),
     ...(input.source?.via === "email" &&
-      input.source.fromOtherAddress && { fromOtherAddress: true }),
+      input.source.fromAddress !== null && { fromAddress: input.source.fromAddress }),
     ...(input.handoffTo !== undefined && { handoff: { operatorId: input.handoffTo } }),
     ...(mentions.length > 0 && { mentions }),
   };

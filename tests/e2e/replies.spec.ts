@@ -307,11 +307,11 @@ test("a visitor's reply by email says so to the team, and from which address", a
   const customer = await visitor(browser, server, "/", "Answered from my phone");
   // As the inbound route stores one: the server's own tests post real emails.
   await server.owner.execute(
-    `update message set metadata = '{"via":"email","fromOtherAddress":true}' where body = 'Answered from my phone'`,
+    `update message set metadata = '{"via":"email","fromAddress":"ada@phone.example"}' where body = 'Answered from my phone'`,
   );
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "Answered from my phone" }).click();
-  await expect(alice.getByText("Replied by email from another address")).toBeVisible();
+  await expect(alice.getByText("Replied by email from ada@phone.example")).toBeVisible();
   await customer.reload();
   await expect(customer.getByText("Answered from my phone")).toBeVisible();
   await expect(customer.getByText(/Replied by email/)).toHaveCount(0);

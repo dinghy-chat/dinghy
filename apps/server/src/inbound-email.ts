@@ -534,7 +534,7 @@ async function addMessages(
   const sender = email.from?.address?.toLowerCase();
   const source: MessageSource = {
     via: "email",
-    fromOtherAddress: sender === undefined || sender !== address.email?.toLowerCase(),
+    fromAddress: sender === address.email?.toLowerCase() ? null : (sender ?? null),
   };
   const { visitorId, conversationId } = address;
   const append = (clientId: string, input: { body: string } | { attachment: NewAttachment }) =>

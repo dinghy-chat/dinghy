@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- A visitor's reply by email from an address other than their email now names that address: **Replied by email from ada@example.org**. API: messages with `via: "email"` have `fromAddress`, the address or null, in place of `fromOtherAddress`. Replies stored before this change read as from the visitor's email.
+
 ## [0.31.1] - 2026-11-14
 
 ### Fixed
