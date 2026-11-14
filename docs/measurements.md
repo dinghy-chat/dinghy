@@ -65,7 +65,7 @@ This did not measure images, the worker, TLS on the server, or traffic across ma
 
 ## 2026-11-05: through Cloudflare's proxy
 
-One stream ran through a proxied hostname for 180 idle seconds, on Cloudflare's Free plan with SSL mode Full. It stayed open, received 7 heartbeats, and delivered a message over the same connection 237 ms after the send. Cloudflare drops an idle proxied connection after about 100 seconds, so the 25-second heartbeat is what holds it open.
+One stream ran through a proxied hostname for 180 idle seconds, on Cloudflare's Free plan with SSL mode Full. It stayed open, received 7 heartbeats, and delivered a message over the same connection 237 ms after the send. Cloudflare drops an idle proxied connection after 125 seconds with no data, per its docs on November 9, 2026, so the 25-second heartbeat is what holds it open.
 
 ## 2026-11-05: local run
 

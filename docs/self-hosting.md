@@ -1,6 +1,6 @@
 # Self-hosting Dinghy
 
-Dinghy runs on one small server with Docker. It needs no third-party account and no API key. Email and S3 storage are optional.
+Dinghy runs on one small server with Docker. It needs no third-party account and no API key, has no license check and sends no telemetry. Email and S3 storage are optional.
 
 ## The quick way
 

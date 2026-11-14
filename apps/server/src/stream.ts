@@ -12,7 +12,7 @@ export interface StreamOptions {
 }
 
 export const DEFAULT_STREAM: StreamOptions = {
-  // Cloudflare drops an idle proxied connection after about 100 seconds.
+  // Cloudflare drops an idle proxied connection after 125 seconds with no data (its docs, November 9, 2026).
   heartbeatMs: 25_000,
   // A cap, so a client recovers from any lost signal and its access gets checked again.
   lifetimeMs: 15 * MINUTE_MS,

@@ -1,0 +1,126 @@
+---
+title: How to add a live chat widget to a Next.js app | Dinghy
+nav: Next.js
+description: Add the Dinghy live chat to a Next.js app with next/script in the root layout. Plus how to show which signed-in user is chatting.
+date: 2026-11-08
+updated: 2026-11-14
+order: 4
+card: next/script in the root layout
+logo: nextdotjs
+---
+
+# Add live chat to Next.js
+
+In Next.js, the chat goes in your root layout with the built-in `Script` component. It loads once and stays across page changes.
+
+## Get your tag
+
+Copy it from the Dinghy operator app, under Settings > Install. You need two values from it, the script address and the `data-key`:
+
+```html
+<script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
+```
+
+Add your site under Allowed sites in Settings > Install, like `https://www.example.com`. For local work, add `http://localhost:3000` too.
+
+## App Router
+
+In `app/layout.tsx`:
+
+```tsx
+import Script from "next/script";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <Script
+          src="https://chat.example.com/widget/loader.js"
+          data-key="wk_your_public_key"
+          strategy="lazyOnload"
+        />
+      </body>
+    </html>
+  );
+}
+```
+
+`lazyOnload` loads the script when the browser is idle, which is what the Next.js docs suggest for chat widgets. The `data-key` attribute passes straight through to the script tag.
+
+## Pages Router
+
+The same component goes in `pages/_app.tsx`:
+
+```tsx
+import type { AppProps } from "next/app";
+import Script from "next/script";
+
+export default function App({ Component, pageProps }: AppProps) {
+  return (
+    <>
+      <Component {...pageProps} />
+      <Script
+        src="https://chat.example.com/widget/loader.js"
+        data-key="wk_your_public_key"
+        strategy="lazyOnload"
+      />
+    </>
+  );
+}
+```
+
+## Show who is chatting
+
+If your app has accounts, your server can tell Dinghy who the user is. Their chat then follows them across devices, and your team sees their name and email. You can add `attributes`, like their plan, as the [add to your site](/docs/add-to-your-site#show-who-is-chatting) page shows.
+
+Your server signs a short token with the workspace's signing secret, from Settings > Install, under Identify signed-in users. Keep that secret on the server. Here's a route handler using the `jose` package:
+
+```tsx
+// app/api/dinghy-token/route.ts
+import { SignJWT } from "jose";
+import { getUser } from "@/lib/auth"; // your own auth
+
+const secret = new TextEncoder().encode(process.env.DINGHY_SIGNING_SECRET);
+
+export async function POST() {
+  const user = await getUser();
+  if (!user) return new Response("Not signed in", { status: 401 });
+  const token = await new SignJWT({ name: user.name, email: user.email })
+    .setProtectedHeader({ alg: "HS256" })
+    .setAudience("wk_your_public_key")
+    .setSubject(String(user.id))
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .sign(secret);
+  return new Response(token);
+}
+```
+
+Then, in a client component that renders for signed-in users:
+
+```tsx
+"use client";
+import { useEffect } from "react";
+
+declare global {
+  interface Window {
+    Dinghy?: { q?: unknown[][]; identify?: (token: () => Promise<string>) => void };
+  }
+}
+
+export function DinghyIdentify() {
+  useEffect(() => {
+    const getToken = async () => (await fetch("/api/dinghy-token", { method: "POST" })).text();
+    if (window.Dinghy?.identify) window.Dinghy.identify(getToken);
+    else (window.Dinghy ??= { q: [] }).q?.push(["identify", getToken]);
+  }, []);
+  return null;
+}
+```
+
+The queue line covers the case where your component runs before the chat script has loaded. When the user signs out, call `Dinghy.reset()` so the next person on that computer can't read the chat. The full rules for the token are in [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting).
+
+## If you use a Content Security Policy
+
+Allow your Dinghy address in `script-src`, `connect-src` and `img-src`. Dinghy doesn't need `unsafe-inline`.
