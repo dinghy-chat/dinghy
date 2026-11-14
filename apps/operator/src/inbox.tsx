@@ -70,11 +70,13 @@ const here = () => `${location.pathname}${location.search}`;
 
 /**
  * False while the address leads away from this workspace's views, as a notification for another
- * workspace or the signup does. The app is then loading that screen, so its address must stay.
+ * of the operator's workspaces or the signup does. The app is then loading that screen, so its
+ * address must stay. A workspace the operator cannot open, as in an old link, is not one of them.
  */
-function isOwnAddress(workspaceId: string): boolean {
+function isOwnAddress(workspaceId: string, workspaces: Me["workspaces"]): boolean {
   const named = new URLSearchParams(location.search).get("workspace");
-  if (named !== null && named !== workspaceId) return false;
+  const elsewhere = workspaces.some((one) => one.workspaceId === named && named !== workspaceId);
+  if (elsewhere) return false;
   const first = location.pathname.split("/")[1] ?? "";
   return first === "" || PAGES.some((page) => page === first);
 }
@@ -238,7 +240,7 @@ export function Inbox({
   // them and Back does not step through each one.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a filter writes its own address.
   useEffect(() => {
-    if (view === "settings" || !isOwnAddress(workspaceId)) return;
+    if (view === "settings" || !isOwnAddress(workspaceId, me.workspaces)) return;
     const address = viewAddress(view, workspaceId, { selected, contactId, filter: shownFilter });
     if (address !== here()) replaceAddress(address);
   }, [view, workspaceId, selected, contactId]);

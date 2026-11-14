@@ -74,3 +74,17 @@ test("Back to another workspace's conversation opens that workspace", async ({ b
   await expect(page).toHaveURL(/conversation=/);
   await expect(page.locator(".row[aria-current='true']")).toContainText("Address message 0");
 });
+
+test("a link to a workspace the operator cannot open gives way to the one shown", async ({
+  browser,
+}) => {
+  const page = await signedIn(browser, server, "owner@example.com");
+  // The app opens the workspace used last in place of the one it cannot open.
+  await page.goto(`${server.apiOrigin}/?workspace=${server.workspaceId()}`);
+  await expect(page.getByRole("button", { name: /^Workspace: E2E/ })).toBeVisible();
+  const gone = "00000000-0000-4000-8000-000000000000";
+  await page.goto(`${server.apiOrigin}/?workspace=${gone}&conversation=${gone}`);
+  await expect(page.getByRole("button", { name: /^Workspace: E2E/ })).toBeVisible();
+  await page.locator(".row", { hasText: "Address message 0" }).click();
+  await expect(page).toHaveURL(new RegExp(`workspace=${server.workspaceId()}&conversation=`));
+});
