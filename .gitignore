@@ -9,6 +9,15 @@ dist/
 test-results/
 playwright-report/
 CLAUDE.local.md
-# Built from docs/*.md by `bun run docs:build`. The Site workflow builds them before it tests and deploys.
+# Built from docs/*.md, site/content/ and site/llms.md by `bun run docs:build`. The Site workflow
+# builds them before it tests and deploys.
 site/public/docs/
+site/public/for/
+site/public/compare/
+site/public/guides/
+site/public/blog/
+site/public/live-chat-widget.html
+site/public/open-source-live-chat.html
+site/public/sitemap.xml
+site/public/llms.txt
 site/public/llms-full.txt
