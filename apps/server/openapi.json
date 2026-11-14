@@ -4506,7 +4506,7 @@
         },
         "responses": {
           "200": {
-            "description": "Taken, or dropped as an automatic answer",
+            "description": "Taken, or dropped as an automatic answer or an email with no sender",
             "content": {
               "application/json": {
                 "schema": {

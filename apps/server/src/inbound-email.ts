@@ -339,7 +339,7 @@ const inboundEmailRoute = createRoute({
   },
   responses: {
     200: {
-      description: "Taken, or dropped as an automatic answer",
+      description: "Taken, or dropped as an automatic answer or an email with no sender",
       content: { "application/json": { schema: z.object({ ok: z.literal(true) }) } },
     },
     401: errorAnswer(
@@ -451,7 +451,8 @@ export function registerInboundEmail(app: App, intake: EmailIntake, secret: stri
 async function receive(options: IntakeOptions, body: Buffer): Promise<Received> {
   const { db, domain, rateLimit, live } = options;
   const email = await PostalMime.parse(body);
-  if (isAutoReply(email)) return { status: 200 };
+  // An email with no sender is malformed or junk, and a message must not pass as the visitor's.
+  if (isAutoReply(email) || email.from?.address === undefined) return { status: 200 };
   const target = replyTarget(email, domain);
   if (target === null) return { status: 404, body: NOT_FOUND };
   const { workspaceId } = target;
@@ -531,10 +532,10 @@ async function addMessages(
   const text = replyText(email.text ?? htmlText(email.html ?? "")).replaceAll("\0", "");
   const parts = textParts(text);
   if (parts === null) return "too_long";
-  const sender = email.from?.address?.toLowerCase();
+  const sender = email.from?.address?.toLowerCase() ?? "";
   const source: MessageSource = {
     via: "email",
-    fromAddress: sender === address.email?.toLowerCase() ? null : (sender ?? null),
+    fromAddress: sender === address.email?.toLowerCase() ? null : sender,
   };
   const { visitorId, conversationId } = address;
   const append = (clientId: string, input: { body: string } | { attachment: NewAttachment }) =>

@@ -425,6 +425,14 @@ describe("a reply", () => {
     expect(await messagesOf(chat.conversationId)).toHaveLength(1);
   });
 
+  test("with no sender is dropped, so it never passes as the visitor's", async () => {
+    const chat = await newChat();
+    const to = await addressFor(a, chat);
+    const noSender = mime({ to, text: "Who am I?" }).replace(/^From: .*\r\n/m, "");
+    expect((await post(noSender)).status).toBe(200);
+    expect(await messagesOf(chat.conversationId)).toEqual([]);
+  });
+
   test("from a blocked visitor is refused", async () => {
     const chat = await newChat();
     const to = await addressFor(a, chat);
