@@ -674,10 +674,11 @@ textarea {
   background: var(--pond);
 }
 
-/* Skeletons: grey bones in the shape of what loads, which skeleton.tsx draws. They fade in after
-   0.3 s, so a quick load shows nothing. One light passes over every bone at once, because the
-   gradient is fixed to the window and not to each bone. */
-.skeleton {
+/* Skeletons: grey bones in the shape of what loads, which skeleton.tsx draws. Each bone fades in
+   after 0.3 s, so a quick load shows nothing. One light passes over every bone at once, because
+   the gradient is fixed to the window and not to each bone. */
+.bone-composer,
+.bone-map {
   animation: skeleton-in 0.3s 0.3s both;
 }
 @keyframes skeleton-in {
@@ -707,9 +708,11 @@ textarea {
     fixed var(--bone, var(--soft));
   background-size: 200vw 100%;
   vertical-align: middle;
-  animation: shimmer 1.6s linear infinite;
+  animation:
+    skeleton-in 0.3s 0.3s both,
+    shimmer 1.6s linear infinite;
 }
-.bone.round {
+.bone.bone-round {
   border-radius: 50%;
 }
 @keyframes shimmer {
@@ -858,6 +861,31 @@ textarea {
   flex: 1;
   border-radius: 999px;
 }
+/* On a tablet, the sidebar is a header: the workspace, the sections in a row, and the operator's
+   face at the end. */
+@media (max-width: 1000px) {
+  .side-skeleton {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .bone-workspace {
+    width: 150px;
+    height: 40px;
+    margin: 0;
+  }
+  .bone-nav {
+    min-height: 40px;
+  }
+  .bone-me {
+    width: 40px;
+    height: 40px;
+    margin: 0 0 0 auto;
+  }
+  .bone-me > .bone {
+    border-radius: 50%;
+  }
+}
 /* On a phone: the workspace and the operator in the top bar, the sections in the tab bar. */
 @media (max-width: 760px) {
   .side-skeleton {
@@ -890,10 +918,10 @@ textarea {
     border-radius: 50%;
   }
 }
+/* No light passes over the bones. They still fade in, which moves nothing. */
 @media (prefers-reduced-motion: reduce) {
-  .skeleton,
   .bone {
-    animation: none;
+    animation: skeleton-in 0.3s 0.3s both;
   }
 }
 

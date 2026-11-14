@@ -26,6 +26,8 @@ const WORKSPACE_KEY = "dinghy.workspace";
 const rememberedWorkspace = () => readStored(WORKSPACE_KEY);
 const rememberWorkspace = (id: string) => store(WORKSPACE_KEY, id);
 
+/** The pages with a card over the sky and the sea, which never show the app's frame. */
+const ACCOUNT_PATHS = new Set(["/invite", "/oauth/authorize", "/billing/return", "/signup"]);
 const here = () => `${location.pathname}${location.search}`;
 
 function App() {
@@ -85,8 +87,13 @@ function App() {
   }
   if (accountDeleted) return <AccountDeleted />;
   if (me === "loading" || meta === "loading") {
-    // An operator who used the app on this device most likely has it open again.
-    return rememberedWorkspace() === null ? <SceneLoading /> : <ShellLoading />;
+    // An operator who used the app on this device most likely has it open again. The account
+    // pages show the sky and the sea instead, as their card will.
+    return rememberedWorkspace() === null || ACCOUNT_PATHS.has(path) ? (
+      <SceneLoading />
+    ) : (
+      <ShellLoading />
+    );
   }
   // Before every page, the consent page too: the server refuses all else until the check passes.
   if (me?.twoFactor === "required") {

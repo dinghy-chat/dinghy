@@ -697,7 +697,6 @@ export function AppLink({
   );
 }
 
-/** The loading state, or why the load failed once it has. */
 /**
  * While a screen loads: its skeleton, a settings page's rows unless it gives another one. A failed
  * load says why instead.

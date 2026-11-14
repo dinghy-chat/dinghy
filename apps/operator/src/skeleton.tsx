@@ -17,13 +17,13 @@ export function Bone({
   height?: number | string;
   round?: boolean;
 }) {
-  return <span className={round ? "bone round" : "bone"} style={{ width, height }} />;
+  return <span className={round ? "bone bone-round" : "bone"} style={{ width, height }} />;
 }
 
 /** Says "Loading" once to a screen reader, and hides the bones from it. */
 function Skeleton({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div className={className === undefined ? "skeleton" : `skeleton ${className}`}>
+    <div className={className}>
       <p className="visually-hidden" role="status">
         {t("loading")}
       </p>

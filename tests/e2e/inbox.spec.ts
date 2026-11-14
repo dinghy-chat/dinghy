@@ -168,6 +168,36 @@ test("the Inbox item, the tab title and the favicon count the conversations that
   for (const page of [first, second, operator, teammate]) await page.context().close();
 });
 
+test("while the list loads, the Inbox shows skeleton rows and never says nothing waits", async ({
+  browser,
+}) => {
+  const asker = await visitor(browser, server, PRICING, "Is anyone there?");
+  const operator = await signedIn(browser, server, "alice@example.com");
+  await expect(row(operator, "Is anyone there?")).toBeVisible();
+
+  // The list's answer waits until the test lets it through.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await operator.route(/\/conversations\?/, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await operator.reload();
+  await expect(
+    operator.getByRole("status").filter({ hasText: "Loading..." }).first(),
+  ).toBeAttached();
+  await expect(operator.locator(".rows-skeleton .bone-row").first()).toBeVisible();
+  await expect(operator.getByText("Nothing is waiting for you.")).toHaveCount(0);
+
+  release();
+  await expect(row(operator, "Is anyone there?")).toBeVisible();
+  await expect(operator.locator(".rows-skeleton")).toHaveCount(0);
+
+  for (const page of [asker, operator]) await page.context().close();
+});
+
 test("a hidden tab's title counts a visitor who writes while it is hidden", async ({ browser }) => {
   const operator = await signedIn(browser, server, "alice@example.com");
   // The waiting counts load every minute while the tab is hidden, which the fake clock skips.
