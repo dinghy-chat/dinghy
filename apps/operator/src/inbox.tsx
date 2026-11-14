@@ -69,19 +69,6 @@ function viewAddress(
 const here = () => `${location.pathname}${location.search}`;
 
 /**
- * False while the address leads away from this workspace's views, as a notification for another
- * of the operator's workspaces or the signup does. The app is then loading that screen, so its
- * address must stay. A workspace the operator cannot open, as in an old link, is not one of them.
- */
-function isOwnAddress(workspaceId: string, workspaces: Me["workspaces"]): boolean {
-  const named = new URLSearchParams(location.search).get("workspace");
-  const elsewhere = workspaces.some((one) => one.workspaceId === named && named !== workspaceId);
-  if (elsewhere) return false;
-  const first = location.pathname.split("/")[1] ?? "";
-  return first === "" || PAGES.some((page) => page === first);
-}
-
-/**
  * The view, Settings page and contact shown, which the address can open, as a reload or a link
  * does. Back and Forward move between them, and a link in the app can open one.
  */
@@ -240,7 +227,7 @@ export function Inbox({
   // them and Back does not step through each one.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a filter writes its own address.
   useEffect(() => {
-    if (view === "settings" || !isOwnAddress(workspaceId, me.workspaces)) return;
+    if (view === "settings") return;
     const address = viewAddress(view, workspaceId, { selected, contactId, filter: shownFilter });
     if (address !== here()) replaceAddress(address);
   }, [view, workspaceId, selected, contactId]);

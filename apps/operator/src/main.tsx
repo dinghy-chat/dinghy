@@ -43,11 +43,16 @@ function App() {
   }, []);
   useEffect(load, [load]);
   useEffect(() => {
+    let moves = 0;
     const moved = () => {
+      moves += 1;
+      const move = moves;
       const next = here();
       const show = (account: Me | null) => {
         // A later move has its own answer coming. This one must not overwrite it.
-        if (here() !== next) return;
+        if (move !== moves) return;
+        // The screen still on show may have written its own address meanwhile.
+        if (here() !== next) replaceAddress(next);
         setMe(account);
         setAccountDeleted(false);
         // A new address can name a workspace, which wins over the last one picked.
