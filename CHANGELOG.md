@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-11-14
+
 ### Changed
 
 - The operator app shows a skeleton in the shape of each screen while it loads, in place of the boat and "Loading...": the sidebar and the Inbox on start, the conversation, Contacts, Analytics, Visitors and the settings pages. It fades in only after 0.3 s, so a quick load shows nothing. While the Inbox's first list loads, it no longer says "Nothing is waiting for you."
@@ -575,7 +577,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/dinghy-chat/dinghy/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/dinghy-chat/dinghy/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/dinghy-chat/dinghy/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/dinghy-chat/dinghy/compare/v0.30.1...v0.31.0
