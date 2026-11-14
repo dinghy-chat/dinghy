@@ -69,7 +69,14 @@ Add these to the tag:
 With the button hidden, any element can open the chat:
 
 ```html
-<button onclick="Dinghy.open()">Chat with us</button>
+<button id="chat-button">Chat with us</button>
+<script>
+  document.querySelector("#chat-button").addEventListener("click", () => {
+    // Before the chat's script has loaded, the call waits in its queue.
+    if (window.Dinghy?.open) Dinghy.open();
+    else (window.Dinghy ??= { q: [] }).q?.push(["open"]);
+  });
+</script>
 ```
 
 [Add the chat to your site](/docs/add-to-your-site) covers every option, the unread count and how to show which signed-in user is chatting.

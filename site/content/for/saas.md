@@ -38,10 +38,13 @@ A chat bubble over your app's UI can get in the way. Hide it with `data-launcher
 ```
 
 ```js
-document.querySelector("#help-chat").addEventListener("click", () => Dinghy.open());
+document.querySelector("#help-chat").addEventListener("click", () => {
+  if (window.Dinghy?.open) Dinghy.open();
+  else (window.Dinghy ??= { q: [] }).q?.push(["open"]);
+});
 ```
 
-The script loads with `async`, so `Dinghy` may not exist yet when your page code runs. That's why the unread listener goes in a queue before the tag. The click handler only runs when someone clicks, and by then the script is there. [Control it from your page](/docs/add-to-your-site#control-it-from-your-page) has the other calls and events, and `Dinghy.setContext()` passes page facts, like the screen the user is on. Set your brand colors and a light, dark or automatic theme in Settings > Appearance so it looks like part of your app. In a React or Next.js app, the npm package `@dinghy-chat/widget` adds the tag for you, with types.
+The script loads with `async`, so `Dinghy` may not exist yet when your page code runs. That's why the unread listener goes in a queue before the tag, and why a click that comes before the script puts `open` in the same queue. [Control it from your page](/docs/add-to-your-site#control-it-from-your-page) has the other calls and events, and `Dinghy.setContext()` passes page facts, like the screen the user is on. Set your brand colors and a light, dark or automatic theme in Settings > Appearance so it looks like part of your app. In a React or Next.js app, the npm package `@dinghy-chat/widget` adds the tag for you, with types.
 
 ## It stays out of your bundle
 

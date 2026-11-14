@@ -1,5 +1,4 @@
 /**
-/**
  * Builds the generated pages of dinghy.chat: the docs from docs/*.md, the content pages from
  * site/content/**\/*.md, and sitemap.xml, llms.txt and llms-full.txt from both. The Markdown is the
  * only source. The files it writes are not committed: the Site workflow builds them before it tests
@@ -637,7 +636,7 @@ function buildStory(page: Page): { html: string; images: string[] } {
   if (page.group === "Blog" && !index && page.date)
     meta = `${longDate(page.date)} · ${minutesToRead(page)} min read`;
   // A comparison's date is the day its prices were checked. Its updated date can be later, for a change to Dinghy's side.
-  else if (page.group === "Compare" && page.date) meta = `Prices checked ${longDate(page.date)}`;
+  else if (page.group === "Compare" && !index && page.date) meta = `Prices checked ${longDate(page.date)}`;
   const metaLine = meta ? `\n          <p class="doc-meta">${meta}</p>` : "";
   let body = doc.html.trim();
   body = body.replace(/<!-- pages(?: (\d+)-(\d+))? -->/g, (_, from?: string, to?: string) =>
