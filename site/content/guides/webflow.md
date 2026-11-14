@@ -43,10 +43,18 @@ If the button isn't there, check that you published after saving, then open the 
 
 ## Open the chat from your own button
 
-Maybe your design already has a "Talk to us" button. Add `data-launcher="hidden"` to the tag to hide Dinghy's button. Then give your own button a link to `#chat` and add this one-liner in the Footer code, after the tag:
+Maybe your design already has a "Talk to us" button. Add `data-launcher="hidden"` to the tag to hide Dinghy's button. Then give your own button a link to `#chat` and add this script in the Footer code, after the tag:
 
 ```html
-<script>document.addEventListener("click", (e) => { if (e.target.closest('a[href="#chat"]')) { e.preventDefault(); Dinghy.open(); } });</script>
+<script>
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest('a[href="#chat"]')) return;
+    e.preventDefault();
+    // Before the chat's script has loaded, the call waits in its queue.
+    if (window.Dinghy?.open) Dinghy.open();
+    else (window.Dinghy ??= { q: [] }).q?.push(["open"]);
+  });
+</script>
 ```
 
 [Add the chat to your site](/docs/add-to-your-site#control-it-from-your-page) has more on `Dinghy.open()`.
