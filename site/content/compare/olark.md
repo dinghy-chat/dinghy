@@ -11,11 +11,11 @@ stat: $29/agent
 
 # Dinghy vs Olark
 
-Olark has been a simple live chat for a long time. Today its pricing page leads with an AI website agent, and the plain human chat is a smaller plan priced per agent. Dinghy is human chat at a flat price, with no AI of its own. Your own agent can draft replies for a person to send.
+Now its pricing page leads with an AI website agent, and plain human chat is a smaller plan, per agent. Dinghy is human chat at one flat price, with no AI of its own. Your own agent can draft replies for a person to send.
 
 ## The quick answer
 
-Pick Olark if you want its AI agent to answer and qualify leads, with account management and white glove support, and the $400 a month plan makes sense for you. Pick Olark's Live Chat plan if you like Olark and you're one person. Pick Dinghy if you're a few people and want to pay one price for the team, with the option to bring your own AI agent.
+Olark's AI plan answers visitors and qualifies leads. It's $400 a month, with account management and white glove support. Dinghy charges one price for the team. You can connect your own AI agent.
 
 ## Price for a small team
 
@@ -28,7 +28,7 @@ Pick Olark if you want its AI agent to answer and qualify leads, with account ma
 | Self-hosting | Free, open source | Not possible |
 | Free trial | None | 14 days, no card |
 
-Olark prices are from olark.com/pricing on November 9, 2026. The page doesn't say whether the $29 has a yearly discount. [All the prices side by side](/compare/).
+Olark prices are from olark.com/pricing on November 9, 2026. The page doesn't say if the $29 has a yearly discount. [All the prices side by side](/compare/).
 
 ## What Olark does that Dinghy doesn't
 
@@ -38,8 +38,8 @@ Olark prices are from olark.com/pricing on November 9, 2026. The page doesn't sa
 
 ## What Dinghy does differently
 
-Dinghy has no AI of its own. A person on your team answers every chat, from a shared inbox with push alerts on their phone. If you want a bot, connect your own through MCP or the API. Its replies wait as drafts for a person to send, unless you let it send directly. See [Bring your own AI agent](/blog/bring-your-own-ai-agent). Dinghy Cloud is $7 a month for up to 5 people, so hiring doesn't raise the bill. You pay at signup and can cancel anytime.
+Dinghy has no AI of its own. Your team answers from a shared inbox, with push alerts on their phones. Connect your own through MCP or the API. Its replies wait as drafts for a person to send, unless you let it send on its own. See [Bring your own AI agent](/blog/bring-your-own-ai-agent). Dinghy Cloud is $7 a month for up to 5 people. You pay at signup and can cancel anytime.
 
 ## Moving over
 
-There's no importer from Olark. [Moving over from another chat](/compare/#moving-over-from-another-chat) has the steps.
+There's no importer from Olark. The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).

@@ -1,7 +1,7 @@
 ---
 title: How to add a live chat widget to a Next.js app | Dinghy
 nav: Next.js
-description: Add the Dinghy live chat to a Next.js app with next/script in the root layout. Plus how to show which signed-in user is chatting.
+description: Add the Dinghy live chat to a Next.js app with next/script in the root layout. And how to show which signed-in user is chatting.
 date: 2026-11-08
 updated: 2026-11-14
 order: 4
@@ -15,7 +15,7 @@ In Next.js, the chat goes in your root layout with the built-in `Script` compone
 
 ## Get your tag
 
-Copy it from the Dinghy operator app, under Settings > Install. You need two values from it, the script address and the `data-key`:
+It's in the Dinghy operator app, under Settings > Install. You need two values from it, the script address and the `data-key`:
 
 ```html
 <script src="https://chat.example.com/widget/loader.js" data-key="wk_your_public_key" async></script>
@@ -46,11 +46,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-`lazyOnload` loads the script when the browser is idle, which is what the Next.js docs suggest for chat widgets. The `data-key` attribute passes straight through to the script tag.
+`lazyOnload` loads the script when the browser is idle. That's what the Next.js docs suggest for chat widgets. The `data-key` attribute goes straight through to the script tag.
 
 ## Pages Router
 
-The same component goes in `pages/_app.tsx`:
+Same component, in `pages/_app.tsx`:
 
 ```tsx
 import type { AppProps } from "next/app";
@@ -72,9 +72,9 @@ export default function App({ Component, pageProps }: AppProps) {
 
 ## Show who is chatting
 
-If your app has accounts, your server can tell Dinghy who the user is. Their chat then follows them across devices, and your team sees their name and email. You can add `attributes`, like their plan, as the [add to your site](/docs/add-to-your-site#show-who-is-chatting) page shows.
+If your app has accounts, your server can tell Dinghy who the user is. Then their chat follows them across devices, and your team sees their name and email. You can add `attributes` too, like their plan. The [add to your site](/docs/add-to-your-site#show-who-is-chatting) page shows how.
 
-Your server signs a short token with the workspace's signing secret, from Settings > Install, under Identify signed-in users. Keep that secret on the server. Here's a route handler using the `jose` package:
+Your server signs a short token with the workspace's signing secret. It's in Settings > Install, under Identify signed-in users. Keep that secret on the server. Add this route handler with the `jose` package:
 
 ```tsx
 // app/api/dinghy-token/route.ts
@@ -119,7 +119,7 @@ export function DinghyIdentify() {
 }
 ```
 
-The queue line covers the case where your component runs before the chat script has loaded. When the user signs out, call `Dinghy.reset()` so the next person on that computer can't read the chat. The full rules for the token are in [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting).
+If the component runs before the chat script loads, the call waits in the queue. When the user signs out, call `Dinghy.reset()`, so the next person on that computer can't read the chat. The full token rules are in [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting).
 
 ## If you use a Content Security Policy
 

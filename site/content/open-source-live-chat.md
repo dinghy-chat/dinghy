@@ -1,7 +1,7 @@
 ---
 title: Open-source live chat you can host yourself | Dinghy
 nav: Open-source live chat
-description: Dinghy is an open-source live chat for your website. Run it free on one small server with one script, or let us host it for $7 a month.
+description: Dinghy is an open-source live chat for your website. Run it free on one small server with one script, or we host it for $7 a month.
 date: 2026-11-08
 updated: 2026-11-14
 order: 1
@@ -10,39 +10,39 @@ card: Free on your server, or $7 on ours
 
 # Open-source live chat you can host yourself
 
-Dinghy is a live chat for your website, and all of it is open source. You can run it on your own server for free, or pay us $7 a month to run it for you on Dinghy Cloud. Same code either way.
+Dinghy is a live chat for your website, and the whole product is open source. Run it on your own server for free, or pay us $7 a month to run it for you on Dinghy Cloud. Same code either way.
 
 ## The short version
 
 - A chat button on your site, and a shared inbox where your team answers.
-- The server is AGPL 3.0. The widget you embed is MIT, so it is fine on any site, commercial or not.
+- The server is AGPL 3.0. The widget you embed is MIT, so it's fine on any site, commercial or not.
 - One Docker image, plus Postgres and Valkey. That's the whole stack.
 - One install script on a fresh Linux server. It sets up Docker, HTTPS and your login.
-- No license check, no telemetry, and you don't need a third-party account or an API key.
+- No license check, no telemetry. You don't need a third-party account or an API key.
 - An HTTP API, webhooks and an MCP server, so your own scripts and AI agents can work with it.
-- We measured it on a 2 vCPU, 4 GB server. The numbers are below.
+- We measured it on a 2 vCPU, 4 GB server. Numbers below.
 
 The code is on [GitHub](https://github.com/dinghy-chat/dinghy).
 
-## Why we made another one
+## Why I made another one
 
-Most open-source chat tools grew into full help desks. They have email, WhatsApp, help centers, bots and automation rules. That's great if you need all of it. It's a lot to run if you just want people on your site to reach you.
+Most open-source chat tools grew into full help desks. Email, WhatsApp, help centers, bots, automation rules. Fine if you need all that. But it's a lot to run if you just want people on your site to reach you.
 
-Dinghy stays small on purpose. It's the chat, a shared inbox with saved replies, notes, labels and analytics, alerts so you don't miss anything, and an API for the rest. Fewer parts means fewer things to update and back up.
+It's the chat, a shared inbox with saved replies, notes, labels and analytics, alerts so you don't miss anything, and an API for the rest.
 
 ## Installing it
 
-On a new Linux server, you clone the repo at the latest release and run `sudo ./install.sh`. The script asks for your domain and email, installs Docker if it's missing, gets a real HTTPS certificate, sets up nightly backups if the server runs cron, and prints a sign-in link plus the tag for your site.
+On a new Linux server, clone the repo at the latest release and run `sudo ./install.sh`. The script asks for your domain and email, installs Docker if it's missing, gets a real HTTPS certificate, sets up nightly backups if the server runs cron, and prints a sign-in link plus the tag for your site.
 
 The [self-hosting guide](/docs/self-hosting) has the exact commands, the settings, backups, restores and upgrades.
 
-Email and S3 storage are optional. Without a mail server, Dinghy still works. It just can't send email to you or your visitors.
+Email and S3 storage are optional. Without a mail server Dinghy still works. It just can't send email to you or your visitors.
 
 ## What one small server can handle
 
-We ran the full install on a Hetzner CX23, which has 2 shared vCPUs and 4 GB of memory. With 5,000 open chat connections, 20 messages a second and a large image upload every second, it peaked at 539 MB of memory, and no message failed. In an earlier run, the same size of server held 20,000 open connections in about 1 GB, without the background jobs or images.
+We ran the full install on a Hetzner CX23, 2 shared vCPUs and 4 GB of memory. With 5,000 open chat connections, 20 messages a second and a large image upload every second, it peaked at 539 MB of memory, and no message failed. In an earlier run, the same size of server held 20,000 open connections in about 1 GB, without the background jobs or images.
 
-There are limits. Above about 50 messages a second inside one workspace, delivery starts to lag. We didn't test TLS on the server or many workspaces at once. The [measurements page](/docs/measurements) has every number and every caveat, and [the blog post](/blog/one-small-server) explains them in plain words.
+Above about 50 messages a second inside one workspace, delivery starts to lag. We didn't test TLS on the server, or many workspaces at once. See the [measurements page](/docs/measurements) for the results and test limits. The [blog post](/blog/one-small-server) explains the test.
 
 ## Self-hosted or Dinghy Cloud
 
@@ -50,18 +50,16 @@ There are limits. Above about 50 messages a second inside one workspace, deliver
 |---|---|---|
 | Price | Free | $7 a month per workspace |
 | Who runs it | You | Us |
-| Updates and backups | You run them | We run them |
-| Operators | As many as you like | Up to 5 |
+| Updates and backups | You do | We do |
+| Operators | As many as you want | Up to 5 |
 | Images and files | As much as your disk holds | 1 GB, kept 12 months |
 | Your data | On your server | Exports to a file that imports into a self-hosted install |
 
-So you can start on the cloud, and if you ever want to leave, export a file and import it into your own server.
-
 ## What it doesn't do
 
-Dinghy has no AI of its own, no marketing campaigns, no help center, and no other channels like a shared email inbox or WhatsApp. If you need those, [Chatwoot](/compare/chatwoot) is the open-source tool to look at, and it's a good one.
+Dinghy has no AI of its own, no marketing campaigns, no help center, and no other channels like a shared email inbox or WhatsApp. If you need those, look at [Chatwoot](/compare/chatwoot). It's open source.
 
-You can still bring your own AI agent. It connects through the MCP server or the API, and its replies wait as drafts for a person to send unless you let it send directly. Self-host Dinghy, run the bot with a model on your own server, and no chat leaves your machines. See [Live chat for AI agents](/for/ai-agents).
+You can still bring your own AI agent. It connects through the MCP server or the API, and its replies wait as drafts for a person to send, unless you let it send directly. Self-host Dinghy, run the bot with a model on your own server, and no chat leaves your machines. See [Live chat for AI agents](/for/ai-agents).
 
 ## How it compares
 
