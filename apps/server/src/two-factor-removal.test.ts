@@ -289,16 +289,22 @@ describe("asking for a removal", () => {
     const released = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let locked = () => {};
+    const isLocked = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
     const reset = owner.transaction(async (tx) => {
       await lockAccount(tx, lost.id);
       await removeTwoFactor(tx, lost.id);
+      locked();
       await released;
     });
+    // The ask starts only once the reset holds the lock, or a fast ask would pass before it.
+    await isLocked;
     const asked = askRemoval(lost.waiting);
-    // A busy CI runner can take a few seconds to reach the lock, and the reset must end either way,
-    // or its lock would hold the hooks after this test.
+    // The reset must end either way, or its lock would hold the hooks after this test.
     try {
-      await untilWaiting(owner, 1, 15_000);
+      await untilWaiting(owner);
     } finally {
       release();
     }

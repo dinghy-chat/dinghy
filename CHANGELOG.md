@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- 0.31.0 has no image, because a test of the two-step removal request raced on the release's runner. This release holds the same changes as 0.31.0.
+
 ## [0.31.0] - 2026-11-13
 
 ### Added
