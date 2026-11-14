@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The operator app's address follows the screen, so a reload or a copied link stays on it. Contacts, one contact, Visitors and Analytics have their own addresses, and the Inbox's address names the open conversation. Before, every screen but Settings was at `/`, and a reload went back to the Inbox. Back leaves a view, and moving through conversations or contacts does not fill the history.
+
 ## [0.33.0] - 2026-11-14
 
 ### Changed

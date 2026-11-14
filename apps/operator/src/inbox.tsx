@@ -27,19 +27,64 @@ import { t } from "./text.ts";
 import { Thread } from "./thread.tsx";
 import { VisitorsPage } from "./visitors.tsx";
 
+/** The views with an address of their own besides the Inbox and Settings, as `/contacts`. */
+const PAGES = ["contacts", "visitors", "analytics"] as const;
+
+/** The view in the address, and the contact for `/contacts/<id>`. Settings reads its own page. */
+function viewInAddress(): { view: View; contactId: string | null } {
+  const [first, second, ...rest] = location.pathname.split("/").filter((part) => part !== "");
+  if (first === "settings") return { view: "settings", contactId: null };
+  const page = PAGES.find((one) => one === first);
+  if (page === undefined) return { view: "inbox", contactId: null };
+  const contact = page === "contacts" && rest.length === 0 ? (second ?? null) : null;
+  return { view: page, contactId: contact };
+}
+
 /**
- * The view and Settings page shown, which the address can open, as a reload or a link does. Back
- * and Forward move between them, and a link in the app can open one.
+ * The address of a view other than Settings, so a reload or a copied link opens the same screen.
+ * A page's names the workspace. The Inbox's names its filter, and an open conversation with its
+ * workspace.
+ */
+function viewAddress(
+  view: Exclude<View, "settings">,
+  workspaceId: string,
+  {
+    selected,
+    contactId,
+    filter,
+  }: { selected: string | null; contactId: string | null; filter: Filter },
+): string {
+  if (view !== "inbox") {
+    const path = view === "contacts" && contactId !== null ? `/contacts/${contactId}` : `/${view}`;
+    return `${path}?workspace=${workspaceId}`;
+  }
+  const url = new URL("/", location.origin);
+  if (selected !== null) {
+    url.searchParams.set("workspace", workspaceId);
+    url.searchParams.set("conversation", selected);
+  }
+  return filterAddress(filter, url.href);
+}
+
+const here = () => `${location.pathname}${location.search}`;
+
+/**
+ * The view, Settings page and contact shown, which the address can open, as a reload or a link
+ * does. Back and Forward move between them, and a link in the app can open one.
  */
 function useViews(setFilter: Dispatch<SetStateAction<Filter>>) {
-  const [initialPage] = useState(settingsInAddress);
-  const [view, setView] = useState<View>(initialPage === undefined ? "inbox" : "settings");
-  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(initialPage ?? null);
+  const [initial] = useState(() => ({ ...viewInAddress(), page: settingsInAddress() }));
+  const [view, setView] = useState<View>(initial.view);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(initial.page ?? null);
+  // The contact the Contacts view shows, or null for its list.
+  const [contactId, setContactId] = useState<string | null>(initial.contactId);
   useEffect(() => {
     const moved = () => {
       const page = settingsInAddress();
       if (page === undefined) {
-        setView((current) => (current === "settings" ? "inbox" : current));
+        const shown = viewInAddress();
+        setView(shown.view);
+        setContactId(shown.contactId);
         const next = filterInAddress();
         setFilter((current) => (sameFilter(current, next) ? current : next));
         return;
@@ -50,7 +95,7 @@ function useViews(setFilter: Dispatch<SetStateAction<Filter>>) {
     addEventListener(NAVIGATE_EVENT, moved);
     return () => removeEventListener(NAVIGATE_EVENT, moved);
   }, [setFilter]);
-  return { view, setView, settingsPage, setSettingsPage };
+  return { view, setView, settingsPage, setSettingsPage, contactId, setContactId };
 }
 
 /**
@@ -109,9 +154,8 @@ export function Inbox({
   const [drafts, setDraft] = useDrafts(me.id, workspaceId);
   // A notification opens the app on its conversation.
   const [selected, setSelected] = useState(() => linkedConversation(workspaceId));
-  const { view, setView, settingsPage, setSettingsPage } = useViews(setFilter);
-  // The contact the Contacts view shows, or null for its list.
-  const [contactId, setContactId] = useState<string | null>(null);
+  const { view, setView, settingsPage, setSettingsPage, contactId, setContactId } =
+    useViews(setFilter);
   // Each opening of the shortcuts is a new sheet. A dialog's close event comes a moment after
   // Escape, so a quick ? must not meet the old sheet's late close.
   const selectedNow = useRef(selected);
@@ -153,21 +197,21 @@ export function Inbox({
   const billing = useBilling(api, me.billing && role === "owner", accountVersion);
   // The conversation a link opened, whose status picks Open or Closed once it loads.
   const linked = useRef(selected);
-  // A notification clicked while the app is open moves it to the conversation.
+  // A notification clicked while the app is open, or Back and Forward, open the address's
+  // conversation.
   useEffect(() => {
     const moved = () => {
       const id = linkedConversation(workspaceId);
-      if (id === null) return;
+      if (id === selectedNow.current) return;
       linked.current = id;
-      setView("inbox");
       setSelected(id);
     };
     addEventListener(NAVIGATE_EVENT, moved);
     return () => removeEventListener(NAVIGATE_EVENT, moved);
-  }, [workspaceId, setView]);
+  }, [workspaceId]);
 
   /** Shows a view, and a Settings page in it, and puts it in the address for Back and reloads. */
-  const showView = (next: View, page: SettingsPage | null = null) => {
+  const showView = (next: View, page: SettingsPage | null = null, contact = contactId) => {
     setSettingsPage(page);
     // The account's delete reads who owns what, which can change in Settings.
     if (page === "profile") onAccountChanged();
@@ -175,10 +219,18 @@ export function Inbox({
     const address =
       next === "settings"
         ? settingsAddress(page, workspaceId)
-        : filterAddress(shownFilter, new URL("/", location.origin).href);
-    if (address !== `${location.pathname}${location.search}`) pushAddress(address);
+        : viewAddress(next, workspaceId, { selected, contactId: contact, filter: shownFilter });
+    if (address !== here()) pushAddress(address);
   };
   const openSettings = (page: SettingsPage | null) => leave(() => showView("settings", page));
+  // The conversation and the contact on screen stay in the address, in place, so a reload keeps
+  // them and Back does not step through each one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a filter writes its own address.
+  useEffect(() => {
+    if (view === "settings") return;
+    const address = viewAddress(view, workspaceId, { selected, contactId, filter: shownFilter });
+    if (address !== here()) replaceAddress(address);
+  }, [view, workspaceId, selected, contactId]);
 
   /** Shows another filter, and puts it in the address, so a reload or a shared link keeps it. */
   const showFilter = (next: Filter) => {
@@ -197,7 +249,7 @@ export function Inbox({
   const openContact = (visitorId: string) =>
     leave(() => {
       setContactId(visitorId);
-      showView("contacts");
+      showView("contacts", null, visitorId);
     });
   /** Opens a conversation in the Inbox, under Open or Closed as it is. */
   const openConversation = (conversationId: string, conversationStatus: Status) =>
@@ -209,8 +261,12 @@ export function Inbox({
 
   /** Shows a view from the sidebar or the keyboard. Contacts opens on its list. */
   const openView = (next: View) => {
-    if (next === "contacts") setContactId(null);
-    if (next !== view || next === "contacts") leave(() => showView(next));
+    if (next !== view || next === "contacts") {
+      leave(() => {
+        if (next === "contacts") setContactId(null);
+        showView(next, null, null);
+      });
+    }
   };
   useShortcuts({
     "?": openKeys,
