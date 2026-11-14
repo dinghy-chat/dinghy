@@ -32,7 +32,7 @@ import {
 import { type Database, enterWorkspace, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { createReplyAddress, pruneReplyAddresses } from "./inbound-email.ts";
 import { prunePageViews } from "./journey.ts";
-import { EMAIL_COLORS, letter, letterHtml } from "./letter.ts";
+import { EMAIL_COLORS, letter, letterHtml, mailParagraphs } from "./letter.ts";
 import type { NamedAddress } from "./mailer.ts";
 import {
   authorNames,
@@ -774,9 +774,6 @@ async function replyEmailPlan(
   };
 }
 
-// Markdown's paragraphs come bare, and a mail app's default margins would pad the bubble unevenly.
-const bubbleParagraphs = (html: string) => html.replaceAll("<p>", '<p style="margin:0 0 8px">');
-
 // The quiet line above a chat bubble that says who wrote it.
 const authorLineHtml = (words: string, top: number) =>
   `<p style="margin:${top}px 0 6px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(words)}</p>`;
@@ -804,7 +801,7 @@ const replyHtml = (
   bubbleHtml(
     quotedHtml(
       reply.quote,
-      bubbleParagraphs(
+      mailParagraphs(
         reply.kind === "file"
           ? `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(reply.body)}</a></p>`
           : markdownHtml(reply.body),
@@ -966,7 +963,7 @@ async function operatorPlan(
     html: letterHtml({
       team: placeName,
       logoUrl: place.logoUrl,
-      html: authorLineHtml(wrote, 0) + bubbleHtml(bubbleParagraphs(markdownHtml(body))),
+      html: authorLineHtml(wrote, 0) + bubbleHtml(mailParagraphs(markdownHtml(body))),
       action: { label: text.operatorOpen, url: threadUrl },
       footer: [escapeHtml(text.operatorWhy)],
     }),

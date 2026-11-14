@@ -155,6 +155,10 @@ const text = {
 /** The longest workspace name an invite shows, so a name cannot fill the subject line. */
 const WORKSPACE_NAME_MAX = 80;
 
+/** Markdown's paragraphs come bare, and a mail app's default margins would space them too far apart. */
+export const mailParagraphs = (html: string) =>
+  html.replaceAll("<p>", '<p style="margin:0 0 8px">');
+
 // One line, so a name cannot add paragraphs of its own.
 export const oneLine = (words: string | undefined) => words?.replace(/\s+/g, " ").trim();
 

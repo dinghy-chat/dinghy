@@ -21,7 +21,7 @@ import {
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { createReplyAddress } from "./inbound-email.ts";
-import { EMAIL_COLORS } from "./letter.ts";
+import { EMAIL_COLORS, mailParagraphs } from "./letter.ts";
 import {
   conversationVisitor,
   filename,
@@ -281,12 +281,14 @@ export function transcriptLetter(
     ...lines.map((line, index) => {
       const shown = standIn(line, words);
       return (
-        `<p style="margin:18px 0 2px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
+        `<p style="margin:16px 0 4px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
         quotedHtml(
           visitorQuote(line.replyTo),
-          shown === null
-            ? markdownHtml(line.body ?? "")
-            : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(shown)}</a></p>`,
+          mailParagraphs(
+            shown === null
+              ? markdownHtml(line.body ?? "")
+              : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(shown)}</a></p>`,
+          ),
           words,
         )
       );
