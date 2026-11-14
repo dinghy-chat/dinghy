@@ -237,17 +237,17 @@ interface MessageFields {
 
 /**
  * A key's reply: through the REST API or through MCP. `draft`: an operator sent a key's draft.
- * `email`: the visitor replied to an email, from an address other than theirs with
- * `fromOtherAddress`.
+ * `email`: the visitor replied to an email, with `fromAddress` when it came from an address other
+ * than theirs.
  */
 export type MessageVia =
   | { via: "api" | "mcp" | "draft" | null }
-  | { via: "email"; fromOtherAddress: boolean };
+  | { via: "email"; fromAddress: string | null };
 
 /** Only the `via` fields of a message, to copy them onto a line. */
 export const viaOf = (message: MessageVia): MessageVia =>
   message.via === "email"
-    ? { via: "email", fromOtherAddress: message.fromOtherAddress }
+    ? { via: "email", fromAddress: message.fromAddress }
     : { via: message.via };
 
 export type Message = MessageFields & MessageVia;

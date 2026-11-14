@@ -15,7 +15,7 @@ import { inboundEmailFromConfig, loadConfig } from "./config.ts";
 import { conversation, event, message, replyAddress, visitor, workspace } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { createReplyAddress, pruneReplyAddresses, replyText, textParts } from "./inbound-email.ts";
-import { appendMessage, setConversationStatus } from "./messages.ts";
+import { appendMessage, listConversationMessages, setConversationStatus } from "./messages.ts";
 import { localStore } from "./storage.ts";
 import { DAY_MS } from "./time.ts";
 import { createUploads } from "./uploads.ts";
@@ -396,7 +396,14 @@ describe("a reply", () => {
     const lines = await messagesOf(chat.conversationId);
     expect(lines.map((line) => line.metadata)).toEqual([
       { via: "email" },
-      { via: "email", fromOtherAddress: true },
+      { via: "email", fromAddress: "ada.work@example.org" },
+    ]);
+    const { messages } = await withWorkspace(db, a.id, (tx) =>
+      listConversationMessages(tx, a.id, chat.conversationId, 0n, 10),
+    );
+    expect(messages.map(({ via, fromAddress }) => ({ via, fromAddress }))).toEqual([
+      { via: "email", fromAddress: null },
+      { via: "email", fromAddress: "ada.work@example.org" },
     ]);
   });
 
@@ -416,6 +423,14 @@ describe("a reply", () => {
     expect(await messagesOf(chat.conversationId)).toEqual([]);
     await post(mime({ to, text: "A person", headers: { "Auto-Submitted": "no" } }));
     expect(await messagesOf(chat.conversationId)).toHaveLength(1);
+  });
+
+  test("with no sender is dropped, so it never passes as the visitor's", async () => {
+    const chat = await newChat();
+    const to = await addressFor(a, chat);
+    const noSender = mime({ to, text: "Who am I?" }).replace(/^From: .*\r\n/m, "");
+    expect((await post(noSender)).status).toBe(200);
+    expect(await messagesOf(chat.conversationId)).toEqual([]);
   });
 
   test("from a blocked visitor is refused", async () => {
@@ -712,22 +727,22 @@ describe("the text", () => {
 });
 
 test.each([
-  [{ via: "email", fromOtherAddress: true } as const, { via: "email", fromOtherAddress: true }],
-  [{ via: "email", fromOtherAddress: false } as const, { via: "email", fromOtherAddress: false }],
+  [
+    { via: "email", fromAddress: "ada.work@example.org" } as const,
+    { via: "email", fromAddress: "ada.work@example.org" },
+  ],
+  [{ via: "email", fromAddress: null } as const, { via: "email", fromAddress: null }],
   [undefined, { via: null }],
-])(
-  "a stored message says how it came, with fromOtherAddress only by email",
-  async (source, via) => {
-    const chat = await newChat();
-    const result = await withWorkspace(db, a.id, (tx) =>
-      appendMessage(
-        tx,
-        a.id,
-        { kind: "visitor", visitorId: chat.visitorId, conversationId: chat.conversationId },
-        { clientId: randomUUID(), body: "Hi", source },
-      ),
-    );
-    expect(result.message).toMatchObject(via);
-    expect("fromOtherAddress" in result.message).toBe(source !== undefined);
-  },
-);
+])("a stored message says how it came, with fromAddress only by email", async (source, via) => {
+  const chat = await newChat();
+  const result = await withWorkspace(db, a.id, (tx) =>
+    appendMessage(
+      tx,
+      a.id,
+      { kind: "visitor", visitorId: chat.visitorId, conversationId: chat.conversationId },
+      { clientId: randomUUID(), body: "Hi", source },
+    ),
+  );
+  expect(result.message).toMatchObject(via);
+  expect("fromAddress" in result.message).toBe(source !== undefined);
+});

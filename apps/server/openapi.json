@@ -1201,11 +1201,12 @@
                     "type": "string",
                     "enum": ["email"]
                   },
-                  "fromOtherAddress": {
-                    "type": "boolean"
+                  "fromAddress": {
+                    "type": ["string", "null"],
+                    "description": "The address the email came from, or null when it was the visitor's email."
                   }
                 },
-                "required": ["via", "fromOtherAddress"]
+                "required": ["via", "fromAddress"]
               }
             ]
           }
@@ -4505,7 +4506,7 @@
         },
         "responses": {
           "200": {
-            "description": "Taken, or dropped as an automatic answer",
+            "description": "Taken, or dropped as an automatic answer or an email with no sender",
             "content": {
               "application/json": {
                 "schema": {

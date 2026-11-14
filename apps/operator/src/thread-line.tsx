@@ -170,7 +170,9 @@ export function ThreadLine({
       {receipt !== null && <ReceiptLine receipt={receipt} />}
       {line.via === "email" && (
         <div className="meta visitor">
-          {t(line.fromOtherAddress ? "repliedByEmailOtherAddress" : "repliedByEmail")}
+          {line.fromAddress === null
+            ? t("repliedByEmail")
+            : t("repliedByEmailFrom", { address: line.fromAddress })}
         </div>
       )}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}

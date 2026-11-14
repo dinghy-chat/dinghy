@@ -1214,7 +1214,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   infoViaDraft: "{name}, from a suggested reply",
   infoViaEmail: "{name}, by email",
   repliedByEmail: "Replied by email",
-  repliedByEmailOtherAddress: "Replied by email from another address",
+  repliedByEmailFrom: "Replied by email from {address}",
   draftLabel: "Reply suggested by {name}",
   draftBy: "Suggested by {name}",
   draftStale: "Not sent. Written before the last message.",

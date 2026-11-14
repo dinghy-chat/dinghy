@@ -150,10 +150,15 @@ const REPLY_TO = z.uuid().optional().openapi({
 
 // A key's reply: sent through the REST API or through MCP. `draft`: an operator sent a key's draft,
 // and is its author. Null for anyone else's. `email`: the visitor replied to an email, from their
-// own address or, with `fromOtherAddress`, another one, such as a forwarding one.
+// own address or, with `fromAddress`, another one, such as a forwarding one.
 const MessageVia = z.discriminatedUnion("via", [
   z.object({ via: z.enum(CHANNELS).exclude(["email"]).nullable() }),
-  z.object({ via: z.literal("email"), fromOtherAddress: z.boolean() }),
+  z.object({
+    via: z.literal("email"),
+    fromAddress: z.string().nullable().openapi({
+      description: "The address the email came from, or null when it was the visitor's email.",
+    }),
+  }),
 ]);
 
 export const InboxMessage = z

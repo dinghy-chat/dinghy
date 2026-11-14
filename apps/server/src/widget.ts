@@ -574,7 +574,7 @@ function messageView(
     editedAt: _edited,
     readAt: _read,
     via: _via,
-    fromOtherAddress: _fromOtherAddress,
+    fromAddress: _fromAddress,
     handoff: _handoff,
     mentions: _mentions,
     ...message
