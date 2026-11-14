@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-11-14
+
 ### Fixed
 
 - 0.31.0 has no image, because a test of the two-step removal request raced on the release's runner. This release holds the same changes as 0.31.0.
@@ -563,7 +565,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.31.1...HEAD
+[0.31.1]: https://github.com/dinghy-chat/dinghy/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/dinghy-chat/dinghy/compare/v0.30.1...v0.31.0
 [0.30.1]: https://github.com/dinghy-chat/dinghy/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/dinghy-chat/dinghy/compare/v0.29.0...v0.30.0
