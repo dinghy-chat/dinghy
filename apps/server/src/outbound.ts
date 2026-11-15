@@ -1,5 +1,16 @@
 import type { z } from "@hono/zod-openapi";
-import { and, asc, desc, eq, inArray, isNull, lte, type SQL, sql } from "drizzle-orm";
+import {
+  type AnyColumn,
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lte,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { chosenButton } from "../../../packages/widget/src/shared.ts";
 import type { Actor } from "./api-keys.ts";
@@ -187,7 +198,7 @@ async function sendsAs(
   actor: Actor,
   key: KeyState | null,
   sender: SendInput["sender"],
-): Promise<{ senderKind: Row["senderKind"]; senderOperatorId: string | null } | SendRefusal> {
+): Promise<NewSend["as"] | SendRefusal> {
   if (sender === "team") return { senderKind: "team", senderOperatorId: null };
   if (sender === undefined) {
     return actor.kind === "key"
@@ -323,17 +334,54 @@ async function refusal(
   return null;
 }
 
+/** A send that passed every check, with the visitor and the sender it resolved to. */
+interface NewSend {
+  workspaceId: string;
+  visitorId: string;
+  actor: Actor;
+  via: "mcp" | null;
+  as: { senderKind: Row["senderKind"]; senderOperatorId: string | null };
+  input: SendInput;
+  times: { sendAt: Date; expiresAt: Date | null };
+}
+
 /** Inserts a new scheduled message, and its `dedupeKey`. */
 async function insertOutbound(
   tx: Transaction,
-  values: typeof outboundMessage.$inferInsert,
+  { workspaceId, visitorId, actor, via, as, input, times }: NewSend,
 ): Promise<Row> {
-  const [row] = await tx.insert(outboundMessage).values(values).returning();
+  const [row] = await tx
+    .insert(outboundMessage)
+    .values({
+      workspaceId,
+      visitorId,
+      ...(actor.kind === "key"
+        ? { authorApiKeyId: actor.apiKeyId }
+        : { authorOperatorId: actor.operatorId }),
+      via,
+      ...as,
+      body: input.body,
+      buttons: input.buttons ?? [],
+      metadata: input.metadata ?? {},
+      startConversation: input.startConversation,
+      show: input.show,
+      ifConversationOpen: input.ifConversationOpen,
+      assignOnReply: input.assignOnReply ?? as.senderKind === "member",
+      sendEmail: input.sendEmail,
+      dedupeKey: input.dedupeKey ?? null,
+      clientId: input.clientId,
+      status: "scheduled",
+      sendAt: times.sendAt,
+      dueAt: times.sendAt,
+      unless: input.unless ?? null,
+      expiresAt: times.expiresAt,
+    })
+    .returning();
   if (row === undefined) throw new Error("The outbound insert returned no row");
   if (row.dedupeKey !== null) {
     await tx.insert(outboundDedupe).values({
-      workspaceId: row.workspaceId,
-      visitorId: row.visitorId,
+      workspaceId,
+      visitorId,
       dedupeKey: row.dedupeKey,
       outboundMessageId: row.id,
     });
@@ -424,30 +472,8 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
         const scheduled = times.sendAt.getTime() > Date.now();
         const refused = await refusal(tx, workspaceId, visitorId, { actor, botsPaused, scheduled });
         if (refused !== null) return refused;
-        const row = await insertOutbound(tx, {
-          workspaceId,
-          visitorId,
-          ...(actor.kind === "key"
-            ? { authorApiKeyId: actor.apiKeyId }
-            : { authorOperatorId: actor.operatorId }),
-          via,
-          ...as,
-          body: input.body,
-          buttons: input.buttons ?? [],
-          metadata: input.metadata ?? {},
-          startConversation: input.startConversation,
-          show: input.show,
-          ifConversationOpen: input.ifConversationOpen,
-          assignOnReply: input.assignOnReply ?? as.senderKind === "member",
-          sendEmail: input.sendEmail,
-          dedupeKey: input.dedupeKey ?? null,
-          clientId: input.clientId,
-          status: "scheduled",
-          sendAt: times.sendAt,
-          dueAt: times.sendAt,
-          unless: input.unless ?? null,
-          expiresAt: times.expiresAt,
-        });
+        const send = { workspaceId, visitorId, actor, via, as, input, times };
+        const row = await insertOutbound(tx, send);
         if (!scheduled) await advance(tx, workspaceId, row, botsPaused);
         return { created: true, id: row.id, visitorId };
       });
@@ -599,10 +625,39 @@ export type Outbound = ReturnType<typeof createOutbound>;
 // The worker ---------------------------------------------------------------------------------------
 
 /**
- * Moves on the messages whose time came: a send time, or a check again of one that waits. The
- * worker's role finds them across workspaces, and the app's role writes them, as they write
- * messages. Each row is claimed with SKIP LOCKED, so several workers share the work. True when it
- * did some.
+ * Claims each message whose time came, one transaction each, and answers what `act` did with it,
+ * or null for one another worker holds. The worker's role finds them across workspaces, and the
+ * app's role writes them, as they write messages. Each row is read again under the workspace lock
+ * and claimed with SKIP LOCKED, so several workers share the work.
+ */
+async function* claimDue<T>(
+  { finder, writer }: { finder: Database; writer: Database },
+  { isDue, time, limit }: { isDue: SQL | undefined; time: AnyColumn; limit: number },
+  act: (tx: Transaction, workspaceId: string, row: Row, botsPaused: boolean) => Promise<T>,
+) {
+  const due = await finder
+    .select({ workspaceId: outboundMessage.workspaceId, id: outboundMessage.id })
+    .from(outboundMessage)
+    .where(isDue)
+    .orderBy(asc(time))
+    .limit(limit);
+  for (const { workspaceId, id } of due) {
+    const done = await withWorkspace(writer, workspaceId, async (tx) => {
+      const { botsPaused } = await lockWorkspace(tx, workspaceId);
+      const [row] = await tx
+        .select()
+        .from(outboundMessage)
+        .where(and(ofRow(workspaceId, id), isDue))
+        .for("update", { skipLocked: true });
+      return row === undefined ? null : act(tx, workspaceId, row, botsPaused);
+    });
+    yield { workspaceId, done };
+  }
+}
+
+/**
+ * Moves on the messages whose time came: a send time, or a check again of one that waits. True when
+ * it found some.
  */
 export async function runDueOutbound(
   finder: Database,
@@ -610,52 +665,37 @@ export async function runDueOutbound(
   live: Signals,
   limit: number,
 ): Promise<boolean> {
-  const due = await finder
-    .select({ workspaceId: outboundMessage.workspaceId, id: outboundMessage.id })
-    .from(outboundMessage)
-    .where(lte(outboundMessage.dueAt, sql`now()`))
-    .orderBy(asc(outboundMessage.dueAt))
-    .limit(limit);
-  for (const { workspaceId, id } of due) {
-    const moved = await withWorkspace(writer, workspaceId, async (tx) => {
-      const { botsPaused } = await lockWorkspace(tx, workspaceId);
-      const [row] = await tx
-        .select()
-        .from(outboundMessage)
-        .where(and(ofRow(workspaceId, id), lte(outboundMessage.dueAt, sql`now()`)))
-        .for("update", { skipLocked: true });
-      return row === undefined ? null : advance(tx, workspaceId, row, botsPaused);
-    });
-    if (moved !== null) tellOutbound(live, workspaceId, moved.visitorId);
+  const isDue = lte(outboundMessage.dueAt, sql`now()`);
+  let found = false;
+  for await (const { workspaceId, done } of claimDue(
+    { finder, writer },
+    { isDue, time: outboundMessage.dueAt, limit },
+    advance,
+  )) {
+    found = true;
+    if (done !== null) tellOutbound(live, workspaceId, done.visitorId);
   }
-  return due.length > 0;
+  return found;
 }
 
-/** Ends the messages whose time ran out before the visitor read them. True when it ended some. */
+/** Ends the messages whose time ran out before the visitor read them. True when it found some. */
 export async function expireOutbound(
   finder: Database,
   writer: Database,
   live: Signals,
   limit: number,
 ): Promise<boolean> {
-  const due = await finder
-    .select({ workspaceId: outboundMessage.workspaceId, id: outboundMessage.id })
-    .from(outboundMessage)
-    .where(and(lte(outboundMessage.expiresAt, sql`now()`), endable))
-    .limit(limit);
-  for (const { workspaceId, id } of due) {
-    await withWorkspace(writer, workspaceId, async (tx) => {
-      await lockWorkspace(tx, workspaceId);
-      const [row] = await tx
-        .select()
-        .from(outboundMessage)
-        .where(and(ofRow(workspaceId, id), endable))
-        .for("update", { skipLocked: true });
-      if (row !== undefined) await end(tx, workspaceId, row, { status: "expired" });
-    });
+  const isDue = and(lte(outboundMessage.expiresAt, sql`now()`), endable);
+  let found = false;
+  for await (const { workspaceId } of claimDue(
+    { finder, writer },
+    { isDue, time: outboundMessage.expiresAt, limit },
+    (tx, workspaceId, row) => end(tx, workspaceId, row, { status: "expired" }),
+  )) {
+    found = true;
     live.wake(workspaceId, OPERATORS);
   }
-  return due.length > 0;
+  return found;
 }
 
 /**

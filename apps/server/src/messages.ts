@@ -187,7 +187,7 @@ export type MessageSource =
  * A message that an outbound message became: its ID, whether a reply email may carry it, who the
  * visitor sees, a member or the workspace, when not its author, and its buttons, when it has any.
  */
-export interface OutboundMark {
+interface OutboundMark {
   id: string;
   sendEmail: boolean;
   sender: { operatorId: string } | "team" | null;

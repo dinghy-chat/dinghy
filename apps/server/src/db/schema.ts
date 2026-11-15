@@ -556,7 +556,7 @@ export const attachment = pgTable(
 );
 
 /** What happened to an outbound message, as the change log and the webhooks name it. */
-export const OUTBOUND_EVENT_KINDS = [
+const OUTBOUND_EVENT_KINDS = [
   "outbound_message.sent",
   "outbound_message.delivered",
   "outbound_message.read",
@@ -1768,13 +1768,13 @@ export type OutboundStatusReason = (typeof OUTBOUND_STATUS_REASONS)[number];
 
 /** When an outbound message goes in a conversation: when the visitor answers, or at once. */
 export const START_CONVERSATION = ["on_reply", "now"] as const;
-export type StartConversation = (typeof START_CONVERSATION)[number];
+type StartConversation = (typeof START_CONVERSATION)[number];
 /** How the widget shows it: the launcher's badge, a card above the launcher, or the open chat. */
 export const OUTBOUND_SHOWS = ["badge", "preview", "chat"] as const;
 export type OutboundShow = (typeof OUTBOUND_SHOWS)[number];
 /** What happens while the visitor has an open conversation: wait, go in it, or cancel. */
 export const IF_CONVERSATION_OPEN = ["hold", "join", "skip"] as const;
-export type IfConversationOpen = (typeof IF_CONVERSATION_OPEN)[number];
+type IfConversationOpen = (typeof IF_CONVERSATION_OPEN)[number];
 /** Who the visitor sees: a member, the workspace, or the message's author. */
 export const SENDER_KINDS = ["member", "team", "author"] as const;
 

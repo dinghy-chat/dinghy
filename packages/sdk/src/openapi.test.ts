@@ -1,11 +1,12 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { generateTypes, TYPES_FILE } from "../scripts/types.ts";
+
+const SCRIPT = fileURLToPath(new URL("../scripts/types.ts", import.meta.url));
 
 // The SDK's types come from the server's OpenAPI file, so a route change must regenerate them.
-test("src/openapi.ts matches apps/server/openapi.json", async () => {
-  const committed = readFileSync(TYPES_FILE, "utf8");
-  expect(committed === (await generateTypes()), "Run node packages/sdk/scripts/types.ts").toBe(
-    true,
-  );
+test("src/openapi.ts matches apps/server/openapi.json", () => {
+  expect(() =>
+    execFileSync(process.execPath, [SCRIPT, "--check"], { stdio: "pipe" }),
+  ).not.toThrow();
 }, 30_000);

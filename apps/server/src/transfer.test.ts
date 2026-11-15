@@ -735,9 +735,6 @@ describe("a round trip onto a fresh install", () => {
         delete data.workspace.businessHours;
         delete data.workspace.widget.language;
         for (const one of data.visitors) delete one.locale;
-        for (const one of data.conversations) delete one.startedBy;
-        delete data.outboundMessages;
-        delete data.outboundDedupe;
       }
       const bytes = data === null ? entry.bytes : Buffer.from(JSON.stringify(data));
       parts.push(...tarEntry(entry.name, bytes));
@@ -993,6 +990,8 @@ describe("a bad file changes nothing", () => {
   test("JSON of the wrong shape", async () => {
     await refuses(await edited((data) => Object.assign(data, { version: 99 })), "format");
     await refuses(await edited((data) => Object.assign(data, { extra: true })), "format");
+    // A file from before outbound messages: the import takes only the current format.
+    await refuses(await edited((data) => delete data.outboundMessages), "format");
     await refuses(
       Buffer.concat([...tarEntry("export.json", Buffer.from("{nope")), tarEnd()]),
       "valid JSON",
