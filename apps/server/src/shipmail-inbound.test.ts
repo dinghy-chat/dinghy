@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -709,5 +709,18 @@ describe("the mailbox sweep", () => {
     await sweep();
     expect(await bodiesOf(chat.conversationId)).toEqual(["Retry me"]);
     expect(shipmail.messages.has(emailId)).toBe(false);
+  });
+
+  test("frees its lock before it ends, so the next sweep can take it at once", async () => {
+    // An idle connection in the pool, which the sweep takes.
+    (await db.$client.connect()).release();
+    const connections = db.$client.totalCount;
+    await sweep();
+    // The connection went back to the pool: the lock was freed on it, not by closing it.
+    expect(db.$client.totalCount).toBe(connections);
+    const locks = await owner.execute<{ count: number }>(sql`
+      SELECT count(*)::int AS count FROM pg_locks
+      WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`);
+    expect(locks.rows[0]?.count).toBe(0);
   });
 });
