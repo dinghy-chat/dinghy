@@ -4,7 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Actor } from "./api-keys.ts";
 import { gateOf, takeOver } from "./bots.ts";
 import { type Condition, ConditionSchema, toSql } from "./conditions.ts";
-import { upsertContact } from "./contacts.ts";
+import { cursorTime, upsertContact } from "./contacts.ts";
 import {
   apiKey,
   type ChosenButton,
@@ -51,7 +51,6 @@ import {
   lockWorkspace,
   nextSeq,
   type StatusActor,
-  type StoredMessage,
   visitorConversation,
   wantsWebhook,
 } from "./messages.ts";
@@ -522,7 +521,8 @@ const senderMark = (row: Row) =>
  * `outbound:<id>`, so a second tab or a retry adds nothing. It reads the row again under the
  * workspace lock and checks that it may still go in and belongs to this visitor, as a stale widget
  * can name a cancelled message. `answer` is the visitor's answer, which needs a recorded read of an
- * `on_reply` message. Null when it does not go in.
+ * `on_reply` message. A conversation it creates sends `conversation.created` with this message.
+ * Null when it does not go in.
  */
 export async function materializeOutbound(
   tx: Transaction,
@@ -530,7 +530,7 @@ export async function materializeOutbound(
   outboundMessageId: string,
   visitorId: string,
   { answer }: { answer: boolean },
-): Promise<StoredMessage | null> {
+): Promise<Awaited<ReturnType<typeof appendMessage>> | null> {
   await lockWorkspace(tx, workspaceId);
   const [row] = await tx
     .select()
@@ -551,6 +551,7 @@ export async function materializeOutbound(
   const appended = await appendMessage(tx, workspaceId, authorOf(row, target.id), {
     clientId: `outbound:${row.id}`,
     body: row.body,
+    conversationCreated: target.started === "created",
     source: {
       via: "outbound",
       outbound: { id: row.id, email: row.email, sender: senderMark(row) },
@@ -563,7 +564,7 @@ export async function materializeOutbound(
     statusReason: null,
     dueAt: null,
   });
-  return appended.message;
+  return appended;
 }
 
 /**
@@ -678,29 +679,24 @@ export async function appendVisitorMessage(
     answering.button === undefined
       ? null
       : await buttonOf(tx, workspaceId, visitorId, answering.button);
-  if (pressed !== null) await readOutbound(tx, workspaceId, visitorId, pressed.row.id);
-  const named = [
-    ...new Set([...answering.outboundIds, ...(pressed === null ? [] : [pressed.row.id])]),
-  ];
-  const read =
-    named.length === 0
-      ? []
-      : await tx
-          .select({ id: outboundMessage.id })
-          .from(outboundMessage)
-          .where(
-            and(
-              eq(outboundMessage.workspaceId, workspaceId),
-              eq(outboundMessage.visitorId, visitorId),
-              inArray(outboundMessage.id, named),
-            ),
-          )
-          .orderBy(asc(outboundMessage.readAt));
+  const named = new Set([...answering.outboundIds, ...(pressed === null ? [] : [pressed.row.id])]);
+  // The widget names only the messages it showed, so each is read now, even when the widget's own
+  // read request failed.
+  const read: Row[] = [];
+  for (const id of named) {
+    const row = await readOutbound(tx, workspaceId, visitorId, id);
+    if (row !== null) read.push(row);
+  }
+  read.sort((a, b) => (a.readAt?.getTime() ?? 0) - (b.readAt?.getTime() ?? 0));
+  let conversationStarted = false;
   for (const one of read) {
-    await materializeOutbound(tx, workspaceId, one.id, visitorId, { answer: true });
+    const put = await materializeOutbound(tx, workspaceId, one.id, visitorId, { answer: true });
+    conversationStarted ||= put?.conversationStarted === true;
   }
   const button =
-    pressed !== null && answersWith(pressed.button) ? chosen(pressed.button) : undefined;
+    pressed !== null && answersWith(pressed.button) && read.some((one) => one.id === pressed.row.id)
+      ? chosen(pressed.button)
+      : undefined;
   const appended = await appendMessage(
     tx,
     workspaceId,
@@ -711,7 +707,7 @@ export async function appendVisitorMessage(
   if (appended.created) {
     await markAnswered(tx, workspaceId, appended.message.conversationId, pressed?.row.id, button);
   }
-  return appended;
+  return { ...appended, conversationStarted: appended.conversationStarted || conversationStarted };
 }
 
 /** The visitor answered in this conversation: its outbound messages that waited are replied. */
@@ -749,7 +745,9 @@ async function markAnswered(
       "outbound_message.replied",
     );
   }
-  const member = answered.findLast((row) => row.assign)?.senderOperatorId ?? null;
+  const member =
+    answered.findLast((row) => row.assign && row.senderOperatorId !== null)?.senderOperatorId ??
+    null;
   if (member === null || !(await isMember(tx, workspaceId, member))) return;
   const [current] = await tx
     .select({ assignee: conversation.assigneeOperatorId })
@@ -887,20 +885,6 @@ export async function conversationsDeleted(
   }
 }
 
-/** A message was deleted: the outbound message it came from loses its text too. */
-export async function messageDeleted(
-  tx: Transaction,
-  workspaceId: string,
-  messageId: string,
-): Promise<void> {
-  await tx
-    .update(outboundMessage)
-    .set({ body: null })
-    .where(
-      and(eq(outboundMessage.workspaceId, workspaceId), eq(outboundMessage.messageId, messageId)),
-    );
-}
-
 // Views ------------------------------------------------------------------------------------------
 
 const authorOperator = alias(operator, "author_operator");
@@ -921,6 +905,7 @@ async function withNames(
       authorOperatorName: authorOperator.name,
       authorKeyName: apiKey.name,
       senderName: senderOperator.name,
+      cursorAt: cursorTime(outboundMessage.createdAt),
     })
     .from(outboundMessage)
     .leftJoin(authorOperator, eq(authorOperator.id, outboundMessage.authorOperatorId))
@@ -1087,13 +1072,14 @@ async function retried(tx: Transaction, workspaceId: string, actor: Actor, clien
   return found?.id;
 }
 
+/** The visitor's messages that a cancel or an expiry can still end, for the limit per visitor. */
 async function waitingCount(tx: Transaction, workspaceId: string, visitorId: string) {
   return tx.$count(
     outboundMessage,
     and(
       eq(outboundMessage.workspaceId, workspaceId),
       eq(outboundMessage.visitorId, visitorId),
-      inArray(outboundMessage.status, [...WAITING_STATUSES]),
+      inArray(outboundMessage.status, [...UNREAD_STATUSES]),
       isNull(outboundMessage.conversationId),
     ),
   );
@@ -1148,6 +1134,9 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
         // `once` key take turns.
         await lockVisitors(tx, workspaceId, [visitorId]);
         const { botsPaused } = await lockWorkspace(tx, workspaceId);
+        // Again under the lock, for a retry that raced the first send past the check above.
+        const raced = await retried(tx, workspaceId, actor, input.clientId);
+        if (raced !== undefined) return { created: false, id: raced, visitorId: null };
         if (input.once !== undefined) {
           const [taken] = await tx
             .select({ id: outboundOnce.outboundMessageId })
@@ -1261,12 +1250,14 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
           filter.limit + 1,
         ),
       );
-      const page = rows.slice(0, filter.limit).map(view);
+      const page = rows.slice(0, filter.limit);
       const last = page.at(-1);
       return {
-        outboundMessages: page,
+        outboundMessages: page.map(view),
         next:
-          rows.length > filter.limit && last !== undefined ? `${last.createdAt},${last.id}` : null,
+          rows.length > filter.limit && last !== undefined
+            ? `${last.cursorAt},${last.row.id}`
+            : null,
       };
     },
 

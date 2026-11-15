@@ -1385,10 +1385,11 @@ describe("email", () => {
         status: "pending",
       })
       .returning({ id: outboundMessage.id });
-    const outbound = await withWorkspace(app, space.id, (tx) =>
+    const put = await withWorkspace(app, space.id, (tx) =>
       materializeOutbound(tx, space.id, row?.id ?? "", from, { answer: false }),
     );
-    if (outbound === null) throw new Error("The outbound message did not go in");
+    if (put === null) throw new Error("The outbound message did not go in");
+    const outbound = put.message;
     await operatorWrites(anna, conversationId, "Answer 2");
     await fanOutAll();
     runWorker({ mail: true });

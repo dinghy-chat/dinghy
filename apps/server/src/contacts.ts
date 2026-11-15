@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { type AnyColumn, and, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { type Condition, ConditionSchema, toSql } from "./conditions.ts";
@@ -332,6 +332,13 @@ const contactView = ({ blockedAt, lastSeenAt, createdAt, ...row }: ContactRow) =
 // An ISO time in UTC to the microsecond, as the cursor carries it.
 const CURSOR_TIME_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
+/**
+ * A time as a page cursor carries it. As text, because Postgres keeps microseconds and a JavaScript
+ * date only milliseconds, so a cursor from a date would skip the rows that share its millisecond.
+ */
+export const cursorTime = (time: SQL | AnyColumn) =>
+  sql<string>`to_char(${time} at time zone 'UTC', ${CURSOR_TIME_FORMAT})`;
+
 /** The sort key, which an index of each sort holds in this exact form. */
 const sortKey = (sort: Sort) =>
   sort === "lastSeen"
@@ -363,9 +370,7 @@ export async function listContacts(
   const rows = await tx
     .select({
       ...contactColumns,
-      // As text, because Postgres keeps microseconds and a JavaScript date only milliseconds, so
-      // a cursor from a date would skip the rows that share its millisecond.
-      sortedAt: sql<string>`to_char(${key} at time zone 'UTC', ${CURSOR_TIME_FORMAT})`,
+      sortedAt: cursorTime(key),
     })
     .from(visitor)
     .where(

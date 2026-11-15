@@ -225,6 +225,52 @@ describe("a send", () => {
     );
   });
 
+  test("read messages that the visitor did not answer do not count toward the limit", async () => {
+    const user = userId();
+    for (let index = 0; index < 5; index++) {
+      await send({ visitor: { userId: user }, body: `Read ${index}` });
+    }
+    const token = await hostToken(space, user);
+    for (const one of await waiting(token)) {
+      await widget(token, "POST", `/outbound-messages/${one.id}/read`);
+    }
+    expect((await send({ visitor: { userId: user }, body: "One more" })).status).toBe(201);
+  });
+
+  test("a retry that races the first send answers its result", async () => {
+    const body = { clientId: randomUUID(), visitor: { userId: userId() }, body: "Raced" };
+    // All three pass the first lookup while the lock is held, then take turns.
+    const answers = await whileLocked(
+      async () => {},
+      () =>
+        Promise.all(
+          [1, 2, 3].map(() => withKey(app, bot.token, "POST", inSpace("/outbound-messages"), body)),
+        ),
+    );
+    expect(answers.map((one) => one.status).sort()).toEqual([200, 200, 201]);
+  });
+
+  test("the list's next page keeps rows that share a millisecond", async () => {
+    const user = userId();
+    const older = await send({ visitor: { userId: user }, body: "Older" });
+    const newer = await send({ visitor: { userId: user }, body: "Newer" });
+    const at = (id: string, time: string) =>
+      owner.execute(sql`update outbound_message set created_at = ${time} where id = ${id}`);
+    await at(older.outboundMessage.id, "2026-01-01T00:00:00.000100Z");
+    await at(newer.outboundMessage.id, "2026-01-01T00:00:00.000200Z");
+    const list = async (query: string) =>
+      (await (
+        await withKey(app, bot.token, "GET", inSpace(`/outbound-messages?${query}`))
+      ).json()) as { outboundMessages: View[]; next: string | null };
+    const visitorId = older.outboundMessage.visitorId;
+    const first = await list(`visitorId=${visitorId}&limit=1`);
+    expect(first.outboundMessages.map((one) => one.id)).toEqual([newer.outboundMessage.id]);
+    const second = await list(
+      `visitorId=${visitorId}&limit=1&cursor=${encodeURIComponent(first.next ?? "")}`,
+    );
+    expect(second.outboundMessages.map((one) => one.id)).toEqual([older.outboundMessage.id]);
+  });
+
   test("a sixth waiting message for one visitor is refused", async () => {
     const user = userId();
     for (let index = 0; index < 5; index++) {
@@ -281,12 +327,38 @@ describe("the widget", () => {
     ]);
   });
 
-  test("an answer that never read the message leaves it out", async () => {
+  test("an answer that names a message whose read failed still puts it first", async () => {
     const user = userId();
-    const sent = await send({ visitor: { userId: user }, body: "Unread" });
+    const sent = await send({ visitor: { userId: user }, body: "Shown, read lost" });
     const token = await hostToken(space, user);
-    await answer(token, "Something else", [sent.outboundMessage.id]);
-    expect((await rowOf(sent.outboundMessage.id))?.conversationId).toBeNull();
+    await waiting(token);
+    const replied = await answer(token, "Yes", [sent.outboundMessage.id]);
+    expect(replied.json.conversationStarted).toBe(true);
+    const row = await rowOf(sent.outboundMessage.id);
+    expect(row?.status).toBe("replied");
+    const lines = await owner
+      .select({ body: message.body })
+      .from(message)
+      .where(eq(message.conversationId, row?.conversationId ?? ""))
+      .orderBy(message.seq);
+    expect(lines).toEqual([{ body: "Shown, read lost" }, { body: "Yes" }]);
+  });
+
+  test("a value button of an ended message answers with what the visitor typed", async () => {
+    const user = userId();
+    const sent = await send({
+      visitor: { userId: user },
+      body: "Want a call?",
+      buttons: [{ label: "Yes, please", value: "yes" }],
+    });
+    const { id } = sent.outboundMessage;
+    const token = await hostToken(space, user);
+    await waiting(token);
+    await withKey(app, bot.token, "POST", inSpace(`/outbound-messages/${id}/cancel`));
+    const replied = await answer(token, "Typed instead", [], {
+      button: { outboundMessageId: id, index: 0 },
+    });
+    expect(replied.json).toMatchObject({ body: "Typed instead", button: null });
   });
 
   test("a stale tab cannot put a cancelled message in the conversation", async () => {
@@ -467,6 +539,56 @@ describe("a delete", () => {
     );
     expect(deleted.status).toBe(200);
     expect((await rowOf(sent.outboundMessage.id))?.body).toBeNull();
+  });
+});
+
+describe("an answer", () => {
+  test("assigns the member who sent one of its messages, not a team message after it", async () => {
+    const user = userId();
+    const byMember = await send({
+      visitor: { userId: user },
+      sender: { operatorId: boss.id },
+      body: "From Julien",
+    });
+    const byTeam = await send({
+      visitor: { userId: user },
+      sender: "team",
+      assign: true,
+      body: "From the team",
+    });
+    const token = await hostToken(space, user);
+    await waiting(token);
+    await answer(token, "Hi both", [byMember.outboundMessage.id, byTeam.outboundMessage.id]);
+    const [started] = await conversationsOf(byMember.outboundMessage.visitorId);
+    expect(started?.assigneeOperatorId).toBe(boss.id);
+  });
+
+  test("to a message that started the conversation sends conversation.created once", async () => {
+    const user = userId();
+    const sent = await send({ visitor: { userId: user }, body: "First words" });
+    const now = await send({
+      visitor: { userId: userId() },
+      body: "Started now",
+      startConversation: "now",
+    });
+    const token = await hostToken(space, user);
+    await waiting(token);
+    await answer(token, "Hello", [sent.outboundMessage.id]);
+    for (const id of [sent.outboundMessage.id, now.outboundMessage.id]) {
+      const conversationId = (await rowOf(id))?.conversationId ?? "";
+      const created = await owner
+        .select({ id: event.seq })
+        .from(event)
+        .where(
+          and(
+            eq(event.workspaceId, space.id),
+            eq(event.kind, "message.created"),
+            sql`${event.payload}->>'conversationId' = ${conversationId}`,
+            sql`(${event.payload}->>'conversationCreated')::boolean`,
+          ),
+        );
+      expect(created).toHaveLength(1);
+    }
   });
 });
 

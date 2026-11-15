@@ -24,7 +24,6 @@ import {
   stored,
   wantsWebhook,
 } from "./messages.ts";
-import { messageDeleted } from "./outbound.ts";
 import { RETENTION_MS } from "./time.ts";
 
 interface EmailCoverage {
@@ -347,7 +346,13 @@ export async function deleteMessage(
       .insert(storageDeletion)
       .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
   }
-  await messageDeleted(tx, workspaceId, messageId);
+  // The outbound message it came from loses its text too.
+  await tx
+    .update(outboundMessage)
+    .set({ body: null })
+    .where(
+      and(eq(outboundMessage.workspaceId, workspaceId), eq(outboundMessage.messageId, messageId)),
+    );
   await recordMessageChange(tx, workspaceId, seq, "message.deleted", line, []);
   await resendQuotes(tx, workspaceId, messageId);
   return deleted;

@@ -613,6 +613,8 @@ export async function appendMessage(
     handoffTo?: string | null | undefined;
     /** A visitor's answer with an outbound message's button. */
     button?: ChosenButton | undefined;
+    /** The caller created the conversation for this message, as an outbound message does. */
+    conversationCreated?: boolean;
   } & (
     | { attachment?: NewAttachment; note?: false }
     | { attachment?: undefined; note: true; mentions?: string[] | undefined }
@@ -685,7 +687,7 @@ export async function appendMessage(
       ? await visitorConversation(tx, workspaceId, author, input.page ?? null)
       : { id: author.conversationId, started: null };
   const conversationId = target.id;
-  const created = target.started === "created";
+  const created = target.started === "created" || input.conversationCreated === true;
   // The reopen's status line took a later position than this message's, and must come first.
   const messageSeq = target.started === "reopened" ? await nextSeq(tx, workspaceId) : seq;
   if (input.replyToMessageId !== undefined) {
