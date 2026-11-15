@@ -4,6 +4,25 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Upgrading
+
+- A visitor's `externalId` is now `userId`, in every route, field, webhook and MCP tool, and in the export.
+
+### Added
+
+- Outbound messages: your server, an AI agent or a member can send a message to one visitor before any conversation, with `POST /outbound-messages`, the MCP tool `send_outbound_message` or the **Message** button on a contact and in Visitors. It waits on the contact and goes in a conversation only when the visitor answers, or at once with `startConversation: "now"`. It takes buttons, a sender (a member, the team or the key), `once`, `delay` or `sendAt`, `unless`, `expiresAt` and `email`. Its status and the reason it waits are on the contact page, in the API and in the new `outbound_message.*` webhooks.
+- `PUT /contacts/by-user/{userId}` creates or updates a contact by your own user ID, and the MCP tool `upsert_contact` does the same. Attributes merge key by key, and the later write wins, from this route or a host token.
+- Contacts lists the people your server created or sent a message to when **Has chatted** is off, and takes a filter on their fields.
+- An API key can get the permission **May send as a member**, in Settings > API & webhooks.
+- The widget shows outbound messages as a badge, a card above the launcher or the open chat, and has `Dinghy.nudge()`, `Dinghy.state.visitorId`, `Dinghy.state.nudging` and the events `visitor`, `nudge`, `outbound:read` and `outbound:dismissed`.
+- `@dinghy-chat/sdk`, a typed client for your server: the whole operator API, outbound messages, contacts, the event stream, host tokens and webhook checks.
+
+### Changed
+
+- A host token's attributes merge into the contact's key by key, in place of replacing them all.
+- Analytics count the conversations the team started, and their reply time starts at the visitor's first message.
+- The public promise changes: Dinghy stores a visitor who never chatted only when your server creates them or sends them a message.
+
 ## [0.34.0] - 2026-11-15
 
 ### Changed
