@@ -61,6 +61,8 @@ let first: { key: string; at: number } | null = null;
 function onKey(event: KeyboardEvent) {
   if (!isOn || event.defaultPrevented || !isShortcut(event)) return;
   const { key } = event;
+  // Caps Lock types a capital without Shift, and a capital key such as E promises Shift.
+  if (/^[A-Z]$/.test(key) && !event.shiftKey) return;
   const pair = first !== null && Date.now() - first.at < SEQUENCE_MS ? `${first.key} ${key}` : null;
   first = null;
   const maps = [...registered].map((keys) => keys.current);

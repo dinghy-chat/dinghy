@@ -443,7 +443,10 @@ export function Thread({
                   ? { value: "note" }
                   : {
                       value: mode,
-                      onChange: write,
+                      onChange: (next) => {
+                        setEditingDraft(null);
+                        setDraft({ ...draft, isNote: next === "note" });
+                      },
                     }
               }
               onEscape={quoting === null ? undefined : () => setQuoting(null)}

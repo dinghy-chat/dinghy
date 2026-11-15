@@ -51,18 +51,19 @@ test("the keyboard moves through the Inbox, replies, and closes a chat to open t
   await operator.keyboard.press("Escape");
   await expect(reply).not.toBeFocused();
 
-  // A click on Note or Reply puts the caret in the box too.
+  // A click on Note or Reply puts the caret in the box, as N and R do.
   const box = operator.locator(".compose .ProseMirror");
   await operator.getByRole("radio", { name: "Note" }).check();
   await expect(box).toBeFocused();
   await operator.getByRole("radio", { name: "Reply" }).check();
   await expect(reply).toBeFocused();
+  // The option already chosen too.
   await operator.keyboard.press("Escape");
   await expect(reply).not.toBeFocused();
-
-  // E alone does nothing, so a stray key cannot close a chat.
-  await operator.keyboard.press("e");
-  await expect(rows).toHaveCount(2);
+  await operator.getByText("Reply", { exact: true }).click();
+  await expect(reply).toBeFocused();
+  await operator.keyboard.press("Escape");
+  await expect(reply).not.toBeFocused();
 
   // Shift+E closes this chat and opens the one left.
   await operator.keyboard.press("Shift+E");

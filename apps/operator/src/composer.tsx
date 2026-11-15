@@ -363,6 +363,7 @@ export function Composer({
   };
 
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: arrows and Space on a radio fire this click too.
     <form
       className={[
         "compose",
@@ -373,6 +374,13 @@ export function Composer({
       ]
         .filter(Boolean)
         .join(" ")}
+      // A click on Reply or Note puts the caret in the box, even on the one already chosen, which
+      // fires no change.
+      onClick={(event) => {
+        if (event.target instanceof HTMLInputElement && event.target.type === "radio") {
+          focusComposer();
+        }
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         send();
