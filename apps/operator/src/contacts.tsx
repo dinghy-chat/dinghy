@@ -456,6 +456,12 @@ function ConversationCards({
 
 type ContactTab = "conversations" | "outbound" | "pages";
 
+const TAB_LABEL: Record<ContactTab, TextId> = {
+  conversations: "contactConversations",
+  outbound: "contactOutbound",
+  pages: "pagesVisited",
+};
+
 /** The conversation to open from the page: the newest open one, or else the newest. */
 const conversationToOpen = (conversations: ContactConversation[]) =>
   conversations.find((one) => one.status === "open") ?? conversations[0];
@@ -590,16 +596,7 @@ function ContactView({
       <ErrorNote text={failure} />
       <ContactTiles contact={contact} />
       <div className="contact-columns">
-        <section
-          className="contact-main"
-          aria-label={t(
-            tab === "pages"
-              ? "pagesVisited"
-              : tab === "outbound"
-                ? "contactOutbound"
-                : "contactConversations",
-          )}
-        >
+        <section className="contact-main" aria-label={t(TAB_LABEL[tab])}>
           <Choices<ContactTab>
             label={t("contactViewTabs")}
             variant="tabs"
@@ -607,15 +604,15 @@ function ContactView({
             options={[
               {
                 value: "conversations",
-                label: "contactConversations",
+                label: TAB_LABEL.conversations,
                 count: contact.conversations.length,
               },
               {
                 value: "outbound",
-                label: "contactOutbound",
+                label: TAB_LABEL.outbound,
                 count: outbound.data?.outboundMessages.length ?? 0,
               },
-              { value: "pages", label: "pagesVisited", count: contact.pages.length },
+              { value: "pages", label: TAB_LABEL.pages, count: contact.pages.length },
             ]}
             onChange={setTab}
           />
