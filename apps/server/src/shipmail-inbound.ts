@@ -19,7 +19,7 @@ import {
   receivedAnswer,
 } from "./inbound-email.ts";
 import { SIGNATURE_TOLERANCE_MINUTES, SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
-import { DAY_MS, MINUTE_MS } from "./time.ts";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "./time.ts";
 
 /** Shipmail's webhook for the mailbox that gets the replies, and the API key that reads it. */
 export interface ShipmailInbound {
@@ -43,6 +43,11 @@ const FRESH_MS = 10 * MINUTE_MS;
  */
 const PAGE_SIZE = 10;
 const PAGE_MAX_BYTES = 64 * 1024 * 1024;
+/**
+ * How often the sweep reads the mailbox when no held workspace opened. The webhook takes nearly every
+ * email, and Shipmail retries a failed delivery, so the sweep is only the last net.
+ */
+const SWEEP_EVERY_MS = HOUR_MS;
 /** The name of the session lock that keeps the sweep to one instance at a time. */
 const SWEEP_LOCK = "shipmail-sweep";
 const EVENT_TOO_LARGE = failure("too_large", `An event can be up to ${EVENT_MAX_BYTES / 1024} KB.`);
@@ -225,6 +230,8 @@ interface SweepOptions {
   domain: string;
   settings: ShipmailInbound;
   logger: Logger;
+  /** How often to read the mailbox when no held workspace opened. Tests set 0. */
+  everyMs?: number;
 }
 
 /**
@@ -233,28 +240,51 @@ interface SweepOptions {
  * one at a time, and deletes one older than REPLY_ADDRESS_DAYS, whose address has expired. It
  * skips a message that is still in its webhook delivery, and one whose workspace is still closed,
  * without downloading it. One sweep runs at a time across instances.
+ *
+ * The worker calls it each minute, and it reads the mailbox at start, once every `everyMs`, and as
+ * soon as a workspace whose emails it left opens again. That check reads only the database, so
+ * Shipmail gets about 24 calls a day.
  */
-export function mailboxSweep({ db, intake, domain, settings, logger }: SweepOptions) {
+export function mailboxSweep({
+  db,
+  intake,
+  domain,
+  settings,
+  logger,
+  everyMs = SWEEP_EVERY_MS,
+}: SweepOptions) {
   const inbox = shipmailInbox(settings);
   // A visitor can put the reply address in Cc, as a mail app's "Reply all" can. One only in Bcc or
   // Delivered-To names no workspace here, so it is downloaded on each sweep while its workspace is
-  // closed. That is rare, and the take keeps it, so nothing is lost.
+  // closed, and once that opens it waits for the next hourly sweep. That is rare, and the take
+  // keeps it, so nothing is lost.
   const workspaceOf = ({ to, cc }: InboxPage["data"][number]) =>
     [...(to ?? []), ...(cc ?? [])]
       .map(({ email }) => parseReplyAddress(email ?? "", domain))
       .find((target) => target !== null)?.workspaceId;
 
-  const sweepOne = async (closed: Set<string>, message: InboxPage["data"][number]) => {
+  // The closed workspaces whose emails the last full sweep left in the mailbox.
+  let held = new Set<string>();
+  let sweptAt = Number.NEGATIVE_INFINITY;
+
+  const sweepOne = async (
+    closed: Set<string>,
+    left: Set<string>,
+    message: InboxPage["data"][number],
+  ) => {
     if (message.received_at.getTime() < Date.now() - REPLY_ADDRESS_DAYS * DAY_MS) {
       await inbox.remove(message.id);
       return;
     }
     const workspaceId = workspaceOf(message);
-    if (workspaceId !== undefined && closed.has(workspaceId)) return;
+    if (workspaceId !== undefined && closed.has(workspaceId)) {
+      left.add(workspaceId);
+      return;
+    }
     await intake.hold(() => take(intake, inbox, message.id));
   };
 
-  const sweepPage = async ({ data }: InboxPage, stopping: AbortSignal) => {
+  const sweepPage = async ({ data }: InboxPage, left: Set<string>, stopping: AbortSignal) => {
     const workspaceIds = data.map(workspaceOf);
     const closed = await closedWorkspaces(
       db,
@@ -263,7 +293,7 @@ export function mailboxSweep({ db, intake, domain, settings, logger }: SweepOpti
     for (const message of data) {
       if (stopping.aborted) return;
       // One message that keeps failing must not hold back the ones after it.
-      await sweepOne(closed, message).catch((err: unknown) =>
+      await sweepOne(closed, left, message).catch((err: unknown) =>
         logger.warn({ err, emailId: message.id }, "a Shipmail email failed and will retry"),
       );
     }
@@ -271,17 +301,35 @@ export function mailboxSweep({ db, intake, domain, settings, logger }: SweepOpti
 
   const sweep = async (stopping: AbortSignal) => {
     const before = new Date(Date.now() - FRESH_MS);
+    const left = new Set<string>();
+    let cursorLost = false;
     let page = await inbox.page(before, null);
     while (page !== null && !stopping.aborted) {
       // The next page first: its cursor names a message of this page, which a delete could remove.
       const cursor = page.pagination.next_cursor;
       const next = cursor === null ? null : await inbox.page(before, cursor);
-      await sweepPage(page, stopping);
+      cursorLost = cursor !== null && next === null;
+      await sweepPage(page, left, stopping);
       page = next;
     }
+    if (stopping.aborted) return;
+    if (cursorLost) {
+      // The pages after the lost cursor went unread, so the list keeps what it had, and the
+      // worker's next call sweeps again instead of an hour later.
+      for (const workspaceId of left) held.add(workspaceId);
+      sweptAt = Number.NEGATIVE_INFINITY;
+      return;
+    }
+    held = left;
   };
 
+  /** Whether a workspace whose emails the last sweep left is open now. A purged one counts too. */
+  const heldOpened = async () =>
+    held.size > 0 && (await closedWorkspaces(db, [...held])).size < held.size;
+
   return async (stopping: AbortSignal): Promise<void> => {
+    if (Date.now() - sweptAt < everyMs && !(await heldOpened())) return;
+    sweptAt = Date.now();
     const client = await db.$client.connect();
     try {
       const lock = await client.query<{ locked: boolean }>(
@@ -300,7 +348,7 @@ const shipmailRoute = createRoute({
   method: "post",
   path: PATH,
   summary: "Receive a visitor's reply by email, from Shipmail",
-  description: `For Shipmail's webhook, and only on a server with \`INBOUND_EMAIL_DOMAIN\`, \`SHIPMAIL_API_KEY\`, \`SHIPMAIL_WEBHOOK_SECRET\` and \`SHIPMAIL_MAILBOX_ID\` set. The body is Shipmail's JSON event, up to ${EVENT_MAX_BYTES / 1024} KB. \`X-Shipmail-Signature\` is the hex HMAC-SHA256 of "v1=<X-Shipmail-Timestamp>\\n<body>" under SHIPMAIL_WEBHOOK_SECRET, and the time must be within ${SIGNATURE_TOLERANCE_MINUTES} minutes. Any event but \`message.received\` in SHIPMAIL_MAILBOX_ID gets a 200 and is ignored. For that one, the server downloads the email, up to ${EMAIL_MAX_MB} MB, and takes it as \`POST /v1/inbound-email\` does. It then deletes the message from the mailbox: once taken, once dropped as an automatic answer, and once refused for good, such as for an unknown address or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox with a 200. It comes in by itself within a minute or two of the workspace opening again, and is deleted from the mailbox after ${REPLY_ADDRESS_DAYS} days if it never does. Shipmail retries any other answer, and a retry adds nothing. The worker also sweeps the mailbox once a minute, so a reply whose webhook delivery failed still comes in, about 10 minutes after it arrived.`,
+  description: `For Shipmail's webhook, and only on a server with \`INBOUND_EMAIL_DOMAIN\`, \`SHIPMAIL_API_KEY\`, \`SHIPMAIL_WEBHOOK_SECRET\` and \`SHIPMAIL_MAILBOX_ID\` set. The body is Shipmail's JSON event, up to ${EVENT_MAX_BYTES / 1024} KB. \`X-Shipmail-Signature\` is the hex HMAC-SHA256 of "v1=<X-Shipmail-Timestamp>\\n<body>" under SHIPMAIL_WEBHOOK_SECRET, and the time must be within ${SIGNATURE_TOLERANCE_MINUTES} minutes. Any event but \`message.received\` in SHIPMAIL_MAILBOX_ID gets a 200 and is ignored. For that one, the server downloads the email, up to ${EMAIL_MAX_MB} MB, and takes it as \`POST /v1/inbound-email\` does. It then deletes the message from the mailbox: once taken, once dropped as an automatic answer, and once refused for good, such as for an unknown address or a blocked visitor. An email for an unpaid or suspended workspace stays in the mailbox with a 200. It comes in by itself after the workspace opens again: within a minute or two once the worker's hourly sweep has seen it, else at the next sweep. It is deleted from the mailbox after ${REPLY_ADDRESS_DAYS} days if it never comes in. Shipmail retries any other answer, and a retry adds nothing. The worker also sweeps the mailbox when it starts and once an hour, so a reply whose webhook delivery failed still comes in, within about 70 minutes of its arrival.`,
   responses: {
     200: {
       description: "Taken, dropped or refused for good, or an event the server ignores",

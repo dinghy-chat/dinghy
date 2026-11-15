@@ -144,6 +144,8 @@ let shipmail: Awaited<ReturnType<typeof fakeShipmail>>;
 let app: App;
 let space: NewWorkspace;
 let sweep: (stopping?: AbortSignal) => Promise<void>;
+/** A new sweep as the worker runs it: called each minute, it reads the mailbox once an hour. */
+let hourlySweep: () => (stopping: AbortSignal) => Promise<void>;
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -176,8 +178,10 @@ beforeAll(async () => {
     live: noLive,
     rateLimit: createRateLimit(valkey, logger),
   });
-  const sweepOnce = mailboxSweep({ db, intake, domain: DOMAIN, settings, logger });
+  // These tests read the mailbox on each call.
+  const sweepOnce = mailboxSweep({ db, intake, domain: DOMAIN, settings, logger, everyMs: 0 });
   sweep = (stopping = new AbortController().signal) => sweepOnce(stopping);
+  hourlySweep = () => mailboxSweep({ db, intake, domain: DOMAIN, settings, logger });
 });
 
 beforeEach(() => {
@@ -552,6 +556,50 @@ describe("the mailbox sweep", () => {
     await sweep();
     expect(await bodiesOf(kept.conversationId)).toEqual(["Are you back?"]);
     expect(shipmail.messages.has(kept.emailId)).toBe(false);
+  });
+
+  test("reads the mailbox at start and once an hour, and at once when a held workspace opens", async () => {
+    const kept = await keptEmail("Paid now");
+    const running = new AbortController().signal;
+    const tick = hourlySweep();
+    await tick(running);
+    const atStart = listCalls();
+    expect(atStart).toBeGreaterThan(0);
+    // Within the hour, a workspace still closed costs no call to Shipmail.
+    await tick(running);
+    expect(listCalls()).toBe(atStart);
+    await setSuspended(kept.workspaceId, null);
+    await tick(running);
+    const afterOpen = listCalls();
+    expect(afterOpen).toBeGreaterThan(atStart);
+    expect(await bodiesOf(kept.conversationId)).toEqual(["Paid now"]);
+    await tick(running);
+    expect(listCalls()).toBe(afterOpen);
+  });
+
+  test("sweeps again at the next call when a webhook's delete loses the listing's cursor", async () => {
+    const chat = await newChat();
+    // The oldest messages in the mailbox, so they fill its first three pages of two.
+    const emailIds = ["0", "1", "2", "3", "4", "5"].map((text, index) => {
+      const emailId = arrives(chat.address, text);
+      arrivedAgo(emailId, 80 * DAY_MS - index * MINUTE_MS);
+      return emailId;
+    });
+    let release = () => {};
+    shipmail.downloads = new Promise((resolve) => {
+      release = resolve;
+    });
+    const running = new AbortController().signal;
+    const tick = hourlySweep();
+    const first = tick(running);
+    // The sweep has read pages 1 and 2. A delete takes the message whose ID is page 3's cursor.
+    await vi.waitFor(() => expect(downloadsOf(emailIds[0] ?? "")).toBe(1));
+    shipmail.messages.delete(emailIds[3] ?? "");
+    release();
+    await first;
+    expect(await bodiesOf(chat.conversationId)).toEqual(["0", "1", "2"]);
+    await tick(running);
+    expect(await bodiesOf(chat.conversationId)).toEqual(["0", "1", "2", "4", "5"]);
   });
 
   test("finds a kept email's workspace by a reply address in Cc too", async () => {
