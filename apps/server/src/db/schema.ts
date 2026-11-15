@@ -1790,9 +1790,9 @@ export interface ChosenButton {
 
 /** What an outbound message keeps beside its text. */
 export interface OutboundMetadata {
-  buttons?: OutboundButton[];
+  buttons?: OutboundButton[] | undefined;
   /** The button the visitor chose last. */
-  chosen?: ChosenButton;
+  chosen?: ChosenButton | undefined;
 }
 
 /**

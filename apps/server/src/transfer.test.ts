@@ -28,6 +28,8 @@ import {
   label,
   message,
   operator,
+  outboundMessage,
+  outboundOnce,
   pageView,
   savedReply,
   visitor,
@@ -205,6 +207,19 @@ async function makeSource(): Promise<Source> {
     token: string;
   };
   await setReplyMode(owner, key.id, "send");
+  // An outbound message that waits, with its `once` key.
+  await app.request(`${inSpace}/outbound-messages`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      clientId: "welcome",
+      visitor: { id: visitorId },
+      body: "Need a hand with the setup?",
+      buttons: [{ label: "Yes", value: "yes" }],
+      delay: "1h",
+      once: "welcome",
+    }),
+  });
   // The owner's reply took the conversation, so it goes back to the bot first.
   await write("POST", `/conversations/${conversationId}/give-back`, {});
   await app.request(`${inSpace}/conversations/${conversationId}/messages`, {
@@ -254,7 +269,7 @@ async function makeSource(): Promise<Source> {
     .where(eq(workspaceMember.operatorId, gone.id));
   await owner
     .update(conversation)
-    .set({ snoozedAt: SNOOZED_AT, snoozedUntil: SNOOZED_UNTIL })
+    .set({ snoozedAt: SNOOZED_AT, snoozedUntil: SNOOZED_UNTIL, startedBy: "team" })
     .where(eq(conversation.id, conversationId));
   await owner.insert(emailStop).values({ workspaceId: space.id, addressHash: "a".repeat(64) });
   await owner
@@ -720,6 +735,9 @@ describe("a round trip onto a fresh install", () => {
         delete data.workspace.businessHours;
         delete data.workspace.widget.language;
         for (const one of data.visitors) delete one.locale;
+        for (const one of data.conversations) delete one.startedBy;
+        delete data.outboundMessages;
+        delete data.outboundOnce;
       }
       const bytes = data === null ? entry.bytes : Buffer.from(JSON.stringify(data));
       parts.push(...tarEntry(entry.name, bytes));
@@ -749,6 +767,30 @@ describe("a round trip onto a fresh install", () => {
       { headers: { authorization: `Bearer ${source.key.token}` } },
     );
     expect(read.status).toBe(401);
+  });
+
+  test("the outbound messages, their once keys and who started the conversation come along", async () => {
+    const pick = async (from: Install) => ({
+      outbound: await from.owner
+        .select()
+        .from(outboundMessage)
+        .where(eq(outboundMessage.workspaceId, source.space.id)),
+      once: await from.owner
+        .select()
+        .from(outboundOnce)
+        .where(eq(outboundOnce.workspaceId, source.space.id)),
+      startedBy: (
+        await from.owner
+          .select({ startedBy: conversation.startedBy })
+          .from(conversation)
+          .where(eq(conversation.id, source.conversationId))
+      )[0]?.startedBy,
+    });
+    const before = await pick(source.install);
+    expect(before.outbound).toHaveLength(1);
+    expect(before.once).toHaveLength(1);
+    expect(before.startedBy).toBe("team");
+    expect(await pick(target)).toEqual(before);
   });
 
   test("what the page sent comes along", async () => {

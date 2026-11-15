@@ -16,15 +16,24 @@ import { newGeneration } from "./db/migrate.ts";
 import {
   apiKey,
   attachment,
+  CONVERSATION_STARTERS,
   conversation,
   conversationLabel,
   emailStop,
+  IF_OPEN,
   LABEL_COLORS,
   label,
   MESSAGE_KINDS,
   message,
+  OUTBOUND_SHOWS,
+  OUTBOUND_STATUS_REASONS,
+  OUTBOUND_STATUSES,
   operator,
+  outboundMessage,
+  outboundOnce,
   pageView,
+  SENDER_KINDS,
+  START_CONVERSATION,
   savedReply,
   visitor,
   widgetLanguage,
@@ -37,9 +46,11 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { allowedFileName, FILE_TYPE, FILENAME_INPUT_MAX } from "./files.ts";
 import { sha256Hex } from "./identity.ts";
+import { ClientId, OnceKey } from "./inputs.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { workspaceParams } from "./member.ts";
 import { markHistoryRead } from "./messages.ts";
+import { ButtonSchema, ChosenButtonSchema } from "./outbound.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
 import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./uploads.ts";
@@ -154,6 +165,8 @@ const ExportFile = z.strictObject({
       // A file from before bot handoffs has neither.
       humanSince: nullableDate.default(null),
       handoffByApiKeyId: id.nullable().default(null),
+      // A file from before outbound messages has none.
+      startedBy: z.enum(CONVERSATION_STARTERS).default("visitor"),
       createdAt: date,
       updatedAt: date,
     }),
@@ -221,6 +234,49 @@ const ExportFile = z.strictObject({
     .default([]),
   conversationLabels: z
     .array(z.strictObject({ conversationId: id, labelId: id, createdAt: date }))
+    .default([]),
+  // A file from before outbound messages has neither.
+  outboundMessages: z
+    .array(
+      z.strictObject({
+        id,
+        visitorId: id,
+        authorOperatorId: id.nullable(),
+        authorApiKeyId: id.nullable(),
+        via: z.literal("mcp").nullable(),
+        senderKind: z.enum(SENDER_KINDS),
+        senderOperatorId: id.nullable(),
+        body: z.string().max(100_000).nullable(),
+        metadata: z.strictObject({
+          buttons: z.array(ButtonSchema).optional(),
+          chosen: ChosenButtonSchema.optional(),
+        }),
+        startConversation: z.enum(START_CONVERSATION),
+        show: z.enum(OUTBOUND_SHOWS),
+        ifOpen: z.enum(IF_OPEN),
+        assign: z.boolean(),
+        email: z.boolean(),
+        onceKey: OnceKey.nullable(),
+        clientId: ClientId,
+        status: z.enum(OUTBOUND_STATUSES),
+        statusReason: z.enum(OUTBOUND_STATUS_REASONS).nullable(),
+        sendAt: date,
+        unless: z.unknown(),
+        expiresAt: nullableDate,
+        dueAt: nullableDate,
+        deliveredAt: nullableDate,
+        readAt: nullableDate,
+        repliedAt: nullableDate,
+        dismissedAt: nullableDate,
+        cancelledAt: nullableDate,
+        conversationId: id.nullable(),
+        messageId: id.nullable(),
+        createdAt: date,
+      }),
+    )
+    .default([]),
+  outboundOnce: z
+    .array(z.strictObject({ visitorId: id, onceKey: OnceKey, outboundMessageId: id }))
     .default([]),
   pageViews: z.array(
     z.strictObject({
@@ -386,6 +442,8 @@ async function readWorkspace(
         | "savedReplies"
         | "labels"
         | "conversationLabels"
+        | "outboundMessages"
+        | "outboundOnce"
         | "pageViews"
       > = {
         version: VERSION,
@@ -445,13 +503,28 @@ async function readWorkspace(
           startedPage: row.startedPage,
           humanSince: isoOrNull(row.humanSince),
           handoffByApiKeyId: row.handoffByApiKeyId,
+          startedBy: row.startedBy,
           createdAt: iso(row.createdAt),
           updatedAt: iso(row.updatedAt),
         })),
       };
+      const outbound = await tx
+        .select()
+        .from(outboundMessage)
+        .where(eq(outboundMessage.workspaceId, workspaceId));
+      const onceKeys = await tx
+        .select()
+        .from(outboundOnce)
+        .where(eq(outboundOnce.workspaceId, workspaceId));
       const tail: Pick<
         ExportData,
-        "attachments" | "emailStops" | "savedReplies" | "labels" | "conversationLabels"
+        | "attachments"
+        | "emailStops"
+        | "savedReplies"
+        | "labels"
+        | "conversationLabels"
+        | "outboundMessages"
+        | "outboundOnce"
       > = {
         attachments: attachments.map((row) => ({
           id: row.id,
@@ -482,6 +555,19 @@ async function readWorkspace(
           labelId: row.labelId,
           createdAt: iso(row.createdAt),
         })),
+        outboundMessages: outbound.map(({ workspaceId: _workspace, ...row }) => ({
+          ...row,
+          sendAt: iso(row.sendAt),
+          expiresAt: isoOrNull(row.expiresAt),
+          dueAt: isoOrNull(row.dueAt),
+          deliveredAt: isoOrNull(row.deliveredAt),
+          readAt: isoOrNull(row.readAt),
+          repliedAt: isoOrNull(row.repliedAt),
+          dismissedAt: isoOrNull(row.dismissedAt),
+          cancelledAt: isoOrNull(row.cancelledAt),
+          createdAt: iso(row.createdAt),
+        })),
+        outboundOnce: onceKeys.map(({ workspaceId: _workspace, ...row }) => row),
       };
       const json = [
         Buffer.from(`${JSON.stringify(head).slice(0, -1)},"messages":[`),
@@ -780,6 +866,7 @@ async function insertWorkspace(
         startedPage: row.startedPage,
         humanSince: dateOrNull(row.humanSince),
         handoffByApiKeyId: row.handoffByApiKeyId,
+        startedBy: row.startedBy,
         createdAt: new Date(row.createdAt),
         updatedAt: new Date(row.updatedAt),
       })),
@@ -809,6 +896,29 @@ async function insertWorkspace(
     );
   }
   for (const rows of batches(uploads)) await tx.insert(attachment).values(rows);
+  // After the messages, which they name.
+  for (const rows of batches(data.outboundMessages)) {
+    await tx.insert(outboundMessage).values(
+      rows.map((row) => ({
+        workspaceId,
+        ...row,
+        authorOperatorId: mapOperator(row.authorOperatorId),
+        senderOperatorId: mapOperator(row.senderOperatorId),
+        sendAt: new Date(row.sendAt),
+        expiresAt: dateOrNull(row.expiresAt),
+        dueAt: dateOrNull(row.dueAt),
+        deliveredAt: dateOrNull(row.deliveredAt),
+        readAt: dateOrNull(row.readAt),
+        repliedAt: dateOrNull(row.repliedAt),
+        dismissedAt: dateOrNull(row.dismissedAt),
+        cancelledAt: dateOrNull(row.cancelledAt),
+        createdAt: new Date(row.createdAt),
+      })),
+    );
+  }
+  for (const rows of batches(data.outboundOnce)) {
+    await tx.insert(outboundOnce).values(rows.map((row) => ({ workspaceId, ...row })));
+  }
   for (const rows of batches(data.pageViews)) {
     await tx.insert(pageView).values(
       rows.map((row) => ({
