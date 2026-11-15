@@ -256,7 +256,8 @@ export function mailboxSweep({
   const inbox = shipmailInbox(settings);
   // A visitor can put the reply address in Cc, as a mail app's "Reply all" can. One only in Bcc or
   // Delivered-To names no workspace here, so it is downloaded on each sweep while its workspace is
-  // closed. That is rare, and the take keeps it, so nothing is lost.
+  // closed, and once that opens it waits for the next hourly sweep. That is rare, and the take
+  // keeps it, so nothing is lost.
   const workspaceOf = ({ to, cc }: InboxPage["data"][number]) =>
     [...(to ?? []), ...(cc ?? [])]
       .map(({ email }) => parseReplyAddress(email ?? "", domain))
@@ -301,16 +302,25 @@ export function mailboxSweep({
   const sweep = async (stopping: AbortSignal) => {
     const before = new Date(Date.now() - FRESH_MS);
     const left = new Set<string>();
+    let cursorLost = false;
     let page = await inbox.page(before, null);
     while (page !== null && !stopping.aborted) {
       // The next page first: its cursor names a message of this page, which a delete could remove.
       const cursor = page.pagination.next_cursor;
       const next = cursor === null ? null : await inbox.page(before, cursor);
+      cursorLost = cursor !== null && next === null;
       await sweepPage(page, left, stopping);
       page = next;
     }
-    // A sweep cut short keeps the last full one's list, so no opened workspace waits an hour.
-    if (!stopping.aborted) held = left;
+    if (stopping.aborted) return;
+    if (cursorLost) {
+      // The pages after the lost cursor went unread, so the list keeps what it had, and the
+      // worker's next call sweeps again instead of an hour later.
+      for (const workspaceId of left) held.add(workspaceId);
+      sweptAt = Number.NEGATIVE_INFINITY;
+      return;
+    }
+    held = left;
   };
 
   /** Whether a workspace whose emails the last sweep left is open now. A purged one counts too. */
