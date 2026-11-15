@@ -64,6 +64,8 @@ const en = {
   quoteImage: "Image",
   messageDeleted: "Message deleted",
   botTyping: "{name} is typing...",
+  outboundCard: "A message from the team",
+  outboundClose: "Close this message",
 };
 
 export type Texts = typeof en;

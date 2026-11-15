@@ -5,9 +5,9 @@ import { buildWidget } from "../build.ts";
 // Limits in gzipped bytes. The loader runs on every page of the host site and the chat loads on
 // every visit, so a feature that grows them must be worth the bytes to every visitor.
 const LIMITS: Record<string, number> = {
-  "loader.js": 2700,
+  "loader.js": 2950,
   "page.js": 1000,
-  "widget.js": 26_100,
+  "widget.js": 27_900,
 };
 
 test("each language but English is a file of its own, and the chat holds no other", async () => {

@@ -1,6 +1,6 @@
 import { Fragment, render } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { ApiError, type ChatMessage, createClient } from "./client.ts";
+import { ApiError, type ChatMessage, createClient, type Waiting } from "./client.ts";
 import {
   inCommitOrder,
   newClientId,
@@ -13,6 +13,7 @@ import { cleanContext } from "./context.ts";
 import "./globals.ts";
 import { type HoursState, hoursState, knownHours } from "./hours.ts";
 import { loadTexts, pickLocale } from "./locale.ts";
+import { Choices, PreviewCard, useOutbound, waitingLine } from "./outbound.tsx";
 import { emit, reportConversation } from "./page-events.ts";
 import { useDraftPreview, usePageReports } from "./page-reports.ts";
 import {
@@ -63,7 +64,7 @@ interface TypingNotice {
   typing: boolean;
 }
 
-/** The server's notices are not parsed, so this checks a bot's typing notice before it shows. */
+/** The server's notices are not parsed, so these check a notice's shape before it acts. */
 function isTypingNotice(value: unknown): value is TypingNotice {
   if (typeof value !== "object" || value === null) return false;
   const notice = value as Record<string, unknown>;
@@ -72,6 +73,16 @@ function isTypingNotice(value: unknown): value is TypingNotice {
     typeof notice.name === "string" &&
     typeof notice.typing === "boolean"
   );
+}
+
+const isOutboundNotice = (value: unknown) =>
+  typeof value === "object" && value !== null && (value as { kind?: unknown }).kind === "outbound";
+
+/** Says once that the visitor exists, with their ID. */
+function knowVisitor(context: WidgetContext, visitorId: string) {
+  if (context.state.visitorId === visitorId) return;
+  context.state.visitorId = visitorId;
+  emit(context, "visitor", visitorId);
 }
 
 function merge(lines: Line[], message: ChatMessage): Line[] {
@@ -128,6 +139,10 @@ interface ChatProps {
   contextVersion: number;
   /** Undefined until the loader's request for it ends. */
   saved: SavedAppearance | undefined;
+  /** Opens the chat for a message, without taking the page's focus. */
+  reveal(): void;
+  /** Grows with each beat that says an outbound message waits. */
+  beat: number;
 }
 
 /**
@@ -145,6 +160,8 @@ function Chat({
   clearPrefill,
   contextVersion,
   saved,
+  reveal,
+  beat,
 }: ChatProps) {
   const { publicKey, base } = context;
   const fullPage = context.page === true;
@@ -352,6 +369,12 @@ function Chat({
     });
   }, [chatted, client, context, contextVersion, fullPage, hasLanguage, token]);
 
+  const outbound = useOutbound(context, client, token, {
+    open: shown,
+    seeing: shown && visible,
+    reveal,
+    beat,
+  });
   const serverSaid = useUnread(
     context,
     client,
@@ -361,6 +384,7 @@ function Chat({
     shown && visible && loaded,
     delivered,
     saved,
+    outbound.unread,
   );
 
   // One request when a visible tab has a token gives the unread count and says whether a stream is
@@ -377,6 +401,7 @@ function Chat({
       .then((me) => {
         if (replaced) return;
         renewDelay.current = 0;
+        knowVisitor(context, me.visitorId);
         // A send during this request leaves a conversation open that this response may not show.
         const hasOpenConversation = me.openConversation || sends.current !== sendsAtStart;
         setOpenConversation(hasOpenConversation);
@@ -405,7 +430,7 @@ function Chat({
     return () => {
       replaced = true;
     };
-  }, [client, identity, publicKey, restored, restoring, token, tokenEpoch, visible]);
+  }, [client, context, identity, publicKey, restored, restoring, token, tokenEpoch, visible]);
 
   // A new session after reset() starts with none, so the page hears false at once.
   useEffect(() => reportConversation(context, openConversation), [context, openConversation]);
@@ -454,12 +479,22 @@ function Chat({
                 // Only a reply that arrives now, as history replays before ready.
                 if (replayed.current && wantsChime.current) chime();
                 setNewReply(true);
-                emit(context, "message:received", { body: message.body });
+                // A waiting message that went in the conversation was announced when it showed.
+                if (message.outboundId === null || !outbound.announced(message.outboundId)) {
+                  emit(context, "message:received", {
+                    id: message.id,
+                    body: message.body,
+                    sender: { name: message.authorName, pictureUrl: message.authorPictureUrl },
+                    outbound: null,
+                  });
+                }
               }
+              if (message.outboundId !== null) outbound.answered([message.outboundId]);
               setLines((current) => merge(current, message));
             },
             notice(value) {
               if (isTypingNotice(value)) setBotTyping(value.typing ? { name: value.name } : null);
+              if (isOutboundNotice(value)) outbound.ask();
             },
             ready(next) {
               if (controller.signal.aborted) return;
@@ -542,6 +577,7 @@ function Chat({
         if (alive.current) {
           writeToken(publicKey, created.token);
           setToken(created.token);
+          knowVisitor(context, created.visitorId);
         }
         return created.token;
       })
@@ -554,14 +590,16 @@ function Chat({
   const markLine = (lineId: string, status: Line["status"]) =>
     setLines((current) => current.map((line) => (line.id === lineId ? { ...line, status } : line)));
 
-  // The line's first ID is its client ID, so a manual retry cannot create a duplicate.
-  const deliver = async (lineId: string, body: string, file?: File, quoteId?: string | null) => {
+  // The line's first ID is its client ID, so a manual retry cannot create a duplicate. A text
+  // answers the outbound messages the visitor read, which go in the conversation first.
+  const deliver = async ({ id: lineId, body, file, quote, button }: Line) => {
     markLine(lineId, "sending");
+    const answer = outbound.answer(button);
     try {
       const first = await ensureToken();
       const post = (token: string) =>
         file === undefined
-          ? client.send(token, lineId, body, quoteId ?? undefined)
+          ? client.send(token, lineId, body, quote?.id ?? undefined, answer)
           : client.sendUpload(token, lineId, file);
       const sent = await post(first).catch(async (error: unknown) => {
         // A tab open past the token's expiry asks the host for a new one and tries once more.
@@ -572,6 +610,7 @@ function Chat({
         return post(renewed);
       });
       sends.current += 1;
+      if (file === undefined) outbound.answered(answer.outboundIds);
       const seq = BigInt(sent.seq);
       lastSent.current = lastSent.current === null ? seq : larger(lastSent.current, seq);
       emit(context, "message:sent", { body: file === undefined ? body : null });
@@ -601,22 +640,28 @@ function Chat({
   };
 
   /** Shows the visitor's new line at once, before the server confirms it, and sends it. */
-  const sendLine = (body: string, extra: Pick<Line, "file" | "quote">) => {
-    const id = newClientId();
-    setLines((current) => [
-      ...current,
-      {
-        id,
-        seq: null,
-        body,
-        attachment: null,
-        fromVisitor: true,
-        author: null,
-        status: "sending",
-        ...extra,
-      },
-    ]);
-    void deliver(id, body, extra.file, extra.quote?.id);
+  const sendLine = (body: string, extra: Pick<Line, "file" | "quote" | "button">) => {
+    const line: Line = {
+      id: newClientId(),
+      seq: null,
+      body,
+      attachment: null,
+      fromVisitor: true,
+      author: null,
+      status: "sending",
+      ...extra,
+    };
+    setLines((current) => [...current, line]);
+    void deliver(line);
+  };
+
+  /** A value button answers with its label. Any other button is the hook's. */
+  const choose = (one: Waiting, index: number) => {
+    const button = one.buttons[index];
+    if (button === undefined || button.url !== undefined || button.dismiss) {
+      return outbound.press(one, index);
+    }
+    sendLine(button.label, { button: { outboundMessageId: one.id, index } });
   };
 
   // An image's URL expires after 15 minutes. Replaying from the start gives every line a new one.
@@ -667,7 +712,17 @@ function Chat({
     }
   };
 
-  if (!shown) return null;
+  if (!shown) {
+    const { card } = outbound;
+    return card === undefined ? null : (
+      <PreviewCard
+        one={card}
+        onOpen={() => setOpen(true)}
+        onClose={() => outbound.hide(card.id)}
+        onPress={(index) => choose(card, index)}
+      />
+    );
+  }
   const everChatted = chatted || lines.length > 0;
   const closed = hours?.open === false;
   // In this order, because a lost connection matters most and an empty chat matters least.
@@ -752,7 +807,9 @@ function Chat({
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />
       <div class="log" role="log" aria-live="polite" ref={log}>
-        {lines.length === 0 && <EmptyLog mascot={mascot} greeting={say("empty")} />}
+        {lines.length === 0 && outbound.waiting.length === 0 && (
+          <EmptyLog mascot={mascot} greeting={say("empty")} />
+        )}
         {lines.map((line, index) => (
           <Fragment key={line.id}>
             <ChatLine
@@ -760,7 +817,7 @@ function Chat({
               showAuthor={startsRun(lines, index)}
               onView={() => setViewing(line.id)}
               onUploadError={refreshUploads}
-              onRetry={() => void deliver(line.id, line.body, line.file, line.quote?.id)}
+              onRetry={() => void deliver(line)}
               onReply={
                 line.fromVisitor || line.note || line.gone || line.seq === null || !openConversation
                   ? undefined
@@ -774,6 +831,21 @@ function Chat({
           </Fragment>
         ))}
         {emailAt === -1 && emailInLog}
+        {outbound.waiting.map((one, index) => (
+          <Fragment key={one.id}>
+            <ChatLine
+              line={waitingLine(one)}
+              showAuthor={startsRun(
+                [...lines, ...outbound.waiting.map(waitingLine)],
+                lines.length + index,
+              )}
+              onView={() => {}}
+              onUploadError={refreshUploads}
+              onRetry={() => {}}
+            />
+            <Choices one={one} onPress={(choice) => choose(one, choice)} />
+          </Fragment>
+        ))}
         {botTyping !== null && (
           <div class="notice">{t("botTyping").replace("{name}", botTyping.name)}</div>
         )}
@@ -842,9 +914,16 @@ function Root({ context }: { context: WidgetContext }) {
     setOpenState(next);
   };
   const [quiet, setQuiet] = useState(remembered);
+  // A message opens the chat, and the focus stays where the visitor had it.
+  const reveal = useCallback(() => {
+    setQuiet(true);
+    context.state.open = true;
+    setOpenState(true);
+  }, [context]);
   const [session, setSession] = useState(0);
   const [prefill, setPrefill] = useState<{ text: string } | null>(null);
   const [contextVersion, setContextVersion] = useState(0);
+  const [beat, setBeat] = useState(0);
   const [saved, setSaved] = useState<SavedAppearance>();
   // The loader's answer, which also gave the launcher its look. The theme is the panel's alone.
   // With no answer the defaults apply, as on the launcher. A workspace that serves no widget has
@@ -883,6 +962,7 @@ function Root({ context }: { context: WidgetContext }) {
         setSession((current) => current + 1);
       },
       context: () => setContextVersion((current) => current + 1),
+      outbound: () => setBeat((current) => current + 1),
     };
     context.chat = handlers;
     context.state.ready = true;
@@ -900,6 +980,8 @@ function Root({ context }: { context: WidgetContext }) {
     launcher?.classList.toggle("opened", open);
     // The focused element is gone after a close, so a keyboard user returns to the launcher.
     if (!open) launcher?.focus();
+    // The pulse lasts until the next open, whichever way it opens.
+    if (open) context.nudge(false);
     emit(context, open ? "open" : "close", undefined);
   }, [context, open]);
   return (
@@ -915,6 +997,8 @@ function Root({ context }: { context: WidgetContext }) {
       clearPrefill={setPrefill}
       contextVersion={contextVersion}
       saved={saved}
+      reveal={reveal}
+      beat={beat}
     />
   );
 }

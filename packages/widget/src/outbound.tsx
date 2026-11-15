@@ -1,0 +1,235 @@
+// Outbound messages: what the team sent this visitor outside any conversation. They wait as a badge,
+// a card above the launcher or the open chat, until the visitor answers, dismisses or leaves them.
+// All of this is in the chat bundle, so the loader only learns from its beat that one waits.
+import { useEffect, useRef, useState } from "preact/hooks";
+import type { Answer, Client, Waiting } from "./client.ts";
+import { emit } from "./page-events.ts";
+import { ChatLine, CloseButton, type Line } from "./panel.tsx";
+import type { OutboundButton, ReceivedMessage, WidgetContext } from "./shared.ts";
+import { t } from "./text.ts";
+
+/** The open panel fills a screen this narrow, so a message shows as a card there instead. */
+const PHONE = "(max-width:480px)";
+
+/** A waiting message as a line of the chat. Its ID cannot be a message's. */
+export const waitingLine = (one: Waiting): Line => ({
+  id: `outbound:${one.id}`,
+  seq: null,
+  body: one.body,
+  attachment: null,
+  fromVisitor: false,
+  author:
+    one.authorId === null || one.authorName === null
+      ? null
+      : {
+          id: one.authorId,
+          name: one.authorName,
+          pictureUrl: one.authorPictureUrl,
+          bot: one.fromBot,
+        },
+  status: "sent",
+});
+
+const received = (one: Waiting): ReceivedMessage => ({
+  id: null,
+  body: one.body,
+  sender: { name: one.authorName, pictureUrl: one.authorPictureUrl },
+  outbound: { id: one.id, show: one.show, buttons: one.buttons },
+});
+
+const chosen = (button: OutboundButton) => ({ value: button.value ?? null, label: button.label });
+
+/** Whether a field of the host page has focus, which a message must not take. */
+function pageTyping(host: Element): boolean {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || active === host) return false;
+  return active.isContentEditable || active.matches("input,textarea,select");
+}
+
+const adding = (ids: string[]) => (current: ReadonlySet<string>) => new Set([...current, ...ids]);
+
+const without =
+  (id: string) =>
+  <T extends { id: string }>(list: T[]) =>
+    list.filter((one) => one.id !== id);
+
+interface Options {
+  open: boolean;
+  /** The visitor can see the open chat now. */
+  seeing: boolean;
+  /** Opens the chat without taking the page's focus. */
+  reveal(): void;
+  /** Grows with each beat that says a message waits. */
+  beat: number;
+}
+
+/**
+ * The waiting messages, fetched when the chat loads, on each open, and when the beat or the stream
+ * says one waits. The visitor reads one when it shows in the open chat. A `chat` message opens the
+ * chat, unless that would cover a phone's screen, come back after the visitor closed it on this
+ * page, or take the focus of a field the visitor types in: then it shows as a card.
+ */
+export function useOutbound(
+  context: WidgetContext,
+  client: Client,
+  token: string | null,
+  { open, seeing, reveal, beat }: Options,
+) {
+  const [waiting, setWaiting] = useState<Waiting[]>([]);
+  const [read, setRead] = useState<ReadonlySet<string>>(new Set());
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const [asked, setAsked] = useState(0);
+  const announced = useRef(new Set<string>());
+  const opened = useRef(new Set<string>());
+  const closedHere = useRef(false);
+  const wasOpen = useRef(open);
+
+  const markRead = (ids: string[]) => setRead(adding(ids));
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `asked`, `beat` and `open` ask for a fetch.
+  useEffect(() => {
+    if (token === null) return;
+    let stale = false;
+    client.waiting(token).then(
+      (list) => {
+        if (stale) return;
+        for (const one of list.filter((each) => !announced.current.has(each.id))) {
+          announced.current.add(one.id);
+          emit(context, "message:received", received(one));
+        }
+        setRead(adding(list.filter((one) => one.read).map((one) => one.id)));
+        setWaiting(list);
+      },
+      () => {
+        // The next beat or open asks again.
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  }, [asked, beat, client, context, open, token]);
+
+  useEffect(() => {
+    if (wasOpen.current && !open) closedHere.current = true;
+    wasOpen.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    if (!seeing || token === null) return;
+    const unseen = waiting.filter((one) => !read.has(one.id));
+    if (unseen.length === 0) return;
+    setRead(adding(unseen.map((one) => one.id)));
+    for (const one of unseen) {
+      client.readOutbound(token, one.id).then(
+        () => emit(context, "outbound:read", { id: one.id, button: null }),
+        () => {
+          // It counts as read here. The next answer names it, and the server checks it then.
+        },
+      );
+    }
+  }, [client, context, read, seeing, token, waiting]);
+
+  const unread = waiting.filter((one) => !read.has(one.id));
+  // Only a message that waits pulses the launcher. The loader stops it at the next open.
+  useEffect(() => {
+    if (!open && unread.length > 0) context.nudge(true);
+  }, [context, open, unread.length]);
+
+  const mayOpen = () =>
+    !closedHere.current && !matchMedia(PHONE).matches && !pageTyping(context.shadow.host);
+  const opening = open
+    ? undefined
+    : unread.find((one) => one.show === "chat" && !opened.current.has(one.id));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mayOpen reads the page at this moment.
+  useEffect(() => {
+    if (opening === undefined || !mayOpen()) return;
+    opened.current.add(opening.id);
+    reveal();
+  }, [opening, reveal]);
+
+  /** A button that opens a page or dismisses. A value button answers, which the chat sends. */
+  const press = (one: Waiting, index: number) => {
+    const button = one.buttons[index];
+    if (button === undefined || token === null) return;
+    if (button.url !== undefined) window.open(button.url, "_blank", "noopener");
+    markRead([one.id]);
+    client.press(token, one.id, button.dismiss ? "dismiss" : "click", index).then(
+      () => {
+        if (!button.dismiss) return;
+        setWaiting(without(one.id));
+        emit(context, "outbound:dismissed", { id: one.id, button: chosen(button) });
+      },
+      () => {
+        // The click is only recorded. A dismiss stays on screen, so the visitor can try again.
+      },
+    );
+  };
+
+  return {
+    waiting,
+    unread: unread.length,
+    /** The newest message that asks for a card, unless the visitor closed its card. */
+    card: open
+      ? undefined
+      : unread.filter((one) => one.show !== "badge" && !hidden.has(one.id)).at(-1),
+    hide: (id: string) => setHidden((current) => new Set(current).add(id)),
+    /** Whether the page heard of this message when it showed. */
+    announced: (id: string) => announced.current.has(id),
+    ask: () => setAsked((current) => current + 1),
+    press,
+    /** What the visitor's next message answers: every message they read here, in order. */
+    answer: (button?: Answer["button"]): Answer => ({
+      outboundIds: waiting.filter((one) => read.has(one.id)).map((one) => one.id),
+      ...(button !== undefined && { button }),
+    }),
+    /** These went in the conversation, which shows them from now. */
+    answered: (ids: string[]) =>
+      setWaiting((current) => current.filter((one) => !ids.includes(one.id))),
+  };
+}
+
+/** A waiting message's buttons. */
+export function Choices({ one, onPress }: { one: Waiting; onPress(index: number): void }) {
+  if (one.buttons.length === 0) return null;
+  return (
+    <div class="choices">
+      {one.buttons.map((button, index) => (
+        <button type="button" key={button.label} onClick={() => onPress(index)}>
+          {button.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const noop = () => {};
+
+/** The card above the launcher: who sent it, its first lines, and its buttons. A click opens the chat. */
+export function PreviewCard({
+  one,
+  onOpen,
+  onClose,
+  onPress,
+}: {
+  one: Waiting;
+  onOpen(): void;
+  onClose(): void;
+  onPress(index: number): void;
+}) {
+  return (
+    <aside class="preview" aria-live="polite" aria-label={t("outboundCard")}>
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: the launcher opens the chat from the keyboard. */}
+      <div class="peek" onClick={onOpen}>
+        <ChatLine
+          line={waitingLine(one)}
+          showAuthor
+          onView={onOpen}
+          onUploadError={noop}
+          onRetry={noop}
+        />
+      </div>
+      <Choices one={one} onPress={onPress} />
+      <CloseButton label={t("outboundClose")} onClick={onClose} />
+    </aside>
+  );
+}

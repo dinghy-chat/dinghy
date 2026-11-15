@@ -58,4 +58,6 @@ export const es: Texts = {
   quoteImage: "Imagen",
   messageDeleted: "Mensaje eliminado",
   botTyping: "{name} está escribiendo...",
+  outboundCard: "Un mensaje del equipo",
+  outboundClose: "Cerrar este mensaje",
 };

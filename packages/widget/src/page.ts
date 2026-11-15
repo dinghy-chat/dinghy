@@ -43,8 +43,17 @@ if (script !== null && publicKey !== null && publicKey !== undefined) {
     pageContext: null,
     // There is no launcher: the chat is open from the start.
     wanted: [undefined],
-    state: { ready: false, open: false, unread: 0, conversation: false },
+    state: {
+      ready: false,
+      open: false,
+      unread: 0,
+      conversation: false,
+      visitorId: null,
+      nudging: false,
+    },
     listeners: {},
+    // There is no launcher to pulse.
+    nudge() {},
   };
   globalThis.__dinghy = context;
   document.body.append(host);
