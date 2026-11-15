@@ -22,7 +22,7 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { forgetPagesWithoutChat, lockVisitors } from "./journey.ts";
+import { forgetPagesWithoutChat, forgetVisitor, lockVisitors } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { conversationParams, workspaceParams } from "./member.ts";
 import {
@@ -96,6 +96,7 @@ export async function noteVisitorAddress(
 }
 
 async function block(tx: Transaction, workspaceId: string, visitorId: string): Promise<void> {
+  await forgetVisitor(tx, workspaceId, [visitorId]);
   const [row] = await tx
     .update(visitor)
     .set({ blockedAt: new Date() })

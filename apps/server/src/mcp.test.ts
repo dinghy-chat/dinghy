@@ -156,6 +156,10 @@ describe("the protocol", () => {
       "get_contact",
       "list_contacts",
       "search_contacts",
+      "upsert_contact",
+      "send_outbound_message",
+      "cancel_outbound_message",
+      "list_outbound_messages",
       "get_live_visitors",
       "get_analytics",
     ]);

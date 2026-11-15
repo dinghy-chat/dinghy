@@ -40,12 +40,14 @@ import {
   conversationVisitor,
   filename,
   isChat,
+  mayGoByEmail,
   messageAuthors,
   messageColumns,
   type Quote,
   type StatusPayload,
   visitorQuote,
 } from "./messages.ts";
+import { pruneOutboundBodies } from "./outbound.ts";
 import { imageUrls } from "./public-images.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
@@ -728,6 +730,7 @@ async function replyEmailPlan(
         isNull(message.deletedAt),
         gt(message.seq, target.lastReadSeq),
         notExists(carriedByTranscript(workspaceId, visitorId)),
+        mayGoByEmail(),
       ),
     )
     .orderBy(desc(message.seq))
@@ -1021,6 +1024,7 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
     const links = await pruneChatLinks(db, PRUNE_BATCH);
     const addresses = await pruneReplyAddresses(db, PRUNE_BATCH);
     const pages = await prunePageViews(db, PRUNE_BATCH);
+    const outbound = await pruneOutboundBodies(db, PRUNE_BATCH);
     const counts = [
       events.rowCount ?? 0,
       deliveries.rowCount ?? 0,
@@ -1029,6 +1033,7 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
       links,
       addresses,
       pages,
+      outbound,
     ];
     removed += counts.reduce((sum, count) => sum + count, 0);
     // A full batch of any of them may have more behind it.

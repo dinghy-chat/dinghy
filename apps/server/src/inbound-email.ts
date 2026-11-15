@@ -14,12 +14,12 @@ import type { Limits } from "./limits.ts";
 import { type Signals, wakeConversation } from "./live.ts";
 import { closedFailure } from "./member.ts";
 import {
-  appendMessage,
   catchClosed,
   type MessageSource,
   type NewAttachment,
   WorkspaceClosedError,
 } from "./messages.ts";
+import { appendVisitorMessage } from "./outbound.ts";
 import { type RateLimit, TOO_MANY_REQUESTS } from "./rate-limit.ts";
 import { SIGNATURE_TOLERANCE_MINUTES, SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
 import type { ShipmailInbound } from "./shipmail-inbound.ts";
@@ -540,11 +540,12 @@ async function addMessages(
   const { visitorId, conversationId } = address;
   const append = (clientId: string, input: { body: string } | { attachment: NewAttachment }) =>
     withWorkspace(db, workspaceId, (tx) =>
-      appendMessage(
+      appendVisitorMessage(
         tx,
         workspaceId,
         { kind: "visitor", visitorId, conversationId },
         { clientId, ...input, source },
+        undefined,
         limits,
       ),
     );

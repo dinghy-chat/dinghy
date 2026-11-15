@@ -13,7 +13,7 @@ import { type Cursor, formatCursor, listWorkspaceEvents, parseCursor } from "./m
 import type { RateLimit } from "./rate-limit.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import type { Uploads } from "./uploads.ts";
-import { isWebhookEvent, labelChange, webhookData, webhookTypes } from "./webhooks.ts";
+import { isWebhookEvent, subjectOf, webhookData, webhookTypes } from "./webhooks.ts";
 
 const PATH = "/v1/events";
 /** Events read for one page of the stream. */
@@ -116,23 +116,16 @@ const readPage = (
       partOf.seq === seq &&
       part <= partOf.part;
     const wantedEvents = page.events.flatMap((one) => {
-      const ids = one.payload as { conversationId?: string; messageId?: string };
-      const { conversationId } = ids;
-      if (conversationId === undefined) return [];
       const types = webhookTypes(one.kind, one.payload);
       const cursor = formatCursor({ generation: page.cursor.generation, seq: one.seq });
-      return [...types.entries()]
-        .filter(([part, type]) => (wanted === null || wanted.has(type)) && !has(one.seq, part))
-        .map(([part, type]) => ({
-          type,
-          seq: one.seq,
-          id: part === types.length - 1 ? cursor : `${cursor}.${part}`,
-          subject: {
-            conversationId,
-            messageId: type.startsWith("message.") ? (ids.messageId ?? null) : null,
-            label: labelChange(type, one.payload),
-          },
-        }));
+      return [...types.entries()].flatMap(([part, type]) => {
+        const subject = subjectOf(type, one.payload);
+        if (subject === null || (wanted !== null && !wanted.has(type)) || has(one.seq, part)) {
+          return [];
+        }
+        const id = part === types.length - 1 ? cursor : `${cursor}.${part}`;
+        return [{ type, seq: one.seq, id, subject }];
+      });
     });
     const bodies = await webhookData(
       tx,
@@ -142,7 +135,7 @@ const readPage = (
     );
     const items = wantedEvents.flatMap(({ type, seq, id }, index) => {
       const data = bodies[index];
-      // A conversation or message deleted since has nothing to send.
+      // A conversation, message or outbound message deleted since has nothing to send.
       if (typeof data !== "object") return [];
       return [{ event: type, seq, id, data: { type, workspaceId, data } }];
     });

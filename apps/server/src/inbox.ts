@@ -6,7 +6,13 @@ import { type Actor, actorId, type KeyActor, keyStillValid } from "./api-keys.ts
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { keyGate, takeOver } from "./bots.ts";
-import { CHAT_KINDS, MESSAGE_KINDS, session, welcomeLink } from "./db/schema.ts";
+import {
+  CHAT_KINDS,
+  CONVERSATION_STARTERS,
+  MESSAGE_KINDS,
+  session,
+  welcomeLink,
+} from "./db/schema.ts";
 import {
   type Database,
   type Transaction,
@@ -67,6 +73,7 @@ import {
   listConversations,
   listWorkspaceEvents,
   markConversationRead,
+  memberSender,
   type NewAttachment,
   nextSnoozeEndMs,
   parseCursor,
@@ -79,6 +86,7 @@ import {
   snoozeConversation,
   WorkspaceClosedError,
 } from "./messages.ts";
+import { ChosenButtonSchema } from "./outbound.ts";
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
@@ -193,6 +201,15 @@ export const InboxMessage = z
     handoff: z.object({ operatorId: z.string().nullable() }).nullable(),
     // The members a note mentions, by operator ID. Empty for any other message.
     mentions: z.array(z.string()),
+    // The outbound message this one came from, or null.
+    outboundId: z.string().nullable(),
+    // Who the visitor saw when not the author: a member, or `team` for the workspace's name and
+    // logo. Null for any other message.
+    sender: z
+      .union([z.literal("team"), z.object({ operatorId: z.string(), name: z.string().nullable() })])
+      .nullable(),
+    // A visitor's answer with a button of an outbound message: its value and label, or null.
+    button: ChosenButtonSchema.nullable(),
     createdAt: z.string(),
   })
   .and(MessageVia)
@@ -222,6 +239,9 @@ export const InboxMessage = z
       via: null,
       handoff: null,
       mentions: [],
+      outboundId: null,
+      sender: null,
+      button: null,
       createdAt: "2026-11-08T09:31:00.000Z",
     },
   });
@@ -257,6 +277,8 @@ const Conversation = z
     assigneeOperatorId: z.string().nullable(),
     // The page where the visitor started it, as origin and path, if the widget reported one.
     startedPage: z.string().nullable(),
+    // `team` when an outbound message started it, not the visitor.
+    startedBy: z.enum(CONVERSATION_STARTERS),
     // On Dinghy Cloud, a welcome chat with Dinghy's founder. False everywhere else.
     welcome: z.boolean(),
     // Who handles it. `person`: the assignee, since an operator replied or a bot handed it off,
@@ -361,6 +383,10 @@ const listRoute = createRoute({
       label: z.uuid().optional().openapi({
         description: "A label's ID: only the conversations with that label.",
       }),
+      startedBy: z.enum(["team"]).optional().openapi({
+        description:
+          "`team`: only the conversations an outbound message started, while the visitor has not answered.",
+      }),
       beforeUpdatedAt: z.iso.datetime().optional(),
       beforeId: z.uuid().optional(),
       limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -396,6 +422,7 @@ const listRoute = createRoute({
                 updatedAt: "2026-11-08T09:30:00.000Z",
                 assigneeOperatorId: null,
                 startedPage: "https://www.example.com/pricing",
+                startedBy: "visitor",
                 welcome: false,
                 handler: null,
                 bot: null,
@@ -523,6 +550,9 @@ const conversationRoute = createRoute({
                 emails: z.array(
                   z.object({ fromSeq: z.string(), toSeq: z.string(), sent: z.boolean() }),
                 ),
+                // Outbound messages sent with `email: false`, which no email carried, even inside
+                // an email's range.
+                notEmailed: z.array(z.string()),
               })
               .openapi("ReplyReceipts"),
           }),
@@ -809,13 +839,22 @@ export function messageView(
     readAt,
     attachment,
     replyTo,
+    outbound,
     ...message
   }: StoredMessage,
 ) {
   const author = message.authorOperatorId ?? message.authorApiKeyId;
+  const member = memberSender(outbound);
   return {
     ...message,
     authorName: author === null ? null : (names.get(author) ?? null),
+    outboundId: outbound?.id ?? null,
+    sender:
+      outbound?.sender === "team"
+        ? ("team" as const)
+        : member === null || member === message.authorOperatorId
+          ? null
+          : { operatorId: member, name: names.get(member) ?? null },
     seq: seq.toString(),
     createdAt: createdAt.toISOString(),
     editedAt: editedAt?.toISOString() ?? null,
@@ -878,6 +917,7 @@ export function conversationView(
     updatedAt: row.updatedAt.toISOString(),
     assigneeOperatorId: row.assigneeOperatorId,
     startedPage: row.startedPage,
+    startedBy: row.startedBy,
     welcome: row.welcome,
     handler: handlerOf(row),
     bot: row.botKey === null ? null : { apiKeyId: row.botKey.id, name: row.botKey.name },
@@ -1213,6 +1253,7 @@ export function createInbox({
             toSeq: email.toSeq.toString(),
             sent: email.sent,
           })),
+          notEmailed: result.receipts.notEmailed.map(String),
         },
       };
       // The MCP transcript names the assignee, which the view holds only while they handle it.
@@ -1350,7 +1391,8 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   });
 
   app.openapi(listRoute, async (c) => {
-    const { status, assignee, label, beforeUpdatedAt, beforeId, limit } = c.req.valid("query");
+    const { status, assignee, label, startedBy, beforeUpdatedAt, beforeId, limit } =
+      c.req.valid("query");
     const actor = c.get("actor");
     if (assignee === "me" && actor.kind === "key") return c.json(KEY_HAS_NO_ASSIGNMENTS, 400);
     const filter: AssigneeFilter =
@@ -1367,7 +1409,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       c.get("memberWorkspaceId"),
       readerId(actor),
       status,
-      { assignee: filter, labelId: label },
+      { assignee: filter, labelId: label, startedByTeam: startedBy === "team" },
       before,
       limit,
     );

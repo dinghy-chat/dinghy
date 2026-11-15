@@ -3,6 +3,7 @@
 // self-hosted install.
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -44,9 +45,17 @@ const ownedByWorkspace = () =>
   uuid("workspace_id")
     .notNull()
     .references(() => workspace.id, { onDelete: "cascade" });
+/** A check that a text column holds one of these values. */
+const enumCheck = (name: string, column: AnyPgColumn, values: readonly string[]) =>
+  check(name, sql`${column} in (${sql.raw(values.map((one) => `'${one}'`).join(", "))})`);
+
+/** When each contact field was written, in milliseconds: `name`, `email` and `attributes.<key>`. */
+export type FieldTimes = Record<string, number>;
 
 export const memberRole = pgEnum("member_role", ["owner", "admin", "member"]);
 export const conversationStatus = pgEnum("conversation_status", ["open", "closed"]);
+/** Who started a conversation: the visitor, or the team with an outbound message. */
+export const CONVERSATION_STARTERS = ["visitor", "team"] as const;
 /**
  * The kinds a visitor sees. `closed` and `reopened` are status lines that a close or a reopen
  * writes, with the event's own sequence, so both sides see them in order. They are not chat: no
@@ -286,8 +295,9 @@ export const visitor = pgTable(
     attributes: jsonb("attributes"),
     // Unsigned values the host page sent with setContext(), for operators to read. Not verified.
     pageContext: jsonb("page_context"),
-    // The issue time of the token that last set the name, email and attributes.
-    identityIssuedAt: bigint("identity_issued_at", { mode: "bigint" }),
+    // When each of `name`, `email` and `attributes.<key>` was last written, in milliseconds, by a
+    // host token or by the contact upsert, so an older write never overwrites a newer one.
+    fieldTimes: jsonb("field_times").$type<FieldTimes>().notNull().default({}),
     // The position this visitor has read up to, so the unread count survives a page load.
     lastReadSeq: bigint("last_read_seq", { mode: "bigint" }).notNull().default(sql`0`),
     blockedAt: timestamp("blocked_at", { withTimezone: true }),
@@ -354,6 +364,11 @@ export const conversation = pgTable(
     humanSince: timestamp("human_since", { withTimezone: true }),
     // The key that handed the conversation off, for the line in its header.
     handoffByApiKeyId: uuid("handoff_by_api_key_id"),
+    // `team` when an outbound message started it, so the inbox and analytics can tell it apart.
+    startedBy: text("started_by")
+      .$type<(typeof CONVERSATION_STARTERS)[number]>()
+      .notNull()
+      .default("visitor"),
     // An operator snoozed it: it stays open but waits for nobody until `snoozed_until`, or with
     // none until the visitor writes. A visitor message, a close and a reopen clear both.
     snoozedAt: timestamp("snoozed_at", { withTimezone: true }),
@@ -403,6 +418,7 @@ export const conversation = pgTable(
       "conversation_snooze",
       sql`${table.snoozedAt} is null and ${table.snoozedUntil} is null or ${table.snoozedAt} is not null and ${table.status} = 'open'`,
     ),
+    enumCheck("conversation_started_by", table.startedBy, CONVERSATION_STARTERS),
   ],
 );
 
@@ -538,6 +554,18 @@ export const attachment = pgTable(
   ],
 );
 
+/** What happened to an outbound message, as the change log and the webhooks name it. */
+export const OUTBOUND_EVENT_KINDS = [
+  "outbound_message.pending",
+  "outbound_message.delivered",
+  "outbound_message.read",
+  "outbound_message.replied",
+  "outbound_message.dismissed",
+  "outbound_message.cancelled",
+  "outbound_message.expired",
+] as const;
+export type OutboundEventKind = (typeof OUTBOUND_EVENT_KINDS)[number];
+
 // The ordered feed. Payloads hold IDs, never message text, so a delete removes the content.
 /**
  * Every kind of event on a workspace's feed. The operator app branches on them, so a new kind goes
@@ -567,6 +595,8 @@ const EVENT_KINDS = [
   "team.changed",
   "billing.changed",
   "workspace.changed",
+  // The payload is an OutboundPayload.
+  ...OUTBOUND_EVENT_KINDS,
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
@@ -582,6 +612,12 @@ export interface MessagePayload {
   conversationCreated?: boolean;
   /** The members a note's alert goes to: all it mentions when written, the new ones on an edit. */
   mentions?: string[];
+}
+
+/** The payload of an outbound message's event. */
+export interface OutboundPayload {
+  outboundMessageId: string;
+  visitorId: string;
 }
 
 /** The payload of a `conversation.labeled` event. */
@@ -912,6 +948,10 @@ export type ApiKeyLevel = (typeof API_KEY_LEVELS)[number];
 export const API_KEY_SOURCES = ["static", "oauth"] as const;
 export type ApiKeySource = (typeof API_KEY_SOURCES)[number];
 
+/** What a key may do beyond its level: `send_as_member` sends outbound messages as a member. */
+export const API_KEY_PERMISSIONS = ["send_as_member"] as const;
+export type ApiKeyPermission = (typeof API_KEY_PERMISSIONS)[number];
+
 /** What a key's reply does: `send` goes to the visitor, and `draft` waits for an operator. */
 export const REPLY_MODES = ["send", "draft"] as const;
 export type ReplyMode = (typeof REPLY_MODES)[number];
@@ -935,6 +975,11 @@ export const apiKey = pgTable(
     // A new key drafts, so a new bot cannot write to visitors before someone has read its replies.
     // The migration set `send` on the keys made before this, so no bot changed behavior.
     replyMode: text("reply_mode").$type<ReplyMode>().notNull().default("draft"),
+    permissions: text("permissions")
+      .array()
+      .$type<ApiKeyPermission[]>()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     // A grant's OAuth client: a client ID that Dinghy signed at registration, or a metadata URL.
     clientId: text("client_id"),
     createdBy: uuid("created_by").notNull(),
@@ -954,6 +999,10 @@ export const apiKey = pgTable(
     check("api_key_level", sql`${table.level} in ('conversations', 'setup')`),
     check("api_key_source", sql`${table.source} in ('static', 'oauth')`),
     check("api_key_reply_mode", sql`${table.replyMode} in ('send', 'draft')`),
+    check(
+      "api_key_permissions",
+      sql`${table.permissions} <@ array[${sql.raw(API_KEY_PERMISSIONS.map((one) => `'${one}'`).join(", "))}]::text[]`,
+    ),
     check("api_key_token", sql`(${table.source} = 'static') = (${table.tokenHash} is not null)`),
     check("api_key_client", sql`(${table.source} = 'oauth') = (${table.clientId} is not null)`),
   ],
@@ -1120,6 +1169,7 @@ export const WEBHOOK_EVENTS = [
   "conversation.handoff",
   "conversation.given_back",
   "conversation.labeled",
+  ...OUTBOUND_EVENT_KINDS,
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -1171,8 +1221,10 @@ export const webhookDelivery = pgTable(
     // The same for every webhook and every retry of one change, so a receiver can drop a repeat.
     eventId: uuid("event_id").notNull(),
     type: text("type").$type<WebhookEvent>().notNull(),
-    conversationId: uuid("conversation_id").notNull(),
+    // Null for an outbound message's event, which names the message instead.
+    conversationId: uuid("conversation_id"),
     messageId: uuid("message_id"),
+    outboundMessageId: uuid("outbound_message_id"),
     // A `conversation.labeled` delivery's label, and whether it was added or removed, both null on
     // other deliveries, as webhook_delivery_label checks. Not a foreign key, so a delivery still says
     // which label went after someone deletes it.
@@ -1226,6 +1278,16 @@ export const webhookDelivery = pgTable(
     index("webhook_delivery_finished_idx").on(table.finishedAt),
     index("webhook_delivery_conversation_idx").on(table.workspaceId, table.conversationId),
     index("webhook_delivery_message_idx").on(table.workspaceId, table.messageId),
+    foreignKey({
+      name: "webhook_delivery_outbound_message_fk",
+      columns: [table.workspaceId, table.outboundMessageId],
+      foreignColumns: [outboundMessage.workspaceId, outboundMessage.id],
+    }).onDelete("cascade"),
+    index("webhook_delivery_outbound_message_idx").on(table.workspaceId, table.outboundMessageId),
+    check(
+      "webhook_delivery_subject",
+      sql`(${table.conversationId} is null) <> (${table.outboundMessageId} is null)`,
+    ),
     check(
       "webhook_delivery_label",
       sql`(${table.labelId} is null) = (${table.labelAdded} is null)`,
@@ -1655,5 +1717,233 @@ export const conversationLabel = pgTable(
       table.labelId,
       table.conversationId,
     ),
+  ],
+);
+
+/**
+ * Where an outbound message stands. `scheduled` waits for `send_at`, `pending` waits for the widget,
+ * and the last five are ends.
+ */
+export const OUTBOUND_STATUSES = [
+  "scheduled",
+  "pending",
+  "delivered",
+  "read",
+  "replied",
+  "dismissed",
+  "cancelled",
+  "expired",
+] as const;
+export type OutboundStatus = (typeof OUTBOUND_STATUSES)[number];
+
+/**
+ * Why an outbound message waits or was cancelled. Campaigns set the reasons that name them, so the
+ * list is whole from the start and a client can switch on every value.
+ */
+export const OUTBOUND_STATUS_REASONS = [
+  "open_conversation",
+  "open_conversation_skipped",
+  "human_handling",
+  "bots_paused",
+  "blocked",
+  "permission_revoked",
+  "workspace_inactive",
+  "unless_matched",
+  "audience_unmatched",
+  "frequency_capped",
+  "goal_reached",
+  "outside_business_hours",
+  "campaign_paused",
+  "campaign_ended",
+  "opted_out",
+  "cancelled_by_api",
+] as const;
+export type OutboundStatusReason = (typeof OUTBOUND_STATUS_REASONS)[number];
+
+/** When an outbound message goes in a conversation: when the visitor answers, or at once. */
+export const START_CONVERSATION = ["on_reply", "now"] as const;
+export type StartConversation = (typeof START_CONVERSATION)[number];
+/** How the widget shows it: the launcher's badge, a card above the launcher, or the open chat. */
+export const OUTBOUND_SHOWS = ["badge", "preview", "chat"] as const;
+export type OutboundShow = (typeof OUTBOUND_SHOWS)[number];
+/** What happens while the visitor has an open conversation: wait, go in it, or cancel. */
+export const IF_OPEN = ["hold", "join", "skip"] as const;
+export type IfOpen = (typeof IF_OPEN)[number];
+/** Who the visitor sees: a member, the workspace, or the message's author. */
+export const SENDER_KINDS = ["member", "team", "author"] as const;
+
+/** A button on an outbound message: it answers with its label, opens a page, or dismisses. */
+export type OutboundButton =
+  | { label: string; value: string }
+  | { label: string; url: string; value?: string | undefined }
+  | { label: string; dismiss: true; value?: string | undefined };
+
+/** The button a visitor chose, as a reply, a dismiss or a click carries it. */
+export interface ChosenButton {
+  value: string | null;
+  label: string;
+}
+
+/** What an outbound message keeps beside its text. */
+export interface OutboundMetadata {
+  buttons?: OutboundButton[];
+  /** The button the visitor chose last. */
+  chosen?: ChosenButton;
+}
+
+/**
+ * A message from the team to one visitor, which may exist before any conversation. The API, MCP and
+ * a member by hand create them. Its body goes 30 days after it ends, and its row stays for
+ * `outbound_once`.
+ */
+export const outboundMessage = pgTable(
+  "outbound_message",
+  {
+    workspaceId: ownedByWorkspace(),
+    id: id(),
+    visitorId: uuid("visitor_id").notNull(),
+    // Who made it: a member by hand, or an API key.
+    authorOperatorId: uuid("author_operator_id"),
+    authorApiKeyId: uuid("author_api_key_id"),
+    // `mcp` when a key made it through the MCP server, null otherwise.
+    via: text("via").$type<"mcp">(),
+    senderKind: text("sender_kind").$type<(typeof SENDER_KINDS)[number]>().notNull(),
+    // The member the visitor sees, for a `member` sender.
+    senderOperatorId: uuid("sender_operator_id"),
+    body: text("body"),
+    metadata: jsonb("metadata").$type<OutboundMetadata>().notNull().default({}),
+    startConversation: text("start_conversation").$type<StartConversation>().notNull(),
+    show: text("show").$type<OutboundShow>().notNull(),
+    ifOpen: text("if_open").$type<IfOpen>().notNull(),
+    // Assign the conversation to the member sender when the visitor answers.
+    assign: boolean("assign").notNull(),
+    // Whether a reply email may carry it.
+    email: boolean("email").notNull(),
+    onceKey: text("once_key"),
+    clientId: text("client_id").notNull(),
+    status: text("status").$type<OutboundStatus>().notNull(),
+    statusReason: text("status_reason").$type<OutboundStatusReason>(),
+    sendAt: timestamp("send_at", { withTimezone: true }).notNull().defaultNow(),
+    // A condition on the contact, checked at `send_at`, that cancels it when it matches.
+    unless: jsonb("unless"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    // When the worker looks at it next: its `send_at`, or a check again while it waits.
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    repliedAt: timestamp("replied_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    // Set once it is in a conversation. Their foreign keys, which set only these columns to null,
+    // are in a custom migration, because Drizzle cannot name the columns.
+    conversationId: uuid("conversation_id"),
+    messageId: uuid("message_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "outbound_message_visitor_fk",
+      columns: [table.workspaceId, table.visitorId],
+      foreignColumns: [visitor.workspaceId, visitor.id],
+    }).onDelete("cascade"),
+    // The purge deletes members and keys before the workspace row, so these go with them.
+    foreignKey({
+      name: "outbound_message_author_operator_fk",
+      columns: [table.workspaceId, table.authorOperatorId],
+      foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "outbound_message_author_api_key_fk",
+      columns: [table.workspaceId, table.authorApiKeyId],
+      foreignColumns: [apiKey.workspaceId, apiKey.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "outbound_message_sender_fk",
+      columns: [table.workspaceId, table.senderOperatorId],
+      foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
+    }).onDelete("cascade"),
+    check(
+      "outbound_message_one_author",
+      sql`num_nonnulls(${table.authorOperatorId}, ${table.authorApiKeyId}) = 1`,
+    ),
+    check(
+      "outbound_message_sender",
+      sql`(${table.senderKind} = 'member') = (${table.senderOperatorId} is not null)`,
+    ),
+    enumCheck("outbound_message_sender_kind", table.senderKind, SENDER_KINDS),
+    enumCheck("outbound_message_status", table.status, OUTBOUND_STATUSES),
+    enumCheck("outbound_message_status_reason", table.statusReason, OUTBOUND_STATUS_REASONS),
+    enumCheck("outbound_message_start_conversation", table.startConversation, START_CONVERSATION),
+    enumCheck("outbound_message_show", table.show, OUTBOUND_SHOWS),
+    enumCheck("outbound_message_if_open", table.ifOpen, IF_OPEN),
+    check("outbound_message_via", sql`${table.via} = 'mcp'`),
+    check(
+      "outbound_message_body_length",
+      sql`char_length(${table.body}) between 1 and ${sql.raw(String(MESSAGE_MAX))}`,
+    ),
+    unique("outbound_message_operator_client_key").on(
+      table.workspaceId,
+      table.authorOperatorId,
+      table.clientId,
+    ),
+    unique("outbound_message_api_key_client_key").on(
+      table.workspaceId,
+      table.authorApiKeyId,
+      table.clientId,
+    ),
+    // The list, newest first, and one visitor's.
+    index("outbound_message_created_idx").on(table.workspaceId, table.createdAt, table.id),
+    index("outbound_message_visitor_idx").on(
+      table.workspaceId,
+      table.visitorId,
+      table.createdAt,
+      table.id,
+    ),
+    // A visitor's waiting messages: the widget's fetch and the limit per visitor.
+    index("outbound_message_waiting_idx")
+      .on(table.workspaceId, table.visitorId)
+      .where(
+        sql`${table.status} in ('scheduled', 'pending', 'delivered', 'read') and ${table.conversationId} is null`,
+      ),
+    // The worker's due messages, across workspaces.
+    index("outbound_message_due_idx").on(table.dueAt).where(sql`${table.dueAt} is not null`),
+    // The worker's expiry, across workspaces. A read message never expires.
+    index("outbound_message_expires_idx")
+      .on(table.expiresAt)
+      .where(
+        sql`${table.status} in ('scheduled', 'pending', 'delivered') and ${table.conversationId} is null`,
+      ),
+    // The prune of old bodies, across workspaces.
+    index("outbound_message_body_idx").on(table.createdAt).where(sql`${table.body} is not null`),
+    // A key's, a conversation's and a message's delete check these foreign keys.
+    index("outbound_message_api_key_idx").on(table.workspaceId, table.authorApiKeyId),
+    index("outbound_message_conversation_idx").on(table.workspaceId, table.conversationId),
+    index("outbound_message_message_idx").on(table.workspaceId, table.messageId),
+  ],
+);
+
+/** A business dedupe key, unique per visitor. A cancel deletes its row, and nothing prunes it. */
+export const outboundOnce = pgTable(
+  "outbound_once",
+  {
+    workspaceId: ownedByWorkspace(),
+    visitorId: uuid("visitor_id").notNull(),
+    onceKey: text("once_key").notNull(),
+    outboundMessageId: uuid("outbound_message_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.visitorId, table.onceKey] }),
+    foreignKey({
+      name: "outbound_once_visitor_fk",
+      columns: [table.workspaceId, table.visitorId],
+      foreignColumns: [visitor.workspaceId, visitor.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "outbound_once_outbound_message_fk",
+      columns: [table.workspaceId, table.outboundMessageId],
+      foreignColumns: [outboundMessage.workspaceId, outboundMessage.id],
+    }).onDelete("cascade"),
+    index("outbound_once_outbound_message_idx").on(table.workspaceId, table.outboundMessageId),
   ],
 );

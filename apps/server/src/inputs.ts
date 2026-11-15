@@ -56,3 +56,67 @@ export const replyToMessageId = z
   .uuid()
   .optional()
   .describe("An earlier message of this conversation to quote, from get_conversation");
+
+const DURATION_UNITS_MS = { m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
+
+/** A duration such as `"30m"`, `"1h"` or `"7d"`, in milliseconds. */
+export const Duration = z
+  .string()
+  .regex(/^[1-9]\d{0,3}[mhd]$/)
+  .transform(
+    (value) =>
+      Number(value.slice(0, -1)) *
+      DURATION_UNITS_MS[value.slice(-1) as keyof typeof DURATION_UNITS_MS],
+  )
+  .openapi({ type: "string", example: "1h", description: "A number with m, h or d, such as 1h" });
+
+const ATTRIBUTES_MAX_BYTES = 2048;
+
+/** Custom attributes, as a host token or a server write sets them: up to 2 KB of JSON. */
+export const Attributes = z
+  .record(z.string(), z.unknown())
+  .refine((value) => Buffer.byteLength(JSON.stringify(value)) <= ATTRIBUTES_MAX_BYTES, {
+    message: `At most ${ATTRIBUTES_MAX_BYTES} bytes of JSON`,
+  });
+
+/** A visitor's name, on one line, so it cannot add lines of its own. */
+export const VisitorName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u);
+
+/** One email address: a mail server sends to every address in a list such as "a@x.com, b@y.com". */
+export const VisitorEmail = z.email().max(320);
+
+/** The host product's user ID. */
+export const UserId = z.string().min(1).max(255);
+
+/** What a server sets on a contact. Attributes merge key by key, and a null value removes one. */
+export const ContactFields = z.object({
+  name: VisitorName.optional(),
+  email: VisitorEmail.optional(),
+  attributes: Attributes.optional().openapi({
+    description: "Merged key by key into the contact's attributes. A null value removes the key.",
+  }),
+});
+export type ContactFields = z.infer<typeof ContactFields>;
+
+/**
+ * Who a server write is for: a signed-in user by `userId`, which creates or updates them, or a
+ * visitor that exists, by `id`.
+ */
+export const VisitorSelector = z
+  .union([ContactFields.extend({ userId: UserId }).strict(), z.strictObject({ id: z.uuid() })])
+  .openapi("VisitorSelector", {
+    example: { userId: "42", name: "Ada Lovelace", email: "ada@example.com" },
+  });
+export type VisitorSelector = z.infer<typeof VisitorSelector>;
+
+/** A business dedupe key, such as `welcome` or `dns-unverified:42`, unique per visitor. */
+export const OnceKey = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[^\p{Cc}]*$/u);

@@ -150,6 +150,7 @@ describe("who may set up", () => {
     }
     const destructive = setupTools.filter((one) => one.annotations.destructiveHint);
     expect(destructive.map((one) => one.name).sort()).toEqual([
+      "cancel_outbound_message",
       "close_conversation",
       "delete_test_visitors",
       "delete_webhook",

@@ -159,8 +159,12 @@ if (role === "worker" || role === "all") {
   publisher.on("error", (err) => logger.error({ err }, "valkey error"));
   const signals = createSignals(publisher, logger);
   const sweep = mailboxSweepFor(signals, publisher);
+  // The outbound messages whose time came write messages, through the app's role.
+  const appPool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 });
+  appPool.on("error", (err) => logger.error({ err }, "postgres pool error"));
   const worker = startWorker({
     db: workerDb,
+    appDb: drizzle(appPool, { schema }),
     cloud,
     signals,
     logger,
@@ -179,6 +183,7 @@ if (role === "worker" || role === "all") {
   stops.push(
     () => worker.stop(),
     () => pool.end(),
+    () => appPool.end(),
     async () => sweep?.pool.end(),
     async () => publisher.disconnect(),
   );

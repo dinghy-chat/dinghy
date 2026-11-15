@@ -44,6 +44,8 @@ import { oauthIssuer, registerOAuth, resourceMetadataUrl } from "./oauth.ts";
 import { type FetchClientDocument, fetchClientDocument } from "./oauth-client.ts";
 import { registerOperatorRoutes } from "./operator.ts";
 import { registerOperatorApp } from "./operator-app.ts";
+import { createOutbound } from "./outbound.ts";
+import { registerOutboundRoutes } from "./outbound-routes.ts";
 import {
   createPresence,
   createVisitorPresence,
@@ -386,10 +388,12 @@ export function createApp({
   const liveVisitors = createLiveVisitors(valkey, logger);
   const ownOrigin = publicUrl === undefined ? undefined : new URL(publicUrl).origin;
   const setup = createSetup({ db, logger, valkey, liveVisitors });
+  const outbound = createOutbound({ db, live });
   // Before the widget routes, because any site may read it.
   registerWidgetAppearance(app, db, urls, rateLimit);
   registerWidgetRoutes(app, {
     db,
+    outbound,
     uploads,
     imageUrls: urls,
     ipSecret,
@@ -525,7 +529,17 @@ export function createApp({
         testVisitors,
         serverUrl,
       },
-      chat: { db, uploads, inbox, limits, live, liveVisitors, presence, visitorPresence },
+      chat: {
+        db,
+        uploads,
+        inbox,
+        outbound,
+        limits,
+        live,
+        liveVisitors,
+        presence,
+        visitorPresence,
+      },
       resourceMetadata: issuer === null ? null : resourceMetadataUrl(issuer),
     });
     registerKeyEvents(app, {
@@ -541,7 +555,8 @@ export function createApp({
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, db, presence);
     registerModerationRoutes(app, db, live);
-    registerContactRoutes(app, { db, live, visitorPresence });
+    registerContactRoutes(app, { db, live, visitorPresence, outbound });
+    registerOutboundRoutes(app, { outbound, rateLimit });
     registerLiveVisitorRoutes(app, db, liveVisitors);
     registerGetStartedRoutes(app, db);
     registerSavedReplyRoutes(app, db, live);

@@ -1250,6 +1250,7 @@ describe("reply receipts", () => {
     expect((await readThread(conversationId)).receipts).toEqual({
       readSeq: expect.any(String),
       emails: [],
+      notEmailed: [],
     });
     expect(BigInt((await readThread(conversationId)).receipts.readSeq)).toBeLessThan(
       BigInt(reply.seq),

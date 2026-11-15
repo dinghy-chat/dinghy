@@ -25,6 +25,7 @@ import {
   apiKey,
   attachment,
   CHAT_KINDS,
+  type ChosenButton,
   conversation,
   conversationLabel,
   conversationRead,
@@ -61,6 +62,13 @@ type MessageKind = (typeof message.$inferSelect)["kind"];
  * hand passes its own column, such as sql`m.kind`.
  */
 export const isChat = (kind: SQLWrapper = message.kind) => inArray(kind, [...CHAT_KINDS]);
+
+/**
+ * Whether a reply email may carry the message: every message but an outbound message sent with
+ * `email: false`.
+ */
+export const mayGoByEmail = () =>
+  sql<boolean>`coalesce((${message.metadata} #>> '{outbound,email}')::boolean, true)`;
 
 /** What people wrote: the chat, and the notes only the team sees. */
 export const isWritten = () => inArray(message.kind, [...WRITTEN_KINDS]);
@@ -171,7 +179,18 @@ type Channel = (typeof CHANNELS)[number];
 export type MessageSource =
   | { via: "mcp" }
   | { via: "draft"; draftId: string }
-  | { via: "email"; fromAddress: string | null };
+  | { via: "email"; fromAddress: string | null }
+  | { via: "outbound"; outbound: OutboundMark; mcp: boolean };
+
+/**
+ * A message that an outbound message became: its ID, whether a reply email may carry it, and who
+ * the visitor sees, a member or the workspace, when not its author.
+ */
+export interface OutboundMark {
+  id: string;
+  email: boolean;
+  sender: { operatorId: string } | "team" | null;
+}
 
 /** How a key's write came, when not through the REST API. */
 export type KeySource = Extract<MessageSource, { via: "mcp" }>;
@@ -210,6 +229,10 @@ interface StoredFields {
   handoff: { operatorId: string | null } | null;
   /** The members a note mentions. Empty for any other message. */
   mentions: string[];
+  /** The outbound message it came from, or null. */
+  outbound: OutboundMark | null;
+  /** The button of an outbound message that the visitor's message answered with, or null. */
+  button: ChosenButton | null;
   /** Its own position, or its last edit's or delete's, for a stream that sends changes again. */
   changeSeq: bigint;
   createdAt: Date;
@@ -286,13 +309,35 @@ interface MessageMetadata {
   handoff?: { operatorId: string | null };
   /** Set on a note that mentions members. */
   mentions?: string[];
+  /** Set on a message that an outbound message became. */
+  outbound?: OutboundMark;
+  /** Set on a visitor's message that answered with an outbound message's button. */
+  button?: ChosenButton;
 }
 
-/** A key's message without a `via` came through the REST API, which writes none. */
+/**
+ * A key's message without a `via` came through the REST API, which writes none. An outbound
+ * message keeps the way its key sent it.
+ */
 function viaOf(meta: MessageMetadata | null, authorApiKeyId: string | null): MessageVia {
   if (meta?.via === "email") return { via: "email", fromAddress: meta.fromAddress ?? null };
   if (meta?.via === "draft") return { via: "draft" };
   return { via: authorApiKeyId === null ? null : (meta?.via ?? "api") };
+}
+
+/** What a message's metadata holds about the way it came. */
+function sourceMetadata(source: MessageSource | undefined): MessageMetadata {
+  if (source === undefined) return {};
+  if (source.via === "outbound") {
+    return { outbound: source.outbound, ...(source.mcp && { via: "mcp" }) };
+  }
+  if (source.via === "email") {
+    return {
+      via: "email",
+      ...(source.fromAddress !== null && { fromAddress: source.fromAddress }),
+    };
+  }
+  return { via: source.via };
 }
 
 /** The attachment from the metadata, which keeps the shape that messages have always stored. */
@@ -320,6 +365,8 @@ export function stored({
     ...viaOf(meta, row.authorApiKeyId),
     handoff: meta?.handoff ?? null,
     mentions: meta?.mentions ?? [],
+    outbound: meta?.outbound ?? null,
+    button: meta?.button ?? null,
     changeSeq: changedSeq ?? row.seq,
   };
 }
@@ -355,13 +402,15 @@ async function dropDepartedAssignee(tx: Transaction, workspaceId: string, conver
  * The conversation a visitor's message goes to: their open one, else their newest closed one,
  * reopened with its assignee, else a new one. No time limit applies, so a visitor keeps one thread.
  * A message for one conversation goes there, reopened if closed, and never to another. The
- * workspace lock makes this safe to race.
+ * workspace lock makes this safe to race. `team` names who reopens or starts it for an outbound
+ * message, when not the visitor.
  */
 export async function visitorConversation(
   tx: Transaction,
   workspaceId: string,
   { visitorId, conversationId }: Extract<Author, { kind: "visitor" }>,
   startedPage: string | null,
+  team?: { reopenedBy: StatusActor },
 ): Promise<{ id: string; started: "created" | "reopened" | null }> {
   const [newest] = await tx
     .select({ id: conversation.id, status: conversation.status })
@@ -377,14 +426,20 @@ export async function visitorConversation(
     .limit(1);
   if (newest?.status === "open") return { id: newest.id, started: null };
   if (newest !== undefined) {
-    await setConversationStatus(tx, workspaceId, newest.id, "open", { kind: "visitor", visitorId });
+    const opener = team?.reopenedBy ?? { kind: "visitor", visitorId };
+    await setConversationStatus(tx, workspaceId, newest.id, "open", opener);
     await dropDepartedAssignee(tx, workspaceId, newest.id);
     return { id: newest.id, started: "reopened" };
   }
   if (conversationId !== undefined) throw new Error("The visitor's conversation is gone");
   const [created] = await tx
     .insert(conversation)
-    .values({ workspaceId, visitorId, startedPage })
+    .values({
+      workspaceId,
+      visitorId,
+      startedPage,
+      startedBy: team === undefined ? "visitor" : "team",
+    })
     .returning({ id: conversation.id });
   if (created === undefined) throw new Error("The conversation insert returned no row");
   return { id: created.id, started: "created" };
@@ -556,6 +611,8 @@ export async function appendMessage(
     source?: MessageSource | undefined;
     /** A bot's handoff note: who takes the conversation, with null for the team. */
     handoffTo?: string | null | undefined;
+    /** A visitor's answer with an outbound message's button. */
+    button?: ChosenButton | undefined;
   } & (
     | { attachment?: NewAttachment; note?: false }
     | { attachment?: undefined; note: true; mentions?: string[] | undefined }
@@ -611,8 +668,10 @@ export async function appendMessage(
         and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, author.conversationId)),
       );
     if (target?.status !== "open") throw new ConversationClosedError();
+    // An outbound message assigns its sender when the visitor answers, if anyone.
     assignsReplier =
       author.kind === "operator" &&
+      input.source?.via !== "outbound" &&
       target.assignee === null &&
       !(await hasOperatorReply(tx, workspaceId, author.conversationId));
   }
@@ -642,9 +701,8 @@ export async function appendMessage(
     : [];
   const metadata: MessageMetadata = {
     ...(upload !== undefined && attachmentMetadata(upload)),
-    ...(input.source !== undefined && { via: input.source.via }),
-    ...(input.source?.via === "email" &&
-      input.source.fromAddress !== null && { fromAddress: input.source.fromAddress }),
+    ...sourceMetadata(input.source),
+    ...(input.button !== undefined && { button: input.button }),
     ...(input.handoffTo !== undefined && { handoff: { operatorId: input.handoffTo } }),
     ...(mentions.length > 0 && { mentions }),
   };
@@ -834,15 +892,15 @@ export async function readState(
 
 /**
  * Moves the read position forward. It never moves back, because tabs can report out of order, and
- * it stops at the feed's position, so a wrong value cannot hide messages that arrive later. True
- * when it passed a team reply, the only lines whose receipts change.
+ * it stops at the feed's position, so a wrong value cannot hide messages that arrive later. Answers
+ * the team replies it passed, the only lines whose receipts change.
  */
 export async function markRead(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
   seq: bigint,
-): Promise<boolean> {
+): Promise<string[]> {
   const target = sql`least(${seq}::bigint, (
     select ${workspace.eventSeq} from ${workspace} where ${workspace.id} = ${workspaceId}
   ))`;
@@ -852,13 +910,13 @@ export async function markRead(
     .from(visitor)
     .where(one)
     .for("no key update");
-  if (before === undefined) return false;
+  if (before === undefined) return [];
   const [moved] = await tx
     .update(visitor)
     .set({ lastReadSeq: target })
     .where(and(one, sql`${visitor.lastReadSeq} < ${target}`))
     .returning({ lastReadSeq: visitor.lastReadSeq });
-  if (moved === undefined) return false;
+  if (moved === undefined) return [];
   // The replies this read passed, so their info can say when the visitor read them.
   const passed = await tx
     .update(message)
@@ -874,7 +932,7 @@ export async function markRead(
       ),
     )
     .returning({ id: message.id });
-  return passed.length > 0;
+  return passed.map((one) => one.id);
 }
 
 const visitorConversations = (tx: Transaction, workspaceId: string, visitorId: string) =>
@@ -975,6 +1033,8 @@ export interface ConversationRow {
   updatedAt: Date;
   assigneeOperatorId: string | null;
   startedPage: string | null;
+  /** `team` when an outbound message started it. */
+  startedBy: "visitor" | "team";
   welcome: boolean;
   visitorId: string;
   visitorBlockedAt: Date | null;
@@ -1064,6 +1124,7 @@ const conversationColumns = {
   updatedAt: conversation.updatedAt,
   assigneeOperatorId: conversation.assigneeOperatorId,
   startedPage: conversation.startedPage,
+  startedBy: conversation.startedBy,
   welcome: conversation.welcome,
   visitorId: conversation.visitorId,
   visitorBlockedAt: visitor.blockedAt,
@@ -1270,11 +1331,22 @@ export type AssigneeFilter =
   | { kind: "operator"; operatorId: string }
   | { kind: "none" };
 
-/** What a list holds: whose conversations, and with a label ID only those with that label. */
+/**
+ * What a list holds: whose conversations, with a label ID only those with that label, and with
+ * `startedByTeam` only those an outbound message started and the visitor has not answered yet.
+ */
 export interface ListFilter {
   assignee: AssigneeFilter;
   labelId?: string | undefined;
+  startedByTeam?: boolean | undefined;
 }
+
+/** Started by the team, and the visitor has written nothing in it. */
+const startedByTeam = () =>
+  sql`(${conversation.startedBy} = 'team' and not exists (
+    select 1 from ${message} as m
+    where m.workspace_id = ${conversation}.workspace_id and m.conversation_id = ${conversation}.id
+      and m.author_visitor_id is not null))`;
 
 /** Only when the filter names a label, so a list without one never reads the labels. */
 function labelCondition(workspaceId: string, labelId: string | undefined) {
@@ -1341,6 +1413,7 @@ export async function listConversations(
         eq(conversation.status, status),
         assigneeCondition(filter.assignee),
         labelCondition(workspaceId, filter.labelId),
+        filter.startedByTeam === true ? startedByTeam() : undefined,
         // A row comparison bounds the scan of conversation_list_idx, where an OR would not.
         before === undefined
           ? undefined
@@ -1478,15 +1551,20 @@ async function apiKeyNames(
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
+/** Who wrote a message, and the member it shows as, when it came from an outbound message. */
+export type MessageAuthorIds = Pick<StoredMessage, "authorOperatorId" | "authorApiKeyId"> & {
+  outbound?: Pick<OutboundMark, "sender"> | null;
+};
+
 /** Each message's author, by the operator's or the key's ID. Both are random UUIDs. */
 export async function messageAuthors(
   tx: Transaction,
   workspaceId: string,
-  messages: Pick<StoredMessage, "authorOperatorId" | "authorApiKeyId">[],
+  messages: MessageAuthorIds[],
 ): Promise<Map<string, MessageAuthor>> {
   const operators = await operatorAuthors(
     tx,
-    messages.map((one) => one.authorOperatorId),
+    messages.flatMap((one) => [one.authorOperatorId, memberSender(one.outbound ?? null)]),
   );
   const keys = await apiKeyNames(
     tx,
@@ -1499,11 +1577,17 @@ export async function messageAuthors(
   return new Map([...operators, ...keyAuthors]);
 }
 
+/** The member an outbound message shows as its sender, or null. */
+export const memberSender = (outbound: Pick<OutboundMark, "sender"> | null) =>
+  outbound !== null && typeof outbound.sender === "object" && outbound.sender !== null
+    ? outbound.sender.operatorId
+    : null;
+
 /** Each message's author name, by the operator's or the key's ID. */
 export async function authorNames(
   tx: Transaction,
   workspaceId: string,
-  messages: Pick<StoredMessage, "authorOperatorId" | "authorApiKeyId">[],
+  messages: MessageAuthorIds[],
 ): Promise<Map<string, string>> {
   const authors = await messageAuthors(tx, workspaceId, messages);
   return new Map([...authors].map(([id, author]) => [id, author.name]));

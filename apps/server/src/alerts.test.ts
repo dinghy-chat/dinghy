@@ -30,6 +30,7 @@ import {
   event,
   ipBlock,
   operator,
+  outboundMessage,
   pushSubscription,
   replyAddress,
   visitor,
@@ -48,6 +49,7 @@ import {
   markRead,
   setConversationStatus,
 } from "./messages.ts";
+import { materializeOutbound } from "./outbound.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 import { queueTranscript, TRANSCRIPT_DELAY_MS } from "./transcripts.ts";
@@ -1358,6 +1360,56 @@ describe("email", () => {
     expect((await edit(first.id, "Answer one")).kind).toBe("edited");
     expect((await edit(during.id, "Answer seven")).kind).toBe("edited");
     expect((await edit(sixth.id, "Answer six")).kind).toBe("seen");
+  });
+
+  test("an outbound message sent with email off stays out of the email, its receipt and its lock", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const from = await addVisitor("v@example.com");
+    const conversationId = (await visitorWrites(from, "Help")).message.conversationId;
+    await operatorWrites(anna, conversationId, "Answer 1");
+    const [row] = await owner
+      .insert(outboundMessage)
+      .values({
+        workspaceId: space.id,
+        visitorId: from,
+        authorOperatorId: anna,
+        senderKind: "member",
+        senderOperatorId: anna,
+        body: "Not by email",
+        startConversation: "now",
+        show: "badge",
+        ifOpen: "join",
+        assign: false,
+        email: false,
+        clientId: randomUUID(),
+        status: "pending",
+      })
+      .returning({ id: outboundMessage.id });
+    const outbound = await withWorkspace(app, space.id, (tx) =>
+      materializeOutbound(tx, space.id, row?.id ?? "", from, { answer: false }),
+    );
+    if (outbound === null) throw new Error("The outbound message did not go in");
+    await operatorWrites(anna, conversationId, "Answer 2");
+    await fanOutAll();
+    runWorker({ mail: true });
+    await makeDue();
+    await until(async () => (await replyRows())[0]?.outcome === "sent", "the email");
+    expect(mails[0]?.text).toContain("Answer 1");
+    expect(mails[0]?.text).toContain("Answer 2");
+    expect(mails[0]?.text).not.toContain("Not by email");
+    const seen = await withWorkspace(app, space.id, async (tx) => ({
+      receipts: await replyReceipts(tx, space.id, conversationId, from),
+      emailed: await emailedAt(tx, space.id, from, outbound),
+    }));
+    expect(seen.receipts.notEmailed).toEqual([outbound.seq]);
+    expect(seen.emailed).toBeNull();
+    const edited = await withWorkspace(app, space.id, (tx) =>
+      editMessage(tx, space.id, conversationId, outbound.id, anna, {
+        body: "Changed",
+        mentions: [],
+      }),
+    );
+    expect(edited.kind).toBe("edited");
   });
 
   test("an email planned while an edit commits carries the edited text", async () => {

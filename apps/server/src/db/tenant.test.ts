@@ -11,6 +11,8 @@ import {
   event,
   message,
   operator,
+  outboundMessage,
+  outboundOnce,
   stripeEvent,
   subscription,
   visitor,
@@ -44,6 +46,8 @@ const TENANT_TABLES = [
   apiKeyCredential,
   draftReply,
   widgetSiteSeen,
+  outboundMessage,
+  outboundOnce,
 ];
 
 let database: TestDatabase;
@@ -108,6 +112,26 @@ async function seed(workspaceId: string): Promise<void> {
     body: `draft of ${workspaceId}`,
   });
   await owner.insert(widgetSiteSeen).values({ workspaceId, origin: "https://app.example.com" });
+  const outboundMessageId = uuidFor(workspaceId, 7);
+  await owner.insert(outboundMessage).values({
+    workspaceId,
+    id: outboundMessageId,
+    visitorId,
+    authorApiKeyId: apiKeyId,
+    senderKind: "author",
+    body: `outbound secret of ${workspaceId}`,
+    startConversation: "on_reply",
+    show: "badge",
+    ifOpen: "hold",
+    assign: false,
+    email: false,
+    onceKey: "welcome",
+    clientId: "outbound",
+    status: "pending",
+  });
+  await owner
+    .insert(outboundOnce)
+    .values({ workspaceId, visitorId, onceKey: "welcome", outboundMessageId });
   const webhookId = uuidFor(workspaceId, 4);
   await owner.insert(webhook).values({
     workspaceId,
@@ -184,6 +208,7 @@ describe("migrations", () => {
       webhook_created_by_operator_fk: "a member's removal, at most 5 webhooks per workspace",
       webhook_created_by_api_key_fk: "a key's delete, at most 5 webhooks per workspace",
       draft_reply_resolved_by_fk: "a member's removal, which only the purge does",
+      outbound_message_sender_fk: "a member's removal, which only the purge does",
     };
     const result = await owner.execute<{ name: string }>(sql`
       select c.conname as name from pg_constraint c

@@ -1,7 +1,7 @@
 import { z } from "@hono/zod-openapi";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Locale } from "../../../packages/widget/src/shared.ts";
-import { conversation, pageView, visitor } from "./db/schema.ts";
+import { conversation, outboundMessage, pageView, visitor } from "./db/schema.ts";
 import type { Database, Transaction } from "./db/tenant.ts";
 
 /** The newest rows a visitor keeps, so a long visit cannot grow without end. */
@@ -178,6 +178,33 @@ export async function forgetPagesWithoutChat(
     UPDATE visitor AS v SET page_context = NULL WHERE v.workspace_id = ${workspaceId} AND v.id IN (${ids})
       AND v.page_context IS NOT NULL AND NOT EXISTS (SELECT 1 FROM conversation AS c
         WHERE c.workspace_id = v.workspace_id AND c.visitor_id = v.id)`);
+}
+
+/**
+ * Forgets what Dinghy holds about these visitors beside their conversations: their pages, what the
+ * page sent, and their outbound messages, with no condition. A block and a contact's delete call it.
+ */
+export async function forgetVisitor(
+  tx: Transaction,
+  workspaceId: string,
+  visitorIds: string[],
+): Promise<void> {
+  if (visitorIds.length === 0) return;
+  await tx
+    .delete(pageView)
+    .where(and(eq(pageView.workspaceId, workspaceId), inArray(pageView.visitorId, visitorIds)));
+  await tx
+    .update(visitor)
+    .set({ pageContext: null })
+    .where(and(eq(visitor.workspaceId, workspaceId), inArray(visitor.id, visitorIds)));
+  await tx
+    .delete(outboundMessage)
+    .where(
+      and(
+        eq(outboundMessage.workspaceId, workspaceId),
+        inArray(outboundMessage.visitorId, visitorIds),
+      ),
+    );
 }
 
 /** Deletes up to `limit` rows older than 90 days, across workspaces. For the worker. */

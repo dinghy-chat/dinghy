@@ -1,25 +1,35 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { SESSION } from "./api-security.ts";
+import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { CHAT_KINDS, conversation, visitor } from "./db/schema.ts";
+import { type Condition, ConditionSchema, toSql } from "./conditions.ts";
+import {
+  CHAT_KINDS,
+  conversation,
+  type FieldTimes,
+  outboundMessage,
+  visitor,
+} from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
   FORBIDDEN,
   failure,
   INVALID,
+  KEY_LIMITED,
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { PageContextSchema, visitorPages } from "./journey.ts";
+import { type ContactFields, ContactFields as ContactFieldsSchema, UserId } from "./inputs.ts";
+import { forgetVisitor, PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { containing, isChat, previewBody } from "./messages.ts";
 import { deleteConversations } from "./moderation.ts";
+import type { Outbound } from "./outbound.ts";
 import type { VisitorPresence } from "./presence.ts";
 import { allowed } from "./team.ts";
 
@@ -105,8 +115,8 @@ function isRealTime(cursor: string): boolean {
   return !Number.isNaN(time.getTime()) && time.toISOString().startsWith(second);
 }
 
-/** A page of the contact list: the route's query, and MCP's `list_contacts` arguments. */
-export const ContactListQuery = z.object({
+/** A page of the contact list, as the route's query and MCP's `list_contacts` share it. */
+const ContactPage = z.object({
   q: z.string().trim().max(100).optional().openapi({
     description: "Matches the name, email or user ID, ignoring case.",
   }),
@@ -117,12 +127,48 @@ export const ContactListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
 });
 
+const HAS_CHATTED_TEXT =
+  "True by default: only people who have a conversation. False adds the people your server created or sent an outbound message to.";
+
+/** MCP's `list_contacts` arguments. */
+export const ContactListQuery = ContactPage.extend({
+  hasChatted: z.boolean().default(true).describe(HAS_CHATTED_TEXT),
+  filter: ConditionSchema.optional().describe("Only the contacts that match this condition."),
+});
+
+/** The route's query: the same, with the condition as JSON text. */
+const ContactListParams = ContactPage.extend({
+  hasChatted: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true")
+    .openapi({ description: HAS_CHATTED_TEXT }),
+  filter: z
+    .string()
+    .max(10_000)
+    .transform((text, context) => {
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        context.addIssue("Not JSON");
+        return z.NEVER;
+      }
+    })
+    .pipe(ConditionSchema)
+    .optional()
+    .openapi({
+      type: "string",
+      description: "Only the contacts that match this condition, as JSON text.",
+      example: '{"field":"attributes.plan","op":"eq","value":"pro"}',
+    }),
+});
+
 const listRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/contacts`,
   security: SESSION,
-  summary: "List the people who have a conversation, newest first",
-  request: { params: workspaceParams, query: ContactListQuery },
+  summary: "List contacts, newest first",
+  request: { params: workspaceParams, query: ContactListParams },
   responses: {
     200: {
       description: "A page of contacts",
@@ -206,6 +252,31 @@ const changeRoute = createRoute({
   },
 });
 
+const upsertRoute = createRoute({
+  method: "put",
+  path: `${PREFIX}/{workspaceId}/contacts/by-user/{userId}`,
+  security: SESSION_OR_KEY,
+  summary: "Create or update a signed-in contact by your user ID, before or after any chat",
+  description:
+    "Sets the name and email, and merges the attributes key by key. Each write carries its time, from this route or from a host token, and the later write wins for each field and each attribute. A change cancels the person's scheduled outbound messages whose `unless` now matches.",
+  request: {
+    params: workspaceParams.extend({ userId: UserId }),
+    body: { required: true, content: { "application/json": { schema: ContactFieldsSchema } } },
+  },
+  responses: {
+    ...KEY_LIMITED,
+    200: {
+      description: "The contact after the change",
+      content: { "application/json": { schema: ContactDetailSchema } },
+    },
+    201: {
+      description: "The new contact",
+      content: { "application/json": { schema: ContactDetailSchema } },
+    },
+    ...MEMBER_WRITE_ERRORS,
+  },
+});
+
 const deleteRoute = createRoute({
   method: "delete",
   path: `${PREFIX}/{workspaceId}/contacts/{visitorId}`,
@@ -267,6 +338,9 @@ const sortKey = (sort: Sort) =>
     ? sql`coalesce(${visitor.lastSeenAt}, ${visitor.createdAt})`
     : sql`${visitor.createdAt}`;
 
+const hasChatted = sql`exists (select 1 from ${conversation} where ${conversation.workspaceId} = ${visitor.workspaceId} and ${conversation.visitorId} = ${visitor.id})`;
+const wasSentTo = sql`exists (select 1 from ${outboundMessage} where ${outboundMessage.workspaceId} = ${visitor.workspaceId} and ${outboundMessage.visitorId} = ${visitor.id})`;
+
 /**
  * A page of contacts, newest first by the sort, in one statement: a bounded scan of the sort's
  * index, with one probe of the conversation index per visitor for its count.
@@ -274,7 +348,14 @@ const sortKey = (sort: Sort) =>
 export async function listContacts(
   tx: Transaction,
   workspaceId: string,
-  options: { q?: string | undefined; sort: Sort; before?: string | undefined; limit: number },
+  options: {
+    q?: string | undefined;
+    sort: Sort;
+    before?: string | undefined;
+    limit: number;
+    hasChatted: boolean;
+    filter?: Condition | undefined;
+  },
 ) {
   const key = sortKey(options.sort);
   const [time, id] = options.before?.split(",") ?? [];
@@ -292,7 +373,8 @@ export async function listContacts(
         eq(visitor.workspaceId, workspaceId),
         // A bot's test visitors are not people.
         eq(visitor.isTest, false),
-        sql`exists (select 1 from ${conversation} where ${conversation.workspaceId} = ${visitor.workspaceId} and ${conversation.visitorId} = ${visitor.id})`,
+        options.hasChatted ? hasChatted : or(hasChatted, isNotNull(visitor.userId), wasSentTo),
+        options.filter === undefined ? undefined : toSql(options.filter),
         pattern === null
           ? undefined
           : sql`(${visitor.name} ilike ${pattern} or ${visitor.email} ilike ${pattern} or ${visitor.userId} ilike ${pattern})`,
@@ -433,6 +515,118 @@ const csvLine = (contact: ReturnType<typeof contactView>) =>
     .map(csvCell)
     .join(",")}\r\n`;
 
+/** A contact's fields that a server or a host token writes, with when each was written. */
+interface ContactState {
+  name: string | null;
+  email: string | null;
+  attributes: unknown;
+  fieldTimes: FieldTimes;
+}
+
+type ContactChange = Pick<ContactState, "name" | "email" | "fieldTimes"> & {
+  attributes: Record<string, unknown> | null;
+};
+
+const ATTRIBUTE_TIME = "attributes.";
+
+/**
+ * A write at `at`, in milliseconds, applied to the contact: each field and each attribute changes
+ * only when no later write set it. A null attribute removes the key. Null when nothing changes.
+ */
+export function mergeContact(
+  current: ContactState,
+  fields: ContactFields,
+  at: number,
+): ContactChange | null {
+  const times = { ...current.fieldTimes };
+  const attributes = { ...((current.attributes as Record<string, unknown> | null) ?? {}) };
+  const next = { name: current.name, email: current.email };
+  let changed = false;
+  /** Writes one field when this write is not older than the last one, and says whether it did. */
+  const take = (field: string, value: unknown, previous: unknown) => {
+    const time = times[field] ?? Number.NEGATIVE_INFINITY;
+    if (at < time || (at === time && value === previous)) return false;
+    times[field] = at;
+    changed = true;
+    return true;
+  };
+  if (fields.name !== undefined && take("name", fields.name, current.name)) next.name = fields.name;
+  if (fields.email !== undefined && take("email", fields.email, current.email)) {
+    next.email = fields.email;
+  }
+  for (const [key, value] of Object.entries(fields.attributes ?? {})) {
+    const before = attributes[key];
+    if (!take(`${ATTRIBUTE_TIME}${key}`, JSON.stringify(value), JSON.stringify(before))) continue;
+    if (value === null) delete attributes[key];
+    else attributes[key] = value;
+  }
+  if (!changed) return null;
+  const kept = Object.keys(attributes).length > 0 ? attributes : null;
+  return { ...next, attributes: kept, fieldTimes: times };
+}
+
+const contactState = {
+  name: visitor.name,
+  email: visitor.email,
+  attributes: visitor.attributes,
+  fieldTimes: visitor.fieldTimes,
+};
+
+/**
+ * Writes a server's or a host token's fields at `at`, in milliseconds. A read with no lock comes
+ * first, so a write that changes nothing, such as the same host token on every request, takes no
+ * lock. True when a value changed.
+ */
+async function writeContact(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+  fields: ContactFields,
+  at: number,
+): Promise<boolean> {
+  const one = and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId));
+  const [seen] = await tx.select(contactState).from(visitor).where(one);
+  if (seen === undefined || mergeContact(seen, fields, at) === null) return false;
+  const [current] = await tx.select(contactState).from(visitor).where(one).for("no key update");
+  const change = current === undefined ? null : mergeContact(current, fields, at);
+  if (current === undefined || change === null) return false;
+  await tx.update(visitor).set(change).where(one);
+  return (
+    change.name !== current.name ||
+    change.email !== current.email ||
+    JSON.stringify(change.attributes) !== JSON.stringify(current.attributes)
+  );
+}
+
+/**
+ * Creates the signed-in contact with this user ID, or writes to the one that exists. `changed` is
+ * true when a value changed, for the checks that read the contact.
+ */
+export async function upsertContact(
+  tx: Transaction,
+  workspaceId: string,
+  userId: string,
+  fields: ContactFields,
+  at: number,
+): Promise<{ visitorId: string; created: boolean; changed: boolean }> {
+  const ofUser = and(eq(visitor.workspaceId, workspaceId), eq(visitor.userId, userId));
+  let [existing] = await tx.select({ id: visitor.id }).from(visitor).where(ofUser);
+  if (existing === undefined) {
+    const empty = { name: null, email: null, attributes: null, fieldTimes: {} };
+    const [created] = await tx
+      .insert(visitor)
+      .values({ workspaceId, userId, ...(mergeContact(empty, fields, at) ?? empty) })
+      .onConflictDoNothing()
+      .returning({ id: visitor.id });
+    if (created !== undefined) return { visitorId: created.id, created: true, changed: true };
+    // Two first requests arrived together, and the other one created the row.
+    [existing] = await tx.select({ id: visitor.id }).from(visitor).where(ofUser);
+    if (existing === undefined) throw new Error("The visitor row is missing");
+  }
+  const changed = await writeContact(tx, workspaceId, existing.id, fields, at);
+  return { visitorId: existing.id, created: false, changed };
+}
+
 /** Deletes visitors with their conversations, messages and images. Answers how many there were. */
 export async function deleteContacts(
   tx: Transaction,
@@ -447,6 +641,7 @@ export async function deleteContacts(
       and(eq(conversation.workspaceId, workspaceId), inArray(conversation.visitorId, visitorIds)),
     );
   await deleteConversations(tx, workspaceId, conversations);
+  await forgetVisitor(tx, workspaceId, visitorIds);
   const deleted = await tx
     .delete(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), inArray(visitor.id, visitorIds)))
@@ -456,7 +651,12 @@ export async function deleteContacts(
 
 export function registerContactRoutes(
   app: App,
-  { db, live, visitorPresence }: { db: Database; live: Live; visitorPresence: VisitorPresence },
+  {
+    db,
+    live,
+    visitorPresence,
+    outbound,
+  }: { db: Database; live: Live; visitorPresence: VisitorPresence; outbound: Outbound },
 ): void {
   /** The contact with whether they are on the site now, which Valkey knows, not Postgres. */
   const withPresence = async (
@@ -484,7 +684,12 @@ export function registerContactRoutes(
           controller.enqueue(encoder.encode(`${CSV_COLUMNS.join(",")}\r\n`));
         }
         const page = await withWorkspace(db, id, (tx) =>
-          listContacts(tx, id, { q: undefined, sort: "firstSeen", before, limit: EXPORT_BATCH }),
+          listContacts(tx, id, {
+            sort: "firstSeen",
+            before,
+            limit: EXPORT_BATCH,
+            hasChatted: true,
+          }),
         );
         controller.enqueue(encoder.encode(page.contacts.map(csvLine).join("")));
         if (page.next === null) controller.close();
@@ -533,6 +738,16 @@ export function registerContactRoutes(
     if (result === "missing" || result === null) return c.json(NOT_FOUND, 404);
     if (result === "signed_in") return c.json(SIGNED_IN, 409);
     return c.json(await withPresence(id, result), 200);
+  });
+
+  app.openapi(upsertRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { userId } = c.req.valid("param");
+    const { visitorId, created } = await outbound.upsertContact(id, userId, c.req.valid("json"));
+    const found = await withWorkspace(db, id, (tx) => readContact(tx, id, visitorId));
+    if (found === null) return c.json(NOT_FOUND, 404);
+    live.wake(id, OPERATORS);
+    return c.json(await withPresence(id, found), created ? 201 : 200);
   });
 
   app.openapi(deleteRoute, async (c) => {

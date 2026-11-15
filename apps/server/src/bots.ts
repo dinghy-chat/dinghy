@@ -48,7 +48,7 @@ type KeyGate = "send" | "draft" | "bots_paused" | "human_handling";
  * A pause stops every bot, a draft-mode key drafts, which it may while a person handles the
  * conversation, and a send-mode key stays quiet while a person handles it.
  */
-function gateOf(state: {
+export function gateOf(state: {
   botsPaused: boolean;
   replyMode: ReplyMode | undefined;
   humanSince: Date | null;

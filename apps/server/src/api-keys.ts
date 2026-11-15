@@ -7,6 +7,7 @@ import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import {
   API_KEY_LEVELS,
+  API_KEY_PERMISSIONS,
   API_KEY_SOURCES,
   type ApiKeyLevel,
   apiKey,
@@ -216,6 +217,9 @@ const ApiKey = z
     source: z.enum(API_KEY_SOURCES),
     // `send` replies go to the visitor. `draft` replies wait for an operator.
     replyMode: z.enum(REPLY_MODES),
+    // What it may do beyond its level. `send_as_member`: send outbound messages with a member's
+    // name and picture.
+    permissions: z.array(z.enum(API_KEY_PERMISSIONS)),
     // A connected app's origin, from its client ID. Null for a static key. `cimd`: the host that
     // published it. `dcr`: the host or scheme it returns to, on this computer when `local`.
     client: z
@@ -236,6 +240,12 @@ export const KeyName = z
   .regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u);
 
 const denied = { ...MEMBER_ERRORS, 403: errorAnswer("forbidden: this role may not do this") };
+
+/** A key's permissions, each once. */
+const Permissions = z
+  .array(z.enum(API_KEY_PERMISSIONS))
+  .max(API_KEY_PERMISSIONS.length)
+  .transform((list) => [...new Set(list)]);
 
 const listRoute = createRoute({
   method: "get",
@@ -268,6 +278,7 @@ const createKeyRoute = createRoute({
             name: KeyName,
             level: z.enum(API_KEY_LEVELS).default("conversations"),
             replyMode: z.enum(REPLY_MODES).default("draft"),
+            permissions: Permissions.default([]),
           }),
         },
       },
@@ -286,7 +297,7 @@ const updateKeyRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/api-keys/{keyId}`,
   security: SESSION,
-  summary: "Change an API key's or a connected app's name, reply mode or level",
+  summary: "Change an API key's or a connected app's name, reply mode, level or permissions",
   request: {
     params: keyParams,
     body: {
@@ -298,6 +309,7 @@ const updateKeyRoute = createRoute({
               name: KeyName.optional(),
               replyMode: z.enum(REPLY_MODES).optional(),
               level: z.enum(API_KEY_LEVELS).optional(),
+              permissions: Permissions.optional(),
             })
             .refine((change) => Object.values(change).some((value) => value !== undefined), {
               message: "Change at least one field",
@@ -340,6 +352,7 @@ async function readKeys(tx: Transaction, workspaceId: string, keyId?: string) {
       level: apiKey.level,
       source: apiKey.source,
       replyMode: apiKey.replyMode,
+      permissions: apiKey.permissions,
       clientId: apiKey.clientId,
       createdByName: operator.name,
       createdAt: apiKey.createdAt,
@@ -376,7 +389,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const operatorId = c.get("operatorId");
-    const { name, level, replyMode } = c.req.valid("json");
+    const { name, level, replyMode, permissions } = c.req.valid("json");
     const token = newToken(STATIC_KEY_PREFIX, id);
     const [row] = await withWorkspace(db, id, (tx) =>
       tx
@@ -386,6 +399,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
           name,
           level,
           replyMode,
+          permissions,
           tokenHash: sha256Hex(token),
           createdBy: operatorId,
         })
@@ -400,6 +414,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
         level,
         source: "static" as const,
         replyMode,
+        permissions,
         client: null,
         createdByName: c.get("operatorName"),
         createdAt: row.createdAt.toISOString(),
@@ -430,6 +445,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
       apiKeyId: keyId,
       level: change.level,
       replyMode: change.replyMode,
+      permissions: change.permissions,
     });
     return c.json(changed, 200);
   });
