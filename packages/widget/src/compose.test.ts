@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import {
   acceptedFiles,
+  enterSends,
   fileExtension,
   fileSize,
   inCommitOrder,
@@ -25,6 +26,16 @@ test("Enter during an IME composition, or Safari's keyCode 229 after it, does no
   expect(isComposing(key(true, 13))).toBe(true);
   expect(isComposing(key(false, 229))).toBe(true);
   expect(isComposing(key(false, 13))).toBe(false);
+});
+
+test("Enter sends with a mouse or trackpad, and starts a line on a phone", () => {
+  for (const fine of [true, false]) {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(any-pointer: fine)" && fine,
+    }));
+    expect(enterSends()).toBe(fine);
+  }
+  vi.unstubAllGlobals();
 });
 
 test("only PNG, JPEG and WebP images up to 5 MB are sent where files are off", () => {

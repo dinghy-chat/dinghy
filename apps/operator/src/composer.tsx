@@ -11,7 +11,7 @@ import {
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
-import { acceptedFiles } from "../../../packages/widget/src/compose.ts";
+import { acceptedFiles, enterSends } from "../../../packages/widget/src/compose.ts";
 import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -124,11 +124,19 @@ const shortcutLabel = (name: TextId, key: string | undefined) =>
         keys: `${ON_MAC ? "⌘" : "Ctrl+"}${key.toUpperCase()}`,
       });
 
+/** A line in a code block, a list item in a list, and a line break anywhere else. */
+const newLine = (editor: Editor) =>
+  editor.commands.first(({ commands }) => [
+    () => commands.newlineInCode(),
+    () => commands.splitListItem("listItem"),
+    () => commands.setHardBreak(),
+  ]);
+
 /**
- * The composer's keys: Enter sends, Shift+Enter starts a line or a list item, Escape cancels, and
- * each format's key does what its button does. While the picker is open, it takes the arrows,
- * Enter, Tab and Escape first. It also keeps the Markdown within a message's length, so a reply
- * cannot fail on the server for its size.
+ * The composer's keys: Enter sends (on a phone it starts a line), Shift+Enter starts a line or a
+ * list item, Escape cancels, and each format's key does what its button does. While the picker is
+ * open, it takes the arrows, Enter, Tab and Escape first. It also keeps the Markdown within a
+ * message's length, so a reply cannot fail on the server for its size.
  */
 const composerExtension = (latest: RefObject<Latest>) =>
   Extension.create({
@@ -145,8 +153,11 @@ const composerExtension = (latest: RefObject<Latest>) =>
           },
         ]),
       ),
-      Enter() {
-        if (!latest.current.pick("Enter")) latest.current.send();
+      // On a phone, the return key starts a line, and the Send button sends.
+      Enter({ editor }) {
+        if (latest.current.pick("Enter")) return true;
+        if (!enterSends()) return newLine(editor);
+        latest.current.send();
         return true;
       },
       Tab() {
@@ -158,12 +169,7 @@ const composerExtension = (latest: RefObject<Latest>) =>
       ArrowDown() {
         return latest.current.pick("ArrowDown");
       },
-      "Shift-Enter": ({ editor }) =>
-        editor.commands.first(({ commands }) => [
-          () => commands.newlineInCode(),
-          () => commands.splitListItem("listItem"),
-          () => commands.setHardBreak(),
-        ]),
+      "Shift-Enter": ({ editor }) => newLine(editor),
       // With nothing to cancel, Escape leaves the box, so the app's single keys work again.
       Escape({ editor }) {
         const { onEscape } = latest.current;
