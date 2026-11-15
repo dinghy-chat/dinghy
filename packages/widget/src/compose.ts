@@ -12,6 +12,14 @@ export function isComposing(event: KeyboardEvent): boolean {
   return event.isComposing || event.keyCode === 229;
 }
 
+/**
+ * Enter sends only where a mouse or trackpad is present. On a phone, the keyboard's return key
+ * starts a new line and the Send button sends, as in Messages.
+ */
+export function enterSends(): boolean {
+  return matchMedia("(any-pointer: fine)").matches;
+}
+
 /** The server's answers for an upload that no retry can fix. */
 export const REFUSED = [400, 413, 507];
 /** A broken image asks for new URLs at most this often, so one deleted file cannot cause a loop. */

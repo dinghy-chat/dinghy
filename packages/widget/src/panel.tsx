@@ -7,6 +7,7 @@ import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
 import type { Attachment } from "./client.ts";
 import {
   acceptedFiles,
+  enterSends,
   fileSize,
   isComposing,
   isImage,
@@ -774,7 +775,8 @@ export function Composer({
           value={draft}
           onInput={(event) => onDraft(event.currentTarget.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !isComposing(event)) onSubmit(event);
+            if (event.key === "Enter" && !event.shiftKey && !isComposing(event) && enterSends())
+              onSubmit(event);
             // The first Escape drops the quote, and the next one closes the chat.
             if (event.key === "Escape" && quoting) {
               event.stopPropagation();

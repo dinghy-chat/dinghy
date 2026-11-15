@@ -11,7 +11,7 @@ import {
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
-import { acceptedFiles } from "../../../packages/widget/src/compose.ts";
+import { acceptedFiles, enterSends } from "../../../packages/widget/src/compose.ts";
 import { markdownHtml, SAFE_LINK } from "../../../packages/widget/src/markdown.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -125,10 +125,10 @@ const shortcutLabel = (name: TextId, key: string | undefined) =>
       });
 
 /**
- * The composer's keys: Enter sends, Shift+Enter starts a line or a list item, Escape cancels, and
- * each format's key does what its button does. While the picker is open, it takes the arrows,
- * Enter, Tab and Escape first. It also keeps the Markdown within a message's length, so a reply
- * cannot fail on the server for its size.
+ * The composer's keys: Enter sends (on a phone it starts a line), Shift+Enter starts a line or a
+ * list item, Escape cancels, and each format's key does what its button does. While the picker is
+ * open, it takes the arrows, Enter, Tab and Escape first. It also keeps the Markdown within a
+ * message's length, so a reply cannot fail on the server for its size.
  */
 const composerExtension = (latest: RefObject<Latest>) =>
   Extension.create({
@@ -145,8 +145,11 @@ const composerExtension = (latest: RefObject<Latest>) =>
           },
         ]),
       ),
+      // On a phone, Enter keeps the editor's own new line, and the Send button sends.
       Enter() {
-        if (!latest.current.pick("Enter")) latest.current.send();
+        if (latest.current.pick("Enter")) return true;
+        if (!enterSends()) return false;
+        latest.current.send();
         return true;
       },
       Tab() {
