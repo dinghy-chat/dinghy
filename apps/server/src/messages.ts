@@ -357,7 +357,7 @@ async function dropDepartedAssignee(tx: Transaction, workspaceId: string, conver
  * A message for one conversation goes there, reopened if closed, and never to another. The
  * workspace lock makes this safe to race.
  */
-async function visitorConversation(
+export async function visitorConversation(
   tx: Transaction,
   workspaceId: string,
   { visitorId, conversationId }: Extract<Author, { kind: "visitor" }>,
