@@ -3654,7 +3654,7 @@
                       "type": "string",
                       "format": "uuid"
                     },
-                    "maxItems": 5,
+                    "maxItems": 50,
                     "default": [],
                     "description": "The outbound messages the visitor read and this answers. They go in the conversation first, in the order read."
                   },
