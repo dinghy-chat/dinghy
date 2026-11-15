@@ -21,6 +21,7 @@ import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
 import {
   DEFAULT_COLORS,
   MESSAGE_MAX,
+  type OutboundButton,
   type SavedAppearance,
   type TeamFace,
   type WidgetSettings,
@@ -221,6 +222,8 @@ export interface Line {
   gone?: boolean;
   /** The visitor's answer with an outbound message's button, kept for a retry. */
   button?: { outboundMessageId: string; index: number };
+  /** The outbound message with buttons that this reply came from. */
+  outbound?: { id: string; buttons: OutboundButton[] };
 }
 
 export type SceneState = "waiting" | "sending" | "reply" | "away" | "lost" | "empty";

@@ -34,6 +34,7 @@ import {
   event,
   type MessagePayload,
   message,
+  type OutboundButton,
   operator,
   type VISITOR_KINDS,
   visitor,
@@ -183,13 +184,14 @@ export type MessageSource =
   | { via: "outbound"; outbound: OutboundMark; mcp: boolean };
 
 /**
- * A message that an outbound message became: its ID, whether a reply email may carry it, and who
- * the visitor sees, a member or the workspace, when not its author.
+ * A message that an outbound message became: its ID, whether a reply email may carry it, who the
+ * visitor sees, a member or the workspace, when not its author, and its buttons, when it has any.
  */
 export interface OutboundMark {
   id: string;
   email: boolean;
   sender: { operatorId: string } | "team" | null;
+  buttons?: OutboundButton[];
 }
 
 /** How a key's write came, when not through the REST API. */

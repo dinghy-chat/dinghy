@@ -560,6 +560,70 @@
         },
         "required": ["id", "authorName", "fromVisitor", "text", "hasImage"]
       },
+      "OutboundButton": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": ["label", "value"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": ["label", "url"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "dismiss": {
+                "type": "boolean",
+                "enum": [true]
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": ["label", "dismiss"],
+            "additionalProperties": false
+          }
+        ],
+        "description": "`{ label, value }` answers with the label, and the visitor's message carries `button: { value, label }`. `{ label, url }` opens a page. `{ label, dismiss: true }` ends the message as `dismissed`."
+      },
       "ChosenButton": {
         "type": ["object", "null"],
         "properties": {
@@ -621,6 +685,12 @@
           "outboundId": {
             "type": ["string", "null"]
           },
+          "buttons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundButton"
+            }
+          },
           "button": {
             "$ref": "#/components/schemas/ChosenButton"
           },
@@ -644,6 +714,7 @@
           "authorPictureUrl",
           "authorId",
           "outboundId",
+          "buttons",
           "button",
           "createdAt"
         ],
@@ -736,70 +807,6 @@
           "authorId",
           "createdAt"
         ]
-      },
-      "OutboundButton": {
-        "anyOf": [
-          {
-            "type": "object",
-            "properties": {
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 40
-              },
-              "value": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 100
-              }
-            },
-            "required": ["label", "value"],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 40
-              },
-              "url": {
-                "type": "string",
-                "format": "uri"
-              },
-              "value": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 100
-              }
-            },
-            "required": ["label", "url"],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 40
-              },
-              "dismiss": {
-                "type": "boolean",
-                "enum": [true]
-              },
-              "value": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 100
-              }
-            },
-            "required": ["label", "dismiss"],
-            "additionalProperties": false
-          }
-        ],
-        "description": "`{ label, value }` answers with the label, and the visitor's message carries `button: { value, label }`. `{ label, url }` opens a page. `{ label, dismiss: true }` ends the message as `dismissed`."
       },
       "Visitor": {
         "type": "object",

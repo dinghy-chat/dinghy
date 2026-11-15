@@ -415,6 +415,8 @@ const MessageSchema = z
     authorId: z.string().nullable(),
     // The outbound message this reply came from, so the widget drops its own copy of it.
     outboundId: z.string().nullable(),
+    // That outbound message's buttons, which the visitor chooses in the chat. Empty otherwise.
+    buttons: z.array(ButtonSchema),
     // The button of an outbound message that the visitor answered with, or null.
     button: ChosenButtonSchema.nullable(),
     createdAt: z.string(),
@@ -687,6 +689,7 @@ function messageView(
     clientId: message.fromVisitor ? clientId : null,
     seq: seq.toString(),
     outboundId: outbound?.id ?? null,
+    buttons: message.deleted ? [] : (outbound?.buttons ?? []),
     createdAt: createdAt.toISOString(),
     attachment: attachmentView(uploads, workspaceId, attachment),
   };

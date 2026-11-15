@@ -575,7 +575,12 @@ export async function materializeOutbound(
     conversationCreated: target.started === "created",
     source: {
       via: "outbound",
-      outbound: { id: row.id, email: row.email, sender: senderMark(row) },
+      outbound: {
+        id: row.id,
+        email: row.email,
+        sender: senderMark(row),
+        ...(row.metadata.buttons !== undefined && { buttons: row.metadata.buttons }),
+      },
       mcp: row.via === "mcp",
     },
   });

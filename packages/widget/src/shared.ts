@@ -234,8 +234,8 @@ export interface DinghyEvents {
   /** A message from the team arrived while the page was open. `body` is null for an image. */
   "message:received": ReceivedMessage;
   "conversation:started": undefined;
-  /** The visitor now exists, with this ID. */
-  visitor: string;
+  /** The visitor now exists, with this ID, or null after reset() or identify() until it is known. */
+  visitor: string | null;
   /** The launcher started or stopped pulsing. */
   nudge: boolean;
   "outbound:read": OutboundChange;

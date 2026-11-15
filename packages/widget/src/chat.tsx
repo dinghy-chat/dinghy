@@ -1,6 +1,6 @@
 import { Fragment, render } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { ApiError, type ChatMessage, createClient, type Waiting } from "./client.ts";
+import { ApiError, type ChatMessage, createClient } from "./client.ts";
 import {
   inCommitOrder,
   newClientId,
@@ -13,7 +13,7 @@ import { cleanContext } from "./context.ts";
 import "./globals.ts";
 import { type HoursState, hoursState, knownHours } from "./hours.ts";
 import { loadTexts, pickLocale } from "./locale.ts";
-import { Choices, PreviewCard, useOutbound, waitingLine } from "./outbound.tsx";
+import { Choices, type Choosable, PreviewCard, useOutbound, waitingLine } from "./outbound.tsx";
 import { emit, reportConversation } from "./page-events.ts";
 import { useDraftPreview, usePageReports } from "./page-reports.ts";
 import {
@@ -78,8 +78,8 @@ function isTypingNotice(value: unknown): value is TypingNotice {
 const isOutboundNotice = (value: unknown) =>
   typeof value === "object" && value !== null && (value as { kind?: unknown }).kind === "outbound";
 
-/** Says once that the visitor exists, with their ID. */
-function knowVisitor(context: WidgetContext, visitorId: string) {
+/** Says once that the visitor exists, with their ID, or that a new session does not know it yet. */
+function knowVisitor(context: WidgetContext, visitorId: string | null) {
   if (context.state.visitorId === visitorId) return;
   context.state.visitorId = visitorId;
   emit(context, "visitor", visitorId);
@@ -90,6 +90,10 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
   const note = kind === "closed" || kind === "reopened" ? kind : undefined;
   const line: Line = {
     ...(note && { note }),
+    ...(message.outboundId !== null &&
+      message.buttons.length > 0 && {
+        outbound: { id: message.outboundId, buttons: message.buttons },
+      }),
     id: message.id,
     seq: BigInt(message.seq),
     // A removed image or file, or a deleted message, reads as a note where it was.
@@ -656,11 +660,12 @@ function Chat({
   };
 
   /** A value button answers with its label. Any other button is the hook's. */
-  const choose = (one: Waiting, index: number) => {
+  const choose = (one: Choosable, index: number) => {
     const button = one.buttons[index];
     if (button === undefined || button.url !== undefined || button.dismiss) {
       return outbound.press(one, index);
     }
+    outbound.readBy(one, button);
     sendLine(button.label, { button: { outboundMessageId: one.id, index } });
   };
 
@@ -771,6 +776,13 @@ function Chat({
       email.form && email.composer && emailCard
     );
   const emailAt = lines.findIndex((line) => line.fromVisitor);
+  // A message's buttons show until the visitor writes after it, or dismisses it.
+  const answeredAt = lines.map((line) => line.fromVisitor).lastIndexOf(true);
+  const lineChoices = (line: Line, index: number) => {
+    const one = line.outbound;
+    if (one === undefined || index < answeredAt || outbound.isHidden(one.id)) return null;
+    return <Choices one={one} onPress={(choice) => choose(one, choice)} />;
+  };
 
   return (
     <section
@@ -827,6 +839,7 @@ function Chat({
                     }
               }
             />
+            {lineChoices(line, index)}
             {index === emailAt && emailInLog}
           </Fragment>
         ))}
@@ -957,8 +970,10 @@ function Root({ context }: { context: WidgetContext }) {
         setOpenState(false);
       },
       session: () => {
-        // A reset leaves no identity, and the next visitor must not get this one's draft.
+        // A reset leaves no identity, and the next visitor must not get this one's draft. Nor its
+        // ID: the new session's visitor is known once the server answers. Only the chat sets it.
         if (context.identity === null) setPrefill(null);
+        knowVisitor(context, null);
         setSession((current) => current + 1);
       },
       context: () => setContextVersion((current) => current + 1),

@@ -608,6 +608,38 @@ describe("an answer", () => {
   });
 });
 
+describe("buttons in a conversation", () => {
+  test("come with the message, and a value button answers there", async () => {
+    const user = userId();
+    const buttons = [
+      { label: "Send the list", value: "list" },
+      { label: "No thanks", dismiss: true },
+    ];
+    const sent = await send({
+      visitor: { userId: user },
+      body: "Your import finished. Want the list?",
+      buttons,
+      startConversation: "now",
+    });
+    const token = await hostToken(space, user);
+    const history = (await widget(token, "GET", "/messages")).json.messages as {
+      outboundId: string | null;
+      buttons: unknown[];
+    }[];
+    expect(history.find((one) => one.outboundId === sent.outboundMessage.id)?.buttons).toEqual(
+      buttons,
+    );
+    const replied = await answer(token, "ignored", [], {
+      button: { outboundMessageId: sent.outboundMessage.id, index: 0 },
+    });
+    expect(replied.json).toMatchObject({
+      body: "Send the list",
+      button: { value: "list", label: "Send the list" },
+    });
+    expect(await rowOf(sent.outboundMessage.id)).toMatchObject({ status: "replied" });
+  });
+});
+
 describe("when a conversation is open", () => {
   test("hold waits, join goes in, skip cancels", async () => {
     const { visitorId, token, conversationId } = await visitorStarts(app, space.publicKey, "Hi");

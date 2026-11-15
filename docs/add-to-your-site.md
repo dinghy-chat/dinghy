@@ -65,7 +65,7 @@ The tag adds a `Dinghy` object to the page:
 | `Dinghy.configure(options)` | Changes the colors, the side, the offsets and the z-index now |
 | `Dinghy.nudge()`, `Dinghy.nudge(false)` | Pulses the chat button until the next open, or stops it. See [Outbound messages](#outbound-messages) |
 | `Dinghy.on(event, callback)` | Calls `callback` on each event, and returns a function that stops it |
-| `Dinghy.state` | `{ ready, open, unread, conversation, visitorId, nudging }`, read only. `visitorId` is null before the visitor exists, and `nudging` says whether the chat button pulses |
+| `Dinghy.state` | `{ ready, open, unread, conversation, visitorId, nudging }`, read only. `visitorId` is null before the visitor exists and after `reset()` or `identify()` until the chat knows the next visitor, and `nudging` says whether the chat button pulses |
 
 ### Use your own button
 
@@ -128,7 +128,7 @@ Dinghy.on("message:sent", ({ body }) => analytics.track("chat message sent"));
 | `message:sent` | The visitor's message reached Dinghy | `{ body }`, with `body` null for an image or a file |
 | `message:received` | A message from the team arrives while the page is open, also an [outbound message](#outbound-messages) that waits when the page loads | `{ id, body, sender, outbound }`. See below |
 | `conversation:started` | The visitor's message started a new conversation. A message after a close reopens the conversation instead, and does not send this | Nothing |
-| `visitor` | The visitor now exists, such as after their first message or a sign-in. `ready` keeps its meaning: the full chat has loaded | The visitor's ID |
+| `visitor` | The visitor now exists, such as after their first message or a sign-in. `ready` keeps its meaning: the full chat has loaded. After `reset()` or `identify()` it fires with null, until the chat knows the next visitor | The visitor's ID, or null |
 | `nudge` | The chat button starts or stops pulsing | `true` or `false` |
 | `outbound:read` | The visitor read an outbound message | `{ id, button }` |
 | `outbound:dismissed` | The visitor chose an outbound message's dismiss button | `{ id, button }` |

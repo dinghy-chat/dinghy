@@ -39,6 +39,9 @@ const received = (one: Waiting): ReceivedMessage => ({
 
 const chosen = (button: OutboundButton) => ({ value: button.value ?? null, label: button.label });
 
+/** A message whose buttons the visitor can choose: one that waits, or one in the conversation. */
+export type Choosable = Pick<Waiting, "id" | "buttons">;
+
 /** Whether a field of the host page has focus, which a message must not take. */
 function pageTyping(host: Element): boolean {
   const active = document.activeElement;
@@ -147,16 +150,24 @@ export function useOutbound(
     reveal();
   }, [opening, reveal]);
 
+  /** A chosen button reads the message, and the page hears of the read the first time. */
+  const readBy = (one: Choosable, button: OutboundButton) => {
+    if (read.has(one.id)) return;
+    markRead([one.id]);
+    emit(context, "outbound:read", { id: one.id, button: chosen(button) });
+  };
+
   /** A button that opens a page or dismisses. A value button answers, which the chat sends. */
-  const press = (one: Waiting, index: number) => {
+  const press = (one: Choosable, index: number) => {
     const button = one.buttons[index];
     if (button === undefined || token === null) return;
     if (button.url !== undefined) window.open(button.url, "_blank", "noopener");
-    markRead([one.id]);
+    readBy(one, button);
     client.press(token, one.id, button.dismiss ? "dismiss" : "click", index).then(
       () => {
         if (!button.dismiss) return;
         setWaiting(without(one.id));
+        setHidden(adding([one.id]));
         emit(context, "outbound:dismissed", { id: one.id, button: chosen(button) });
       },
       () => {
@@ -172,11 +183,14 @@ export function useOutbound(
     card: open
       ? undefined
       : unread.filter((one) => one.show !== "badge" && !hidden.has(one.id)).at(-1),
-    hide: (id: string) => setHidden((current) => new Set(current).add(id)),
+    hide: (id: string) => setHidden(adding([id])),
     /** Whether the page heard of this message when it showed. */
     announced: (id: string) => announced.current.has(id),
     ask: () => setAsked((current) => current + 1),
     press,
+    readBy,
+    /** Whether the visitor closed this message's card or dismissed it in this tab. */
+    isHidden: (id: string) => hidden.has(id),
     /** What the visitor's next message answers: every message they read here, in order. */
     answer: (button?: Answer["button"]): Answer => ({
       outboundIds: waiting.filter((one) => read.has(one.id)).map((one) => one.id),
@@ -188,8 +202,8 @@ export function useOutbound(
   };
 }
 
-/** A waiting message's buttons. */
-export function Choices({ one, onPress }: { one: Waiting; onPress(index: number): void }) {
+/** A message's buttons. */
+export function Choices({ one, onPress }: { one: Choosable; onPress(index: number): void }) {
   if (one.buttons.length === 0) return null;
   return (
     <div class="choices">

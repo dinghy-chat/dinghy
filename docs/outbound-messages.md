@@ -277,6 +277,8 @@ A message can carry up to 4 buttons, each in one of three shapes, with a `label`
 
 The last two take an optional `value` too, up to 100 characters. A card shows the buttons, so a click there records the read first. The chosen button is on the outbound message's `button`, and on the `replied` and `dismissed` events.
 
+A message that goes in a conversation before the visitor answers, with `startConversation: "now"` or `ifOpen: "join"`, keeps its buttons there. The chat shows them under the message until the visitor writes after it or dismisses it, and the widget API's messages carry them as `buttons`.
+
 ## Cancel
 
 ```ts

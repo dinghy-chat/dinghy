@@ -5175,6 +5175,24 @@ export interface components {
       text: string;
       hasImage: boolean;
     } | null;
+    /** @description `{ label, value }` answers with the label, and the visitor's message carries `button: { value, label }`. `{ label, url }` opens a page. `{ label, dismiss: true }` ends the message as `dismissed`. */
+    OutboundButton:
+      | {
+          label: string;
+          value: string;
+        }
+      | {
+          label: string;
+          /** Format: uri */
+          url: string;
+          value?: string;
+        }
+      | {
+          label: string;
+          /** @enum {boolean} */
+          dismiss: true;
+          value?: string;
+        };
     ChosenButton: {
       value: string | null;
       label: string;
@@ -5215,6 +5233,7 @@ export interface components {
       authorPictureUrl: string | null;
       authorId: string | null;
       outboundId: string | null;
+      buttons: components["schemas"]["OutboundButton"][];
       button: components["schemas"]["ChosenButton"];
       createdAt: string;
     };
@@ -5237,24 +5256,6 @@ export interface components {
       authorId: string | null;
       createdAt: string;
     };
-    /** @description `{ label, value }` answers with the label, and the visitor's message carries `button: { value, label }`. `{ label, url }` opens a page. `{ label, dismiss: true }` ends the message as `dismissed`. */
-    OutboundButton:
-      | {
-          label: string;
-          value: string;
-        }
-      | {
-          label: string;
-          /** Format: uri */
-          url: string;
-          value?: string;
-        }
-      | {
-          label: string;
-          /** @enum {boolean} */
-          dismiss: true;
-          value?: string;
-        };
     Visitor: {
       visitorId: string;
       signedIn: boolean;

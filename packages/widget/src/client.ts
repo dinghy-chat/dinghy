@@ -44,6 +44,8 @@ export interface ChatMessage {
   deleted: boolean;
   /** The outbound message this reply came from, which the widget showed apart before. */
   outboundId: string | null;
+  /** That outbound message's buttons. Empty otherwise. */
+  buttons: OutboundButton[];
   createdAt: string;
 }
 

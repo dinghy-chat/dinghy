@@ -186,3 +186,70 @@ test("recipe 4: an AI agent starts a conversation now, and wait_for_messages get
     [conversationId, "Yes, send me the list"],
   ]);
 });
+
+/** Records the page's outbound and visitor events from now. */
+const watchEvents = (page: Page) =>
+  page.evaluate(() => {
+    const win = window as unknown as {
+      heard: unknown[];
+      Dinghy: { on(event: string, callback: (data: unknown) => void): void };
+    };
+    win.heard = [];
+    for (const name of ["outbound:read", "outbound:dismissed", "visitor"]) {
+      win.Dinghy.on(name, (data) => win.heard.push([name, data]));
+    }
+  });
+const heard = (page: Page) =>
+  page.evaluate(() => (window as unknown as { heard: unknown[] }).heard);
+
+test("a card's button reads the message, and reset() forgets the visitor's ID", async ({
+  browser,
+}) => {
+  const sent = await send({
+    visitor: { userId: "shipmail-card" },
+    body: "Your trial ends in 3 days.",
+    show: "preview",
+    buttons: [{ label: "I'm fine", dismiss: true }],
+  });
+  const { id } = sent.json.outboundMessage;
+  const page = await signedInPage(browser, "shipmail-card");
+  await expect(page.locator(".preview")).toContainText("Your trial ends");
+  await watchEvents(page);
+  await page.locator(".preview").getByRole("button", { name: "I'm fine" }).click();
+  await expect(page.locator(".preview")).toHaveCount(0);
+  const button = { value: null, label: "I'm fine" };
+  await expect
+    .poll(() => heard(page))
+    .toEqual([
+      ["outbound:read", { id, button }],
+      ["outbound:dismissed", { id, button }],
+    ]);
+  const visitorId = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { Dinghy: { state: { visitorId: string | null } } }).Dinghy.state
+          .visitorId,
+    );
+  expect(await visitorId()).not.toBeNull();
+  await page.evaluate(() => (window as unknown as { Dinghy: { reset(): void } }).Dinghy.reset());
+  expect(await visitorId()).toBeNull();
+  await expect.poll(() => heard(page)).toContainEqual(["visitor", null]);
+});
+
+test("a message that starts a conversation keeps its buttons there", async ({ browser }) => {
+  await send({
+    visitor: { userId: "shipmail-buttons" },
+    body: "Your import finished. Want the list of skipped messages?",
+    startConversation: "now",
+    buttons: [{ label: "Send the list", value: "list" }],
+  });
+  const page = await signedInPage(browser, "shipmail-buttons");
+  await page.getByRole("button", { name: /Open chat/ }).click();
+  await expect(page.locator(".msg", { hasText: "Your import finished" })).toBeVisible();
+  await page.locator(".choices").getByRole("button", { name: "Send the list" }).click();
+  await expect(page.locator(".msg.mine", { hasText: "Send the list" })).toBeVisible();
+  await expect(page.locator(".choices")).toHaveCount(0);
+  await expect
+    .poll(async () => (await api("GET", "/outbound-messages?status=replied")).json.outboundMessages)
+    .toContainEqual(expect.objectContaining({ button: { value: "list", label: "Send the list" } }));
+});
