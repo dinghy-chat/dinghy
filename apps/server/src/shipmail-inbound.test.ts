@@ -144,6 +144,8 @@ let shipmail: Awaited<ReturnType<typeof fakeShipmail>>;
 let app: App;
 let space: NewWorkspace;
 let sweep: (stopping?: AbortSignal) => Promise<void>;
+/** The worker's sweep as it runs: called each minute, it reads the mailbox once an hour. */
+let hourlySweep: (stopping: AbortSignal) => Promise<void>;
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -176,8 +178,10 @@ beforeAll(async () => {
     live: noLive,
     rateLimit: createRateLimit(valkey, logger),
   });
-  const sweepOnce = mailboxSweep({ db, intake, domain: DOMAIN, settings, logger });
+  // These tests read the mailbox on each call.
+  const sweepOnce = mailboxSweep({ db, intake, domain: DOMAIN, settings, logger, everyMs: 0 });
   sweep = (stopping = new AbortController().signal) => sweepOnce(stopping);
+  hourlySweep = mailboxSweep({ db, intake, domain: DOMAIN, settings, logger });
 });
 
 beforeEach(() => {
@@ -552,6 +556,24 @@ describe("the mailbox sweep", () => {
     await sweep();
     expect(await bodiesOf(kept.conversationId)).toEqual(["Are you back?"]);
     expect(shipmail.messages.has(kept.emailId)).toBe(false);
+  });
+
+  test("reads the mailbox at start and once an hour, and at once when a held workspace opens", async () => {
+    const kept = await keptEmail("Paid now");
+    const running = new AbortController().signal;
+    await hourlySweep(running);
+    const atStart = listCalls();
+    expect(atStart).toBeGreaterThan(0);
+    // Within the hour, a workspace still closed costs no call to Shipmail.
+    await hourlySweep(running);
+    expect(listCalls()).toBe(atStart);
+    await setSuspended(kept.workspaceId, null);
+    await hourlySweep(running);
+    const afterOpen = listCalls();
+    expect(afterOpen).toBeGreaterThan(atStart);
+    expect(await bodiesOf(kept.conversationId)).toEqual(["Paid now"]);
+    await hourlySweep(running);
+    expect(listCalls()).toBe(afterOpen);
   });
 
   test("finds a kept email's workspace by a reply address in Cc too", async () => {
