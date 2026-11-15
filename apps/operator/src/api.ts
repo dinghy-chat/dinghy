@@ -19,7 +19,7 @@ export type Assignee = "me" | "none";
 export interface VisitorIdentity {
   id: string;
   email: string | null;
-  externalId: string | null;
+  userId: string | null;
   /** The name the host site signed. */
   name: string | null;
 }

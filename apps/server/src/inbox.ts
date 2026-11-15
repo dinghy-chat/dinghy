@@ -271,7 +271,7 @@ const Conversation = z
     visitor: z.object({
       id: z.string(),
       email: z.string().nullable(),
-      externalId: z.string().nullable(),
+      userId: z.string().nullable(),
       // The name the host site signed, on one line.
       name: z.string().nullable(),
       // Custom attributes the host site signed.
@@ -403,7 +403,7 @@ const listRoute = createRoute({
                 visitor: {
                   id: "0b6f1c6e-2f4a-4c1e-9a57-3f1b8f0e6d21",
                   email: "ana@example.com",
-                  externalId: null,
+                  userId: null,
                   name: "Ana Lima",
                   attributes: { plan: "pro" },
                   blocked: false,
@@ -886,7 +886,7 @@ export function conversationView(
       id: row.visitorId,
       blocked: row.visitorBlockedAt !== null,
       email: row.visitorEmail,
-      externalId: row.visitorExternalId,
+      userId: row.visitorUserId,
       name: row.visitorName,
       attributes: (row.visitorAttributes as Record<string, unknown> | null) ?? null,
       device: row.visitorDevice,

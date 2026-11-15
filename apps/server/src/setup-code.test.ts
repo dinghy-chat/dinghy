@@ -106,7 +106,7 @@ describe("the identity setup", () => {
     const token = await sign({ id: "user-42", name: "Ada Lovelace", email: "ada@example.com" });
     const identity = await verifyHostToken(token, SECRET, install.publicKey);
     expect(identity).toMatchObject({
-      externalId: "user-42",
+      userId: "user-42",
       name: "Ada Lovelace",
       email: "ada@example.com",
     });

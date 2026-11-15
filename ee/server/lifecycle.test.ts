@@ -221,7 +221,7 @@ async function paidWorkspace({ onboarding = false } = {}) {
   await withWorkspace(db, workspaceId, async (tx) => {
     const [row] = await tx
       .insert(visitor)
-      .values({ workspaceId, externalId: "visitor-1" })
+      .values({ workspaceId, userId: "visitor-1" })
       .returning({ id: visitor.id });
     const author = { kind: "visitor" as const, visitorId: row?.id ?? "" };
     await appendMessage(tx, workspaceId, author, { clientId: "c1", body: "Hello there" });

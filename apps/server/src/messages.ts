@@ -979,7 +979,7 @@ export interface ConversationRow {
   visitorId: string;
   visitorBlockedAt: Date | null;
   visitorEmail: string | null;
-  visitorExternalId: string | null;
+  visitorUserId: string | null;
   visitorName: string | null;
   visitorAttributes: unknown;
   visitorPageContext: unknown;
@@ -1068,7 +1068,7 @@ const conversationColumns = {
   visitorId: conversation.visitorId,
   visitorBlockedAt: visitor.blockedAt,
   visitorEmail: visitor.email,
-  visitorExternalId: visitor.externalId,
+  visitorUserId: visitor.userId,
   visitorName: visitor.name,
   visitorAttributes: visitor.attributes,
   visitorPageContext: visitor.pageContext,
@@ -1868,7 +1868,7 @@ export async function searchConversations(
         or(
           ilike(visitor.name, pattern),
           ilike(visitor.email, pattern),
-          ilike(visitor.externalId, pattern),
+          ilike(visitor.userId, pattern),
           inArray(conversation.id, inMessages),
         ),
       ),

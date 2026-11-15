@@ -215,7 +215,7 @@ const blockedList = createRoute({
               z.object({
                 id: z.string(),
                 email: z.string().nullable(),
-                externalId: z.string().nullable(),
+                userId: z.string().nullable(),
                 name: z.string().nullable(),
                 blockedAt: z.string(),
               }),
@@ -287,7 +287,7 @@ export function registerModerationRoutes(app: App, db: Database, live: Live): vo
         .select({
           id: visitor.id,
           email: visitor.email,
-          externalId: visitor.externalId,
+          userId: visitor.userId,
           name: visitor.name,
           blockedAt: visitor.blockedAt,
         })

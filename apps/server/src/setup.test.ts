@@ -408,7 +408,7 @@ describe("test visitors", () => {
       conversationId: first.conversationId,
     });
     const [row] = await owner.select().from(visitor).where(eq(visitor.id, first.visitorId));
-    expect(row).toMatchObject({ isTest: true, name: "Test Tess", externalId: null });
+    expect(row).toMatchObject({ isTest: true, name: "Test Tess", userId: null });
     const listed = await callTool(app, chatKey, "list_conversations");
     expect(listed.structuredContent).toMatchObject({
       conversations: [{ id: first.conversationId, visitor: { isTest: true } }],

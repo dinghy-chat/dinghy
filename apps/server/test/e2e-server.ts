@@ -236,7 +236,7 @@ export async function startE2EServer(
         await withWorkspace(db, workspace.id, async (tx) => {
           const [row] = await tx
             .insert(visitor)
-            .values({ workspaceId: workspace.id, externalId: `${prefix}-${i}`, country })
+            .values({ workspaceId: workspace.id, userId: `${prefix}-${i}`, country })
             .returning({ id: visitor.id });
           await appendMessage(
             tx,

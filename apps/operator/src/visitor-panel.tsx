@@ -596,7 +596,7 @@ export function VisitorPanel({
       <ContactFolds
         contact={contact}
         visitor={{
-          userId: visitor.externalId,
+          userId: visitor.userId,
           attributes: visitor.attributes,
           pageContext: conversation.pageContext,
         }}

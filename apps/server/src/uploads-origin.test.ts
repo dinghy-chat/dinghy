@@ -70,7 +70,7 @@ async function stored(bytes: Uint8Array, contentType: string): Promise<URL> {
   await withWorkspace(db, space.id, async (tx) => {
     const [row] = await tx
       .insert(visitor)
-      .values({ workspaceId: space.id, externalId: randomUUID() })
+      .values({ workspaceId: space.id, userId: randomUUID() })
       .returning({ id: visitor.id });
     await appendMessage(
       tx,
@@ -132,7 +132,7 @@ describe("a separate origin for user uploads", () => {
     const token = await withWorkspace(owner, space.id, async (tx) => {
       const [row] = await tx
         .insert(visitor)
-        .values({ workspaceId: space.id, externalId: randomUUID() })
+        .values({ workspaceId: space.id, userId: randomUUID() })
         .returning({ id: visitor.id });
       const visitorId = row?.id ?? "";
       const { message: sent } = await appendMessage(

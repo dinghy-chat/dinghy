@@ -291,7 +291,7 @@ describe("uploads: a byte limit per workspace on the cloud", () => {
   test("concurrent uploads near the limit cannot pass it", async () => {
     const space = await createWorkspace(db, "Race", [SITE]);
     const [row] = await withWorkspace(db, space.id, (tx) =>
-      tx.insert(visitor).values({ workspaceId: space.id, externalId: "v" }).returning(),
+      tx.insert(visitor).values({ workspaceId: space.id, userId: "v" }).returning(),
     );
     const visitorId = row?.id ?? "";
     const limits = createLimits(valkey, logger, { maxStoredBytes: 350 });

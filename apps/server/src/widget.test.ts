@@ -77,7 +77,7 @@ describe("token kinds", () => {
     return withWorkspace(database.connect("migrator").db, a.id, async (tx) => {
       const [row] = await tx
         .insert(visitor)
-        .values({ workspaceId: a.id, externalId: `kinds-${Date.now()}` })
+        .values({ workspaceId: a.id, userId: `kinds-${Date.now()}` })
         .returning({ id: visitor.id });
       if (row === undefined) throw new Error("No visitor");
       const [chat] = await tx
@@ -208,9 +208,7 @@ describe("host tokens", () => {
     const version = async () => {
       const { rows } = await database
         .connect("migrator")
-        .db.execute<{ xmin: string }>(
-          sql`select xmin from visitor where external_id = 'unchanged'`,
-        );
+        .db.execute<{ xmin: string }>(sql`select xmin from visitor where user_id = 'unchanged'`);
       return rows[0]?.xmin;
     };
     const before = await version();
@@ -641,7 +639,7 @@ describe("the widget lookup", () => {
     const { db: owner } = database.connect("migrator");
     await expect(owner.insert(visitor).values({ workspaceId: a.id })).rejects.toThrow();
     await expect(
-      owner.insert(visitor).values({ workspaceId: a.id, externalId: "x", tokenHash: "y" }),
+      owner.insert(visitor).values({ workspaceId: a.id, userId: "x", tokenHash: "y" }),
     ).rejects.toThrow();
   });
 });

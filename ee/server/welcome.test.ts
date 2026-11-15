@@ -678,7 +678,7 @@ describe("while the new workspace has not paid, or its subscription ended", () =
     const link = await linkOf(acme.workspaceId);
     const [guest] = await owner
       .insert(visitor)
-      .values({ workspaceId: acme.workspaceId, externalId: "bea", name: "Bea" })
+      .values({ workspaceId: acme.workspaceId, userId: "bea", name: "Bea" })
       .returning({ id: visitor.id });
     const [other] = await owner
       .insert(conversation)

@@ -114,7 +114,7 @@ const ExportFile = z.strictObject({
   visitors: z.array(
     z.strictObject({
       id,
-      externalId: z.string().max(512).nullable(),
+      userId: z.string().max(512).nullable(),
       tokenHash: z.string().max(128).nullable(),
       email: z.string().max(320).nullable(),
       name: z.string().max(100).nullable(),
@@ -416,7 +416,7 @@ async function readWorkspace(
         })),
         visitors: visitors.map((row) => ({
           id: row.id,
-          externalId: row.externalId,
+          userId: row.userId,
           tokenHash: row.tokenHash,
           email: row.email,
           name: row.name,
@@ -747,7 +747,7 @@ async function insertWorkspace(
       rows.map((row) => ({
         workspaceId,
         id: row.id,
-        externalId: row.externalId,
+        userId: row.userId,
         tokenHash: row.tokenHash,
         email: row.email,
         name: row.name,

@@ -32,7 +32,7 @@ const hostTokenPayload = z.object({
 });
 
 export interface HostIdentity {
-  externalId: string;
+  userId: string;
   email: string | undefined;
   name: string | undefined;
   attributes: Record<string, unknown> | undefined;
@@ -62,7 +62,7 @@ export async function verifyHostToken(
     if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS) return null;
     if (iat > now.getTime() / 1000 + CLOCK_TOLERANCE_SECONDS) return null;
     return {
-      externalId: parsed.data.sub,
+      userId: parsed.data.sub,
       email: parsed.data.email,
       name: parsed.data.name,
       attributes: parsed.data.attributes,

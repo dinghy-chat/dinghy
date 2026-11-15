@@ -276,7 +276,7 @@ export const visitor = pgTable(
     workspaceId: workspaceId(),
     id: id(),
     // The host product's user ID, for a signed-in visitor.
-    externalId: text("external_id"),
+    userId: text("user_id"),
     // The SHA-256 of a signed-out visitor's browser token. The token itself is never stored.
     tokenHash: text("token_hash"),
     email: text("email"),
@@ -329,10 +329,10 @@ export const visitor = pgTable(
     check("visitor_country", sql`${table.country} ~ '^[A-Z]{2}$'`),
     check("visitor_time_zone_length", sql`char_length(${table.timeZone}) <= 64`),
     index("visitor_blocked_idx").on(table.workspaceId).where(sql`${table.blockedAt} is not null`),
-    unique("visitor_external_id_key").on(table.workspaceId, table.externalId),
+    unique("visitor_user_id_key").on(table.workspaceId, table.userId),
     unique("visitor_token_hash_key").on(table.tokenHash),
     // A visitor is signed in or signed out, so one identity can never merge into the other.
-    check("visitor_one_identity", sql`num_nonnulls(${table.externalId}, ${table.tokenHash}) = 1`),
+    check("visitor_one_identity", sql`num_nonnulls(${table.userId}, ${table.tokenHash}) = 1`),
   ],
 );
 

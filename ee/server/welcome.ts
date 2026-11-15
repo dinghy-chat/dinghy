@@ -49,9 +49,9 @@ const text = {
 };
 
 /** The founder's visitor in a new workspace. A workspace has one welcome chat, so one is enough. */
-const FOUNDER_EXTERNAL_ID = "dinghy-welcome";
+const FOUNDER_USER_ID = "dinghy-welcome";
 /** A new workspace's visitor in Dinghy's own workspace. */
-const customerExternalId = (workspaceId: string) => `dinghy-welcome-${workspaceId}`;
+const customerUserId = (workspaceId: string) => `dinghy-welcome-${workspaceId}`;
 /** A copy's own client ID, so a copy of one message can never go in twice. */
 const copyClientId = (messageId: string) => `copy-${messageId}`;
 
@@ -103,7 +103,7 @@ export async function welcomeProblem(
 async function welcomeConversation(
   tx: Transaction,
   workspaceId: string,
-  guest: { externalId: string; name: string },
+  guest: { userId: string; name: string },
   assigneeOperatorId: string | null,
 ) {
   const [made] = await tx
@@ -140,7 +140,7 @@ export async function startWelcomeChat(
     tx,
     founder,
     {
-      externalId: customerExternalId(customer.workspaceId),
+      userId: customerUserId(customer.workspaceId),
       name: text.customerVisitor(customer.ownerName, customer.workspaceName),
     },
     operatorId,
@@ -156,7 +156,7 @@ export async function startWelcomeChat(
   const customerSide = await welcomeConversation(
     tx,
     customer.workspaceId,
-    { externalId: FOUNDER_EXTERNAL_ID, name: text.founderVisitor },
+    { userId: FOUNDER_USER_ID, name: text.founderVisitor },
     null,
   );
   await appendMessage(

@@ -61,7 +61,7 @@ async function seed(workspaceId: string): Promise<void> {
     signingSecret: "test-secret",
   });
   await owner.insert(workspaceMember).values({ workspaceId, operatorId: OPERATOR, role: "owner" });
-  await owner.insert(visitor).values({ workspaceId, id: visitorId, externalId: "user-1" });
+  await owner.insert(visitor).values({ workspaceId, id: visitorId, userId: "user-1" });
   await owner.insert(conversation).values({ workspaceId, id: conversationId, visitorId });
   await owner.insert(message).values({
     workspaceId,
@@ -248,9 +248,7 @@ describe("reads", () => {
 describe("writes", () => {
   test("an insert for another workspace fails", async () => {
     await expect(
-      withWorkspace(app, A, (tx) =>
-        tx.insert(visitor).values({ workspaceId: B, externalId: "cross" }),
-      ),
+      withWorkspace(app, A, (tx) => tx.insert(visitor).values({ workspaceId: B, userId: "cross" })),
     ).rejects.toThrow();
   });
 

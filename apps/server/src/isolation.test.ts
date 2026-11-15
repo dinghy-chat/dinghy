@@ -2569,7 +2569,7 @@ describe.each([
       body: "same user, second workspace",
     });
     expect(inB.status).toBeLessThan(300);
-    const rows = await owner.select().from(visitor).where(eq(visitor.externalId, "same-user"));
+    const rows = await owner.select().from(visitor).where(eq(visitor.userId, "same-user"));
     const here = rows.filter((row) => row.workspaceId === a.id);
     const there = rows.filter((row) => row.workspaceId === b.id);
     expect(here).toHaveLength(1);

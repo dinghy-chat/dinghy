@@ -674,17 +674,14 @@ async function signedInVisitor(
     ...(identity.attributes === undefined ? {} : { attributes: identity.attributes }),
     identityIssuedAt: issuedAt,
   };
-  const isThisUser = and(
-    eq(visitor.workspaceId, workspaceId),
-    eq(visitor.externalId, identity.externalId),
-  );
+  const isThisUser = and(eq(visitor.workspaceId, workspaceId), eq(visitor.userId, identity.userId));
   const columns = { id: visitor.id, identityIssuedAt: visitor.identityIssuedAt };
   return withWorkspace(db, workspaceId, async (tx) => {
     let [existing] = await tx.select(columns).from(visitor).where(isThisUser);
     if (existing === undefined) {
       const [created] = await tx
         .insert(visitor)
-        .values({ workspaceId, externalId: identity.externalId, ...context })
+        .values({ workspaceId, userId: identity.userId, ...context })
         .onConflictDoNothing()
         .returning({ id: visitor.id });
       if (created !== undefined) return created.id;
@@ -824,7 +821,7 @@ async function knownVisitor(
     tx
       .select({ id: visitor.id })
       .from(visitor)
-      .where(and(eq(visitor.workspaceId, found.id), eq(visitor.externalId, identity.externalId))),
+      .where(and(eq(visitor.workspaceId, found.id), eq(visitor.userId, identity.userId))),
   );
   return row?.id ?? null;
 }

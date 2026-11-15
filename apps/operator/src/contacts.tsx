@@ -534,7 +534,7 @@ function ContactView({
         ]),
   ];
   const details = {
-    userId: contact.externalId,
+    userId: contact.userId,
     attributes: contact.attributes,
     pageContext: contact.pageContext,
   };

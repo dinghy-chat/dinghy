@@ -39,7 +39,7 @@ const ContactSchema = z
     id: z.string(),
     name: z.string().nullable(),
     email: z.string().nullable(),
-    externalId: z.string().nullable(),
+    userId: z.string().nullable(),
     // The host site signed who this is, so the name and email are read-only here.
     signedIn: z.boolean(),
     // The signed `company` attribute, when it is text.
@@ -219,7 +219,7 @@ const contactColumns = {
   id: visitor.id,
   name: visitor.name,
   email: visitor.email,
-  externalId: visitor.externalId,
+  userId: visitor.userId,
   company: sql<string | null>`"visitor"."attributes"->>${COMPANY_ATTRIBUTE}`,
   country: visitor.country,
   timeZone: visitor.timeZone,
@@ -238,7 +238,7 @@ interface ContactRow {
   id: string;
   name: string | null;
   email: string | null;
-  externalId: string | null;
+  userId: string | null;
   company: string | null;
   country: string | null;
   timeZone: string | null;
@@ -252,7 +252,7 @@ interface ContactRow {
 
 const contactView = ({ blockedAt, lastSeenAt, createdAt, ...row }: ContactRow) => ({
   ...row,
-  signedIn: row.externalId !== null,
+  signedIn: row.userId !== null,
   blocked: blockedAt !== null,
   lastSeenAt: lastSeenAt?.toISOString() ?? null,
   createdAt: createdAt.toISOString(),
@@ -295,7 +295,7 @@ export async function listContacts(
         sql`exists (select 1 from ${conversation} where ${conversation.workspaceId} = ${visitor.workspaceId} and ${conversation.visitorId} = ${visitor.id})`,
         pattern === null
           ? undefined
-          : sql`(${visitor.name} ilike ${pattern} or ${visitor.email} ilike ${pattern} or ${visitor.externalId} ilike ${pattern})`,
+          : sql`(${visitor.name} ilike ${pattern} or ${visitor.email} ilike ${pattern} or ${visitor.userId} ilike ${pattern})`,
         time === undefined
           ? undefined
           : sql`(${key}, ${visitor.id}) < (${time}::timestamptz, ${id}::uuid)`,
@@ -420,7 +420,7 @@ const csvLine = (contact: ReturnType<typeof contactView>) =>
   `${[
     contact.name,
     contact.email,
-    contact.externalId,
+    contact.userId,
     contact.company,
     contact.country,
     contact.timeZone,
@@ -511,12 +511,12 @@ export function registerContactRoutes(
     const { note, name, email } = c.req.valid("json");
     const result = await withWorkspace(db, id, async (tx) => {
       const [row] = await tx
-        .select({ externalId: visitor.externalId })
+        .select({ userId: visitor.userId })
         .from(visitor)
         .where(and(eq(visitor.workspaceId, id), eq(visitor.id, visitorId)));
       if (row === undefined) return "missing" as const;
       const identity = name !== undefined || email !== undefined;
-      if (identity && row.externalId !== null) return "signed_in" as const;
+      if (identity && row.userId !== null) return "signed_in" as const;
       const change = {
         ...(note !== undefined && { note: note?.trim() === "" ? null : note }),
         ...(name !== undefined && { name: name === "" ? null : name }),

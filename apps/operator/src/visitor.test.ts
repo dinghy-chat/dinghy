@@ -32,8 +32,8 @@ describe("visitor labels", () => {
 
   test("an email or a user ID from the host site comes first", () => {
     const id = "7f3a9c2e-1b4d-4e8f-9a0b-1c2d3e4f5a6b";
-    const named = (email: string | null, externalId: string | null) =>
-      visitorName({ id, name: null, email, externalId });
+    const named = (email: string | null, userId: string | null) =>
+      visitorName({ id, name: null, email, userId });
     expect(named("a@example.com", "u1")).toBe("a@example.com");
     expect(named(null, "u1")).toBe("u1");
     expect(named(null, null)).toBe(visitorLabel(id));
@@ -51,7 +51,7 @@ describe("waiting", () => {
     visitor: {
       id: "v",
       email: null,
-      externalId: null,
+      userId: null,
       name: null,
       attributes: null,
       blocked: false,
@@ -101,10 +101,8 @@ describe("waiting", () => {
 
 describe("names and links", () => {
   test("a signed name comes before the email and the user ID", () => {
-    expect(visitorName({ id: "v", name: "Ana", email: "a@example.com", externalId: "u1" })).toBe(
-      "Ana",
-    );
-    expect(visitorName({ id: "v", name: null, email: "a@example.com", externalId: "u1" })).toBe(
+    expect(visitorName({ id: "v", name: "Ana", email: "a@example.com", userId: "u1" })).toBe("Ana");
+    expect(visitorName({ id: "v", name: null, email: "a@example.com", userId: "u1" })).toBe(
       "a@example.com",
     );
   });

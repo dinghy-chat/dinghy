@@ -921,7 +921,7 @@
               "email": {
                 "type": ["string", "null"]
               },
-              "externalId": {
+              "userId": {
                 "type": ["string", "null"]
               },
               "name": {
@@ -963,7 +963,7 @@
             "required": [
               "id",
               "email",
-              "externalId",
+              "userId",
               "name",
               "attributes",
               "blocked",
@@ -2003,7 +2003,7 @@
           "email": {
             "type": ["string", "null"]
           },
-          "externalId": {
+          "userId": {
             "type": ["string", "null"]
           },
           "signedIn": {
@@ -2041,7 +2041,7 @@
           "id",
           "name",
           "email",
-          "externalId",
+          "userId",
           "signedIn",
           "company",
           "country",
@@ -2196,14 +2196,14 @@
               "email": {
                 "type": ["string", "null"]
               },
-              "externalId": {
+              "userId": {
                 "type": ["string", "null"]
               },
               "conversationId": {
                 "type": ["string", "null"]
               }
             },
-            "required": ["id", "name", "email", "externalId", "conversationId"]
+            "required": ["id", "name", "email", "userId", "conversationId"]
           }
         },
         "required": [
@@ -6326,7 +6326,7 @@
                       "visitor": {
                         "id": "0b6f1c6e-2f4a-4c1e-9a57-3f1b8f0e6d21",
                         "email": "ana@example.com",
-                        "externalId": null,
+                        "userId": null,
                         "name": "Ana Lima",
                         "attributes": {
                           "plan": "pro"
@@ -13211,7 +13211,7 @@
                           "email": {
                             "type": ["string", "null"]
                           },
-                          "externalId": {
+                          "userId": {
                             "type": ["string", "null"]
                           },
                           "name": {
@@ -13221,7 +13221,7 @@
                             "type": "string"
                           }
                         },
-                        "required": ["id", "email", "externalId", "name", "blockedAt"]
+                        "required": ["id", "email", "userId", "name", "blockedAt"]
                       }
                     }
                   },

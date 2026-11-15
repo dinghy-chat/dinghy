@@ -205,7 +205,7 @@ describe("conversations", () => {
     const body = (await response.json()) as { conversation: { visitor: unknown } };
     expect(body.conversation.visitor).toMatchObject({
       email: "pat@example.com",
-      externalId: "user-42",
+      userId: "user-42",
       name: "Pat Doe",
       attributes: { plan: "pro" },
     });
@@ -837,12 +837,12 @@ describe("user context from older tokens", () => {
     await me(await sign({ plan: "pro" }, now));
     await me(await sign({ plan: "free" }, now - 60));
     const { rows } = await owner.execute<{ attributes: unknown }>(
-      sql`select attributes from visitor where external_id = 'two-tokens'`,
+      sql`select attributes from visitor where user_id = 'two-tokens'`,
     );
     expect(rows[0]?.attributes).toEqual({ plan: "pro" });
     await me(await sign({ plan: "team" }, now + 1));
     const after = await owner.execute<{ attributes: unknown }>(
-      sql`select attributes from visitor where external_id = 'two-tokens'`,
+      sql`select attributes from visitor where user_id = 'two-tokens'`,
     );
     expect(after.rows[0]?.attributes).toEqual({ plan: "team" });
   });
