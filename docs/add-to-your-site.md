@@ -14,7 +14,7 @@ Put it before the closing `</body>` tag, on every page that should have the chat
 
 Then add your website under **Allowed sites** in **Settings > Install**, with one origin on each line. An origin has the scheme and the host and no path, such as `https://www.example.com`. The chat does not work on a site that is not on this list. This includes `www` and the bare domain, which are two different origins.
 
-The tag is safe to publish. The key in it only names your workspace. The tag loads a small script of under 4 KB, and the full chat loads only when a visitor opens it or comes back to a chat.
+The tag is safe to publish. The key in it only names your workspace. The tag loads a small script of under 4 KB, and the full chat loads only when a visitor opens it, comes back to a chat, or has an [outbound message](outbound-messages.md) waiting.
 
 Put the chat on your own site, not on a page served from the same address as Dinghy. The chat does not work there, because a browser does not send an origin for a request to its own address.
 
@@ -63,8 +63,9 @@ The tag adds a `Dinghy` object to the page:
 | `Dinghy.identify(token)`, `Dinghy.reset()` | Signs a user in and out. See [Show who is chatting](#show-who-is-chatting) |
 | `Dinghy.setContext(data)` | Tells operators about the page, such as a plan or a cart. See below |
 | `Dinghy.configure(options)` | Changes the colors, the side, the offsets and the z-index now |
+| `Dinghy.nudge()`, `Dinghy.nudge(false)` | Pulses the chat button until the next open, or stops it. See [Outbound messages](#outbound-messages) |
 | `Dinghy.on(event, callback)` | Calls `callback` on each event, and returns a function that stops it |
-| `Dinghy.state` | `{ ready, open, unread, conversation }`, read only |
+| `Dinghy.state` | `{ ready, open, unread, conversation, visitorId, nudging }`, read only. `visitorId` is null before the visitor exists, and `nudging` says whether the chat button pulses |
 
 ### Use your own button
 
@@ -125,10 +126,46 @@ Dinghy.on("message:sent", ({ body }) => analytics.track("chat message sent"));
 | `unread` | The unread count changes, and once at once | The count |
 | `conversation` | The visitor starts or ends having an open conversation, and once at once | `true` or `false` |
 | `message:sent` | The visitor's message reached Dinghy | `{ body }`, with `body` null for an image or a file |
-| `message:received` | A reply arrives while the page is open | `{ body }`, with `body` null for an image or a file |
+| `message:received` | A message from the team arrives while the page is open, also an [outbound message](#outbound-messages) that waits when the page loads | `{ id, body, sender, outbound }`. See below |
 | `conversation:started` | The visitor's message started a new conversation. A message after a close reopens the conversation instead, and does not send this | Nothing |
+| `visitor` | The visitor now exists, such as after their first message or a sign-in. `ready` keeps its meaning: the full chat has loaded | The visitor's ID |
+| `nudge` | The chat button starts or stops pulsing | `true` or `false` |
+| `outbound:read` | The visitor read an outbound message | `{ id, button }` |
+| `outbound:dismissed` | The visitor chose an outbound message's dismiss button | `{ id, button }` |
+
+`message:received` gets `{ id, body, sender, outbound }`. `id` is the message's ID, and null for an outbound message that is in no conversation yet. `body` is null for an image or a file. `sender` is `{ name, pictureUrl }`, the person or the workspace the visitor sees, either of them possibly null. `outbound` is `{ id, show, buttons }` for an outbound message that waits, and null for a reply. `outbound:read` and `outbound:dismissed` get the outbound message's `id`, and `button`, the `{ value, label }` the visitor chose, or null.
 
 A callback that throws does not stop the chat or the other callbacks. The browser reports its error.
+
+### Outbound messages
+
+Your server can send a visitor an [outbound message](outbound-messages.md), before they ever chat. The widget fetches the visitor's waiting messages when the page loads, when `identify()` sets a new user, on its beat each minute, and over its stream while the chat is open. A page with nothing waiting loads nothing more. Each message shows as its `show` says:
+
+- `badge`: the chat button pulses and the unread count goes up. The message is in the chat when the visitor opens it.
+- `preview`: a card above the chat button, with the sender's face, the first lines and the message's buttons. A click opens the chat. Its close button only hides the card, and the message stays in the chat. The widget shows one card at a time, the newest, and counts the others in the badge. Screen readers hear the card, as it is `aria-live="polite"`.
+- `chat`: the chat opens. It shows as `preview` instead on a phone, after the visitor closed the chat on this page, and while an input of your page has focus.
+
+With `prefers-reduced-motion`, the badge stays still and the card does not slide. A message that arrives while the visitor types never moves the message box or takes the focus.
+
+`Dinghy.nudge()` pulses the chat button until the visitor next opens the chat, and `Dinghy.nudge(false)` stops it. It stays in the page and tells the server nothing. A `badge` message starts it too. `Dinghy.state.nudging` and the `nudge` event follow it.
+
+With `data-launcher="hidden"` and your own button, `badge` raises the unread count as a reply does, and `preview` shows its card in the configured corner, with the same offsets. To pulse your own button:
+
+```js
+// page
+Dinghy.on("nudge", (on) => helpButton.classList.toggle("pulse", on));
+```
+
+`message:received` carries what you need to draw your own card: the text, the sender's name and picture, and the buttons:
+
+```js
+// page
+Dinghy.on("message:received", ({ body, sender, outbound }) => {
+  if (outbound !== null) showHelpCard({ name: sender.name, picture: sender.pictureUrl, body });
+});
+```
+
+A message for a signed-in user reaches them once your page calls `identify()`. A visitor who is not signed in has an ID once they exist, in `Dinghy.state.visitorId` and the `visitor` event. Your page can pass it to your server, which can then send to `{ "id": visitorId }`.
 
 ### Tell operators about the page
 
@@ -255,7 +292,7 @@ Any JWT library works, in any language. The token must have these fields:
 | `iat` and `exp` | The issue time and the expiry, at most 24 hours apart |
 | `name` | Optional. The name operators see, on one line, up to 100 characters. Anything else is dropped |
 | `email` | Optional. One address, which operators see. Anything else, such as a list, is dropped |
-| `attributes` | Optional. Custom attributes that operators see, such as a plan, up to 2 KB of JSON. A value that starts with `https://` or `http://` shows as a link |
+| `attributes` | Optional. Custom attributes that operators see, such as a plan, up to 2 KB of JSON. They merge key by key into the contact's attributes, and a `null` value removes a key. A value that starts with `https://` or `http://` shows as a link |
 
 **2. On your page,** pass a function that asks your server for a token. The widget calls it again when a token expires, so a tab that stays open keeps working:
 
@@ -273,6 +310,8 @@ You can also pass the token as a string, but a string cannot renew itself. Call 
 ```js
 Dinghy.reset();
 ```
+
+Your server can also set the name, email and attributes with no page at all, through the [contact upsert](outbound-messages.md#contacts), `PUT /v1/operator/workspaces/{workspaceId}/contacts/by-user/{userId}` with an API key. It creates the contact when it does not exist, so an [outbound message](outbound-messages.md) can reach a user before their first visit. Both write the same contact. Attributes merge key by key, and an attribute your token leaves out stays. Each write carries its time, a token's being its `iat`, and the later write wins for each field and each attribute, so a token signed before an upsert does not undo it.
 
 If you replace the signing secret in **Settings > Install**, tokens signed with the old one stop working at once. Update your server at the same moment.
 
@@ -305,7 +344,7 @@ Once a visitor has chatted, the widget tells your Dinghy server the page they ar
 
 The widget stores nothing in the browser of a visitor who never used the chat: no cookie, nothing in `localStorage` and nothing in `sessionStorage`. On a page load it asks for the chat's saved look, with no token and no cookie, and the browser keeps the answer for 5 minutes.
 
-For the live view in **Visitors**, each tab also sends a small beat when the page loads and once a minute while the tab is visible, and a last one when the page closes. A beat holds a random ID for the tab, which lives only in the page's memory and is gone on the next page, the page's address without its query string or `#` part, its title, the site the visitor came from as an origin such as `https://news.example.org` on the first beat only, and the browser's time zone, such as `Europe/Paris`. Your Dinghy server looks up the country of the request's address in a database inside the server, and then drops the address: it is never stored. The tab stays in the live view, in Valkey only, until 90 seconds after its last beat. Nothing about a visitor who never chatted reaches Postgres. For a visitor who has chatted, the beat carries their token, and the server saves their country and time zone with them, which operators see in the conversation and in **Contacts**. Countries come from DB-IP's free IP to Country Lite database, under CC BY 4.0, which the Docker image downloads when it is built. A server without the file shows no countries, and everything else works.
+For the live view in **Visitors**, each tab also sends a small beat when the page loads and once a minute while the tab is visible, and a last one when the page closes. A beat holds a random ID for the tab, which lives only in the page's memory and is gone on the next page, the page's address without its query string or `#` part, its title, the site the visitor came from as an origin such as `https://news.example.org` on the first beat only, and the browser's time zone, such as `Europe/Paris`. Your Dinghy server looks up the country of the request's address in a database inside the server, and then drops the address: it is never stored. The tab stays in the live view, in Valkey only, until 90 seconds after its last beat. A beat never creates a visitor. Dinghy stores a visitor who never chatted only when your server creates them or sends them a message. A signed-in user counts as created by your server, since your server signs their token: the first request with it stores them. For a visitor Dinghy has stored, the beat carries their token, and the server saves their country and time zone with them, which operators see in the conversation and in **Contacts**. The beat also answers how many outbound messages wait for them, so the chat loads only when one does. Countries come from DB-IP's free IP to Country Lite database, under CC BY 4.0, which the Docker image downloads when it is built. A server without the file shows no countries, and everything else works.
 
 The widget stores its own token in `localStorage` only once the visitor sends a message, and a signed-in user's token is never stored. For a visitor who has a token or is signed in, it also notes in `sessionStorage` that the chat is open, so the chat opens again after a reload in the same tab. That note goes when the chat closes or the tab closes. So the chat needs no cookie banner.
 

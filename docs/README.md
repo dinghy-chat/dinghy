@@ -24,5 +24,6 @@ If something does not work, read [Troubleshooting](troubleshooting.md). If the s
 ## Build on it
 
 - [Use Dinghy with AI agents](agents.md) connects Claude Code or your own bot with OAuth or an API key, and explains drafts, handoff and safety.
+- [Outbound messages](outbound-messages.md) sends a visitor a message from your server or an agent before any chat, with recipes.
 - [Architecture](architecture.md) explains how the processes, tenant isolation, messages, live signals and jobs fit together.
 - [API](api.md) describes the HTTP API, and links its OpenAPI document at `/v1/openapi.json`.
