@@ -377,6 +377,22 @@ describe("the widget", () => {
     expect(replied.json).toMatchObject({ body: "Typed instead", button: null });
   });
 
+  test("an answer names every message the visitor read, beyond the waiting limit", async () => {
+    const user = userId();
+    const token = await hostToken(space, user);
+    const ids: string[] = [];
+    for (const round of [5, 1]) {
+      for (let i = 0; i < round; i += 1) {
+        const sent = await send({ visitor: { userId: user }, body: `Message ${ids.length + 1}` });
+        ids.push(sent.outboundMessage.id);
+      }
+      for (const id of ids) await widget(token, "POST", `/outbound-messages/${id}/read`);
+    }
+    const replied = await answer(token, "Hello", ids);
+    expect(replied.status).toBe(201);
+    for (const id of ids) expect((await rowOf(id))?.status).toBe("replied");
+  });
+
   test("a stale tab cannot put a cancelled message in the conversation", async () => {
     const user = userId();
     const sent = await send({ visitor: { userId: user }, body: "Soon cancelled" });
@@ -522,7 +538,12 @@ describe("a change that commits while another waits for the lock", () => {
 describe("a delete", () => {
   test("of a conversation ends its waiting messages, so they never show again", async () => {
     const { visitorId, token, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
-    const join = await send({ visitor: { id: visitorId }, body: "Joined", ifOpen: "join" });
+    const join = await send({
+      visitor: { id: visitorId },
+      body: "Joined",
+      ifOpen: "join",
+      once: "deleted-once",
+    });
     await waiting(token);
     expect((await rowOf(join.outboundMessage.id))?.conversationId).toBe(conversationId);
     const deleted = await asOperator(
@@ -538,6 +559,9 @@ describe("a delete", () => {
       statusReason: "conversation_deleted",
       body: null,
     });
+    // Its `once` key is free again, as after any cancel.
+    const again = await send({ visitor: { id: visitorId }, body: "Again", once: "deleted-once" });
+    expect(again.status).toBe(201);
   });
 
   test("of its message removes the outbound message's text", async () => {
@@ -637,6 +661,29 @@ describe("buttons in a conversation", () => {
       button: { value: "list", label: "Send the list" },
     });
     expect(await rowOf(sent.outboundMessage.id)).toMatchObject({ status: "replied" });
+  });
+
+  test("a dismissed message keeps no buttons after a reload", async () => {
+    const user = userId();
+    const sent = await send({
+      visitor: { userId: user },
+      body: "Want a tour?",
+      buttons: [{ label: "No thanks", dismiss: true }],
+      startConversation: "now",
+    });
+    const token = await hostToken(space, user);
+    const dismissed = await widget(
+      token,
+      "POST",
+      `/outbound-messages/${sent.outboundMessage.id}/dismiss`,
+      { button: 0 },
+    );
+    expect(dismissed.status).toBe(200);
+    const history = (await widget(token, "GET", "/messages")).json.messages as {
+      outboundId: string | null;
+      buttons: unknown[];
+    }[];
+    expect(history.find((one) => one.outboundId === sent.outboundMessage.id)?.buttons).toEqual([]);
   });
 });
 

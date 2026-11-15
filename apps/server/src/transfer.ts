@@ -12,6 +12,7 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
 import { BusinessHoursSchema, readBusinessHours, saveBusinessHours } from "./business-hours.ts";
+import { ConditionSchema } from "./conditions.ts";
 import { newGeneration } from "./db/migrate.ts";
 import {
   apiKey,
@@ -261,7 +262,7 @@ const ExportFile = z.strictObject({
         status: z.enum(OUTBOUND_STATUSES),
         statusReason: z.enum(OUTBOUND_STATUS_REASONS).nullable(),
         sendAt: date,
-        unless: z.unknown(),
+        unless: ConditionSchema.nullable(),
         expiresAt: nullableDate,
         dueAt: nullableDate,
         deliveredAt: nullableDate,
@@ -296,10 +297,35 @@ const dateOrNull = (value: string | null | undefined) => (value == null ? null :
 type MessageRow = typeof message.$inferSelect;
 
 /** A note's metadata with the members it mentions named by their IDs on this server. */
-function withMappedMentions(metadata: unknown, mapOperator: (exported: string) => string | null) {
-  const { mentions, ...rest } = metadata as { mentions?: unknown };
-  if (!Array.isArray(mentions)) return metadata;
-  return { ...rest, mentions: mentions.map((one) => mapOperator(String(one))) };
+type OperatorRefs = {
+  mentions?: unknown;
+  handoff?: { operatorId?: unknown };
+  outbound?: { sender?: unknown };
+};
+
+/** A message's metadata with every operator it names moved to the operator's ID here. */
+function withMappedOperators(metadata: unknown, mapOperator: (exported: string) => string | null) {
+  const { mentions, handoff, outbound, ...rest } = metadata as OperatorRefs;
+  const sender = outbound?.sender;
+  return {
+    ...rest,
+    ...(Array.isArray(mentions) && { mentions: mentions.map((one) => mapOperator(String(one))) }),
+    ...(handoff !== undefined && {
+      handoff: {
+        ...handoff,
+        operatorId: typeof handoff.operatorId === "string" ? mapOperator(handoff.operatorId) : null,
+      },
+    }),
+    ...(outbound !== undefined && {
+      outbound: {
+        ...outbound,
+        sender:
+          typeof sender === "object" && sender !== null && "operatorId" in sender
+            ? { operatorId: mapOperator(String(sender.operatorId)) }
+            : sender,
+      },
+    }),
+  };
 }
 
 const messageJson = (row: MessageRow): ExportData["messages"][number] => ({
@@ -885,7 +911,7 @@ async function insertWorkspace(
         authorApiKeyId: row.authorApiKeyId,
         clientId: row.clientId,
         body: row.body,
-        metadata: withMappedMentions(row.metadata ?? {}, mapOperator),
+        metadata: withMappedOperators(row.metadata ?? {}, mapOperator),
         // Messages go in commit order, so a quoted one is always in already.
         replyToMessageId: row.replyToMessageId ?? null,
         editedAt: dateOrNull(row.editedAt),

@@ -5,7 +5,12 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Answer, Client, Waiting } from "./client.ts";
 import { emit } from "./page-events.ts";
 import { ChatLine, CloseButton, type Line } from "./panel.tsx";
-import type { OutboundButton, ReceivedMessage, WidgetContext } from "./shared.ts";
+import {
+  OUTBOUND_ANSWERED_MAX,
+  type OutboundButton,
+  type ReceivedMessage,
+  type WidgetContext,
+} from "./shared.ts";
 import { t } from "./text.ts";
 
 /** The open panel fills a screen this narrow, so a message shows as a card there instead. */
@@ -193,7 +198,10 @@ export function useOutbound(
     isHidden: (id: string) => hidden.has(id),
     /** What the visitor's next message answers: every message they read here, in order. */
     answer: (button?: Answer["button"]): Answer => ({
-      outboundIds: waiting.filter((one) => read.has(one.id)).map((one) => one.id),
+      outboundIds: waiting
+        .filter((one) => read.has(one.id))
+        .map((one) => one.id)
+        .slice(-OUTBOUND_ANSWERED_MAX),
       ...(button !== undefined && { button }),
     }),
     /** These went in the conversation, which shows them from now. */

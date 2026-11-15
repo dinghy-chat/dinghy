@@ -111,6 +111,9 @@ export interface SavedAppearance extends WidgetSettings {
 }
 
 /** The longest title an owner can save. */
+/** The outbound messages one answer may name: the newest the visitor read and did not answer. */
+export const OUTBOUND_ANSWERED_MAX = 50;
+
 export const TITLE_MAX = 40;
 /** The longest greeting or away text. */
 export const TEXT_MAX = 200;

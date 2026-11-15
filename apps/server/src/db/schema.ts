@@ -33,6 +33,7 @@ import {
   SAVED_REPLY_SHORTCUT,
   WIDGET_DEFAULTS,
 } from "../../../../packages/widget/src/shared.ts";
+import type { Condition } from "../conditions.ts";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const id = () => uuid("id").notNull().default(sql`gen_random_uuid()`);
@@ -1829,7 +1830,7 @@ export const outboundMessage = pgTable(
     statusReason: text("status_reason").$type<OutboundStatusReason>(),
     sendAt: timestamp("send_at", { withTimezone: true }).notNull().defaultNow(),
     // A condition on the contact, checked at `send_at`, that cancels it when it matches.
-    unless: jsonb("unless"),
+    unless: jsonb("unless").$type<Condition>(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     // When the worker looks at it next: its `send_at`, or a check again while it waits.
     dueAt: timestamp("due_at", { withTimezone: true }),

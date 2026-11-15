@@ -350,6 +350,12 @@ async function end(
   );
 }
 
+/** A dismissed message in a conversation keeps no buttons, so a reload does not show them again. */
+const dropButtons = (tx: Transaction, workspaceId: string, messageId: string) =>
+  tx.execute(sql`
+    UPDATE message SET metadata = jsonb_set(metadata, '{outbound,buttons}', '[]'::jsonb)
+    WHERE workspace_id = ${workspaceId} AND id = ${messageId} AND metadata ? 'outbound'`);
+
 /** A message whose time ran out before the visitor read it: it ends as expired, and goes nowhere. */
 const hasExpired = (row: Row) =>
   row.conversationId === null &&
@@ -892,22 +898,11 @@ export async function conversationsDeleted(
     )
     .for("update");
   for (const row of rows) {
-    const waits = WAITING_STATUSES.some((status) => status === row.status);
-    await change(
-      tx,
-      workspaceId,
-      row,
-      {
-        body: null,
-        ...(waits && {
-          status: "cancelled",
-          statusReason: "conversation_deleted",
-          cancelledAt: new Date(),
-          dueAt: null,
-        }),
-      },
-      waits ? "outbound_message.cancelled" : undefined,
-    );
+    const textless = await change(tx, workspaceId, row, { body: null });
+    if (WAITING_STATUSES.some((status) => status === row.status)) {
+      // Through `end`, so its `once` key is free again, as with any cancel.
+      await end(tx, workspaceId, textless, { status: "cancelled", reason: "conversation_deleted" });
+    }
   }
 }
 
@@ -1371,6 +1366,7 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
             { status: "dismissed", dismissedAt: new Date(), metadata, dueAt: null },
             "outbound_message.dismissed",
           );
+          if (row.messageId !== null) await dropButtons(tx, workspaceId, row.messageId);
         } else {
           await change(tx, workspaceId, row, { metadata });
         }

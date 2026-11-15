@@ -4,7 +4,7 @@ import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
-import { firstName, LOCALES } from "../../../packages/widget/src/shared.ts";
+import { firstName, LOCALES, OUTBOUND_ANSWERED_MAX } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
@@ -96,8 +96,6 @@ import {
 } from "./workspaces.ts";
 
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
-/** Outbound messages one answer may name: as many as may wait for one visitor. */
-const OUTBOUND_ANSWERED_MAX = 5;
 
 const createVisitorRoute = createRoute({
   method: "post",

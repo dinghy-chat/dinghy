@@ -1032,6 +1032,31 @@ describe("a bad file changes nothing", () => {
     );
   });
 
+  test("a message whose handoff or outbound sender names an unknown operator", async () => {
+    for (const metadata of [
+      { handoff: { operatorId: randomUUID() } },
+      { outbound: { id: randomUUID(), email: false, sender: { operatorId: randomUUID() } } },
+    ]) {
+      await refuses(
+        await edited((data) => {
+          const first = (data.messages as { metadata: object }[])[0];
+          if (first !== undefined) first.metadata = metadata;
+        }),
+        "unknown operator",
+      );
+    }
+  });
+
+  test("an outbound message with a condition of the wrong shape", async () => {
+    await refuses(
+      await edited((data) => {
+        const first = (data.outboundMessages as { unless: unknown }[])[0];
+        if (first !== undefined) first.unless = { field: "plan", op: "nope" };
+      }),
+      "format",
+    );
+  });
+
   test("an entry with a path of its own", async () => {
     const parts = [...tarEntry("export.json", Buffer.alloc(0))];
     await refuses(Buffer.concat([...parts, tarEnd()]));
